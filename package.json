@@ -46,6 +46,7 @@
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "@types/node": "^22.0.0",
+    "@vitest/coverage-v8": "^4.1.9",
     "vitest": "^4.1.8"
   }
 }
