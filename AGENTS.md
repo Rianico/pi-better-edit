@@ -63,6 +63,18 @@ The design intent of this fork is identical to the original. If a change starts 
 - **Wire format: `replace` uses `old_range`.** The `old_range` field is a pair `[start, end]` forming an inclusive line range. Both anchors are required (a single-line replace is `old_range: ["X", "X"]`). The anchor (e.g. `aB3`) is the entire wire format: no line number, no `│content`, no disambiguator. Passing a `HASH│content` form is rejected with `[E_BAD_REF]` — the model must re-read and copy just the anchor.
 - **One documented normalization: `new_lines: [""]` → `new_lines: []` for `replace`.** Models commonly emit `new_lines: [""]` to mean "delete this line" instead of the strictly correct `new_lines: []`. The non-empty-l span branch preserves the trailing newline of the last replaced line, so a single-element empty array would leave that newline behind as an extra blank line. The runtime normalizes this to `new_lines: []` (a true deletion) in `applyHashlineEdits` (and again in `resolveEditAnchors` for clarity at the tool layer). Multi-element empty arrays (e.g. `["", ""]`) are NOT collapsed — they legitimately mean "insert blank lines". This is the only input rewrite, and it has a single narrow trigger.
 
+### Boundary duplication warnings
+
+The boundary duplication check in `validateAnchorEdits` detects when the LLM accidentally duplicates an adjacent line. Two cases:
+
+- **Trailing:** the last line of `new_lines` exactly matches the next surviving line after the edit range.
+- **Leading:** the first line of `new_lines` exactly matches the preceding surviving line before the edit range.
+
+When detected, a warning is emitted (not an error, not autocorrection). The warning includes the surviving line's post-edit hash so the model can reference it in a follow-up edit. Raw line comparison (not `.trim()`) is used to avoid false positives when indentation differs (e.g., `    }` vs `        }`).
+
+The surviving line's hash is computed after the edit is applied (not before), using occurrence counting to identify the correct line when multiple identical lines exist. Metadata (line content, position, occurrence index) is stored during validation, then used to reconstruct the warning with the post-edit hash in `applyHashlineEdits`.
+
+Implementation: `src/hashline/resolve.ts` (detection + metadata), `src/hashline/apply.ts` (post-edit hash reconstruction). Tests: `test/core/hashline.recovery.test.ts`, `test/core/indent-dup.test.ts`, `test/integration/boundary-dup-correction.test.ts`.
 ## Hash format — non-negotiable
 
 The hash length, alphabet, and perfect hashing are the divergence from the upstream fork, and they're the *point* of this fork. Treat them as a contract.
