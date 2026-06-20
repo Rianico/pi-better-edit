@@ -1,4 +1,3 @@
-
 import { throwIfAborted } from "../runtime";
 import { computeLineHashes } from "./hash";
 import {
@@ -13,7 +12,7 @@ import {
 	type BoundaryDuplicationWarning,
 } from "./resolve";
 import { countVisibleLines } from "../utils";
-
+import { ANCHOR_CONTEXT_LINES, ANCHOR_MAX_OUTPUT_LINES } from "../constants";
 
 type LineIndex = {
 	fileLines: string[];
@@ -236,7 +235,6 @@ export function applyHashlineEdits(
 			lastChangedLine: undefined,
 		};
 
-	// Normalize new_lines: [""] to new_lines: [] for deletion.
 	edits = edits.map((edit) =>
 		edit.new_lines.length === 1 &&
 		edit.new_lines[0] === ""
@@ -278,9 +276,6 @@ export function applyHashlineEdits(
 	assertDoesNotEmptyFile(content, result);
 	const changedRange = computeChangedLineRange(content, result);
 
-	// Reconstruct boundary duplication warnings with post-edit hashes.
-	// Use position + occurrence to find the exact surviving line (handles
-	// files with multiple identical lines like several `}` closings).
 	const resultLines = result.split("\n");
 	const resultHashes = computeLineHashes(result);
 	for (const bw of boundaryWarnings) {
@@ -316,9 +311,6 @@ export function applyHashlineEdits(
 }
 
 
-const ANCHOR_CONTEXT_LINES = 0;
-const ANCHOR_MAX_OUTPUT_LINES = 12;
-
 export function computeAffectedLineRange(params: {
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
@@ -338,8 +330,6 @@ export function computeAffectedLineRange(params: {
 		return null;
 	}
 
-	// When contextLines is 0, skip the anchor block entirely.
-	// The LLM already knows what it changed and can call read for fresh anchors.
 	if (contextLines === 0) {
 		return null;
 	}
@@ -405,6 +395,7 @@ export function computeChangedLineRange(
 	}
 	if (firstDiff === minLen && original.length === result.length) return null;
 
+
 	let lastOrig = original.length - 1;
 	let lastRes = result.length - 1;
 	while (
@@ -440,4 +431,3 @@ export function computeChangedLineRange(
 
 	return { firstChangedLine, lastChangedLine };
 }
-

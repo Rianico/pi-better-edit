@@ -8,9 +8,6 @@ import {
 	type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readFileSync } from "fs";
-import { access as fsAccess } from "fs/promises";
-import { constants } from "fs";
 import { normalizeToLF, stripBom } from "./replace-diff";
 import { loadFileKindAndText } from "./file-kind";
 import { computeLineHashes, formatHashlineRegion } from "./hashline";
@@ -18,28 +15,16 @@ import { resolveToCwd } from "./path-utils";
 import { throwIfAborted } from "./runtime";
 import { getFileSnapshot } from "./snapshot";
 import { getVisibleLines } from "./utils";
+import { loadPrompt, loadPromptGuidelines } from "./prompts";
+import { validateFileAccess, validateFileKind, isTextFile } from "./validation";
 
-const READ_DESC = readFileSync(
-	new URL("../prompts/read.md", import.meta.url),
-	"utf-8",
-)
-	.replaceAll("{{DEFAULT_MAX_LINES}}", String(DEFAULT_MAX_LINES))
-	.replaceAll("{{DEFAULT_MAX_BYTES}}", formatSize(DEFAULT_MAX_BYTES))
-	.trim();
+const READ_DESC = loadPrompt("../prompts/read.md", {
+	DEFAULT_MAX_LINES: String(DEFAULT_MAX_LINES),
+	DEFAULT_MAX_BYTES: formatSize(DEFAULT_MAX_BYTES),
+});
 
-const READ_PROMPT_SNIPPET = readFileSync(
-	new URL("../prompts/read-snippet.md", import.meta.url),
-	"utf-8",
-).trim();
-
-const READ_PROMPT_GUIDELINES = readFileSync(
-	new URL("../prompts/read-guidelines.md", import.meta.url),
-	"utf-8",
-)
-	.split("\n")
-	.map((line) => line.trim())
-	.filter((line) => line.startsWith("- "))
-	.map((line) => line.slice(2));
+const READ_PROMPT_SNIPPET = loadPrompt("../prompts/read-snippet.md");
+const READ_PROMPT_GUIDELINES = loadPromptGuidelines("../prompts/read-guidelines.md");
 
 function normalizePositiveInteger(
 	value: number | undefined,
@@ -151,35 +136,11 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			const absolutePath = resolveToCwd(rawPath, ctx.cwd);
 
 			throwIfAborted(signal);
-			try {
-				await fsAccess(absolutePath, constants.R_OK);
-			} catch (error: unknown) {
-				const code =
-					error instanceof Error
-						? (error as NodeJS.ErrnoException).code
-						: undefined;
-				if (code === "ENOENT") {
-					throw new Error(`File not found: ${rawPath}`);
-				}
-				if (code === "EACCES" || code === "EPERM") {
-					throw new Error(`File is not readable: ${rawPath}`);
-				}
-				throw new Error(`Cannot access file: ${rawPath}`);
-			}
+			await validateFileAccess(absolutePath, rawPath);
 
 			throwIfAborted(signal);
 			const file = await loadFileKindAndText(absolutePath);
-			if (file.kind === "directory") {
-				throw new Error(
-					`Path is a directory: ${rawPath}. Use ls to inspect directories.`,
-				);
-			}
-
-			if (file.kind === "binary") {
-				throw new Error(
-					`Path is a binary file: ${rawPath} (${file.description}). Hashline read only supports text files and supported images.`,
-				);
-			}
+			validateFileKind(file, rawPath);
 
 			if (file.kind === "image") {
 				const builtinRead = createReadTool(ctx.cwd);
@@ -195,9 +156,6 @@ export function registerReadTool(pi: ExtensionAPI): void {
 
 			throwIfAborted(signal);
 			const normalized = normalizeToLF(stripBom(file.text).text);
-			// Compute hashes once for the whole file so the per-line anchors the
-			// model sees here are byte-identical to what the replace tool will
-			// compute when it later validates against this file.
 			const fileHashes = computeLineHashes(normalized);
 			const preview = formatHashlineReadPreview(
 				normalized,
@@ -209,9 +167,6 @@ export function registerReadTool(pi: ExtensionAPI): void {
 			);
 			const snapshot = await getFileSnapshot(absolutePath);
 
-			// Invalid UTF-8 bytes are decoded as U+FFFD, matching Pi's built-in
-			// tools. Warn only when the decoder reported invalid bytes; a literal,
-			// valid U+FFFD in a UTF-8 file should not be treated as lossy decoding.
 			const previewText =
 				file.hadUtf8DecodeErrors === true
 					? `${preview.text}\n\n[Non-UTF-8 bytes shown as U+FFFD; editing rewrites the file as UTF-8.]`
@@ -221,14 +176,10 @@ export function registerReadTool(pi: ExtensionAPI): void {
 				content: [{ type: "text", text: previewText }],
 				details: {
 					truncation: preview.truncation,
-					// snapshotId remains in details for host UI (e.g. "file changed since
-					// last view"). It is NOT echoed in text — the LLM no longer needs it.
 					snapshotId: snapshot.snapshotId,
 					...(preview.nextOffset !== undefined
 						? { nextOffset: preview.nextOffset }
 						: {}),
-					// Phase 2 C — host-only observability. Truncated reads usually mean
-					// a follow-up read with `offset = next_offset` is coming.
 					metrics: {
 						truncated: !!preview.truncation,
 						...(preview.nextOffset !== undefined

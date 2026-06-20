@@ -6,8 +6,6 @@ import type {
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { constants } from "fs";
-import { readFileSync } from "fs";
-import { access as fsAccess } from "fs/promises";
 import {
 	detectLineEnding,
 	generateDiffString,
@@ -45,6 +43,8 @@ import {
 	type ReplacePreview,
 	type ReplaceRenderState,
 } from "./replace-render";
+import { loadPrompt, loadPromptGuidelines } from "./prompts";
+import { validateFileAccess, validateFileKind, isTextFile } from "./validation";
 
 
 const hashlineEditNewLinesSchema = Type.Array(Type.String(), {
@@ -87,40 +87,15 @@ export type ReplaceRequestParams = {
 export type HashlineReplaceToolDetails = {
 	diff: string;
 	firstChangedLine?: number;
-	/**
-	 * Post-edit snapshot fingerprint. Surfaced in details only — the LLM no
-	 * longer receives or echoes it. Hosts may use this for UI hints (e.g.
-	 * "file changed since last view"). See plan W2.
-	 */
 	snapshotId?: string;
 	classification?: "noop";
 	structureOutline?: string[];
-	/**
-	 * Phase 2 C — opt-in observability surface for hosts. Never echoed in text.
-	 * Hosts can use it for adoption/regression dashboards.
-	 */
 	metrics?: ReplaceMetrics;
 };
 
-const EDIT_DESC = readFileSync(
-	new URL("../prompts/replace.md", import.meta.url),
-	"utf-8",
-).trim();
-
-const EDIT_PROMPT_SNIPPET = readFileSync(
-	new URL("../prompts/replace-snippet.md", import.meta.url),
-	"utf-8",
-).trim();
-
-
-const EDIT_PROMPT_GUIDELINES = readFileSync(
-	new URL("../prompts/replace-guidelines.md", import.meta.url),
-	"utf-8",
-)
-	.split("\n")
-	.map((line) => line.trim())
-	.filter((line) => line.startsWith("- "))
-	.map((line) => line.slice(2));
+const EDIT_DESC = loadPrompt("../prompts/replace.md");
+const EDIT_PROMPT_SNIPPET = loadPrompt("../prompts/replace-snippet.md");
+const EDIT_PROMPT_GUIDELINES = loadPromptGuidelines("../prompts/replace-guidelines.md");
 const ROOT_KEYS = new Set(["path", "edits"]);
 
 export function assertReplaceRequest(
@@ -190,38 +165,11 @@ async function executeEditPipeline(
 	}
 
 	throwIfAborted(signal);
-	try {
-		await fsAccess(absolutePath, accessMode);
-	} catch (error: unknown) {
-		const code = (error as NodeJS.ErrnoException).code;
-		if (code === "ENOENT") {
-			throw new Error(`File not found: ${path}`);
-		}
-		if (code === "EACCES" || code === "EPERM") {
-			const accessLabel =
-				accessMode & constants.W_OK ? "not writable" : "not readable";
-			throw new Error(`File is ${accessLabel}: ${path}`);
-		}
-		throw new Error(`Cannot access file: ${path}`);
-	}
+	await validateFileAccess(absolutePath, path, accessMode);
 
 	throwIfAborted(signal);
 	const file = await loadFileKindAndText(absolutePath);
-	if (file.kind === "directory") {
-		throw new Error(
-			`Path is a directory: ${path}. Use ls to inspect directories.`,
-		);
-	}
-	if (file.kind === "image") {
-		throw new Error(
-			`Path is an image file: ${path}. Hashline edit only supports text files.`,
-		);
-	}
-	if (file.kind === "binary") {
-		throw new Error(
-			`Path is a binary file: ${path} (${file.description}). Hashline edit only supports text files.`,
-		);
-	}
+	validateFileKind(file, path);
 
 	throwIfAborted(signal);
 	const { bom, text: rawContent } = stripBom(file.text);

@@ -85,19 +85,16 @@ export function generateDiffString(
       let linesToShow = raw;
       let skipStart = 0;
       let skipEnd = 0;
-      let skipMiddle = 0; // lines skipped between head and tail context
+      let skipMiddle = 0;
 
       if (!lastWasChange) {
-        // Before a change: show last contextLines only.
         skipStart = Math.max(0, raw.length - contextLines);
         linesToShow = raw.slice(skipStart);
       } else if (nextPartIsChange && raw.length > contextLines * 2) {
-        // Between two changes: show first contextLines + last contextLines with ellipsis in between.
         const tail = raw.slice(-contextLines);
         linesToShow = [...raw.slice(0, contextLines), "__ELLIPSIS__", ...tail];
         skipMiddle = raw.length - contextLines * 2;
       } else if (linesToShow.length > contextLines) {
-        // After a change with no next change nearby: show first contextLines only.
         skipEnd = linesToShow.length - contextLines;
         linesToShow = linesToShow.slice(0, contextLines);
       }

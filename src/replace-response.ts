@@ -1,4 +1,3 @@
-
 import { generateDiffString } from "./replace-diff";
 import {
 	computeAffectedLineRange,
@@ -6,15 +5,13 @@ import {
 	formatHashlineRegion,
 } from "./hashline";
 import { getVisibleLines } from "./utils";
+import { CHANGED_ANCHOR_TEXT_BUDGET_BYTES } from "./constants";
 
 type ToolResult = {
 	content: Array<{ type: "text"; text: string }>;
 	isError?: boolean;
 	details: any;
 };
-
-const CHANGED_ANCHOR_TEXT_BUDGET_BYTES = 50 * 1024;
-
 
 export type ReplaceMetrics = {
 	edits_attempted: number;
@@ -45,7 +42,6 @@ type NoopEditEntry = {
 };
 
 
-// ─── Builder inputs ─────────────────────────────────────────────────────
 
 export interface NoopResponseInput {
 	path: string;
@@ -65,7 +61,6 @@ export interface SuccessResponseInput {
 	editMeta: ReplaceMeta;
 }
 
-// ─── Helpers ────────────────────────────────────────────────────────────
 
 
 function countDiffLines(diff: string, marker: "+" | "-"): number {
@@ -118,7 +113,6 @@ function warningsBlockOf(warnings: string[] | undefined): string {
 	return warnings?.length ? `\n\nWarnings:\n${warnings.join("\n")}` : "";
 }
 
-// ─── Builders ───────────────────────────────────────────────────────────
 
 export function buildNoopResponse(input: NoopResponseInput): ToolResult {
 	const {
@@ -190,10 +184,10 @@ export function buildChangedResponse(input: SuccessResponseInput): ToolResult {
 					CHANGED_ANCHOR_TEXT_BUDGET_BYTES
 					? block
 					: "Anchors omitted; use read for subsequent edits.";
-		})()
+			})()
 		: resultLines.length === 0
 			? "File is empty. Use edit to insert content."
-			: ""; // No anchor context → show nothing; LLM can call read for fresh anchors
+			: "";
 	const text = [anchorsBlock, warningsBlock.trimStart()]
 		.filter((section) => section.length > 0)
 		.join("\n\n");

@@ -1,4 +1,3 @@
-
 import { isRecord, hasOwn } from "./utils";
 
 function coerceEditsArray(edits: unknown): unknown {
@@ -21,7 +20,6 @@ export function normalizeReplaceRequest(input: unknown): unknown {
 
 	const record: Record<string, unknown> = { ...input };
 
-	// file_path → path alias.
 	if (typeof record.path !== "string" && typeof record.file_path === "string") {
 		record.path = record.file_path;
 		delete record.file_path;
@@ -29,11 +27,9 @@ export function normalizeReplaceRequest(input: unknown): unknown {
 
 	const hasEditsField = hasOwn(record, "edits");
 
-	// edits-as-JSON-string → array.
 	if (hasEditsField) {
 		record.edits = coerceEditsArray(record.edits);
 	}
 
 	return record;
 }
-

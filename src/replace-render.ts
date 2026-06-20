@@ -1,16 +1,8 @@
-/**
- * TUI rendering helpers for the replace tool.
- *
- * Extracted from `src/replace.ts` to separate presentation (color themes, diff
- * formatting, Markdown rendering) from tool execution logic.
- */
 
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { normalizeReplaceRequest } from "./replace-normalize";
 import type { ReplaceRequestParams, HashlineReplaceToolDetails } from "./replace";
 import { isRecord } from "./utils";
-
-// ─── Theme type aliases ─────────────────────────────────────────────────
 
 export type FgTheme = Pick<Theme, "fg">;
 export type CallTheme = Pick<Theme, "fg" | "bold">;
@@ -19,8 +11,6 @@ export type RenderedMarkdownTheme = Pick<
 	"fg" | "bold" | "italic" | "underline" | "strikethrough"
 >;
 
-// ─── Render state ───────────────────────────────────────────────────────
-
 export type ReplacePreview = { diff: string } | { error: string };
 
 export type ReplaceRenderState = {
@@ -28,8 +18,6 @@ export type ReplaceRenderState = {
 	preview?: ReplacePreview;
 	previewGeneration?: number;
 };
-
-// ─── Preview input extraction ───────────────────────────────────────────
 
 
 export function getRenderablePreviewInput(
@@ -52,8 +40,6 @@ export function getRenderablePreviewInput(
 
 	return request.edits !== undefined ? request : null;
 }
-
-// ─── Diff formatting ────────────────────────────────────────────────────
 
 export function colorDiffLines(lines: string[], theme: FgTheme): string[] {
 	return lines.map((line) => {
@@ -88,8 +74,6 @@ export function formatResultDiff(diff: string, theme: FgTheme): string {
 	return colorDiffLines(diff.split("\n"), theme).join("\n");
 }
 
-// ─── Edit call formatting ───────────────────────────────────────────────
-
 export function formatEditCall(
 	args: ReplaceRequestParams | undefined,
 	state: ReplaceRenderState,
@@ -118,8 +102,6 @@ export function formatEditCall(
 	return text;
 }
 
-// ─── Result text extraction ─────────────────────────────────────────────
-
 export function getRenderedEditTextContent(result: {
 	content?: Array<{ type: string; text?: string }>;
 }): string | undefined {
@@ -135,8 +117,6 @@ export function extractRenderedWarnings(
 ): string | undefined {
 	return text?.match(/(?:^|\n)Warnings:\n[\s\S]*$/)?.[0]?.trimStart();
 }
-
-// ─── Result classification ──────────────────────────────────────────────
 
 export function isAppliedChangedResult(
 	details: HashlineReplaceToolDetails | undefined,
@@ -165,7 +145,6 @@ export function buildAppliedChangedResultText(
 
 	return sections.length > 0 ? sections.join("\n\n") : undefined;
 }
-// ─── Markdown rendering ─────────────────────────────────────────────────
 
 function trimEdgeEmptyLines(lines: string[]): string[] {
 	let start = 0;

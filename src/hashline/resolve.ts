@@ -39,9 +39,7 @@ export interface NoopEdit {
 export type HashlineToolEdit = {
 	old_range?: [string, string];
 	new_lines?: string[];
-	/** @deprecated Legacy field — rejected with [E_LEGACY_SHAPE] at validation time. */
 	oldText?: string;
-	/** @deprecated Legacy field — rejected with [E_LEGACY_SHAPE] at validation time. */
 	newText?: string;
 };
 
@@ -164,7 +162,6 @@ export function resolveEditAnchors(edits: HashlineToolEdit[]): HashlineEdit[] {
 	for (const [index, edit] of edits.entries()) {
 		assertEditItem(edit as Record<string, unknown>, index);
 
-		// Normalize new_lines: [""] to new_lines: [] for deletion.
 		const replaceLines = hashlineParseText(edit.new_lines ?? null);
 		const normalizedLines =
 			replaceLines.length === 1 && replaceLines[0] === ""
@@ -229,9 +226,6 @@ export function assertNoBareHashPrefixLines(
 }
 
 
-/**
- * Human-readable label for a resolved edit (used in warnings and conflict errors).
- */
 export function describeEdit(edit: ResolvedHashlineEdit): string {
 	return `replace ${edit.old_range[0].hash}-${edit.old_range[1].hash}`;
 }

@@ -1,5 +1,6 @@
 import { open as fsOpen, stat as fsStat } from "fs/promises";
 import { fileTypeFromBuffer } from "file-type";
+import { FILE_TYPE_SNIFF_BYTES } from "./constants";
 
 const IMAGE_MIME_TYPES = new Set<string>([
 	"image/jpeg",
@@ -17,8 +18,6 @@ const TEXT_LIKE_MIME_TYPES = new Set<string>([
 function isTextLikeMimeType(mimeType: string): boolean {
 	return mimeType.startsWith("text/") || TEXT_LIKE_MIME_TYPES.has(mimeType);
 }
-
-const FILE_TYPE_SNIFF_BYTES = 8192;
 
 export type FileKind =
 	| { kind: "directory" }
@@ -84,12 +83,6 @@ export async function loadFileKindAndText(
 			};
 		}
 
-		// Non-fatal decode, matching pi's built-in tools: invalid UTF-8 becomes
-		// U+FFFD rather than rejecting the file. The null-byte guard above is the
-		// only signal we treat as binary, so non-UTF-8 text (CP1251, GBK, …) reads
-		// instead of forcing the model to bypass hashline with raw shell edits.
-		// Track fatal-decoder failures separately so a literal, valid U+FFFD in a
-		// UTF-8 file does not get mistaken for lossy decoding.
 		const decoder = new TextDecoder("utf-8");
 		const fatalDecoder = new TextDecoder("utf-8", { fatal: true });
 		let hadUtf8DecodeErrors = false;

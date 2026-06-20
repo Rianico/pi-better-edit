@@ -1,11 +1,8 @@
-
 import xxhash from "xxhash-wasm";
 
 
 export const HASH_LENGTH = 3;
-
 export const HASH_PREFIX = "";
-
 export const ANCHOR_LENGTH = HASH_LENGTH;
 
 const HASH_ALPHABET =
@@ -42,27 +39,20 @@ export const HASHLINE_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CHARS_CLASS})│
 
 
 
-// Lazy-initialized xxhash-wasm hasher. Initialization starts at module load
-// time and completes in ~2ms. By the time any tool calls xxh32(), the hasher
-// is ready.
 type Hasher = { h32(input: string, seed?: number): number };
 let hasherPromise: Promise<Hasher> | null = null;
 let hasherSync: Hasher | null = null;
 
 function getHasher(): Hasher {
 	if (hasherSync) return hasherSync;
-	// Fast path won't hit this in practice — the wasm init completes in ~2ms
-	// and no tool call happens at import time. But if it does, throw clearly.
 	throw new Error("xxhash-wasm not initialized yet. This should not happen.");
 }
 
-// Start initialization immediately at module load time.
 hasherPromise = xxhash().then((h) => {
 	hasherSync = h;
 	return h;
 });
 
-// Export for tests that need to await readiness.
 export function ensureHasherReady(): Promise<Hasher> {
 	return hasherPromise!
 }
