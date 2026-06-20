@@ -36,7 +36,7 @@ describe("edit tool noop + warnings", () => {
     });
   });
 
-  it("emits a boundary duplication warning without blocking the edit", async () => {
+  it("warns on trailing duplicate line that matches the next surviving line", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { pi, getTool } = makeFakePiRegistry();
       register(pi);
@@ -58,7 +58,7 @@ describe("edit tool noop + warnings", () => {
       );
 
       expect(getText(result)).toContain("Warnings:");
-      expect(getText(result)).toMatch(/boundary duplication|duplicate/i);
+      expect(getText(result)).toMatch(/Potential boundary duplication/i);
       expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\nccc\n");
     });
   });

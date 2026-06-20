@@ -26,6 +26,7 @@ export {
 	type ResolvedHashlineEdit,
 	type HashlineToolEdit,
 	type NoopEdit,
+	type BoundaryDuplicationWarning,
 	describeEdit,
 	resolveEditAnchors,
 	validateAnchorEdits,

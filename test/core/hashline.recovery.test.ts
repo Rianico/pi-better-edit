@@ -94,8 +94,9 @@ describe("applyHashlineEdits — error handling", () => {
 });
 
 describe("applyHashlineEdits — heuristics", () => {
-	it("preserves trailing boundary-looking lines in replacements", () => {
+	it("warns on trailing } that duplicates the next surviving line", () => {
 		const content = "if (ok) {\n  run();\n}\nafter();";
+		const hashes = computeLineHashes(content);
 		const edits: HashlineEdit[] = [
 			{
 				old_range: [makeTag(content, 1), makeTag(content, 2)],
@@ -103,8 +104,72 @@ describe("applyHashlineEdits — heuristics", () => {
 			},
 		];
 		const result = applyHashlineEdits(content, edits);
+		// Duplicate } is preserved (strict semantics: no autocorrection), but a warning fires.
 		expect(result.content).toBe("if (ok) {\n  runSafe();\n}\n}\nafter();");
-		expect(result.warnings).toBeUndefined();
+		expect(result.warnings).toEqual([
+			`Potential boundary duplication: the last line of the replacement ("}") matches the next surviving line. Surviving line hash: ${hashes[2]!}`,
+		]);
+	});
+
+	it("warns on trailing } that duplicates the next line", () => {
+		const content = "function foo() {\n  const x = 1;\n  return x;\n}";
+		const hashes = computeLineHashes(content);
+		const edits: HashlineEdit[] = [
+			{
+				old_range: [makeTag(content, 2), makeTag(content, 3)],
+				new_lines: ["  const y = 2;", "  return y;", "}"],
+			},
+		];
+		const result = applyHashlineEdits(content, edits);
+		expect(result.content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n}");
+		expect(result.warnings).toBeDefined();
+		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
+	});
+
+	it("warns on trailing }); that duplicates the next line", () => {
+		const content = "app.get(\"/api\", (req, res) => {\n  const data = fetchData();\n  res.json(data);\n});";
+		const hashes = computeLineHashes(content);
+		const edits: HashlineEdit[] = [
+			{
+				old_range: [makeTag(content, 2), makeTag(content, 3)],
+				new_lines: ["  const result = processData();", "  res.json(result);", "});"],
+			},
+		];
+		const result = applyHashlineEdits(content, edits);
+		expect(result.content).toBe("app.get(\"/api\", (req, res) => {\n  const result = processData();\n  res.json(result);\n});\n});");
+		expect(result.warnings).toBeDefined();
+		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
+	});
+
+	it("warns on trailing } else { that duplicates the next line", () => {
+		const content = "if (condition) {\n  doSomething();\n} else {\n  doOther();\n}";
+		const hashes = computeLineHashes(content);
+		const edits: HashlineEdit[] = [
+			{
+				old_range: [makeTag(content, 1), makeTag(content, 2)],
+				new_lines: ["if (condition) {", "  doNewThing();", "} else {"],
+			},
+		];
+		const result = applyHashlineEdits(content, edits);
+		expect(result.content).toBe("if (condition) {\n  doNewThing();\n} else {\n} else {\n  doOther();\n}");
+		expect(result.warnings).toBeDefined();
+		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
+	});
+
+	it("warns on trailing duplicate even when mid-replacement also has matching lines", () => {
+		const content = "a\n}\nb";
+		const hashes = computeLineHashes(content);
+		const edits: HashlineEdit[] = [
+			{
+				old_range: [makeTag(content, 1), makeTag(content, 1)],
+				new_lines: ["x", "}", "y", "}"],
+			},
+		];
+		const result = applyHashlineEdits(content, edits);
+		// The trailing } duplicates the next line (}), so a warning fires. Content is preserved.
+		expect(result.content).toBe("x\n}\ny\n}\n}\nb");
+		expect(result.warnings).toBeDefined();
+		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
 	});
 
 	it("preserves leading boundary-looking lines in replacements", () => {
@@ -124,7 +189,7 @@ describe("applyHashlineEdits — heuristics", () => {
 		);
 		const hashes = computeLineHashes(content);
 		expect(result.warnings).toEqual([
-			`Potential boundary duplication before replace ${hashes[1]!}-${hashes[2]!}: the replacement starts with a line that matches the preceding surviving line after trim.`,
+			`Potential boundary duplication: the first line of the replacement ("before();") matches the preceding surviving line. Surviving line hash: ${hashes[0]!}`,
 		]);
 	});
 

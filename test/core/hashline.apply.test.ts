@@ -231,7 +231,7 @@ describe("applyHashlineEdits — warning heuristics", () => {
 		expect(result.content).toBe("before\nbefore\nnew one\nnew two\nafter");
 		expect(result.warnings).toEqual([
 			expect.stringContaining(
-				"replacement starts with a line that matches the preceding surviving line",
+				"the first line of the replacement",
 			),
 		]);
 	});

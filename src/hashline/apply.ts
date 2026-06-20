@@ -10,6 +10,7 @@ import {
 	type ResolvedHashlineEdit,
 	type NoopEdit,
 	type HashlineEdit,
+	type BoundaryDuplicationWarning,
 } from "./resolve";
 import { countVisibleLines } from "../utils";
 
@@ -248,7 +249,7 @@ export function applyHashlineEdits(
 	const noopEdits: NoopEdit[] = [];
 	const warnings: string[] = [];
 
-	const { resolved, mismatches } = validateAnchorEdits(
+	const { resolved, mismatches, boundaryWarnings } = validateAnchorEdits(
 		edits,
 		lineIndex.fileLines,
 		fileHashes,
@@ -276,6 +277,34 @@ export function applyHashlineEdits(
 	const result = assembleEditResult(content, orderedSpans, signal);
 	assertDoesNotEmptyFile(content, result);
 	const changedRange = computeChangedLineRange(content, result);
+
+	// Reconstruct boundary duplication warnings with post-edit hashes.
+	// Use position + occurrence to find the exact surviving line (handles
+	// files with multiple identical lines like several `}` closings).
+	const resultLines = result.split("\n");
+	const resultHashes = computeLineHashes(result);
+	for (const bw of boundaryWarnings) {
+		let seen = 0;
+		let matchIndex = -1;
+		for (let i = 0; i < resultLines.length; i++) {
+			if (resultLines[i] === bw.survivingLineContent) {
+				if (seen === bw.occurrence) { matchIndex = i; break; }
+				seen++;
+			}
+		}
+		if (matchIndex >= 0) {
+			const hash = resultHashes[matchIndex];
+			if (bw.kind === "trailing") {
+				warnings.push(
+					`Potential boundary duplication: the last line of the replacement (${JSON.stringify(bw.replacementLineContent)}) matches the next surviving line. Surviving line hash: ${hash}`
+				);
+			} else {
+				warnings.push(
+					`Potential boundary duplication: the first line of the replacement (${JSON.stringify(bw.replacementLineContent)}) matches the preceding surviving line. Surviving line hash: ${hash}`
+				);
+			}
+		}
+	}
 
 	return {
 		content: result,

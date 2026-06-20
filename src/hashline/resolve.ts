@@ -21,6 +21,15 @@ interface HashMismatch {
 	candidates?: number[];
 }
 
+export interface BoundaryDuplicationWarning {
+	kind: "trailing" | "leading";
+	survivingLineContent: string;
+	survivingLineIndex: number;
+	occurrence: number;
+	replacementLineContent: string;
+	editIndex: number;
+}
+
 export interface NoopEdit {
 	editIndex: number;
 	loc: string;
@@ -233,7 +242,7 @@ export function validateAnchorEdits(
 	fileHashes: string[],
 	warnings: string[],
 	signal: AbortSignal | undefined,
-): { resolved: ResolvedHashlineEdit[]; mismatches: HashMismatch[] } {
+): { resolved: ResolvedHashlineEdit[]; mismatches: HashMismatch[]; boundaryWarnings: BoundaryDuplicationWarning[] } {
 	if (fileHashes.length !== fileLines.length) {
 		throw new Error(
 			`validateAnchorEdits: fileHashes.length (${fileHashes.length}) must match fileLines.length (${fileLines.length}).`,
@@ -241,6 +250,7 @@ export function validateAnchorEdits(
 	}
 	const resolved: ResolvedHashlineEdit[] = [];
 	const mismatches: HashMismatch[] = [];
+	const boundaryWarnings: BoundaryDuplicationWarning[] = [];
 
 	const tryResolve = (ref: Anchor): ResolvedAnchor | undefined => {
 		const result = resolveAnchor(ref, fileLines, fileHashes);
@@ -266,36 +276,38 @@ export function validateAnchorEdits(
 		}
 		const endLine = endResolved.line;
 		const nextLine = fileLines[endLine];
-		const replacementLastLine = edit.new_lines.at(-1)?.trim();
+		const replacementLastLine = edit.new_lines.at(-1);
 		if (
 			nextLine !== undefined &&
-			replacementLastLine &&
-			/[\p{L}\p{N}]/u.test(replacementLastLine) &&
-			replacementLastLine === nextLine.trim()
+			replacementLastLine !== undefined &&
+			replacementLastLine.length > 0 &&
+			replacementLastLine === nextLine
 		) {
-			const resolvedEdit: ResolvedHashlineEdit = {
-				old_range: [startResolved, endResolved],
-				new_lines: edit.new_lines,
-			};
-			warnings.push(
-				`Potential boundary duplication after ${describeEdit(resolvedEdit)}: the replacement ends with a line that matches the next surviving line after trim.`,
-			);
+			boundaryWarnings.push({
+				kind: "trailing",
+				survivingLineContent: nextLine,
+				survivingLineIndex: endLine,
+				occurrence: fileLines.slice(0, endLine).filter(l => l === nextLine).length,
+				replacementLineContent: replacementLastLine,
+				editIndex: resolved.length,
+			});
 		}
 		const prevLine = fileLines[startResolved.line - 2];
-		const replacementFirstLine = edit.new_lines[0]?.trim();
+		const replacementFirstLine = edit.new_lines[0];
 		if (
 			prevLine !== undefined &&
-			replacementFirstLine &&
-			/[\p{L}\p{N}]/u.test(replacementFirstLine) &&
-			replacementFirstLine === prevLine.trim()
+			replacementFirstLine !== undefined &&
+			replacementFirstLine.length > 0 &&
+			replacementFirstLine === prevLine
 		) {
-			const resolvedEdit: ResolvedHashlineEdit = {
-				old_range: [startResolved, endResolved],
-				new_lines: edit.new_lines,
-			};
-			warnings.push(
-				`Potential boundary duplication before ${describeEdit(resolvedEdit)}: the replacement starts with a line that matches the preceding surviving line after trim.`,
-			);
+			boundaryWarnings.push({
+				kind: "leading",
+				survivingLineContent: prevLine,
+				survivingLineIndex: startResolved.line - 2,
+				occurrence: fileLines.slice(0, startResolved.line - 2).filter(l => l === prevLine).length,
+				replacementLineContent: replacementFirstLine,
+				editIndex: resolved.length,
+			});
 		}
 		resolved.push({
 			old_range: [startResolved, endResolved],
@@ -303,7 +315,7 @@ export function validateAnchorEdits(
 		});
 	}
 
-	return { resolved, mismatches };
+	return { resolved, mismatches, boundaryWarnings };
 }
 
 export { maybeWarnSuspiciousUnicodeEscapePlaceholder };
