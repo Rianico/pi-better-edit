@@ -118,7 +118,7 @@ export function assertReplaceRequest(
 	);
 	if (unknownRootKeys.length > 0) {
 		throw new Error(
-			`[E_BAD_SHAPE] Edit request contains unknown or unsupported fields: ${unknownRootKeys.join(", ")}.`,
+			`[E_BAD_SHAPE] Edit request contains unknown or unsupported fields: ${unknownRootKeys.join(", ")}. Use only { path, edits }; each edit is { old_range: ["<START>", "<END>"], new_lines: [...] }.`,
 		);
 	}
 
@@ -127,7 +127,7 @@ export function assertReplaceRequest(
 	}
 
 	if (hasOwn(request, "edits") && !Array.isArray(request.edits)) {
-		throw new Error('[E_BAD_SHAPE] Edit request requires an "edits" array when provided.');
+		throw new Error('[E_BAD_SHAPE] Edit request requires an "edits" array when provided. Each edit is { old_range: ["<START>", "<END>"], new_lines: [...] }.');
 	}
 
 }

@@ -134,7 +134,7 @@ function assertEditItem(edit: Record<string, unknown>, index: number): void {
 	const unknownKeys = Object.keys(edit).filter((key) => !ITEM_KEYS.has(key));
 	if (unknownKeys.length > 0) {
 		throw new Error(
-			`[E_BAD_SHAPE] Edit ${index} contains unknown or unsupported fields: ${unknownKeys.join(", ")}.`,
+			`[E_BAD_SHAPE] Edit ${index} contains unknown or unsupported fields: ${unknownKeys.join(", ")}. Each edit takes only { old_range, new_lines }.`,
 		);
 	}
 
@@ -144,7 +144,7 @@ function assertEditItem(edit: Record<string, unknown>, index: number): void {
 		);
 	}
 	if (!("new_lines" in edit)) {
-		throw new Error(`[E_BAD_SHAPE] Edit ${index} requires a "new_lines" field.`);
+		throw new Error(`[E_BAD_SHAPE] Edit ${index} requires a "new_lines" field. Provide the replacement lines (use [] to delete).`);
 	}
 	if ("new_lines" in edit && !isStringArray(edit.new_lines)) {
 		throw new Error(`[E_BAD_SHAPE] Edit ${index} field "new_lines" must be a string array.`);
