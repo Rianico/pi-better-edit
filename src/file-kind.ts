@@ -1,6 +1,6 @@
 import { open as fsOpen, stat as fsStat } from "fs/promises";
 import { fileTypeFromBuffer } from "file-type";
-import { FILE_TYPE_SNIFF_BYTES } from "./constants";
+import { FILE_TYPE_SNIFF_BYTES, MAX_FILE_BYTES } from "./constants";
 
 const IMAGE_MIME_TYPES = new Set<string>([
 	"image/jpeg",
@@ -46,6 +46,12 @@ export async function loadFileKindAndText(
 		return {
 			kind: "binary",
 			description: "unsupported file type",
+		};
+	}
+	if (pathStat.size > MAX_FILE_BYTES) {
+		return {
+			kind: "binary",
+			description: `file exceeds ${MAX_FILE_BYTES} byte limit`
 		};
 	}
 

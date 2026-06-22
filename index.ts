@@ -1,7 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFile } from "fs/promises";
 import { join, isAbsolute } from "path";
-import { computeLineHashes, formatHashlineRegion } from "./src/hashline";
+import { computeLineHashes, ensureHasherReady, formatHashlineRegion } from "./src/hashline";
 import { registerReplaceTool } from "./src/replace";
 import { registerReadTool } from "./src/read";
 import { normalizeToLF } from "./src/replace-diff";
@@ -15,6 +15,7 @@ export default function (pi: ExtensionAPI): void {
   pi.on("session_start", async (_event, ctx) => {
     const active = pi.getActiveTools();
     pi.setActiveTools(active.filter((t) => t !== "edit"));
+    await ensureHasherReady();
   });
 
   const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;

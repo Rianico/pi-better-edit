@@ -156,13 +156,12 @@ export function buildNoopResponse(input: NoopResponseInput): ToolResult {
 export function buildChangedResponse(input: SuccessResponseInput): ToolResult {
 	const { result, warnings, snapshotId, originalNormalized, editMeta } = input;
 
-	const diffResult = generateDiffString(originalNormalized, result);
+	const resultLines = getVisibleLines(result);
+	const resultHashes = input.resultHashes ?? computeLineHashes(result);
+	const diffResult = generateDiffString(originalNormalized, result, 2, resultHashes);
 	const addedLines = countDiffLines(diffResult.diff, "+");
 	const removedLines = countDiffLines(diffResult.diff, "-");
 	const warningsBlock = warningsBlockOf(warnings);
-
-	const resultLines = getVisibleLines(result);
-	const resultHashes = input.resultHashes ?? computeLineHashes(result);
 	const anchorRange = computeAffectedLineRange({
 		firstChangedLine: editMeta.firstChangedLine,
 		lastChangedLine: editMeta.lastChangedLine,

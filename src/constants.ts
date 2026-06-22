@@ -3,3 +3,4 @@ export const CHANGED_ANCHOR_TEXT_BUDGET_BYTES = 50 * 1024;
 export const ANCHOR_CONTEXT_LINES = 0;
 export const ANCHOR_MAX_OUTPUT_LINES = 12;
 export const FILE_TYPE_SNIFF_BYTES = 8192;
+export const MAX_FILE_BYTES = 100 * 1024 * 1024;
