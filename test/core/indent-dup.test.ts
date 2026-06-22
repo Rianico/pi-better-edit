@@ -8,8 +8,8 @@ describe("indentation difference in boundary check", () => {
     const hashes = computeLineHashes(file);
 
     const edit = {
-      old_range: [hashes[1], hashes[2]], // lines 2-3
-      new_lines: ["    function inner() {", "      return 2;", "        }"], // 8 spaces + }
+      old_range: [hashes[1], hashes[2]] as [string, string],
+      new_lines: ["    function inner() {", "      return 2;", "        }"],
     };
 
     const resolved = resolveEditAnchors([edit]);
@@ -24,8 +24,8 @@ describe("indentation difference in boundary check", () => {
     const hashes = computeLineHashes(file);
 
     const edit = {
-      old_range: [hashes[1], hashes[2]], // lines 2-3
-      new_lines: ["  function inner() {", "    return 2;", "  }"], // exact same indent as next line
+      old_range: [hashes[1], hashes[2]] as [string, string],
+      new_lines: ["  function inner() {", "    return 2;", "  }"],
     };
 
     const resolved = resolveEditAnchors([edit]);

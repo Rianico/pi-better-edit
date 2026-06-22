@@ -122,6 +122,21 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 		expect(caught!.message).toMatch(/None match file line hashes/);
 	});
 
+	it("reports the edit index and new_lines index for each offending line", () => {
+		let caught: Error | undefined;
+		try {
+			applyTool([
+				{ old_range: [anchor, anchor], new_lines: ["ZZZ│one"] },
+				{ old_range: [anchor, anchor], new_lines: ["real", "ZZP│two"] },
+			]);
+		} catch (e) {
+			caught = e as Error;
+		}
+		expect(caught).toBeDefined();
+		expect(caught!.message).toMatch(/edit 0, new_lines\[0\]/);
+		expect(caught!.message).toMatch(/edit 1, new_lines\[1\]/);
+	});
+
 	it("accepts a single legit 'TS: TypeScript' line without warning", () => {
 		const result = applyTool([
 			{ old_range: [anchor, anchor], new_lines: ["TS: TypeScript"] },

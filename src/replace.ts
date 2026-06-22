@@ -44,18 +44,18 @@ import {
 	type ReplaceRenderState,
 } from "./replace-render";
 import { loadPrompt, loadPromptGuidelines } from "./prompts";
-import { validateFileAccess, validateFileKind, isTextFile } from "./validation";
+import { validateFileAccess, assertTextFile } from "./validation";
 
 
 const hashlineEditNewLinesSchema = Type.Array(Type.String(), {
 	description:
-		"replacement content, one array entry per line, no HASH| prefix",
+		"literal replacement file content, one string per line. Must not include the HASH│ prefix from read output.",
 });
 
 const hasheditOldRangeSchema = Type.Array(
 	Type.String({ description: "anchor (3-char HASH)" }),
 	{
-		description: "inclusive line range to replace [start, end]",
+		description: "inclusive line range to replace [start_hash, end_hash]. Each element must be the 3-character hash anchor only; do not include the │ separator or line content.",
 		minItems: 2,
 		maxItems: 2,
 	},
@@ -169,7 +169,7 @@ async function executeEditPipeline(
 
 	throwIfAborted(signal);
 	const file = await loadFileKindAndText(absolutePath);
-	validateFileKind(file, path);
+	assertTextFile(file, path);
 
 	throwIfAborted(signal);
 	const { bom, text: rawContent } = stripBom(file.text);
@@ -390,17 +390,16 @@ const editToolDefinition: EditToolDefinition = {
 
 			if (originalNormalized === result) {
 				const noopSnapshotId = (await getFileSnapshot(absolutePath)).snapshotId;
-				return buildNoopResponse({
-					path,
-					noopEdits,
-					originalNormalized,
-					snapshotId: noopSnapshotId,
-					editMeta: {
-						editsAttempted,
-						noopEditsCount: noopEdits?.length ?? 0,
-					},
-					warnings,
-				});
+			return buildNoopResponse({
+				path,
+				noopEdits,
+				snapshotId: noopSnapshotId,
+				editMeta: {
+					editsAttempted,
+					noopEditsCount: noopEdits?.length ?? 0,
+				},
+				warnings,
+			});
 			}
 
 			if (hadUtf8DecodeErrors) {

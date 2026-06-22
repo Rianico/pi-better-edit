@@ -15,14 +15,18 @@ function diagnoseHashRef(ref: string): string {
 	const trimmed = ref.trim();
 
 	if (!trimmed.length) {
-		return `[E_BAD_REF] Invalid anchor. Expected a 3-character base64 anchor (e.g. \"aB3\").`;
+		return `[E_BAD_REF] Invalid anchor. Expected a 3-character base64 anchor (e.g. "aB3").`;
 	}
 
 	if (/^\d+/.test(trimmed)) {
-		return `[E_BAD_REF] Invalid anchor. Use the hash alone (e.g. \"aB3\") — no line numbers or trailing content.`;
+		return `[E_BAD_REF] Invalid anchor. Use the hash alone (e.g. "aB3") — no line numbers or trailing content.`;
 	}
 
-	return `[E_BAD_REF] Invalid anchor \"${trimmed}\". Expected a 3-character base64 anchor (e.g. \"aB3\").`;
+	if (trimmed.includes("│")) {
+		return `[E_BAD_REF] Invalid anchor "${trimmed}". old_range must contain the 3-character hash only — remove everything from "│" onward (including the separator).`;
+	}
+
+	return `[E_BAD_REF] Invalid anchor "${trimmed}". Expected a 3-character base64 anchor (e.g. "aB3").`;
 }
 
 function parseAnchorRef(ref: string): Anchor {

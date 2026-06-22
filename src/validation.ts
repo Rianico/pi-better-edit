@@ -22,7 +22,7 @@ export async function validateFileAccess(
 	}
 }
 
-export function validateFileKind(file: LoadedFile, path: string): void {
+export function validateFileKind(file: LoadedFile, path: string): asserts file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
 	if (file.kind === "directory") {
 		throw new Error(`Path is a directory: ${path}. Use ls to inspect directories.`);
 	}
@@ -32,6 +32,10 @@ export function validateFileKind(file: LoadedFile, path: string): void {
 	if (file.kind === "image") {
 		throw new Error(`Path is an image file: ${path}. Hashline edit only supports text files.`);
 	}
+}
+
+export function assertTextFile(file: LoadedFile, path: string): asserts file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
+	validateFileKind(file, path);
 }
 
 export function isTextFile(file: LoadedFile): file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {

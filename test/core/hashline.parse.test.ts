@@ -14,6 +14,11 @@ describe("parseHashRef", () => {
 		);
 	});
 
+	it("rejects a full HASH│content line copied into old_range", () => {
+		expect(() => parseHashRef("aB3│const x = 1;")).toThrow(
+			/old_range must contain the 3-character hash only/,
+		);
+	});
 	it("rejects leading >>> markers (strict mode: no marker stripping)", () => {
 		// The wire format is the bare anchor. A `>>> ` prefix from a
 		// stale-anchor retry block is not part of the wire format and is rejected;

@@ -209,19 +209,23 @@ export function assertNoBareHashPrefixLines(
 	}
 	if (suspects.length === 0) return [];
 
+	const locations = suspects
+		.map((s) => `edit ${s.editIndex}, new_lines[${s.lineIndex}]`)
+		.join("; ");
+
 	const fileHashSet = new Set(fileHashes);
 	const matched = suspects.filter((s) => fileHashSet.has(s.hash));
 	const matchedCount = matched.length;
-	const exampleLine = `${suspects[0]!.hash}│${suspects[0]!.line}`;
 
+	const exampleLine = `${suspects[0]!.hash}│${suspects[0]!.line}`;
 
 	const linesHint =
 		matchedCount === 0
 			? `None match file line hashes.`
-			: `${matchedCount} match file line hashes — likely a copied hash.`;
+			: `${matchedCount} match file line hashes — strong evidence the prefix was copied from read output.`;
 
 	throw new Error(
-		`[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (e.g. ${JSON.stringify(exampleLine)}). ${linesHint} Use literal file content in \"lines\" — never paste HASH│content from read output.`
+		`[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (${locations}). Example: ${JSON.stringify(exampleLine)}. ${linesHint} Remove the "HASH│" prefix from each affected new_lines entry; keep only the literal line content that appears after "│" in read output. Remember: old_range uses hash anchors, new_lines uses file content only.`
 	);
 }
 

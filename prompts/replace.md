@@ -48,6 +48,32 @@ Examples:
 ] }
 ```
 
+⚠️ Common mistake: do not copy the `HASH│` prefix into `new_lines`.
+
+Wrong:
+```json
+{ "old_range": ["F4T", "F4T"], "new_lines": ["F4T│import { x } from \"./x\";"] }
+```
+
+Right:
+```json
+{ "old_range": ["F4T", "F4T"], "new_lines": ["import { x } from \"./x\";"] }
+```
+
+`old_range` uses the hash anchor. `new_lines` uses literal file content only — the same text that appears after the `│` in `read` output.
+
+⚠️ Common mistake: `old_range` is only the 3-character HASH, not the full `HASH│content` line.
+
+Wrong:
+```json
+{ "old_range": ["F4T│import { x } from \"./x\";", "F4T│import { x } from \"./x\";"], "new_lines": [...] }
+```
+
+Right:
+```json
+{ "old_range": ["F4T", "F4T"], "new_lines": [...] }
+```
+
 Rules:
 - `old_range` is a pair `[start, end]`. A single-line replace is `old_range: ["X", "X"]`.
 - To delete a range, use `new_lines: []`.
@@ -69,6 +95,6 @@ Error recovery:
 - `[E_LEGACY_SHAPE]` — old `oldText`/`newText` format detected. Use `{old_range, new_lines}` instead.
 - `[E_EDIT_CONFLICT]` — two edits overlap on the same line range. Make edits non-overlapping.
 - `[E_AMBIGUOUS_ANCHOR]` — hash collision. Call `read` to get fresh anchors.
-- `[E_BARE_HASH_PREFIX]` — edit line starts with `HASH│`. Use literal file content in `new_lines`, not read output.
+- `[E_BARE_HASH_PREFIX]` — a `new_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `old_range` uses hashes, `new_lines` does not.
 - `[E_INVALID_PATCH]` — diff prefixes (`+`/`-`) in `new_lines`. Use literal content only.
 - `[E_WOULD_EMPTY]` — edit would empty a non-empty file.

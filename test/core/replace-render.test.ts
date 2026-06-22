@@ -177,37 +177,39 @@ describe("extractRenderedWarnings", () => {
 
 describe("isAppliedChangedResult", () => {
 	it("returns true for applied changes", () => {
-		const details = {
-			metrics: {
-				classification: "applied" as const,
-				edits_attempted: 1,
-				edits_noop: 0,
-				warnings: 0,
-				added_lines: 1,
-				removed_lines: 1,
-			},
-		};
+	const details = {
+		diff: "",
+		metrics: {
+			classification: "applied" as const,
+			edits_attempted: 1,
+			edits_noop: 0,
+			warnings: 0,
+			added_lines: 1,
+			removed_lines: 1,
+		},
+	};
 		expect(isAppliedChangedResult(details)).toBe(true);
 	});
 
 	it("returns false for noop", () => {
-		const details = {
-			metrics: {
-				classification: "noop" as const,
-				edits_attempted: 1,
-				edits_noop: 1,
-				warnings: 0,
-			},
-		};
+	const details = {
+		diff: "",
+		metrics: {
+			classification: "noop" as const,
+			edits_attempted: 1,
+			edits_noop: 1,
+			warnings: 0,
+		},
+	};
 		expect(isAppliedChangedResult(details)).toBe(false);
 	});
 
 	it("returns false for undefined details", () => {
-		expect(isAppliedChangedResult(undefined)).toBe(false);
+		expect(isAppliedChangedResult({ diff: "" })).toBe(false);
 	});
 
 	it("returns false for missing metrics", () => {
-		expect(isAppliedChangedResult({})).toBe(false);
+		expect(isAppliedChangedResult({ diff: "" })).toBe(false);
 	});
 });
 

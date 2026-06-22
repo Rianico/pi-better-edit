@@ -16,7 +16,7 @@ import { throwIfAborted } from "./runtime";
 import { getFileSnapshot } from "./snapshot";
 import { getVisibleLines } from "./utils";
 import { loadPrompt, loadPromptGuidelines } from "./prompts";
-import { validateFileAccess, validateFileKind, isTextFile } from "./validation";
+import { validateFileAccess, assertTextFile } from "./validation";
 
 const READ_DESC = loadPrompt("../prompts/read.md", {
 	DEFAULT_MAX_LINES: String(DEFAULT_MAX_LINES),
@@ -140,8 +140,6 @@ export function registerReadTool(pi: ExtensionAPI): void {
 
 			throwIfAborted(signal);
 			const file = await loadFileKindAndText(absolutePath);
-			validateFileKind(file, rawPath);
-
 			if (file.kind === "image") {
 				const builtinRead = createReadTool(ctx.cwd);
 				const executeBuiltinRead = builtinRead.execute as unknown as (
@@ -153,6 +151,7 @@ export function registerReadTool(pi: ExtensionAPI): void {
 				) => ReturnType<typeof builtinRead.execute>;
 				return executeBuiltinRead(_toolCallId, params, signal, _onUpdate, ctx);
 			}
+			assertTextFile(file, rawPath);
 
 			throwIfAborted(signal);
 			const normalized = normalizeToLF(stripBom(file.text).text);
