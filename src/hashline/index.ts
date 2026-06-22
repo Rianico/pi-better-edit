@@ -12,6 +12,7 @@ export {
 	HASHLINE_BARE_PREFIX_RE,
 	computeLineHashes,
 	computeLineHash,
+	ensureHasherReady,
 } from "./hash";
 
 export {
