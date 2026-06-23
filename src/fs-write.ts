@@ -10,7 +10,7 @@ import {
 } from "fs/promises";
 import { dirname, join, parse, resolve, sep } from "path";
 
-export async function resolveMutationTargetPath(path: string): Promise<string> {
+export async function resolveTarget(path: string): Promise<string> {
 	const absolutePath = resolve(path);
 	const { root } = parse(absolutePath);
 	const parts = absolutePath
@@ -19,7 +19,7 @@ export async function resolveMutationTargetPath(path: string): Promise<string> {
 		.filter((part) => part.length > 0);
 	const visitedSymlinks = new Set<string>();
 
-	async function resolveFromParts(
+	async function resParts(
 		currentPath: string,
 		remainingParts: string[],
 	): Promise<string> {
@@ -33,7 +33,7 @@ export async function resolveMutationTargetPath(path: string): Promise<string> {
 		try {
 			const candidateStats = await lstat(candidatePath);
 			if (!candidateStats.isSymbolicLink()) {
-				return resolveFromParts(candidatePath, tail);
+				return resParts(candidatePath, tail);
 			}
 
 			if (visitedSymlinks.has(candidatePath)) {
@@ -53,7 +53,7 @@ export async function resolveMutationTargetPath(path: string): Promise<string> {
 				.slice(parse(linkTargetPath).root.length)
 				.split(sep)
 				.filter((part) => part.length > 0);
-			return resolveFromParts(parse(linkTargetPath).root, [
+			return resParts(parse(linkTargetPath).root, [
 				...targetParts,
 				...tail,
 			]);
@@ -65,14 +65,14 @@ export async function resolveMutationTargetPath(path: string): Promise<string> {
 		}
 	}
 
-	return resolveFromParts(root, parts);
+	return resParts(root, parts);
 }
 
-export async function writeFileAtomically(
+export async function writeAtomic(
 	path: string,
 	content: string,
 ): Promise<void> {
-	const targetPath = await resolveMutationTargetPath(path);
+	const targetPath = await resolveTarget(path);
 
 	let existingStats: Awaited<ReturnType<typeof stat>> | null = null;
 	try {

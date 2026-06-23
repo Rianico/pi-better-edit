@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "fs/promises";
 import { join } from "path";
-import { writeFileAtomically } from "../../src/fs-write";
+import { writeAtomic } from "../../src/fs-write";
 
 // These tests exercise the real filesystem (no fs/promises mocking) to cover the
-// new-file branch of writeFileAtomically, which the mocked permissions test
+// new-file branch of writeAtomic, which the mocked permissions test
 // skips by always returning an existing stat. They lock the current behavior;
 // revisit if umask-honoring new-file modes are desired.
 
@@ -14,7 +14,7 @@ async function makeTempDir(): Promise<string> {
   return mkdtemp(join(root, "pi-hashline-perm-"));
 }
 
-describe("writeFileAtomically — new-file mode", () => {
+describe("writeAtomic — new-file mode", () => {
   it("creates a new file with mode 0o600 (owner-only), independent of umask", async () => {
     // open(temp, "wx", 0o600) creates the temp file at 0o600 and the new-file
     // path has no existingStats, so no chmod fallback runs. 0o600 has only owner
@@ -23,7 +23,7 @@ describe("writeFileAtomically — new-file mode", () => {
     const dir = await makeTempDir();
     try {
       const target = join(dir, "fresh.txt");
-      await writeFileAtomically(target, "hello\n");
+      await writeAtomic(target, "hello\n");
       const stats = await stat(target);
       expect(stats.isFile()).toBe(true);
       expect(stats.mode & 0o777).toBe(0o600);
@@ -42,7 +42,7 @@ describe("writeFileAtomically — new-file mode", () => {
       await chmod(target, 0o644);
       expect((await stat(target)).mode & 0o777).toBe(0o644);
 
-      await writeFileAtomically(target, "new\n");
+      await writeAtomic(target, "new\n");
       const stats = await stat(target);
       expect(stats.mode & 0o777).toBe(0o644);
     } finally {

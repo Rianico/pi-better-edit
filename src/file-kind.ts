@@ -1,43 +1,43 @@
 import { open as fsOpen, stat as fsStat } from "fs/promises";
 import { fileTypeFromBuffer } from "file-type";
-import { FILE_TYPE_SNIFF_BYTES, MAX_FILE_BYTES } from "./constants";
+import { SNIFF_BYTES, MAX_BYTES } from "./constants";
 
-const IMAGE_MIME_TYPES = new Set<string>([
+const IMG_TYPES = new Set<string>([
 	"image/jpeg",
 	"image/png",
 	"image/gif",
 	"image/webp",
 ]);
 
-const TEXT_LIKE_MIME_TYPES = new Set<string>([
+const TEXT_TYPES = new Set<string>([
 	"application/rtf",
 	"application/xml",
 	"application/x-ms-regedit",
 ]);
 
-function isTextLikeMimeType(mimeType: string): boolean {
-	return mimeType.startsWith("text/") || TEXT_LIKE_MIME_TYPES.has(mimeType);
+function isTextType(mimeType: string): boolean {
+	return mimeType.startsWith("text/") || TEXT_TYPES.has(mimeType);
 }
 
-export type FileKind =
+export type FKind =
 	| { kind: "directory" }
 	| { kind: "image"; mimeType: string }
 	| { kind: "text" }
 	| { kind: "binary"; description: string };
 
-export type LoadedFile =
+export type LFile =
 	| { kind: "directory" }
 	| { kind: "image"; mimeType: string }
 	| { kind: "text"; text: string; hadUtf8DecodeErrors?: true }
 	| { kind: "binary"; description: string };
 
-function hasNullByte(buffer: Uint8Array): boolean {
+function hasNull(buffer: Uint8Array): boolean {
 	return buffer.includes(0);
 }
 
 export async function loadFileKindAndText(
 	filePath: string,
-): Promise<LoadedFile> {
+): Promise<LFile> {
 	const pathStat = await fsStat(filePath);
 	if (pathStat.isDirectory()) {
 		return { kind: "directory" };
@@ -48,20 +48,20 @@ export async function loadFileKindAndText(
 			description: "unsupported file type",
 		};
 	}
-	if (pathStat.size > MAX_FILE_BYTES) {
+	if (pathStat.size > MAX_BYTES) {
 		return {
 			kind: "binary",
-			description: `file exceeds ${MAX_FILE_BYTES} byte limit`
+			description: `file exceeds ${MAX_BYTES} byte limit`
 		};
 	}
 
 	const fileHandle = await fsOpen(filePath, "r");
 	try {
-		const buffer = Buffer.alloc(FILE_TYPE_SNIFF_BYTES);
+		const buffer = Buffer.alloc(SNIFF_BYTES);
 		const { bytesRead } = await fileHandle.read(
 			buffer,
 			0,
-			FILE_TYPE_SNIFF_BYTES,
+			SNIFF_BYTES,
 			0,
 		);
 		if (bytesRead === 0) {
@@ -72,9 +72,9 @@ export async function loadFileKindAndText(
 		const detectedMimeType = (await fileTypeFromBuffer(sample))?.mime;
 		if (
 			detectedMimeType !== undefined &&
-			!isTextLikeMimeType(detectedMimeType)
+			!isTextType(detectedMimeType)
 		) {
-			if (IMAGE_MIME_TYPES.has(detectedMimeType)) {
+			if (IMG_TYPES.has(detectedMimeType)) {
 				return { kind: "image", mimeType: detectedMimeType };
 			}
 			return {
@@ -82,7 +82,7 @@ export async function loadFileKindAndText(
 				description: detectedMimeType,
 			};
 		}
-		if (hasNullByte(sample)) {
+		if (hasNull(sample)) {
 			return {
 				kind: "binary",
 				description: "null bytes detected",
@@ -92,7 +92,7 @@ export async function loadFileKindAndText(
 		const decoder = new TextDecoder("utf-8");
 		const fatalDecoder = new TextDecoder("utf-8", { fatal: true });
 		let hadUtf8DecodeErrors = false;
-		const noteUtf8DecodeErrors = (chunk?: Uint8Array): void => {
+		const noteUtf8Err = (chunk?: Uint8Array): void => {
 			if (hadUtf8DecodeErrors) return;
 			try {
 				fatalDecoder.decode(chunk, { stream: chunk !== undefined });
@@ -105,7 +105,7 @@ export async function loadFileKindAndText(
 			}
 		};
 
-		noteUtf8DecodeErrors(sample);
+		noteUtf8Err(sample);
 		const parts: string[] = [decoder.decode(sample, { stream: true })];
 
 		let position = bytesRead;
@@ -113,7 +113,7 @@ export async function loadFileKindAndText(
 			const { bytesRead: chunkBytesRead } = await fileHandle.read(
 				buffer,
 				0,
-				FILE_TYPE_SNIFF_BYTES,
+				SNIFF_BYTES,
 				position,
 			);
 			if (chunkBytesRead === 0) {
@@ -121,18 +121,18 @@ export async function loadFileKindAndText(
 			}
 
 			const chunk = buffer.subarray(0, chunkBytesRead);
-			if (hasNullByte(chunk)) {
+			if (hasNull(chunk)) {
 				return {
 					kind: "binary",
 					description: "null bytes detected",
 				};
 			}
-			noteUtf8DecodeErrors(chunk);
+			noteUtf8Err(chunk);
 			parts.push(decoder.decode(chunk, { stream: true }));
 			position += chunkBytesRead;
 		}
 
-		noteUtf8DecodeErrors();
+		noteUtf8Err();
 		parts.push(decoder.decode());
 
 		return {
@@ -145,7 +145,7 @@ export async function loadFileKindAndText(
 	}
 }
 
-export async function classifyFileKind(filePath: string): Promise<FileKind> {
+export async function classifyFileKind(filePath: string): Promise<FKind> {
 	const loaded = await loadFileKindAndText(filePath);
 	switch (loaded.kind) {
 		case "directory":

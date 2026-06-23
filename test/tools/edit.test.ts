@@ -1,18 +1,18 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import {
-	assertReplaceRequest,
-	hashlineEditToolSchema,
-	registerReplaceTool,
+	assertReq,
+	editToolSchema,
+	regReplace,
 } from "../../src/replace";
-import { computeLineHash } from "../../src/hashline";
+import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
 import register from "../../index";
 
-describe("assertReplaceRequest", () => {
+describe("assertReq", () => {
 	it("rejects unknown or unsupported root fields", () => {
 		expect(() =>
-			assertReplaceRequest({ path: "a.ts", legacy_field: [] } as any),
+			assertReq({ path: "a.ts", legacy_field: [] } as any),
 		).toThrow(/unknown or unsupported fields/i);
 	});
 
@@ -21,7 +21,7 @@ describe("assertReplaceRequest", () => {
 		// edits are the only path. The runtime throws a clear error pointing
 		// the model to the right shape on the next turn.
 		expect(() =>
-			assertReplaceRequest({
+			assertReq({
 				path: "a.ts",
 				oldText: "before",
 				newText: "after",
@@ -31,7 +31,7 @@ describe("assertReplaceRequest", () => {
 
 	it("rejects top-level old_text/new_text with E_LEGACY_SHAPE", () => {
 		expect(() =>
-			assertReplaceRequest({
+			assertReq({
 				path: "a.ts",
 				old_text: "before",
 				new_text: "after",
@@ -41,9 +41,9 @@ describe("assertReplaceRequest", () => {
 
 });
 
-describe("registerReplaceTool", () => {
+describe("regReplace", () => {
 	it("publishes a schema with expected structure", () => {
-		const schema = hashlineEditToolSchema as any;
+		const schema = editToolSchema as any;
 
 		// Schema should be an object type
 		expect(schema.type).toBe("object");
@@ -65,8 +65,8 @@ describe("registerReplaceTool", () => {
 	});
 
 	it("publishes a top-level object schema for pi tool registration", () => {
-		expect((hashlineEditToolSchema as any).type).toBe("object");
-		expect((hashlineEditToolSchema as any).anyOf).toBeUndefined();
+		expect((editToolSchema as any).type).toBe("object");
+		expect((editToolSchema as any).anyOf).toBeUndefined();
 	});
 
 	it("prepareArguments passes hash-anchored requests through unchanged", () => {
@@ -85,9 +85,9 @@ describe("registerReplaceTool", () => {
 			},
 		} as any;
 
-		registerReplaceTool(pi);
+		regReplace(pi);
 
-		expect(registered?.parameters).toEqual(hashlineEditToolSchema);
+		expect(registered?.parameters).toEqual(editToolSchema);
 		expect(typeof registered?.prepareArguments).toBe("function");
 
 		// Hash-anchored requests pass through with no transformation. The
@@ -117,7 +117,7 @@ describe("registerReplaceTool", () => {
 						path: "sample.txt",
 						edits: [
 							{
-								old_range: [`${computeLineHash(1, "aaa")}`, `${computeLineHash(1, "aaa")}`], new_lines: null,
+								old_range: [`${lineHash(1, "aaa")}`, `${lineHash(1, "aaa")}`], new_lines: null,
 							},
 						],
 					},
@@ -157,7 +157,7 @@ describe("registerReplaceTool", () => {
 				path: "sample.txt",
 				edits: [
 					{
-						old_range: [computeLineHash(2, "bbb"), computeLineHash(2, "bbb")], new_lines: ["BBB"],
+						old_range: [lineHash(2, "bbb"), lineHash(2, "bbb")], new_lines: ["BBB"],
 					},
 				],
 			};
@@ -191,9 +191,9 @@ describe("registerReplaceTool", () => {
 			expect(rendered).not.toContain("Changes: +1 -1");
 			expect(rendered).not.toContain("Diff preview:");
 			expect(rendered).not.toContain("```diff");
-			expect(rendered).toContain(`${computeLineHash(2, "BBB")}│BBB`);
+			expect(rendered).toContain(`${lineHash(2, "BBB")}│BBB`);
 			expect(rendered).not.toContain("Updated sample.txt");
-		expect(result.details?.diff).toContain(`+${computeLineHash(2, "BBB")}`);
+		expect(result.details?.diff).toContain(`+${lineHash(2, "BBB")}`);
 		});
 	});
 });

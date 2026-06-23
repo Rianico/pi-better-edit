@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
-import { computeLineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline";
 
 import register from "../../index";
 
@@ -61,9 +61,9 @@ export function extractHash(line: string): string {
 
 /**
  * Build a hash-only anchor for line `line` in the given `content`. Uses the
- * same `computeLineHashes` path the runtime uses, so the hash is exactly
+ * same `lineHashes` path the runtime uses, so the hash is exactly
  * what validation will compare against.
  */
 export function makeTag(content: string, line: number): { hash: string } {
-  return { hash: computeLineHashes(content)[line - 1]! };
+  return { hash: lineHashes(content)[line - 1]! };
 }

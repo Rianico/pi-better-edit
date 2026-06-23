@@ -1,19 +1,19 @@
-import { generateDiffString } from "./replace-diff";
+import { genDiff } from "./replace-diff";
 import {
-	computeAffectedLineRange,
-	computeLineHashes,
-	formatHashlineRegion,
+	affRange,
+	lineHashes,
+	fmtRegion,
 } from "./hashline";
-import { getVisibleLines } from "./utils";
-import { CHANGED_ANCHOR_TEXT_BUDGET_BYTES } from "./constants";
+import { visLines } from "./utils";
+import { ANCHOR_BUDGET } from "./constants";
 
-type ToolResult = {
+type TResult = {
 	content: Array<{ type: "text"; text: string }>;
 	isError?: boolean;
 	details: any;
 };
 
-export type ReplaceMetrics = {
+export type RMetrics = {
 	edits_attempted: number;
 	edits_noop: number;
 	warnings: number;
@@ -23,47 +23,38 @@ export type ReplaceMetrics = {
 	removed_lines?: number;
 };
 
-export type ReadMetrics = {
-	truncated: boolean;
-	next_offset?: number;
-};
-
-export type ReplaceMeta = {
+export type RMeta = {
 	editsAttempted: number;
 	noopEditsCount: number;
 	firstChangedLine?: number;
 	lastChangedLine?: number;
 };
 
-type NoopEditEntry = {
+type NEditEntry = {
 	editIndex: number;
 	loc: string;
 	currentContent: string;
 };
 
-
-
-export interface NoopResponseInput {
+export interface NoopInput {
 	path: string;
-	noopEdits: NoopEditEntry[] | undefined;
+	noopEdits: NEditEntry[] | undefined;
 	snapshotId: string;
-	editMeta: ReplaceMeta;
+	editMeta: RMeta;
 	warnings: string[] | undefined;
 }
 
-export interface SuccessResponseInput {
+export interface SuccessInput {
 	path: string;
 	originalNormalized: string;
 	result: string;
 	resultHashes?: string[];
 	warnings: string[] | undefined;
 	snapshotId: string;
-	editMeta: ReplaceMeta;
+	editMeta: RMeta;
 }
 
-
-
-function countDiffLines(diff: string, marker: "+" | "-"): number {
+function cntDiff(diff: string, marker: "+" | "-"): number {
 	if (!diff) return 0;
 	let count = 0;
 	for (const line of diff.split("\n")) {
@@ -77,7 +68,7 @@ function countDiffLines(diff: string, marker: "+" | "-"): number {
 	return count;
 }
 
-function buildMetrics(args: {
+function buildM(args: {
 	classification: "applied" | "noop";
 	editsAttempted: number;
 	noopEditsCount: number;
@@ -86,8 +77,8 @@ function buildMetrics(args: {
 	lastChangedLine?: number;
 	addedLines?: number;
 	removedLines?: number;
-}): ReplaceMetrics {
-	const metrics: ReplaceMetrics = {
+}): RMetrics {
+	const metrics: RMetrics = {
 		edits_attempted: args.editsAttempted,
 		edits_noop: args.noopEditsCount,
 		warnings: args.warningsCount,
@@ -109,12 +100,11 @@ function buildMetrics(args: {
 	return metrics;
 }
 
-function warningsBlockOf(warnings: string[] | undefined): string {
+function warnBlock(warnings: string[] | undefined): string {
 	return warnings?.length ? `\n\nWarnings:\n${warnings.join("\n")}` : "";
 }
 
-
-export function buildNoopResponse(input: NoopResponseInput): ToolResult {
+export function buildNoop(input: NoopInput): TResult {
 	const {
 		path,
 		noopEdits,
@@ -134,7 +124,7 @@ export function buildNoopResponse(input: NoopResponseInput): ToolResult {
 
 	const text = `No changes made to ${path}\nClassification: noop\n${noopDetailsText}`;
 
-	const metrics = buildMetrics({
+	const metrics = buildM({
 		classification: "noop",
 		editsAttempted: editMeta.editsAttempted,
 		noopEditsCount: editMeta.noopEditsCount,
@@ -153,16 +143,16 @@ export function buildNoopResponse(input: NoopResponseInput): ToolResult {
 	};
 }
 
-export function buildChangedResponse(input: SuccessResponseInput): ToolResult {
+export function buildChanged(input: SuccessInput): TResult {
 	const { result, warnings, snapshotId, originalNormalized, editMeta } = input;
 
-	const resultLines = getVisibleLines(result);
-	const resultHashes = input.resultHashes ?? computeLineHashes(result);
-	const diffResult = generateDiffString(originalNormalized, result, 2, resultHashes);
-	const addedLines = countDiffLines(diffResult.diff, "+");
-	const removedLines = countDiffLines(diffResult.diff, "-");
-	const warningsBlock = warningsBlockOf(warnings);
-	const anchorRange = computeAffectedLineRange({
+	const resultLines = visLines(result);
+	const resultHashes = input.resultHashes ?? lineHashes(result);
+	const diffResult = genDiff(originalNormalized, result, 2, resultHashes);
+	const addedLines = cntDiff(diffResult.diff, "+");
+	const removedLines = cntDiff(diffResult.diff, "-");
+	const warningsBlock = warnBlock(warnings);
+	const anchorRange = affRange({
 		firstChangedLine: editMeta.firstChangedLine,
 		lastChangedLine: editMeta.lastChangedLine,
 		resultLineCount: resultLines.length,
@@ -177,10 +167,10 @@ export function buildChangedResponse(input: SuccessResponseInput): ToolResult {
 					anchorRange.start - 1,
 					anchorRange.end,
 				);
-				const formatted = formatHashlineRegion(regionHashes, region);
+				const formatted = fmtRegion(regionHashes, region);
 				const block = `--- Anchors ---\n${formatted}`;
 				return Buffer.byteLength(block, "utf8") <=
-					CHANGED_ANCHOR_TEXT_BUDGET_BYTES
+					ANCHOR_BUDGET
 					? block
 					: "Anchors omitted; use read for subsequent edits.";
 			})()
@@ -191,7 +181,7 @@ export function buildChangedResponse(input: SuccessResponseInput): ToolResult {
 		.filter((section) => section.length > 0)
 		.join("\n\n");
 
-	const metrics = buildMetrics({
+	const metrics = buildM({
 		classification: "applied",
 		editsAttempted: editMeta.editsAttempted,
 		noopEditsCount: editMeta.noopEditsCount,

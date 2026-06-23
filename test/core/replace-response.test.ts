@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildNoopResponse, buildChangedResponse } from "../../src/replace-response";
+import { buildNoop, buildChanged } from "../../src/replace-response";
 
-describe("buildNoopResponse", () => {
+describe("buildNoop", () => {
 	it("builds noop response with edits", () => {
-		const result = buildNoopResponse({
+		const result = buildNoop({
 			path: "test.txt",
 			noopEdits: [
 				{ editIndex: 0, loc: "AAA", currentContent: "line1" },
@@ -24,7 +24,7 @@ describe("buildNoopResponse", () => {
 	});
 
 	it("builds noop response without edits", () => {
-		const result = buildNoopResponse({
+		const result = buildNoop({
 			path: "test.txt",
 			noopEdits: undefined,
 			snapshotId: "v1|test|123|456",
@@ -39,7 +39,7 @@ describe("buildNoopResponse", () => {
 	});
 
 	it("does not include warnings in text", () => {
-		const result = buildNoopResponse({
+		const result = buildNoop({
 			path: "test.txt",
 			noopEdits: undefined,
 			snapshotId: "v1|test|123|456",
@@ -54,7 +54,7 @@ describe("buildNoopResponse", () => {
 	});
 
 	it("includes metrics", () => {
-		const result = buildNoopResponse({
+		const result = buildNoop({
 			path: "test.txt",
 			noopEdits: undefined,
 			snapshotId: "v1|test|123|456",
@@ -71,9 +71,9 @@ describe("buildNoopResponse", () => {
 	});
 });
 
-describe("buildChangedResponse", () => {
+describe("buildChanged", () => {
 	it("builds changed response with diff", () => {
-		const result = buildChangedResponse({
+		const result = buildChanged({
 			path: "test.txt",
 			originalNormalized: "line1\nline2\n",
 			result: "line1\nmodified\n",
@@ -95,7 +95,7 @@ describe("buildChangedResponse", () => {
 	});
 
 	it("includes warnings", () => {
-		const result = buildChangedResponse({
+		const result = buildChanged({
 			path: "test.txt",
 			originalNormalized: "line1\n",
 			result: "line1\nline2\n",
@@ -113,7 +113,7 @@ describe("buildChangedResponse", () => {
 	});
 
 	it("includes metrics", () => {
-		const result = buildChangedResponse({
+		const result = buildChanged({
 			path: "test.txt",
 			originalNormalized: "line1\n",
 			result: "line1\nline2\n",
@@ -133,7 +133,7 @@ describe("buildChangedResponse", () => {
 	});
 
 	it("handles empty result file", () => {
-		const result = buildChangedResponse({
+		const result = buildChanged({
 			path: "test.txt",
 			originalNormalized: "line1\n",
 			result: "",
@@ -151,7 +151,7 @@ describe("buildChangedResponse", () => {
 	});
 
 	it("uses provided resultHashes", () => {
-		const result = buildChangedResponse({
+		const result = buildChanged({
 			path: "test.txt",
 			originalNormalized: "line1\n",
 			result: "line1\nline2\n",

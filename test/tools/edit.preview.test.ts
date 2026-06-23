@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { chmod } from "fs/promises";
-import { computeReplacePreview } from "../../src/replace";
-import { computeLineHash } from "../../src/hashline";
+import { compPreview } from "../../src/replace";
+import { lineHash } from "../../src/hashline";
 import { withTempFile } from "../support/fixtures";
 
 vi.mock("../../src/file-kind", () => ({
@@ -11,7 +11,7 @@ vi.mock("../../src/file-kind", () => ({
 
 import * as fileKindMod from "../../src/file-kind";
 
-describe("computeReplacePreview", () => {
+describe("compPreview", () => {
   beforeEach(() => {
     vi.mocked(fileKindMod.loadFileKindAndText).mockReset();
     vi.mocked(fileKindMod.classifyFileKind).mockReset();
@@ -21,8 +21,8 @@ describe("computeReplacePreview", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({ kind: "text", text: "aaa\nbbb\nccc\n" });
 
-      const betaRef = computeLineHash(2, "bbb");
-      const preview = await computeReplacePreview(
+      const betaRef = lineHash(2, "bbb");
+      const preview = await compPreview(
         {
           path: "sample.txt",
           edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
@@ -34,7 +34,7 @@ describe("computeReplacePreview", () => {
       if (!("diff" in preview)) {
         return;
       }
-      expect(preview.diff).toContain(`+${computeLineHash(2, "BBB")}`);
+      expect(preview.diff).toContain(`+${lineHash(2, "BBB")}`);
 	      expect(preview.diff).toContain("│BBB");
     });
   });
@@ -46,8 +46,8 @@ describe("computeReplacePreview", () => {
         text: "alpha\nbeta\ngamma\n",
       });
 
-      const betaRef = computeLineHash(2, "beta");
-      const preview = await computeReplacePreview(
+      const betaRef = lineHash(2, "beta");
+      const preview = await compPreview(
         {
           path: "sample.txt",
           edits: [{ old_range: [betaRef, betaRef], new_lines: ["BETA"] }],
@@ -68,10 +68,10 @@ describe("computeReplacePreview", () => {
       vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({ kind: "text", text: "aaa\nbbb\nccc\n" });
 
       await chmod(path, 0o444);
-      const betaRef = computeLineHash(2, "bbb");
+      const betaRef = lineHash(2, "bbb");
 
       try {
-        const preview = await computeReplacePreview(
+        const preview = await compPreview(
           {
             path: "sample.txt",
             edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
@@ -97,8 +97,8 @@ describe("computeReplacePreview", () => {
         new Error("preview should not call classifyFileKind on text paths"),
       );
 
-      const betaRef = computeLineHash(2, "bbb");
-      const preview = await computeReplacePreview(
+      const betaRef = lineHash(2, "bbb");
+      const preview = await compPreview(
         {
           path: "sample.txt",
           edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
@@ -126,14 +126,14 @@ describe("computeReplacePreview", () => {
         return { kind: "text", text: "aaa\nbbb\nccc\n" };
       });
 
-      const betaRef = computeLineHash(2, "bbb");
+      const betaRef = lineHash(2, "bbb");
       const editArgs = {
         path: "sample.txt",
         edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
       };
 
-      // Import registerReplaceTool to set up the tool with its render methods
-      const { registerReplaceTool } = await import("../../src/replace");
+      // Import regReplace to set up the tool with its render methods
+      const { regReplace } = await import("../../src/replace");
       const tools = new Map<string, any>();
       const pi = {
         registerTool(tool: any) {
@@ -141,7 +141,7 @@ describe("computeReplacePreview", () => {
         },
         on() {},
       };
-      registerReplaceTool(pi as any);
+      regReplace(pi as any);
       const tool = tools.get("replace");
       if (!tool) throw new Error("Tool not registered: edit");
 

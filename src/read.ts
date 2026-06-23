@@ -8,25 +8,25 @@ import {
 	type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { normalizeToLF, stripBom } from "./replace-diff";
 import { loadFileKindAndText } from "./file-kind";
-import { computeLineHashes, formatHashlineRegion } from "./hashline";
-import { resolveToCwd } from "./path-utils";
-import { throwIfAborted } from "./runtime";
-import { getFileSnapshot } from "./snapshot";
-import { getVisibleLines } from "./utils";
-import { loadPrompt, loadPromptGuidelines } from "./prompts";
-import { validateFileAccess, assertTextFile } from "./validation";
+import { readNormFile } from "./file-reader";
+import { lineHashes, fmtRegion } from "./hashline";
+import { toCwd } from "./path-utils";
+import { abortIf } from "./runtime";
+import { fileSnap } from "./snapshot";
+import { visLines } from "./utils";
+import { loadP, loadGuide } from "./prompts";
+import { valAccess } from "./validation";
 
-const READ_DESC = loadPrompt("../prompts/read.md", {
+const R_DESC = loadP("../prompts/read.md", {
 	DEFAULT_MAX_LINES: String(DEFAULT_MAX_LINES),
 	DEFAULT_MAX_BYTES: formatSize(DEFAULT_MAX_BYTES),
 });
 
-const READ_PROMPT_SNIPPET = loadPrompt("../prompts/read-snippet.md");
-const READ_PROMPT_GUIDELINES = loadPromptGuidelines("../prompts/read-guidelines.md");
+const R_SNIPPET = loadP("../prompts/read-snippet.md");
+const R_GUIDE = loadGuide("../prompts/read-guidelines.md");
 
-function normalizePositiveInteger(
+function normPosInt(
 	value: number | undefined,
 	name: "offset" | "limit",
 ): number | undefined {
@@ -41,15 +41,14 @@ function normalizePositiveInteger(
 	return value;
 }
 
-
-export function formatHashlineReadPreview(
+export function fmtReadPreview(
 	text: string,
 	options: { offset?: number; limit?: number },
 	precomputedHashes?: string[],
 ): { text: string; truncation?: TruncationResult; nextOffset?: number } {
-	const allLines = getVisibleLines(text);
+	const allLines = visLines(text);
 	const totalLines = allLines.length;
-	const startLine = normalizePositiveInteger(options.offset, "offset") ?? 1;
+	const startLine = normPosInt(options.offset, "offset") ?? 1;
 	if (totalLines === 0) {
 		if (startLine === 1) {
 			return {
@@ -67,14 +66,14 @@ export function formatHashlineReadPreview(
 		};
 	}
 
-	const limit = normalizePositiveInteger(options.limit, "limit");
+	const limit = normPosInt(options.limit, "limit");
 	const endIdx = limit
 		? Math.min(startLine - 1 + limit, totalLines)
 		: totalLines;
 	const selected = allLines.slice(startLine - 1, endIdx);
-	const allHashes = precomputedHashes ?? computeLineHashes(text);
+	const allHashes = precomputedHashes ?? lineHashes(text);
 	const selectedHashes = allHashes.slice(startLine - 1, endIdx);
-	const formatted = formatHashlineRegion(selectedHashes, selected);
+	const formatted = fmtRegion(selectedHashes, selected);
 
 	const truncation = truncateHead(formatted);
 	if (truncation.firstLineExceedsLimit) {
@@ -106,13 +105,13 @@ export function formatHashlineReadPreview(
 	};
 }
 
-export function registerReadTool(pi: ExtensionAPI): void {
+export function regRead(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "read",
 		label: "Read",
-		description: READ_DESC,
-		promptSnippet: READ_PROMPT_SNIPPET,
-		promptGuidelines: READ_PROMPT_GUIDELINES,
+		description: R_DESC,
+		promptSnippet: R_SNIPPET,
+		promptGuidelines: R_GUIDE,
 		parameters: Type.Object({
 			path: Type.String({
 				description: "Path to the file to read (relative or absolute)",
@@ -133,12 +132,12 @@ export function registerReadTool(pi: ExtensionAPI): void {
 
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const rawPath = params.path;
-			const absolutePath = resolveToCwd(rawPath, ctx.cwd);
+			const absolutePath = toCwd(rawPath, ctx.cwd);
 
-			throwIfAborted(signal);
-			await validateFileAccess(absolutePath, rawPath);
+			abortIf(signal);
+			await valAccess(absolutePath, rawPath);
 
-			throwIfAborted(signal);
+			abortIf(signal);
 			const file = await loadFileKindAndText(absolutePath);
 			if (file.kind === "image") {
 				const builtinRead = createReadTool(ctx.cwd);
@@ -151,12 +150,10 @@ export function registerReadTool(pi: ExtensionAPI): void {
 				) => ReturnType<typeof builtinRead.execute>;
 				return executeBuiltinRead(_toolCallId, params, signal, _onUpdate, ctx);
 			}
-			assertTextFile(file, rawPath);
-
-			throwIfAborted(signal);
-			const normalized = normalizeToLF(stripBom(file.text).text);
-			const fileHashes = computeLineHashes(normalized);
-			const preview = formatHashlineReadPreview(
+			const { normalized, fileHashes, hadUtf8DecodeErrors } = await readNormFile(
+				rawPath, ctx.cwd, signal, undefined, file,
+			);
+			const preview = fmtReadPreview(
 				normalized,
 				{
 					offset: params.offset,
@@ -164,10 +161,10 @@ export function registerReadTool(pi: ExtensionAPI): void {
 				},
 				fileHashes,
 			);
-			const snapshot = await getFileSnapshot(absolutePath);
+			const snapshot = await fileSnap(absolutePath);
 
 			const previewText =
-				file.hadUtf8DecodeErrors === true
+				hadUtf8DecodeErrors
 					? `${preview.text}\n\n[Non-UTF-8 bytes shown as U+FFFD; editing rewrites the file as UTF-8.]`
 					: preview.text;
 

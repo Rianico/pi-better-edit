@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { hashlineParseText, parseHashRef } from "../../src/hashline";
+import { parseText, parseHashRef } from "../../src/hashline";
 
 describe("parseHashRef", () => {
 	it("parses a hash anchor without # prefix", () => {
@@ -10,13 +10,13 @@ describe("parseHashRef", () => {
 	it("rejects trailing content after the anchor", () => {
 		// The wire format is anchor only. No content may follow.
 		expect(() => parseHashRef("aB3:const x = 1;")).toThrow(
-			/Expected a 3-character base64 anchor/,
+			/Expected a 3-char base64 anchor/,
 		);
 	});
 
 	it("rejects a full HASH│content line copied into old_range", () => {
 		expect(() => parseHashRef("aB3│const x = 1;")).toThrow(
-			/old_range must contain the 3-character hash only/,
+			/old_range must contain the 3-char hash only/,
 		);
 	});
 	it("rejects leading >>> markers (strict mode: no marker stripping)", () => {
@@ -70,62 +70,62 @@ describe("parseHashRef", () => {
 	});
 });
 
-describe("hashlineParseText", () => {
+describe("parseText", () => {
 	it("returns [] for null", () => {
-		expect(hashlineParseText(null)).toEqual([]);
+		expect(parseText(null)).toEqual([]);
 	});
 
 	it("splits string on newline", () => {
-		expect(hashlineParseText("a\nb")).toEqual(["a", "b"]);
+		expect(parseText("a\nb")).toEqual(["a", "b"]);
 	});
 
 	it("removes trailing blank line from string input", () => {
-		expect(hashlineParseText("a\nb\n")).toEqual(["a", "b"]);
+		expect(parseText("a\nb\n")).toEqual(["a", "b"]);
 	});
 
 	it("preserves a trailing whitespace-only content line in string input", () => {
-		expect(hashlineParseText("a\nb\n  ")).toEqual(["a", "b", "  "]);
+		expect(parseText("a\nb\n  ")).toEqual(["a", "b", "  "]);
 	});
 
 	it("passes through array input verbatim", () => {
 		const input = ["a", "b"];
-		expect(hashlineParseText(input)).toEqual(input);
+		expect(parseText(input)).toEqual(input);
 	});
 
 	it("preserves '# keep me' comment lines (no autocorrection)", () => {
-		expect(hashlineParseText(["# keep me"])).toEqual(["# keep me"]);
+		expect(parseText(["# keep me"])).toEqual(["# keep me"]);
 	});
 
 	it("preserves literal '+' prefixed content (no autocorrection)", () => {
-		expect(hashlineParseText(["+added"])).toEqual(["+added"]);
+		expect(parseText(["+added"])).toEqual(["+added"]);
 	});
 
 	it("returns empty string as a single empty line for blank content", () => {
-		expect(hashlineParseText("")).toEqual([""]);
+		expect(parseText("")).toEqual([""]);
 	});
 
 	it("rejects array input that contains HASH| prefixes", () => {
 		// The +HASH| form is unambiguous diff metadata and
 		// always rejected on shape alone.
-		expect(() => hashlineParseText(["+aB3│foo", "+xYp│bar"])).toThrow(
+		expect(() => parseText(["+aB3│foo", "+xYp│bar"])).toThrow(
 			/^\[E_INVALID_PATCH\]/,
 		);
 	});
 
 	it("rejects diff-preview hunks with + and context hash prefixes", () => {
 		expect(() =>
-				hashlineParseText([" aB3│keep", "+xYp│new", " mNo│after"]),
+				parseText([" aB3│keep", "+xYp│new", " mNo│after"]),
 		).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 
 	it("rejects diff-preview deletion rows", () => {
 		expect(() =>
-				hashlineParseText([" aB3│keep", "-10    old", " xYp│after"]),
+				parseText([" aB3│keep", "-10    old", " xYp│after"]),
 		).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 
 	it("rejects string-form rendered diff hunks", () => {
 		const input = " aB3│keep\n-10    old\n+xYp│new\n mNo│after";
-		expect(() => hashlineParseText(input)).toThrow(/^\[E_INVALID_PATCH\]/);
+		expect(() => parseText(input)).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 });

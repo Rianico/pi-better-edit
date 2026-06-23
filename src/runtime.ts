@@ -1,3 +1,3 @@
-export function throwIfAborted(signal?: AbortSignal): void {
+export function abortIf(signal?: AbortSignal): void {
   if (signal?.aborted) throw new Error("Operation aborted");
 }

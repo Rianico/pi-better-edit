@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import register from "../../index";
-import { computeLineHash } from "../../src/hashline";
+import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 
@@ -17,7 +17,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.ts",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "bbb")}`, `${computeLineHash(2, "bbb")}`], new_lines: ["BBB"],
+              old_range: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], new_lines: ["BBB"],
             },
           ],
         },
@@ -32,7 +32,7 @@ describe("edit tool text shape (token budget)", () => {
       expect(text).not.toContain("Updated sample.ts");
       expect(text).not.toContain("Changes: +1 -1");
       expect(text).not.toContain("Updated anchors");
-      expect(result.details?.diff).toContain(`+${computeLineHash(2, "BBB")}`);
+      expect(result.details?.diff).toContain(`+${lineHash(2, "BBB")}`);
       expect(result.details?.diff).toContain("│BBB");
       expect(result.details?.metrics).toMatchObject({
         added_lines: 1,
@@ -53,7 +53,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.ts",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "bbb")}`, `${computeLineHash(2, "bbb")}`], new_lines: ["BBB"],
+              old_range: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], new_lines: ["BBB"],
             },
           ],
         },
@@ -82,7 +82,7 @@ describe("edit tool text shape (token budget)", () => {
             path: "sample.txt",
             edits: [
               {
-                old_range: [`${computeLineHash(1, "only")}`, `${computeLineHash(1, "only")}`], new_lines: [],
+                old_range: [`${lineHash(1, "only")}`, `${lineHash(1, "only")}`], new_lines: [],
               },
             ],
           },
@@ -107,7 +107,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.txt",
           edits: [
             {
-              old_range: [`${computeLineHash(2, longLine)}`, `${computeLineHash(2, longLine)}`], new_lines: [`b${longLine.slice(1)}`],
+              old_range: [`${lineHash(2, longLine)}`, `${lineHash(2, longLine)}`], new_lines: [`b${longLine.slice(1)}`],
             },
           ],
         },

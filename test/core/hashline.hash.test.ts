@@ -1,30 +1,30 @@
 import { describe, expect, it } from "vitest";
 import {
-	applyHashlineEdits,
-	computeLineHash,
-	computeLineHashes,
-	hashlineParseText,
+	applyEdits,
+	lineHash,
+	lineHashes,
+	parseText,
 } from "../../src/hashline";
 
-describe("computeLineHash", () => {
+describe("lineHash", () => {
 	it("returns a 3-character string from the URL-safe base64 alphabet", () => {
-		const hash = computeLineHash(1, "hello");
+		const hash = lineHash(1, "hello");
 		expect(hash).toHaveLength(3);
 		expect(hash).toMatch(/^[A-Za-z0-9_\-]{3}$/);
 	});
 
 	it("trims trailing whitespace without collapsing internal spaces", () => {
-		expect(computeLineHash(1, "a\t")).toBe(computeLineHash(1, "a"));
-		expect(computeLineHash(1, "a  b")).not.toBe(computeLineHash(1, "a b"));
+		expect(lineHash(1, "a\t")).toBe(lineHash(1, "a"));
+		expect(lineHash(1, "a  b")).not.toBe(lineHash(1, "a b"));
 	});
 
 	it("strips trailing CR", () => {
-		expect(computeLineHash(1, "hello\r")).toBe(computeLineHash(1, "hello"));
+		expect(lineHash(1, "hello\r")).toBe(lineHash(1, "hello"));
 	});
 
 	it("same content produces same hash", () => {
-		const h1 = computeLineHash(1, "}");
-		const h10 = computeLineHash(10, "}");
+		const h1 = lineHash(1, "}");
+		const h10 = lineHash(10, "}");
 		expect(h1).toMatch(/^[A-Za-z0-9_\-]{3}$/);
 		expect(h1).toBe(h10);
 	});
@@ -33,15 +33,15 @@ describe("computeLineHash", () => {
 
 describe("strict hashline contract", () => {
 	it("preserves internal spaces when hashing", () => {
-		expect(computeLineHash(1, "a b")).not.toBe(computeLineHash(1, "ab"));
+		expect(lineHash(1, "a b")).not.toBe(lineHash(1, "ab"));
 	});
 
 	it("trims trailing spaces when hashing", () => {
-		expect(computeLineHash(1, "value  ")).toBe(computeLineHash(1, "value"));
+		expect(lineHash(1, "value  ")).toBe(lineHash(1, "value"));
 	});
 
 	it("preserves explicit blank trailing line in array input", () => {
-		expect(hashlineParseText(["alpha", ""])).toEqual(["alpha", ""]);
+		expect(parseText(["alpha", ""])).toEqual(["alpha", ""]);
 	});
 
 	it("rejects stale anchors instead of relocating by hash", () => {
@@ -50,13 +50,13 @@ describe("strict hashline contract", () => {
 			old_range: [{ hash: "ZZZZ" }, { hash: "ZZZZ" }], new_lines: ["updated"],
 		} as any;
 
-		expect(() => applyHashlineEdits(content, [stale])).toThrow(/stale anchor/);
+		expect(() => applyEdits(content, [stale])).toThrow(/stale anchor/);
 	});
 });
 
 describe("perfect hashing", () => {
 	it("returns one hash per line, indexed 0-based by line number", () => {
-		const hashes = computeLineHashes("alpha\nbeta\ngamma");
+		const hashes = lineHashes("alpha\nbeta\ngamma");
 		expect(hashes).toHaveLength(3);
 		expect(hashes[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
 		expect(hashes[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
@@ -69,7 +69,7 @@ describe("perfect hashing", () => {
 			"import { baz } from 'qux';",
 			"import { foo } from 'bar';", // identical to line 1
 		].join("\n");
-		const hashes = computeLineHashes(file);
+		const hashes = lineHashes(file);
 		expect(hashes[0]).not.toBe(hashes[2]); // the key property
 		expect(hashes[0]).not.toBe(hashes[1]);
 		expect(hashes[1]).not.toBe(hashes[2]);
@@ -84,7 +84,7 @@ describe("perfect hashing", () => {
 			"  return 2;",
 			"}",
 		].join("\n");
-		const hashes = computeLineHashes(file);
+		const hashes = lineHashes(file);
 		// Lines 3 and 6 are both lone `}` — they should still get different hashes.
 		expect(hashes[2]).not.toBe(hashes[5]);
 	});
@@ -95,9 +95,9 @@ describe("perfect hashing", () => {
 			"const y = 2;",
 			"const x = 1;", // identical to line 1
 		].join("\n");
-		const hashes = computeLineHashes(file);
+		const hashes = lineHashes(file);
 		// Edit only the second occurrence of "const x = 1;" (line 3, not line 1).
-		const result = applyHashlineEdits(file, [
+		const result = applyEdits(file, [
 			{ old_range: [{ hash: hashes[2]! }, { hash: hashes[2]! }], new_lines: ["const x = 999;"] },
 		]);
 		expect(result.content).toBe("const x = 1;\nconst y = 2;\nconst x = 999;");
@@ -108,7 +108,7 @@ describe("perfect hashing", () => {
 		const staleHash = "ZZZZ";
 		let caught: Error | undefined;
 		try {
-			applyHashlineEdits(file, [
+			applyEdits(file, [
 				{ old_range: [{ hash: staleHash }, { hash: staleHash }], new_lines: ["X"] },
 			]);
 		} catch (e) {
@@ -123,7 +123,7 @@ describe("perfect hashing", () => {
 		// We can't force a real collision with xxHash32, so we inject
 		// a precomputed hash array to simulate two lines sharing one hash.
 		const file = "alpha\nbeta\ngamma\ndelta";
-		const realHashes = computeLineHashes(file);
+		const realHashes = lineHashes(file);
 		const forgedHashes = [...realHashes];
 		forgedHashes[2] = realHashes[0]!; // line 3 (index 2) now matches line 1's hash
 
@@ -131,7 +131,7 @@ describe("perfect hashing", () => {
 
 		let caught: Error | undefined;
 		try {
-			applyHashlineEdits(
+			applyEdits(
 				file,
 				[
 					{ old_range: [{ hash: sharedHash }, { hash: sharedHash }], new_lines: ["X"] },

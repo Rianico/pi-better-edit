@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import register from "../../index";
-import { computeLineHash } from "../../src/hashline";
+import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 
@@ -42,7 +42,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "a.txt",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "beta")}`, `${computeLineHash(2, "beta")}`], new_lines: ["BETA"],
+              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },
@@ -74,7 +74,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "b.txt",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "beta")}`, `${computeLineHash(2, "beta")}`], new_lines: ["beta"],
+              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["beta"],
             },
           ],
         },
@@ -104,7 +104,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "c.txt",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "two")}`, `${computeLineHash(2, "two")}`], new_lines: ["TWO"],
+              old_range: [`${lineHash(2, "two")}`, `${lineHash(2, "two")}`], new_lines: ["TWO"],
             },
           ],
         },
@@ -132,7 +132,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "e.txt",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "beta")}`, `${computeLineHash(2, "beta")}`], new_lines: ["beta"],
+              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["beta"],
             },
           ],
         },

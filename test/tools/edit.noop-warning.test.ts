@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import register from "../../index";
-import { computeLineHash } from "../../src/hashline";
+import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 
@@ -18,7 +18,7 @@ describe("edit tool noop + warnings", () => {
           path: "sample.txt",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "bbb")}`, `${computeLineHash(2, "bbb")}`], new_lines: ["bbb"],
+              old_range: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], new_lines: ["bbb"],
             },
           ],
         },
@@ -45,7 +45,7 @@ describe("edit tool noop + warnings", () => {
           path: "sample.txt",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "bbb")}`, `${computeLineHash(2, "bbb")}`], new_lines: ["BBB", "ccc"],
+              old_range: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], new_lines: ["BBB", "ccc"],
             },
           ],
         },

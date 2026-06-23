@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import register from "../../index";
-import { computeLineHash } from "../../src/hashline";
+import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 
@@ -41,7 +41,7 @@ describe("snapshotId surface (details-only after W2)", () => {
             snapshotId: "v1|fake|0|0",
             edits: [
               {
-                old_range: [`${computeLineHash(2, "beta")}`, `${computeLineHash(2, "beta")}`], new_lines: ["BETA"],
+                old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
               },
             ],
           },
@@ -77,7 +77,7 @@ describe("snapshotId surface (details-only after W2)", () => {
             path: "sample.txt",
             edits: [
               {
-                old_range: [`${computeLineHash(4, "four")}`, `${computeLineHash(4, "four")}`], new_lines: ["FOUR"],
+                old_range: [`${lineHash(4, "four")}`, `${lineHash(4, "four")}`], new_lines: ["FOUR"],
               },
             ],
           },
@@ -106,7 +106,7 @@ describe("snapshotId surface (details-only after W2)", () => {
           path: "sample.txt",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "beta")}`, `${computeLineHash(2, "beta")}`], new_lines: ["BETA"],
+              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },
@@ -141,7 +141,7 @@ describe("snapshotId surface (details-only after W2)", () => {
               path: "sample.txt",
               edits: [
                 {
-                  old_range: [`${computeLineHash(2, "two")}`, `${computeLineHash(2, "two")}`], new_lines: ["TWO"],
+                  old_range: [`${lineHash(2, "two")}`, `${lineHash(2, "two")}`], new_lines: ["TWO"],
                 },
               ],
             },

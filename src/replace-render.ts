@@ -1,35 +1,33 @@
-
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { normalizeReplaceRequest } from "./replace-normalize";
+import { normReq } from "./replace-normalize";
 import type { ReplaceRequestParams, HashlineReplaceToolDetails } from "./replace";
-import { isRecord } from "./utils";
+import { isRec } from "./utils";
 
-export type FgTheme = Pick<Theme, "fg">;
-export type CallTheme = Pick<Theme, "fg" | "bold">;
-export type RenderedMarkdownTheme = Pick<
+export type FgT = Pick<Theme, "fg">;
+export type CallT = Pick<Theme, "fg" | "bold">;
+export type MdTheme = Pick<
 	Theme,
 	"fg" | "bold" | "italic" | "underline" | "strikethrough"
 >;
 
-export type ReplacePreview = { diff: string } | { error: string };
+export type RPreview = { diff: string } | { error: string };
 
-export type ReplaceRenderState = {
+export type RRState = {
 	argsKey?: string;
-	preview?: ReplacePreview;
+	preview?: RPreview;
 	previewGeneration?: number;
 };
 
-
-export function getRenderablePreviewInput(
+export function getPreviewInput(
 	args: unknown,
 ): ReplaceRequestParams | null {
 	let normalized: unknown;
 	try {
-		normalized = normalizeReplaceRequest(args);
+		normalized = normReq(args);
 	} catch {
 		return null;
 	}
-	if (!isRecord(normalized) || typeof normalized.path !== "string") {
+	if (!isRec(normalized) || typeof normalized.path !== "string") {
 		return null;
 	}
 
@@ -41,7 +39,7 @@ export function getRenderablePreviewInput(
 	return request.edits !== undefined ? request : null;
 }
 
-export function colorDiffLines(lines: string[], theme: FgTheme): string[] {
+export function colorLines(lines: string[], theme: FgT): string[] {
 	return lines.map((line) => {
 		if (line.startsWith("+") && !line.startsWith("+++")) {
 			return theme.fg("success", line);
@@ -53,14 +51,14 @@ export function colorDiffLines(lines: string[], theme: FgTheme): string[] {
 	});
 }
 
-export function formatPreviewDiff(
+export function fmtPreview(
 	diff: string,
 	expanded: boolean,
-	theme: FgTheme,
+	theme: FgT,
 ): string {
 	const lines = diff.split("\n");
 	const maxLines = expanded ? 40 : 16;
-	const shown = colorDiffLines(lines.slice(0, maxLines), theme);
+	const shown = colorLines(lines.slice(0, maxLines), theme);
 
 	if (lines.length > maxLines) {
 		shown.push(
@@ -70,15 +68,15 @@ export function formatPreviewDiff(
 	return shown.join("\n");
 }
 
-export function formatResultDiff(diff: string, theme: FgTheme): string {
-	return colorDiffLines(diff.split("\n"), theme).join("\n");
+export function fmtResult(diff: string, theme: FgT): string {
+	return colorLines(diff.split("\n"), theme).join("\n");
 }
 
-export function formatEditCall(
+export function fmtCall(
 	args: ReplaceRequestParams | undefined,
-	state: ReplaceRenderState,
+	state: RRState,
 	expanded: boolean,
-	theme: CallTheme,
+	theme: CallT,
 ): string {
 	const path = args?.path;
 	const pathDisplay =
@@ -97,12 +95,12 @@ export function formatEditCall(
 	}
 
 	if (state.preview.diff) {
-		text += `\n\n${formatPreviewDiff(state.preview.diff, expanded, theme)}`;
+		text += `\n\n${fmtPreview(state.preview.diff, expanded, theme)}`;
 	}
 	return text;
 }
 
-export function getRenderedEditTextContent(result: {
+export function getResultText(result: {
 	content?: Array<{ type: string; text?: string }>;
 }): string | undefined {
 	const textContent = result.content?.find(
@@ -112,13 +110,13 @@ export function getRenderedEditTextContent(result: {
 	return textContent?.text;
 }
 
-export function extractRenderedWarnings(
+export function extractWarnings(
 	text: string | undefined,
 ): string | undefined {
 	return text?.match(/(?:^|\n)Warnings:\n[\s\S]*$/)?.[0]?.trimStart();
 }
 
-export function isAppliedChangedResult(
+export function isApplied(
 	details: HashlineReplaceToolDetails | undefined,
 ): boolean {
 	const metrics = details?.metrics;
@@ -129,24 +127,24 @@ export function isAppliedChangedResult(
 	);
 }
 
-export function buildAppliedChangedResultText(
+export function buildAppliedText(
 	text: string | undefined,
 	details: HashlineReplaceToolDetails | undefined,
-	theme: FgTheme,
+	theme: FgT,
 ): string | undefined {
 	const sections: string[] = [];
 
 	if (details?.diff) {
-		sections.push(formatResultDiff(details.diff, theme));
+		sections.push(fmtResult(details.diff, theme));
 	}
 
-	const warnings = extractRenderedWarnings(text);
+	const warnings = extractWarnings(text);
 	if (warnings) sections.push(warnings);
 
 	return sections.length > 0 ? sections.join("\n\n") : undefined;
 }
 
-function trimEdgeEmptyLines(lines: string[]): string[] {
+function trimEmpty(lines: string[]): string[] {
 	let start = 0;
 	let end = lines.length;
 
@@ -160,7 +158,7 @@ function trimEdgeEmptyLines(lines: string[]): string[] {
 	return lines.slice(start, end);
 }
 
-function isRenderedEditSectionBoundary(line: string): boolean {
+function isSectionBoundary(line: string): boolean {
 	return (
 		line === "--- Anchors ---" ||
 		line === "Warnings:" ||
@@ -169,13 +167,13 @@ function isRenderedEditSectionBoundary(line: string): boolean {
 	);
 }
 
-export function formatRenderedEditResultMarkdown(text: string): string {
+export function fmtResultMd(text: string): string {
 	const lines = text.split("\n");
 	const sections: string[] = [];
 	let plainLines: string[] = [];
 
-	const flushPlainLines = () => {
-		const trimmed = trimEdgeEmptyLines(plainLines);
+	const flush = () => {
+		const trimmed = trimEmpty(plainLines);
 		if (trimmed.length > 0) {
 			sections.push(trimmed.join("\n"));
 		}
@@ -187,13 +185,13 @@ export function formatRenderedEditResultMarkdown(text: string): string {
 		const line = lines[index]!;
 
 		if (line.startsWith("--- Anchors ")) {
-			flushPlainLines();
+			flush();
 			const title = line.replace(/^---\s*/, "").replace(/\s*---$/, "");
 			index++;
 			const bodyLines: string[] = [];
 			while (
 				index < lines.length &&
-				!isRenderedEditSectionBoundary(lines[index]!)
+				!isSectionBoundary(lines[index]!)
 			) {
 				bodyLines.push(lines[index]!);
 				index++;
@@ -202,7 +200,7 @@ export function formatRenderedEditResultMarkdown(text: string): string {
 				[
 					`#### ${title}`,
 					"```text",
-					...trimEdgeEmptyLines(bodyLines),
+					...trimEmpty(bodyLines),
 					"```",
 				].join("\n"),
 			);
@@ -213,12 +211,12 @@ export function formatRenderedEditResultMarkdown(text: string): string {
 		index++;
 	}
 
-	flushPlainLines();
+	flush();
 
 	return sections.join("\n\n");
 }
 
-export function createRenderedEditMarkdownTheme(theme: RenderedMarkdownTheme) {
+export function mkMdTheme(theme: MdTheme) {
 	return {
 		heading: (text: string) => theme.fg("mdHeading", text),
 		link: (text: string) => theme.fg("mdLink", text),

@@ -1,82 +1,78 @@
 import xxhash from "xxhash-wasm";
 
+export const HASH_LEN = 3;
+export const ANCHOR_LEN = HASH_LEN;
 
-export const HASH_LENGTH = 3;
-export const HASH_PREFIX = "";
-export const ANCHOR_LENGTH = HASH_LENGTH;
-
-const HASH_ALPHABET =
+const ALPH =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-const HASH_ALPHABET_BITS = 6;
-const HASH_ALPHABET_MASK = (1 << HASH_ALPHABET_BITS) - 1;
-const HASH_ALPHABET_REGEX_SAFE = HASH_ALPHABET.replace(/-/g, "\\-");
-const HASH_ALPHABET_RE = new RegExp(`^[${HASH_ALPHABET_REGEX_SAFE}]+$`);
-export const HASH_CHARS_CLASS = `${HASH_PREFIX}[${HASH_ALPHABET_REGEX_SAFE}]{${HASH_LENGTH}}`;
-function hashToString(h: number): string {
-	const totalBits = HASH_LENGTH * HASH_ALPHABET_BITS;
+const ALPH_BITS = 6;
+const ALPH_MASK = (1 << ALPH_BITS) - 1;
+const ALPH_SAFE = ALPH.replace(/-/g, "\\-");
+const ALPH_RE = new RegExp(`^[${ALPH_SAFE}]+$`);
+export const HASH_CLASS = `[${ALPH_SAFE}]{${HASH_LEN}}`;
+
+function h2s(h: number): string {
+	const totalBits = HASH_LEN * ALPH_BITS;
 	const shift = 32 - totalBits;
 	let n = h >>> shift;
 	let out = "";
-	for (let j = 0; j < HASH_LENGTH; j++) {
+	for (let j = 0; j < HASH_LEN; j++) {
 		out +=
-			HASH_ALPHABET[
-				(n >>> ((HASH_LENGTH - 1 - j) * HASH_ALPHABET_BITS)) &
-					HASH_ALPHABET_MASK
+			ALPH[
+				(n >>> ((HASH_LEN - 1 - j) * ALPH_BITS)) &
+					ALPH_MASK
 			]!;
 	}
 	return out;
 }
 
-export const HASHLINE_PREFIX_RE = new RegExp(
-	`^\\s*(?:>>>|>>)?\\s*${HASH_CHARS_CLASS}│`,
+export const HL_PREFIX_RE = new RegExp(
+	`^\\s*(?:>>>|>>)?\\s*${HASH_CLASS}│`,
 );
-export const HASHLINE_PREFIX_PLUS_RE = new RegExp(
-	`^\\+\\s*${HASH_CHARS_CLASS}│`,
+export const HL_PREFIX_PLUS_RE = new RegExp(
+	`^\\+\\s*${HASH_CLASS}│`,
 );
 export const DIFF_MINUS_RE = /^-\s*\d+\s{4}/;
 
-export const HASHLINE_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CHARS_CLASS})│`);
-
-
+export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
 
 type Hasher = { h32(input: string, seed?: number): number };
-let hasherPromise: Promise<Hasher> | null = null;
-let hasherSync: Hasher | null = null;
+let hasherP: Promise<Hasher> | null = null;
+let hasher: Hasher | null = null;
 
-function getHasher(): Hasher {
-	if (hasherSync) return hasherSync;
+function getH(): Hasher {
+	if (hasher) return hasher;
 	throw new Error("xxhash-wasm not initialized yet. This should not happen.");
 }
 
-hasherPromise = xxhash().then((h) => {
-	hasherSync = h;
+hasherP = xxhash().then((h) => {
+	hasher = h;
 	return h;
 });
 
-export function ensureHasherReady(): Promise<Hasher> {
-	return hasherPromise!
+export function initHasher(): Promise<Hasher> {
+	return hasherP!
 }
 
 function xxh32(input: string, seed = 0): number {
-	return getHasher().h32(input, seed) >>> 0;
+	return getH().h32(input, seed) >>> 0;
 }
 
-
-function canonicalizeLine(line: string): string {
+function canon(line: string): string {
 	return line.replace(/\r/g, "").trimEnd();
 }
 
-export function computeLineHashes(content: string): string[] {
+export function lineHashes(content: string): string[] {
 	const lines = content.split("\n");
 	const hashes = new Array<string>(lines.length);
 	const assigned = new Set<string>();
 	for (let i = 0; i < lines.length; i++) {
-		const canonical = canonicalizeLine(lines[i]!);
-		let hash = hashToString(xxh32(canonical));
+		const c = canon(lines[i]!);
+		let hash = h2s(xxh32(c));
 		let retry = 0;
 		while (assigned.has(hash)) {
 			retry++;
-			hash = hashToString(xxh32(`${canonical}:R${retry}`));
+			hash = h2s(xxh32(`${c}:R${retry}`));
 		}
 		assigned.add(hash);
 		hashes[i] = hash;
@@ -84,18 +80,8 @@ export function computeLineHashes(content: string): string[] {
 	return hashes;
 }
 
-export function computeLineHash(idx: number, line: string): string {
-	const canonical = canonicalizeLine(line);
-	return hashToString(xxh32(canonical));
+export function lineHash(idx: number, line: string): string {
+	return h2s(xxh32(canon(line)));
 }
 
-export const HASH_FORMAT = {
-	prefix: HASH_PREFIX,
-	length: HASH_LENGTH,
-	anchorLength: ANCHOR_LENGTH,
-	bitsPerChar: HASH_ALPHABET_BITS,
-	alphabet: HASH_ALPHABET,
-};
-
-
-export { HASH_ALPHABET_RE };
+export { ALPH_RE };

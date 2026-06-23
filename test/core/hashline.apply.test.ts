@@ -1,15 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyHashlineEdits,
-  computeAffectedLineRange,
+  applyEdits,
+  affRange,
   type HashlineEdit,
 } from "../../src/hashline";
 import { makeTag } from "../support/fixtures";
 
 
-describe("applyHashlineEdits — basic operations", () => {
+describe("applyEdits — basic operations", () => {
 	it("returns content unchanged for empty edits", () => {
-		const result = applyHashlineEdits("hello\nworld", []);
+		const result = applyEdits("hello\nworld", []);
 		expect(result.content).toBe("hello\nworld");
 		expect(result.firstChangedLine).toBeUndefined();
 	});
@@ -19,7 +19,7 @@ describe("applyHashlineEdits — basic operations", () => {
 		const edits: HashlineEdit[] = [
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["BBB"] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nccc");
 		expect(result.firstChangedLine).toBe(2);
 	});
@@ -29,7 +29,7 @@ describe("applyHashlineEdits — basic operations", () => {
 		const edits: HashlineEdit[] = [
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["BBB", "B2"] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nB2\nccc");
 	});
 
@@ -38,7 +38,7 @@ describe("applyHashlineEdits — basic operations", () => {
 		const edits: HashlineEdit[] = [
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: [] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nccc");
 	});
 
@@ -51,7 +51,7 @@ describe("applyHashlineEdits — basic operations", () => {
 		const edits: HashlineEdit[] = [
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: [""] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nccc\n");
 	});
 
@@ -63,7 +63,7 @@ describe("applyHashlineEdits — basic operations", () => {
 				new_lines: [""],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nddd\n");
 	});
 
@@ -75,7 +75,7 @@ describe("applyHashlineEdits — basic operations", () => {
 		const edits: HashlineEdit[] = [
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["", ""] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		// Two blank lines inserted in place of "bbb", preserving the trailing
 		// newline. Exact shape is not asserted — only that it differs from a
 		// pure deletion and contains the two newlines.
@@ -91,7 +91,7 @@ describe("applyHashlineEdits — basic operations", () => {
 				new_lines: ["BBB", "CCC"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nCCC\nddd");
 	});
 
@@ -103,19 +103,19 @@ describe("applyHashlineEdits — basic operations", () => {
 				new_lines: [],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nddd");
 	});
 });
 
-describe("applyHashlineEdits — multi-edit ordering", () => {
+describe("applyEdits — multi-edit ordering", () => {
 	it("applies multiple edits bottom-up correctly", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HashlineEdit[] = [
 			{ old_range: [makeTag(content, 1), makeTag(content, 1)], new_lines: ["AAA"] },
 			{ old_range: [makeTag(content, 3), makeTag(content, 3)], new_lines: ["CCC"] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("AAA\nbbb\nCCC");
 	});
 
@@ -126,7 +126,7 @@ describe("applyHashlineEdits — multi-edit ordering", () => {
 			{ old_range: [{ ...pos }, { ...pos }], new_lines: ["BBB"] },
 			{ old_range: [{ ...pos }, { ...pos }], new_lines: ["BBB"] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nccc");
 	});
 
@@ -138,7 +138,7 @@ describe("applyHashlineEdits — multi-edit ordering", () => {
 			{ old_range: [{ ...pos }, { ...pos }], new_lines: ["BBB"] },
 		];
 
-		applyHashlineEdits(content, edits);
+		applyEdits(content, edits);
 
 		expect(edits).toHaveLength(2);
 		expect(edits[0]).toEqual({ old_range: [{ ...pos }, { ...pos }], new_lines: ["BBB"] });
@@ -146,13 +146,13 @@ describe("applyHashlineEdits — multi-edit ordering", () => {
 	});
 });
 
-describe("applyHashlineEdits — noop detection", () => {
+describe("applyEdits — noop detection", () => {
 	it("detects single-line noop", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HashlineEdit[] = [
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["bbb"] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.noopEdits).toHaveLength(1);
 		expect(result.noopEdits![0]!.editIndex).toBe(0);
 	});
@@ -165,7 +165,7 @@ describe("applyHashlineEdits — noop detection", () => {
 				new_lines: ["bbb", "ccc"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.noopEdits).toHaveLength(1);
 	});
 
@@ -177,7 +177,7 @@ describe("applyHashlineEdits — noop detection", () => {
 				new_lines: [],
 			},
 		];
-		expect(() => applyHashlineEdits(content, edits)).toThrow(
+		expect(() => applyEdits(content, edits)).toThrow(
 			/^\[E_WOULD_EMPTY\]/,
 		);
 	});
@@ -191,7 +191,7 @@ describe("applyHashlineEdits — noop detection", () => {
 			},
 		];
 
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 
 		expect(result.content).toBe("ccc");
 	});
@@ -202,13 +202,13 @@ describe("applyHashlineEdits — noop detection", () => {
 			{ old_range: [makeTag(content, 1), makeTag(content, 1)], new_lines: ["\n"] },
 		];
 
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 
 		expect(result.content).toBe("\n");
 	});
 });
 
-describe("applyHashlineEdits — warning heuristics", () => {
+describe("applyEdits — warning heuristics", () => {
 	it("warns when replacement starts with the previous surviving line", () => {
 		const content = "before\nold one\nold two\nafter";
 		const edits: HashlineEdit[] = [
@@ -218,7 +218,7 @@ describe("applyHashlineEdits — warning heuristics", () => {
 			},
 		];
 
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 
 		expect(result.content).toBe("before\nbefore\nnew one\nnew two\nafter");
 		expect(result.warnings).toEqual([
@@ -229,7 +229,7 @@ describe("applyHashlineEdits — warning heuristics", () => {
 	});
 });
 
-describe("applyHashlineEdits — lastChangedLine tracking", () => {
+describe("applyEdits — lastChangedLine tracking", () => {
 	it("tracks lastChangedLine when single-line replace expands to multiple lines", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HashlineEdit[] = [
@@ -238,7 +238,7 @@ describe("applyHashlineEdits — lastChangedLine tracking", () => {
 			},
 		];
 
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 
 		expect(result.firstChangedLine).toBe(2);
 		expect(result.lastChangedLine).toBe(6);
@@ -250,7 +250,7 @@ describe("applyHashlineEdits — lastChangedLine tracking", () => {
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: [] },
 		];
 
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 
 		expect(result.firstChangedLine).toBe(2);
 		expect(result.lastChangedLine).toBe(2);
@@ -265,7 +265,7 @@ describe("applyHashlineEdits — lastChangedLine tracking", () => {
 			},
 		];
 
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 
 		expect(result.firstChangedLine).toBe(2);
 		expect(result.lastChangedLine).toBe(4);

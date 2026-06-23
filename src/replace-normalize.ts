@@ -1,4 +1,4 @@
-import { isRecord, hasOwn } from "./utils";
+import { isRec, has } from "./utils";
 
 function coerceEditsArray(edits: unknown): unknown {
 	if (typeof edits !== "string") {
@@ -13,8 +13,8 @@ function coerceEditsArray(edits: unknown): unknown {
 }
 
 
-export function normalizeReplaceRequest(input: unknown): unknown {
-	if (!isRecord(input)) {
+export function normReq(input: unknown): unknown {
+	if (!isRec(input)) {
 		return input;
 	}
 
@@ -25,7 +25,7 @@ export function normalizeReplaceRequest(input: unknown): unknown {
 		delete record.file_path;
 	}
 
-	const hasEditsField = hasOwn(record, "edits");
+	const hasEditsField = has(record, "edits");
 
 	if (hasEditsField) {
 		record.edits = coerceEditsArray(record.edits);

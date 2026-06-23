@@ -1,21 +1,18 @@
-
 import {
-	ANCHOR_LENGTH,
-	HASH_ALPHABET_RE,
-	HASH_CHARS_CLASS,
-	HASHLINE_PREFIX_PLUS_RE,
+	ANCHOR_LEN,
+	ALPH_RE,
+	HASH_CLASS,
+	HL_PREFIX_PLUS_RE,
 	DIFF_MINUS_RE,
 } from "./hash";
 
-
 export type Anchor = { hash: string };
 
-
-function diagnoseHashRef(ref: string): string {
+function diagRef(ref: string): string {
 	const trimmed = ref.trim();
 
 	if (!trimmed.length) {
-		return `[E_BAD_REF] Invalid anchor. Expected a 3-character base64 anchor (e.g. "aB3").`;
+		return `[E_BAD_REF] Invalid anchor. Expected a 3-char base64 anchor (e.g. "aB3").`;
 	}
 
 	if (/^\d+/.test(trimmed)) {
@@ -23,43 +20,42 @@ function diagnoseHashRef(ref: string): string {
 	}
 
 	if (trimmed.includes("│")) {
-		return `[E_BAD_REF] Invalid anchor "${trimmed}". old_range must contain the 3-character hash only — remove everything from "│" onward (including the separator).`;
+		return `[E_BAD_REF] Invalid anchor "${trimmed}". old_range must contain the 3-char hash only — remove everything from "│" onward.`;
 	}
 
-	return `[E_BAD_REF] Invalid anchor "${trimmed}". Expected a 3-character base64 anchor (e.g. "aB3").`;
+	return `[E_BAD_REF] Invalid anchor "${trimmed}". Expected a 3-char base64 anchor (e.g. "aB3").`;
 }
 
-function parseAnchorRef(ref: string): Anchor {
+function parseRef(ref: string): Anchor {
 	const trimmed = ref.trim();
 
 	if (
-		trimmed.length === ANCHOR_LENGTH &&
-		HASH_ALPHABET_RE.test(trimmed)
+		trimmed.length === ANCHOR_LEN &&
+		ALPH_RE.test(trimmed)
 	) {
 		return { hash: trimmed };
 	}
 
-	throw new Error(diagnoseHashRef(ref));
+	throw new Error(diagRef(ref));
 }
 
-export const parseHashRef = parseAnchorRef;
+export const parseHashRef = parseRef;
 
-
-function assertNoDisplayPrefixes(lines: string[]): void {
+function assertNoPrefixes(lines: string[]): void {
 	for (const line of lines) {
 		if (!line.length) continue;
 		if (
-			HASHLINE_PREFIX_PLUS_RE.test(line) ||
+			HL_PREFIX_PLUS_RE.test(line) ||
 			DIFF_MINUS_RE.test(line)
 		) {
 			throw new Error(
-			`[E_INVALID_PATCH] \"lines\" must contain literal file content, not HASH| or diff prefixes. Offending line: ${JSON.stringify(line)}`
+			`[E_INVALID_PATCH] "lines" must contain literal file content, not HASH| or diff prefixes. Offending line: ${JSON.stringify(line)}`
 			);
 		}
 	}
 }
 
-export function hashlineParseText(edit: string[] | string | null): string[] {
+export function parseText(edit: string[] | string | null): string[] {
 	if (edit === null) return [];
 	const lines =
 		typeof edit === "string"
@@ -67,6 +63,6 @@ export function hashlineParseText(edit: string[] | string | null): string[] {
 					.replaceAll("\r", "")
 					.split("\n")
 			: edit;
-	assertNoDisplayPrefixes(lines);
+	assertNoPrefixes(lines);
 	return lines;
 }

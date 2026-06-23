@@ -1,71 +1,71 @@
 import { describe, expect, it, vi } from "vitest";
-import { validateFileAccess, validateFileKind, isTextFile, getErrorCode } from "../../src/validation";
+import { valAccess, valKind, isText, errCode } from "../../src/validation";
 
-describe("getErrorCode", () => {
+describe("errCode", () => {
 	it("returns code from NodeJS.ErrnoException", () => {
 		const error = new Error("test") as NodeJS.ErrnoException;
 		error.code = "ENOENT";
-		expect(getErrorCode(error)).toBe("ENOENT");
+		expect(errCode(error)).toBe("ENOENT");
 	});
 
 	it("returns undefined for non-Error values", () => {
-		expect(getErrorCode("string")).toBeUndefined();
-		expect(getErrorCode(null)).toBeUndefined();
-		expect(getErrorCode(undefined)).toBeUndefined();
-		expect(getErrorCode(42)).toBeUndefined();
+		expect(errCode("string")).toBeUndefined();
+		expect(errCode(null)).toBeUndefined();
+		expect(errCode(undefined)).toBeUndefined();
+		expect(errCode(42)).toBeUndefined();
 	});
 
 	it("returns undefined for Error without code", () => {
-		expect(getErrorCode(new Error("test"))).toBeUndefined();
+		expect(errCode(new Error("test"))).toBeUndefined();
 	});
 });
 
-describe("isTextFile", () => {
+describe("isText", () => {
 	it("returns true for text files", () => {
-		expect(isTextFile({ kind: "text", text: "content" })).toBe(true);
+		expect(isText({ kind: "text", text: "content" })).toBe(true);
 	});
 
 	it("returns true for text files with hadUtf8DecodeErrors", () => {
-		expect(isTextFile({ kind: "text", text: "content", hadUtf8DecodeErrors: true })).toBe(true);
+		expect(isText({ kind: "text", text: "content", hadUtf8DecodeErrors: true })).toBe(true);
 	});
 
 	it("returns false for directory", () => {
-		expect(isTextFile({ kind: "directory" })).toBe(false);
+		expect(isText({ kind: "directory" })).toBe(false);
 	});
 
 	it("returns false for binary", () => {
-		expect(isTextFile({ kind: "binary", description: "test" })).toBe(false);
+		expect(isText({ kind: "binary", description: "test" })).toBe(false);
 	});
 
 	it("returns false for image", () => {
-		expect(isTextFile({ kind: "image", mimeType: "image/png" })).toBe(false);
+		expect(isText({ kind: "image", mimeType: "image/png" })).toBe(false);
 	});
 });
 
-describe("validateFileKind", () => {
+describe("valKind", () => {
 	it("throws for directory", () => {
-		expect(() => validateFileKind({ kind: "directory" }, "test.txt"))
+		expect(() => valKind({ kind: "directory" }, "test.txt"))
 			.toThrow("Path is a directory: test.txt. Use ls to inspect directories.");
 	});
 
 	it("throws for binary file", () => {
-		expect(() => validateFileKind({ kind: "binary", description: "application/octet-stream" }, "test.bin"))
+		expect(() => valKind({ kind: "binary", description: "application/octet-stream" }, "test.bin"))
 			.toThrow("Path is a binary file: test.bin (application/octet-stream). Hashline edit only supports text files.");
 	});
 
 	it("throws for image file", () => {
-		expect(() => validateFileKind({ kind: "image", mimeType: "image/png" }, "test.png"))
+		expect(() => valKind({ kind: "image", mimeType: "image/png" }, "test.png"))
 			.toThrow("Path is an image file: test.png. Hashline edit only supports text files.");
 	});
 
 	it("does not throw for text file", () => {
-		expect(() => validateFileKind({ kind: "text", text: "content" }, "test.txt")).not.toThrow();
+		expect(() => valKind({ kind: "text", text: "content" }, "test.txt")).not.toThrow();
 	});
 });
 
-describe("validateFileAccess", () => {
+describe("valAccess", () => {
 	it("throws ENOENT error for missing file", async () => {
-		await expect(validateFileAccess("/nonexistent/path.txt", "path.txt"))
+		await expect(valAccess("/nonexistent/path.txt", "path.txt"))
 			.rejects.toThrow("File not found: path.txt");
 	});
 
@@ -79,7 +79,7 @@ describe("validateFileAccess", () => {
 		await chmod(testFile, 0o000);
 
 		try {
-			await expect(validateFileAccess(testFile, "unreadable.txt"))
+			await expect(valAccess(testFile, "unreadable.txt"))
 				.rejects.toThrow("File is not readable: unreadable.txt");
 		} finally {
 			await chmod(testFile, 0o644);
@@ -99,7 +99,7 @@ describe("validateFileAccess", () => {
 		await chmod(testFile, 0o444);
 
 		try {
-			await expect(validateFileAccess(testFile, "readonly.txt", constants.R_OK | constants.W_OK))
+			await expect(valAccess(testFile, "readonly.txt", constants.R_OK | constants.W_OK))
 				.rejects.toThrow("File is not writable: readonly.txt");
 		} finally {
 			await chmod(testFile, 0o644);
@@ -117,7 +117,7 @@ describe("validateFileAccess", () => {
 		await writeFile(testFile, "content");
 
 		try {
-			await expect(validateFileAccess(testFile, "readable.txt")).resolves.toBeUndefined();
+			await expect(valAccess(testFile, "readable.txt")).resolves.toBeUndefined();
 		} finally {
 			const { rm } = await import("fs/promises");
 			await rm(tmpDir, { recursive: true, force: true });

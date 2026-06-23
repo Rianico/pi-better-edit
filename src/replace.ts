@@ -7,52 +7,47 @@ import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { constants } from "fs";
 import {
-	detectLineEnding,
-	generateDiffString,
-	normalizeToLF,
-	restoreLineEndings,
-	stripBom,
+	genDiff,
+	restoreEndings,
 } from "./replace-diff";
-import { normalizeReplaceRequest } from "./replace-normalize";
-import { isRecord, hasOwn } from "./utils";
-import { resolveMutationTargetPath, writeFileAtomically } from "./fs-write";
+import { readNormFile } from "./file-reader";
+import { normReq } from "./replace-normalize";
+import { isRec, has } from "./utils";
+import { resolveTarget, writeAtomic } from "./fs-write";
 import {
-	applyHashlineEdits,
-	computeLineHashes,
-	resolveEditAnchors,
-	type HashlineToolEdit,
+	applyEdits,
+	lineHashes,
+	resEdits,
+	type HTEdit,
 } from "./hashline";
-import { loadFileKindAndText } from "./file-kind";
-import { resolveToCwd } from "./path-utils";
-import { throwIfAborted } from "./runtime";
-import { getFileSnapshot } from "./snapshot";
+import { toCwd } from "./path-utils";
+import { abortIf } from "./runtime";
+import { fileSnap } from "./snapshot";
 import {
-	buildChangedResponse,
-	buildNoopResponse,
-	type ReplaceMeta,
-	type ReplaceMetrics,
+	buildChanged,
+	buildNoop,
+	type RMeta,
+	type RMetrics,
 } from "./replace-response";
 import {
-	buildAppliedChangedResultText,
-	createRenderedEditMarkdownTheme,
-	formatEditCall,
-	formatRenderedEditResultMarkdown,
-	getRenderablePreviewInput,
-	getRenderedEditTextContent,
-	isAppliedChangedResult,
-	type ReplacePreview,
-	type ReplaceRenderState,
+	buildAppliedText,
+	mkMdTheme,
+	fmtCall,
+	fmtResultMd,
+	getPreviewInput,
+	getResultText,
+	isApplied,
+	type RPreview,
+	type RRState,
 } from "./replace-render";
-import { loadPrompt, loadPromptGuidelines } from "./prompts";
-import { validateFileAccess, assertTextFile } from "./validation";
+import { loadP, loadGuide } from "./prompts";
 
-
-const hashlineEditNewLinesSchema = Type.Array(Type.String(), {
+const newLinesSchema = Type.Array(Type.String(), {
 	description:
 		"literal replacement file content, one string per line. Must not include the HASH│ prefix from read output.",
 });
 
-const hasheditOldRangeSchema = Type.Array(
+const oldRangeSchema = Type.Array(
 	Type.String({ description: "anchor (3-char HASH)" }),
 	{
 		description: "inclusive line range to replace [start_hash, end_hash]. Each element must be the 3-character hash anchor only; do not include the │ separator or line content.",
@@ -61,52 +56,51 @@ const hasheditOldRangeSchema = Type.Array(
 	},
 );
 
-const hashlineEditItemSchema = Type.Object(
+const editItemSchema = Type.Object(
 	{
-		old_range: hasheditOldRangeSchema,
-		new_lines: hashlineEditNewLinesSchema,
+		old_range: oldRangeSchema,
+		new_lines: newLinesSchema,
 	},
 	{ additionalProperties: false },
 );
-export const hashlineEditToolSchema = Type.Object(
+export const editToolSchema = Type.Object(
 	{
 		path: Type.String({ description: "path" }),
 		edits: Type.Optional(
-			Type.Array(hashlineEditItemSchema, { description: "edits over $path" }),
+			Type.Array(editItemSchema, { description: "edits over $path" }),
 		),
 	},
 	{ additionalProperties: false },
 );
 
-export type ReplaceRequestParams = {
+export type ReqParams = {
 	path: string;
-	edits?: HashlineToolEdit[];
+	edits?: HTEdit[];
 };
 
-
-export type HashlineReplaceToolDetails = {
+export type ReplaceDetails = {
 	diff: string;
 	firstChangedLine?: number;
 	snapshotId?: string;
 	classification?: "noop";
 	structureOutline?: string[];
-	metrics?: ReplaceMetrics;
+	metrics?: RMetrics;
 };
 
-const EDIT_DESC = loadPrompt("../prompts/replace.md");
-const EDIT_PROMPT_SNIPPET = loadPrompt("../prompts/replace-snippet.md");
-const EDIT_PROMPT_GUIDELINES = loadPromptGuidelines("../prompts/replace-guidelines.md");
-const ROOT_KEYS = new Set(["path", "edits"]);
+const E_DESC = loadP("../prompts/replace.md");
+const E_SNIPPET = loadP("../prompts/replace-snippet.md");
+const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
+const ROOT_KS = new Set(["path", "edits"]);
 
-export function assertReplaceRequest(
+export function assertReq(
 	request: unknown,
-): asserts request is ReplaceRequestParams {
-	if (!isRecord(request)) {
+): asserts request is ReqParams {
+	if (!isRec(request)) {
 		throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
 	}
 
 	for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "start", "end", "lines"]) {
-		if (hasOwn(request, legacyKey)) {
+		if (has(request, legacyKey)) {
 			throw new Error(
 				`[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {old_range: ["<START>", "<END>"], new_lines: [...]}.`
 			);
@@ -114,7 +108,7 @@ export function assertReplaceRequest(
 	}
 
 	const unknownRootKeys = Object.keys(request).filter(
-		(key) => !ROOT_KEYS.has(key),
+		(key) => !ROOT_KS.has(key),
 	);
 	if (unknownRootKeys.length > 0) {
 		throw new Error(
@@ -126,19 +120,19 @@ export function assertReplaceRequest(
 		throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "path" string.');
 	}
 
-	if (hasOwn(request, "edits") && !Array.isArray(request.edits)) {
+	if (has(request, "edits") && !Array.isArray(request.edits)) {
 		throw new Error('[E_BAD_SHAPE] Edit request requires an "edits" array when provided. Each edit is { old_range: ["<START>", "<END>"], new_lines: [...] }.');
 	}
-
 }
-async function executeEditPipeline(
-	params: ReplaceRequestParams,
+
+async function execPipeline(
+	params: ReqParams,
 	cwd: string,
 	accessMode: number,
 	signal?: AbortSignal,
 ): Promise<{
 	path: string;
-	toolEdits: HashlineToolEdit[];
+	toolEdits: HTEdit[];
 	originalNormalized: string;
 	result: string;
 	bom: string;
@@ -152,31 +146,20 @@ async function executeEditPipeline(
 }> {
 
 	const path = params.path;
-	const absolutePath = resolveToCwd(path, cwd);
 	const toolEdits = Array.isArray(params.edits)
-		? (params.edits as HashlineToolEdit[])
+		? (params.edits as HTEdit[])
 		: [];
 
 	if (toolEdits.length === 0) {
 		throw new Error("[E_BAD_SHAPE] Edit request requires a non-empty \"edits\" array.");
 	}
 
-	throwIfAborted(signal);
-	await validateFileAccess(absolutePath, path, accessMode);
+	const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors } = await readNormFile(
+		path, cwd, signal, accessMode,
+	);
 
-	throwIfAborted(signal);
-	const file = await loadFileKindAndText(absolutePath);
-	assertTextFile(file, path);
-
-	throwIfAborted(signal);
-	const { bom, text: rawContent } = stripBom(file.text);
-	const originalEnding = detectLineEnding(rawContent);
-	const originalNormalized = normalizeToLF(rawContent);
-
-	const originalHashes = computeLineHashes(originalNormalized);
-
-	const resolved = resolveEditAnchors(toolEdits);
-	const anchorResult = applyHashlineEdits(
+	const resolved = resEdits(toolEdits);
+	const anchorResult = applyEdits(
 		originalNormalized,
 		resolved,
 		signal,
@@ -190,7 +173,7 @@ async function executeEditPipeline(
 		result: anchorResult.content,
 		bom,
 		originalEnding,
-		hadUtf8DecodeErrors: file.hadUtf8DecodeErrors === true,
+		hadUtf8DecodeErrors,
 		warnings: [...(anchorResult.warnings ?? [])],
 		noopEdits: anchorResult.noopEdits,
 		firstChangedLine: anchorResult.firstChangedLine,
@@ -199,14 +182,14 @@ async function executeEditPipeline(
 	};
 }
 
-export async function computeReplacePreview(
+export async function compPreview(
 	request: unknown,
 	cwd: string,
-): Promise<ReplacePreview> {
+): Promise<RPreview> {
 	try {
-		const normalized = normalizeReplaceRequest(request);
-		assertReplaceRequest(normalized);
-		const { path, originalNormalized, result } = await executeEditPipeline(
+		const normalized = normReq(request);
+		assertReq(normalized);
+		const { path, originalNormalized, result } = await execPipeline(
 			normalized,
 			cwd,
 			constants.R_OK,
@@ -218,30 +201,30 @@ export async function computeReplacePreview(
 			};
 		}
 
-		return { diff: generateDiffString(originalNormalized, result, 4, computeLineHashes(result)).diff };
+		return { diff: genDiff(originalNormalized, result, 4, lineHashes(result)).diff };
 	} catch (error: unknown) {
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
 }
 
-type EditToolDefinition = ToolDefinition<
-	typeof hashlineEditToolSchema,
-	HashlineReplaceToolDetails,
-	ReplaceRenderState
+type ToolDef = ToolDefinition<
+	typeof editToolSchema,
+	ReplaceDetails,
+	RRState
 > & { renderShell?: "default" | "self" };
 
-const editToolDefinition: EditToolDefinition = {
+const toolDef: ToolDef = {
 	name: "replace",
 	label: "Replace",
-	description: EDIT_DESC,
-	parameters: hashlineEditToolSchema,
-	promptSnippet: EDIT_PROMPT_SNIPPET,
-	promptGuidelines: EDIT_PROMPT_GUIDELINES,
+	description: E_DESC,
+	parameters: editToolSchema,
+	promptSnippet: E_SNIPPET,
+	promptGuidelines: E_GUIDE,
 	prepareArguments: (args: unknown) =>
-		normalizeReplaceRequest(args) as ReplaceRequestParams,
+		normReq(args) as ReqParams,
 	renderShell: "default",
 	renderCall(args, theme, context) {
-		const previewInput = getRenderablePreviewInput(args);
+		const previewInput = getPreviewInput(args);
 		if (context.executionStarted) {
 			context.state.argsKey = undefined;
 			context.state.preview = undefined;
@@ -259,7 +242,7 @@ const editToolDefinition: EditToolDefinition = {
 				context.state.preview = undefined;
 				const previewGeneration = (context.state.previewGeneration ?? 0) + 1;
 				context.state.previewGeneration = previewGeneration;
-				computeReplacePreview(previewInput, context.cwd)
+				compPreview(previewInput, context.cwd)
 					.then((preview) => {
 						if (
 							context.state.argsKey === argsKey &&
@@ -285,9 +268,9 @@ const editToolDefinition: EditToolDefinition = {
 		const text =
 			(context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 		text.setText(
-			formatEditCall(
-				getRenderablePreviewInput(args) ?? undefined,
-				context.state as ReplaceRenderState,
+			fmtCall(
+				getPreviewInput(args) ?? undefined,
+				context.state as RRState,
 				context.expanded,
 				theme,
 			),
@@ -305,11 +288,11 @@ const editToolDefinition: EditToolDefinition = {
 
 		const typedResult = result as {
 			content?: Array<{ type: string; text?: string }>;
-			details?: HashlineReplaceToolDetails;
+			details?: ReplaceDetails;
 		};
-		const renderedText = getRenderedEditTextContent(typedResult);
+		const renderedText = getResultText(typedResult);
 
-		const renderState = context.state as ReplaceRenderState | undefined;
+		const renderState = context.state as RRState | undefined;
 		if (renderState) {
 			renderState.preview = undefined;
 			renderState.previewGeneration = (renderState.previewGeneration ?? 0) + 1;
@@ -327,8 +310,8 @@ const editToolDefinition: EditToolDefinition = {
 			return text;
 		}
 
-		if (isAppliedChangedResult(typedResult.details)) {
-			const appliedChangedText = buildAppliedChangedResultText(
+		if (isApplied(typedResult.details)) {
+			const appliedChangedText = buildAppliedText(
 				renderedText,
 				typedResult.details,
 				theme,
@@ -351,20 +334,20 @@ const editToolDefinition: EditToolDefinition = {
 		const markdown =
 			context.lastComponent instanceof Markdown
 				? context.lastComponent
-				: new Markdown("", 0, 0, createRenderedEditMarkdownTheme(theme));
-		markdown.setText(formatRenderedEditResultMarkdown(renderedText));
+				: new Markdown("", 0, 0, mkMdTheme(theme));
+		markdown.setText(fmtResultMd(renderedText));
 		return markdown;
 	},
 
 	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-		const normalized = normalizeReplaceRequest(params);
-		assertReplaceRequest(normalized);
+		const normalized = normReq(params);
+		assertReq(normalized);
 		const normalizedParams = normalized;
 		const path = normalizedParams.path;
-		const absolutePath = resolveToCwd(path, ctx.cwd);
-		const mutationTargetPath = await resolveMutationTargetPath(absolutePath);
+		const absolutePath = toCwd(path, ctx.cwd);
+		const mutationTargetPath = await resolveTarget(absolutePath);
 		return withFileMutationQueue(mutationTargetPath, async () => {
-			throwIfAborted(signal);
+			abortIf(signal);
 
 			const {
 				originalNormalized,
@@ -376,7 +359,7 @@ const editToolDefinition: EditToolDefinition = {
 				noopEdits,
 				firstChangedLine,
 				lastChangedLine,
-			} = await executeEditPipeline(
+			} = await execPipeline(
 				normalized,
 				ctx.cwd,
 				constants.R_OK | constants.W_OK,
@@ -388,8 +371,8 @@ const editToolDefinition: EditToolDefinition = {
 				: 0;
 
 			if (originalNormalized === result) {
-				const noopSnapshotId = (await getFileSnapshot(absolutePath)).snapshotId;
-			return buildNoopResponse({
+				const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
+			return buildNoop({
 				path,
 				noopEdits,
 				snapshotId: noopSnapshotId,
@@ -407,15 +390,15 @@ const editToolDefinition: EditToolDefinition = {
 				);
 			}
 
-			throwIfAborted(signal);
-			await writeFileAtomically(
+			abortIf(signal);
+			await writeAtomic(
 				absolutePath,
-				bom + restoreLineEndings(result, originalEnding),
+				bom + restoreEndings(result, originalEnding),
 			);
-			const updatedSnapshotId = (await getFileSnapshot(absolutePath))
+			const updatedSnapshotId = (await fileSnap(absolutePath))
 				.snapshotId;
 
-			const editMeta: ReplaceMeta = {
+			const editMeta: RMeta = {
 				editsAttempted,
 				noopEditsCount: noopEdits?.length ?? 0,
 				firstChangedLine,
@@ -426,17 +409,17 @@ const editToolDefinition: EditToolDefinition = {
 				path,
 				originalNormalized,
 				result,
-				resultHashes: computeLineHashes(result),
+				resultHashes: lineHashes(result),
 				warnings,
 				snapshotId: updatedSnapshotId,
 				editMeta,
 			};
 
-			return buildChangedResponse(successInput);
+			return buildChanged(successInput);
 		});
 	},
 };
 
-export function registerReplaceTool(pi: ExtensionAPI): void {
-	pi.registerTool(editToolDefinition);
+export function regReplace(pi: ExtensionAPI): void {
+	pi.registerTool(toolDef);
 }

@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { buildCompactHashlineDiffPreview, generateDiffString } from "../../src/replace-diff";
+import { genDiff } from "../../src/replace-diff";
 
-describe("generateDiffString", () => {
+describe("genDiff", () => {
 	it("adds hash hints for context and addition lines and pads deletion lines to align the '│' column", () => {
-		const result = generateDiffString("alpha\nbeta\ngamma", "alpha\nBETA\ngamma");
+		const result = genDiff("alpha\nbeta\ngamma", "alpha\nBETA\ngamma");
 		const diff = result.diff;
 		// Marker + (optional hash) + "│" + content. The marker is 1 char; the
 		// hash (when present) is 3 chars, so the "│" sits in column 4 (0-indexed)
@@ -34,9 +34,9 @@ describe("generateDiffString", () => {
 			"}",
 		].join("\n");
 
-		const { diff } = generateDiffString(before, after);
+		const { diff } = genDiff(before, after);
 		// eslint-disable-next-line no-console
-		console.log("\n--- generateDiffString output ---\n" + diff + "\n----------------------------------");
+		console.log("\n--- genDiff output ---\n" + diff + "\n----------------------------------");
 
 		// Every line should be: 1-char marker + 3-char hash-or-padding + '│' + content.
 		// The "│" therefore lives at index 4 on every line.
@@ -60,7 +60,7 @@ describe("generateDiffString", () => {
 		const before = "BEFORE\n" + lines.join("\n") + "\nAFTER";
 		const after = "BEFORE_CHANGED\n" + lines.join("\n") + "\nAFTER_CHANGED";
 
-		const { diff } = generateDiffString(before, after, 4);
+		const { diff } = genDiff(before, after, 4);
 		const diffLines = diff.split("\n");
 
 		// Should NOT contain all 1000 lines between the changes
@@ -87,24 +87,3 @@ describe("generateDiffString", () => {
 	});
 });
 
-describe("buildCompactHashlineDiffPreview", () => {
-	it("collapses long unchanged runs and counts add/remove lines", () => {
-		const diff = [
-			" 1 ctx-a",
-			" 2 ctx-b",
-			" 3 ctx-c",
-			" 4 ctx-d",
-			"+5 added",
-			"-6 removed",
-			" 7 tail-a",
-			" 8 tail-b",
-			" 9 tail-c",
-		].join("\n");
-
-		const preview = buildCompactHashlineDiffPreview(diff);
-
-		expect(preview.preview).toContain("... 2 more unchanged lines");
-		expect(preview.addedLines).toBe(1);
-		expect(preview.removedLines).toBe(1);
-	});
-});

@@ -1,20 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { throwIfAborted } from "../../src/runtime";
+import { abortIf } from "../../src/runtime";
 
-describe("throwIfAborted", () => {
+describe("abortIf", () => {
   it("does nothing when signal is undefined", () => {
-    expect(() => throwIfAborted(undefined)).not.toThrow();
+    expect(() => abortIf(undefined)).not.toThrow();
   });
 
   it("does nothing when signal is not aborted", () => {
     const controller = new AbortController();
-    expect(() => throwIfAborted(controller.signal)).not.toThrow();
+    expect(() => abortIf(controller.signal)).not.toThrow();
   });
 
   it("throws when signal is already aborted", () => {
     const controller = new AbortController();
     controller.abort();
-    expect(() => throwIfAborted(controller.signal)).toThrow(
+    expect(() => abortIf(controller.signal)).toThrow(
       "Operation aborted",
     );
   });

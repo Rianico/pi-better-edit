@@ -1,19 +1,19 @@
 import { describe, expect, it } from "vitest";
 import {
-	buildNoopResponse,
-	buildChangedResponse,
+	buildNoop,
+	buildChanged,
 	type NoopResponseInput,
 	type SuccessResponseInput,
 	type ReplaceMeta,
 } from "../../src/replace-response";
-import { computeLineHash } from "../../src/hashline";
+import { lineHash } from "../../src/hashline";
 
 const baseReplaceMeta: ReplaceMeta = {
 	editsAttempted: 1,
 	noopEditsCount: 0,
 };
 
-describe("buildNoopResponse", () => {
+describe("buildNoop", () => {
 	it("returns noop classification in text", () => {
 		const input: NoopResponseInput = {
 			path: "src/main.ts",
@@ -22,7 +22,7 @@ describe("buildNoopResponse", () => {
 			editMeta: baseReplaceMeta,
 			warnings: undefined,
 		};
-		const result = buildNoopResponse(input);
+		const result = buildNoop(input);
 		expect(result.content[0].text).toContain("No changes made");
 		expect(result.content[0].text).toContain("noop");
 		expect(result.details.classification).toBe("noop");
@@ -34,7 +34,7 @@ describe("buildNoopResponse", () => {
 			noopEdits: [
 				{
 					editIndex: 0,
-					loc: computeLineHash(1, "line1"),
+					loc: lineHash(1, "line1"),
 					currentContent: "line1",
 				},
 			],
@@ -42,7 +42,7 @@ describe("buildNoopResponse", () => {
 			editMeta: { ...baseReplaceMeta, noopEditsCount: 1 },
 			warnings: undefined,
 		};
-		const result = buildNoopResponse(input);
+		const result = buildNoop(input);
 		expect(result.content[0].text).toContain("Edit 0");
 		expect(result.content[0].text).toContain("identical to current content");
 	});
@@ -55,7 +55,7 @@ describe("buildNoopResponse", () => {
 			editMeta: baseReplaceMeta,
 			warnings: ["Test warning"],
 		};
-		const result = buildNoopResponse(input);
+		const result = buildNoop(input);
 		// Warnings are tracked in metrics for noop responses
 		expect(result.details.metrics.warnings).toBe(1);
 	});
@@ -68,14 +68,14 @@ describe("buildNoopResponse", () => {
 			editMeta: baseReplaceMeta,
 			warnings: undefined,
 		};
-		const result = buildNoopResponse(input);
+		const result = buildNoop(input);
 		expect(result.details.metrics).toBeDefined();
 		expect(result.details.metrics.classification).toBe("noop");
 		expect(result.details.metrics.edits_attempted).toBe(1);
 	});
 });
 
-describe("buildChangedResponse", () => {
+describe("buildChanged", () => {
 	it("returns nothing in text when no anchor context", () => {
 		// With contextLines=0 (default), no anchor block is shown
 		// Nothing is shown; LLM can call read for fresh anchors
@@ -91,7 +91,7 @@ describe("buildChangedResponse", () => {
 				lastChangedLine: 2,
 			},
 		};
-		const result = buildChangedResponse(input);
+		const result = buildChanged(input);
 		expect(result.content[0].text).toBe("");
 	});
 
@@ -108,7 +108,7 @@ describe("buildChangedResponse", () => {
 				lastChangedLine: 2,
 			},
 		};
-		const result = buildChangedResponse(input);
+		const result = buildChanged(input);
 		expect(result.details.diff).toContain("+");
 		expect(result.details.diff).toContain("modified");
 		// Text should not contain the diff directly
@@ -128,7 +128,7 @@ describe("buildChangedResponse", () => {
 				lastChangedLine: 2,
 			},
 		};
-		const result = buildChangedResponse(input);
+		const result = buildChanged(input);
 		expect(result.details.metrics.classification).toBe("applied");
 		expect(result.details.metrics.added_lines).toBeGreaterThanOrEqual(1);
 	});
@@ -150,7 +150,7 @@ describe("buildChangedResponse", () => {
 				lastChangedLine: 51,
 			},
 		};
-		const result = buildChangedResponse(input);
+		const result = buildChanged(input);
 		// With contextLines=0 (default), no anchor block is shown
 		expect(result.content[0].text).toBe("");
 	});
@@ -173,7 +173,7 @@ describe("buildChangedResponse", () => {
 				lastChangedLine: 25,
 			},
 		};
-		const result = buildChangedResponse(input);
+		const result = buildChanged(input);
 		// Should NOT contain full anchors block
 		expect(result.content[0].text).not.toContain("--- Anchors ---");
 		// With contextLines=0, nothing is shown in text

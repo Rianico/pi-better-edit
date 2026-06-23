@@ -1,47 +1,45 @@
 import * as Diff from "diff";
 import {
-  computeLineHashes,
-  ANCHOR_LENGTH,
+  lineHashes,
+  ANCHOR_LEN,
 } from "./hashline";
 
-
-export function detectLineEnding(content: string): "\r\n" | "\n" {
+export function detectEnding(content: string): "\r\n" | "\n" {
   const crlfIdx = content.indexOf("\r\n");
   const lfIdx = content.indexOf("\n");
   if (lfIdx === -1 || crlfIdx === -1) return "\n";
   return crlfIdx < lfIdx ? "\r\n" : "\n";
 }
 
-export function normalizeToLF(text: string): string {
+export function toLF(text: string): string {
   return text.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
 }
 
-export function restoreLineEndings(
+export function restoreEndings(
   text: string,
   ending: "\r\n" | "\n",
 ): string {
   return ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
 }
 
-export function stripBom(content: string): { bom: string; text: string } {
+export function stripBOM(content: string): { bom: string; text: string } {
   return content.startsWith("\uFEFF")
     ? { bom: "\uFEFF", text: content.slice(1) }
     : { bom: "", text: content };
 }
 
-
-function formatDiffPreviewLine(
+function fmtDiffLine(
   prefix: " " | "+" | "-",
   line: string,
   hash: string | undefined,
 ): string {
   if (hash === undefined) {
-    return `${prefix}${" ".repeat(ANCHOR_LENGTH)}│${line}`;
+    return `${prefix}${" ".repeat(ANCHOR_LEN)}│${line}`;
   }
   return `${prefix}${hash}│${line}`;
 }
 
-export function generateDiffString(
+export function genDiff(
   oldContent: string,
   newContent: string,
   contextLines = 2,
@@ -49,7 +47,7 @@ export function generateDiffString(
 ): { diff: string; firstChangedLine: number | undefined } {
   const parts = Diff.diffLines(oldContent, newContent);
   const output: string[] = [];
-  const effectiveNewHashes = newContentHashes ?? computeLineHashes(newContent);
+  const effectiveNewHashes = newContentHashes ?? lineHashes(newContent);
 
   let oldLineNum = 1;
   let newLineNum = 1;
@@ -66,11 +64,11 @@ export function generateDiffString(
       for (const line of raw) {
         if (part.added) {
           const hash = effectiveNewHashes[newLineNum - 1];
-          output.push(formatDiffPreviewLine("+", line, hash));
+          output.push(fmtDiffLine("+", line, hash));
           newLineNum++;
         } else {
           output.push(
-            formatDiffPreviewLine("-", line, undefined),
+            fmtDiffLine("-", line, undefined),
           );
           oldLineNum++;
         }
@@ -112,7 +110,7 @@ export function generateDiffString(
           continue;
         }
         const hash = effectiveNewHashes[newLineNum - 1];
-        output.push(formatDiffPreviewLine(" ", line, hash));
+        output.push(fmtDiffLine(" ", line, hash));
 
         oldLineNum++;
         newLineNum++;
@@ -125,110 +123,4 @@ export function generateDiffString(
   }
 
   return { diff: output.join("\n"), firstChangedLine };
-}
-
-export interface CompactHashlineDiffPreview {
-  preview: string;
-  addedLines: number;
-  removedLines: number;
-}
-
-type DiffPreviewKind = "context" | "addition" | "deletion";
-
-function classifyDiffPreviewLine(line: string): DiffPreviewKind | null {
-  if (line.startsWith("+")) return "addition";
-  if (line.startsWith("-")) return "deletion";
-  if (line.startsWith(" ")) return "context";
-  return null;
-}
-
-function summarizeOmitted(count: number, label: string): string {
-  return `... ${count} more ${label} line${count === 1 ? "" : "s"}`;
-}
-
-function collapseDiffPreviewRun(
-  lines: string[],
-  maxVisible: number,
-  label: string,
-): string[] {
-  if (lines.length <= maxVisible) {
-    return lines;
-  }
-
-  return [
-    ...lines.slice(0, maxVisible),
-    summarizeOmitted(lines.length - maxVisible, label),
-  ];
-}
-
-export function buildCompactHashlineDiffPreview(
-  diff: string,
-  options: {
-    maxUnchangedRun?: number;
-    maxAdditionRun?: number;
-    maxDeletionRun?: number;
-    maxOutputLines?: number;
-  } = {},
-): CompactHashlineDiffPreview {
-  const {
-    maxUnchangedRun = 2,
-    maxAdditionRun = 4,
-    maxDeletionRun = 4,
-    maxOutputLines = 12,
-  } = options;
-
-  if (!diff.trim()) {
-    return { preview: "", addedLines: 0, removedLines: 0 };
-  }
-
-  const lines = diff.split("\n").filter((line) => line.length > 0);
-  const previewLines: string[] = [];
-  let addedLines = 0;
-  let removedLines = 0;
-
-  for (let index = 0; index < lines.length; ) {
-    const kind = classifyDiffPreviewLine(lines[index]!);
-    let end = index + 1;
-    while (end < lines.length && classifyDiffPreviewLine(lines[end]!) === kind) {
-      end += 1;
-    }
-
-    const run = lines.slice(index, end);
-    switch (kind) {
-      case "addition":
-        addedLines += run.length;
-        previewLines.push(...collapseDiffPreviewRun(run, maxAdditionRun, "added"));
-        break;
-      case "deletion":
-        removedLines += run.length;
-        previewLines.push(...collapseDiffPreviewRun(run, maxDeletionRun, "removed"));
-        break;
-      case "context":
-        previewLines.push(...collapseDiffPreviewRun(run, maxUnchangedRun, "unchanged"));
-        break;
-      default:
-        previewLines.push(...run);
-        break;
-    }
-
-    index = end;
-  }
-
-  if (previewLines.length > maxOutputLines) {
-    const visibleLines = previewLines.slice(0, maxOutputLines);
-    visibleLines.push(
-      summarizeOmitted(previewLines.length - maxOutputLines, "preview"),
-    );
-    return {
-      preview: visibleLines.join("\n"),
-      addedLines,
-      removedLines,
-    };
-  }
-
-  return {
-    preview: previewLines.join("\n"),
-    addedLines,
-    removedLines,
-  };
 }

@@ -1,27 +1,26 @@
+import { abortIf } from "../runtime";
+import { HL_BARE_PREFIX_RE } from "./hash";
+import { parseHashRef, parseText, type Anchor } from "./parse";
 
-import { throwIfAborted } from "../runtime";
-import { HASHLINE_BARE_PREFIX_RE } from "./hash";
-import { parseHashRef, hashlineParseText, type Anchor } from "./parse";
-
-
-export type ResolvedAnchor = {
+export type RAnchor = {
 	line: number;
 	hash: string;
 	hashMatched: boolean;
 };
 
-export type HashlineEdit = { old_range: [Anchor, Anchor]; new_lines: string[] };
-export type ResolvedHashlineEdit = {
-	old_range: [ResolvedAnchor, ResolvedAnchor];
+export type HEdit = { old_range: [Anchor, Anchor]; new_lines: string[] };
+export type RHEdit = {
+	old_range: [RAnchor, RAnchor];
 	new_lines: string[];
 };
-interface HashMismatch {
+
+interface HMismatch {
 	ref: Anchor;
 	kind: "not_found" | "ambiguous";
 	candidates?: number[];
 }
 
-export interface BoundaryDuplicationWarning {
+export interface BDupWarn {
 	kind: "trailing" | "leading";
 	survivingLineContent: string;
 	survivingLineIndex: number;
@@ -30,23 +29,22 @@ export interface BoundaryDuplicationWarning {
 	editIndex: number;
 }
 
-export interface NoopEdit {
+export interface NEdit {
 	editIndex: number;
 	loc: string;
 	currentContent: string;
 }
 
-export type HashlineToolEdit = {
+export type HTEdit = {
 	old_range: [string, string];
 	new_lines: string[];
 };
 
-
-function resolveAnchor(
+function resAnchor(
 	ref: Anchor,
 	fileLines: string[],
 	fileHashes: string[],
-): ResolvedAnchor | HashMismatch {
+): RAnchor | HMismatch {
 	const hashMatches: number[] = [];
 	for (let i = 0; i < fileHashes.length; i++) {
 		if (fileHashes[i] === ref.hash) hashMatches.push(i + 1);
@@ -64,26 +62,24 @@ function resolveAnchor(
 	return { ref, kind: "ambiguous", candidates: hashMatches };
 }
 
-
-function assertFileStateAligned(
+function assertAligned(
 	fileLines: string[],
 	fileHashes: string[],
-	context: string,
+	ctx: string,
 ): void {
 	if (fileHashes.length !== fileLines.length) {
 		throw new Error(
-			`${context}: fileHashes.length (${fileHashes.length}) must match fileLines.length (${fileLines.length}).`,
+			`${ctx}: fileHashes.length (${fileHashes.length}) must match fileLines.length (${fileLines.length}).`,
 		);
 	}
 }
 
-
-export function formatMismatchError(
-	mismatches: HashMismatch[],
+export function fmtMismatch(
+	mismatches: HMismatch[],
 	fileLines: string[],
 	fileHashes: string[],
 	): string {
-	assertFileStateAligned(fileLines, fileHashes, "formatMismatchError");
+	assertAligned(fileLines, fileHashes, "fmtMismatch");
 
 	const out: string[] = [];
 	const notFound = mismatches.filter((m) => m.kind === "not_found");
@@ -92,13 +88,13 @@ export function formatMismatchError(
 	const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
 	if (notFound.length > 0) {
 	out.push(
-		`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}: ${refList}. Call read() to get fresh anchors, then copy the 3-character HASH from each line into your next replace call.`
+		`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}: ${refList}. Call read() to get fresh anchors, then copy the 3-char HASH from each line into your next replace call.`
 	);
 	}
 	if (ambiguous.length > 0) {
 		if (out.length > 0) out.push("");
 	out.push(
-		`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}. Call read() to get fresh anchors, then copy the 3-character HASH from each line into your next replace call.`
+		`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}. Call read() to get fresh anchors, then copy the 3-char HASH from each line into your next replace call.`
 	);
 		for (const m of ambiguous) {
 			const sample = (m.candidates ?? []).slice(0, 5);
@@ -118,19 +114,18 @@ export function formatMismatchError(
 		}
 	}
 
-
 	return out.join("\n");
 }
 
+const ITEM_KS = new Set(["old_range", "new_lines"]);
 
-const ITEM_KEYS = new Set(["old_range", "new_lines"]);
-function isStringArray(value: unknown): value is string[] {
+function isStrArr(value: unknown): value is string[] {
 	return (
 		Array.isArray(value) && value.every((item) => typeof item === "string")
 	);
 }
 
-function isStringPair(value: unknown): value is [string, string] {
+function isStrPair(value: unknown): value is [string, string] {
 	return (
 		Array.isArray(value) &&
 		value.length === 2 &&
@@ -138,15 +133,15 @@ function isStringPair(value: unknown): value is [string, string] {
 	);
 }
 
-function assertEditItem(edit: Record<string, unknown>, index: number): void {
-	const unknownKeys = Object.keys(edit).filter((key) => !ITEM_KEYS.has(key));
+function assertItem(edit: Record<string, unknown>, index: number): void {
+	const unknownKeys = Object.keys(edit).filter((key) => !ITEM_KS.has(key));
 	if (unknownKeys.length > 0) {
 		throw new Error(
 			`[E_BAD_SHAPE] Edit ${index} contains unknown or unsupported fields: ${unknownKeys.join(", ")}. Each edit takes only { old_range, new_lines }.`,
 		);
 	}
 
-	if ("old_range" in edit && !isStringPair(edit.old_range)) {
+	if ("old_range" in edit && !isStrPair(edit.old_range)) {
 		throw new Error(
 			`[E_BAD_SHAPE] Edit ${index} field "old_range" must be a pair of anchor strings [start, end].`,
 		);
@@ -154,10 +149,10 @@ function assertEditItem(edit: Record<string, unknown>, index: number): void {
 	if (!("new_lines" in edit)) {
 		throw new Error(`[E_BAD_SHAPE] Edit ${index} requires a "new_lines" field. Provide the replacement lines (use [] to delete).`);
 	}
-	if ("new_lines" in edit && !isStringArray(edit.new_lines)) {
+	if ("new_lines" in edit && !isStrArr(edit.new_lines)) {
 		throw new Error(`[E_BAD_SHAPE] Edit ${index} field "new_lines" must be a string array.`);
 	}
-	if (!isStringPair(edit.old_range)) {
+	if (!isStrPair(edit.old_range)) {
 		throw new Error(
 			`[E_BAD_OP] Edit ${index} requires an "old_range" pair of anchor strings [start, end].`,
 		);
@@ -165,26 +160,22 @@ function assertEditItem(edit: Record<string, unknown>, index: number): void {
 
 }
 
-export function resolveEditAnchors(edits: HashlineToolEdit[]): HashlineEdit[] {
-	const result: HashlineEdit[] = [];
+export function resEdits(edits: HTEdit[]): HEdit[] {
+	const result: HEdit[] = [];
 	for (const [index, edit] of edits.entries()) {
-		assertEditItem(edit as Record<string, unknown>, index);
+		assertItem(edit as Record<string, unknown>, index);
 
-		const replaceLines = hashlineParseText(edit.new_lines);
-		const normalizedLines =
-			replaceLines.length === 1 && replaceLines[0] === ""
-				? []
-				: replaceLines;
+		const replaceLines = parseText(edit.new_lines);
 		result.push({
 			old_range: [parseHashRef(edit.old_range[0]), parseHashRef(edit.old_range[1])],
-			new_lines: normalizedLines,
+			new_lines: replaceLines,
 		});
 	}
 	return result;
 }
 
-function maybeWarnSuspiciousUnicodeEscapePlaceholder(
-	edits: HashlineEdit[],
+function warnUnicodeEsc(
+	edits: HEdit[],
 	warnings: string[],
 ): void {
 	for (const edit of edits) {
@@ -196,18 +187,18 @@ function maybeWarnSuspiciousUnicodeEscapePlaceholder(
 	}
 }
 
-export function assertNoBareHashPrefixLines(
-	edits: HashlineEdit[],
+export function assertNoBarePrefix(
+	edits: HEdit[],
 	fileLines: string[],
 	fileHashes: string[],
 ): string[] {
-	assertFileStateAligned(fileLines, fileHashes, "assertNoBareHashPrefixLines");
+	assertAligned(fileLines, fileHashes, "assertNoBarePrefix");
 	const suspects: { line: string; hash: string; editIndex: number; lineIndex: number }[] = [];
 	for (let editIndex = 0; editIndex < edits.length; editIndex++) {
 		const edit = edits[editIndex]!;
 		for (let lineIndex = 0; lineIndex < edit.new_lines.length; lineIndex++) {
 			const line = edit.new_lines[lineIndex]!;
-			const match = line.match(HASHLINE_BARE_PREFIX_RE);
+			const match = line.match(HL_BARE_PREFIX_RE);
 			if (match) suspects.push({ line, hash: match[1]!, editIndex, lineIndex });
 		}
 	}
@@ -233,25 +224,24 @@ export function assertNoBareHashPrefixLines(
 	);
 }
 
-
-export function describeEdit(edit: ResolvedHashlineEdit): string {
+export function descEdit(edit: RHEdit): string {
 	return `replace ${edit.old_range[0].hash}-${edit.old_range[1].hash}`;
 }
 
-export function validateAnchorEdits(
-	edits: HashlineEdit[],
+export function valEdits(
+	edits: HEdit[],
 	fileLines: string[],
 	fileHashes: string[],
 	warnings: string[],
 	signal: AbortSignal | undefined,
-): { resolved: ResolvedHashlineEdit[]; mismatches: HashMismatch[]; boundaryWarnings: BoundaryDuplicationWarning[] } {
-	assertFileStateAligned(fileLines, fileHashes, "validateAnchorEdits");
-	const resolved: ResolvedHashlineEdit[] = [];
-	const mismatches: HashMismatch[] = [];
-	const boundaryWarnings: BoundaryDuplicationWarning[] = [];
+): { resolved: RHEdit[]; mismatches: HMismatch[]; boundaryWarnings: BDupWarn[] } {
+	assertAligned(fileLines, fileHashes, "valEdits");
+	const resolved: RHEdit[] = [];
+	const mismatches: HMismatch[] = [];
+	const boundaryWarnings: BDupWarn[] = [];
 
-	const tryResolve = (ref: Anchor): ResolvedAnchor | undefined => {
-		const result = resolveAnchor(ref, fileLines, fileHashes);
+	const tryResolve = (ref: Anchor): RAnchor | undefined => {
+		const result = resAnchor(ref, fileLines, fileHashes);
 		if ("kind" in result) {
 			mismatches.push(result);
 			return undefined;
@@ -259,9 +249,8 @@ export function validateAnchorEdits(
 		return result;
 	};
 
-
 	for (const edit of edits) {
-		throwIfAborted(signal);
+		abortIf(signal);
 		const startResolved = tryResolve(edit.old_range[0]);
 		const endResolved = tryResolve(edit.old_range[1]);
 		if (!startResolved || !endResolved) {
@@ -316,4 +305,4 @@ export function validateAnchorEdits(
 	return { resolved, mismatches, boundaryWarnings };
 }
 
-export { maybeWarnSuspiciousUnicodeEscapePlaceholder };
+export { warnUnicodeEsc };

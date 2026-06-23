@@ -1,26 +1,26 @@
-import { throwIfAborted } from "../runtime";
-import { computeLineHashes } from "./hash";
+import { abortIf } from "../runtime";
+import { lineHashes } from "./hash";
 import {
-	validateAnchorEdits,
-	assertNoBareHashPrefixLines,
-	maybeWarnSuspiciousUnicodeEscapePlaceholder,
-	formatMismatchError,
-	describeEdit,
-	type ResolvedHashlineEdit,
-	type NoopEdit,
-	type HashlineEdit,
-	type BoundaryDuplicationWarning,
+	valEdits,
+	assertNoBarePrefix,
+	warnUnicodeEsc,
+	fmtMismatch,
+	descEdit,
+	type RHEdit,
+	type NEdit,
+	type HEdit,
+	type BDupWarn,
 } from "./resolve";
-import { countVisibleLines } from "../utils";
-import { ANCHOR_CONTEXT_LINES, ANCHOR_MAX_OUTPUT_LINES } from "../constants";
+import { cntLines } from "../utils";
+import { CTX_LINES, MAX_OUT } from "../constants";
 
-type LineIndex = {
+type LIdx = {
 	fileLines: string[];
 	lineStarts: number[];
 	hasTerminalNewline: boolean;
 };
 
-export function buildLineIndex(content: string): LineIndex {
+export function buildIdx(content: string): LIdx {
 	const fileLines = content.split("\n");
 	const lineStarts: number[] = [];
 	let offset = 0;
@@ -40,8 +40,7 @@ export function buildLineIndex(content: string): LineIndex {
 	};
 }
 
-
-type ResolvedEditSpan = {
+type RESpan = {
 	kind: "replace";
 	index: number;
 	label: string;
@@ -50,7 +49,7 @@ type ResolvedEditSpan = {
 	replacement: string;
 };
 
-function assertDoesNotEmptyFile(originalContent: string, result: string): void {
+function assertNotEmpty(originalContent: string, result: string): void {
 	if (originalContent.length > 0 && result.length === 0) {
 		throw new Error(
 			"[E_WOULD_EMPTY] Cannot empty a non-empty file via edit."
@@ -58,8 +57,7 @@ function assertDoesNotEmptyFile(originalContent: string, result: string): void {
 	}
 }
 
-
-function throwEditConflict(
+function throwConflict(
 	left: { index: number; label: string },
 	right: { index: number; label: string },
 	reason: string,
@@ -69,14 +67,13 @@ function throwEditConflict(
 	);
 }
 
-
-function resolveEditToSpan(
-	edit: ResolvedHashlineEdit,
+function resToSpan(
+	edit: RHEdit,
 	index: number,
 	content: string,
-	lineIndex: LineIndex,
-	noopEdits: NoopEdit[],
-): ResolvedEditSpan | null {
+	lineIndex: LIdx,
+	noopEdits: NEdit[],
+): RESpan | null {
 	const { fileLines, lineStarts, hasTerminalNewline } = lineIndex;
 
 	const startLine = edit.old_range[0].line;
@@ -100,7 +97,7 @@ function resolveEditToSpan(
 		return {
 			kind: "replace",
 			index,
-			label: describeEdit(edit),
+			label: descEdit(edit),
 			start: lineStarts[startLine - 1]!,
 			end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
 			replacement: edit.new_lines.join("\n"),
@@ -111,7 +108,7 @@ function resolveEditToSpan(
 		return {
 			kind: "replace",
 			index,
-			label: describeEdit(edit),
+			label: descEdit(edit),
 			start: 0,
 			end: content.length,
 			replacement: "",
@@ -122,7 +119,7 @@ function resolveEditToSpan(
 		return {
 			kind: "replace",
 			index,
-			label: describeEdit(edit),
+			label: descEdit(edit),
 			start: lineStarts[startLine - 1]!,
 			end: lineStarts[endLine]!,
 			replacement: "",
@@ -132,14 +129,14 @@ function resolveEditToSpan(
 	return {
 		kind: "replace",
 		index,
-		label: describeEdit(edit),
+		label: descEdit(edit),
 		start: Math.max(0, lineStarts[startLine - 1]! - 1),
 		end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
 		replacement: "",
 	};
 }
 
-function assertNoConflictingSpans(spans: ResolvedEditSpan[]): void {
+function assertNoConflict(spans: RESpan[]): void {
 	for (let leftIndex = 0; leftIndex < spans.length; leftIndex++) {
 		const left = spans[leftIndex]!;
 		for (
@@ -150,7 +147,7 @@ function assertNoConflictingSpans(spans: ResolvedEditSpan[]): void {
 			const right = spans[rightIndex]!;
 
 			if (left.start < right.end && right.start < left.end) {
-				throwEditConflict(
+				throwConflict(
 					left,
 					right,
 					"overlap on the same original line range",
@@ -160,18 +157,18 @@ function assertNoConflictingSpans(spans: ResolvedEditSpan[]): void {
 	}
 }
 
-function resolveEditSpans(
-	edits: ResolvedHashlineEdit[],
+function resSpans(
+	edits: RHEdit[],
 	content: string,
-	lineIndex: LineIndex,
-	noopEdits: NoopEdit[],
+	lineIndex: LIdx,
+	noopEdits: NEdit[],
 	signal: AbortSignal | undefined,
-): ResolvedEditSpan[] {
+): RESpan[] {
 	const seenSpanKeys = new Set<string>();
-	const resolvedSpans: ResolvedEditSpan[] = [];
+	const resolvedSpans: RESpan[] = [];
 	for (const [index, edit] of edits.entries()) {
-		throwIfAborted(signal);
-		const span = resolveEditToSpan(
+	abortIf(signal);
+		const span = resToSpan(
 			edit,
 			index,
 			content,
@@ -191,7 +188,7 @@ function resolveEditSpans(
 		resolvedSpans.push(span);
 	}
 
-	assertNoConflictingSpans(resolvedSpans);
+	assertNoConflict(resolvedSpans);
 	return [...resolvedSpans].sort((left, right) => {
 		if (right.end !== left.end) {
 			return right.end - left.end;
@@ -200,24 +197,23 @@ function resolveEditSpans(
 	});
 }
 
-function assembleEditResult(
+function assemble(
 	content: string,
-	spans: ResolvedEditSpan[],
+	spans: RESpan[],
 	signal: AbortSignal | undefined,
 ): string {
 	let result = content;
 	for (const span of spans) {
-		throwIfAborted(signal);
+		abortIf(signal);
 		result =
 			result.slice(0, span.start) + span.replacement + result.slice(span.end);
 	}
 	return result;
 }
 
-
-export function applyHashlineEdits(
+export function applyEdits(
 	content: string,
-	edits: import("./resolve").HashlineEdit[],
+	edits: import("./resolve").HEdit[],
 	signal?: AbortSignal,
 	precomputedHashes?: string[],
 ): {
@@ -225,9 +221,9 @@ export function applyHashlineEdits(
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
 	warnings?: string[];
-	noopEdits?: NoopEdit[];
+	noopEdits?: NEdit[];
 } {
-	throwIfAborted(signal);
+	abortIf(signal);
 	if (!edits.length)
 		return {
 			content,
@@ -242,12 +238,12 @@ export function applyHashlineEdits(
 			: edit,
 	);
 
-	const lineIndex = buildLineIndex(content);
-	const fileHashes = precomputedHashes ?? computeLineHashes(content);
-	const noopEdits: NoopEdit[] = [];
+	const lineIndex = buildIdx(content);
+	const fileHashes = precomputedHashes ?? lineHashes(content);
+	const noopEdits: NEdit[] = [];
 	const warnings: string[] = [];
 
-	const { resolved, mismatches, boundaryWarnings } = validateAnchorEdits(
+	const { resolved, mismatches, boundaryWarnings } = valEdits(
 		edits,
 		lineIndex.fileLines,
 		fileHashes,
@@ -256,15 +252,15 @@ export function applyHashlineEdits(
 	);
 	if (mismatches.length) {
 		throw new Error(
-			formatMismatchError(mismatches, lineIndex.fileLines, fileHashes),
+			fmtMismatch(mismatches, lineIndex.fileLines, fileHashes),
 		);
 	}
 
-	const barePrefixWarnings = assertNoBareHashPrefixLines(edits, lineIndex.fileLines, fileHashes);
+	const barePrefixWarnings = assertNoBarePrefix(edits, lineIndex.fileLines, fileHashes);
 	warnings.push(...barePrefixWarnings);
-	maybeWarnSuspiciousUnicodeEscapePlaceholder(edits, warnings);
+	warnUnicodeEsc(edits, warnings);
 
-	const orderedSpans = resolveEditSpans(
+	const orderedSpans = resSpans(
 		resolved,
 		content,
 		lineIndex,
@@ -272,12 +268,12 @@ export function applyHashlineEdits(
 		signal,
 	);
 
-	const result = assembleEditResult(content, orderedSpans, signal);
-	assertDoesNotEmptyFile(content, result);
-	const changedRange = computeChangedLineRange(content, result);
+	const result = assemble(content, orderedSpans, signal);
+	assertNotEmpty(content, result);
+	const range = changedRange(content, result);
 
 	const resultLines = result.split("\n");
-	const resultHashes = computeLineHashes(result);
+	const resultHashes = lineHashes(result);
 	for (const bw of boundaryWarnings) {
 		let seen = 0;
 		let matchIndex = -1;
@@ -303,15 +299,14 @@ export function applyHashlineEdits(
 
 	return {
 		content: result,
-		firstChangedLine: changedRange?.firstChangedLine,
-		lastChangedLine: changedRange?.lastChangedLine,
+		firstChangedLine: range?.firstChangedLine,
+		lastChangedLine: range?.lastChangedLine,
 		...(warnings.length ? { warnings } : {}),
 		...(noopEdits.length ? { noopEdits } : {}),
 	};
 }
 
-
-export function computeAffectedLineRange(params: {
+export function affRange(params: {
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
 	resultLineCount: number;
@@ -322,8 +317,8 @@ export function computeAffectedLineRange(params: {
 		firstChangedLine,
 		lastChangedLine,
 		resultLineCount,
-		contextLines = ANCHOR_CONTEXT_LINES,
-		maxOutputLines = ANCHOR_MAX_OUTPUT_LINES,
+		contextLines = CTX_LINES,
+		maxOutputLines = MAX_OUT,
 	} = params;
 
 	if (firstChangedLine === undefined || lastChangedLine === undefined) {
@@ -352,13 +347,13 @@ export function computeAffectedLineRange(params: {
 	return { start, end };
 }
 
-export function formatHashlineRegion(
+export function fmtRegion(
 	hashes: string[],
 	lines: string[],
 ): string {
 	if (hashes.length !== lines.length) {
 		throw new Error(
-			`formatHashlineRegion: hashes.length (${hashes.length}) must match lines.length (${lines.length}).`,
+			`fmtRegion: hashes.length (${hashes.length}) must match lines.length (${lines.length}).`,
 		);
 	}
 	return lines
@@ -366,25 +361,23 @@ export function formatHashlineRegion(
 		.join("\n");
 }
 
-
-export function computeChangedLineRange(
+export function changedRange(
 	original: string,
 	result: string,
 ): { firstChangedLine: number; lastChangedLine: number } | null {
 	if (original === result) return null;
 
-
 	if (original.length === 0) {
 		return {
 			firstChangedLine: 1,
-			lastChangedLine: countVisibleLines(result),
+			lastChangedLine: cntLines(result),
 		};
 	}
 
 	if (result.startsWith(original) && original.endsWith("\n")) {
 		return {
-			firstChangedLine: countVisibleLines(original) + 1,
-			lastChangedLine: countVisibleLines(result),
+			firstChangedLine: cntLines(original) + 1,
+			lastChangedLine: cntLines(result),
 		};
 	}
 
@@ -394,7 +387,6 @@ export function computeChangedLineRange(
 		firstDiff++;
 	}
 	if (firstDiff === minLen && original.length === result.length) return null;
-
 
 	let lastOrig = original.length - 1;
 	let lastRes = result.length - 1;
@@ -407,7 +399,7 @@ export function computeChangedLineRange(
 		lastRes--;
 	}
 
-	function indexToLine(charIdx: number, text: string): number {
+	function idxToLine(charIdx: number, text: string): number {
 		let line = 1;
 		for (let i = 0; i < charIdx && i < text.length; i++) {
 			if (text[i] === "\n") line++;
@@ -415,10 +407,10 @@ export function computeChangedLineRange(
 		return line;
 	}
 
-	const firstChangedLine = indexToLine(firstDiff + 1, result);
+	const firstChangedLine = idxToLine(firstDiff + 1, result);
 	let lastChangedLine: number;
 	if (lastRes < firstDiff) {
-		lastChangedLine = result.length === 0 ? 1 : countVisibleLines(result);
+		lastChangedLine = result.length === 0 ? 1 : cntLines(result);
 	} else if (
 		firstDiff === 0 &&
 		original.length > 0 &&
@@ -426,7 +418,7 @@ export function computeChangedLineRange(
 	) {
 		lastChangedLine = firstChangedLine;
 	} else {
-		lastChangedLine = indexToLine(lastRes + 1, result);
+		lastChangedLine = idxToLine(lastRes + 1, result);
 	}
 
 	return { firstChangedLine, lastChangedLine };

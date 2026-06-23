@@ -25,7 +25,7 @@ vi.mock("fs/promises", () => ({
 	writeFile: writeFileMock,
 }));
 
-describe("writeFileAtomically permissions", () => {
+describe("writeAtomic permissions", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		openMock.mockResolvedValue({
@@ -38,9 +38,9 @@ describe("writeFileAtomically permissions", () => {
 	});
 
 	it("creates the temporary file securely, writes content, then restores the target mode", async () => {
-		const { writeFileAtomically } = await import("../../src/fs-write");
+		const { writeAtomic } = await import("../../src/fs-write");
 
-		await writeFileAtomically("/tmp/secret.txt", "secret\n");
+		await writeAtomic("/tmp/secret.txt", "secret\n");
 
 		expect(openMock).toHaveBeenCalledWith(
 			expect.stringMatching(/\/tmp\/.tmp-/),

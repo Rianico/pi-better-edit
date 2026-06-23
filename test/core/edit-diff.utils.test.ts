@@ -1,103 +1,103 @@
 import { describe, expect, it } from "vitest";
-import { detectLineEnding, normalizeToLF, restoreLineEndings, stripBom } from "../../src/replace-diff";
+import { detectEnding, toLF, restoreEndings, stripBOM } from "../../src/replace-diff";
 
-// ─── detectLineEnding ───────────────────────────────────────────────────
+// ─── detectEnding ───────────────────────────────────────────────────
 
-describe("detectLineEnding", () => {
+describe("detectEnding", () => {
   it("detects CRLF when \\r\\n appears first", () => {
-    expect(detectLineEnding("hello\r\nworld")).toBe("\r\n");
+    expect(detectEnding("hello\r\nworld")).toBe("\r\n");
   });
 
   it("defaults to LF when only \\n is present", () => {
-    expect(detectLineEnding("hello\nworld")).toBe("\n");
+    expect(detectEnding("hello\nworld")).toBe("\n");
   });
 
   it("detects CRLF when both exist but CRLF comes first", () => {
-    expect(detectLineEnding("line1\r\nline2\nline3")).toBe("\r\n");
+    expect(detectEnding("line1\r\nline2\nline3")).toBe("\r\n");
   });
 
   it("defaults to LF when no line endings exist", () => {
-    expect(detectLineEnding("hello world")).toBe("\n");
+    expect(detectEnding("hello world")).toBe("\n");
   });
 
   it("defaults to LF for empty string", () => {
-    expect(detectLineEnding("")).toBe("\n");
+    expect(detectEnding("")).toBe("\n");
   });
 });
 
-// ─── normalizeToLF ──────────────────────────────────────────────────────
+// ─── toLF ──────────────────────────────────────────────────────
 
-describe("normalizeToLF", () => {
+describe("toLF", () => {
   it("converts \\r\\n to \\n", () => {
-    expect(normalizeToLF("hello\r\nworld")).toBe("hello\nworld");
+    expect(toLF("hello\r\nworld")).toBe("hello\nworld");
   });
 
   it("converts bare \\r to \\n", () => {
-    expect(normalizeToLF("hello\rworld")).toBe("hello\nworld");
+    expect(toLF("hello\rworld")).toBe("hello\nworld");
   });
 
   it("leaves already-LF text unchanged", () => {
-    expect(normalizeToLF("hello\nworld")).toBe("hello\nworld");
+    expect(toLF("hello\nworld")).toBe("hello\nworld");
   });
 
   it("handles mixed line endings", () => {
-    expect(normalizeToLF("a\r\nb\rc\nd")).toBe("a\nb\nc\nd");
+    expect(toLF("a\r\nb\rc\nd")).toBe("a\nb\nc\nd");
   });
 
   it("returns empty string for empty input", () => {
-    expect(normalizeToLF("")).toBe("");
+    expect(toLF("")).toBe("");
   });
 });
 
-// ─── stripBom ───────────────────────────────────────────────────────────
+// ─── stripBOM ───────────────────────────────────────────────────────────
 
-describe("stripBom", () => {
+describe("stripBOM", () => {
   it("strips \\uFEFF prefix", () => {
-    const result = stripBom("\uFEFFhello");
+    const result = stripBOM("\uFEFFhello");
     expect(result).toEqual({ bom: "\uFEFF", text: "hello" });
   });
 
   it("returns empty bom when no BOM present", () => {
-    const result = stripBom("hello");
+    const result = stripBOM("hello");
     expect(result).toEqual({ bom: "", text: "hello" });
   });
 
   it("handles empty string with BOM only", () => {
-    const result = stripBom("\uFEFF");
+    const result = stripBOM("\uFEFF");
     expect(result).toEqual({ bom: "\uFEFF", text: "" });
   });
 
   it("handles plain empty string", () => {
-    const result = stripBom("");
+    const result = stripBOM("");
     expect(result).toEqual({ bom: "", text: "" });
   });
 });
 
-// ─── restoreLineEndings ────────────────────────────────────────────────
+// ─── restoreEndings ────────────────────────────────────────────────
 
-describe("restoreLineEndings", () => {
+describe("restoreEndings", () => {
   it("converts LF back to CRLF when original used CRLF", () => {
-    expect(restoreLineEndings("hello\nworld", "\r\n")).toBe("hello\r\nworld");
+    expect(restoreEndings("hello\nworld", "\r\n")).toBe("hello\r\nworld");
   });
 
   it("leaves LF unchanged when original used LF", () => {
-    expect(restoreLineEndings("hello\nworld", "\n")).toBe("hello\nworld");
+    expect(restoreEndings("hello\nworld", "\n")).toBe("hello\nworld");
   });
 
   it("handles empty string with CRLF target", () => {
-    expect(restoreLineEndings("", "\r\n")).toBe("");
+    expect(restoreEndings("", "\r\n")).toBe("");
   });
 
   it("handles empty string with LF target", () => {
-    expect(restoreLineEndings("", "\n")).toBe("");
+    expect(restoreEndings("", "\n")).toBe("");
   });
 
   it("handles multiple lines with CRLF target", () => {
-    expect(restoreLineEndings("a\nb\nc", "\r\n")).toBe("a\r\nb\r\nc");
+    expect(restoreEndings("a\nb\nc", "\r\n")).toBe("a\r\nb\r\nc");
   });
 
   it("preserves content without newlines", () => {
-    expect(restoreLineEndings("hello", "\r\n")).toBe("hello");
-    expect(restoreLineEndings("hello", "\n")).toBe("hello");
+    expect(restoreEndings("hello", "\r\n")).toBe("hello");
+    expect(restoreEndings("hello", "\n")).toBe("hello");
   });
 });

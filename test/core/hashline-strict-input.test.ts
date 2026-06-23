@@ -1,21 +1,21 @@
 import { describe, expect, it } from "vitest";
 import {
-	applyHashlineEdits,
-	computeLineHashes,
-	resolveEditAnchors,
+	applyEdits,
+	lineHashes,
+	resEdits,
 	type HashlineToolEdit,
 } from "../../src/hashline";
 
 describe("strict edit input (no autocorrection)", () => {
 	it("rejects bare HASH| prefix in content with E_BARE_HASH_PREFIX", () => {
 		const file = "foo\nbar";
-		const hashes = computeLineHashes(file);
+		const hashes = lineHashes(file);
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hashes[0]!, hashes[0]!], new_lines: [`${hashes[0]!}│foo`] },
 		];
 		let caught: Error | undefined;
 		try {
-			applyHashlineEdits(file, resolveEditAnchors(toolEdits));
+			applyEdits(file, resEdits(toolEdits));
 		} catch (e) {
 			caught = e as Error;
 		}
@@ -26,57 +26,57 @@ describe("strict edit input (no autocorrection)", () => {
 
 	it("rejects string new_lines before patch-prefix validation", () => {
 		const file = "foo\nbar";
-		const hashes = computeLineHashes(file);
+		const hashes = lineHashes(file);
 		const toolEdits: HashlineToolEdit[] = [
 			{
 				old_range: [hashes[0]!, hashes[0]!], new_lines: `+${hashes[0]!}:foo`,
 			} as unknown as HashlineToolEdit,
 		];
-		expect(() => resolveEditAnchors(toolEdits)).toThrow(
+		expect(() => resEdits(toolEdits)).toThrow(
 			/new_lines" must be a string array/i,
 		);
 	});
 
 	it("rejects diff deletion rows in array form", () => {
 		const file = "foo\nbar";
-		const hashes = computeLineHashes(file);
+		const hashes = lineHashes(file);
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hashes[0]!, hashes[0]!], new_lines: ["-1    foo"] },
 		];
-		expect(() => resolveEditAnchors(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
+		expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 
 	it("accepts plain literal content unchanged", () => {
 		const file = "foo\nbar";
-		const hashes = computeLineHashes(file);
+		const hashes = lineHashes(file);
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hashes[0]!, hashes[0]!], new_lines: ["bar"] },
 		];
-		const resolved = resolveEditAnchors(toolEdits);
+		const resolved = resEdits(toolEdits);
 		expect(resolved).toHaveLength(1);
 		expect(resolved[0]!.new_lines).toEqual(["bar"]);
 	});
 
 	it("preserves '#' comment lines that do not match the strict prefix", () => {
 		const file = "foo\nbar";
-		const hashes = computeLineHashes(file);
+		const hashes = lineHashes(file);
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hashes[0]!, hashes[0]!], new_lines: ["# keep me"] },
 		];
-		const resolved = resolveEditAnchors(toolEdits);
+		const resolved = resEdits(toolEdits);
 		expect(resolved[0]!.new_lines).toEqual(["# keep me"]);
 	});
 });
 
 describe("partial hash prefixes copied into content (issue #24)", () => {
 	const file = "alpha\nbeta\ngamma\ndelta";
-	const hashes = computeLineHashes(file);
+	const hashes = lineHashes(file);
 	const anchor = hashes[0]!;
 	const betaHash = hashes[1]!;
 	const gammaHash = hashes[2]!;
 
 	function applyTool(toolEdits: HashlineToolEdit[]) {
-		return applyHashlineEdits(file, resolveEditAnchors(toolEdits));
+		return applyEdits(file, resEdits(toolEdits));
 	}
 
 	it("rejects with E_BARE_HASH_PREFIX when a bare prefix matches an existing file line hash", () => {

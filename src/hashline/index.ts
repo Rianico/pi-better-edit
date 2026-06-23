@@ -1,44 +1,40 @@
-
-
 export {
-	HASH_LENGTH,
-	HASH_PREFIX,
-	ANCHOR_LENGTH,
-	HASH_FORMAT,
-	HASH_CHARS_CLASS,
-	HASHLINE_PREFIX_RE,
-	HASHLINE_PREFIX_PLUS_RE,
+	HASH_LEN,
+	ANCHOR_LEN,
+	HASH_CLASS,
+	HL_PREFIX_RE,
+	HL_PREFIX_PLUS_RE,
 	DIFF_MINUS_RE,
-	HASHLINE_BARE_PREFIX_RE,
-	computeLineHashes,
-	computeLineHash,
-	ensureHasherReady,
+	HL_BARE_PREFIX_RE,
+	lineHashes,
+	lineHash,
+	initHasher,
 } from "./hash";
 
 export {
 	parseHashRef,
-	hashlineParseText,
+	parseText,
 	type Anchor,
 } from "./parse";
 
 export {
-	type ResolvedAnchor,
-	type HashlineEdit,
-	type ResolvedHashlineEdit,
-	type HashlineToolEdit,
-	type NoopEdit,
-	type BoundaryDuplicationWarning,
-	describeEdit,
-	resolveEditAnchors,
-	validateAnchorEdits,
-	assertNoBareHashPrefixLines,
-	formatMismatchError,
+	type RAnchor,
+	type HEdit,
+	type RHEdit,
+	type HTEdit,
+	type NEdit,
+	type BDupWarn,
+	descEdit,
+	resEdits,
+	valEdits,
+	assertNoBarePrefix,
+	fmtMismatch,
 } from "./resolve";
 
 export {
-	buildLineIndex,
-	applyHashlineEdits,
-	computeAffectedLineRange,
-	formatHashlineRegion,
-	computeChangedLineRange,
+	buildIdx,
+	applyEdits,
+	affRange,
+	fmtRegion,
+	changedRange,
 } from "./apply";

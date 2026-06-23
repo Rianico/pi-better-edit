@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyHashlineEdits,
-  computeLineHash,
-  computeLineHashes,
-  resolveEditAnchors,
+  applyEdits,
+  lineHash,
+  lineHashes,
+  resEdits,
   type Anchor,
   type HashlineEdit,
   type HashlineToolEdit,
@@ -11,13 +11,13 @@ import {
 import { makeTag } from "../support/fixtures";
 
 
-describe("applyHashlineEdits — error handling", () => {
+describe("applyEdits — error handling", () => {
 	it("throws on hash mismatch", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HashlineEdit[] = [
 			{ old_range: [{ hash: "#XXPM" }, { hash: "#XXPM" }], new_lines: ["BBB"] },
 		];
-		expect(() => applyHashlineEdits(content, edits)).toThrow(/E_STALE_ANCHOR/);
+		expect(() => applyEdits(content, edits)).toThrow(/E_STALE_ANCHOR/);
 	});
 
 	it("throws when the hash matches no line in the file", () => {
@@ -25,7 +25,7 @@ describe("applyHashlineEdits — error handling", () => {
 		const edits: HashlineEdit[] = [
 			{ old_range: [{ hash: "ZZPM" }, { hash: "ZZPM" }], new_lines: ["x"] },
 		];
-		expect(() => applyHashlineEdits(content, edits)).toThrow(
+		expect(() => applyEdits(content, edits)).toThrow(
 			/2 stale anchors: "ZZPM", "ZZPM"/,
 		);
 	});
@@ -38,7 +38,7 @@ describe("applyHashlineEdits — error handling", () => {
 				new_lines: ["x"],
 			},
 		];
-		expect(() => applyHashlineEdits(content, edits)).toThrow(
+		expect(() => applyEdits(content, edits)).toThrow(
 			/must be <= end line/,
 		);
 	});
@@ -49,7 +49,7 @@ describe("applyHashlineEdits — error handling", () => {
 			{ old_range: [{ hash: "#XXPM" }, { hash: "#XXPM" }], new_lines: ["A"] },
 			{ old_range: [{ hash: "#YYWV" }, { hash: "#YYWV" }], new_lines: ["C"] },
 		];
-		expect(() => applyHashlineEdits(content, edits)).toThrow(
+		expect(() => applyEdits(content, edits)).toThrow(
 			/4 stale anchors/,
 		);
 	});
@@ -60,14 +60,14 @@ describe("applyHashlineEdits — error handling", () => {
 			{ old_range: [{ hash: "#XXPM" }, { hash: "#XXPM" }], new_lines: ["A"] },
 			{ old_range: [{ hash: "#YYWV" }, { hash: "#YYWV" }], new_lines: ["C"] },
 		];
-		expect(() => applyHashlineEdits(content, edits)).toThrow(
+		expect(() => applyEdits(content, edits)).toThrow(
 			/4 stale anchors: "#XXPM", "#XXPM", "#YYWV", "#YYWV"/,
 		);
 	});
 
 	it("mismatch message contains actionable guidance", () => {
 		expect(() =>
-			applyHashlineEdits("aaa", [
+			applyEdits("aaa", [
 				{
 					old_range: [{ hash: "ZZPM" }, { hash: "ZZPM" }], new_lines: ["bbb"],
 				} as any,
@@ -78,7 +78,7 @@ describe("applyHashlineEdits — error handling", () => {
 	it("rejects overlapping replace ranges in one request", () => {
 		const content = "aaa\nbbb\nccc\nddd";
 		expect(() =>
-			applyHashlineEdits(content, [
+			applyEdits(content, [
 				{
 					old_range: [makeTag(content, 2), makeTag(content, 3)],
 				new_lines: ["X"],
@@ -91,17 +91,17 @@ describe("applyHashlineEdits — error handling", () => {
 	});
 });
 
-describe("applyHashlineEdits — heuristics", () => {
+describe("applyEdits — heuristics", () => {
 	it("warns on trailing } that duplicates the next surviving line", () => {
 		const content = "if (ok) {\n  run();\n}\nafter();";
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		const edits: HashlineEdit[] = [
 			{
 				old_range: [makeTag(content, 1), makeTag(content, 2)],
 				new_lines: ["if (ok) {", "  runSafe();", "}"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		// Duplicate } is preserved (strict semantics: no autocorrection), but a warning fires.
 		expect(result.content).toBe("if (ok) {\n  runSafe();\n}\n}\nafter();");
 		expect(result.warnings).toEqual([
@@ -111,14 +111,14 @@ describe("applyHashlineEdits — heuristics", () => {
 
 	it("warns on trailing } that duplicates the next line", () => {
 		const content = "function foo() {\n  const x = 1;\n  return x;\n}";
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		const edits: HashlineEdit[] = [
 			{
 				old_range: [makeTag(content, 2), makeTag(content, 3)],
 				new_lines: ["  const y = 2;", "  return y;", "}"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n}");
 		expect(result.warnings).toBeDefined();
 		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
@@ -126,14 +126,14 @@ describe("applyHashlineEdits — heuristics", () => {
 
 	it("warns on trailing }); that duplicates the next line", () => {
 		const content = "app.get(\"/api\", (req, res) => {\n  const data = fetchData();\n  res.json(data);\n});";
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		const edits: HashlineEdit[] = [
 			{
 				old_range: [makeTag(content, 2), makeTag(content, 3)],
 				new_lines: ["  const result = processData();", "  res.json(result);", "});"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("app.get(\"/api\", (req, res) => {\n  const result = processData();\n  res.json(result);\n});\n});");
 		expect(result.warnings).toBeDefined();
 		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
@@ -141,14 +141,14 @@ describe("applyHashlineEdits — heuristics", () => {
 
 	it("warns on trailing } else { that duplicates the next line", () => {
 		const content = "if (condition) {\n  doSomething();\n} else {\n  doOther();\n}";
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		const edits: HashlineEdit[] = [
 			{
 				old_range: [makeTag(content, 1), makeTag(content, 2)],
 				new_lines: ["if (condition) {", "  doNewThing();", "} else {"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("if (condition) {\n  doNewThing();\n} else {\n} else {\n  doOther();\n}");
 		expect(result.warnings).toBeDefined();
 		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
@@ -156,14 +156,14 @@ describe("applyHashlineEdits — heuristics", () => {
 
 	it("warns on trailing duplicate even when mid-replacement also has matching lines", () => {
 		const content = "a\n}\nb";
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		const edits: HashlineEdit[] = [
 			{
 				old_range: [makeTag(content, 1), makeTag(content, 1)],
 				new_lines: ["x", "}", "y", "}"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		// The trailing } duplicates the next line (}), so a warning fires. Content is preserved.
 		expect(result.content).toBe("x\n}\ny\n}\n}\nb");
 		expect(result.warnings).toBeDefined();
@@ -178,14 +178,14 @@ describe("applyHashlineEdits — heuristics", () => {
 				new_lines: ["before();", "if (ok) {", "  runSafe();"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		// The runtime does not auto-correct the duplicated boundary line; the
 		// replacement is applied verbatim. It does surface a non-blocking warning
 		// so the model can notice a likely Variant-A boundary duplication.
 		expect(result.content).toBe(
 			"before();\nbefore();\nif (ok) {\n  runSafe();\n}\nafter();",
 		);
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		expect(result.warnings).toEqual([
 			`Potential boundary duplication: the first line of the replacement ("before();") matches the preceding surviving line. Surviving line hash: ${hashes[0]!}`,
 		]);
@@ -198,7 +198,7 @@ describe("applyHashlineEdits — heuristics", () => {
 				old_range: [makeTag(content, 3), makeTag(content, 3)], new_lines: ["\\t\\treplaced"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("root\n\tchild\n\\t\\treplaced\nend");
 		expect(result.warnings).toBeUndefined();
 		expect(edits[0]).toEqual({
@@ -213,7 +213,7 @@ describe("applyHashlineEdits — heuristics", () => {
 				old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["\\uDDDD"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\n\\uDDDD\nccc");
 		expect(result.warnings?.[0]).toContain("Detected literal \\uDDDD");
 	});
@@ -225,7 +225,7 @@ describe("applyHashlineEdits — heuristics", () => {
 				old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["x1", "x2", "x3"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		// A 1-line range accepts N replacement lines; no autocorrection.
 		expect(result.content).toBe("aaa\nx1\nx2\nx3\nccc\nddd");
 		expect(result.warnings?.some((w) => w.includes("Single-anchor replace"))).toBeFalsy();
@@ -238,7 +238,7 @@ describe("applyHashlineEdits — heuristics", () => {
 				old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["BBB"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nccc");
 		expect(result.warnings).toBeUndefined();
 	});
@@ -251,7 +251,7 @@ describe("applyHashlineEdits — heuristics", () => {
 				new_lines: ["x1", "x2", "x3"],
 			},
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nx1\nx2\nx3\nddd");
 		expect(
 			result.warnings?.some((w) => w.includes("Single-anchor replace")) ??
@@ -260,43 +260,43 @@ describe("applyHashlineEdits — heuristics", () => {
 	});
 });
 
-describe("integration: resolveEditAnchors → applyHashlineEdits", () => {
+describe("integration: resEdits → applyEdits", () => {
 	it("full pipeline: tool-schema edit → resolve → apply", () => {
 		const content = "aaa\nbbb\nccc";
-		const hash = computeLineHashes(content)[1]!;
+		const hash = lineHashes(content)[1]!;
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hash, hash], new_lines: ["BBB"] },
 		];
-		const resolved = resolveEditAnchors(toolEdits);
-		const result = applyHashlineEdits(content, resolved);
+		const resolved = resEdits(toolEdits);
+		const result = applyEdits(content, resolved);
 		expect(result.content).toBe("aaa\nBBB\nccc");
 	});
 
 	it("full pipeline: string new_lines are rejected", () => {
 		const content = "aaa\nbbb\nccc";
-		const hash = computeLineHashes(content)[1]!;
+		const hash = lineHashes(content)[1]!;
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hash, hash], new_lines: "BBB" } as unknown as HashlineToolEdit,
 		];
-		expect(() => resolveEditAnchors(toolEdits)).toThrow(
+		expect(() => resEdits(toolEdits)).toThrow(
 			/new_lines" must be a string array/i,
 		);
 	});
 
 	it("full pipeline: null new_lines are rejected instead of deleting", () => {
 		const content = "aaa\nbbb\nccc";
-		const hash = computeLineHashes(content)[1]!;
+		const hash = lineHashes(content)[1]!;
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hash, hash], new_lines: null } as unknown as HashlineToolEdit,
 		];
-		expect(() => resolveEditAnchors(toolEdits)).toThrow(
+		expect(() => resEdits(toolEdits)).toThrow(
 			/new_lines" must be a string array/i,
 		);
 	});
 
 	it("full pipeline: hashline-prefixed array new_lines are rejected (no autocorrection)", () => {
 		const content = "aaa\nbbb\nccc";
-		const hash = computeLineHashes(content)[1]!;
+		const hash = lineHashes(content)[1]!;
 		// In the new format, the line number is gone from the wire protocol,
 		// so a "2#HHHH:" prefix inside `new_lines` would never be produced by
 		// read output — it can only come from a confused model. The
@@ -305,12 +305,12 @@ describe("integration: resolveEditAnchors → applyHashlineEdits", () => {
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hash, hash], new_lines: [`+${hash}│BBB`] },
 		];
-		expect(() => resolveEditAnchors(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
+		expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 
 	it("full pipeline: copied diff-preview hunks are rejected (no autocorrection)", () => {
 		const content = "aaa\nbbb\nccc";
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		const start = hashes[0]!;
 		const end = hashes[2]!;
 		const replacement = [
@@ -322,7 +322,7 @@ describe("integration: resolveEditAnchors → applyHashlineEdits", () => {
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [start, end], new_lines: replacement },
 		];
-		expect(() => resolveEditAnchors(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
+		expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 
 	it("full pipeline: tool-level new_lines:[\"\"] is normalized to a delete (no extra blank line)", () => {
@@ -332,12 +332,12 @@ describe("integration: resolveEditAnchors → applyHashlineEdits", () => {
 		// runs. Otherwise the original trailing newline of the last replaced
 		// line is left behind as an extra blank line.
 		const content = "aaa\nbbb\nccc\n";
-		const hash = computeLineHashes(content)[1]!;
+		const hash = lineHashes(content)[1]!;
 		const toolEdits: HashlineToolEdit[] = [
 			{ old_range: [hash, hash], new_lines: [""] },
 		];
-		const resolved = resolveEditAnchors(toolEdits);
-		const result = applyHashlineEdits(content, resolved);
+		const resolved = resEdits(toolEdits);
+		const result = applyEdits(content, resolved);
 		expect(result.content).toBe("aaa\nccc\n");
 	});
 });

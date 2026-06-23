@@ -1,8 +1,8 @@
 import { describe, it, expect, vi, beforeEach } from "vitest";
 import register from "../../index";
-import { formatHashlineRegion, computeLineHashes } from "../../src/hashline";
-import { formatHashlineReadPreview } from "../../src/read";
-import { computeLineHash } from "../../src/hashline";
+import { fmtRegion, lineHashes } from "../../src/hashline";
+import { fmtReadPreview } from "../../src/read";
+import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
 
 vi.mock("../../src/file-kind", () => ({
@@ -12,10 +12,10 @@ vi.mock("../../src/file-kind", () => ({
 
 import * as fileKindMod from "../../src/file-kind";
 
-describe("formatHashlineReadPreview", () => {
+describe("fmtReadPreview", () => {
 	it("refuses to emit a truncated hashline for an oversized first line", () => {
 		const longLine = "x".repeat(70_000);
-		const result = formatHashlineReadPreview(longLine, { offset: 1 });
+		const result = fmtReadPreview(longLine, { offset: 1 });
 
 		expect(result.text).toContain("Hashline output requires full lines");
 		expect(result.truncation?.truncated).toBe(true);
@@ -24,7 +24,7 @@ describe("formatHashlineReadPreview", () => {
 	});
 
 	it("formats ordinary lines as HASH|content (no line number)", () => {
-		const result = formatHashlineReadPreview("alpha\nbeta", { offset: 1 });
+		const result = fmtReadPreview("alpha\nbeta", { offset: 1 });
 		// No line number in the wire format; the hash is the anchor.
 		expect(result.text).not.toMatch(/^\d/m);
 		expect(result.text).toContain("│alpha");
@@ -36,8 +36,8 @@ describe("formatHashlineReadPreview", () => {
 			{ length: 10 },
 			(_, index) => `line-${index + 1}`,
 		).join("\n");
-		const result = formatHashlineReadPreview(text, { offset: 8 });
-		const hashes = computeLineHashes(text);
+		const result = fmtReadPreview(text, { offset: 8 });
+		const hashes = lineHashes(text);
 
 		expect(result.text.split("\n").slice(0, 3)).toEqual([
 			`${hashes[7]}│line-8`,
@@ -47,15 +47,15 @@ describe("formatHashlineReadPreview", () => {
 	});
 
 	it("returns an advisory for empty files instead of a synthetic empty-line anchor", () => {
-		const result = formatHashlineReadPreview("", { offset: 1 });
+		const result = fmtReadPreview("", { offset: 1 });
 		expect(result.text).toContain("File is empty");
 		expect(result.text).toContain("Use edit to insert content");
 		expect(result.text).not.toMatch(/^\d/m);
 	});
 
 	it("hides the terminal newline sentinel from preview output", () => {
-		const result = formatHashlineReadPreview("alpha\nbeta\n", { offset: 1 });
-		const hashes = computeLineHashes("alpha\nbeta\n");
+		const result = fmtReadPreview("alpha\nbeta\n", { offset: 1 });
+		const hashes = lineHashes("alpha\nbeta\n");
 		expect(result.text).toContain(`${hashes[0]}│alpha`);
 		expect(result.text).toContain(`${hashes[1]}│beta`);
 		expect(result.text).not.toMatch(/^\d#/m);
@@ -63,7 +63,7 @@ describe("formatHashlineReadPreview", () => {
 	});
 
 	it("keeps continuation hints for partial previews", () => {
-		const result = formatHashlineReadPreview("alpha\nbeta", {
+		const result = fmtReadPreview("alpha\nbeta", {
 			offset: 1,
 			limit: 1,
 		});
@@ -72,7 +72,7 @@ describe("formatHashlineReadPreview", () => {
 	});
 
 	it("reports when offset is beyond end of content", () => {
-		const result = formatHashlineReadPreview("alpha\nbeta", { offset: 10 });
+		const result = fmtReadPreview("alpha\nbeta", { offset: 10 });
 
 		expect(result.text).toContain("Offset 10 is beyond end of file");
 		expect(result.text).toContain("2 lines total");
@@ -80,26 +80,26 @@ describe("formatHashlineReadPreview", () => {
 
 	it("rejects fractional offsets", () => {
 		expect(() =>
-			formatHashlineReadPreview("alpha\nbeta", { offset: 1.5 }),
+			fmtReadPreview("alpha\nbeta", { offset: 1.5 }),
 		).toThrow(/offset.*positive integer/i);
 	});
 
 	it("rejects non-positive limits", () => {
 		expect(() =>
-			formatHashlineReadPreview("alpha\nbeta", { limit: 0 }),
+			fmtReadPreview("alpha\nbeta", { limit: 0 }),
 		).toThrow(/limit.*positive integer/i);
 	});
 });
 
-describe("formatHashlineRegion", () => {
+describe("fmtRegion", () => {
 	it("formats lines as HASH|content rows", () => {
 		// 10-line file so we can request a window starting at line 5.
 		const allLines = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`);
 		const content = allLines.join("\n");
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		const visibleLines = allLines.slice(4, 7);
 		const visibleHashes = hashes.slice(4, 7);
-		const result = formatHashlineRegion(visibleHashes, visibleLines);
+		const result = fmtRegion(visibleHashes, visibleLines);
 
 		expect(result).toBe(
 			`${visibleHashes[0]}│line-5\n` +
@@ -111,10 +111,10 @@ describe("formatHashlineRegion", () => {
 	it("does not pad line numbers (the format drops them)", () => {
 		const allLines = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`);
 		const content = allLines.join("\n");
-		const hashes = computeLineHashes(content);
+		const hashes = lineHashes(content);
 		const visibleLines = allLines.slice(7, 10);
 		const visibleHashes = hashes.slice(7, 10);
-		const result = formatHashlineRegion(visibleHashes, visibleLines);
+		const result = fmtRegion(visibleHashes, visibleLines);
 
 		expect(result).toBe(
 			`${visibleHashes[0]}│line-8\n` +
@@ -124,12 +124,12 @@ describe("formatHashlineRegion", () => {
 	});
 
 	it("handles a single line", () => {
-		const result = formatHashlineRegion(["h1h1"], ["hello"]);
+		const result = fmtRegion(["h1h1"], ["hello"]);
 		expect(result).toBe(`h1h1│hello`);
 	});
 
 	it("handles empty array", () => {
-		const result = formatHashlineRegion([], []);
+		const result = fmtRegion([], []);
 		expect(result).toBe("");
 	});
 });

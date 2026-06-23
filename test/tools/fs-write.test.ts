@@ -10,14 +10,14 @@ import {
 import { describe, expect, it } from "vitest";
 import { join } from "path";
 import { withTempFile } from "../support/fixtures";
-import { writeFileAtomically } from "../../src/fs-write";
+import { writeAtomic } from "../../src/fs-write";
 
-describe("writeFileAtomically", () => {
+describe("writeAtomic", () => {
 	it("creates new files with owner-only permissions", async () => {
 		await withTempFile("seed.txt", "seed\n", async ({ cwd }) => {
 			const path = join(cwd, "created.txt");
 
-			await writeFileAtomically(path, "secret\n");
+			await writeAtomic(path, "secret\n");
 
 			const fileStats = await stat(path);
 			expect(fileStats.mode & 0o777).toBe(0o600);
@@ -28,7 +28,7 @@ describe("writeFileAtomically", () => {
 		await withTempFile("script.sh", "echo before\n", async ({ path }) => {
 			await chmod(path, 0o755);
 
-			await writeFileAtomically(path, "echo after\n");
+			await writeAtomic(path, "echo after\n");
 
 			const fileStats = await stat(path);
 			expect(fileStats.mode & 0o777).toBe(0o755);
@@ -40,7 +40,7 @@ describe("writeFileAtomically", () => {
 			await chmod(path, 0o644);
 			const previousUmask = process.umask(0o077);
 			try {
-				await writeFileAtomically(path, "after\n");
+				await writeAtomic(path, "after\n");
 			} finally {
 				process.umask(previousUmask);
 			}
@@ -58,7 +58,7 @@ describe("writeFileAtomically", () => {
 				const linkPath = `${cwd}/linked.txt`;
 				await symlink("target.txt", linkPath);
 
-				await writeFileAtomically(linkPath, "after\n");
+				await writeAtomic(linkPath, "after\n");
 
 				expect(await readFile(targetPath, "utf-8")).toBe("after\n");
 				expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
@@ -76,7 +76,7 @@ describe("writeFileAtomically", () => {
 			await symlink("missing.txt", intermediateLinkPath);
 			await symlink("level-2.txt", topLinkPath);
 
-			await writeFileAtomically(topLinkPath, "after\n");
+			await writeAtomic(topLinkPath, "after\n");
 
 			expect((await lstat(topLinkPath)).isSymbolicLink()).toBe(true);
 			expect(await readlink(topLinkPath)).toBe("level-2.txt");
@@ -95,7 +95,7 @@ describe("writeFileAtomically", () => {
 				await link(primaryPath, siblingPath);
 				const originalInode = (await stat(primaryPath)).ino;
 
-				await writeFileAtomically(primaryPath, "after\n");
+				await writeAtomic(primaryPath, "after\n");
 
 				expect(await readFile(primaryPath, "utf-8")).toBe("after\n");
 				expect(await readFile(siblingPath, "utf-8")).toBe("after\n");

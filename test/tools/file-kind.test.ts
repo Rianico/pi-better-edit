@@ -12,7 +12,7 @@ import {
 import { join } from "path";
 import register from "../../index";
 import { classifyFileKind, loadFileKindAndText } from "../../src/file-kind";
-import { computeLineHash } from "../../src/hashline";
+import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 async function createTempRoot(): Promise<string> {
@@ -416,7 +416,7 @@ describe("file kind guards in tools", () => {
 						path: "sample.c",
 						edits: [
 							{
-								old_range: [`${computeLineHash(2, "int")}`, `${computeLineHash(2, "int")}`], new_lines: ["long"],
+								old_range: [`${lineHash(2, "int")}`, `${lineHash(2, "int")}`], new_lines: ["long"],
 							},
 						],
 					},
@@ -448,7 +448,7 @@ describe("file kind guards in tools", () => {
 							path: "sample.bin",
 							edits: [
 								{
-									old_range: [`${computeLineHash(1, "int")}`, `${computeLineHash(1, "int")}`], new_lines: ["long"],
+									old_range: [`${lineHash(1, "int")}`, `${lineHash(1, "int")}`], new_lines: ["long"],
 								},
 							],
 						},
@@ -477,7 +477,7 @@ describe("file kind guards in tools", () => {
 							path: "sample.bin",
 							edits: [
 								{
-									old_range: [`${computeLineHash(1, "a")}`, `${computeLineHash(1, "a")}`], new_lines: ["A"],
+									old_range: [`${lineHash(1, "a")}`, `${lineHash(1, "a")}`], new_lines: ["A"],
 								},
 							],
 						},

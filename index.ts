@@ -1,37 +1,37 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFile } from "fs/promises";
 import { join, isAbsolute } from "path";
-import { computeLineHashes, ensureHasherReady, formatHashlineRegion } from "./src/hashline";
-import { registerReplaceTool } from "./src/replace";
-import { registerReadTool } from "./src/read";
-import { normalizeToLF } from "./src/replace-diff";
-import { getVisibleLines } from "./src/utils";
-import { AUTO_READ_MAX_LINES } from "./src/constants";
+import { lineHashes, initHasher, fmtRegion } from "./src/hashline";
+import { regReplace } from "./src/replace";
+import { regRead } from "./src/read";
+import { toLF } from "./src/replace-diff";
+import { visLines } from "./src/utils";
+import { AUTO_READ_MAX } from "./src/constants";
 
 export default function (pi: ExtensionAPI): void {
-  registerReadTool(pi);
-  registerReplaceTool(pi);
+  regRead(pi);
+  regReplace(pi);
 
   pi.on("session_start", async (_event, ctx) => {
     const active = pi.getActiveTools();
     pi.setActiveTools(active.filter((t) => t !== "edit"));
-    await ensureHasherReady();
+    await initHasher();
   });
 
   const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
-  let autoReadEnabled = autoReadValue === "1" || autoReadValue === "true";
+  let autoRead = autoReadValue === "1" || autoReadValue === "true";
 
   pi.registerCommand("toggle-auto-read", {
     description: "Toggle automatic hashline anchors after write operations",
     handler: async (_args, ctx) => {
-      autoReadEnabled = !autoReadEnabled;
-      const state = autoReadEnabled ? "enabled" : "disabled";
+      autoRead = !autoRead;
+      const state = autoRead ? "enabled" : "disabled";
       ctx.ui.notify(`Auto-read after write: ${state}`, "info");
     },
   });
 
   pi.on("tool_result", async (event, ctx) => {
-    if (!autoReadEnabled) return;
+    if (!autoRead) return;
     if (event.toolName !== "write" || event.isError) return;
 
     const filePath = (event.input as Record<string, unknown>)?.path;
@@ -41,20 +41,20 @@ export default function (pi: ExtensionAPI): void {
       const absolutePath = isAbsolute(filePath) ? filePath : join(ctx.cwd, filePath);
       const content = await readFile(absolutePath, "utf-8");
 
-      const normalized = normalizeToLF(content);
-      const visibleLines = getVisibleLines(normalized);
+      const normalized = toLF(content);
+      const visibleLines = visLines(normalized);
 
       if (visibleLines.length === 0) return;
 
-      const truncated = visibleLines.length > AUTO_READ_MAX_LINES;
-      const displayLines = truncated ? visibleLines.slice(0, AUTO_READ_MAX_LINES) : visibleLines;
+      const truncated = visibleLines.length > AUTO_READ_MAX;
+      const displayLines = truncated ? visibleLines.slice(0, AUTO_READ_MAX) : visibleLines;
 
-      const hashes = computeLineHashes(normalized);
+      const hashes = lineHashes(normalized);
       const selectedHashes = hashes.slice(0, displayLines.length);
-      const hashlineOutput = formatHashlineRegion(selectedHashes, displayLines);
+      const hashlineOutput = fmtRegion(selectedHashes, displayLines);
 
       const paginationHint = truncated
-        ? `\n\n[Showing lines 1-${AUTO_READ_MAX_LINES} of ${visibleLines.length}. Use offset=${AUTO_READ_MAX_LINES + 1} to continue.]`
+        ? `\n\n[Showing lines 1-${AUTO_READ_MAX} of ${visibleLines.length}. Use offset=${AUTO_READ_MAX + 1} to continue.]`
         : "";
 
       if (hashlineOutput) {

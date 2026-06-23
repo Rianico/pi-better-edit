@@ -1,7 +1,7 @@
 import { symlink } from "fs/promises";
 import { readFile } from "fs/promises";
 import { describe, expect, it, vi, beforeEach } from "vitest";
-import { computeLineHash } from "../../src/hashline";
+import { lineHash } from "../../src/hashline";
 import { withTempFile } from "../support/fixtures";
 
 vi.mock("@earendil-works/pi-coding-agent", async (importOriginal) => {
@@ -18,12 +18,12 @@ vi.mock("../../src/read", async (importOriginal) => {
   const original = await importOriginal<typeof import("../../src/read")>();
   return {
     ...original,
-    formatHashlineReadPreview: (text: string) => ({ text }),
+    fmtReadPreview: (text: string) => ({ text }),
   };
 });
 
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { registerReplaceTool } from "../../src/replace";
+import { regReplace } from "../../src/replace";
 
 function makeFakeRegistry() {
   const tools = new Map<string, any>();
@@ -33,7 +33,7 @@ function makeFakeRegistry() {
     },
     on() {},
   } as any;
-  registerReplaceTool(pi);
+  regReplace(pi);
   const tool = tools.get("replace");
   if (!tool) throw new Error("Tool not registered: edit");
   return { tool };
@@ -55,7 +55,7 @@ describe("edit tool file mutation queue", () => {
           path: "race.ts",
           edits: [
             {
-              old_range: [`${computeLineHash(1, "alpha")}`, `${computeLineHash(1, "alpha")}`], new_lines: ["ALPHA"],
+              old_range: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
             },
           ],
         },
@@ -69,7 +69,7 @@ describe("edit tool file mutation queue", () => {
           path: "race.ts",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "beta")}`, `${computeLineHash(2, "beta")}`], new_lines: ["BETA"],
+              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },
@@ -101,7 +101,7 @@ describe("edit tool file mutation queue", () => {
           path: "race.ts",
           edits: [
             {
-              old_range: [`${computeLineHash(1, "alpha")}`, `${computeLineHash(1, "alpha")}`], new_lines: ["ALPHA"],
+              old_range: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
             },
           ],
         },
@@ -115,7 +115,7 @@ describe("edit tool file mutation queue", () => {
           path: "linked-race.ts",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "beta")}`, `${computeLineHash(2, "beta")}`], new_lines: ["BETA"],
+              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },
@@ -147,7 +147,7 @@ describe("edit tool file mutation queue", () => {
           path: "race.ts",
           edits: [
             {
-              old_range: [`${computeLineHash(1, "alpha")}`, `${computeLineHash(1, "alpha")}`], new_lines: ["ALPHA"],
+              old_range: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
             },
           ],
         },
@@ -161,7 +161,7 @@ describe("edit tool file mutation queue", () => {
           path: "aliasdir/race.ts",
           edits: [
             {
-              old_range: [`${computeLineHash(2, "beta")}`, `${computeLineHash(2, "beta")}`], new_lines: ["BETA"],
+              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },

@@ -1,10 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyHashlineEdits,
-  computeAffectedLineRange,
-  computeLineHashes,
-  formatHashlineRegion,
-  resolveEditAnchors,
+  applyEdits,
+  affRange,
+  lineHashes,
+  fmtRegion,
+  resEdits,
   type HashlineToolEdit,
   type HashlineEdit,
 } from "../../src/hashline";
@@ -23,21 +23,21 @@ describe("stale-position compound edits", () => {
 			{ old_range: [{ hash: line5Hash }, { hash: line5Hash }], new_lines: ["NEW_LINE_5"] },
 		];
 
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 		expect(result.content.split("\n")[4]).toBe("NEW_LINE_5"); // line 5 in final doc
 
 		// Attempting to use the OLD hash (for the original line 5) on the
 		// result should fail because the line at that hash no longer exists.
 		expect(() => {
-			applyHashlineEdits(result.content, [
+			applyEdits(result.content, [
 				{ old_range: [{ hash: line5Hash }, { hash: line5Hash }], new_lines: ["ANOTHER"] },
 			]);
 		}).toThrow(/stale anchor/);
 
 		// The correct anchor uses the fresh hash for "NEW_LINE_5" in the new
 		// file.
-		const freshHash = computeLineHashes(result.content)[4]!;
-		const result2 = applyHashlineEdits(result.content, [
+		const freshHash = lineHashes(result.content)[4]!;
+		const result2 = applyEdits(result.content, [
 			{ old_range: [{ hash: freshHash }, { hash: freshHash }], new_lines: ["UPDATED_LINE_5"] },
 		]);
 		expect(result2.content.split("\n")[4]).toBe("UPDATED_LINE_5");
@@ -58,10 +58,10 @@ describe("stale-position compound edits", () => {
 		];
 
 		// Resolve through the tool-schema → HashlineEdit pipeline
-		const resolved: HashlineEdit[] = resolveEditAnchors(toolEdits);
+		const resolved: HashlineEdit[] = resEdits(toolEdits);
 
 		// Apply all edits at once
-		const result = applyHashlineEdits(content, resolved);
+		const result = applyEdits(content, resolved);
 
 		// ── Verify final content ──
 		const expectedLines = [
@@ -85,8 +85,8 @@ describe("stale-position compound edits", () => {
 		// ── Verify line count ──
 		expect(result.content.split("\n").length).toBe(10);
 
-		// ── Verify computeAffectedLineRange returns null with default contextLines (0) ──
-		const anchorRange = computeAffectedLineRange({
+		// ── Verify affRange returns null with default contextLines (0) ──
+		const anchorRange = affRange({
 			firstChangedLine: result.firstChangedLine,
 			lastChangedLine: result.lastChangedLine,
 			resultLineCount: expectedLines.length,
@@ -100,7 +100,7 @@ describe("stale-position compound edits", () => {
 		const edits: HashlineEdit[] = [
 			{ old_range: [makeTag(content, 3), makeTag(content, 4)], new_lines: ["C_D"] },
 		];
-		const result = applyHashlineEdits(content, edits);
+		const result = applyEdits(content, edits);
 
 		// Final doc: a, b, C_D, e  (4 lines)
 		expect(result.content).toBe("a\nb\nC_D\ne");
