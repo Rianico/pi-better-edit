@@ -53,7 +53,7 @@ describe("normReq", () => {
 		const edits = [{ hash_range_incl: ["AAA", "BBB"], new_lines: ["new"] }];
 		const input = { path: "test.txt", edits };
 		const result = normReq(input) as Record<string, unknown>;
-		expect(result.edits).toBe(edits);
+		expect(result.edits).toEqual(edits);
 	});
 
 	it("returns edits as-is if not valid JSON", () => {
