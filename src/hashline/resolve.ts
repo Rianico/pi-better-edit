@@ -37,10 +37,8 @@ export interface NoopEdit {
 }
 
 export type HashlineToolEdit = {
-	old_range?: [string, string];
-	new_lines?: string[];
-	oldText?: string;
-	newText?: string;
+	old_range: [string, string];
+	new_lines: string[];
 };
 
 
@@ -162,13 +160,13 @@ export function resolveEditAnchors(edits: HashlineToolEdit[]): HashlineEdit[] {
 	for (const [index, edit] of edits.entries()) {
 		assertEditItem(edit as Record<string, unknown>, index);
 
-		const replaceLines = hashlineParseText(edit.new_lines ?? null);
+		const replaceLines = hashlineParseText(edit.new_lines);
 		const normalizedLines =
 			replaceLines.length === 1 && replaceLines[0] === ""
 				? []
 				: replaceLines;
 		result.push({
-			old_range: [parseHashRef(edit.old_range![0]), parseHashRef(edit.old_range![1])],
+			old_range: [parseHashRef(edit.old_range[0]), parseHashRef(edit.old_range[1])],
 			new_lines: normalizedLines,
 		});
 	}

@@ -63,8 +63,8 @@ const hasheditOldRangeSchema = Type.Array(
 
 const hashlineEditItemSchema = Type.Object(
 	{
-		old_range: Type.Optional(hasheditOldRangeSchema),
-		new_lines: Type.Optional(hashlineEditNewLinesSchema),
+		old_range: hasheditOldRangeSchema,
+		new_lines: hashlineEditNewLinesSchema,
 	},
 	{ additionalProperties: false },
 );

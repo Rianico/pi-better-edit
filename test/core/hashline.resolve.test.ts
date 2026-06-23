@@ -31,10 +31,8 @@ describe("resolveEditAnchors", () => {
 	});
 
 	it("throws on replace with no old_range", () => {
-		const edits: HashlineToolEdit[] = [{ new_lines: ["new"] }];
-		expect(() => resolveEditAnchors(edits)).toThrow(
-			/requires an "old_range" pair/i,
-		);
+		const edits = [{ new_lines: ["new"] }] as any;
+		expect(() => resolveEditAnchors(edits)).toThrow(/requires an "old_range" pair/i);
 	});
 
 	it("throws on malformed old_range", () => {
