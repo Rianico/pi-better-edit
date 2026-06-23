@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import register from "../../index";
 import { computeLineHash } from "../../src/hashline";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
-function getText(result: { content: Array<{ text?: string }> }): string {
-  return result.content[0]?.text ?? "";
-}
 
 describe("snapshotId surface (details-only after W2)", () => {
   it("read writes snapshotId to details but not to text", async () => {

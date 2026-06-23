@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-	applyHashlineEdits,
-	computeAffectedLineRange,
-	computeLineHashes,
-	formatHashlineRegion,
-	resolveEditAnchors,
-	type HashlineToolEdit,
-	type HashlineEdit,
+  applyHashlineEdits,
+  computeAffectedLineRange,
+  computeLineHashes,
+  formatHashlineRegion,
+  resolveEditAnchors,
+  type HashlineToolEdit,
+  type HashlineEdit,
 } from "../../src/hashline";
+import { makeTag } from "../support/fixtures";
 
-function makeTag(content: string, line: number) {
-	return { hash: computeLineHashes(content)[line - 1]! };
-}
 
 describe("stale-position compound edits", () => {
 	it("rejects stale anchors after a replace", () => {

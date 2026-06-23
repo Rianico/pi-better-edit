@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import register from "../../index";
 import { computeLineHash } from "../../src/hashline";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
-function getText(result: { content: Array<{ text?: string }> }): string {
-  return result.content[0]?.text ?? "";
-}
 
 describe("edit tool text shape (token budget)", () => {
   it("changed mode keeps only anchors in LLM-visible text and line counts in details", async () => {

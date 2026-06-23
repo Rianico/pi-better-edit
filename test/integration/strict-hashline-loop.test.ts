@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
-import register from "../../index";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 describe("strict hashline tool loop", () => {
   it("supports read -> fresh edit -> stale rejection -> retry with fresh anchor", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const firstText = firstRead.content[0].text as string;
@@ -67,12 +61,7 @@ describe("strict hashline tool loop", () => {
 describe("CRLF line ending preservation", () => {
   it("preserves CRLF line endings after edit", async () => {
     await withTempFile("crlf.ts", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       // Read and get anchor for beta
       const readResult = await readTool.execute("r1", { path: "crlf.ts" }, undefined, undefined, ctx);
@@ -101,12 +90,7 @@ describe("CRLF line ending preservation", () => {
 
   it("preserves LF line endings after edit (no CRLF introduced)", async () => {
     await withTempFile("lf.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const readResult = await readTool.execute("r1", { path: "lf.ts" }, undefined, undefined, ctx);
       const betaRef = readResult.content[0].text

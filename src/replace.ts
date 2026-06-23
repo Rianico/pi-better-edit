@@ -132,7 +132,7 @@ export function assertReplaceRequest(
 
 }
 async function executeEditPipeline(
-	request: unknown,
+	params: ReplaceRequestParams,
 	cwd: string,
 	accessMode: number,
 	signal?: AbortSignal,
@@ -150,10 +150,7 @@ async function executeEditPipeline(
 	lastChangedLine?: number;
 	originalHashes?: string[];
 }> {
-	const normalized = normalizeReplaceRequest(request);
-	assertReplaceRequest(normalized);
 
-	const params = normalized;
 	const path = params.path;
 	const absolutePath = resolveToCwd(path, cwd);
 	const toolEdits = Array.isArray(params.edits)
@@ -207,8 +204,10 @@ export async function computeReplacePreview(
 	cwd: string,
 ): Promise<ReplacePreview> {
 	try {
+		const normalized = normalizeReplaceRequest(request);
+		assertReplaceRequest(normalized);
 		const { path, originalNormalized, result } = await executeEditPipeline(
-			request,
+			normalized,
 			cwd,
 			constants.R_OK,
 		);

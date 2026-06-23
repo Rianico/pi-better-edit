@@ -1,5 +1,8 @@
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
+import { computeLineHashes } from "../../src/hashline";
+
+import register from "../../index";
 
 async function getWritableTempRoot(): Promise<string> {
   const fallback = join(process.cwd(), ".tmp");
@@ -39,4 +42,28 @@ export function makeFakePiRegistry() {
       return tool;
     },
   };
+}
+
+export function setupIntegrationTest(cwd: string) {
+  const { pi, getTool } = makeFakePiRegistry();
+  register(pi);
+  const ctx = { cwd, ui: { notify() {} } } as any;
+  return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };
+}
+
+export function getText(result: { content: Array<{ text?: string }> }): string {
+  return result.content[0]?.text ?? "";
+}
+
+export function extractHash(line: string): string {
+  return line.split("│")[0]!
+}
+
+/**
+ * Build a hash-only anchor for line `line` in the given `content`. Uses the
+ * same `computeLineHashes` path the runtime uses, so the hash is exactly
+ * what validation will compare against.
+ */
+export function makeTag(content: string, line: number): { hash: string } {
+  return { hash: computeLineHashes(content)[line - 1]! };
 }

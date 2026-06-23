@@ -1,19 +1,19 @@
 import { execFile } from "child_process";
 import { describe, expect, it } from "vitest";
 import {
-	access,
-	appendFile,
-	mkdtemp,
-	mkdir,
-	readFile,
-	rm,
-	writeFile,
+  access,
+  appendFile,
+  mkdtemp,
+  mkdir,
+  readFile,
+  rm,
+  writeFile,
 } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { classifyFileKind, loadFileKindAndText } from "../../src/file-kind";
 import { computeLineHash } from "../../src/hashline";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 async function createTempRoot(): Promise<string> {
 	const root = join(process.cwd(), ".tmp");
@@ -50,9 +50,6 @@ async function withTempDirectory(
 	}
 }
 
-function getText(result: { content: Array<{ text?: string }> }): string {
-	return result.content[0]?.text ?? "";
-}
 
 describe("classifyFileKind", () => {
 	it("classifies directories explicitly", async () => {

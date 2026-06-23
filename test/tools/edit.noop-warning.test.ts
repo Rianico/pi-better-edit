@@ -2,11 +2,8 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import register from "../../index";
 import { computeLineHash } from "../../src/hashline";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
-function getText(result: { content: Array<{ text?: string }> }): string {
-  return result.content[0]?.text ?? "";
-}
 
 describe("edit tool noop + warnings", () => {
   it("returns classification noop instead of throwing on identical content", async () => {

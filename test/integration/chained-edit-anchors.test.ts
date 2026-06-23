@@ -1,16 +1,10 @@
 import { describe, expect, it } from "vitest";
-import register from "../../index";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 describe("chained edit anchors", () => {
   it("returns updated anchors in edit result for a single-line replace", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const betaRef = firstRead.content[0].text
@@ -54,12 +48,7 @@ describe("chained edit anchors", () => {
     // Replace 15 lines with 15 new lines: span=15, +4 context = 19 > 12 budget.
     const fifteenLines = Array.from({ length: 15 }, (_, i) => `line ${i + 1}`).join("\n");
     await withTempFile("big.ts", fifteenLines, async ({ cwd }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const firstRead = await readTool.execute("r1", { path: "big.ts" }, undefined, undefined, ctx);
       const line1Ref = firstRead.content[0].text
@@ -91,12 +80,7 @@ describe("chained edit anchors", () => {
   it("omits anchors when single-line replace expands beyond budget", async () => {
     // Replace 1 line with 11 new lines: span=11, +4 context = 15 > 12 budget.
     await withTempFile("expand.ts", "before\ntarget\nafter\n", async ({ cwd }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const firstRead = await readTool.execute("r1", { path: "expand.ts" }, undefined, undefined, ctx);
       const targetRef = firstRead.content[0].text
@@ -120,12 +104,7 @@ describe("chained edit anchors", () => {
 
   it("unchanged line anchors from original read remain valid after chained edits", async () => {
     await withTempFile("stale.ts", "alpha\nbeta\n", async ({ cwd }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const firstRead = await readTool.execute("r1", { path: "stale.ts" }, undefined, undefined, ctx);
       const betaRef = firstRead.content[0].text

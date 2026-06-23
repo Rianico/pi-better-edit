@@ -65,16 +65,26 @@ function resolveAnchor(
 }
 
 
+function assertFileStateAligned(
+	fileLines: string[],
+	fileHashes: string[],
+	context: string,
+): void {
+	if (fileHashes.length !== fileLines.length) {
+		throw new Error(
+			`${context}: fileHashes.length (${fileHashes.length}) must match fileLines.length (${fileLines.length}).`,
+		);
+	}
+}
+
+
 export function formatMismatchError(
 	mismatches: HashMismatch[],
 	fileLines: string[],
 	fileHashes: string[],
-): string {
-	if (fileHashes.length !== fileLines.length) {
-		throw new Error(
-			`formatMismatchError: fileHashes.length (${fileHashes.length}) must match fileLines.length (${fileLines.length}).`,
-		);
-	}
+	): string {
+	assertFileStateAligned(fileLines, fileHashes, "formatMismatchError");
+
 	const out: string[] = [];
 	const notFound = mismatches.filter((m) => m.kind === "not_found");
 	const ambiguous = mismatches.filter((m) => m.kind === "ambiguous");
@@ -191,11 +201,7 @@ export function assertNoBareHashPrefixLines(
 	fileLines: string[],
 	fileHashes: string[],
 ): string[] {
-	if (fileHashes.length !== fileLines.length) {
-		throw new Error(
-			`assertNoBareHashPrefixLines: fileHashes.length (${fileHashes.length}) must match fileLines.length (${fileLines.length}).`,
-		);
-	}
+	assertFileStateAligned(fileLines, fileHashes, "assertNoBareHashPrefixLines");
 	const suspects: { line: string; hash: string; editIndex: number; lineIndex: number }[] = [];
 	for (let editIndex = 0; editIndex < edits.length; editIndex++) {
 		const edit = edits[editIndex]!;
@@ -239,11 +245,7 @@ export function validateAnchorEdits(
 	warnings: string[],
 	signal: AbortSignal | undefined,
 ): { resolved: ResolvedHashlineEdit[]; mismatches: HashMismatch[]; boundaryWarnings: BoundaryDuplicationWarning[] } {
-	if (fileHashes.length !== fileLines.length) {
-		throw new Error(
-			`validateAnchorEdits: fileHashes.length (${fileHashes.length}) must match fileLines.length (${fileLines.length}).`,
-		);
-	}
+	assertFileStateAligned(fileLines, fileHashes, "validateAnchorEdits");
 	const resolved: ResolvedHashlineEdit[] = [];
 	const mismatches: HashMismatch[] = [];
 	const boundaryWarnings: BoundaryDuplicationWarning[] = [];

@@ -1,17 +1,15 @@
 import { describe, expect, it } from "vitest";
 import {
-	applyHashlineEdits,
-	computeLineHash,
-	computeLineHashes,
-	resolveEditAnchors,
-	type Anchor,
-	type HashlineEdit,
-	type HashlineToolEdit,
+  applyHashlineEdits,
+  computeLineHash,
+  computeLineHashes,
+  resolveEditAnchors,
+  type Anchor,
+  type HashlineEdit,
+  type HashlineToolEdit,
 } from "../../src/hashline";
+import { makeTag } from "../support/fixtures";
 
-function makeTag(content: string, lineNum: number): Anchor {
-	return { hash: computeLineHashes(content)[lineNum - 1]! };
-}
 
 describe("applyHashlineEdits — error handling", () => {
 	it("throws on hash mismatch", () => {

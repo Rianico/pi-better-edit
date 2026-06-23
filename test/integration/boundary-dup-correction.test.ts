@@ -1,26 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
-import register from "../../index";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
-function getText(result: { content: Array<{ text?: string }> }): string {
-  return result.content[0]?.text ?? "";
-}
-
-function extractHash(line: string): string {
-  return line.split("│")[0]!;
-}
 
 describe("boundary duplication warning → self-correction via replace", () => {
   it("trailing }: warning fires, LLM uses surviving hash to remove duplicate", async () => {
     const file = "function foo() {\n  const x = 1;\n  return x;\n}\n";
     await withTempFile("sample.ts", file, async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       // Step 1: Read the file to get anchors
       const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
@@ -106,12 +93,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
   it("trailing });: warning fires, LLM removes duplicate using surviving hash", async () => {
     const file = 'app.get("/api", (req, res) => {\n  const data = fetchData();\n  res.json(data);\n});\n';
     await withTempFile("server.ts", file, async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const read1 = await readTool.execute("r1", { path: "server.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
@@ -162,12 +144,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
   it("leading: warning fires, LLM removes duplicate using surviving hash", async () => {
     const file = "before();\nif (ok) {\n  run();\n}\nafter();\n";
     await withTempFile("logic.ts", file, async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const read1 = await readTool.execute("r1", { path: "logic.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
@@ -220,12 +197,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
     // The surviving } is the 3rd one (occurrence index 2).
     const file = "if (a) {\n  x();\n}\nif (b) {\n  y();\n}\nif (c) {\n  z();\n}\n";
     await withTempFile("multi.ts", file, async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const read1 = await readTool.execute("r1", { path: "multi.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
@@ -289,12 +261,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
       "}",
     ].join("\n") + "\n";
     await withTempFile("fourth.ts", file, async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const ctx = { cwd, ui: { notify() {} } } as any;
-
-      const readTool = getTool("read");
-      const editTool = getTool("replace");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const read1 = await readTool.execute("r1", { path: "fourth.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");

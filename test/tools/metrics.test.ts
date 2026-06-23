@@ -1,11 +1,8 @@
 import { describe, expect, it } from "vitest";
 import register from "../../index";
 import { computeLineHash } from "../../src/hashline";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
-function getText(result: { content: Array<{ text?: string }> }): string {
-  return result.content[0]?.text ?? "";
-}
 
 describe("details.metrics surface (Phase 2 C — host-only observability)", () => {
   it("read exposes truncation + next_offset metrics, never in text", async () => {
