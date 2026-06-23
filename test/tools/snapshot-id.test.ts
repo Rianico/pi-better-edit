@@ -4,7 +4,6 @@ import register from "../../index";
 import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
-
 describe("snapshotId surface (details-only after W2)", () => {
   it("read writes snapshotId to details but not to text", async () => {
     await withTempFile("sample.txt", "alpha\nbeta\n", async ({ cwd }) => {
@@ -68,7 +67,6 @@ describe("snapshotId surface (details-only after W2)", () => {
         register(pi);
         const editTool = getTool("replace");
 
-        // External, unrelated change: line 2 mutated, line 4 still "four".
         await writeFile(path, "one\nTWO!\nthree\nfour\nfive\n", "utf-8");
 
         const result = await editTool.execute(
@@ -116,7 +114,7 @@ describe("snapshotId surface (details-only after W2)", () => {
       );
 
       expect(getText(result)).not.toContain("SnapshotId");
-      // details still expose the post-edit fingerprint for host UIs.
+
       expect(result.details?.snapshotId).toEqual(expect.any(String));
     });
   });
@@ -130,7 +128,6 @@ describe("snapshotId surface (details-only after W2)", () => {
         register(pi);
         const editTool = getTool("replace");
 
-        // External change: rewrite the line we are about to target.
         await writeFile(path, "one\nTWO!\nthree\n", "utf-8");
 
         let errorMessage = "";

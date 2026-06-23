@@ -10,7 +10,6 @@ import {
 } from "../../src/hashline";
 import { makeTag } from "../support/fixtures";
 
-
 describe("applyEdits — error handling", () => {
 	it("throws on hash mismatch", () => {
 		const content = "aaa\nbbb\nccc";
@@ -102,7 +101,7 @@ describe("applyEdits — heuristics", () => {
 			},
 		];
 		const result = applyEdits(content, edits);
-		// Duplicate } is preserved (strict semantics: no autocorrection), but a warning fires.
+
 		expect(result.content).toBe("if (ok) {\n  runSafe();\n}\n}\nafter();");
 		expect(result.warnings).toEqual([
 			`Potential boundary duplication: the last line of the replacement ("}") matches the next surviving line. Surviving line hash: ${hashes[2]!}`,
@@ -164,7 +163,7 @@ describe("applyEdits — heuristics", () => {
 			},
 		];
 		const result = applyEdits(content, edits);
-		// The trailing } duplicates the next line (}), so a warning fires. Content is preserved.
+
 		expect(result.content).toBe("x\n}\ny\n}\n}\nb");
 		expect(result.warnings).toBeDefined();
 		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
@@ -179,9 +178,7 @@ describe("applyEdits — heuristics", () => {
 			},
 		];
 		const result = applyEdits(content, edits);
-		// The runtime does not auto-correct the duplicated boundary line; the
-		// replacement is applied verbatim. It does surface a non-blocking warning
-		// so the model can notice a likely Variant-A boundary duplication.
+
 		expect(result.content).toBe(
 			"before();\nbefore();\nif (ok) {\n  runSafe();\n}\nafter();",
 		);
@@ -226,7 +223,7 @@ describe("applyEdits — heuristics", () => {
 			},
 		];
 		const result = applyEdits(content, edits);
-		// A 1-line range accepts N replacement lines; no autocorrection.
+
 		expect(result.content).toBe("aaa\nx1\nx2\nx3\nccc\nddd");
 		expect(result.warnings?.some((w) => w.includes("Single-anchor replace"))).toBeFalsy();
 	});
@@ -297,11 +294,7 @@ describe("integration: resEdits → applyEdits", () => {
 	it("full pipeline: hashline-prefixed array new_lines are rejected (no autocorrection)", () => {
 		const content = "aaa\nbbb\nccc";
 		const hash = lineHashes(content)[1]!;
-		// In the new format, the line number is gone from the wire protocol,
-		// so a "2#HHHH:" prefix inside `new_lines` would never be produced by
-		// read output — it can only come from a confused model. The
-		// `+HHHH:` form (diff-style addition) is what assertNoDisplayPrefixes
-		// catches on shape alone, and it remains rejected.
+
 		const toolEdits: HTEdit[] = [
 			{ old_range: [hash, hash], new_lines: [`+${hash}│BBB`] },
 		];
@@ -326,11 +319,7 @@ describe("integration: resEdits → applyEdits", () => {
 	});
 
 	it("full pipeline: tool-level new_lines:[\"\"] is normalized to a delete (no extra blank line)", () => {
-		// Models commonly emit `new_lines: [""]` to mean "delete this line". The
-		// tool-level pipeline must collapse that to `new_lines: []` so the apply
-		// layer's deletion branch (which correctly handles trailing newlines)
-		// runs. Otherwise the original trailing newline of the last replaced
-		// line is left behind as an extra blank line.
+
 		const content = "aaa\nbbb\nccc\n";
 		const hash = lineHashes(content)[1]!;
 		const toolEdits: HTEdit[] = [

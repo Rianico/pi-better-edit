@@ -17,9 +17,7 @@ describe("assertReq", () => {
 	});
 
 	it("rejects top-level oldText/newText with E_LEGACY_SHAPE", () => {
-		// The legacy native edit shape is no longer supported — hash-anchored
-		// edits are the only path. The runtime throws a clear error pointing
-		// the model to the right shape on the next turn.
+
 		expect(() =>
 			assertReq({
 				path: "a.ts",
@@ -45,22 +43,18 @@ describe("regReplace", () => {
 	it("publishes a schema with expected structure", () => {
 		const schema = editToolSchema as any;
 
-		// Schema should be an object type
 		expect(schema.type).toBe("object");
 
-		// Schema should have the expected properties
 		const props = schema.properties;
 		expect(props).toBeDefined();
 		expect(props.path).toBeDefined();
 		expect(props.edits).toBeDefined();
 
-		// Schema should NOT have legacy fields
 		expect(props.oldText).toBeUndefined();
 		expect(props.newText).toBeUndefined();
 		expect(props.old_text).toBeUndefined();
 		expect(props.new_text).toBeUndefined();
 
-		// Schema should have additionalProperties: false
 		expect(schema.additionalProperties).toBe(false);
 	});
 
@@ -90,10 +84,6 @@ describe("regReplace", () => {
 		expect(registered?.parameters).toEqual(editToolSchema);
 		expect(typeof registered?.prepareArguments).toBe("function");
 
-		// Hash-anchored requests pass through with no transformation. The
-		// legacy top-level oldText/newText shape is NOT folded (the
-		// normalization layer is gone) — those would now reach validation
-		// and be rejected with E_LEGACY_SHAPE.
 		const result = registered?.prepareArguments?.({
 			path: "a.ts",
 			edits: [{ old_range: ["ZZPM", "ZZPM"], new_lines: ["x"] }],

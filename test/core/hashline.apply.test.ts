@@ -6,7 +6,6 @@ import {
 } from "../../src/hashline";
 import { makeTag } from "../support/fixtures";
 
-
 describe("applyEdits — basic operations", () => {
 	it("returns content unchanged for empty edits", () => {
 		const result = applyEdits("hello\nworld", []);
@@ -43,10 +42,6 @@ describe("applyEdits — basic operations", () => {
 	});
 
 	it("treats lines:[\"\"] as a deletion request for replace (no extra blank line)", () => {
-		// Models commonly emit `lines: [""]` to mean "delete this line". The
-		// runtime must normalize that to `lines: []` (a true deletion) so the
-		// trailing newline of the last replaced line is removed instead of
-		// being left behind as an extra blank line.
 		const content = "aaa\nbbb\nccc\n";
 		const edits: HEdit[] = [
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: [""] },
@@ -68,17 +63,11 @@ describe("applyEdits — basic operations", () => {
 	});
 
 	it("does not normalize multi-element empty arrays (those are blank lines)", () => {
-		// `lines: ["", ""]` is a legitimate "insert two blank lines" request
-		// and must NOT be collapsed to a deletion. Only the single-element
-		// `[""]` form is normalized.
 		const content = "aaa\nbbb\n";
 		const edits: HEdit[] = [
 			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["", ""] },
 		];
 		const result = applyEdits(content, edits);
-		// Two blank lines inserted in place of "bbb", preserving the trailing
-		// newline. Exact shape is not asserted — only that it differs from a
-		// pure deletion and contains the two newlines.
 		expect(result.content).not.toBe("aaa\n");
 		expect(result.content.split("\n").filter((line) => line === "").length).toBeGreaterThanOrEqual(2);
 	});
@@ -269,5 +258,60 @@ describe("applyEdits — lastChangedLine tracking", () => {
 
 		expect(result.firstChangedLine).toBe(2);
 		expect(result.lastChangedLine).toBe(4);
+	});
+});
+
+describe("applyEdits — edge cases (empty, single-line, no trailing newline)", () => {
+	it("edits a single-line file without trailing newline", () => {
+		const content = "hello";
+		const edits: HEdit[] = [
+			{ old_range: [makeTag(content, 1), makeTag(content, 1)], new_lines: ["world"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("world");
+	});
+
+	it("edits a single-line file with trailing newline", () => {
+		const content = "hello\n";
+		const edits: HEdit[] = [
+			{ old_range: [makeTag(content, 1), makeTag(content, 1)], new_lines: ["world"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("world\n");
+	});
+
+	it("edits a file with only a trailing newline (one blank line)", () => {
+		const content = "\n";
+		const edits: HEdit[] = [
+			{ old_range: [makeTag(content, 1), makeTag(content, 1)], new_lines: ["hello"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("hello\n");
+	});
+
+	it("deletes the only line in a single-line file without trailing newline", () => {
+		const content = "hello";
+		const edits: HEdit[] = [
+			{ old_range: [makeTag(content, 1), makeTag(content, 1)], new_lines: [] },
+		];
+		expect(() => applyEdits(content, edits)).toThrow(/^\[E_WOULD_EMPTY\]/);
+	});
+
+	it("replaces a line in a file with no trailing newline", () => {
+		const content = "aaa\nbbb\nccc";
+		const edits: HEdit[] = [
+			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["BBB"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("aaa\nBBB\nccc");
+	});
+
+	it("appends a line to a file without trailing newline", () => {
+		const content = "aaa\nbbb";
+		const edits: HEdit[] = [
+			{ old_range: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["bbb", "ccc"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("aaa\nbbb\nccc");
 	});
 });

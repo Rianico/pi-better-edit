@@ -50,7 +50,6 @@ async function withTempDirectory(
 	}
 }
 
-
 describe("classifyFileKind", () => {
 	it("classifies directories explicitly", async () => {
 		await withTempDirectory("nested", async ({ path }) => {
@@ -318,7 +317,7 @@ describe("file kind guards in tools", () => {
 				const text = getText(result);
 				expect(text).toContain("<LinearLayout");
 				expect(text).not.toMatch(/binary file/i);
-				// Text path renders hashline-prefixed lines (e.g. "1#<hash>:<?xml ...").
+
 				expect(text).toMatch(/^[A-Za-z0-9_\-]{3}│<\?xml/m);
 			},
 		);
@@ -328,8 +327,7 @@ describe("file kind guards in tools", () => {
 		const declaration = '<?xml version="1.0"?>\n<root/>\n';
 		const payload = Buffer.from(declaration, "utf16le");
 		const bytes = new Uint8Array(2 + payload.length);
-		// UTF-16 LE BOM: file-type still detects this as application/xml, so the
-		// regression guard relies on the null-byte check further down.
+
 		bytes[0] = 0xff;
 		bytes[1] = 0xfe;
 		bytes.set(payload, 2);
@@ -395,12 +393,6 @@ describe("file kind guards in tools", () => {
 		);
 	});
 
-	// Matches pi's built-in read/edit, which both decode with a non-fatal
-	// `buffer.toString("utf-8")` and write back as utf-8. Non-UTF-8 bytes
-	// therefore survive `read` as U+FFFD and are re-encoded on `edit`, so any
-	// invalid byte (even outside the edited region) is rewritten as the 3-byte
-	// replacement sequence. This is lossy by design — the null-byte guard is the
-	// line we hold to keep genuine binaries (with NUL) out of this path.
 	it("edit decodes invalid utf-8 as replacement chars and writes them back as utf-8", async () => {
 		await withTempBytes(
 			"sample.c",

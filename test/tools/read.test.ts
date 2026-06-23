@@ -25,7 +25,7 @@ describe("fmtReadPreview", () => {
 
 	it("formats ordinary lines as HASH|content (no line number)", () => {
 		const result = fmtReadPreview("alpha\nbeta", { offset: 1 });
-		// No line number in the wire format; the hash is the anchor.
+
 		expect(result.text).not.toMatch(/^\d/m);
 		expect(result.text).toContain("│alpha");
 		expect(result.text).toContain("│beta");
@@ -93,7 +93,7 @@ describe("fmtReadPreview", () => {
 
 describe("fmtRegion", () => {
 	it("formats lines as HASH|content rows", () => {
-		// 10-line file so we can request a window starting at line 5.
+
 		const allLines = Array.from({ length: 10 }, (_, i) => `line-${i + 1}`);
 		const content = allLines.join("\n");
 		const hashes = lineHashes(content);
@@ -220,8 +220,7 @@ describe("read tool protocol", () => {
 
 	it("warns that editing rewrites a file containing non-utf-8 bytes", async () => {
 		await withTempFile("legacy.c", "ignored\n", async ({ cwd }) => {
-			// U+FFFD stands in for the bytes file-kind's non-fatal decode produced
-			// from a CP1251 source. read should flag the lossy round-trip once.
+
 			vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({
 				kind: "text",
 				text: "int � = 0;\n",

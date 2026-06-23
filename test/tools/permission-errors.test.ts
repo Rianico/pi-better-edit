@@ -5,11 +5,6 @@ import { join } from "path";
 import register from "../../index";
 import { makeFakePiRegistry } from "../support/fixtures";
 
-/**
- * Permission-error tests rely on chmod(0o000) producing EACCES/EPERM.
- * This is POSIX-specific: on Windows chmod is a no-op (or throws ENOTSUP).
- * Skip the entire suite on Windows; root already skips via the existing check.
- */
 const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
 const isWindows = process.platform === "win32";
 

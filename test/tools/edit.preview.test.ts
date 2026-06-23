@@ -132,7 +132,6 @@ describe("compPreview", () => {
         edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
       };
 
-      // Import regReplace to set up the tool with its render methods
       const { regReplace } = await import("../../src/replace");
       const tools = new Map<string, any>();
       const pi = {

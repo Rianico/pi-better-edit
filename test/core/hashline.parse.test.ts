@@ -8,7 +8,6 @@ describe("parseHashRef", () => {
 	});
 
 	it("rejects trailing content after the anchor", () => {
-		// The wire format is anchor only. No content may follow.
 		expect(() => parseHashRef("aB3:const x = 1;")).toThrow(
 			/Expected a 3-char base64 anchor/,
 		);
@@ -20,9 +19,6 @@ describe("parseHashRef", () => {
 		);
 	});
 	it("rejects leading >>> markers (strict mode: no marker stripping)", () => {
-		// The wire format is the bare anchor. A `>>> ` prefix from a
-		// stale-anchor retry block is not part of the wire format and is rejected;
-		// the model must copy just the anchor, not the surrounding retry-block framing.
 		expect(() => parseHashRef(">>> aB3")).toThrow(/E_BAD_REF/);
 	});
 
@@ -33,15 +29,12 @@ describe("parseHashRef", () => {
 	});
 
 	it("accepts a hash that starts with - in the body (alphabet char, not a marker)", () => {
-		// The URL-safe base64 alphabet is A-Za-z0-9-_, so the hash body can
-		// legitimately begin with "-". E.g. `#-qk` is a valid anchor.
 		expect(parseHashRef("-qk")).toEqual({ hash: "-qk" });
 		expect(parseHashRef("-_-")).toEqual({ hash: "-_-" });
 		expect(parseHashRef("---")).toEqual({ hash: "---" });
 	});
 
 	it("rejects + as a hash body character (not in alphabet)", () => {
-		// "+" is not in the URL-safe base64 alphabet
 		expect(() => parseHashRef("+qk")).toThrow(/E_BAD_REF/);
 		expect(() => parseHashRef("#+qk")).toThrow(/E_BAD_REF/);
 	});
@@ -57,11 +50,10 @@ describe("parseHashRef", () => {
 	});
 
 	it("rejects wrong-length anchors", () => {
-		// Too short (missing body chars)
 		expect(() => parseHashRef("aB")).toThrow(/E_BAD_REF/);
-		// Too long
 		expect(() => parseHashRef("aB3x")).toThrow(/E_BAD_REF/);
-		// Too long
+		expect(() => parseHashRef("aB3x")).toThrow(/E_BAD_REF/);
+		expect(() => parseHashRef("#aB3x")).toThrow(/E_BAD_REF/);
 		expect(() => parseHashRef("#aB3x")).toThrow(/E_BAD_REF/);
 	});
 
@@ -105,8 +97,6 @@ describe("parseText", () => {
 	});
 
 	it("rejects array input that contains HASH| prefixes", () => {
-		// The +HASH| form is unambiguous diff metadata and
-		// always rejected on shape alone.
 		expect(() => parseText(["+aB3│foo", "+xYp│bar"])).toThrow(
 			/^\[E_INVALID_PATCH\]/,
 		);

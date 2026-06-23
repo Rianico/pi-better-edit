@@ -4,7 +4,6 @@ import register from "../../index";
 import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
-
 describe("edit tool noop + warnings", () => {
   it("returns classification noop instead of throwing on identical content", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {

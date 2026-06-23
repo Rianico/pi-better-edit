@@ -3,7 +3,6 @@ import register from "../../index";
 import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
-
 describe("edit tool text shape (token budget)", () => {
   it("changed mode keeps only anchors in LLM-visible text and line counts in details", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
@@ -27,7 +26,7 @@ describe("edit tool text shape (token budget)", () => {
       );
 
       const text = getText(result);
-      // With contextLines=0, no anchor block is shown
+
       expect(text).toBe("");
       expect(text).not.toContain("Updated sample.ts");
       expect(text).not.toContain("Changes: +1 -1");
@@ -63,7 +62,7 @@ describe("edit tool text shape (token budget)", () => {
       );
 
       const text = getText(result);
-      // With contextLines=0, no anchor block is shown
+
       expect(text).toBe("");
       expect(text).not.toMatch(/use these for subsequent edits/);
     });
@@ -117,7 +116,7 @@ describe("edit tool text shape (token budget)", () => {
       );
 
       const text = getText(result);
-      // With contextLines=0, no anchor block is shown at all
+
       expect(text).toBe("");
       expect(text).not.toContain("--- Anchors");
     });

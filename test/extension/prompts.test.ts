@@ -36,7 +36,6 @@ describe("prompts/replace.md (model-facing contract)", () => {
 		expect(replacePrompt).toContain("response text is empty");
 	});
 
-
 	it("documents error recovery", () => {
 		expect(replacePrompt).toContain("[E_STALE_ANCHOR]");
 		expect(replacePrompt).toContain("[E_BAD_REF]");

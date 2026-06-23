@@ -63,14 +63,12 @@ describe("CRLF line ending preservation", () => {
     await withTempFile("crlf.ts", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      // Read and get anchor for beta
       const readResult = await readTool.execute("r1", { path: "crlf.ts" }, undefined, undefined, ctx);
       const betaRef = readResult.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│beta"))!
         .split("│")[0]!;
 
-      // Edit beta → BETA
       await editTool.execute(
         "e1",
         { path: "crlf.ts", edits: [{ old_range: [betaRef, betaRef], new_lines: ["BETA"] }] },
@@ -79,12 +77,11 @@ describe("CRLF line ending preservation", () => {
         ctx,
       );
 
-      // Verify file on disk still uses CRLF
       const { readFile } = await import("fs/promises");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("alpha\r\nBETA\r\ngamma\r\n");
       expect(content).toContain("\r\n");
-      expect(content).not.toMatch(/[^\r]\n/); // no bare LF
+      expect(content).not.toMatch(/[^\r]\n/);
     });
   });
 
@@ -106,7 +103,6 @@ describe("CRLF line ending preservation", () => {
         ctx,
       );
 
-      // Verify file on disk still uses LF (no CRLF introduced)
       const { readFile } = await import("fs/promises");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("alpha\nBETA\ngamma\n");

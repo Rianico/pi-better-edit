@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { detectEnding, toLF, restoreEndings, stripBOM } from "../../src/replace-diff";
 
-// ─── detectEnding ───────────────────────────────────────────────────
-
 describe("detectEnding", () => {
   it("detects CRLF when \\r\\n appears first", () => {
     expect(detectEnding("hello\r\nworld")).toBe("\r\n");
@@ -24,8 +22,6 @@ describe("detectEnding", () => {
     expect(detectEnding("")).toBe("\n");
   });
 });
-
-// ─── toLF ──────────────────────────────────────────────────────
 
 describe("toLF", () => {
   it("converts \\r\\n to \\n", () => {
@@ -49,8 +45,6 @@ describe("toLF", () => {
   });
 });
 
-// ─── stripBOM ───────────────────────────────────────────────────────────
-
 describe("stripBOM", () => {
   it("strips \\uFEFF prefix", () => {
     const result = stripBOM("\uFEFFhello");
@@ -72,8 +66,6 @@ describe("stripBOM", () => {
     expect(result).toEqual({ bom: "", text: "" });
   });
 });
-
-// ─── restoreEndings ────────────────────────────────────────────────
 
 describe("restoreEndings", () => {
   it("converts LF back to CRLF when original used CRLF", () => {

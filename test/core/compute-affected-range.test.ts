@@ -23,7 +23,7 @@ describe("affRange", () => {
   });
 
 	it("returns null with default contextLines (0)", () => {
-		// With contextLines=0 (default), the anchor block is skipped entirely
+
 		const result = affRange({
 			firstChangedLine: 5,
 			lastChangedLine: 5,
@@ -76,8 +76,8 @@ describe("affRange", () => {
       resultLineCount: 20,
       maxOutputLines: 12,
     });
-    // 1-15 = 15 lines > 12, even with clamping
-    expect(result).toBeNull();
+
+		expect(result).toBeNull();
   });
 
   it("accepts a range that exactly fits maxOutputLines", () => {
@@ -88,8 +88,8 @@ describe("affRange", () => {
       maxOutputLines: 12,
       contextLines: 2,
     });
-    // 3-2=1 to 8+2=10 → 10 lines ≤ 12
-    expect(result).toEqual({ start: 1, end: 10 });
+
+		expect(result).toEqual({ start: 1, end: 10 });
   });
 
   it("supports custom contextLines", () => {
@@ -102,15 +102,13 @@ describe("affRange", () => {
     expect(result).toEqual({ start: 4, end: 6 });
   });
 
-  it("returns null for empty-file result (P2 regression)", () => {
-    // When an edit deletes all content, resultLineCount is 0 and the
-    // range should be null, not a bogus { start: 1, end: 0 }.
-    expect(
+	it("returns null for empty-file result (P2 regression)", () => {
+		expect(
       affRange({
         firstChangedLine: 1,
         lastChangedLine: 1,
         resultLineCount: 0,
       }),
-    ).toBeNull();
+		).toBeNull();
   });
 });

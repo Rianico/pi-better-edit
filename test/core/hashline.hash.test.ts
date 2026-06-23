@@ -28,7 +28,6 @@ describe("lineHash", () => {
 		expect(h1).toMatch(/^[A-Za-z0-9_\-]{3}$/);
 		expect(h1).toBe(h10);
 	});
-
 });
 
 describe("strict hashline contract", () => {
@@ -67,10 +66,10 @@ describe("perfect hashing", () => {
 		const file = [
 			"import { foo } from 'bar';",
 			"import { baz } from 'qux';",
-			"import { foo } from 'bar';", // identical to line 1
+			"import { foo } from 'bar';",
 		].join("\n");
 		const hashes = lineHashes(file);
-		expect(hashes[0]).not.toBe(hashes[2]); // the key property
+		expect(hashes[0]).not.toBe(hashes[2]);
 		expect(hashes[0]).not.toBe(hashes[1]);
 		expect(hashes[1]).not.toBe(hashes[2]);
 	});
@@ -85,7 +84,6 @@ describe("perfect hashing", () => {
 			"}",
 		].join("\n");
 		const hashes = lineHashes(file);
-		// Lines 3 and 6 are both lone `}` — they should still get different hashes.
 		expect(hashes[2]).not.toBe(hashes[5]);
 	});
 
@@ -93,10 +91,9 @@ describe("perfect hashing", () => {
 		const file = [
 			"const x = 1;",
 			"const y = 2;",
-			"const x = 1;", // identical to line 1
+			"const x = 1;",
 		].join("\n");
 		const hashes = lineHashes(file);
-		// Edit only the second occurrence of "const x = 1;" (line 3, not line 1).
 		const result = applyEdits(file, [
 			{ old_range: [{ hash: hashes[2]! }, { hash: hashes[2]! }], new_lines: ["const x = 999;"] },
 		]);
@@ -120,12 +117,10 @@ describe("perfect hashing", () => {
 	});
 
 	it("rejects an ambiguous hash with [E_AMBIGUOUS_ANCHOR] (synthetic collision)", () => {
-		// We can't force a real collision with xxHash32, so we inject
-		// a precomputed hash array to simulate two lines sharing one hash.
 		const file = "alpha\nbeta\ngamma\ndelta";
 		const realHashes = lineHashes(file);
 		const forgedHashes = [...realHashes];
-		forgedHashes[2] = realHashes[0]!; // line 3 (index 2) now matches line 1's hash
+		forgedHashes[2] = realHashes[0]!;
 
 		const sharedHash = realHashes[0]!;
 
@@ -147,5 +142,35 @@ describe("perfect hashing", () => {
 		expect(caught!.message).toMatch(/matches lines 1, 3/);
 		expect(caught!.message).toContain(`${realHashes[0]!}│alpha`);
 		expect(caught!.message).toContain(`${realHashes[0]!}│gamma`);
+	});
+
+	it("all hashes are unique for any file shape", () => {
+		const files = [
+			"",
+			"\n",
+			"a",
+			"a\n",
+			"a\nb\nc",
+			"a\nb\nc\n",
+			"}\n}\n}\n}\n}",
+			"import x\nimport y\nimport x",
+			"a\n".repeat(1000),
+			Array.from({ length: 100 }, (_, i) => `line${i}`).join("\n"),
+		];
+		for (const file of files) {
+			const hashes = lineHashes(file);
+			const unique = new Set(hashes);
+			expect(
+				unique.size,
+				`Failed for file with ${file.split("\n").length} lines`
+			).toBe(hashes.length);
+		}
+	});
+
+	it("hash array length matches line count for edge cases", () => {
+		const cases = ["", "\n", "a", "a\n", "a\nb\nc\n"];
+		for (const file of cases) {
+			expect(lineHashes(file)).toHaveLength(file.split("\n").length);
+		}
 	});
 });

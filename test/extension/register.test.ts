@@ -22,7 +22,7 @@ describe("extension registration", () => {
 
 		expect(toolNames.sort()).toEqual(["read", "replace"]);
 		expect(commandNames).toEqual(["toggle-auto-read"]);
-		// tool_result is always registered (handler checks flag internally)
+
 		expect(eventNames).toEqual(["session_start", "tool_result"]);
 	});
 });

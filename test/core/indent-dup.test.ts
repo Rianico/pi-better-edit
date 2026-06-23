@@ -3,7 +3,7 @@ import { lineHashes, resEdits, applyEdits } from "../../src/hashline";
 
 describe("indentation difference in boundary check", () => {
   it("does NOT warn when indentation differs even if trimmed content matches", () => {
-    // File has } at 4 spaces. LLM adds } at 8 spaces (different indent, same trimmed content).
+
     const file = "function outer() {\n  function inner() {\n    return 1;\n    }\n  }";
     const hashes = lineHashes(file);
 
@@ -15,7 +15,6 @@ describe("indentation difference in boundary check", () => {
     const resolved = resEdits([edit]);
     const result = applyEdits(file, resolved);
 
-    // Raw lines differ: "        }" !== "    }" — no warning
     expect(result.warnings).toBeUndefined();
   });
 
@@ -31,7 +30,6 @@ describe("indentation difference in boundary check", () => {
     const resolved = resEdits([edit]);
     const result = applyEdits(file, resolved);
 
-    // Exact match: "  }" === "  }" — warning fires
     expect(result.warnings).toBeDefined();
     expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
   });

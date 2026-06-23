@@ -3,7 +3,6 @@ import register from "../../index";
 import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
-
 describe("details.metrics surface (Phase 2 C — host-only observability)", () => {
   it("read exposes truncation + next_offset metrics, never in text", async () => {
     const lines = Array.from({ length: 200 }, (_, i) => `line${i + 1}`).join("\n");

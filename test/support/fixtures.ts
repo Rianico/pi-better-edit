@@ -59,11 +59,6 @@ export function extractHash(line: string): string {
   return line.split("│")[0]!
 }
 
-/**
- * Build a hash-only anchor for line `line` in the given `content`. Uses the
- * same `lineHashes` path the runtime uses, so the hash is exactly
- * what validation will compare against.
- */
 export function makeTag(content: string, line: number): { hash: string } {
   return { hash: lineHashes(content)[line - 1]! };
 }
