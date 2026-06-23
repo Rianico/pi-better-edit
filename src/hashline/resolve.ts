@@ -150,7 +150,7 @@ function assertItem(edit: Record<string, unknown>, index: number): void {
 	}
 	if (!isStrPair(edit.old_range)) {
 		throw new Error(
-			`[E_BAD_OP] Edit ${index} requires an "old_range" pair of anchor strings [start, end].`,
+			`[E_BAD_SHAPE] Edit ${index} requires an "old_range" pair of anchor strings [start, end].`,
 		);
 	}
 

@@ -30,9 +30,9 @@ describe("resEdits", () => {
 		expect(r.old_range[1].hash).toBe("MQX");
 	});
 
-	it("throws on replace with no old_range", () => {
+	it("throws on replace with no old_range (E_BAD_SHAPE)", () => {
 		const edits = [{ new_lines: ["new"] }] as any;
-		expect(() => resEdits(edits)).toThrow(/requires an "old_range" pair/i);
+		expect(() => resEdits(edits)).toThrow(/^\[E_BAD_SHAPE\]/);
 	});
 
 	it("throws on malformed old_range", () => {
