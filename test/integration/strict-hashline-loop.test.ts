@@ -35,14 +35,14 @@ describe("strict hashline tool loop", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/2 stale anchor/);
+      ).rejects.toThrow(/2 stale anchor.*sample\.ts/);
 
       const secondRead = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
       const secondText = secondRead.content[0].text as string;
       const freshRef = secondText
         .split("\n")
-	        .find((line: string) => line.includes("│BETA"))!
-	        .split("│")[0]!;
+        .find((line: string) => line.includes("│BETA"))!
+        .split("│")[0]!;
 
       await editTool.execute(
         "e3",
@@ -54,6 +54,27 @@ describe("strict hashline tool loop", () => {
         undefined,
         ctx,
       );
+    });
+  });
+
+  it("seeds content into an empty file via the empty-line hash", async () => {
+    await withTempFile("empty.ts", "", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const readResult = await readTool.execute("r1", { path: "empty.ts" }, undefined, undefined, ctx);
+      const emptyHash = readResult.content[0].text.split("\n")[0]!.split("│")[0]!;
+      expect(emptyHash).toMatch(/^[A-Za-z0-9_-]{3}$/);
+
+      await editTool.execute(
+        "e1",
+        { path: "empty.ts", edits: [{ hash_range_incl: [emptyHash, emptyHash], new_lines: ["first", "second"] }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const { readFile } = await import("fs/promises");
+      expect(await readFile(path, "utf-8")).toBe("first\nsecond");
     });
   });
 });
@@ -107,6 +128,35 @@ describe("CRLF line ending preservation", () => {
       const content = await readFile(path, "utf-8");
       expect(content).toBe("alpha\nBETA\ngamma\n");
       expect(content).not.toContain("\r");
+    });
+  });
+});
+
+describe("UTF-8 BOM handling", () => {
+  it("strips the BOM when reading and does not restore it on write", async () => {
+    await withTempFile("bom.ts", "alpha\nbeta\n", async ({ cwd, path }) => {
+      const { readFile, writeFile } = await import("fs/promises");
+      await writeFile(path, "\uFEFFalpha\nbeta\n", "utf-8");
+
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const readResult = await readTool.execute("r1", { path: "bom.ts" }, undefined, undefined, ctx);
+      const betaRef = readResult.content[0].text
+        .split("\n")
+        .find((line: string) => line.includes("│beta"))!
+        .split("│")[0]!;
+
+      await editTool.execute(
+        "e1",
+        { path: "bom.ts", edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BETA"] }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const content = await readFile(path, "utf-8");
+      expect(content).not.toContain("\uFEFF");
+      expect(content).toBe("alpha\nBETA\n");
     });
   });
 });

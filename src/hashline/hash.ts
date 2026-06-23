@@ -62,6 +62,17 @@ function canon(line: string): string {
 	return line.replace(/\r/g, "").trimEnd();
 }
 
+/**
+ * Compute a unique 3-character hash for every line of `content`.
+ *
+ * Each line is hashed with xxHash32 over its canonical form (trailing
+ * whitespace and CR characters stripped). If the base hash collides with a
+ * hash already assigned to an earlier line, a retry counter (`:R{retry}`)
+ * is appended to the canonical content and the hash is recomputed until a
+ * unique anchor is found. This perfect-hashing step guarantees every line
+ * in a file receives a distinct anchor, even when multiple lines contain
+ * identical text (e.g. repeated `}` or `import` statements).
+ */
 export function lineHashes(content: string): string[] {
 	const lines = content.split("\n");
 	const hashes = new Array<string>(lines.length);

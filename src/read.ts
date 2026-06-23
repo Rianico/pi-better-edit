@@ -51,12 +51,14 @@ export function fmtReadPreview(
 	const startLine = normPosInt(options.offset, "offset") ?? 1;
 	if (totalLines === 0) {
 		if (startLine === 1) {
+			const allHashes = precomputedHashes ?? lineHashes(text);
+			const emptyLineHash = allHashes[0] ?? "";
 			return {
-				text: "File is empty. Use edit to insert content.",
+				text: `${emptyLineHash}│\n[File is empty. Use replace to insert content.]`,
 			};
 		}
 		return {
-			text: `Offset ${startLine} is beyond end of file (0 lines total). The file is empty. Use edit to insert content.`,
+			text: `Offset ${startLine} is beyond end of file (0 lines total). The file is empty. Use replace to insert content.`,
 		};
 
 	}

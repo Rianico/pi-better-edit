@@ -79,6 +79,7 @@ export function fmtMismatch(
 	mismatches: HMismatch[],
 	fileLines: string[],
 	fileHashes: string[],
+	filePath?: string,
 	): string {
 	assertAligned(fileLines, fileHashes, "fmtMismatch");
 
@@ -88,15 +89,15 @@ export function fmtMismatch(
 
 	const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
 	if (notFound.length > 0) {
-	out.push(
-		`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}: ${refList}. Call read() to get fresh anchors, then copy the 3-char HASH from each line into your next replace call.`
-	);
+		out.push(
+			`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Call read() to get fresh anchors, then copy the 3-char HASH from each line into your next replace call.`
+		);
 	}
 	if (ambiguous.length > 0) {
 		if (out.length > 0) out.push("");
-	out.push(
-		`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}. Call read() to get fresh anchors, then copy the 3-char HASH from each line into your next replace call.`
-	);
+		out.push(
+			`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH from each line into your next replace call.`
+		);
 		for (const m of ambiguous) {
 			const sample = (m.candidates ?? []).slice(0, 5);
 			const more =

@@ -66,16 +66,14 @@ const editItemSchema = Type.Object(
 export const editToolSchema = Type.Object(
 	{
 		path: Type.String({ description: "path" }),
-		edits: Type.Optional(
-			Type.Array(editItemSchema, { description: "edits over $path" }),
-		),
+		edits: Type.Array(editItemSchema, { description: "edits over $path" }),
 	},
 	{ additionalProperties: false },
 );
 
 export type ReqParams = {
 	path: string;
-	edits?: HTEdit[];
+	edits: HTEdit[];
 };
 
 export type ReplaceDetails = {
@@ -113,8 +111,8 @@ export function assertReq(
 		throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "path" string.');
 	}
 
-	if (has(request, "edits") && !Array.isArray(request.edits)) {
-		throw new Error('[E_BAD_SHAPE] Edit request requires an "edits" array when provided. Each edit is { hash_range_incl: ["<START>", "<END>"], new_lines: [...] }.');
+	if (!Array.isArray(request.edits)) {
+		throw new Error('[E_BAD_SHAPE] Edit request requires an "edits" array. Each edit is { hash_range_incl: ["<START>", "<END>"], new_lines: [...] }.');
 	}
 }
 
@@ -157,6 +155,7 @@ async function execPipeline(
 		resolved,
 		signal,
 		originalHashes,
+		path,
 	);
 
 	return {

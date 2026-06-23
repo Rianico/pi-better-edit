@@ -64,7 +64,7 @@ describe("buildNoop", () => {
 			},
 			warnings: ["Test warning"],
 		});
-		expect(result.details.metrics.warnings).toBe(1);
+		expect(result.details.metrics!.warnings).toBe(1);
 	});
 
 	it("includes metrics", () => {
@@ -79,9 +79,9 @@ describe("buildNoop", () => {
 			warnings: undefined,
 		});
 
-		expect(result.details.metrics.edits_attempted).toBe(2);
-		expect(result.details.metrics.edits_noop).toBe(1);
-		expect(result.details.metrics.classification).toBe("noop");
+		expect(result.details.metrics!.edits_attempted).toBe(2);
+		expect(result.details.metrics!.edits_noop).toBe(1);
+		expect(result.details.metrics!.classification).toBe("noop");
 	});
 });
 
@@ -141,9 +141,9 @@ describe("buildChanged", () => {
 			},
 		});
 
-		expect(result.details.metrics.classification).toBe("applied");
-		expect(result.details.metrics.edits_attempted).toBe(1);
-		expect(result.details.metrics.changed_lines).toEqual({ first: 2, last: 2 });
+		expect(result.details.metrics!.classification).toBe("applied");
+		expect(result.details.metrics!.edits_attempted).toBe(1);
+		expect(result.details.metrics!.changed_lines).toEqual({ first: 2, last: 2 });
 	});
 
 	it("handles empty result file", () => {

@@ -1,5 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { normReq } from "./replace-normalize";
+import type { HTEdit } from "./hashline";
 import type { ReqParams, ReplaceDetails } from "./replace";
 import { isRec } from "./utils";
 
@@ -31,12 +32,16 @@ export function getPreviewInput(
 		return null;
 	}
 
-	const request: ReqParams = { path: normalized.path };
-	if (Array.isArray(normalized.edits)) {
-		request.edits = normalized.edits as any;
+	if (!Array.isArray(normalized.edits)) {
+		return null;
 	}
 
-	return request.edits !== undefined ? request : null;
+	const request: ReqParams = {
+		path: normalized.path,
+		edits: normalized.edits as HTEdit[],
+	};
+
+	return request;
 }
 
 export function colorLines(lines: string[], theme: FgT): string[] {

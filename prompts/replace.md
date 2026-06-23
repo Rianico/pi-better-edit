@@ -44,6 +44,22 @@ Examples:
 ] }
 ```
 
+4. Append after the last line (include the old last line so the new line is added after it):
+
+```json
+{ "path": "src/main.ts", "edits": [
+  { "hash_range_incl": ["ZPM", "ZPM"], "new_lines": ["old last line", "new line"] }
+] }
+```
+
+5. Seed content into an empty file (replace the single empty-line hash returned by read):
+
+```json
+{ "path": "src/main.ts", "edits": [
+  { "hash_range_incl": ["aB3", "aB3"], "new_lines": ["first line", "second line"] }
+] }
+```
+
 ⚠️ Common mistake: do not copy the `HASH│` prefix into `new_lines`.
 
 Wrong:

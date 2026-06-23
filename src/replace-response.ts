@@ -1,3 +1,4 @@
+import type { ReplaceDetails } from "./replace";
 import { genDiff } from "./replace-diff";
 import {
 	affRange,
@@ -10,7 +11,7 @@ import { ANCHOR_BUDGET } from "./constants";
 type TResult = {
 	content: Array<{ type: "text"; text: string }>;
 	isError?: boolean;
-	details: any;
+	details: ReplaceDetails;
 };
 
 export type RMetrics = {
@@ -175,7 +176,7 @@ export function buildChanged(input: SuccessInput): TResult {
 					: "Anchors omitted; use read for subsequent edits.";
 			})()
 		: resultLines.length === 0
-			? "File is empty. Use edit to insert content."
+			? "File is empty. Use replace to insert content."
 			: "";
 	const text = [anchorsBlock, warningsBlock.trimStart()]
 		.filter((section) => section.length > 0)

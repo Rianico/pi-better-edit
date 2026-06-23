@@ -4,7 +4,9 @@ import { fmtReadPreview } from "../../src/read";
 describe("fmtReadPreview", () => {
 	it("returns empty file message for empty content", () => {
 		const result = fmtReadPreview("", {});
-		expect(result.text).toBe("File is empty. Use edit to insert content.");
+		expect(result.text).toContain("File is empty");
+		expect(result.text).toContain("Use replace to insert content");
+		expect(result.text).toMatch(/^[A-Za-z0-9_-]{3}│$/m);
 	});
 
 	it("returns offset beyond end message for empty file with offset", () => {

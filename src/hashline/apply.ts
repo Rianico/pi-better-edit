@@ -216,7 +216,8 @@ export function applyEdits(
 	edits: import("./resolve").HEdit[],
 	signal?: AbortSignal,
 	precomputedHashes?: string[],
-): {
+	filePath?: string,
+	): {
 	content: string;
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
@@ -252,7 +253,7 @@ export function applyEdits(
 	);
 	if (mismatches.length) {
 		throw new Error(
-			fmtMismatch(mismatches, lineIndex.fileLines, fileHashes),
+			fmtMismatch(mismatches, lineIndex.fileLines, fileHashes, filePath),
 		);
 	}
 

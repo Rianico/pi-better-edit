@@ -49,10 +49,9 @@ describe("fmtReadPreview", () => {
 	it("returns an advisory for empty files instead of a synthetic empty-line anchor", () => {
 		const result = fmtReadPreview("", { offset: 1 });
 		expect(result.text).toContain("File is empty");
-		expect(result.text).toContain("Use edit to insert content");
-		expect(result.text).not.toMatch(/^\d/m);
+		expect(result.text).toContain("Use replace to insert content");
+		expect(result.text).toMatch(/^[A-Za-z0-9_-]{3}│$/m);
 	});
-
 	it("hides the terminal newline sentinel from preview output", () => {
 		const result = fmtReadPreview("alpha\nbeta\n", { offset: 1 });
 		const hashes = lineHashes("alpha\nbeta\n");

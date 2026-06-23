@@ -12,6 +12,7 @@ File kinds:
 - Text files are returned as `HASH│content` lines.
 - Images (JPEG, PNG, GIF, WebP) are returned as visual attachments.
 - Binary files and directories are rejected with a descriptive error.
+- Empty files are returned as a single empty-line hash (`HASH│`). Use replace on that hash to insert content.
 
 Non-UTF-8 bytes:
-- Non-UTF-8 bytes are decoded as U+FFFD. The output is flagged when this happens.
+- UTF-8 byte-order marks (BOM) are stripped. Editing a file with a BOM rewrites it without the BOM.

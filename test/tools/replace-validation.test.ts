@@ -75,7 +75,7 @@ describe("assertReq", () => {
 		})).not.toThrow();
 	});
 
-	it("does not throw for request without edits", () => {
-		expect(() => assertReq({ path: "test.txt" })).not.toThrow();
+	it("throws for request without edits", () => {
+		expect(() => assertReq({ path: "test.txt" })).toThrow("[E_BAD_SHAPE]");
 	});
 });

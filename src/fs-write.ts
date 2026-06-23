@@ -5,6 +5,7 @@ import {
 	open,
 	readlink,
 	rename,
+	rm,
 	stat,
 	writeFile,
 } from "fs/promises";
@@ -102,5 +103,14 @@ export async function writeAtomic(
 		await tempHandle.close();
 	}
 
-	await rename(tempPath, targetPath);
+	try {
+		await rename(tempPath, targetPath);
+	} catch (error: unknown) {
+		try {
+			await rm(tempPath, { force: true });
+		} catch {
+			// best-effort cleanup
+		}
+		throw error;
+	}
 }
