@@ -9,6 +9,7 @@ import {
 	writeFile,
 } from "fs/promises";
 import { dirname, join, parse, resolve, sep } from "path";
+import { errCode } from "./validation";
 
 export async function resolveTarget(path: string): Promise<string> {
 	const absolutePath = resolve(path);
@@ -57,12 +58,12 @@ export async function resolveTarget(path: string): Promise<string> {
 				...targetParts,
 				...tail,
 			]);
-		} catch (error: unknown) {
-			if ((error as NodeJS.ErrnoException)?.code === "ENOENT") {
-				return join(candidatePath, ...tail);
-			}
-			throw error;
+	} catch (error: unknown) {
+		if (errCode(error) === "ENOENT") {
+			return join(candidatePath, ...tail);
 		}
+		throw error;
+	}
 	}
 
 	return resParts(root, parts);
@@ -78,7 +79,7 @@ export async function writeAtomic(
 	try {
 		existingStats = await stat(targetPath);
 	} catch (error: unknown) {
-		if ((error as NodeJS.ErrnoException)?.code !== "ENOENT") {
+		if (errCode(error) !== "ENOENT") {
 			throw error;
 		}
 	}

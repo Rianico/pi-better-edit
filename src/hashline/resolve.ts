@@ -1,4 +1,5 @@
 import { abortIf } from "../runtime";
+import { rejectUnknownFields } from "../utils";
 import { HL_BARE_PREFIX_RE } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 
@@ -134,12 +135,7 @@ function isStrPair(value: unknown): value is [string, string] {
 }
 
 function assertItem(edit: Record<string, unknown>, index: number): void {
-	const unknownKeys = Object.keys(edit).filter((key) => !ITEM_KS.has(key));
-	if (unknownKeys.length > 0) {
-		throw new Error(
-			`[E_BAD_SHAPE] Edit ${index} contains unknown or unsupported fields: ${unknownKeys.join(", ")}. Each edit takes only { old_range, new_lines }.`,
-		);
-	}
+	rejectUnknownFields(edit, ITEM_KS, `Edit ${index}`, "Each edit takes only { old_range, new_lines }.");
 
 	if ("old_range" in edit && !isStrPair(edit.old_range)) {
 		throw new Error(

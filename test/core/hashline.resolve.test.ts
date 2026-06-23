@@ -2,12 +2,12 @@ import { describe, expect, it } from "vitest";
 import {
 	resEdits,
 	type Anchor,
-	type HashlineToolEdit,
+	type HTEdit,
 } from "../../src/hashline";
 
 describe("resEdits", () => {
 	it("resolves replace with old_range", () => {
-		const edits: HashlineToolEdit[] = [
+		const edits: HTEdit[] = [
 			{ old_range: ["ZZP", "PPW"], new_lines: ["a", "b"] },
 		];
 		const resolved = resEdits(edits);
@@ -17,7 +17,7 @@ describe("resEdits", () => {
 	});
 
 	it("resolves a 1-line replace (same anchor)", () => {
-		const edits: HashlineToolEdit[] = [
+		const edits: HTEdit[] = [
 			{ old_range: ["MQX", "MQX"], new_lines: ["new"] },
 		];
 		const resolved = resEdits(edits);
@@ -36,18 +36,18 @@ describe("resEdits", () => {
 	});
 
 	it("throws on malformed old_range", () => {
-		const edits: HashlineToolEdit[] = [
+		const edits: HTEdit[] = [
 			{ old_range: ["not-valid", "not-valid"], new_lines: ["x"] },
 		];
 		expect(() => resEdits(edits)).toThrow(/Invalid anchor/);
 	});
 
 	it("rejects string new_lines input", () => {
-		const edits: HashlineToolEdit[] = [
+		const edits: HTEdit[] = [
 			{
 				old_range: ["ZZP", "ZZP"],
 				new_lines: "hello\nworld\n",
-			} as unknown as HashlineToolEdit,
+			} as unknown as HTEdit,
 		];
 		expect(() => resEdits(edits)).toThrow(
 			/new_lines" must be a string array/i,
@@ -55,11 +55,11 @@ describe("resEdits", () => {
 	});
 
 	it("rejects null new_lines input", () => {
-		const edits: HashlineToolEdit[] = [
+		const edits: HTEdit[] = [
 			{
 				old_range: ["ZZP", "ZZP"],
 				new_lines: null,
-			} as unknown as HashlineToolEdit,
+			} as unknown as HTEdit,
 		];
 		expect(() => resEdits(edits)).toThrow(
 			/new_lines" must be a string array/i,

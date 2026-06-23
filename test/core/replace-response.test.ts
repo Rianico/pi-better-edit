@@ -53,6 +53,20 @@ describe("buildNoop", () => {
 		expect(result.content[0].text).not.toContain("Warning 1");
 	});
 
+	it("includes warnings in details when present", () => {
+		const result = buildNoop({
+			path: "src/main.ts",
+			noopEdits: undefined,
+			snapshotId: "v1|test|123|456",
+			editMeta: {
+				editsAttempted: 1,
+				noopEditsCount: 0,
+			},
+			warnings: ["Test warning"],
+		});
+		expect(result.details.metrics.warnings).toBe(1);
+	});
+
 	it("includes metrics", () => {
 		const result = buildNoop({
 			path: "test.txt",
@@ -168,5 +182,47 @@ describe("buildChanged", () => {
 
 		expect(result.content[0].text).not.toContain("AAA");
 		expect(result.content[0].text).not.toContain("BBB");
+	});
+
+	it("omits anchors when region too large", () => {
+		const lines = Array.from({ length: 100 }, (_, i) => `line${i}`);
+		const original = lines.join("\n") + "\n";
+		const modified = [...lines.slice(0, 50), "changed", ...lines.slice(51)].join("\n") + "\n";
+		const result = buildChanged({
+			path: "src/main.ts",
+			originalNormalized: original,
+			result: modified,
+			warnings: undefined,
+			snapshotId: "v1|test|123|456",
+			editMeta: {
+				editsAttempted: 1,
+				noopEditsCount: 0,
+				firstChangedLine: 51,
+				lastChangedLine: 51,
+			},
+		});
+		expect(result.content[0].text).toBe("");
+	});
+
+	it("shows compact diff preview when anchors omitted due to large edit", () => {
+		const lines = Array.from({ length: 30 }, (_, i) => `line${i}`);
+		const original = lines.join("\n") + "\n";
+		const newLines = Array.from({ length: 15 }, (_, i) => `NEW${i}`);
+		const modified = [...lines.slice(0, 10), ...newLines, ...lines.slice(25)].join("\n") + "\n";
+		const result = buildChanged({
+			path: "src/main.ts",
+			originalNormalized: original,
+			result: modified,
+			warnings: undefined,
+			snapshotId: "v1|test|123|456",
+			editMeta: {
+				editsAttempted: 1,
+				noopEditsCount: 0,
+				firstChangedLine: 11,
+				lastChangedLine: 25,
+			},
+		});
+		expect(result.content[0].text).not.toContain("--- Anchors ---");
+		expect(result.content[0].text).toBe("");
 	});
 });

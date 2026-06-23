@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { normReq } from "./replace-normalize";
-import type { ReplaceRequestParams, HashlineReplaceToolDetails } from "./replace";
+import type { ReqParams, ReplaceDetails } from "./replace";
 import { isRec } from "./utils";
 
 export type FgT = Pick<Theme, "fg">;
@@ -20,7 +20,7 @@ export type RRState = {
 
 export function getPreviewInput(
 	args: unknown,
-): ReplaceRequestParams | null {
+): ReqParams | null {
 	let normalized: unknown;
 	try {
 		normalized = normReq(args);
@@ -31,7 +31,7 @@ export function getPreviewInput(
 		return null;
 	}
 
-	const request: ReplaceRequestParams = { path: normalized.path };
+	const request: ReqParams = { path: normalized.path };
 	if (Array.isArray(normalized.edits)) {
 		request.edits = normalized.edits as any;
 	}
@@ -73,7 +73,7 @@ export function fmtResult(diff: string, theme: FgT): string {
 }
 
 export function fmtCall(
-	args: ReplaceRequestParams | undefined,
+	args: ReqParams | undefined,
 	state: RRState,
 	expanded: boolean,
 	theme: CallT,
@@ -117,7 +117,7 @@ export function extractWarnings(
 }
 
 export function isApplied(
-	details: HashlineReplaceToolDetails | undefined,
+	details: ReplaceDetails | undefined,
 ): boolean {
 	const metrics = details?.metrics;
 	return (
@@ -129,7 +129,7 @@ export function isApplied(
 
 export function buildAppliedText(
 	text: string | undefined,
-	details: HashlineReplaceToolDetails | undefined,
+	details: ReplaceDetails | undefined,
 	theme: FgT,
 ): string | undefined {
 	const sections: string[] = [];

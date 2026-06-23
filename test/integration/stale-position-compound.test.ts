@@ -5,8 +5,8 @@ import {
   lineHashes,
   fmtRegion,
   resEdits,
-  type HashlineToolEdit,
-  type HashlineEdit,
+  type HTEdit,
+  type HEdit,
 } from "../../src/hashline";
 import { makeTag } from "../support/fixtures";
 
@@ -19,7 +19,7 @@ describe("stale-position compound edits", () => {
 		const content = originalLines.join("\n");
 
 		const line5Hash = makeTag(content, 5).hash;
-		const edits: HashlineEdit[] = [
+		const edits: HEdit[] = [
 			{ old_range: [{ hash: line5Hash }, { hash: line5Hash }], new_lines: ["NEW_LINE_5"] },
 		];
 
@@ -51,14 +51,14 @@ describe("stale-position compound edits", () => {
 		// Replace lines 2-4 with 3 new lines
 		const line2Hash = makeTag(content, 2).hash;
 		const line4Hash = makeTag(content, 4).hash;
-		const toolEdits: HashlineToolEdit[] = [
+		const toolEdits: HTEdit[] = [
 			{
 				old_range: [line2Hash, line4Hash], new_lines: ["NEW_2", "NEW_3", "NEW_4"],
 			},
 		];
 
-		// Resolve through the tool-schema → HashlineEdit pipeline
-		const resolved: HashlineEdit[] = resEdits(toolEdits);
+		// Resolve through the tool-schema → HEdit pipeline
+		const resolved: HEdit[] = resEdits(toolEdits);
 
 		// Apply all edits at once
 		const result = applyEdits(content, resolved);
@@ -97,7 +97,7 @@ describe("stale-position compound edits", () => {
 	it("tracks correct coordinates when replace shrinks lines", () => {
 		// Replace 2 lines with 1 (shrink).
 		const content = "a\nb\nc\nd\ne";
-		const edits: HashlineEdit[] = [
+		const edits: HEdit[] = [
 			{ old_range: [makeTag(content, 3), makeTag(content, 4)], new_lines: ["C_D"] },
 		];
 		const result = applyEdits(content, edits);

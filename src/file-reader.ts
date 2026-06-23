@@ -1,6 +1,6 @@
 import { constants } from "fs";
 import { lineHashes } from "./hashline";
-import { loadFileKindAndText, type LoadedFile } from "./file-kind";
+import { loadFileKindAndText, type LFile } from "./file-kind";
 import { toCwd } from "./path-utils";
 import { detectEnding, toLF, stripBOM } from "./replace-diff";
 import { abortIf } from "./runtime";
@@ -20,7 +20,7 @@ export async function readNormFile(
 	cwd: string,
 	signal: AbortSignal | undefined,
 	accessMode: number = constants.R_OK,
-	preloadedFile?: LoadedFile,
+	preloadedFile?: LFile,
 ): Promise<NormFile> {
 	const absolutePath = toCwd(path, cwd);
 

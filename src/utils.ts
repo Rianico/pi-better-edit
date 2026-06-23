@@ -15,3 +15,18 @@ export function visLines(text: string): string[] {
 export function cntLines(text: string): number {
 	return visLines(text).length;
 }
+
+export function rejectUnknownFields(
+	obj: Record<string, unknown>,
+	allowed: Set<string>,
+	label: string,
+	hint?: string,
+): void {
+	const unknown = Object.keys(obj).filter((key) => !allowed.has(key));
+	if (unknown.length > 0) {
+		const suffix = hint ? ` ${hint}` : "";
+		throw new Error(
+			`[E_BAD_SHAPE] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
+		);
+	}
+}

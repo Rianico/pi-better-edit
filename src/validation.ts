@@ -1,6 +1,6 @@
 import { constants } from "fs";
 import { access as fsAccess } from "fs/promises";
-import type { LoadedFile } from "./file-kind";
+import type { LFile } from "./file-kind";
 
 export async function valAccess(
 	absolutePath: string,
@@ -22,7 +22,7 @@ export async function valAccess(
 	}
 }
 
-export function valKind(file: LoadedFile, path: string): asserts file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
+export function valKind(file: LFile, path: string): asserts file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
 	if (file.kind === "directory") {
 		throw new Error(`Path is a directory: ${path}. Use ls to inspect directories.`);
 	}
@@ -34,11 +34,11 @@ export function valKind(file: LoadedFile, path: string): asserts file is { kind:
 	}
 }
 
-export function assertText(file: LoadedFile, path: string): asserts file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
+export function assertText(file: LFile, path: string): asserts file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
 	valKind(file, path);
 }
 
-export function isText(file: LoadedFile): file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
+export function isText(file: LFile): file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
 	return file.kind === "text";
 }
 

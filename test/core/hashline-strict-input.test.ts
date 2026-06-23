@@ -3,14 +3,14 @@ import {
 	applyEdits,
 	lineHashes,
 	resEdits,
-	type HashlineToolEdit,
+	type HTEdit,
 } from "../../src/hashline";
 
 describe("strict edit input (no autocorrection)", () => {
 	it("rejects bare HASH| prefix in content with E_BARE_HASH_PREFIX", () => {
 		const file = "foo\nbar";
 		const hashes = lineHashes(file);
-		const toolEdits: HashlineToolEdit[] = [
+		const toolEdits: HTEdit[] = [
 			{ old_range: [hashes[0]!, hashes[0]!], new_lines: [`${hashes[0]!}│foo`] },
 		];
 		let caught: Error | undefined;
@@ -27,10 +27,10 @@ describe("strict edit input (no autocorrection)", () => {
 	it("rejects string new_lines before patch-prefix validation", () => {
 		const file = "foo\nbar";
 		const hashes = lineHashes(file);
-		const toolEdits: HashlineToolEdit[] = [
+		const toolEdits: HTEdit[] = [
 			{
 				old_range: [hashes[0]!, hashes[0]!], new_lines: `+${hashes[0]!}:foo`,
-			} as unknown as HashlineToolEdit,
+			} as unknown as HTEdit,
 		];
 		expect(() => resEdits(toolEdits)).toThrow(
 			/new_lines" must be a string array/i,
@@ -40,7 +40,7 @@ describe("strict edit input (no autocorrection)", () => {
 	it("rejects diff deletion rows in array form", () => {
 		const file = "foo\nbar";
 		const hashes = lineHashes(file);
-		const toolEdits: HashlineToolEdit[] = [
+		const toolEdits: HTEdit[] = [
 			{ old_range: [hashes[0]!, hashes[0]!], new_lines: ["-1    foo"] },
 		];
 		expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
@@ -49,7 +49,7 @@ describe("strict edit input (no autocorrection)", () => {
 	it("accepts plain literal content unchanged", () => {
 		const file = "foo\nbar";
 		const hashes = lineHashes(file);
-		const toolEdits: HashlineToolEdit[] = [
+		const toolEdits: HTEdit[] = [
 			{ old_range: [hashes[0]!, hashes[0]!], new_lines: ["bar"] },
 		];
 		const resolved = resEdits(toolEdits);
@@ -60,7 +60,7 @@ describe("strict edit input (no autocorrection)", () => {
 	it("preserves '#' comment lines that do not match the strict prefix", () => {
 		const file = "foo\nbar";
 		const hashes = lineHashes(file);
-		const toolEdits: HashlineToolEdit[] = [
+		const toolEdits: HTEdit[] = [
 			{ old_range: [hashes[0]!, hashes[0]!], new_lines: ["# keep me"] },
 		];
 		const resolved = resEdits(toolEdits);
@@ -75,7 +75,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 	const betaHash = hashes[1]!;
 	const gammaHash = hashes[2]!;
 
-	function applyTool(toolEdits: HashlineToolEdit[]) {
+	function applyTool(toolEdits: HTEdit[]) {
 		return applyEdits(file, resEdits(toolEdits));
 	}
 

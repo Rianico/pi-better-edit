@@ -12,7 +12,7 @@ import {
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
 import { normReq } from "./replace-normalize";
-import { isRec, has } from "./utils";
+import { isRec, has, rejectUnknownFields } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import {
 	applyEdits,
@@ -107,14 +107,7 @@ export function assertReq(
 		}
 	}
 
-	const unknownRootKeys = Object.keys(request).filter(
-		(key) => !ROOT_KS.has(key),
-	);
-	if (unknownRootKeys.length > 0) {
-		throw new Error(
-			`[E_BAD_SHAPE] Edit request contains unknown or unsupported fields: ${unknownRootKeys.join(", ")}. Use only { path, edits }; each edit is { old_range: ["<START>", "<END>"], new_lines: [...] }.`,
-		);
-	}
+	rejectUnknownFields(request, ROOT_KS, "Edit request");
 
 	if (typeof request.path !== "string" || request.path.length === 0) {
 		throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "path" string.');
