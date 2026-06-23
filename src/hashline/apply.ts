@@ -76,8 +76,8 @@ function resToSpan(
 ): RESpan | null {
 	const { fileLines, lineStarts, hasTerminalNewline } = lineIndex;
 
-	const startLine = edit.old_range[0].line;
-	const endLine = edit.old_range[1].line;
+	const startLine = edit.hash_range_incl[0].line;
+	const endLine = edit.hash_range_incl[1].line;
 	const originalLines = fileLines.slice(startLine - 1, endLine);
 	if (
 		originalLines.length === edit.new_lines.length &&
@@ -87,7 +87,7 @@ function resToSpan(
 	) {
 		noopEdits.push({
 			editIndex: index,
-			loc: edit.old_range[0].hash,
+			loc: edit.hash_range_incl[0].hash,
 			currentContent: originalLines.join("\n"),
 		});
 		return null;

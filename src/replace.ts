@@ -47,10 +47,10 @@ const newLinesSchema = Type.Array(Type.String(), {
 		"literal replacement file content, one string per line. Must not include the HASH│ prefix from read output.",
 });
 
-const oldRangeSchema = Type.Array(
+const hashRangeInclSchema = Type.Array(
 	Type.String({ description: "anchor (3-char HASH)" }),
 	{
-		description: "inclusive line range to replace [start_hash, end_hash]. Each element must be the 3-character hash anchor only; do not include the │ separator or line content.",
+		description: "inclusive hash range to replace [start_hash, end_hash]. Each element must be the 3-character hash anchor only; do not include the │ separator or line content.",
 		minItems: 2,
 		maxItems: 2,
 	},
@@ -58,7 +58,7 @@ const oldRangeSchema = Type.Array(
 
 const editItemSchema = Type.Object(
 	{
-		old_range: oldRangeSchema,
+		hash_range_incl: hashRangeInclSchema,
 		new_lines: newLinesSchema,
 	},
 	{ additionalProperties: false },
@@ -99,10 +99,10 @@ export function assertReq(
 		throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
 	}
 
-	for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "start", "end", "lines"]) {
+	for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "start", "end", "lines", "old_range"]) {
 		if (has(request, legacyKey)) {
 			throw new Error(
-				`[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {old_range: ["<START>", "<END>"], new_lines: [...]}.`
+				`[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_incl: ["<START>", "<END>"], new_lines: [...]}.`
 			);
 		}
 	}
@@ -114,7 +114,7 @@ export function assertReq(
 	}
 
 	if (has(request, "edits") && !Array.isArray(request.edits)) {
-		throw new Error('[E_BAD_SHAPE] Edit request requires an "edits" array when provided. Each edit is { old_range: ["<START>", "<END>"], new_lines: [...] }.');
+		throw new Error('[E_BAD_SHAPE] Edit request requires an "edits" array when provided. Each edit is { hash_range_incl: ["<START>", "<END>"], new_lines: [...] }.');
 	}
 }
 

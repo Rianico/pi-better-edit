@@ -41,13 +41,13 @@ describe("getPreviewInput", () => {
 	});
 
 	it("returns request for valid input", () => {
-		const input = { path: "test.txt", edits: [{ old_range: ["AAA", "BBB"], new_lines: ["new"] }] };
+		const input = { path: "test.txt", edits: [{ hash_range_incl: ["AAA", "BBB"], new_lines: ["new"] }] };
 		const result = getPreviewInput(input);
 		expect(result).toEqual(input);
 	});
 
 	it("normalizes file_path to path", () => {
-		const input = { file_path: "test.txt", edits: [{ old_range: ["AAA", "BBB"], new_lines: ["new"] }] };
+		const input = { file_path: "test.txt", edits: [{ hash_range_incl: ["AAA", "BBB"], new_lines: ["new"] }] };
 		const result = getPreviewInput(input);
 		expect(result?.path).toBe("test.txt");
 	});

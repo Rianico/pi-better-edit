@@ -13,9 +13,9 @@ describe("parseHashRef", () => {
 		);
 	});
 
-	it("rejects a full HASH│content line copied into old_range", () => {
+	it("rejects a full HASH│content line copied into hash_range_incl", () => {
 		expect(() => parseHashRef("aB3│const x = 1;")).toThrow(
-			/old_range must contain the 3-char hash only/,
+			/hash_range_incl must contain the 3-char hash only/,
 		);
 	});
 	it("rejects leading >>> markers (strict mode: no marker stripping)", () => {

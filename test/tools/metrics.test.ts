@@ -41,7 +41,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "a.txt",
           edits: [
             {
-              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
+              hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },
@@ -73,7 +73,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "b.txt",
           edits: [
             {
-              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["beta"],
+              hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["beta"],
             },
           ],
         },
@@ -103,7 +103,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "c.txt",
           edits: [
             {
-              old_range: [`${lineHash(2, "two")}`, `${lineHash(2, "two")}`], new_lines: ["TWO"],
+              hash_range_incl: [`${lineHash(2, "two")}`, `${lineHash(2, "two")}`], new_lines: ["TWO"],
             },
           ],
         },
@@ -131,7 +131,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "e.txt",
           edits: [
             {
-              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["beta"],
+              hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["beta"],
             },
           ],
         },

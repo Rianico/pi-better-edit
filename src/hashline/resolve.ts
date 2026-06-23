@@ -9,9 +9,9 @@ export type RAnchor = {
 	hashMatched: boolean;
 };
 
-export type HEdit = { old_range: [Anchor, Anchor]; new_lines: string[] };
+export type HEdit = { hash_range_incl: [Anchor, Anchor]; new_lines: string[] };
 export type RHEdit = {
-	old_range: [RAnchor, RAnchor];
+	hash_range_incl: [RAnchor, RAnchor];
 	new_lines: string[];
 };
 
@@ -37,7 +37,7 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-	old_range: [string, string];
+	hash_range_incl: [string, string];
 	new_lines: string[];
 };
 
@@ -118,7 +118,7 @@ export function fmtMismatch(
 	return out.join("\n");
 }
 
-const ITEM_KS = new Set(["old_range", "new_lines"]);
+const ITEM_KS = new Set(["hash_range_incl", "new_lines"]);
 
 function isStrArr(value: unknown): value is string[] {
 	return (
@@ -135,11 +135,11 @@ function isStrPair(value: unknown): value is [string, string] {
 }
 
 function assertItem(edit: Record<string, unknown>, index: number): void {
-	rejectUnknownFields(edit, ITEM_KS, `Edit ${index}`, "Each edit takes only { old_range, new_lines }.");
+	rejectUnknownFields(edit, ITEM_KS, `Edit ${index}`, "Each edit takes only { hash_range_incl, new_lines }.");
 
-	if ("old_range" in edit && !isStrPair(edit.old_range)) {
+	if ("hash_range_incl" in edit && !isStrPair(edit.hash_range_incl)) {
 		throw new Error(
-			`[E_BAD_SHAPE] Edit ${index} field "old_range" must be a pair of anchor strings [start, end].`,
+			`[E_BAD_SHAPE] Edit ${index} field "hash_range_incl" must be a pair of anchor strings [start, end].`,
 		);
 	}
 	if (!("new_lines" in edit)) {
@@ -148,9 +148,9 @@ function assertItem(edit: Record<string, unknown>, index: number): void {
 	if ("new_lines" in edit && !isStrArr(edit.new_lines)) {
 		throw new Error(`[E_BAD_SHAPE] Edit ${index} field "new_lines" must be a string array.`);
 	}
-	if (!isStrPair(edit.old_range)) {
+	if (!isStrPair(edit.hash_range_incl)) {
 		throw new Error(
-			`[E_BAD_SHAPE] Edit ${index} requires an "old_range" pair of anchor strings [start, end].`,
+			`[E_BAD_SHAPE] Edit ${index} requires an "hash_range_incl" pair of anchor strings [start, end].`,
 		);
 	}
 
@@ -163,7 +163,7 @@ export function resEdits(edits: HTEdit[]): HEdit[] {
 
 		const replaceLines = parseText(edit.new_lines);
 		result.push({
-			old_range: [parseHashRef(edit.old_range[0]), parseHashRef(edit.old_range[1])],
+			hash_range_incl: [parseHashRef(edit.hash_range_incl[0]), parseHashRef(edit.hash_range_incl[1])],
 			new_lines: replaceLines,
 		});
 	}
@@ -216,12 +216,12 @@ export function assertNoBarePrefix(
 			: `${matchedCount} match file line hashes — strong evidence the prefix was copied from read output.`;
 
 	throw new Error(
-		`[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (${locations}). Example: ${JSON.stringify(exampleLine)}. ${linesHint} Remove the "HASH│" prefix from each affected new_lines entry; keep only the literal line content that appears after "│" in read output. Remember: old_range uses hash anchors, new_lines uses file content only.`
+		`[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (${locations}). Example: ${JSON.stringify(exampleLine)}. ${linesHint} Remove the "HASH│" prefix from each affected new_lines entry; keep only the literal line content that appears after "│" in read output. Remember: hash_range_incl uses hash anchors, new_lines uses file content only.`
 	);
 }
 
 export function descEdit(edit: RHEdit): string {
-	return `replace ${edit.old_range[0].hash}-${edit.old_range[1].hash}`;
+	return `replace ${edit.hash_range_incl[0].hash}-${edit.hash_range_incl[1].hash}`;
 }
 
 export function valEdits(
@@ -247,14 +247,14 @@ export function valEdits(
 
 	for (const edit of edits) {
 		abortIf(signal);
-		const startResolved = tryResolve(edit.old_range[0]);
-		const endResolved = tryResolve(edit.old_range[1]);
+		const startResolved = tryResolve(edit.hash_range_incl[0]);
+		const endResolved = tryResolve(edit.hash_range_incl[1]);
 		if (!startResolved || !endResolved) {
 			continue;
 		}
 		if (startResolved.line > endResolved.line) {
 			throw new Error(
-				`[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.old_range[0].hash} and ${edit.old_range[1].hash}).`,
+				`[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_range_incl[0].hash} and ${edit.hash_range_incl[1].hash}).`,
 			);
 		}
 		const endLine = endResolved.line;
@@ -293,7 +293,7 @@ export function valEdits(
 			});
 		}
 		resolved.push({
-			old_range: [startResolved, endResolved],
+			hash_range_incl: [startResolved, endResolved],
 			new_lines: edit.new_lines,
 		});
 	}

@@ -1,3 +1,3 @@
 - Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call.
 - After a successful `replace`, the response text is empty (warnings only). Call `read` to get fresh anchors for follow-up edits.
-- On `[E_STALE_ANCHOR]`, call `read` to get fresh anchors, copy the 3-character HASH from each line into `old_range`, and retry.
+- On `[E_STALE_ANCHOR]`, call `read` to get fresh anchors, copy the 3-character HASH from each line into `hash_range_incl`, and retry.

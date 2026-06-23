@@ -20,7 +20,7 @@ function diagRef(ref: string): string {
 	}
 
 	if (trimmed.includes("│")) {
-		return `[E_BAD_REF] Invalid anchor "${trimmed}". old_range must contain the 3-char hash only — remove everything from "│" onward.`;
+		return `[E_BAD_REF] Invalid anchor "${trimmed}". hash_range_incl must contain the 3-char hash only — remove everything from "│" onward.`;
 	}
 
 	return `[E_BAD_REF] Invalid anchor "${trimmed}". Expected a 3-char base64 anchor (e.g. "aB3").`;

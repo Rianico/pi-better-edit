@@ -86,11 +86,11 @@ describe("regReplace", () => {
 
 		const result = registered?.prepareArguments?.({
 			path: "a.ts",
-			edits: [{ old_range: ["ZZPM", "ZZPM"], new_lines: ["x"] }],
+			edits: [{ hash_range_incl: ["ZZPM", "ZZPM"], new_lines: ["x"] }],
 		});
 		expect(result).toEqual({
 			path: "a.ts",
-			edits: [{ old_range: ["ZZPM", "ZZPM"], new_lines: ["x"] }],
+			edits: [{ hash_range_incl: ["ZZPM", "ZZPM"], new_lines: ["x"] }],
 		});
 	});
 
@@ -107,7 +107,7 @@ describe("regReplace", () => {
 						path: "sample.txt",
 						edits: [
 							{
-								old_range: [`${lineHash(1, "aaa")}`, `${lineHash(1, "aaa")}`], new_lines: null,
+								hash_range_incl: [`${lineHash(1, "aaa")}`, `${lineHash(1, "aaa")}`], new_lines: null,
 							},
 						],
 					},
@@ -129,7 +129,7 @@ describe("regReplace", () => {
 		await expect(
 			editTool.execute(
 				"e1",
-					{ edits: [{ old_range: ["aB3x", "aB3x"], new_lines: ["x"] }] },
+					{ edits: [{ hash_range_incl: ["aB3x", "aB3x"], new_lines: ["x"] }] },
 				undefined,
 				undefined,
 				{ cwd: process.cwd() } as any,
@@ -147,7 +147,7 @@ describe("regReplace", () => {
 				path: "sample.txt",
 				edits: [
 					{
-						old_range: [lineHash(2, "bbb"), lineHash(2, "bbb")], new_lines: ["BBB"],
+						hash_range_incl: [lineHash(2, "bbb"), lineHash(2, "bbb")], new_lines: ["BBB"],
 					},
 				],
 			};

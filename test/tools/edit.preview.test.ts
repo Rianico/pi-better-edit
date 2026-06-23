@@ -25,7 +25,7 @@ describe("compPreview", () => {
       const preview = await compPreview(
         {
           path: "sample.txt",
-          edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
+          edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BBB"] }],
         },
         cwd,
       );
@@ -50,7 +50,7 @@ describe("compPreview", () => {
       const preview = await compPreview(
         {
           path: "sample.txt",
-          edits: [{ old_range: [betaRef, betaRef], new_lines: ["BETA"] }],
+          edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BETA"] }],
         },
         cwd,
       );
@@ -74,7 +74,7 @@ describe("compPreview", () => {
         const preview = await compPreview(
           {
             path: "sample.txt",
-            edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
+            edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BBB"] }],
           },
           cwd,
         );
@@ -101,7 +101,7 @@ describe("compPreview", () => {
       const preview = await compPreview(
         {
           path: "sample.txt",
-          edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
+          edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BBB"] }],
         },
         cwd,
       );
@@ -129,7 +129,7 @@ describe("compPreview", () => {
       const betaRef = lineHash(2, "bbb");
       const editArgs = {
         path: "sample.txt",
-        edits: [{ old_range: [betaRef, betaRef], new_lines: ["BBB"] }],
+        edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BBB"] }],
       };
 
       const { regReplace } = await import("../../src/replace");

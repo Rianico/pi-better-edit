@@ -19,8 +19,8 @@ describe("prompts/replace.md (model-facing contract)", () => {
 		expect(replacePrompt).toContain('"new_lines": []');
 	});
 
-	it("requires old_range pair", () => {
-		expect(replacePrompt).toMatch(/old_range/i);
+	it("requires hash_range_incl pair", () => {
+		expect(replacePrompt).toMatch(/hash_range_incl/i);
 	});
 
 	it("declares that edits must be non-conflicting", () => {

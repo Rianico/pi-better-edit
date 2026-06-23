@@ -42,7 +42,7 @@ describe("normReq", () => {
 	});
 
 	it("coerces edits JSON string to array", () => {
-		const edits = [{ old_range: ["AAA", "BBB"], new_lines: ["new"] }];
+		const edits = [{ hash_range_incl: ["AAA", "BBB"], new_lines: ["new"] }];
 		const input = { path: "test.txt", edits: JSON.stringify(edits) };
 		const result = normReq(input) as Record<string, unknown>;
 		expect(Array.isArray(result.edits)).toBe(true);
@@ -50,7 +50,7 @@ describe("normReq", () => {
 	});
 
 	it("returns edits as-is if already array", () => {
-		const edits = [{ old_range: ["AAA", "BBB"], new_lines: ["new"] }];
+		const edits = [{ hash_range_incl: ["AAA", "BBB"], new_lines: ["new"] }];
 		const input = { path: "test.txt", edits };
 		const result = normReq(input) as Record<string, unknown>;
 		expect(result.edits).toBe(edits);

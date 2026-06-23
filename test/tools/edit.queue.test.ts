@@ -55,7 +55,7 @@ describe("edit tool file mutation queue", () => {
           path: "race.ts",
           edits: [
             {
-              old_range: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
+              hash_range_incl: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
             },
           ],
         },
@@ -69,7 +69,7 @@ describe("edit tool file mutation queue", () => {
           path: "race.ts",
           edits: [
             {
-              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
+              hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },
@@ -101,7 +101,7 @@ describe("edit tool file mutation queue", () => {
           path: "race.ts",
           edits: [
             {
-              old_range: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
+              hash_range_incl: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
             },
           ],
         },
@@ -115,7 +115,7 @@ describe("edit tool file mutation queue", () => {
           path: "linked-race.ts",
           edits: [
             {
-              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
+              hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },
@@ -147,7 +147,7 @@ describe("edit tool file mutation queue", () => {
           path: "race.ts",
           edits: [
             {
-              old_range: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
+              hash_range_incl: [`${lineHash(1, "alpha")}`, `${lineHash(1, "alpha")}`], new_lines: ["ALPHA"],
             },
           ],
         },
@@ -161,7 +161,7 @@ describe("edit tool file mutation queue", () => {
           path: "aliasdir/race.ts",
           edits: [
             {
-              old_range: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
+              hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
             },
           ],
         },

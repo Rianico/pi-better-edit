@@ -17,7 +17,7 @@ describe("strict hashline tool loop", () => {
         "e1",
         {
           path: "sample.ts",
-          edits: [{ old_range: [betaRef, betaRef], new_lines: ["BETA"] }],
+          edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BETA"] }],
         },
         undefined,
         undefined,
@@ -29,7 +29,7 @@ describe("strict hashline tool loop", () => {
           "e2",
           {
             path: "sample.ts",
-            edits: [{ old_range: [betaRef, betaRef], new_lines: ["BETA-AGAIN"] }],
+            edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BETA-AGAIN"] }],
           },
           undefined,
           undefined,
@@ -48,7 +48,7 @@ describe("strict hashline tool loop", () => {
         "e3",
         {
           path: "sample.ts",
-          edits: [{ old_range: [freshRef, freshRef], new_lines: ["BETA-AGAIN"] }],
+          edits: [{ hash_range_incl: [freshRef, freshRef], new_lines: ["BETA-AGAIN"] }],
         },
         undefined,
         undefined,
@@ -71,7 +71,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "crlf.ts", edits: [{ old_range: [betaRef, betaRef], new_lines: ["BETA"] }] },
+        { path: "crlf.ts", edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BETA"] }] },
         undefined,
         undefined,
         ctx,
@@ -97,7 +97,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "lf.ts", edits: [{ old_range: [betaRef, betaRef], new_lines: ["BETA"] }] },
+        { path: "lf.ts", edits: [{ hash_range_incl: [betaRef, betaRef], new_lines: ["BETA"] }] },
         undefined,
         undefined,
         ctx,

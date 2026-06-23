@@ -8,7 +8,7 @@ describe("indentation difference in boundary check", () => {
     const hashes = lineHashes(file);
 
     const edit = {
-      old_range: [hashes[1], hashes[2]] as [string, string],
+      hash_range_incl: [hashes[1], hashes[2]] as [string, string],
       new_lines: ["    function inner() {", "      return 2;", "        }"],
     };
 
@@ -23,7 +23,7 @@ describe("indentation difference in boundary check", () => {
     const hashes = lineHashes(file);
 
     const edit = {
-      old_range: [hashes[1], hashes[2]] as [string, string],
+      hash_range_incl: [hashes[1], hashes[2]] as [string, string],
       new_lines: ["  function inner() {", "    return 2;", "  }"],
     };
 
