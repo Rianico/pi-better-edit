@@ -66,19 +66,14 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 {
   "path": "src/main.ts",
   "edits": [
-    { "old_range": ["ve7", "ve7"], "new_lines": ["  console.log('hashline');"] }
+    { "hash_range_incl": ["ve7", "ve7"], "new_lines": ["  console.log('hashline');"] }
   ]
 }
 ```
-
-| Field | Purpose |
-|---|---|
-| `old_range` | Inclusive line range `[start_hash, end_hash]` (required). |
-| `new_lines` | Replacement content (one string per line). Use `[]` to delete. |
+| `hash_range_incl` | Inclusive line range `[start_hash, end_hash]` (required). |
 
 - **Request structure validation.** The request envelope (`path`, `edits`) and individual edit items are validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`.
-- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{old_range: ["<START>", "<END>"], new_lines: [...]}`.
-
+- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_incl: ["<START>", "<END>"], new_lines: [...]}`.
 All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
 
 ### Chained edits
@@ -105,7 +100,7 @@ The post-edit diff (with `+`/`-` markers) is exposed to the host UI via `details
 - **Stale anchors fail.** A hash mismatch means the file has changed since the last `read`. The error tells the model to call `read()` to get fresh anchors, then copy the 3-character HASH from each line into the next replace call.
 - **No fallback relocation.** Mismatched anchors are never silently relocated to a "close enough" line. This trades convenience for correctness.
 - **Strict patch content.** If `new_lines` contains `+HASH│` display prefixes (or `-N   ` diff rows), the edit is rejected with `[E_INVALID_PATCH]`. Bare `HASH│` content (the first 4 chars of a `new_lines` entry looking like 3 base64 chars + `│`) is also rejected with `[E_BARE_HASH_PREFIX]`. When the suspect's prefix happens to match a real file-line anchor, the error message flags that as strong evidence the model copied an anchor from the read output.
-- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{old_range: ["<START>", "<END>"], new_lines: [...]}`.
+- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_incl: ["<START>", "<END>"], new_lines: [...]}`.
 - **Atomic writes.** Files are written via temp-file-then-rename to avoid corruption from interrupted writes. Symlink chains are resolved so the target file is updated without replacing the symlink. Hard-linked files are updated in place to preserve the shared inode. File permissions are preserved across atomic renames.
 - **Per-file mutation queue.** Edits queue by the canonical write target, so concurrent edits through different symlink paths still serialize onto the same underlying file.
 - **Boundary duplication warnings.** When the last line of a replacement matches the next surviving line (or the first line matches the preceding one), a warning is emitted. This catches a common LLM pattern where closing delimiters like `}`, `});`, or `} else {` are accidentally duplicated. The warning includes the surviving line's post-edit hash so the model can reference it in a follow-up edit. No autocorrection is applied — the duplicate stays in the file and the model decides whether to remove it. Raw line comparison (not trimmed) avoids false positives when indentation differs.

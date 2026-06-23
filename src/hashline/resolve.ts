@@ -187,8 +187,7 @@ export function assertNoBarePrefix(
 	edits: HEdit[],
 	fileLines: string[],
 	fileHashes: string[],
-): string[] {
-	assertAligned(fileLines, fileHashes, "assertNoBarePrefix");
+): void {
 	const suspects: { line: string; hash: string; editIndex: number; lineIndex: number }[] = [];
 	for (let editIndex = 0; editIndex < edits.length; editIndex++) {
 		const edit = edits[editIndex]!;
@@ -198,8 +197,7 @@ export function assertNoBarePrefix(
 			if (match) suspects.push({ line, hash: match[1]!, editIndex, lineIndex });
 		}
 	}
-	if (suspects.length === 0) return [];
-
+	if (suspects.length === 0) return;
 	const locations = suspects
 		.map((s) => `edit ${s.editIndex}, new_lines[${s.lineIndex}]`)
 		.join("; ");

@@ -12,16 +12,6 @@ function coerceEditsArray(edits: unknown): unknown {
 	}
 }
 
-function normalizeEditItem(item: unknown): unknown {
-	if (!isRec(item)) return item;
-	const record: Record<string, unknown> = { ...item };
-	// Rename old_range to hash_range_incl for backward compatibility
-	if (has(record, "old_range") && !has(record, "hash_range_incl")) {
-		record.hash_range_incl = record.old_range;
-		delete record.old_range;
-	}
-	return record;
-}
 
 export function normReq(input: unknown): unknown {
 	if (!isRec(input)) {
@@ -41,10 +31,6 @@ export function normReq(input: unknown): unknown {
 		record.edits = coerceEditsArray(record.edits);
 	}
 
-	// Normalize each edit item: rename old_range to hash_range_incl
-	if (Array.isArray(record.edits)) {
-		record.edits = record.edits.map(normalizeEditItem);
-	}
 
 	return record;
 }

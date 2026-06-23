@@ -7,10 +7,6 @@ How to use:
 1. Call `read` to get HASH anchors:
 ```
 read({ path: "src/main.ts" })
-// Returns:
-// MQX│const x = 1;
-// ZPM│const y = 2;
-// VRW│const z = 3;
 ```
 
 2. Copy the 3-character HASH (before `│`) into `hash_range_incl`:
@@ -92,7 +88,7 @@ Error recovery:
 - `[E_BAD_REF]` — malformed HASH. Re-read and try again.
 - `[E_BAD_OP]` — invalid operation (e.g. start line > end line).
 - `[E_BAD_SHAPE]` — malformed request or edit item (missing fields, wrong types, unknown fields).
-- `[E_LEGACY_SHAPE]` — old `oldText`/`newText` or `old_range` format detected. Use `{hash_range_incl, new_lines}` instead.
+- `[E_LEGACY_SHAPE]` — old `oldText`/`newText` or `old_text`/`new_text` format detected. Use `{hash_range_incl, new_lines}` instead.
 - `[E_EDIT_CONFLICT]` — two edits overlap on the same line range. Make edits non-overlapping.
 - `[E_AMBIGUOUS_ANCHOR]` — hash collision. Call `read` to get fresh anchors.
 - `[E_BARE_HASH_PREFIX]` — a `new_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `hash_range_incl` uses hashes, `new_lines` does not.

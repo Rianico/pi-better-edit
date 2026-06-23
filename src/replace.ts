@@ -99,7 +99,7 @@ export function assertReq(
 		throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
 	}
 
-	for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "start", "end", "lines"]) {
+	for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"]) {
 		if (has(request, legacyKey)) {
 			throw new Error(
 				`[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_incl: ["<START>", "<END>"], new_lines: [...]}.`

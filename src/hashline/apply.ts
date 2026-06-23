@@ -256,8 +256,7 @@ export function applyEdits(
 		);
 	}
 
-	const barePrefixWarnings = assertNoBarePrefix(edits, lineIndex.fileLines, fileHashes);
-	warnings.push(...barePrefixWarnings);
+	assertNoBarePrefix(edits, lineIndex.fileLines, fileHashes);
 	warnUnicodeEsc(edits, warnings);
 
 	const orderedSpans = resSpans(
