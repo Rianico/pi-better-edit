@@ -171,3 +171,88 @@ describe("normReq — content_lines JSON string coercion", () => {
 		expect(input.changes[0]!.content_lines).toBe(originalNewLines);
 	});
 });
+
+describe("normReq — change item JSON string coercion", () => {
+	it("coerces JSON-string change items to objects", () => {
+		const input = {
+			path: "test.txt",
+			changes: [JSON.stringify({ hash_range_incl: ["AAA", "BBB"], content_lines: ["line1"] })],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const changes = result.changes as Array<Record<string, unknown>>;
+		expect(Array.isArray(changes)).toBe(true);
+		expect(changes).toHaveLength(1);
+		expect(changes[0]).toEqual({ hash_range_incl: ["AAA", "BBB"], content_lines: ["line1"] });
+	});
+
+	it("coerces multiple JSON-string change items", () => {
+		const input = {
+			path: "test.txt",
+			changes: [
+				JSON.stringify({ hash_range_incl: ["AAA", "BBB"], content_lines: ["a"] }),
+				JSON.stringify({ hash_range_incl: ["CCC", "DDD"], content_lines: ["b", "c"] }),
+			],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const changes = result.changes as Array<Record<string, unknown>>;
+		expect(changes).toHaveLength(2);
+		expect(changes[0]).toEqual({ hash_range_incl: ["AAA", "BBB"], content_lines: ["a"] });
+		expect(changes[1]).toEqual({ hash_range_incl: ["CCC", "DDD"], content_lines: ["b", "c"] });
+	});
+
+	it("leaves non-JSON string items as-is for downstream validation", () => {
+		const input = {
+			path: "test.txt",
+			changes: ["not json"],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const changes = result.changes as Array<unknown>;
+		expect(changes[0]).toBe("not json");
+	});
+
+	it("leaves object items unchanged", () => {
+		const input = {
+			path: "test.txt",
+			changes: [{ hash_range_incl: ["AAA", "BBB"], content_lines: ["line1"] }],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const changes = result.changes as Array<Record<string, unknown>>;
+		expect(changes[0]).toEqual({ hash_range_incl: ["AAA", "BBB"], content_lines: ["line1"] });
+	});
+
+	it("coerces JSON-string items when edits was also a JSON string", () => {
+		const changesPayload = [
+			JSON.stringify({ hash_range_incl: ["AAA", "BBB"], content_lines: ["x"] }),
+		];
+		const input = { path: "test.txt", changes: JSON.stringify(changesPayload) };
+		const result = normReq(input) as Record<string, unknown>;
+		const changes = result.changes as Array<Record<string, unknown>>;
+		expect(Array.isArray(changes)).toBe(true);
+		expect(changes).toHaveLength(1);
+		expect(changes[0]).toEqual({ hash_range_incl: ["AAA", "BBB"], content_lines: ["x"] });
+	});
+
+	it("coerces JSON-string items with JSON-string content_lines", () => {
+		const input = {
+			path: "test.txt",
+			changes: [
+				JSON.stringify({ hash_range_incl: ["AAA", "BBB"], content_lines: JSON.stringify(["a", "b"]) }),
+			],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const changes = result.changes as Array<Record<string, unknown>>;
+		expect(changes).toHaveLength(1);
+		expect(changes[0]).toEqual({ hash_range_incl: ["AAA", "BBB"], content_lines: ["a", "b"] });
+	});
+
+	it("does not mutate the original input's change items", () => {
+		const itemStr = JSON.stringify({ hash_range_incl: ["AAA", "BBB"], content_lines: ["x"] });
+		const input = {
+			path: "test.txt",
+			changes: [itemStr],
+		};
+		const originalItem = input.changes[0];
+		normReq(input);
+		expect(input.changes[0]).toBe(originalItem);
+	});
+});

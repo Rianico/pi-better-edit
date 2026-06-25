@@ -29,6 +29,20 @@ function coerceContentLines(changes: unknown): unknown {
   });
 }
 
+function coerceChangeItems(changes: unknown): unknown {
+  if (!Array.isArray(changes)) return changes;
+  return changes.map((item: unknown) => {
+    if (typeof item !== "string") return item;
+    try {
+      const parsed: unknown = JSON.parse(item);
+      if (isRec(parsed)) return parsed;
+    } catch {
+      // not valid JSON, leave as-is for downstream validation
+    }
+    return item;
+  });
+}
+
 export function normReq(input: unknown): unknown {
   if (!isRec(input)) {
     return input;
@@ -46,10 +60,12 @@ export function normReq(input: unknown): unknown {
 
   if (hasChangesField) {
     record.changes = coerceChangesArray(record.changes);
+    record.changes = coerceChangeItems(record.changes);
     record.changes = coerceContentLines(record.changes);
   } else if (hasEditsField) {
     // Accept "edits" as an alias for "changes" for backward compatibility
     record.changes = coerceChangesArray(record.edits);
+    record.changes = coerceChangeItems(record.changes);
     record.changes = coerceContentLines(record.changes);
     delete record.edits;
   }
