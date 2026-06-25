@@ -315,3 +315,50 @@ describe("applyEdits — edge cases (empty, single-line, no trailing newline)", 
 		expect(result.content).toBe("aaa\nbbb\nccc");
 	});
 });
+
+describe("applyEdits — trailing newline preservation", () => {
+	it("preserves trailing newline when replacing the last line of a file with one", () => {
+		const content = "line1\n</br>\n";
+		const edits: HEdit[] = [
+			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], new_lines: ["LINE1"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("LINE1\n</br>\n");
+	});
+
+	it("preserves trailing newline when replacing the last line itself", () => {
+		const content = "line1\n</br>\n";
+		const edits: HEdit[] = [
+			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["<br/>"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("line1\n<br/>\n");
+	});
+
+	it("preserves trailing newline when replacing a range ending at the last line", () => {
+		const content = "a\nb\nc\n";
+		const edits: HEdit[] = [
+			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 3)], new_lines: ["B", "C"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("a\nB\nC\n");
+	});
+
+	it("does not add trailing newline when original had none", () => {
+		const content = "line1\n</br>";
+		const edits: HEdit[] = [
+			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], new_lines: ["LINE1"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("LINE1\n</br>");
+	});
+
+	it("does not add trailing newline for mid-file edits", () => {
+		const content = "a\nb\nc\n";
+		const edits: HEdit[] = [
+			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["B"] },
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("a\nB\nc\n");
+	});
+});

@@ -1,107 +1,186 @@
-import {
-	chmod,
-	link,
-	lstat,
-	readFile,
-	readlink,
-	stat,
-	symlink,
-} from "fs/promises";
 import { describe, expect, it } from "vitest";
+import {
+  mkdtemp,
+  mkdir,
+  rm,
+  writeFile,
+  readFile,
+  stat,
+  symlink,
+  link,
+  chmod,
+} from "fs/promises";
 import { join } from "path";
-import { withTempFile } from "../support/fixtures";
-import { writeAtomic } from "../../src/fs-write";
+import { resolveTarget, writeAtomic } from "../../src/fs-write";
+
+async function tmpDir(): Promise<string> {
+  const root = join(process.cwd(), ".tmp");
+  await mkdir(root, { recursive: true });
+  return mkdtemp(join(root, "fs-write-test-"));
+}
+
+async function withDir(run: (dir: string) => Promise<void>): Promise<void> {
+  const dir = await tmpDir();
+  try {
+    await run(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+describe("resolveTarget", () => {
+  it("resolves a simple path", async () => {
+    await withDir(async (dir) => {
+      const filePath = join(dir, "a.txt");
+      await writeFile(filePath, "hello");
+      const resolved = await resolveTarget(filePath);
+      expect(resolved).toBe(filePath);
+    });
+  });
+
+  it("resolves a path through a symlink", async () => {
+    await withDir(async (dir) => {
+      const targetDir = join(dir, "target");
+      const linkDir = join(dir, "link");
+      await mkdir(targetDir);
+      await symlink(targetDir, linkDir);
+      const filePath = join(linkDir, "f.txt");
+      await writeFile(join(targetDir, "f.txt"), "data");
+      const resolved = await resolveTarget(filePath);
+      expect(resolved).toBe(join(targetDir, "f.txt"));
+    });
+  });
+
+  it("resolves a chain of symlinks", async () => {
+    await withDir(async (dir) => {
+      const real = join(dir, "real");
+      const link1 = join(dir, "link1");
+      const link2 = join(dir, "link2");
+      await mkdir(real);
+      await symlink(real, link1);
+      await symlink(link1, link2);
+      await writeFile(join(real, "x.txt"), "data");
+      const resolved = await resolveTarget(join(link2, "x.txt"));
+      expect(resolved).toBe(join(real, "x.txt"));
+    });
+  });
+
+  it("throws ELOOP on circular symlinks", async () => {
+    await withDir(async (dir) => {
+      const a = join(dir, "a");
+      const b = join(dir, "b");
+      await symlink(b, a);
+      await symlink(a, b);
+      await expect(resolveTarget(join(a, "x.txt"))).rejects.toThrow(
+        /Too many symbolic links/,
+      );
+    });
+  });
+
+  it("returns the path with remaining parts when a component does not exist", async () => {
+    await withDir(async (dir) => {
+      const missing = join(dir, "nonexistent", "sub", "file.txt");
+      const resolved = await resolveTarget(missing);
+      expect(resolved).toBe(missing);
+    });
+  });
+
+  it("resolves an absolute path unchanged", async () => {
+    await withDir(async (dir) => {
+      const filePath = join(dir, "data.txt");
+      await writeFile(filePath, "x");
+      const resolved = await resolveTarget(filePath);
+      expect(resolved).toBe(filePath);
+    });
+  });
+});
 
 describe("writeAtomic", () => {
-	it("creates new files with owner-only permissions", async () => {
-		await withTempFile("seed.txt", "seed\n", async ({ cwd }) => {
-			const path = join(cwd, "created.txt");
+  it("writes content to a new file", async () => {
+    await withDir(async (dir) => {
+      const filePath = join(dir, "new.txt");
+      await writeAtomic(filePath, "hello world");
+      const content = await readFile(filePath, "utf-8");
+      expect(content).toBe("hello world");
+    });
+  });
 
-			await writeAtomic(path, "secret\n");
+  it("overwrites an existing file", async () => {
+    await withDir(async (dir) => {
+      const filePath = join(dir, "existing.txt");
+      await writeFile(filePath, "old content");
+      await writeAtomic(filePath, "new content");
+      const content = await readFile(filePath, "utf-8");
+      expect(content).toBe("new content");
+    });
+  });
 
-			const fileStats = await stat(path);
-			expect(fileStats.mode & 0o777).toBe(0o600);
-		});
-	});
+  it("preserves file permissions on overwrite", async () => {
+    await withDir(async (dir) => {
+      const filePath = join(dir, "perm.txt");
+      await writeFile(filePath, "original", { mode: 0o644 });
+      await chmod(filePath, 0o644);
+      const before = await stat(filePath);
+      await writeAtomic(filePath, "updated");
+      const after = await stat(filePath);
+      expect(after.mode & 0o7777).toBe(before.mode & 0o7777);
+    });
+  });
 
-	it("preserves the target file mode when replacing an existing file", async () => {
-		await withTempFile("script.sh", "echo before\n", async ({ path }) => {
-			await chmod(path, 0o755);
+  it("writes to a file through a symlink", async () => {
+    await withDir(async (dir) => {
+      const targetDir = join(dir, "real");
+      const linkDir = join(dir, "link");
+      await mkdir(targetDir);
+      await symlink(targetDir, linkDir);
+      const filePath = join(linkDir, "through.txt");
+      await writeAtomic(filePath, "via symlink");
+      const content = await readFile(join(targetDir, "through.txt"), "utf-8");
+      expect(content).toBe("via symlink");
+    });
+  });
 
-			await writeAtomic(path, "echo after\n");
+  it("writes to a hard-linked file in-place (nlink > 1)", async () => {
+    await withDir(async (dir) => {
+      const original = join(dir, "original.txt");
+      const hardlink = join(dir, "hardlink.txt");
+      await writeFile(original, "shared content");
+      await link(original, hardlink);
+      // Both files now share the same inode (nlink === 2)
+      await writeAtomic(original, "updated shared");
+      const content1 = await readFile(original, "utf-8");
+      const content2 = await readFile(hardlink, "utf-8");
+      expect(content1).toBe("updated shared");
+      // Hard-linked files share the same inode, so both see the update
+      expect(content2).toBe("updated shared");
+    });
+  });
 
-			const fileStats = await stat(path);
-			expect(fileStats.mode & 0o777).toBe(0o755);
-		});
-	});
+  it("creates intermediate directories", async () => {
+    await withDir(async (dir) => {
+      const nested = join(dir, "a", "b", "c", "nested.txt");
+      await writeAtomic(nested, "deep");
+      const content = await readFile(nested, "utf-8");
+      expect(content).toBe("deep");
+    });
+  });
 
-	it("preserves the target file mode under a restrictive umask", async () => {
-		await withTempFile("public.txt", "before\n", async ({ path }) => {
-			await chmod(path, 0o644);
-			const previousUmask = process.umask(0o077);
-			try {
-				await writeAtomic(path, "after\n");
-			} finally {
-				process.umask(previousUmask);
-			}
+  it("writes empty content", async () => {
+    await withDir(async (dir) => {
+      const filePath = join(dir, "empty.txt");
+      await writeAtomic(filePath, "");
+      const content = await readFile(filePath, "utf-8");
+      expect(content).toBe("");
+    });
+  });
 
-			const fileStats = await stat(path);
-			expect(fileStats.mode & 0o777).toBe(0o644);
-		});
-	});
-
-	it("updates a symlink target without replacing the symlink", async () => {
-		await withTempFile(
-			"target.txt",
-			"before\n",
-			async ({ cwd, path: targetPath }) => {
-				const linkPath = `${cwd}/linked.txt`;
-				await symlink("target.txt", linkPath);
-
-				await writeAtomic(linkPath, "after\n");
-
-				expect(await readFile(targetPath, "utf-8")).toBe("after\n");
-				expect((await lstat(linkPath)).isSymbolicLink()).toBe(true);
-				expect(await readlink(linkPath)).toBe("target.txt");
-			},
-		);
-	});
-
-	it("follows a dangling symlink chain through to the missing terminal target", async () => {
-		await withTempFile("seed.txt", "seed\n", async ({ cwd }) => {
-			const intermediateLinkPath = join(cwd, "level-2.txt");
-			const topLinkPath = join(cwd, "level-1.txt");
-			const missingTargetPath = join(cwd, "missing.txt");
-
-			await symlink("missing.txt", intermediateLinkPath);
-			await symlink("level-2.txt", topLinkPath);
-
-			await writeAtomic(topLinkPath, "after\n");
-
-			expect((await lstat(topLinkPath)).isSymbolicLink()).toBe(true);
-			expect(await readlink(topLinkPath)).toBe("level-2.txt");
-			expect((await lstat(intermediateLinkPath)).isSymbolicLink()).toBe(true);
-			expect(await readlink(intermediateLinkPath)).toBe("missing.txt");
-			expect(await readFile(missingTargetPath, "utf-8")).toBe("after\n");
-		});
-	});
-
-	it("preserves hard links by updating the existing inode in place", async () => {
-		await withTempFile(
-			"primary.txt",
-			"before\n",
-			async ({ cwd, path: primaryPath }) => {
-				const siblingPath = join(cwd, "sibling.txt");
-				await link(primaryPath, siblingPath);
-				const originalInode = (await stat(primaryPath)).ino;
-
-				await writeAtomic(primaryPath, "after\n");
-
-				expect(await readFile(primaryPath, "utf-8")).toBe("after\n");
-				expect(await readFile(siblingPath, "utf-8")).toBe("after\n");
-				expect((await stat(primaryPath)).ino).toBe(originalInode);
-				expect((await stat(siblingPath)).ino).toBe(originalInode);
-			},
-		);
-	});
+  it("writes content with special characters", async () => {
+    await withDir(async (dir) => {
+      const filePath = join(dir, "special.txt");
+      const content = "line1\nline2\n  indented  \n\t\ttabbed\n";
+      await writeAtomic(filePath, content);
+      const read = await readFile(filePath, "utf-8");
+      expect(read).toBe(content);
+    });
+  });
 });

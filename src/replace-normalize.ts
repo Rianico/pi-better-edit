@@ -12,6 +12,22 @@ function coerceEditsArray(edits: unknown): unknown {
 	}
 }
 
+function coerceNewLines(edits: unknown): unknown {
+  if (!Array.isArray(edits)) return edits;
+  return edits.map((edit: unknown) => {
+    if (!isRec(edit)) return edit;
+    if (typeof edit.new_lines !== "string") return edit;
+    try {
+      const parsed: unknown = JSON.parse(edit.new_lines);
+      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
+        return { ...edit, new_lines: parsed };
+      }
+    } catch {
+      // not valid JSON, leave as-is for downstream validation
+    }
+    return edit;
+  });
+}
 
 export function normReq(input: unknown): unknown {
 	if (!isRec(input)) {
@@ -29,8 +45,8 @@ export function normReq(input: unknown): unknown {
 
 	if (hasEditsField) {
 		record.edits = coerceEditsArray(record.edits);
+		record.edits = coerceNewLines(record.edits);
 	}
-
 
 	return record;
 }

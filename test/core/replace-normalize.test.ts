@@ -101,3 +101,73 @@ describe("normReq", () => {
 		expect(input.edits).toBe(originalEdits);
 	});
 });
+
+describe("normReq — new_lines JSON string coercion", () => {
+	it("coerces JSON-string new_lines to array", () => {
+		const input = {
+			path: "test.txt",
+			edits: [{ hash_range_incl: ["AAA", "BBB"], new_lines: JSON.stringify(["line1", "line2"]) }],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const edits = result.edits as Array<Record<string, unknown>>;
+		expect(Array.isArray(edits[0]!.new_lines)).toBe(true);
+		expect(edits[0]!.new_lines).toEqual(["line1", "line2"]);
+	});
+
+	it("leaves array new_lines unchanged", () => {
+		const input = {
+			path: "test.txt",
+			edits: [{ hash_range_incl: ["AAA", "BBB"], new_lines: ["line1", "line2"] }],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const edits = result.edits as Array<Record<string, unknown>>;
+		expect(edits[0]!.new_lines).toEqual(["line1", "line2"]);
+	});
+
+	it("leaves non-JSON string new_lines as-is for downstream validation", () => {
+		const input = {
+			path: "test.txt",
+			edits: [{ hash_range_incl: ["AAA", "BBB"], new_lines: "not json" }],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const edits = result.edits as Array<Record<string, unknown>>;
+		expect(typeof edits[0]!.new_lines).toBe("string");
+		expect(edits[0]!.new_lines).toBe("not json");
+	});
+
+	it("coerces new_lines in all edits", () => {
+		const input = {
+			path: "test.txt",
+			edits: [
+				{ hash_range_incl: ["AAA", "BBB"], new_lines: JSON.stringify(["a"]) },
+				{ hash_range_incl: ["CCC", "DDD"], new_lines: JSON.stringify(["b", "c"]) },
+			],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const edits = result.edits as Array<Record<string, unknown>>;
+		expect(edits[0]!.new_lines).toEqual(["a"]);
+		expect(edits[1]!.new_lines).toEqual(["b", "c"]);
+	});
+
+	it("coerces new_lines when edits was also a JSON string", () => {
+		const editsPayload = [
+			{ hash_range_incl: ["AAA", "BBB"], new_lines: JSON.stringify(["x"]) },
+		];
+		const input = { path: "test.txt", edits: JSON.stringify(editsPayload) };
+		const result = normReq(input) as Record<string, unknown>;
+		const edits = result.edits as Array<Record<string, unknown>>;
+		expect(Array.isArray(edits)).toBe(true);
+		expect(edits[0]!.new_lines).toEqual(["x"]);
+	});
+
+	it("does not mutate the original input's new_lines", () => {
+		const newLinesStr = JSON.stringify(["a", "b"]);
+		const input = {
+			path: "test.txt",
+			edits: [{ hash_range_incl: ["AAA", "BBB"], new_lines: newLinesStr }],
+		};
+		const originalNewLines = input.edits[0]!.new_lines;
+		normReq(input);
+		expect(input.edits[0]!.new_lines).toBe(originalNewLines);
+	});
+});
