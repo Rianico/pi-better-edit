@@ -1,52 +1,58 @@
 import { isRec, has } from "./utils";
 
-function coerceEditsArray(edits: unknown): unknown {
-	if (typeof edits !== "string") {
-		return edits;
-	}
-	try {
-		const parsed: unknown = JSON.parse(edits);
-		return Array.isArray(parsed) ? parsed : edits;
-	} catch {
-		return edits;
-	}
+function coerceChangesArray(changes: unknown): unknown {
+  if (typeof changes !== "string") {
+    return changes;
+  }
+  try {
+    const parsed: unknown = JSON.parse(changes);
+    return Array.isArray(parsed) ? parsed : changes;
+  } catch {
+    return changes;
+  }
 }
 
-function coerceNewLines(edits: unknown): unknown {
-  if (!Array.isArray(edits)) return edits;
-  return edits.map((edit: unknown) => {
-    if (!isRec(edit)) return edit;
-    if (typeof edit.new_lines !== "string") return edit;
+function coerceContentLines(changes: unknown): unknown {
+  if (!Array.isArray(changes)) return changes;
+  return changes.map((change: unknown) => {
+    if (!isRec(change)) return change;
+    if (typeof change.content_lines !== "string") return change;
     try {
-      const parsed: unknown = JSON.parse(edit.new_lines);
+      const parsed: unknown = JSON.parse(change.content_lines);
       if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
-        return { ...edit, new_lines: parsed };
+        return { ...change, content_lines: parsed };
       }
     } catch {
       // not valid JSON, leave as-is for downstream validation
     }
-    return edit;
+    return change;
   });
 }
 
 export function normReq(input: unknown): unknown {
-	if (!isRec(input)) {
-		return input;
-	}
+  if (!isRec(input)) {
+    return input;
+  }
 
-	const record: Record<string, unknown> = { ...input };
+  const record: Record<string, unknown> = { ...input };
 
-	if (typeof record.path !== "string" && typeof record.file_path === "string") {
-		record.path = record.file_path;
-		delete record.file_path;
-	}
+  if (typeof record.path !== "string" && typeof record.file_path === "string") {
+    record.path = record.file_path;
+    delete record.file_path;
+  }
 
-	const hasEditsField = has(record, "edits");
+  const hasChangesField = has(record, "changes");
+  const hasEditsField = has(record, "edits");
 
-	if (hasEditsField) {
-		record.edits = coerceEditsArray(record.edits);
-		record.edits = coerceNewLines(record.edits);
-	}
+  if (hasChangesField) {
+    record.changes = coerceChangesArray(record.changes);
+    record.changes = coerceContentLines(record.changes);
+  } else if (hasEditsField) {
+    // Accept "edits" as an alias for "changes" for backward compatibility
+    record.changes = coerceChangesArray(record.edits);
+    record.changes = coerceContentLines(record.changes);
+    delete record.edits;
+  }
 
-	return record;
+  return record;
 }

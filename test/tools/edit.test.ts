@@ -48,7 +48,7 @@ describe("regReplace", () => {
 		const props = schema.properties;
 		expect(props).toBeDefined();
 		expect(props.path).toBeDefined();
-		expect(props.edits).toBeDefined();
+		expect(props.changes).toBeDefined();
 
 		expect(props.oldText).toBeUndefined();
 		expect(props.newText).toBeUndefined();
@@ -86,11 +86,11 @@ describe("regReplace", () => {
 
 		const result = registered?.prepareArguments?.({
 			path: "a.ts",
-			edits: [{ hash_range_incl: ["ZZPM", "ZZPM"], new_lines: ["x"] }],
+			changes: [{ hash_range_incl: ["ZZPM", "ZZPM"], content_lines: ["x"] }],
 		});
 		expect(result).toEqual({
 			path: "a.ts",
-			edits: [{ hash_range_incl: ["ZZPM", "ZZPM"], new_lines: ["x"] }],
+			changes: [{ hash_range_incl: ["ZZPM", "ZZPM"], content_lines: ["x"] }],
 		});
 	});
 
@@ -105,9 +105,9 @@ describe("regReplace", () => {
 					"e1",
 					{
 						path: "sample.txt",
-						edits: [
+						changes: [
 							{
-								hash_range_incl: [`${lineHash(1, "aaa")}`, `${lineHash(1, "aaa")}`], new_lines: null,
+								hash_range_incl: [`${lineHash(1, "aaa")}`, `${lineHash(1, "aaa")}`], content_lines: null,
 							},
 						],
 					},
@@ -129,7 +129,7 @@ describe("regReplace", () => {
 		await expect(
 			editTool.execute(
 				"e1",
-					{ edits: [{ hash_range_incl: ["aB3x", "aB3x"], new_lines: ["x"] }] },
+					{ changes: [{ hash_range_incl: ["aB3x", "aB3x"], content_lines: ["x"] }] },
 				undefined,
 				undefined,
 				{ cwd: process.cwd() } as any,
@@ -145,9 +145,9 @@ describe("regReplace", () => {
 
 			const editArgs = {
 				path: "sample.txt",
-				edits: [
+				changes: [
 					{
-						hash_range_incl: [lineHash(2, "bbb"), lineHash(2, "bbb")], new_lines: ["BBB"],
+						hash_range_incl: [lineHash(2, "bbb"), lineHash(2, "bbb")], content_lines: ["BBB"],
 					},
 				],
 			};

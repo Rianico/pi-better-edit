@@ -9,10 +9,10 @@ export type RAnchor = {
 	hashMatched: boolean;
 };
 
-export type HEdit = { hash_range_incl: [Anchor, Anchor]; new_lines: string[] };
+export type HEdit = { hash_range_incl: [Anchor, Anchor]; content_lines: string[] };
 export type RHEdit = {
-	hash_range_incl: [RAnchor, RAnchor];
-	new_lines: string[];
+  hash_range_incl: [RAnchor, RAnchor];
+  content_lines: string[];
 };
 
 interface HMismatch {
@@ -37,8 +37,8 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-	hash_range_incl: [string, string];
-	new_lines: string[];
+  hash_range_incl: [string, string];
+  content_lines: string[];
 };
 
 function resAnchor(
@@ -119,7 +119,7 @@ export function fmtMismatch(
 	return out.join("\n");
 }
 
-const ITEM_KS = new Set(["hash_range_incl", "new_lines"]);
+const ITEM_KS = new Set(["hash_range_incl", "content_lines"]);
 
 function isStrArr(value: unknown): value is string[] {
 	return (
@@ -136,87 +136,86 @@ function isStrPair(value: unknown): value is [string, string] {
 }
 
 function assertItem(edit: Record<string, unknown>, index: number): void {
-	rejectUnknownFields(edit, ITEM_KS, `Edit ${index}`, "Each edit takes only { hash_range_incl, new_lines }.");
+  rejectUnknownFields(edit, ITEM_KS, `Edit ${index}`, "Each edit takes only { hash_range_incl, content_lines }.");
 
-	if ("hash_range_incl" in edit && !isStrPair(edit.hash_range_incl)) {
-		throw new Error(
-			`[E_BAD_SHAPE] Edit ${index} field "hash_range_incl" must be a pair of anchor strings [start, end].`,
-		);
-	}
-	if (!("new_lines" in edit)) {
-		throw new Error(`[E_BAD_SHAPE] Edit ${index} requires a "new_lines" field. Provide the replacement lines (use [] to delete).`);
-	}
-	if ("new_lines" in edit && !isStrArr(edit.new_lines)) {
-		throw new Error(`[E_BAD_SHAPE] Edit ${index} field "new_lines" must be a string array.`);
-	}
-	if (!isStrPair(edit.hash_range_incl)) {
-		throw new Error(
-			`[E_BAD_SHAPE] Edit ${index} requires an "hash_range_incl" pair of anchor strings [start, end].`,
-		);
-	}
-
+  if ("hash_range_incl" in edit && !isStrPair(edit.hash_range_incl)) {
+    throw new Error(
+      `[E_BAD_SHAPE] Edit ${index} field "hash_range_incl" must be a pair of anchor strings [start, end].`,
+    );
+  }
+  if (!("content_lines" in edit)) {
+    throw new Error(`[E_BAD_SHAPE] Edit ${index} requires a "content_lines" field. Provide the replacement lines (use [] to delete).`);
+  }
+  if ("content_lines" in edit && !isStrArr(edit.content_lines)) {
+    throw new Error(`[E_BAD_SHAPE] Edit ${index} field "content_lines" must be a string array.`);
+  }
+  if (!isStrPair(edit.hash_range_incl)) {
+    throw new Error(
+      `[E_BAD_SHAPE] Edit ${index} requires an "hash_range_incl" pair of anchor strings [start, end].`,
+    );
+  }
 }
 
 export function resEdits(edits: HTEdit[]): HEdit[] {
-	const result: HEdit[] = [];
-	for (const [index, edit] of edits.entries()) {
-		assertItem(edit as Record<string, unknown>, index);
+  const result: HEdit[] = [];
+  for (const [index, edit] of edits.entries()) {
+    assertItem(edit as Record<string, unknown>, index);
 
-		const replaceLines = parseText(edit.new_lines);
-		result.push({
-			hash_range_incl: [parseHashRef(edit.hash_range_incl[0]), parseHashRef(edit.hash_range_incl[1])],
-			new_lines: replaceLines,
-		});
-	}
-	return result;
+    const replaceLines = parseText(edit.content_lines);
+    result.push({
+      hash_range_incl: [parseHashRef(edit.hash_range_incl[0]), parseHashRef(edit.hash_range_incl[1])],
+      content_lines: replaceLines,
+    });
+  }
+  return result;
 }
 
 function warnUnicodeEsc(
-	edits: HEdit[],
-	warnings: string[],
+  edits: HEdit[],
+  warnings: string[],
 ): void {
-	for (const edit of edits) {
-		if (edit.new_lines.some((line) => /\\uDDDD/i.test(line))) {
-			warnings.push(
-				"Detected literal \\uDDDD in edit content; no autocorrection applied. Verify whether this should be a real Unicode escape or plain text.",
-			);
-		}
-	}
+  for (const edit of edits) {
+    if (edit.content_lines.some((line) => /\\uDDDD/i.test(line))) {
+      warnings.push(
+        "Detected literal \\uDDDD in edit content; no autocorrection applied. Verify whether this should be a real Unicode escape or plain text.",
+      );
+    }
+  }
 }
 
 export function assertNoBarePrefix(
-	edits: HEdit[],
-	fileLines: string[],
-	fileHashes: string[],
+  edits: HEdit[],
+  fileLines: string[],
+  fileHashes: string[],
 ): void {
-	const suspects: { line: string; hash: string; editIndex: number; lineIndex: number }[] = [];
-	for (let editIndex = 0; editIndex < edits.length; editIndex++) {
-		const edit = edits[editIndex]!;
-		for (let lineIndex = 0; lineIndex < edit.new_lines.length; lineIndex++) {
-			const line = edit.new_lines[lineIndex]!;
-			const match = line.match(HL_BARE_PREFIX_RE);
-			if (match) suspects.push({ line, hash: match[1]!, editIndex, lineIndex });
-		}
-	}
-	if (suspects.length === 0) return;
-	const locations = suspects
-		.map((s) => `edit ${s.editIndex}, new_lines[${s.lineIndex}]`)
-		.join("; ");
+  const suspects: { line: string; hash: string; editIndex: number; lineIndex: number }[] = [];
+  for (let editIndex = 0; editIndex < edits.length; editIndex++) {
+    const edit = edits[editIndex]!;
+    for (let lineIndex = 0; lineIndex < edit.content_lines.length; lineIndex++) {
+      const line = edit.content_lines[lineIndex]!;
+      const match = line.match(HL_BARE_PREFIX_RE);
+      if (match) suspects.push({ line, hash: match[1]!, editIndex, lineIndex });
+    }
+  }
+  if (suspects.length === 0) return;
+  const locations = suspects
+    .map((s) => `edit ${s.editIndex}, content_lines[${s.lineIndex}]`)
+    .join("; ");
 
-	const fileHashSet = new Set(fileHashes);
-	const matched = suspects.filter((s) => fileHashSet.has(s.hash));
-	const matchedCount = matched.length;
+  const fileHashSet = new Set(fileHashes);
+  const matched = suspects.filter((s) => fileHashSet.has(s.hash));
+  const matchedCount = matched.length;
 
-	const exampleLine = `${suspects[0]!.hash}│${suspects[0]!.line}`;
+  const exampleLine = `${suspects[0]!.hash}│${suspects[0]!.line}`;
 
-	const linesHint =
-		matchedCount === 0
-			? `None match file line hashes.`
-			: `${matchedCount} match file line hashes — strong evidence the prefix was copied from read output.`;
+  const linesHint =
+    matchedCount === 0
+      ? `None match file line hashes.`
+      : `${matchedCount} match file line hashes — strong evidence the prefix was copied from read output.`;
 
-	throw new Error(
-		`[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (${locations}). Example: ${JSON.stringify(exampleLine)}. ${linesHint} Remove the "HASH│" prefix from each affected new_lines entry; keep only the literal line content that appears after "│" in read output. Remember: hash_range_incl uses hash anchors, new_lines uses file content only.`
-	);
+  throw new Error(
+    `[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (${locations}). Example: ${JSON.stringify(exampleLine)}. ${linesHint} Remove the "HASH│" prefix from each affected content_lines entry; keep only the literal line content that appears after "│" in read output. Remember: hash_range_incl uses hash anchors, content_lines uses file content only.`
+  );
 }
 
 export function descEdit(edit: RHEdit): string {
@@ -224,80 +223,80 @@ export function descEdit(edit: RHEdit): string {
 }
 
 export function valEdits(
-	edits: HEdit[],
-	fileLines: string[],
-	fileHashes: string[],
-	warnings: string[],
-	signal: AbortSignal | undefined,
+  edits: HEdit[],
+  fileLines: string[],
+  fileHashes: string[],
+  warnings: string[],
+  signal: AbortSignal | undefined,
 ): { resolved: RHEdit[]; mismatches: HMismatch[]; boundaryWarnings: BDupWarn[] } {
-	assertAligned(fileLines, fileHashes, "valEdits");
-	const resolved: RHEdit[] = [];
-	const mismatches: HMismatch[] = [];
-	const boundaryWarnings: BDupWarn[] = [];
+  assertAligned(fileLines, fileHashes, "valEdits");
+  const resolved: RHEdit[] = [];
+  const mismatches: HMismatch[] = [];
+  const boundaryWarnings: BDupWarn[] = [];
 
-	const tryResolve = (ref: Anchor): RAnchor | undefined => {
-		const result = resAnchor(ref, fileLines, fileHashes);
-		if ("kind" in result) {
-			mismatches.push(result);
-			return undefined;
-		}
-		return result;
-	};
+  const tryResolve = (ref: Anchor): RAnchor | undefined => {
+    const result = resAnchor(ref, fileLines, fileHashes);
+    if ("kind" in result) {
+      mismatches.push(result);
+      return undefined;
+    }
+    return result;
+  };
 
-	for (const edit of edits) {
-		abortIf(signal);
-		const startResolved = tryResolve(edit.hash_range_incl[0]);
-		const endResolved = tryResolve(edit.hash_range_incl[1]);
-		if (!startResolved || !endResolved) {
-			continue;
-		}
-		if (startResolved.line > endResolved.line) {
-			throw new Error(
-				`[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_range_incl[0].hash} and ${edit.hash_range_incl[1].hash}).`,
-			);
-		}
-		const endLine = endResolved.line;
-		const nextLine = fileLines[endLine];
-		const replacementLastLine = edit.new_lines.at(-1);
-		if (
-			nextLine !== undefined &&
-			replacementLastLine !== undefined &&
-			replacementLastLine.length > 0 &&
-			replacementLastLine === nextLine
-		) {
-			boundaryWarnings.push({
-				kind: "trailing",
-				survivingLineContent: nextLine,
-				survivingLineIndex: endLine,
-				occurrence: fileLines.slice(0, endLine).filter(l => l === nextLine).length,
-				replacementLineContent: replacementLastLine,
-				editIndex: resolved.length,
-			});
-		}
-		const prevLine = fileLines[startResolved.line - 2];
-		const replacementFirstLine = edit.new_lines[0];
-		if (
-			prevLine !== undefined &&
-			replacementFirstLine !== undefined &&
-			replacementFirstLine.length > 0 &&
-			replacementFirstLine === prevLine
-		) {
-			boundaryWarnings.push({
-				kind: "leading",
-				survivingLineContent: prevLine,
-				survivingLineIndex: startResolved.line - 2,
-				occurrence: fileLines.slice(0, startResolved.line - 2).filter(l => l === prevLine).length,
-				replacementLineContent: replacementFirstLine,
-				editIndex: resolved.length,
-			});
-		}
-		resolved.push({
-			hash_range_incl: [startResolved, endResolved],
-			new_lines: edit.new_lines,
-		});
-	}
+  for (const edit of edits) {
+    abortIf(signal);
+    const startResolved = tryResolve(edit.hash_range_incl[0]);
+    const endResolved = tryResolve(edit.hash_range_incl[1]);
+    if (!startResolved || !endResolved) {
+      continue;
+    }
+    if (startResolved.line > endResolved.line) {
+      throw new Error(
+        `[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_range_incl[0].hash} and ${edit.hash_range_incl[1].hash}).`,
+      );
+    }
+    const endLine = endResolved.line;
+    const nextLine = fileLines[endLine];
+    const replacementLastLine = edit.content_lines.at(-1);
+    if (
+      nextLine !== undefined &&
+      replacementLastLine !== undefined &&
+      replacementLastLine.length > 0 &&
+      replacementLastLine === nextLine
+    ) {
+      boundaryWarnings.push({
+        kind: "trailing",
+        survivingLineContent: nextLine,
+        survivingLineIndex: endLine,
+        occurrence: fileLines.slice(0, endLine).filter(l => l === nextLine).length,
+        replacementLineContent: replacementLastLine,
+        editIndex: resolved.length,
+      });
+    }
+    const prevLine = fileLines[startResolved.line - 2];
+    const replacementFirstLine = edit.content_lines[0];
+    if (
+      prevLine !== undefined &&
+      replacementFirstLine !== undefined &&
+      replacementFirstLine.length > 0 &&
+      replacementFirstLine === prevLine
+    ) {
+      boundaryWarnings.push({
+        kind: "leading",
+        survivingLineContent: prevLine,
+        survivingLineIndex: startResolved.line - 2,
+        occurrence: fileLines.slice(0, startResolved.line - 2).filter(l => l === prevLine).length,
+        replacementLineContent: replacementFirstLine,
+        editIndex: resolved.length,
+      });
+    }
+    resolved.push({
+      hash_range_incl: [startResolved, endResolved],
+      content_lines: edit.content_lines,
+    });
+  }
 
-	return { resolved, mismatches, boundaryWarnings };
+  return { resolved, mismatches, boundaryWarnings };
 }
 
 export { warnUnicodeEsc };

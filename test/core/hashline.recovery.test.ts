@@ -14,7 +14,7 @@ describe("applyEdits — error handling", () => {
 	it("throws on hash mismatch", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [{ hash: "#XXPM" }, { hash: "#XXPM" }], new_lines: ["BBB"] },
+			{ hash_range_incl: [{ hash: "#XXPM" }, { hash: "#XXPM" }], content_lines: ["BBB"] },
 		];
 		expect(() => applyEdits(content, edits)).toThrow(/E_STALE_ANCHOR/);
 	});
@@ -22,7 +22,7 @@ describe("applyEdits — error handling", () => {
 	it("throws when the hash matches no line in the file", () => {
 		const content = "aaa\nbbb";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [{ hash: "ZZPM" }, { hash: "ZZPM" }], new_lines: ["x"] },
+			{ hash_range_incl: [{ hash: "ZZPM" }, { hash: "ZZPM" }], content_lines: ["x"] },
 		];
 		expect(() => applyEdits(content, edits)).toThrow(
 			/2 stale anchors: "ZZPM", "ZZPM"/,
@@ -34,7 +34,7 @@ describe("applyEdits — error handling", () => {
 		const edits: HEdit[] = [
 			{
 				hash_range_incl: [makeTag(content, 3), makeTag(content, 1)],
-				new_lines: ["x"],
+				content_lines: ["x"],
 			},
 		];
 		expect(() => applyEdits(content, edits)).toThrow(
@@ -45,8 +45,8 @@ describe("applyEdits — error handling", () => {
 	it("reports multiple mismatches at once", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [{ hash: "#XXPM" }, { hash: "#XXPM" }], new_lines: ["A"] },
-			{ hash_range_incl: [{ hash: "#YYWV" }, { hash: "#YYWV" }], new_lines: ["C"] },
+			{ hash_range_incl: [{ hash: "#XXPM" }, { hash: "#XXPM" }], content_lines: ["A"] },
+			{ hash_range_incl: [{ hash: "#YYWV" }, { hash: "#YYWV" }], content_lines: ["C"] },
 		];
 		expect(() => applyEdits(content, edits)).toThrow(
 			/4 stale anchors/,
@@ -56,8 +56,8 @@ describe("applyEdits — error handling", () => {
 	it("lists stale anchor hashes in mismatch errors", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [{ hash: "#XXPM" }, { hash: "#XXPM" }], new_lines: ["A"] },
-			{ hash_range_incl: [{ hash: "#YYWV" }, { hash: "#YYWV" }], new_lines: ["C"] },
+			{ hash_range_incl: [{ hash: "#XXPM" }, { hash: "#XXPM" }], content_lines: ["A"] },
+			{ hash_range_incl: [{ hash: "#YYWV" }, { hash: "#YYWV" }], content_lines: ["C"] },
 		];
 		expect(() => applyEdits(content, edits)).toThrow(
 			/4 stale anchors: "#XXPM", "#XXPM", "#YYWV", "#YYWV"/,
@@ -68,7 +68,7 @@ describe("applyEdits — error handling", () => {
 		expect(() =>
 			applyEdits("aaa", [
 				{
-					hash_range_incl: [{ hash: "ZZPM" }, { hash: "ZZPM" }], new_lines: ["bbb"],
+					hash_range_incl: [{ hash: "ZZPM" }, { hash: "ZZPM" }], content_lines: ["bbb"],
 				} as any,
 			]),
 		).toThrow(/Call read\(\) to get fresh anchors/);
@@ -80,10 +80,10 @@ describe("applyEdits — error handling", () => {
 			applyEdits(content, [
 				{
 					hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
-				new_lines: ["X"],
+				content_lines: ["X"],
 				},
 				{
-					hash_range_incl: [makeTag(content, 3), makeTag(content, 3)], new_lines: ["Y"],
+					hash_range_incl: [makeTag(content, 3), makeTag(content, 3)], content_lines: ["Y"],
 				},
 			]),
 		).toThrow(/E_EDIT_CONFLICT.*overlap.*same original line range/i);
@@ -97,7 +97,7 @@ describe("applyEdits — heuristics", () => {
 		const edits: HEdit[] = [
 			{
 				hash_range_incl: [makeTag(content, 1), makeTag(content, 2)],
-				new_lines: ["if (ok) {", "  runSafe();", "}"],
+				content_lines: ["if (ok) {", "  runSafe();", "}"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -114,7 +114,7 @@ describe("applyEdits — heuristics", () => {
 		const edits: HEdit[] = [
 			{
 				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
-				new_lines: ["  const y = 2;", "  return y;", "}"],
+				content_lines: ["  const y = 2;", "  return y;", "}"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -129,7 +129,7 @@ describe("applyEdits — heuristics", () => {
 		const edits: HEdit[] = [
 			{
 				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
-				new_lines: ["  const result = processData();", "  res.json(result);", "});"],
+				content_lines: ["  const result = processData();", "  res.json(result);", "});"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -144,7 +144,7 @@ describe("applyEdits — heuristics", () => {
 		const edits: HEdit[] = [
 			{
 				hash_range_incl: [makeTag(content, 1), makeTag(content, 2)],
-				new_lines: ["if (condition) {", "  doNewThing();", "} else {"],
+				content_lines: ["if (condition) {", "  doNewThing();", "} else {"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -159,7 +159,7 @@ describe("applyEdits — heuristics", () => {
 		const edits: HEdit[] = [
 			{
 				hash_range_incl: [makeTag(content, 1), makeTag(content, 1)],
-				new_lines: ["x", "}", "y", "}"],
+				content_lines: ["x", "}", "y", "}"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -174,7 +174,7 @@ describe("applyEdits — heuristics", () => {
 		const edits: HEdit[] = [
 			{
 				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
-				new_lines: ["before();", "if (ok) {", "  runSafe();"],
+				content_lines: ["before();", "if (ok) {", "  runSafe();"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -192,14 +192,14 @@ describe("applyEdits — heuristics", () => {
 		const content = "root\n\tchild\n\t\tvalue\nend";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 3), makeTag(content, 3)], new_lines: ["\\t\\treplaced"],
+				hash_range_incl: [makeTag(content, 3), makeTag(content, 3)], content_lines: ["\\t\\treplaced"],
 			},
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("root\n\tchild\n\\t\\treplaced\nend");
 		expect(result.warnings).toBeUndefined();
 		expect(edits[0]).toEqual({
-			hash_range_incl: [makeTag(content, 3), makeTag(content, 3)], new_lines: ["\\t\\treplaced"],
+			hash_range_incl: [makeTag(content, 3), makeTag(content, 3)], content_lines: ["\\t\\treplaced"],
 		});
 	});
 
@@ -207,7 +207,7 @@ describe("applyEdits — heuristics", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["\\uDDDD"],
+				hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["\\uDDDD"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -219,7 +219,7 @@ describe("applyEdits — heuristics", () => {
 		const content = "aaa\nbbb\nccc\nddd";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["x1", "x2", "x3"],
+				hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["x1", "x2", "x3"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -232,7 +232,7 @@ describe("applyEdits — heuristics", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], new_lines: ["BBB"],
+				hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["BBB"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -245,7 +245,7 @@ describe("applyEdits — heuristics", () => {
 		const edits: HEdit[] = [
 			{
 				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
-				new_lines: ["x1", "x2", "x3"],
+				content_lines: ["x1", "x2", "x3"],
 			},
 		];
 		const result = applyEdits(content, edits);
@@ -262,41 +262,41 @@ describe("integration: resEdits → applyEdits", () => {
 		const content = "aaa\nbbb\nccc";
 		const hash = lineHashes(content)[1]!;
 		const toolEdits: HTEdit[] = [
-			{ hash_range_incl: [hash, hash], new_lines: ["BBB"] },
+			{ hash_range_incl: [hash, hash], content_lines: ["BBB"] },
 		];
 		const resolved = resEdits(toolEdits);
 		const result = applyEdits(content, resolved);
 		expect(result.content).toBe("aaa\nBBB\nccc");
 	});
 
-	it("full pipeline: string new_lines are rejected", () => {
+	it("full pipeline: string content_lines are rejected", () => {
 		const content = "aaa\nbbb\nccc";
 		const hash = lineHashes(content)[1]!;
 		const toolEdits: HTEdit[] = [
-			{ hash_range_incl: [hash, hash], new_lines: "BBB" } as unknown as HTEdit,
+			{ hash_range_incl: [hash, hash], content_lines: "BBB" } as unknown as HTEdit,
 		];
 		expect(() => resEdits(toolEdits)).toThrow(
-			/new_lines" must be a string array/i,
+			/content_lines" must be a string array/i,
 		);
 	});
 
-	it("full pipeline: null new_lines are rejected instead of deleting", () => {
+	it("full pipeline: null content_lines are rejected instead of deleting", () => {
 		const content = "aaa\nbbb\nccc";
 		const hash = lineHashes(content)[1]!;
 		const toolEdits: HTEdit[] = [
-			{ hash_range_incl: [hash, hash], new_lines: null } as unknown as HTEdit,
+			{ hash_range_incl: [hash, hash], content_lines: null } as unknown as HTEdit,
 		];
 		expect(() => resEdits(toolEdits)).toThrow(
-			/new_lines" must be a string array/i,
+			/content_lines" must be a string array/i,
 		);
 	});
 
-	it("full pipeline: hashline-prefixed array new_lines are rejected (no autocorrection)", () => {
+	it("full pipeline: hashline-prefixed array content_lines are rejected (no autocorrection)", () => {
 		const content = "aaa\nbbb\nccc";
 		const hash = lineHashes(content)[1]!;
 
 		const toolEdits: HTEdit[] = [
-			{ hash_range_incl: [hash, hash], new_lines: [`+${hash}│BBB`] },
+			{ hash_range_incl: [hash, hash], content_lines: [`+${hash}│BBB`] },
 		];
 		expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
@@ -313,17 +313,17 @@ describe("integration: resEdits → applyEdits", () => {
 			` ${hashes[2]!}:ccc`,
 		];
 		const toolEdits: HTEdit[] = [
-			{ hash_range_incl: [start, end], new_lines: replacement },
+			{ hash_range_incl: [start, end], content_lines: replacement },
 		];
 		expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 
-	it("full pipeline: tool-level new_lines:[\"\"] is normalized to a delete (no extra blank line)", () => {
+	it("full pipeline: tool-level content_lines:[\"\"] is normalized to a delete (no extra blank line)", () => {
 
 		const content = "aaa\nbbb\nccc\n";
 		const hash = lineHashes(content)[1]!;
 		const toolEdits: HTEdit[] = [
-			{ hash_range_incl: [hash, hash], new_lines: [""] },
+			{ hash_range_incl: [hash, hash], content_lines: [""] },
 		];
 		const resolved = resEdits(toolEdits);
 		const result = applyEdits(content, resolved);

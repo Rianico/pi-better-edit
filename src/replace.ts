@@ -42,9 +42,9 @@ import {
 } from "./replace-render";
 import { loadP, loadGuide } from "./prompts";
 
-const newLinesSchema = Type.Array(Type.String(), {
-	description:
-		"literal replacement file content, one string per line. Must not include the HASH│ prefix from read output.",
+const contentLinesSchema = Type.Array(Type.String(), {
+  description:
+    "literal replacement file content, one string per line. Must not include the HASH│ prefix from read output.",
 });
 
 const hashRangeInclSchema = Type.Array(
@@ -56,24 +56,24 @@ const hashRangeInclSchema = Type.Array(
 	},
 );
 
-const editItemSchema = Type.Object(
-	{
-		hash_range_incl: hashRangeInclSchema,
-		new_lines: newLinesSchema,
-	},
-	{ additionalProperties: false },
+const changeItemSchema = Type.Object(
+  {
+    hash_range_incl: hashRangeInclSchema,
+    content_lines: contentLinesSchema,
+  },
+  { additionalProperties: false },
 );
 export const editToolSchema = Type.Object(
-	{
-		path: Type.String({ description: "path" }),
-		edits: Type.Array(editItemSchema, { description: "edits over $path" }),
-	},
-	{ additionalProperties: false },
+  {
+    path: Type.String({ description: "path" }),
+    changes: Type.Array(changeItemSchema, { description: "changes over $path" }),
+  },
+  { additionalProperties: false },
 );
 
 export type ReqParams = {
-	path: string;
-	edits: HTEdit[];
+  path: string;
+  changes: HTEdit[];
 };
 
 export type ReplaceDetails = {
@@ -88,90 +88,90 @@ export type ReplaceDetails = {
 const E_DESC = loadP("../prompts/replace.md");
 const E_SNIPPET = loadP("../prompts/replace-snippet.md");
 const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
-const ROOT_KS = new Set(["path", "edits"]);
+const ROOT_KS = new Set(["path", "changes"]);
 
 export function assertReq(
-	request: unknown,
+  request: unknown,
 ): asserts request is ReqParams {
-	if (!isRec(request)) {
-		throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
-	}
+  if (!isRec(request)) {
+    throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
+  }
 
-	for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"]) {
-		if (has(request, legacyKey)) {
-			throw new Error(
-				`[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_incl: ["<START>", "<END>"], new_lines: [...]}.`
-			);
-		}
-	}
+  for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"]) {
+    if (has(request, legacyKey)) {
+      throw new Error(
+        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_incl: ["<START>", "<END>"], content_lines: [...]}.`
+      );
+    }
+  }
 
-	rejectUnknownFields(request, ROOT_KS, "Edit request");
+  rejectUnknownFields(request, ROOT_KS, "Edit request");
 
-	if (typeof request.path !== "string" || request.path.length === 0) {
-		throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "path" string.');
-	}
+  if (typeof request.path !== "string" || request.path.length === 0) {
+    throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "path" string.');
+  }
 
-	if (!Array.isArray(request.edits)) {
-		throw new Error('[E_BAD_SHAPE] Edit request requires an "edits" array. Each edit is { hash_range_incl: ["<START>", "<END>"], new_lines: [...] }.');
-	}
+  if (!Array.isArray(request.changes)) {
+    throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { hash_range_incl: ["<START>", "<END>"], content_lines: [...] }.');
+  }
 }
 
 async function execPipeline(
-	params: ReqParams,
-	cwd: string,
-	accessMode: number,
-	signal?: AbortSignal,
+  params: ReqParams,
+  cwd: string,
+  accessMode: number,
+  signal?: AbortSignal,
 ): Promise<{
-	path: string;
-	toolEdits: HTEdit[];
-	originalNormalized: string;
-	result: string;
-	bom: string;
-	originalEnding: "\r\n" | "\n";
-	hadUtf8DecodeErrors: boolean;
-	warnings: string[];
-	noopEdits?: { editIndex: number; loc: string; currentContent: string }[];
-	firstChangedLine?: number;
-	lastChangedLine?: number;
-	originalHashes?: string[];
+  path: string;
+  toolEdits: HTEdit[];
+  originalNormalized: string;
+  result: string;
+  bom: string;
+  originalEnding: "\r\n" | "\n";
+  hadUtf8DecodeErrors: boolean;
+  warnings: string[];
+  noopEdits?: { editIndex: number; loc: string; currentContent: string }[];
+  firstChangedLine?: number;
+  lastChangedLine?: number;
+  originalHashes?: string[];
 }> {
 
-	const path = params.path;
-	const toolEdits = Array.isArray(params.edits)
-		? (params.edits as HTEdit[])
-		: [];
+  const path = params.path;
+  const toolEdits = Array.isArray(params.changes)
+    ? (params.changes as HTEdit[])
+    : [];
 
-	if (toolEdits.length === 0) {
-		throw new Error("[E_BAD_SHAPE] Edit request requires a non-empty \"edits\" array.");
-	}
+  if (toolEdits.length === 0) {
+    throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "changes" array.');
+  }
 
-	const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors } = await readNormFile(
-		path, cwd, signal, accessMode,
-	);
+  const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors } = await readNormFile(
+    path, cwd, signal, accessMode,
+  );
 
-	const resolved = resEdits(toolEdits);
-	const anchorResult = applyEdits(
-		originalNormalized,
-		resolved,
-		signal,
-		originalHashes,
-		path,
-	);
+  const resolved = resEdits(toolEdits);
+  const anchorResult = applyEdits(
+    originalNormalized,
+    resolved,
+    signal,
+    originalHashes,
+    path,
+  );
 
-	return {
-		path,
-		toolEdits,
-		originalNormalized,
-		result: anchorResult.content,
-		bom,
-		originalEnding,
-		hadUtf8DecodeErrors,
-		warnings: [...(anchorResult.warnings ?? [])],
-		noopEdits: anchorResult.noopEdits,
-		firstChangedLine: anchorResult.firstChangedLine,
-		lastChangedLine: anchorResult.lastChangedLine,
-		originalHashes,
-	};
+  return {
+    path,
+    toolEdits,
+    originalNormalized,
+    result: anchorResult.content,
+    bom,
+    originalEnding,
+    hadUtf8DecodeErrors,
+    warnings: [...(anchorResult.warnings ?? [])],
+    noopEdits: anchorResult.noopEdits,
+    firstChangedLine: anchorResult.firstChangedLine,
+    lastChangedLine: anchorResult.lastChangedLine,
+    originalHashes,
+  };
 }
 
 export async function compPreview(
@@ -358,9 +358,9 @@ const toolDef: ToolDef = {
 				signal,
 			);
 
-			const editsAttempted = Array.isArray(normalizedParams.edits)
-				? normalizedParams.edits.length
-				: 0;
+      const editsAttempted = Array.isArray(normalizedParams.changes)
+        ? normalizedParams.changes.length
+        : 0;
 
 			if (originalNormalized === result) {
 				const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;

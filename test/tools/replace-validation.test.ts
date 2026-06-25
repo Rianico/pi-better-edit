@@ -44,34 +44,34 @@ describe("assertReq", () => {
 	});
 
 	it("throws for unknown fields", () => {
-		expect(() => assertReq({ path: "test.txt", edits: [], unknown: "field" }))
+		expect(() => assertReq({ path: "test.txt", changes: [], unknown: "field" }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for missing path", () => {
-		expect(() => assertReq({ edits: [] }))
+		expect(() => assertReq({ changes: [] }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for empty path", () => {
-		expect(() => assertReq({ path: "", edits: [] }))
+		expect(() => assertReq({ path: "", changes: [] }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for non-string path", () => {
-		expect(() => assertReq({ path: 42, edits: [] }))
+		expect(() => assertReq({ path: 42, changes: [] }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for non-array edits", () => {
-		expect(() => assertReq({ path: "test.txt", edits: "not array" }))
+		expect(() => assertReq({ path: "test.txt", changes: "not array" }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("does not throw for valid request", () => {
 		expect(() => assertReq({
 			path: "test.txt",
-			edits: [{ hash_range_incl: ["AAA", "BBB"], new_lines: ["new"] }],
+			changes: [{ hash_range_incl: ["AAA", "BBB"], content_lines: ["new"] }],
 		})).not.toThrow();
 	});
 

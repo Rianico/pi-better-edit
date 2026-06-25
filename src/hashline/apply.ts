@@ -68,72 +68,72 @@ function throwConflict(
 }
 
 function resToSpan(
-	edit: RHEdit,
-	index: number,
-	content: string,
-	lineIndex: LIdx,
-	noopEdits: NEdit[],
+  edit: RHEdit,
+  index: number,
+  content: string,
+  lineIndex: LIdx,
+  noopEdits: NEdit[],
 ): RESpan | null {
-	const { fileLines, lineStarts, hasTerminalNewline } = lineIndex;
+  const { fileLines, lineStarts, hasTerminalNewline } = lineIndex;
 
-	const startLine = edit.hash_range_incl[0].line;
-	const endLine = edit.hash_range_incl[1].line;
-	const originalLines = fileLines.slice(startLine - 1, endLine);
-	if (
-		originalLines.length === edit.new_lines.length &&
-		originalLines.every(
-			(line, lineIndex) => line === edit.new_lines[lineIndex],
-		)
-	) {
-		noopEdits.push({
-			editIndex: index,
-			loc: edit.hash_range_incl[0].hash,
-			currentContent: originalLines.join("\n"),
-		});
-		return null;
-	}
+  const startLine = edit.hash_range_incl[0].line;
+  const endLine = edit.hash_range_incl[1].line;
+  const originalLines = fileLines.slice(startLine - 1, endLine);
+  if (
+    originalLines.length === edit.content_lines.length &&
+    originalLines.every(
+      (line, lineIndex) => line === edit.content_lines[lineIndex],
+    )
+  ) {
+    noopEdits.push({
+      editIndex: index,
+      loc: edit.hash_range_incl[0].hash,
+      currentContent: originalLines.join("\n"),
+    });
+    return null;
+  }
 
-	if (edit.new_lines.length > 0) {
-		return {
-			kind: "replace",
-			index,
-			label: descEdit(edit),
-			start: lineStarts[startLine - 1]!,
-			end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
-			replacement: edit.new_lines.join("\n"),
-		};
-	}
+  if (edit.content_lines.length > 0) {
+    return {
+      kind: "replace",
+      index,
+      label: descEdit(edit),
+      start: lineStarts[startLine - 1]!,
+      end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
+      replacement: edit.content_lines.join("\n"),
+    };
+  }
 
-	if (startLine === 1 && endLine === fileLines.length) {
-		return {
-			kind: "replace",
-			index,
-			label: descEdit(edit),
-			start: 0,
-			end: content.length,
-			replacement: "",
-		};
-	}
+  if (startLine === 1 && endLine === fileLines.length) {
+    return {
+      kind: "replace",
+      index,
+      label: descEdit(edit),
+      start: 0,
+      end: content.length,
+      replacement: "",
+    };
+  }
 
-	if (endLine < fileLines.length) {
-		return {
-			kind: "replace",
-			index,
-			label: descEdit(edit),
-			start: lineStarts[startLine - 1]!,
-			end: lineStarts[endLine]!,
-			replacement: "",
-		};
-	}
+  if (endLine < fileLines.length) {
+    return {
+      kind: "replace",
+      index,
+      label: descEdit(edit),
+      start: lineStarts[startLine - 1]!,
+      end: lineStarts[endLine]!,
+      replacement: "",
+    };
+  }
 
-	return {
-		kind: "replace",
-		index,
-		label: descEdit(edit),
-		start: Math.max(0, lineStarts[startLine - 1]! - 1),
-		end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
-		replacement: "",
-	};
+  return {
+    kind: "replace",
+    index,
+    label: descEdit(edit),
+    start: Math.max(0, lineStarts[startLine - 1]! - 1),
+    end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
+    replacement: "",
+  };
 }
 
 function assertNoConflict(spans: RESpan[]): void {
@@ -232,12 +232,12 @@ export function applyEdits(
 			lastChangedLine: undefined,
 		};
 
-	edits = edits.map((edit) =>
-		edit.new_lines.length === 1 &&
-		edit.new_lines[0] === ""
-			? { ...edit, new_lines: [] }
-			: edit,
-	);
+  edits = edits.map((edit) =>
+    edit.content_lines.length === 1 &&
+    edit.content_lines[0] === ""
+      ? { ...edit, content_lines: [] }
+      : edit,
+  );
 
 	const lineIndex = buildIdx(content);
 	const fileHashes = precomputedHashes ?? lineHashes(content);

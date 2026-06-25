@@ -20,9 +20,9 @@ describe("boundary duplication warning → self-correction via replace", () => {
         "e1",
         {
           path: "sample.ts",
-          edits: [{
+          changes: [{
             hash_range_incl: [line2Hash, line3Hash],
-            new_lines: ["  const y = 2;", "  return y;", "}"],
+            content_lines: ["  const y = 2;", "  return y;", "}"],
           }],
         },
         undefined,
@@ -61,9 +61,9 @@ describe("boundary duplication warning → self-correction via replace", () => {
         "e2",
         {
           path: "sample.ts",
-          edits: [{
+          changes: [{
             hash_range_incl: [extractHash(duplicateHash!), extractHash(duplicateHash!)],
-            new_lines: [],
+            content_lines: [],
           }],
         },
         undefined,
@@ -91,9 +91,9 @@ describe("boundary duplication warning → self-correction via replace", () => {
         "e1",
         {
           path: "server.ts",
-          edits: [{
+          changes: [{
             hash_range_incl: [line2Hash, line3Hash],
-            new_lines: ["  const result = processData();", "  res.json(result);", "});"],
+            content_lines: ["  const result = processData();", "  res.json(result);", "});"],
           }],
         },
         undefined,
@@ -114,12 +114,11 @@ describe("boundary duplication warning → self-correction via replace", () => {
 
       await editTool.execute(
         "e2",
-        { path: "server.ts", edits: [{ hash_range_incl: [duplicateHash, duplicateHash], new_lines: [] }] },
+        { path: "server.ts", changes: [{ hash_range_incl: [duplicateHash, duplicateHash], content_lines: [] }] },
         undefined,
         undefined,
         ctx,
       );
-
       const content = await readFile(path, "utf-8");
       expect(content).toBe('app.get("/api", (req, res) => {\n  const result = processData();\n  res.json(result);\n});\n');
     });
@@ -140,9 +139,9 @@ describe("boundary duplication warning → self-correction via replace", () => {
         "e1",
         {
           path: "logic.ts",
-          edits: [{
+          changes: [{
             hash_range_incl: [line2Hash, line3Hash],
-            new_lines: ["before();", "if (ok) {", "  runSafe();"],
+            content_lines: ["before();", "if (ok) {", "  runSafe();"],
           }],
         },
         undefined,
@@ -163,12 +162,11 @@ describe("boundary duplication warning → self-correction via replace", () => {
 
       await editTool.execute(
         "e2",
-        { path: "logic.ts", edits: [{ hash_range_incl: [duplicateHash, duplicateHash], new_lines: [] }] },
+        { path: "logic.ts", changes: [{ hash_range_incl: [duplicateHash, duplicateHash], content_lines: [] }] },
         undefined,
         undefined,
         ctx,
       );
-
       const content = await readFile(path, "utf-8");
       expect(content).toBe("before();\nif (ok) {\n  runSafe();\n}\nafter();\n");
     });
@@ -194,9 +192,9 @@ describe("boundary duplication warning → self-correction via replace", () => {
         "e1",
         {
           path: "multi.ts",
-          edits: [{
+          changes: [{
             hash_range_incl: [line4Hash, line5Hash],
-            new_lines: ["if (b) {", "  yNew();", "}"],
+            content_lines: ["if (b) {", "  yNew();", "}"],
           }],
         },
         undefined,
@@ -251,7 +249,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
         "e1",
         {
           path: "fourth.ts",
-          edits: [{ hash_range_incl: [fooHash, barHash], new_lines: ["foo();", "bar();", "}"] }],
+          changes: [{ hash_range_incl: [fooHash, barHash], content_lines: ["foo();", "bar();", "}"] }],
         },
         undefined,
         undefined,

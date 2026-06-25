@@ -406,11 +406,11 @@ describe("file kind guards in tools", () => {
 					"e1",
 					{
 						path: "sample.c",
-						edits: [
-							{
-								hash_range_incl: [`${lineHash(2, "int")}`, `${lineHash(2, "int")}`], new_lines: ["long"],
-							},
-						],
+            changes: [
+              {
+                hash_range_incl: [`${lineHash(2, "int")}`, `${lineHash(2, "int")}`], content_lines: ["long"],
+              },
+            ],
 					},
 					undefined,
 					undefined,
@@ -438,11 +438,11 @@ describe("file kind guards in tools", () => {
 						"e1",
 						{
 							path: "sample.bin",
-							edits: [
-								{
-									hash_range_incl: [`${lineHash(1, "int")}`, `${lineHash(1, "int")}`], new_lines: ["long"],
-								},
-							],
+              changes: [
+                {
+                  hash_range_incl: [`${lineHash(1, "int")}`, `${lineHash(1, "int")}`], content_lines: ["long"],
+                },
+              ],
 						},
 						undefined,
 						undefined,
@@ -467,11 +467,11 @@ describe("file kind guards in tools", () => {
 						"e1",
 						{
 							path: "sample.bin",
-							edits: [
-								{
-									hash_range_incl: [`${lineHash(1, "a")}`, `${lineHash(1, "a")}`], new_lines: ["A"],
-								},
-							],
+              changes: [
+                {
+                  hash_range_incl: [`${lineHash(1, "a")}`, `${lineHash(1, "a")}`], content_lines: ["A"],
+                },
+              ],
 						},
 						undefined,
 						undefined,

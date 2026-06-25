@@ -1,1 +1,1 @@
-Replace lines in a text file via HASH anchors from read, batching all edits to a file in one call
+Replace lines in a text file via HASH anchors from read, batching all changes to a file in one call

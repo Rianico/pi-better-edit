@@ -38,9 +38,9 @@ describe("snapshotId surface (details-only after W2)", () => {
           {
             path: "sample.txt",
             snapshotId: "v1|fake|0|0",
-            edits: [
+            changes: [
               {
-                hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
+                hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], content_lines: ["BETA"],
               },
             ],
           },
@@ -73,9 +73,9 @@ describe("snapshotId surface (details-only after W2)", () => {
           "e1",
           {
             path: "sample.txt",
-            edits: [
+            changes: [
               {
-                hash_range_incl: [`${lineHash(4, "four")}`, `${lineHash(4, "four")}`], new_lines: ["FOUR"],
+                hash_range_incl: [`${lineHash(4, "four")}`, `${lineHash(4, "four")}`], content_lines: ["FOUR"],
               },
             ],
           },
@@ -102,9 +102,9 @@ describe("snapshotId surface (details-only after W2)", () => {
         "e1",
         {
           path: "sample.txt",
-          edits: [
+          changes: [
             {
-              hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], new_lines: ["BETA"],
+              hash_range_incl: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], content_lines: ["BETA"],
             },
           ],
         },
@@ -136,9 +136,9 @@ describe("snapshotId surface (details-only after W2)", () => {
             "e1",
             {
               path: "sample.txt",
-              edits: [
+              changes: [
                 {
-                  hash_range_incl: [`${lineHash(2, "two")}`, `${lineHash(2, "two")}`], new_lines: ["TWO"],
+                  hash_range_incl: [`${lineHash(2, "two")}`, `${lineHash(2, "two")}`], content_lines: ["TWO"],
                 },
               ],
             },

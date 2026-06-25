@@ -32,13 +32,13 @@ export function getPreviewInput(
 		return null;
 	}
 
-	if (!Array.isArray(normalized.edits)) {
+	if (!Array.isArray(normalized.changes)) {
 		return null;
 	}
 
 	const request: ReqParams = {
 		path: normalized.path,
-		edits: normalized.edits as HTEdit[],
+		changes: normalized.changes as HTEdit[],
 	};
 
 	return request;

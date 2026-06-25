@@ -16,7 +16,7 @@ describe("prompts/replace.md (model-facing contract)", () => {
 		expect(replacePrompt).toMatch(/Single line replace/);
 		expect(replacePrompt).toMatch(/Range replace/);
 		expect(replacePrompt).toMatch(/Multiple regions in one call/);
-		expect(replacePrompt).toContain('"new_lines": []');
+    expect(replacePrompt).toContain('"content_lines": []');
 	});
 
 	it("requires hash_range_incl pair", () => {
