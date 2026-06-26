@@ -91,4 +91,28 @@ describe("readNormFile", () => {
 			expect(result.normalized).toBe("alpha\nbeta\n");
 		});
 	});
+
+	describe("maxLines guard", () => {
+		it("rejects files exceeding the limit before hashing", async () => {
+			await withTempFile("big.txt", "a\nb\nc\nd\ne", async ({ cwd }) => {
+				await expect(
+					readNormFile("big.txt", cwd, undefined, undefined, undefined, 3),
+				).rejects.toThrow(/\[E_FILE_TOO_LARGE\]/);
+			});
+		});
+
+		it("allows files at or under the limit", async () => {
+			await withTempFile("ok.txt", "a\nb\nc", async ({ cwd }) => {
+				const result = await readNormFile("ok.txt", cwd, undefined, undefined, undefined, 5);
+				expect(result.fileHashes).toHaveLength(3);
+			});
+		});
+
+		it("does not enforce the guard when maxLines is omitted (read path)", async () => {
+			await withTempFile("plain.txt", "a\nb\nc\nd\ne", async ({ cwd }) => {
+				const result = await readNormFile("plain.txt", cwd, undefined);
+				expect(result.fileHashes).toHaveLength(5);
+			});
+		});
+	});
 });

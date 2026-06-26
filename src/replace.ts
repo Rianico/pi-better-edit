@@ -13,6 +13,7 @@ import {
 import { readNormFile } from "./file-reader";
 import { normReq } from "./replace-normalize";
 import { isRec, has, rejectUnknownFields } from "./utils";
+import { MAX_HASH_LINES } from "./constants";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import {
 	applyEdits,
@@ -146,7 +147,7 @@ async function execPipeline(
   }
 
   const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors } = await readNormFile(
-    path, cwd, signal, accessMode,
+    path, cwd, signal, accessMode, undefined, MAX_HASH_LINES,
   );
 
   const resolved = resEdits(toolEdits);

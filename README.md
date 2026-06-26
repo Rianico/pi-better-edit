@@ -13,7 +13,7 @@ The original uses 2-character hashes of a 16-character alphabet, with the hash b
 This fork makes two changes that compound:
 
 1. **Bump hash length to 3 characters** of the 64-char URL-safe base64 alphabet. That gives 18 bits / 262,144 buckets, up from 8 bits / 256 in the upstream.
-2. **Perfect hashing (collision resolution).** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `R{retry}`) until a unique hash is found. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `import` statements, repeated `}`) get different hashes automatically.
+2. **Perfect hashing (collision resolution).** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `:R{retry}`) until a unique hash is found. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `import` statements, repeated `}`) get different hashes automatically.
 
 ## Installation
 
@@ -65,16 +65,20 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 ```json
 {
   "path": "src/main.ts",
-  "edits": [
-    { "hash_range_incl": ["ve7", "ve7"], "new_lines": ["  console.log('hashline');"] }
+  "changes": [
+    { "hash_range_incl": ["ve7", "ve7"], "content_lines": ["  console.log('hashline');"] }
   ]
 }
 ```
-| `hash_range_incl` | Inclusive line range `[start_hash, end_hash]` (required). |
 
-- **Request structure validation.** The request envelope (`path`, `edits`) and individual edit items are validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`.
-- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_incl: ["<START>", "<END>"], new_lines: [...]}`.
-All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
+| Field | Description |
+| --- | --- |
+| `hash_range_incl` | Inclusive line range `[start_hash, end_hash]` (required). |
+| `content_lines` | Literal replacement content, one string per line (use `[]` to delete the range). |
+
+- **Request structure validation.** The request envelope (`path`, `changes`) and individual edit items are validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`.
+- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_incl: ["<START>", "<END>"], content_lines: [...]}`.
+- **Batched atomicity.** All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
 
 ### Chained edits
 
@@ -99,8 +103,7 @@ The post-edit diff (with `+`/`-` markers) is exposed to the host UI via `details
 
 - **Stale anchors fail.** A hash mismatch means the file has changed since the last `read`. The error tells the model to call `read()` to get fresh anchors, then copy the 3-character HASH from each line into the next replace call.
 - **No fallback relocation.** Mismatched anchors are never silently relocated to a "close enough" line. This trades convenience for correctness.
-- **Strict patch content.** If `new_lines` contains `+HASH│` display prefixes (or `-N   ` diff rows), the edit is rejected with `[E_INVALID_PATCH]`. Bare `HASH│` content (the first 4 chars of a `new_lines` entry looking like 3 base64 chars + `│`) is also rejected with `[E_BARE_HASH_PREFIX]`. When the suspect's prefix happens to match a real file-line anchor, the error message flags that as strong evidence the model copied an anchor from the read output.
-- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_incl: ["<START>", "<END>"], new_lines: [...]}`.
+- **Strict patch content.** If `content_lines` contains `+HASH│` display prefixes (or `-N   ` diff rows), the edit is rejected with `[E_INVALID_PATCH]`. Bare `HASH│` content (the first 4 chars of a `content_lines` entry looking like 3 base64 chars + `│`) is also rejected with `[E_BARE_HASH_PREFIX]`. When the suspect's prefix happens to match a real file-line anchor, the error message flags that as strong evidence the model copied an anchor from the read output.
 - **Atomic writes.** Files are written via temp-file-then-rename to avoid corruption from interrupted writes. Symlink chains are resolved so the target file is updated without replacing the symlink. Hard-linked files are updated in place to preserve the shared inode. File permissions are preserved across atomic renames.
 - **Per-file mutation queue.** Edits queue by the canonical write target, so concurrent edits through different symlink paths still serialize onto the same underlying file.
 - **Boundary duplication warnings.** When the last line of a replacement matches the next surviving line (or the first line matches the preceding one), a warning is emitted. This catches a common LLM pattern where closing delimiters like `}`, `});`, or `} else {` are accidentally duplicated. The warning includes the surviving line's post-edit hash so the model can reference it in a follow-up edit. No autocorrection is applied — the duplicate stays in the file and the model decides whether to remove it. Raw line comparison (not trimmed) avoids false positives when indentation differs.
@@ -111,11 +114,11 @@ Hashes are computed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (
 
 The alphabet is sized for an LLM consumer. The model tokenizes, it doesn't squint at pixel glyphs, so the human-readability heuristics used by smaller hand-curated alphabets (no G/L/I/O because they look like digits, no vowels so the hash doesn't accidentally spell a word, no hex digits so it can't be confused with `0xFF`) don't apply. The full 64 chars give maximum entropy per character, with case and digits included.
 
-**Perfect hashing (collision resolution):** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `R{retry}`) until a unique hash is found. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
+**Perfect hashing (collision resolution):** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `:R{retry}`) until a unique hash is found. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
 
-The runtime always precomputes the full per-line hash array for a file via `computeLineHashes(content)`, then looks up by line number during validation and during `read` / `replace` response formatting. There is no per-line recomputation that could disagree with what the model saw in its last read.
+The runtime always precomputes the full per-line hash array for a file via `lineHashes(content)`, then looks up by line number during validation and during `read` / `replace` response formatting. There is no per-line recomputation that could disagree with what the model saw in its last read.
 
-`HASH_LENGTH` and `HASH_ALPHABET` are constants at the top of `src/hashline/hash.ts`; bump the length to 4 if you need even more entropy without collision resolution.
+`HASH_LEN` in `src/hashline/hash.ts` sets the hash body length; bump it to 4 if you need even more entropy without collision resolution.
 
 ### Bare-prefix detector
 

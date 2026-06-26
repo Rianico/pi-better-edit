@@ -21,6 +21,7 @@ export async function readNormFile(
 	signal: AbortSignal | undefined,
 	accessMode: number = constants.R_OK,
 	preloadedFile?: LFile,
+	maxLines?: number,
 ): Promise<NormFile> {
 	const absolutePath = toCwd(path, cwd);
 
@@ -35,6 +36,16 @@ export async function readNormFile(
 	const { bom, text: rawContent } = stripBOM(file.text);
 	const originalEnding = detectEnding(rawContent);
 	const normalized = toLF(rawContent);
+
+	if (maxLines !== undefined) {
+		const lineCount = normalized.split("\n").length;
+		if (lineCount > maxLines) {
+			throw new Error(
+				`[E_FILE_TOO_LARGE] ${path} has ${lineCount} lines, exceeding the ${maxLines}-line edit limit. Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.`,
+			);
+		}
+	}
+
 	const fileHashes = lineHashes(normalized);
 
 	return {
