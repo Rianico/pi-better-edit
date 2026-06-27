@@ -2,6 +2,7 @@ import * as Diff from "diff";
 import {
   lineHashes,
   ANCHOR_LEN,
+  HASH_SEP,
 } from "./hashline";
 
 export function detectEnding(content: string): "\r\n" | "\n" {
@@ -34,9 +35,9 @@ function fmtDiffLine(
   hash: string | undefined,
 ): string {
   if (hash === undefined) {
-    return `${prefix}${" ".repeat(ANCHOR_LEN)}│${line}`;
+    return `${prefix}${" ".repeat(ANCHOR_LEN)}${HASH_SEP}${line}`;
   }
-  return `${prefix}${hash}│${line}`;
+  return `${prefix}${hash}${HASH_SEP}${line}`;
 }
 
 export function genDiff(

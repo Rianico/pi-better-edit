@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-  mkdtemp,
   mkdir,
-  rm,
   writeFile,
   readFile,
   stat,
@@ -12,25 +10,12 @@ import {
 } from "fs/promises";
 import { join } from "path";
 import { resolveTarget, writeAtomic } from "../../src/fs-write";
+import { withTempDir } from "../support/fixtures";
 
-async function tmpDir(): Promise<string> {
-  const root = join(process.cwd(), ".tmp");
-  await mkdir(root, { recursive: true });
-  return mkdtemp(join(root, "fs-write-test-"));
-}
-
-async function withDir(run: (dir: string) => Promise<void>): Promise<void> {
-  const dir = await tmpDir();
-  try {
-    await run(dir);
-  } finally {
-    await rm(dir, { recursive: true, force: true });
-  }
-}
 
 describe("resolveTarget", () => {
   it("resolves a simple path", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const filePath = join(dir, "a.txt");
       await writeFile(filePath, "hello");
       const resolved = await resolveTarget(filePath);
@@ -39,7 +24,7 @@ describe("resolveTarget", () => {
   });
 
   it("resolves a path through a symlink", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const targetDir = join(dir, "target");
       const linkDir = join(dir, "link");
       await mkdir(targetDir);
@@ -52,7 +37,7 @@ describe("resolveTarget", () => {
   });
 
   it("resolves a chain of symlinks", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const real = join(dir, "real");
       const link1 = join(dir, "link1");
       const link2 = join(dir, "link2");
@@ -66,7 +51,7 @@ describe("resolveTarget", () => {
   });
 
   it("throws ELOOP on circular symlinks", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const a = join(dir, "a");
       const b = join(dir, "b");
       await symlink(b, a);
@@ -78,7 +63,7 @@ describe("resolveTarget", () => {
   });
 
   it("returns the path with remaining parts when a component does not exist", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const missing = join(dir, "nonexistent", "sub", "file.txt");
       const resolved = await resolveTarget(missing);
       expect(resolved).toBe(missing);
@@ -86,7 +71,7 @@ describe("resolveTarget", () => {
   });
 
   it("resolves an absolute path unchanged", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const filePath = join(dir, "data.txt");
       await writeFile(filePath, "x");
       const resolved = await resolveTarget(filePath);
@@ -97,7 +82,7 @@ describe("resolveTarget", () => {
 
 describe("writeAtomic", () => {
   it("writes content to a new file", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const filePath = join(dir, "new.txt");
       await writeAtomic(filePath, "hello world");
       const content = await readFile(filePath, "utf-8");
@@ -106,7 +91,7 @@ describe("writeAtomic", () => {
   });
 
   it("overwrites an existing file", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const filePath = join(dir, "existing.txt");
       await writeFile(filePath, "old content");
       await writeAtomic(filePath, "new content");
@@ -116,7 +101,7 @@ describe("writeAtomic", () => {
   });
 
   it("preserves file permissions on overwrite", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const filePath = join(dir, "perm.txt");
       await writeFile(filePath, "original", { mode: 0o644 });
       await chmod(filePath, 0o644);
@@ -128,7 +113,7 @@ describe("writeAtomic", () => {
   });
 
   it("writes to a file through a symlink", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const targetDir = join(dir, "real");
       const linkDir = join(dir, "link");
       await mkdir(targetDir);
@@ -141,7 +126,7 @@ describe("writeAtomic", () => {
   });
 
   it("writes to a hard-linked file in-place (nlink > 1)", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const original = join(dir, "original.txt");
       const hardlink = join(dir, "hardlink.txt");
       await writeFile(original, "shared content");
@@ -157,7 +142,7 @@ describe("writeAtomic", () => {
   });
 
   it("creates intermediate directories", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const nested = join(dir, "a", "b", "c", "nested.txt");
       await writeAtomic(nested, "deep");
       const content = await readFile(nested, "utf-8");
@@ -166,7 +151,7 @@ describe("writeAtomic", () => {
   });
 
   it("writes empty content", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const filePath = join(dir, "empty.txt");
       await writeAtomic(filePath, "");
       const content = await readFile(filePath, "utf-8");
@@ -175,7 +160,7 @@ describe("writeAtomic", () => {
   });
 
   it("writes content with special characters", async () => {
-    await withDir(async (dir) => {
+    await withTempDir("fs-write-test-", async (dir) => {
       const filePath = join(dir, "special.txt");
       const content = "line1\nline2\n  indented  \n\t\ttabbed\n";
       await writeAtomic(filePath, content);

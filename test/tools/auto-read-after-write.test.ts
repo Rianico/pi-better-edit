@@ -1,16 +1,13 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdir, rm, writeFile } from "fs/promises";
+import { mkdtemp, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
+import { getWritableTempRoot } from "../support/fixtures";
 
-async function getWritableTempRoot(): Promise<string> {
-  const fallback = join(process.cwd(), ".tmp");
-  await mkdir(fallback, { recursive: true });
-  return fallback;
-}
-
-async function makeTempDir(parent: string, prefix: string): Promise<string> {
-  return (await mkdir(join(parent, prefix), { recursive: true }))!;
+async function makeTempDir(prefix: string): Promise<string> {
+	// mkdtemp (not mkdir) so every call gets a fresh, unique dir even if a prior
+	// run left a stale same-named dir behind; the body just needs a writable cwd.
+	return mkdtemp(join(await getWritableTempRoot(), prefix));
 }
 
 type ToolResultHandler = (
@@ -82,8 +79,7 @@ describe("auto-read after write", () => {
   });
 
   it("handler returns undefined by default (disabled)", async () => {
-    const tempRoot = await getWritableTempRoot();
-    const cwd = await makeTempDir(tempRoot, "auto-read-test-disabled-");
+    const cwd = await makeTempDir("auto-read-test-disabled-");
     await writeFile(join(cwd, "test.txt"), "hello\nworld\n", "utf-8");
     try {
       const { getToolResultHandler } = createTestPi();
@@ -116,8 +112,7 @@ describe("auto-read after write", () => {
   });
 
   it("appends hashline read output after successful write when enabled", async () => {
-    const tempRoot = await getWritableTempRoot();
-    const cwd = await makeTempDir(tempRoot, "auto-read-test-");
+    const cwd = await makeTempDir("auto-read-test-");
     await writeFile(join(cwd, "test.txt"), "hello\nworld\n", "utf-8");
     try {
       const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
@@ -154,8 +149,7 @@ describe("auto-read after write", () => {
   });
 
   it("does not trigger auto-read when write fails", async () => {
-    const tempRoot = await getWritableTempRoot();
-    const cwd = await makeTempDir(tempRoot, "auto-read-test-fail-");
+    const cwd = await makeTempDir("auto-read-test-fail-");
 
     try {
       const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
@@ -180,8 +174,7 @@ describe("auto-read after write", () => {
   });
 
   it("does not trigger for non-write tools", async () => {
-    const tempRoot = await getWritableTempRoot();
-    const cwd = await makeTempDir(tempRoot, "auto-read-test-nonwrite-");
+    const cwd = await makeTempDir("auto-read-test-nonwrite-");
 
     try {
       const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
@@ -206,8 +199,7 @@ describe("auto-read after write", () => {
   });
 
   it("handles missing path in write input gracefully", async () => {
-    const tempRoot = await getWritableTempRoot();
-    const cwd = await makeTempDir(tempRoot, "auto-read-test-nopath-");
+    const cwd = await makeTempDir("auto-read-test-nopath-");
 
     try {
       const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
@@ -232,8 +224,7 @@ describe("auto-read after write", () => {
   });
 
   it("returns original write result when auto-read fails", async () => {
-    const tempRoot = await getWritableTempRoot();
-    const cwd = await makeTempDir(tempRoot, "auto-read-test-autoreadfail-");
+    const cwd = await makeTempDir("auto-read-test-autoreadfail-");
 
     try {
       const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
@@ -258,8 +249,7 @@ describe("auto-read after write", () => {
   });
 
   it("includes hashline anchors in correct format", async () => {
-    const tempRoot = await getWritableTempRoot();
-    const cwd = await makeTempDir(tempRoot, "auto-read-test-format-");
+    const cwd = await makeTempDir("auto-read-test-format-");
 
     try {
       const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
@@ -303,8 +293,7 @@ describe("auto-read after write", () => {
   });
 
   it("handles large files with truncation", async () => {
-    const tempRoot = await getWritableTempRoot();
-    const cwd = await makeTempDir(tempRoot, "auto-read-test-large-");
+    const cwd = await makeTempDir("auto-read-test-large-");
 
     try {
       const { getToolResultHandler } = createTestPi({ enableAutoRead: true });

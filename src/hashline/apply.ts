@@ -1,5 +1,5 @@
 import { abortIf } from "../runtime";
-import { lineHashes } from "./hash";
+import { lineHashes, HASH_SEP } from "./hash";
 import {
 	valEdits,
 	assertNoBarePrefix,
@@ -357,7 +357,7 @@ export function fmtRegion(
 		);
 	}
 	return lines
-		.map((line, index) => `${hashes[index]}│${line}`)
+		.map((line, index) => `${hashes[index]}${HASH_SEP}${line}`)
 		.join("\n");
 }
 

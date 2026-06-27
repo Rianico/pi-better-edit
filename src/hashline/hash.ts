@@ -3,6 +3,13 @@ import xxhash from "xxhash-wasm";
 export const HASH_LEN = 3;
 export const ANCHOR_LEN = HASH_LEN;
 
+/**
+ * The `│` (U+2502) delimiter between a hash anchor and its line content. This
+ * is the wire-format separator in `HASH│content` rows. Kept as a constant so
+ * every construction site resolves the same delimiter.
+ */
+export const HASH_SEP = "│";
+
 const ALPH =
 	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
 const ALPH_BITS = 6;

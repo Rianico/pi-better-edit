@@ -3,56 +3,26 @@ import { describe, expect, it } from "vitest";
 import {
   access,
   appendFile,
-  mkdtemp,
-  mkdir,
   readFile,
-  rm,
   writeFile,
 } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { classifyFileKind, loadFileKindAndText } from "../../src/file-kind";
 import { lineHash } from "../../src/hashline";
-import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
+import {
+	makeFakePiRegistry,
+	withTempFile,
+	withTempBytes,
+	withTempSubdir,
+	withTempDir,
+	getText,
+} from "../support/fixtures";
 
-async function createTempRoot(): Promise<string> {
-	const root = join(process.cwd(), ".tmp");
-	await mkdir(root, { recursive: true });
-	return mkdtemp(join(root, "pi-hashline-kind-"));
-}
-
-async function withTempBytes(
-	name: string,
-	bytes: Uint8Array,
-	run: (args: { cwd: string; path: string }) => Promise<void>,
-): Promise<void> {
-	const cwd = await createTempRoot();
-	const path = join(cwd, name);
-	try {
-		await writeFile(path, bytes);
-		await run({ cwd, path });
-	} finally {
-		await rm(cwd, { recursive: true, force: true });
-	}
-}
-
-async function withTempDirectory(
-	name: string,
-	run: (args: { cwd: string; path: string }) => Promise<void>,
-): Promise<void> {
-	const cwd = await createTempRoot();
-	const path = join(cwd, name);
-	try {
-		await mkdir(path, { recursive: true });
-		await run({ cwd, path });
-	} finally {
-		await rm(cwd, { recursive: true, force: true });
-	}
-}
 
 describe("classifyFileKind", () => {
 	it("classifies directories explicitly", async () => {
-		await withTempDirectory("nested", async ({ path }) => {
+		await withTempSubdir("nested", async ({ path }) => {
 			await expect(classifyFileKind(path)).resolves.toEqual({
 				kind: "directory",
 			});
@@ -232,9 +202,8 @@ describe("classifyFileKind", () => {
 			return;
 		}
 
-		const cwd = await createTempRoot();
-		const pipePath = join(cwd, "sample.pipe");
-		try {
+		await withTempDir("pi-hashline-pipe-", async (cwd) => {
+			const pipePath = join(cwd, "sample.pipe");
 			await new Promise<void>((resolve, reject) => {
 				execFile("mkfifo", [pipePath], (error) => {
 					if (error) {
@@ -248,17 +217,15 @@ describe("classifyFileKind", () => {
 			const result = await classifyFileKind(pipePath);
 			expect(result).toEqual({
 				kind: "binary",
-				description: "unsupported file type",
-			});
-		} finally {
-			await rm(cwd, { recursive: true, force: true });
-		}
+					description: "unsupported file type",
+				});
+		});
 	}, 2000);
 });
 
 describe("file kind guards in tools", () => {
 	it("read reports directories explicitly", async () => {
-		await withTempDirectory("nested", async ({ cwd }) => {
+		await withTempSubdir("nested", async ({ cwd }) => {
 			const { pi, getTool } = makeFakePiRegistry();
 			register(pi);
 			const readTool = getTool("read");

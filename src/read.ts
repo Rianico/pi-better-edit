@@ -10,7 +10,7 @@ import {
 import { Type } from "typebox";
 import { loadFileKindAndText } from "./file-kind";
 import { readNormFile } from "./file-reader";
-import { lineHashes, fmtRegion } from "./hashline";
+import { lineHashes, fmtRegion, HASH_SEP } from "./hashline";
 import { toCwd } from "./path-utils";
 import { abortIf } from "./runtime";
 import { fileSnap } from "./snapshot";
@@ -41,6 +41,22 @@ function normPosInt(
 	return value;
 }
 
+/**
+ * Builds the `[Showing lines A-B of N. Use offset=M to continue.]` hint shared by
+ * `fmtReadPreview` and the auto-read-after-write handler. `byteLimit` adds the
+ * `(size limit)` suffix used when truncation is byte-driven.
+ */
+export function formatPaginationHint(
+	startLine: number,
+	endLine: number,
+	totalLines: number,
+	nextOffset: number,
+	byteLimit?: number,
+): string {
+	const sizeSuffix = byteLimit !== undefined ? ` (${formatSize(byteLimit)} limit)` : "";
+	return `[Showing lines ${startLine}-${endLine} of ${totalLines}${sizeSuffix}. Use offset=${nextOffset} to continue.]`;
+}
+
 export function fmtReadPreview(
 	text: string,
 	options: { offset?: number; limit?: number },
@@ -54,7 +70,7 @@ export function fmtReadPreview(
 			const allHashes = precomputedHashes ?? lineHashes(text);
 			const emptyLineHash = allHashes[0] ?? "";
 			return {
-				text: `${emptyLineHash}│\n[File is empty. Use replace to insert content.]`,
+				text: `${emptyLineHash}${HASH_SEP}\n[File is empty. Use replace to insert content.]`,
 			};
 		}
 		return {
@@ -91,13 +107,13 @@ export function fmtReadPreview(
 		const endLineDisplay = startLine + truncation.outputLines - 1;
 		nextOffset = endLineDisplay + 1;
 		if (truncation.truncatedBy === "lines") {
-			preview += `\n\n[Showing lines ${startLine}-${endLineDisplay} of ${totalLines}. Use offset=${nextOffset} to continue.]`;
+			preview += `\n\n${formatPaginationHint(startLine, endLineDisplay, totalLines, nextOffset)}`;
 		} else {
-			preview += `\n\n[Showing lines ${startLine}-${endLineDisplay} of ${totalLines} (${formatSize(truncation.maxBytes)} limit). Use offset=${nextOffset} to continue.]`;
+			preview += `\n\n${formatPaginationHint(startLine, endLineDisplay, totalLines, nextOffset, truncation.maxBytes)}`;
 		}
 	} else if (endIdx < totalLines) {
 		nextOffset = endIdx + 1;
-		preview += `\n\n[Showing lines ${startLine}-${endIdx} of ${totalLines}. Use offset=${nextOffset} to continue.]`;
+		preview += `\n\n${formatPaginationHint(startLine, endIdx, totalLines, nextOffset)}`;
 	}
 
 	return {

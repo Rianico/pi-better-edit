@@ -23,22 +23,7 @@ vi.mock("../../src/read", async (importOriginal) => {
 });
 
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { regReplace } from "../../src/replace";
-
-function makeFakeRegistry() {
-  const tools = new Map<string, any>();
-  const pi = {
-    registerTool(tool: any) {
-      tools.set(tool.name, tool);
-    },
-    on() {},
-  } as any;
-  regReplace(pi);
-  const tool = tools.get("replace");
-  if (!tool) throw new Error("Tool not registered: edit");
-  return { tool };
-}
-
+import { makeFakeReplaceRegistry } from "../support/fixtures";
 describe("edit tool file mutation queue", () => {
   beforeEach(() => {
     vi.mocked(withFileMutationQueue).mockClear();
@@ -46,7 +31,7 @@ describe("edit tool file mutation queue", () => {
 
   it("uses the same queue key for repeated edits to the same path", async () => {
     await withTempFile("race.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
-      const { tool } = makeFakeRegistry();
+      const { tool } = makeFakeReplaceRegistry();
       const ctx = { cwd };
 
       await tool.execute(
@@ -92,7 +77,7 @@ describe("edit tool file mutation queue", () => {
     await withTempFile("race.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       await symlink("race.ts", `${cwd}/linked-race.ts`);
 
-      const { tool } = makeFakeRegistry();
+      const { tool } = makeFakeReplaceRegistry();
       const ctx = { cwd };
 
       await tool.execute(
@@ -138,7 +123,7 @@ describe("edit tool file mutation queue", () => {
     await withTempFile("race.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       await symlink(".", `${cwd}/aliasdir`);
 
-      const { tool } = makeFakeRegistry();
+      const { tool } = makeFakeReplaceRegistry();
       const ctx = { cwd };
 
       await tool.execute(

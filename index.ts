@@ -3,7 +3,7 @@ import { readFile } from "fs/promises";
 import { join, isAbsolute } from "path";
 import { lineHashes, initHasher, fmtRegion } from "./src/hashline";
 import { regReplace } from "./src/replace";
-import { regRead } from "./src/read";
+import { regRead, formatPaginationHint } from "./src/read";
 import { toLF } from "./src/replace-diff";
 import { visLines } from "./src/utils";
 import { AUTO_READ_MAX } from "./src/constants";
@@ -54,7 +54,7 @@ export default function (pi: ExtensionAPI): void {
       const hashlineOutput = fmtRegion(selectedHashes, displayLines);
 
       const paginationHint = truncated
-        ? `\n\n[Showing lines 1-${AUTO_READ_MAX} of ${visibleLines.length}. Use offset=${AUTO_READ_MAX + 1} to continue.]`
+        ? `\n\n${formatPaginationHint(1, AUTO_READ_MAX, visibleLines.length, AUTO_READ_MAX + 1)}`
         : "";
 
       if (hashlineOutput) {
