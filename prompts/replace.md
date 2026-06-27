@@ -87,10 +87,10 @@ Right:
 ```
 
 Rules:
-- `hash_range_incl` is a pair `[start, end]`. A single-line replace is `hash_range_incl: ["X", "X"].
+- `hash_range_incl` is a pair `[start, end]`. A single-line replace is `hash_range_incl: ["X", "X"]`.
 - To delete a range, use `content_lines: []`.
 - `hash_range_incl` elements are HASH anchors only (e.g. `aB3`). Do not include `│` or line content.
-- `content_lines` is literal file content — each string becomes exactly one line in the file. No `HASH│` prefix, no `+`/`-` diff markers.
+- `content_lines` is literal file content — each string becomes exactly one line in the file. No `HASH│` prefix. A line that happens to start with `+` or `-` is written as-is; the only rejected form is the diff preview's `+HASH│…` row (see `[E_INVALID_PATCH]`).
 - Don't add `""` for spacing unless you actually want a new blank line.
 - Copy anchors from the most recent `read` of the file. Do not guess or construct them.
 - All changes in one call must be non-conflicting. The runtime rejects with `[E_EDIT_CONFLICT]` if two ranges overlap.
@@ -99,7 +99,7 @@ Rules:
 On success, the response text is empty (or contains only warnings if present). Call `read` to get fresh anchors for follow-up edits.
 
 Error recovery:
-- `[E_STALE_ANCHOR]` — file changed since last read. Call `read` to get fresh anchors, then copy the HASH and retry.
+- `[E_STALE_ANCHOR]` — the anchored line's content changed since the last read. Call `read` to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into `hash_range_incl` and retry. (Staleness is per-line: editing or appending lines does not invalidate anchors for lines whose content is unchanged, so anchors for untouched regions stay valid across edits.)
 - `[E_BAD_REF]` — malformed HASH. Re-read and try again.
 - `[E_BAD_OP]` — invalid operation (e.g. start line > end line).
 - `[E_BAD_SHAPE]` — malformed request or change item (missing fields, wrong types, unknown fields).
@@ -107,5 +107,5 @@ Error recovery:
 - `[E_EDIT_CONFLICT]` — two changes overlap on the same line range. Make changes non-overlapping.
 - `[E_AMBIGUOUS_ANCHOR]` — hash collision. Call `read` to get fresh anchors.
 - `[E_BARE_HASH_PREFIX]` — a `content_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `hash_range_incl` uses hashes, `content_lines` does not.
-- `[E_INVALID_PATCH]` — diff prefixes (`+`/`-`) in `content_lines`. Use literal content only.
+- `[E_INVALID_PATCH]` — a `content_lines` entry matches the diff preview's `+HASH│…` addition-row form. Use literal file content. (Plain `+`/`-` lines are not rejected — they are written literally.)
 - `[E_WOULD_EMPTY]` — edit would empty a non-empty file.

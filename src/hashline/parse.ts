@@ -49,7 +49,7 @@ function assertNoPrefixes(lines: string[]): void {
 			DIFF_MINUS_RE.test(line)
 		) {
 			throw new Error(
-			`[E_INVALID_PATCH] "lines" must contain literal file content, not HASH| or diff prefixes. Offending line: ${JSON.stringify(line)}`
+			`[E_INVALID_PATCH] "content_lines" must contain literal file content. Offending line looks like the diff preview's +HASH│ row: ${JSON.stringify(line)}. Use literal file content only — plain + or - lines are written literally.`
 			);
 		}
 	}
