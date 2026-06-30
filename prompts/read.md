@@ -7,6 +7,7 @@ HASH format:
 
 Pagination:
 - Large files return a truncated preview with a pagination hint (e.g. `[Showing lines 1-100 of 500. Use offset=101 to continue.]`). Call `read` again with `offset=N` to continue.
+- Default cap: {{DEFAULT_MAX_LINES}} lines or {{DEFAULT_MAX_BYTES}}; output exceeding either is truncated. Pass `limit` to read fewer lines.
 
 File kinds:
 - Text files are returned as `HASH│content` lines.

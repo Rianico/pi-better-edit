@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { loadP, loadGuide } from "../../src/prompts";
+import { DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES, formatSize } from "@earendil-works/pi-coding-agent";
 
 describe("loadP", () => {
 	it("loads a prompt file", () => {
@@ -22,6 +23,20 @@ describe("loadP", () => {
 	it("handles missing replacements gracefully", () => {
 		const prompt = loadP("../prompts/read.md");
 		expect(prompt).toBeTruthy();
+	});
+
+	it("substitutes DEFAULT_MAX_LINES/DEFAULT_MAX_BYTES into read.md (issue #2 regression)", () => {
+		const raw = loadP("../prompts/read.md");
+		expect(raw).toContain("{{DEFAULT_MAX_LINES}}");
+		expect(raw).toContain("{{DEFAULT_MAX_BYTES}}");
+
+		const rendered = loadP("../prompts/read.md", {
+			DEFAULT_MAX_LINES: String(DEFAULT_MAX_LINES),
+			DEFAULT_MAX_BYTES: formatSize(DEFAULT_MAX_BYTES),
+		});
+		expect(rendered).not.toContain("{{");
+		expect(rendered).toContain(String(DEFAULT_MAX_LINES));
+		expect(rendered).toContain(formatSize(DEFAULT_MAX_BYTES));
 	});
 });
 
