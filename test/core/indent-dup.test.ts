@@ -29,6 +29,6 @@ describe("indentation difference in boundary check", () => {
     const result = applyEdits(file, resolved);
 
     expect(result.warnings).toBeDefined();
-    expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
+    expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
   });
 });

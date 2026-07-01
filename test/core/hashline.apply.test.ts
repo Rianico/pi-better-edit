@@ -210,11 +210,10 @@ describe("applyEdits — warning heuristics", () => {
 		const result = applyEdits(content, edits);
 
 		expect(result.content).toBe("before\nbefore\nnew one\nnew two\nafter");
-		expect(result.warnings).toEqual([
-			expect.stringContaining(
-				"the first line of the replacement",
-			),
-		]);
+		expect(result.warnings).toHaveLength(1);
+		expect(result.warnings![0]).toContain("Boundary duplication (leading)");
+		expect(result.warnings![0]).toContain("│before");
+		expect(result.warnings![0]).toContain("│new two");
 	});
 });
 

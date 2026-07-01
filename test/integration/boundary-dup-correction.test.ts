@@ -31,14 +31,10 @@ describe("boundary duplication warning → self-correction via replace", () => {
       );
 
       const edit1Text = getText(edit1);
-      expect(edit1Text).toContain("Potential boundary duplication");
-      expect(edit1Text).toContain("Surviving line hash:");
+      expect(edit1Text).toContain("Boundary duplication (trailing)");
+      expect(edit1Text).toContain(`${line4Hash}│`);
 
-      const survivingHashMatch = edit1Text.match(/Surviving line hash: (\S+)/);
-      expect(survivingHashMatch).toBeTruthy();
-      const survivingHash = survivingHashMatch![1]!;
-
-      expect(survivingHash).toBe(line4Hash);
+      const survivingHash = line4Hash;
 
       const read2 = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
       const text2 = getText(read2);
@@ -102,9 +98,10 @@ describe("boundary duplication warning → self-correction via replace", () => {
       );
 
       const edit1Text = getText(edit1);
-      expect(edit1Text).toContain("Surviving line hash:");
-      const survivingHash = edit1Text.match(/Surviving line hash: (\S+)/)![1]!;
-      expect(survivingHash).toBe(line4Hash);
+      expect(edit1Text).toContain("Boundary duplication (trailing)");
+      expect(edit1Text).toContain(`${line4Hash}│`);
+
+      const survivingHash = line4Hash;
 
       const read2 = await readTool.execute("r2", { path: "server.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");
@@ -150,9 +147,10 @@ describe("boundary duplication warning → self-correction via replace", () => {
       );
 
       const edit1Text = getText(edit1);
-      expect(edit1Text).toContain("Surviving line hash:");
-      const survivingHash = edit1Text.match(/Surviving line hash: (\S+)/)![1]!;
-      expect(survivingHash).toBe(line1Hash);
+      expect(edit1Text).toContain("Boundary duplication (leading)");
+      expect(edit1Text).toContain(`${line1Hash}│`);
+
+      const survivingHash = line1Hash;
 
       const read2 = await readTool.execute("r2", { path: "logic.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");
@@ -203,10 +201,10 @@ describe("boundary duplication warning → self-correction via replace", () => {
       );
 
       const edit1Text = getText(edit1);
-      expect(edit1Text).toContain("Surviving line hash:");
-      const survivingHash = edit1Text.match(/Surviving line hash: (\S+)/)![1]!;
+      expect(edit1Text).toContain("Boundary duplication (trailing)");
+      expect(edit1Text).toContain(`${survivingBraceHash}│`);
 
-      expect(survivingHash).toBe(survivingBraceHash);
+      const survivingHash = survivingBraceHash;
 
       const read2 = await readTool.execute("r2", { path: "multi.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");
@@ -257,10 +255,10 @@ describe("boundary duplication warning → self-correction via replace", () => {
       );
 
       const edit1Text = getText(edit1);
-      expect(edit1Text).toContain("Surviving line hash:");
-      const survivingHash = edit1Text.match(/Surviving line hash: (\S+)/)![1]!;
+      expect(edit1Text).toContain("Boundary duplication (trailing)");
+      expect(edit1Text).toContain(`${fourthBraceHash}│`);
 
-      expect(survivingHash).toBe(fourthBraceHash);
+      const survivingHash = fourthBraceHash;
 
       const read2 = await readTool.execute("r2", { path: "fourth.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");

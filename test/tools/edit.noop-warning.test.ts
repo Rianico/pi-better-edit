@@ -54,7 +54,7 @@ describe("edit tool noop + warnings", () => {
       );
 
       expect(getText(result)).toContain("Warnings:");
-      expect(getText(result)).toMatch(/Potential boundary duplication/i);
+      expect(getText(result)).toMatch(/Boundary duplication/i);
       expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\nccc\n");
     });
   });

@@ -211,6 +211,56 @@ function assemble(
 	return result;
 }
 
+/**
+ * Builds the boundary-duplication warning shown after an edit. A minimal header
+ * is followed by a hashline-anchored window: 2 lines of context before the
+ * duplicated pair, the pair itself, and 2 lines after. The window carries the
+ * post-edit hashes the model needs to remove the duplicate in a follow-up
+ * `replace` (no `read` round-trip required, since the hashes are current and
+ * staleness is per-line). Rows are plain `HASH│content` — no annotations.
+ */
+function fmtBoundaryWarning(params: {
+	kind: "trailing" | "leading";
+	survivingContent: string;
+	matchIndex: number;
+	resultLines: string[];
+	resultHashes: string[];
+}): string {
+	const header =
+		params.kind === "trailing"
+			? "Boundary duplication (trailing): the last replacement line duplicated the next line. Delete the duplicate."
+			: "Boundary duplication (leading): the first replacement line duplicated the previous line. Delete the duplicate.";
+
+	// Locate the adjacent duplicated pair (two identical neighboring lines). The
+	// occurrence-based matchIndex usually lands inside the pair; when a file has
+	// several identical lines we pick the pair nearest matchIndex so the window
+	// frames the duplication this edit introduced, not an unrelated one.
+	let pairStart = -1;
+	let bestDist = Infinity;
+	for (let i = 0; i < params.resultLines.length - 1; i++) {
+		if (
+			params.resultLines[i] === params.survivingContent &&
+			params.resultLines[i + 1] === params.survivingContent
+		) {
+			const dist = Math.abs(i - params.matchIndex);
+			if (dist < bestDist) {
+				bestDist = dist;
+				pairStart = i;
+			}
+		}
+	}
+	if (pairStart < 0) pairStart = params.matchIndex;
+
+	const winStart = Math.max(0, pairStart - 2);
+	const winEnd = Math.min(params.resultLines.length - 1, pairStart + 3);
+
+	const rows: string[] = [];
+	for (let i = winStart; i <= winEnd; i++) {
+		rows.push(`${params.resultHashes[i]}${HASH_SEP}${params.resultLines[i]}`);
+	}
+	return `${header}\n\n${rows.join("\n")}`;
+}
+
 export function applyEdits(
 	content: string,
 	edits: import("./resolve").HEdit[],
@@ -284,16 +334,15 @@ export function applyEdits(
 			}
 		}
 		if (matchIndex >= 0) {
-			const hash = resultHashes[matchIndex];
-			if (bw.kind === "trailing") {
-				warnings.push(
-					`Potential boundary duplication: the last line of the replacement (${JSON.stringify(bw.replacementLineContent)}) matches the next surviving line. Surviving line hash: ${hash}`
-				);
-			} else {
-				warnings.push(
-					`Potential boundary duplication: the first line of the replacement (${JSON.stringify(bw.replacementLineContent)}) matches the preceding surviving line. Surviving line hash: ${hash}`
-				);
-			}
+			warnings.push(
+				fmtBoundaryWarning({
+					kind: bw.kind,
+					survivingContent: bw.survivingLineContent,
+					matchIndex,
+					resultLines,
+					resultHashes,
+				}),
+			);
 		}
 	}
 

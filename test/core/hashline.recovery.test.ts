@@ -103,9 +103,10 @@ describe("applyEdits — heuristics", () => {
 		const result = applyEdits(content, edits);
 
 		expect(result.content).toBe("if (ok) {\n  runSafe();\n}\n}\nafter();");
-		expect(result.warnings).toEqual([
-			`Potential boundary duplication: the last line of the replacement ("}") matches the next surviving line. Surviving line hash: ${hashes[2]!}`,
-		]);
+		expect(result.warnings).toHaveLength(1);
+		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
+		expect(result.warnings![0]).toContain("│  runSafe();");
+		expect(result.warnings![0]).toContain(`${hashes[2]}│}`);
 	});
 
 	it("warns on trailing } that duplicates the next line", () => {
@@ -120,7 +121,7 @@ describe("applyEdits — heuristics", () => {
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n}");
 		expect(result.warnings).toBeDefined();
-		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
+		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
 	});
 
 	it("warns on trailing }); that duplicates the next line", () => {
@@ -135,7 +136,7 @@ describe("applyEdits — heuristics", () => {
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("app.get(\"/api\", (req, res) => {\n  const result = processData();\n  res.json(result);\n});\n});");
 		expect(result.warnings).toBeDefined();
-		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
+		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
 	});
 
 	it("warns on trailing } else { that duplicates the next line", () => {
@@ -150,7 +151,7 @@ describe("applyEdits — heuristics", () => {
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("if (condition) {\n  doNewThing();\n} else {\n} else {\n  doOther();\n}");
 		expect(result.warnings).toBeDefined();
-		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
+		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
 	});
 
 	it("warns on trailing duplicate even when mid-replacement also has matching lines", () => {
@@ -166,7 +167,7 @@ describe("applyEdits — heuristics", () => {
 
 		expect(result.content).toBe("x\n}\ny\n}\n}\nb");
 		expect(result.warnings).toBeDefined();
-		expect(result.warnings![0]).toContain("Potential boundary duplication: the last line");
+		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
 	});
 
 	it("preserves leading boundary-looking lines in replacements", () => {
@@ -183,9 +184,9 @@ describe("applyEdits — heuristics", () => {
 			"before();\nbefore();\nif (ok) {\n  runSafe();\n}\nafter();",
 		);
 		const hashes = lineHashes(content);
-		expect(result.warnings).toEqual([
-			`Potential boundary duplication: the first line of the replacement ("before();") matches the preceding surviving line. Surviving line hash: ${hashes[0]!}`,
-		]);
+		expect(result.warnings).toHaveLength(1);
+		expect(result.warnings![0]).toContain("Boundary duplication (leading)");
+		expect(result.warnings![0]).toContain(`${hashes[0]}│before();`);
 	});
 
 	it("does not auto-correct escaped tab indentation", () => {
