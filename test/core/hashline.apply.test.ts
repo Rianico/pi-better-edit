@@ -16,7 +16,7 @@ describe("applyEdits — basic operations", () => {
 	it("replaces a single line", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["BBB"] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["BBB"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nccc");
@@ -26,7 +26,7 @@ describe("applyEdits — basic operations", () => {
 	it("replaces a single line with multiple lines", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["BBB", "B2"] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["BBB", "B2"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nB2\nccc");
@@ -35,7 +35,7 @@ describe("applyEdits — basic operations", () => {
 	it("deletes a single line (empty lines array)", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: [] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: [] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nccc");
@@ -44,7 +44,7 @@ describe("applyEdits — basic operations", () => {
 	it("treats lines:[\"\"] as a deletion request for replace (no extra blank line)", () => {
 		const content = "aaa\nbbb\nccc\n";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: [""] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: [""] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nccc\n");
@@ -54,7 +54,7 @@ describe("applyEdits — basic operations", () => {
 		const content = "aaa\nbbb\nccc\nddd\n";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
+				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
 				content_lines: [""],
 			},
 		];
@@ -65,7 +65,7 @@ describe("applyEdits — basic operations", () => {
 	it("does not normalize multi-element empty arrays (those are blank lines)", () => {
 		const content = "aaa\nbbb\n";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["", ""] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["", ""] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).not.toBe("aaa\n");
@@ -76,7 +76,7 @@ describe("applyEdits — basic operations", () => {
 		const content = "aaa\nbbb\nccc\nddd";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
+				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
 				content_lines: ["BBB", "CCC"],
 			},
 		];
@@ -88,7 +88,7 @@ describe("applyEdits — basic operations", () => {
 		const content = "aaa\nbbb\nccc\nddd";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
+				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
 				content_lines: [],
 			},
 		];
@@ -101,8 +101,8 @@ describe("applyEdits — multi-edit ordering", () => {
 	it("applies multiple edits bottom-up correctly", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["AAA"] },
-			{ hash_range_incl: [makeTag(content, 3), makeTag(content, 3)], content_lines: ["CCC"] },
+			{ hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["AAA"] },
+			{ hash_range_inclusive: [makeTag(content, 3), makeTag(content, 3)], content_lines: ["CCC"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("AAA\nbbb\nCCC");
@@ -112,8 +112,8 @@ describe("applyEdits — multi-edit ordering", () => {
 		const content = "aaa\nbbb\nccc";
 		const pos = makeTag(content, 2);
 		const edits: HEdit[] = [
-			{ hash_range_incl: [{ ...pos }, { ...pos }], content_lines: ["BBB"] },
-			{ hash_range_incl: [{ ...pos }, { ...pos }], content_lines: ["BBB"] },
+			{ hash_range_inclusive: [{ ...pos }, { ...pos }], content_lines: ["BBB"] },
+			{ hash_range_inclusive: [{ ...pos }, { ...pos }], content_lines: ["BBB"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nccc");
@@ -123,15 +123,15 @@ describe("applyEdits — multi-edit ordering", () => {
 		const content = "aaa\nbbb\nccc";
 		const pos = makeTag(content, 2);
 		const edits: HEdit[] = [
-			{ hash_range_incl: [{ ...pos }, { ...pos }], content_lines: ["BBB"] },
-			{ hash_range_incl: [{ ...pos }, { ...pos }], content_lines: ["BBB"] },
+			{ hash_range_inclusive: [{ ...pos }, { ...pos }], content_lines: ["BBB"] },
+			{ hash_range_inclusive: [{ ...pos }, { ...pos }], content_lines: ["BBB"] },
 		];
 
 		applyEdits(content, edits);
 
 		expect(edits).toHaveLength(2);
-		expect(edits[0]).toEqual({ hash_range_incl: [{ ...pos }, { ...pos }], content_lines: ["BBB"] });
-		expect(edits[1]).toEqual({ hash_range_incl: [{ ...pos }, { ...pos }], content_lines: ["BBB"] });
+		expect(edits[0]).toEqual({ hash_range_inclusive: [{ ...pos }, { ...pos }], content_lines: ["BBB"] });
+		expect(edits[1]).toEqual({ hash_range_inclusive: [{ ...pos }, { ...pos }], content_lines: ["BBB"] });
 	});
 });
 
@@ -139,7 +139,7 @@ describe("applyEdits — noop detection", () => {
 	it("detects single-line noop", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["bbb"] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["bbb"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.noopEdits).toHaveLength(1);
@@ -150,7 +150,7 @@ describe("applyEdits — noop detection", () => {
 		const content = "aaa\nbbb\nccc\nddd";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
+				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
 				content_lines: ["bbb", "ccc"],
 			},
 		];
@@ -162,7 +162,7 @@ describe("applyEdits — noop detection", () => {
 		const content = "aaa\nbbb";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 1), makeTag(content, 2)],
+				hash_range_inclusive: [makeTag(content, 1), makeTag(content, 2)],
 				content_lines: [],
 			},
 		];
@@ -175,7 +175,7 @@ describe("applyEdits — noop detection", () => {
 		const content = "aaa\nbbb";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 1), makeTag(content, 2)],
+				hash_range_inclusive: [makeTag(content, 1), makeTag(content, 2)],
 				content_lines: ["ccc"],
 			},
 		];
@@ -188,7 +188,7 @@ describe("applyEdits — noop detection", () => {
 	it("allows replacing content with whitespace", () => {
 		const content = "aaa";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["\n"] },
+			{ hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["\n"] },
 		];
 
 		const result = applyEdits(content, edits);
@@ -202,7 +202,7 @@ describe("applyEdits — warning heuristics", () => {
 		const content = "before\nold one\nold two\nafter";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 3)],
+				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
 				content_lines: ["before", "new one", "new two"],
 			},
 		];
@@ -222,7 +222,7 @@ describe("applyEdits — lastChangedLine tracking", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["B1", "B2", "B3", "B4", "B5"],
+				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["B1", "B2", "B3", "B4", "B5"],
 			},
 		];
 
@@ -235,7 +235,7 @@ describe("applyEdits — lastChangedLine tracking", () => {
 	it("tracks lastChangedLine correctly for single-line delete", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: [] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: [] },
 		];
 
 		const result = applyEdits(content, edits);
@@ -248,7 +248,7 @@ describe("applyEdits — lastChangedLine tracking", () => {
 		const content = "aaa\nbbb\nccc\nddd\neee\nfff\nggg";
 		const edits: HEdit[] = [
 			{
-				hash_range_incl: [makeTag(content, 2), makeTag(content, 4)],
+				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 4)],
 				content_lines: [],
 			},
 		];
@@ -264,7 +264,7 @@ describe("applyEdits — edge cases (empty, single-line, no trailing newline)", 
 	it("edits a single-line file without trailing newline", () => {
 		const content = "hello";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["world"] },
+			{ hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["world"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("world");
@@ -273,7 +273,7 @@ describe("applyEdits — edge cases (empty, single-line, no trailing newline)", 
 	it("edits a single-line file with trailing newline", () => {
 		const content = "hello\n";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["world"] },
+			{ hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["world"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("world\n");
@@ -282,7 +282,7 @@ describe("applyEdits — edge cases (empty, single-line, no trailing newline)", 
 	it("edits a file with only a trailing newline (one blank line)", () => {
 		const content = "\n";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["hello"] },
+			{ hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["hello"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("hello\n");
@@ -291,7 +291,7 @@ describe("applyEdits — edge cases (empty, single-line, no trailing newline)", 
 	it("deletes the only line in a single-line file without trailing newline", () => {
 		const content = "hello";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], content_lines: [] },
+			{ hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)], content_lines: [] },
 		];
 		expect(() => applyEdits(content, edits)).toThrow(/^\[E_WOULD_EMPTY\]/);
 	});
@@ -299,7 +299,7 @@ describe("applyEdits — edge cases (empty, single-line, no trailing newline)", 
 	it("replaces a line in a file with no trailing newline", () => {
 		const content = "aaa\nbbb\nccc";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["BBB"] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["BBB"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nBBB\nccc");
@@ -308,7 +308,7 @@ describe("applyEdits — edge cases (empty, single-line, no trailing newline)", 
 	it("appends a line to a file without trailing newline", () => {
 		const content = "aaa\nbbb";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["bbb", "ccc"] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["bbb", "ccc"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("aaa\nbbb\nccc");
@@ -319,7 +319,7 @@ describe("applyEdits — trailing newline preservation", () => {
 	it("preserves trailing newline when replacing the last line of a file with one", () => {
 		const content = "line1\n</br>\n";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["LINE1"] },
+			{ hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["LINE1"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("LINE1\n</br>\n");
@@ -328,7 +328,7 @@ describe("applyEdits — trailing newline preservation", () => {
 	it("preserves trailing newline when replacing the last line itself", () => {
 		const content = "line1\n</br>\n";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["<br/>"] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["<br/>"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("line1\n<br/>\n");
@@ -337,7 +337,7 @@ describe("applyEdits — trailing newline preservation", () => {
 	it("preserves trailing newline when replacing a range ending at the last line", () => {
 		const content = "a\nb\nc\n";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 3)], content_lines: ["B", "C"] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)], content_lines: ["B", "C"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("a\nB\nC\n");
@@ -346,7 +346,7 @@ describe("applyEdits — trailing newline preservation", () => {
 	it("does not add trailing newline when original had none", () => {
 		const content = "line1\n</br>";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["LINE1"] },
+			{ hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)], content_lines: ["LINE1"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("LINE1\n</br>");
@@ -355,7 +355,7 @@ describe("applyEdits — trailing newline preservation", () => {
 	it("does not add trailing newline for mid-file edits", () => {
 		const content = "a\nb\nc\n";
 		const edits: HEdit[] = [
-			{ hash_range_incl: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["B"] },
+			{ hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["B"] },
 		];
 		const result = applyEdits(content, edits);
 		expect(result.content).toBe("a\nB\nc\n");

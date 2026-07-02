@@ -76,8 +76,8 @@ function resToSpan(
 ): RESpan | null {
   const { fileLines, lineStarts, hasTerminalNewline } = lineIndex;
 
-  const startLine = edit.hash_range_incl[0].line;
-  const endLine = edit.hash_range_incl[1].line;
+  const startLine = edit.hash_range_inclusive[0].line;
+  const endLine = edit.hash_range_inclusive[1].line;
   const originalLines = fileLines.slice(startLine - 1, endLine);
   if (
     originalLines.length === edit.content_lines.length &&
@@ -87,7 +87,7 @@ function resToSpan(
   ) {
     noopEdits.push({
       editIndex: index,
-      loc: edit.hash_range_incl[0].hash,
+      loc: edit.hash_range_inclusive[0].hash,
       currentContent: originalLines.join("\n"),
     });
     return null;
@@ -228,8 +228,8 @@ function fmtBoundaryWarning(params: {
 }): string {
 	const header =
 		params.kind === "trailing"
-			? "Boundary duplication (trailing): the last replacement line duplicated the next line. Delete the duplicate."
-			: "Boundary duplication (leading): the first replacement line duplicated the previous line. Delete the duplicate.";
+			? "Boundary duplication (trailing): the last replacement line duplicated the next line. This happens when `content_lines` includes a line that was already outside the replaced range. Delete the duplicate — the original line outside the range is still there."
+			: "Boundary duplication (leading): the first replacement line duplicated the previous line. This happens when `content_lines` includes a line that was already outside the replaced range. Delete the duplicate — the original line outside the range is still there.";
 
 	// Locate the adjacent duplicated pair (two identical neighboring lines). The
 	// occurrence-based matchIndex usually lands inside the pair; when a file has

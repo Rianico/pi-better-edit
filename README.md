@@ -66,18 +66,18 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 {
   "path": "src/main.ts",
   "changes": [
-    { "hash_range_incl": ["ve7", "ve7"], "content_lines": ["  console.log('hashline');"] }
+    { "hash_range_inclusive": ["ve7", "ve7"], "content_lines": ["  console.log('hashline');"] }
   ]
 }
 ```
 
 | Field | Description |
 | --- | --- |
-| `hash_range_incl` | Inclusive line range `[start_hash, end_hash]` (required). |
+| `hash_range_inclusive` | Inclusive line range `[start_hash, end_hash]` (required). |
 | `content_lines` | Literal replacement content, one string per line (use `[]` to delete the range). |
 
 - **Request structure validation.** The request envelope (`path`, `changes`) and individual edit items are validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`.
-- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_incl: ["<START>", "<END>"], content_lines: [...]}`.
+- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}`.
 - **Batched atomicity.** All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
 
 ### Chained edits
@@ -101,7 +101,7 @@ The post-edit diff (with `+`/`-` markers) is exposed to the host UI via `details
 
 ## Design Decisions
 
-- **Stale anchors fail (per-line).** A hash mismatch means that specific line's content changed since the last `read`; the error tells the model to call `read()` to get fresh anchors, then copy the 3-character HASH of the start and end of the range being replaced into `hash_range_incl` of the next replace call. Because staleness is per-line, editing or appending lines does **not** invalidate anchors for lines whose content is unchanged — anchors for untouched regions stay valid across edits to other regions.
+- **Stale anchors fail (per-line).** A hash mismatch means that specific line's content changed since the last `read`; the error tells the model to call `read()` to get fresh anchors, then copy the 3-character HASH of the start and end of the range being replaced into `hash_range_inclusive` of the next replace call. Because staleness is per-line, editing or appending lines does **not** invalidate anchors for lines whose content is unchanged — anchors for untouched regions stay valid across edits to other regions.
 - **No fallback relocation.** Mismatched anchors are never silently relocated to a "close enough" line. This trades convenience for correctness.
 - **Strict patch content.** If `content_lines` contains `+HASH│` display prefixes (or `-N   ` numbered deletion rows), the edit is rejected with `[E_INVALID_PATCH]`. This narrowly guards against pasting the tool's own diff-preview rows back as content; standard unified-diff lines (`+x`, `-x`, ` x`, `@@ … @@`) are **not** rejected — they are written literally, since literal content must never be silently altered. Bare `HASH│` content (the first 4 chars of a `content_lines` entry looking like 3 base64 chars + `│`) is rejected with `[E_BARE_HASH_PREFIX]`. When the suspect's prefix happens to match a real file-line anchor, the error message flags that as strong evidence the model copied an anchor from the read output.
 - **Atomic writes.** Files are written via temp-file-then-rename to avoid corruption from interrupted writes. Symlink chains are resolved so the target file is updated without replacing the symlink. Hard-linked files are updated in place to preserve the shared inode. File permissions are preserved across atomic renames.

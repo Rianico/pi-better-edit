@@ -59,7 +59,7 @@ const hashRangeInclSchema = Type.Array(
 
 const changeItemSchema = Type.Object(
   {
-    hash_range_incl: hashRangeInclSchema,
+    hash_range_inclusive: hashRangeInclSchema,
     content_lines: contentLinesSchema,
   },
   { additionalProperties: false },
@@ -101,7 +101,7 @@ export function assertReq(
   for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"]) {
     if (has(request, legacyKey)) {
       throw new Error(
-        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_incl: ["<START>", "<END>"], content_lines: [...]}.`
+        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}.`
       );
     }
   }
@@ -113,7 +113,7 @@ export function assertReq(
   }
 
   if (!Array.isArray(request.changes)) {
-    throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { hash_range_incl: ["<START>", "<END>"], content_lines: [...] }.');
+    throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { hash_range_inclusive: ["<START>", "<END>"], content_lines: [...] }.');
   }
 }
 

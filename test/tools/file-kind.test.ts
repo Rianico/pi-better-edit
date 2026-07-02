@@ -375,7 +375,7 @@ describe("file kind guards in tools", () => {
 						path: "sample.c",
             changes: [
               {
-                hash_range_incl: [`${lineHash(2, "int")}`, `${lineHash(2, "int")}`], content_lines: ["long"],
+                hash_range_inclusive: [`${lineHash(2, "int")}`, `${lineHash(2, "int")}`], content_lines: ["long"],
               },
             ],
 					},
@@ -407,7 +407,7 @@ describe("file kind guards in tools", () => {
 							path: "sample.bin",
               changes: [
                 {
-                  hash_range_incl: [`${lineHash(1, "int")}`, `${lineHash(1, "int")}`], content_lines: ["long"],
+                  hash_range_inclusive: [`${lineHash(1, "int")}`, `${lineHash(1, "int")}`], content_lines: ["long"],
                 },
               ],
 						},
@@ -436,7 +436,7 @@ describe("file kind guards in tools", () => {
 							path: "sample.bin",
               changes: [
                 {
-                  hash_range_incl: [`${lineHash(1, "a")}`, `${lineHash(1, "a")}`], content_lines: ["A"],
+                  hash_range_inclusive: [`${lineHash(1, "a")}`, `${lineHash(1, "a")}`], content_lines: ["A"],
                 },
               ],
 						},

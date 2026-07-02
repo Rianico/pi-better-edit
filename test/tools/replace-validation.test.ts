@@ -71,7 +71,7 @@ describe("assertReq", () => {
 	it("does not throw for valid request", () => {
 		expect(() => assertReq({
 			path: "test.txt",
-			changes: [{ hash_range_incl: ["AAA", "BBB"], content_lines: ["new"] }],
+			changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }],
 		})).not.toThrow();
 	});
 

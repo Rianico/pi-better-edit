@@ -21,7 +21,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
         {
           path: "sample.ts",
           changes: [{
-            hash_range_incl: [line2Hash, line3Hash],
+            hash_range_inclusive: [line2Hash, line3Hash],
             content_lines: ["  const y = 2;", "  return y;", "}"],
           }],
         },
@@ -58,7 +58,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
         {
           path: "sample.ts",
           changes: [{
-            hash_range_incl: [extractHash(duplicateHash!), extractHash(duplicateHash!)],
+            hash_range_inclusive: [extractHash(duplicateHash!), extractHash(duplicateHash!)],
             content_lines: [],
           }],
         },
@@ -88,7 +88,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
         {
           path: "server.ts",
           changes: [{
-            hash_range_incl: [line2Hash, line3Hash],
+            hash_range_inclusive: [line2Hash, line3Hash],
             content_lines: ["  const result = processData();", "  res.json(result);", "});"],
           }],
         },
@@ -111,7 +111,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
 
       await editTool.execute(
         "e2",
-        { path: "server.ts", changes: [{ hash_range_incl: [duplicateHash, duplicateHash], content_lines: [] }] },
+        { path: "server.ts", changes: [{ hash_range_inclusive: [duplicateHash, duplicateHash], content_lines: [] }] },
         undefined,
         undefined,
         ctx,
@@ -137,7 +137,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
         {
           path: "logic.ts",
           changes: [{
-            hash_range_incl: [line2Hash, line3Hash],
+            hash_range_inclusive: [line2Hash, line3Hash],
             content_lines: ["before();", "if (ok) {", "  runSafe();"],
           }],
         },
@@ -160,7 +160,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
 
       await editTool.execute(
         "e2",
-        { path: "logic.ts", changes: [{ hash_range_incl: [duplicateHash, duplicateHash], content_lines: [] }] },
+        { path: "logic.ts", changes: [{ hash_range_inclusive: [duplicateHash, duplicateHash], content_lines: [] }] },
         undefined,
         undefined,
         ctx,
@@ -191,7 +191,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
         {
           path: "multi.ts",
           changes: [{
-            hash_range_incl: [line4Hash, line5Hash],
+            hash_range_inclusive: [line4Hash, line5Hash],
             content_lines: ["if (b) {", "  yNew();", "}"],
           }],
         },
@@ -247,7 +247,7 @@ describe("boundary duplication warning → self-correction via replace", () => {
         "e1",
         {
           path: "fourth.ts",
-          changes: [{ hash_range_incl: [fooHash, barHash], content_lines: ["foo();", "bar();", "}"] }],
+          changes: [{ hash_range_inclusive: [fooHash, barHash], content_lines: ["foo();", "bar();", "}"] }],
         },
         undefined,
         undefined,

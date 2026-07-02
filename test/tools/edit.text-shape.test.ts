@@ -16,7 +16,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.ts",
           changes: [
             {
-              hash_range_incl: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], content_lines: ["BBB"],
+              hash_range_inclusive: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], content_lines: ["BBB"],
             },
           ],
         },
@@ -52,7 +52,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.ts",
           changes: [
             {
-              hash_range_incl: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], content_lines: ["BBB"],
+              hash_range_inclusive: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], content_lines: ["BBB"],
             },
           ],
         },
@@ -81,7 +81,7 @@ describe("edit tool text shape (token budget)", () => {
             path: "sample.txt",
             changes: [
               {
-                hash_range_incl: [`${lineHash(1, "only")}`, `${lineHash(1, "only")}`], content_lines: [],
+                hash_range_inclusive: [`${lineHash(1, "only")}`, `${lineHash(1, "only")}`], content_lines: [],
               },
             ],
           },
@@ -106,7 +106,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.txt",
           changes: [
             {
-              hash_range_incl: [`${lineHash(2, longLine)}`, `${lineHash(2, longLine)}`], content_lines: [`b${longLine.slice(1)}`],
+              hash_range_inclusive: [`${lineHash(2, longLine)}`, `${lineHash(2, longLine)}`], content_lines: [`b${longLine.slice(1)}`],
             },
           ],
         },

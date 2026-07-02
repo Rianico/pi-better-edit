@@ -1,3 +1,4 @@
 - Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call.
 - After a successful `replace`, the response text is empty (warnings only). Call `read` to get fresh anchors for follow-up edits.
-- On `[E_STALE_ANCHOR]`, call `read` to get fresh anchors, copy the 3-character HASH of the start and end of the range you are replacing into `hash_range_incl`, and retry.
+- On `[E_STALE_ANCHOR]`, call `read` to get fresh anchors, copy the 3-character HASH of the start and end of the range you are replacing into `hash_range_inclusive`, and retry.
+- `hash_range_inclusive` replaces the ENTIRE range inclusively. Every line from the first anchor through the second anchor is deleted. Only put the replacement lines in `content_lines` — do not include lines that already exist outside the range.

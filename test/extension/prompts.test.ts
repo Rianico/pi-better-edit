@@ -19,8 +19,8 @@ describe("prompts/replace.md (model-facing contract)", () => {
     expect(replacePrompt).toContain('"content_lines": []');
 	});
 
-	it("requires hash_range_incl pair", () => {
-		expect(replacePrompt).toMatch(/hash_range_incl/i);
+	it("requires hash_range_inclusive pair", () => {
+		expect(replacePrompt).toMatch(/hash_range_inclusive/i);
 	});
 
 	it("declares that edits must be non-conflicting", () => {
