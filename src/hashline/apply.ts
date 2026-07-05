@@ -92,11 +92,13 @@ function resToSpan(
     return null;
   }
 
+  const label = descEdit(edit);
+
   if (edit.content_lines.length > 0) {
     return {
       kind: "replace",
       index,
-      label: descEdit(edit),
+      label,
       start: lineStarts[startLine - 1]!,
       end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
       replacement: edit.content_lines.join("\n"),
@@ -107,7 +109,7 @@ function resToSpan(
     return {
       kind: "replace",
       index,
-      label: descEdit(edit),
+      label,
       start: 0,
       end: content.length,
       replacement: "",
@@ -118,7 +120,7 @@ function resToSpan(
     return {
       kind: "replace",
       index,
-      label: descEdit(edit),
+      label,
       start: lineStarts[startLine - 1]!,
       end: lineStarts[endLine]!,
       replacement: "",
@@ -128,7 +130,7 @@ function resToSpan(
   return {
     kind: "replace",
     index,
-    label: descEdit(edit),
+    label,
     start: Math.max(0, lineStarts[startLine - 1]! - 1),
     end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
     replacement: "",

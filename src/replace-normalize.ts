@@ -27,6 +27,32 @@ function coerceEditArray(items: unknown[]): unknown[] {
     });
 }
 
+/**
+ * Normalizes a field from `from` to `to`: JSON-string arrays → real arrays,
+ * single objects → wrapped in array. Shared by the `changes` and `edits`
+ * normalization branches.
+ */
+function normalizeField(
+  record: Record<string, unknown>,
+  from: string,
+  to: string,
+): void {
+  if (!has(record, from)) return;
+  const raw = tryParseJSON(record[from], Array.isArray) ?? record[from];
+  if (Array.isArray(raw)) {
+    record[to] = coerceEditArray(raw);
+  } else {
+    const single =
+      typeof raw === "string"
+        ? tryParseJSON(raw, isRec)
+        : isRec(raw)
+          ? raw
+          : undefined;
+    if (single) record[to] = coerceEditArray([single]);
+  }
+  if (from !== to) delete record[from];
+}
+
 export function normReq(input: unknown): unknown {
   if (!isRec(input)) {
     return input;
@@ -39,32 +65,8 @@ export function normReq(input: unknown): unknown {
     delete record.file_path;
   }
 
-  const hasChangesField = has(record, "changes");
-  const hasEditsField = has(record, "edits");
-
-if (hasChangesField) {
-    const raw = tryParseJSON(record.changes, Array.isArray) ?? record.changes;
-    if (Array.isArray(raw)) {
-        record.changes = coerceEditArray(raw);
-    } else {
-        // Single object (JSON string or literal) → wrap in array
-        const single = typeof raw === "string"
-            ? tryParseJSON(raw, isRec)
-            : isRec(raw) ? raw : undefined;
-        if (single) record.changes = coerceEditArray([single]);
-    }
-} else if (hasEditsField) {
-    const raw = tryParseJSON(record.edits, Array.isArray) ?? record.edits;
-    if (Array.isArray(raw)) {
-        record.changes = coerceEditArray(raw);
-    } else {
-        const single = typeof raw === "string"
-            ? tryParseJSON(raw, isRec)
-            : isRec(raw) ? raw : undefined;
-        if (single) record.changes = coerceEditArray([single]);
-    }
-    delete record.edits;
-}
+  normalizeField(record, "changes", "changes");
+  normalizeField(record, "edits", "changes");
 
   return record;
 }
