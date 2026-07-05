@@ -1,12 +1,10 @@
 import { describe, expect, it } from "vitest";
 import {
-  applyEdits,
-  affRange,
-  lineHashes,
-  fmtRegion,
-  resEdits,
-  type HTEdit,
-  type HEdit,
+	applyEdits,
+	lineHashes,
+	resEdits,
+	type HTEdit,
+	type HEdit,
 } from "../../src/hashline";
 import { makeTag } from "../support/fixtures";
 
@@ -72,12 +70,6 @@ describe("stale-position compound edits", () => {
 
 		expect(result.content.split("\n").length).toBe(10);
 
-		const anchorRange = affRange({
-			firstChangedLine: result.firstChangedLine,
-			lastChangedLine: result.lastChangedLine,
-			resultLineCount: expectedLines.length,
-		});
-		expect(anchorRange).toBeNull();
 	});
 
 	it("tracks correct coordinates when replace shrinks lines", () => {

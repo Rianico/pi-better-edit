@@ -12,7 +12,6 @@ import {
 	type BDupWarn,
 } from "./resolve";
 import { cntLines } from "../utils";
-import { CTX_LINES, MAX_OUT } from "../constants";
 
 type LIdx = {
 	fileLines: string[];
@@ -271,6 +270,7 @@ export function applyEdits(
 	content: string;
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
+	resultHashes?: string[];
 	warnings?: string[];
 	noopEdits?: NEdit[];
 } {
@@ -350,50 +350,10 @@ export function applyEdits(
 		content: result,
 		firstChangedLine: range?.firstChangedLine,
 		lastChangedLine: range?.lastChangedLine,
+		resultHashes,
 		...(warnings.length ? { warnings } : {}),
 		...(noopEdits.length ? { noopEdits } : {}),
 	};
-}
-
-export function affRange(params: {
-	firstChangedLine: number | undefined;
-	lastChangedLine: number | undefined;
-	resultLineCount: number;
-	contextLines?: number;
-	maxOutputLines?: number;
-}): { start: number; end: number } | null {
-	const {
-		firstChangedLine,
-		lastChangedLine,
-		resultLineCount,
-		contextLines = CTX_LINES,
-		maxOutputLines = MAX_OUT,
-	} = params;
-
-	if (firstChangedLine === undefined || lastChangedLine === undefined) {
-		return null;
-	}
-
-	if (contextLines === 0) {
-		return null;
-	}
-
-	if (resultLineCount === 0) {
-		return null;
-	}
-
-	const start = Math.max(1, firstChangedLine - contextLines);
-	const end = Math.min(resultLineCount, lastChangedLine + contextLines);
-
-	if (end < start) {
-		return null;
-	}
-
-	if (end - start + 1 > maxOutputLines) {
-		return null;
-	}
-
-	return { start, end };
 }
 
 export function fmtRegion(

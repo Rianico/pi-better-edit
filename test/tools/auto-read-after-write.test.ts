@@ -1,14 +1,9 @@
 import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { mkdtemp, rm, writeFile } from "fs/promises";
+import { rm, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { getWritableTempRoot } from "../support/fixtures";
+import { makeTempDir } from "../support/fixtures";
 
-async function makeTempDir(prefix: string): Promise<string> {
-	// mkdtemp (not mkdir) so every call gets a fresh, unique dir even if a prior
-	// run left a stale same-named dir behind; the body just needs a writable cwd.
-	return mkdtemp(join(await getWritableTempRoot(), prefix));
-}
 
 type ToolResultHandler = (
   event: {

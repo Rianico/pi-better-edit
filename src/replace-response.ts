@@ -1,12 +1,9 @@
 import type { ReplaceDetails } from "./replace";
 import { genDiff } from "./replace-diff";
 import {
-	affRange,
 	lineHashes,
-	fmtRegion,
 } from "./hashline";
 import { visLines } from "./utils";
-import { ANCHOR_BUDGET } from "./constants";
 
 type TResult = {
 	content: Array<{ type: "text"; text: string }>;
@@ -153,34 +150,9 @@ export function buildChanged(input: SuccessInput): TResult {
 	const addedLines = cntDiff(diffResult.diff, "+");
 	const removedLines = cntDiff(diffResult.diff, "-");
 	const warningsBlock = warnBlock(warnings);
-	const anchorRange = affRange({
-		firstChangedLine: editMeta.firstChangedLine,
-		lastChangedLine: editMeta.lastChangedLine,
-		resultLineCount: resultLines.length,
-	});
-	const anchorsBlock = anchorRange
-		? (() => {
-				const region = resultLines.slice(
-					anchorRange.start - 1,
-					anchorRange.end,
-				);
-				const regionHashes = resultHashes.slice(
-					anchorRange.start - 1,
-					anchorRange.end,
-				);
-				const formatted = fmtRegion(regionHashes, region);
-				const block = `--- Anchors ---\n${formatted}`;
-				return Buffer.byteLength(block, "utf8") <=
-					ANCHOR_BUDGET
-					? block
-					: "Anchors omitted; use read for subsequent edits.";
-			})()
-		: resultLines.length === 0
-			? "File is empty. Use replace to insert content."
-			: "";
-	const text = [anchorsBlock, warningsBlock.trimStart()]
-		.filter((section) => section.length > 0)
-		.join("\n\n");
+	const text = resultLines.length === 0
+		? "File is empty. Use replace to insert content."
+		: warningsBlock.trimStart();
 
 	const metrics = buildM({
 		classification: "applied",

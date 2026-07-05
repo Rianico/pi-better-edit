@@ -77,8 +77,16 @@ export async function withTempDir(
   try {
     await run(dir);
   } finally {
-    await rm(dir, { recursive: true, force: true });
   }
+}
+
+/**
+ * Creates a fresh mkdtemp dir under `.tmp/` and returns the path.
+ * Caller is responsible for cleanup. For tests that need the dir path
+ * to create files manually.
+ */
+export async function makeTempDir(prefix: string): Promise<string> {
+  return mkdtemp(join(await getWritableTempRoot(), prefix));
 }
 
 export function makeFakePiRegistry() {

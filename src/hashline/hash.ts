@@ -55,6 +55,9 @@ function getH(): Hasher {
 hasherP = xxhash().then((h) => {
 	hasher = h;
 	return h;
+}).catch((err) => {
+	console.error("xxhash-wasm initialization failed:", err);
+	throw err;
 });
 
 export function initHasher(): Promise<Hasher> {

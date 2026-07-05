@@ -34,7 +34,6 @@ export {
 export {
 	buildIdx,
 	applyEdits,
-	affRange,
 	fmtRegion,
 	changedRange,
 } from "./apply";

@@ -99,6 +99,7 @@ interface PipelineResult {
   firstChangedLine?: number;
   lastChangedLine?: number;
   originalHashes?: string[];
+  resultHashes?: string[];
 }
 
 const E_DESC = loadP("../prompts/replace.md");
@@ -173,6 +174,7 @@ async function execPipeline(
     noopEdits: anchorResult.noopEdits,
     firstChangedLine: anchorResult.firstChangedLine,
     lastChangedLine: anchorResult.lastChangedLine,
+    resultHashes: anchorResult.resultHashes,
     originalHashes,
   };
 }
@@ -184,7 +186,7 @@ export async function compPreview(
 	try {
 		const normalized = normReq(request);
 		assertReq(normalized);
-		const { path, originalNormalized, result } = await execPipeline(
+		const { path, originalNormalized, result, resultHashes } = await execPipeline(
 			normalized,
 			cwd,
 			constants.R_OK,
@@ -196,7 +198,7 @@ export async function compPreview(
 			};
 		}
 
-		return { diff: genDiff(originalNormalized, result, 4, lineHashes(result)).diff };
+		return { diff: genDiff(originalNormalized, result, 4, resultHashes).diff };
 	} catch (error: unknown) {
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
@@ -340,6 +342,7 @@ const toolDef: ToolDef = {
 				noopEdits,
 				firstChangedLine,
 				lastChangedLine,
+				resultHashes,
 			} = await execPipeline(
 				normalizedParams,
 				ctx.cwd,
@@ -390,7 +393,7 @@ const toolDef: ToolDef = {
 				path,
 				originalNormalized,
 				result,
-				resultHashes: lineHashes(result),
+				resultHashes,
 				warnings,
 				snapshotId: updatedSnapshotId,
 				editMeta,

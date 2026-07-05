@@ -1,9 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { readFile } from "fs/promises";
 import { join, isAbsolute } from "path";
-import { lineHashes, initHasher, fmtRegion } from "./src/hashline";
+import { initHasher } from "./src/hashline";
 import { regReplace } from "./src/replace";
-import { regRead, formatPaginationHint } from "./src/read";
+import { regRead, fmtReadPreview } from "./src/read";
 import { toLF, stripBOM } from "./src/replace-diff";
 import { visLines } from "./src/utils";
 import { AUTO_READ_MAX } from "./src/constants";
@@ -47,29 +47,18 @@ export default function (pi: ExtensionAPI): void {
       const content = await readFile(absolutePath, "utf-8");
       const { text: rawContent } = stripBOM(content);
       const normalized = toLF(rawContent);
-      const visibleLines = visLines(normalized);
 
-      if (visibleLines.length === 0) return;
+      if (visLines(normalized).length === 0) return;
 
-      const truncated = visibleLines.length > AUTO_READ_MAX;
-      const displayLines = truncated ? visibleLines.slice(0, AUTO_READ_MAX) : visibleLines;
+      const preview = fmtReadPreview(normalized, { limit: AUTO_READ_MAX });
+      if (!preview.text) return;
 
-      const hashes = lineHashes(normalized);
-      const selectedHashes = hashes.slice(0, displayLines.length);
-      const hashlineOutput = fmtRegion(selectedHashes, displayLines);
-
-      const paginationHint = truncated
-        ? `\n\n${formatPaginationHint(1, AUTO_READ_MAX, visibleLines.length, AUTO_READ_MAX + 1)}`
-        : "";
-
-      if (hashlineOutput) {
-        return {
-          content: [
-            ...(event.content ?? []),
-            { type: "text", text: `\n\n--- Auto-read (hashline anchors) ---\n${hashlineOutput}${paginationHint}` },
-          ],
-        };
-      }
+      return {
+        content: [
+          ...(event.content ?? []),
+          { type: "text", text: `\n\n--- Auto-read (hashline anchors) ---\n${preview.text}` },
+        ],
+      };
     } catch (error) {
       console.error("Auto-read after write failed:", error);
     }

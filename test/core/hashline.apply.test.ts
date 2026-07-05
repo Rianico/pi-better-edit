@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   applyEdits,
-  affRange,
   type HEdit,
 } from "../../src/hashline";
 import { makeTag } from "../support/fixtures";
