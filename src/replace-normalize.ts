@@ -42,14 +42,29 @@ export function normReq(input: unknown): unknown {
   const hasChangesField = has(record, "changes");
   const hasEditsField = has(record, "edits");
 
-  if (hasChangesField) {
+if (hasChangesField) {
     const raw = tryParseJSON(record.changes, Array.isArray) ?? record.changes;
-    if (Array.isArray(raw)) record.changes = coerceEditArray(raw);
-  } else if (hasEditsField) {
+    if (Array.isArray(raw)) {
+        record.changes = coerceEditArray(raw);
+    } else {
+        // Single object (JSON string or literal) → wrap in array
+        const single = typeof raw === "string"
+            ? tryParseJSON(raw, isRec)
+            : isRec(raw) ? raw : undefined;
+        if (single) record.changes = coerceEditArray([single]);
+    }
+} else if (hasEditsField) {
     const raw = tryParseJSON(record.edits, Array.isArray) ?? record.edits;
-    if (Array.isArray(raw)) record.changes = coerceEditArray(raw);
+    if (Array.isArray(raw)) {
+        record.changes = coerceEditArray(raw);
+    } else {
+        const single = typeof raw === "string"
+            ? tryParseJSON(raw, isRec)
+            : isRec(raw) ? raw : undefined;
+        if (single) record.changes = coerceEditArray([single]);
+    }
     delete record.edits;
-  }
+}
 
   return record;
 }

@@ -62,12 +62,59 @@ describe("normReq", () => {
 		expect(result.changes).toBe("not json");
 	});
 
-	it("returns edits as-is if JSON is not array", () => {
-		const input = { path: "test.txt", changes: '{"key": "value"}' };
+	it("wraps a JSON-string single change object in an array", () => {
+		const input = {
+			path: "test.txt",
+			changes: JSON.stringify({ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }),
+		};
 		const result = normReq(input) as Record<string, unknown>;
-		expect(result.changes).toBe('{"key": "value"}');
+		expect(Array.isArray(result.changes)).toBe(true);
+		expect(result.changes).toHaveLength(1);
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+		expect(change.content_lines).toEqual(["new"]);
 	});
 
+	it("wraps a literal single change object in an array", () => {
+		const input = {
+			path: "test.txt",
+			changes: { hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] },
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(Array.isArray(result.changes)).toBe(true);
+		expect(result.changes).toHaveLength(1);
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+		expect(change.content_lines).toEqual(["new"]);
+	});
+
+	it("wraps a JSON-string single edit object from edits field", () => {
+		const input = {
+			path: "test.txt",
+			edits: JSON.stringify({ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }),
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(Array.isArray(result.changes)).toBe(true);
+		expect(result.changes).toHaveLength(1);
+		expect(result.edits).toBeUndefined();
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+		expect(change.content_lines).toEqual(["new"]);
+	});
+
+	it("wraps a literal single edit object from edits field", () => {
+		const input = {
+			path: "test.txt",
+			edits: { hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] },
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(Array.isArray(result.changes)).toBe(true);
+		expect(result.changes).toHaveLength(1);
+		expect(result.edits).toBeUndefined();
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+		expect(change.content_lines).toEqual(["new"]);
+	});
 	it("handles both file_path and JSON-string edits together", () => {
 		const changesArray = [
 			{ start: "aB3x", end: "aB3x", lines: ["line1"] },
