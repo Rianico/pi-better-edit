@@ -26,7 +26,6 @@ describe("genDiff", () => {
 		].join("\n");
 
 		const { diff } = genDiff(before, after);
-		console.log("\n--- genDiff output ---\n" + diff + "\n----------------------------------");
 
 		const lines = diff.split("\n");
 
