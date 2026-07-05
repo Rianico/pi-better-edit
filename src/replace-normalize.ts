@@ -1,46 +1,12 @@
 import { isRec, has } from "./utils";
 
-function coerceChangesArray(changes: unknown): unknown {
-  if (typeof changes !== "string") {
-    return changes;
-  }
+function tryParseJSON<T>(value: unknown, guard: (v: unknown) => v is T): T | undefined {
+  if (typeof value !== "string") return undefined;
   try {
-    const parsed: unknown = JSON.parse(changes);
-    return Array.isArray(parsed) ? parsed : changes;
-  } catch {
-    return changes;
-  }
-}
-
-function coerceContentLines(changes: unknown): unknown {
-  if (!Array.isArray(changes)) return changes;
-  return changes.map((change: unknown) => {
-    if (!isRec(change)) return change;
-    if (typeof change.content_lines !== "string") return change;
-    try {
-      const parsed: unknown = JSON.parse(change.content_lines);
-      if (Array.isArray(parsed) && parsed.every((item) => typeof item === "string")) {
-        return { ...change, content_lines: parsed };
-      }
-    } catch {
-      // not valid JSON, leave as-is for downstream validation
-    }
-    return change;
-  });
-}
-
-function coerceChangeItems(changes: unknown): unknown {
-  if (!Array.isArray(changes)) return changes;
-  return changes.map((item: unknown) => {
-    if (typeof item !== "string") return item;
-    try {
-      const parsed: unknown = JSON.parse(item);
-      if (isRec(parsed)) return parsed;
-    } catch {
-      // not valid JSON, leave as-is for downstream validation
-    }
-    return item;
-  });
+    const parsed: unknown = JSON.parse(value);
+    if (guard(parsed)) return parsed;
+  } catch {}
+  return undefined;
 }
 
 export function normReq(input: unknown): unknown {
@@ -59,14 +25,33 @@ export function normReq(input: unknown): unknown {
   const hasEditsField = has(record, "edits");
 
   if (hasChangesField) {
-    record.changes = coerceChangesArray(record.changes);
-    record.changes = coerceChangeItems(record.changes);
-    record.changes = coerceContentLines(record.changes);
+    const raw = tryParseJSON(record.changes, Array.isArray) ?? record.changes;
+    if (Array.isArray(raw)) {
+      record.changes = raw
+        .map((item: unknown) => tryParseJSON(item, isRec) ?? item)
+        .map((change: unknown) => {
+          if (!isRec(change)) return change;
+          if (typeof change.content_lines !== "string") return change;
+          const parsed = tryParseJSON(change.content_lines, (v): v is string[] =>
+            Array.isArray(v) && v.every((i) => typeof i === "string"),
+          );
+          return parsed ? { ...change, content_lines: parsed } : change;
+        });
+    }
   } else if (hasEditsField) {
-    // Accept "edits" as an alias for "changes" for backward compatibility
-    record.changes = coerceChangesArray(record.edits);
-    record.changes = coerceChangeItems(record.changes);
-    record.changes = coerceContentLines(record.changes);
+    const raw = tryParseJSON(record.edits, Array.isArray) ?? record.edits;
+    if (Array.isArray(raw)) {
+      record.changes = raw
+        .map((item: unknown) => tryParseJSON(item, isRec) ?? item)
+        .map((change: unknown) => {
+          if (!isRec(change)) return change;
+          if (typeof change.content_lines !== "string") return change;
+          const parsed = tryParseJSON(change.content_lines, (v): v is string[] =>
+            Array.isArray(v) && v.every((i) => typeof i === "string"),
+          );
+          return parsed ? { ...change, content_lines: parsed } : change;
+        });
+    }
     delete record.edits;
   }
 

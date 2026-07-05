@@ -86,6 +86,21 @@ export type ReplaceDetails = {
 	metrics?: RMetrics;
 };
 
+interface PipelineResult {
+  path: string;
+  toolEdits: HTEdit[];
+  originalNormalized: string;
+  result: string;
+  bom: string;
+  originalEnding: "\r\n" | "\n";
+  hadUtf8DecodeErrors: boolean;
+  warnings: string[];
+  noopEdits?: { editIndex: number; loc: string; currentContent: string }[];
+  firstChangedLine?: number;
+  lastChangedLine?: number;
+  originalHashes?: string[];
+}
+
 const E_DESC = loadP("../prompts/replace.md");
 const E_SNIPPET = loadP("../prompts/replace-snippet.md");
 const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
@@ -122,20 +137,7 @@ async function execPipeline(
   cwd: string,
   accessMode: number,
   signal?: AbortSignal,
-): Promise<{
-  path: string;
-  toolEdits: HTEdit[];
-  originalNormalized: string;
-  result: string;
-  bom: string;
-  originalEnding: "\r\n" | "\n";
-  hadUtf8DecodeErrors: boolean;
-  warnings: string[];
-  noopEdits?: { editIndex: number; loc: string; currentContent: string }[];
-  firstChangedLine?: number;
-  lastChangedLine?: number;
-  originalHashes?: string[];
-}> {
+): Promise<PipelineResult> {
 
   const path = params.path;
   const toolEdits = Array.isArray(params.changes)
@@ -205,6 +207,21 @@ type ToolDef = ToolDefinition<
 	ReplaceDetails,
 	RRState
 > & { renderShell?: "default" | "self" };
+function reuseText(context: any, content: string): Text {
+  const t = context.lastComponent instanceof Text
+    ? context.lastComponent
+    : new Text("", 0, 0);
+  t.setText(content);
+  return t;
+}
+
+function reuseMarkdown(context: any, content: string, theme: any): Markdown {
+  const m = context.lastComponent instanceof Markdown
+    ? context.lastComponent
+    : new Markdown("", 0, 0, mkMdTheme(theme));
+  m.setText(content);
+  return m;
+}
 
 const toolDef: ToolDef = {
 	name: "replace",
@@ -273,10 +290,7 @@ const toolDef: ToolDef = {
 
 	renderResult(result, { isPartial }, theme, context) {
 		if (isPartial) {
-			const text =
-				(context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(theme.fg("warning", "Editing..."));
-			return text;
+			return reuseText(context, theme.fg("warning", "Editing..."));
 		}
 
 		const typedResult = result as {
@@ -292,44 +306,18 @@ const toolDef: ToolDef = {
 		}
 
 		if (context.isError) {
-			if (!renderedText) {
-				return new Text("", 0, 0);
-			}
-			const text =
-				context.lastComponent instanceof Text
-					? context.lastComponent
-					: new Text("", 0, 0);
-			text.setText(`\n${theme.fg("error", renderedText)}`);
-			return text;
+			return renderedText
+				? reuseText(context, `\n${theme.fg("error", renderedText)}`)
+				: new Text("", 0, 0);
 		}
 
 		if (isApplied(typedResult.details)) {
-			const appliedChangedText = buildAppliedText(
-				renderedText,
-				typedResult.details,
-				theme,
-			);
-			if (!appliedChangedText) {
-				return new Text("", 0, 0);
-			}
-			const text =
-				context.lastComponent instanceof Text
-					? context.lastComponent
-					: new Text("", 0, 0);
-			text.setText(appliedChangedText);
-			return text;
+			const appliedText = buildAppliedText(renderedText, typedResult.details, theme);
+			return appliedText ? reuseText(context, appliedText) : new Text("", 0, 0);
 		}
 
-		if (!renderedText) {
-			return new Text("", 0, 0);
-		}
-
-		const markdown =
-			context.lastComponent instanceof Markdown
-				? context.lastComponent
-				: new Markdown("", 0, 0, mkMdTheme(theme));
-		markdown.setText(fmtResultMd(renderedText));
-		return markdown;
+		if (!renderedText) return new Text("", 0, 0);
+		return reuseMarkdown(context, fmtResultMd(renderedText), theme);
 	},
 
 	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -353,7 +341,7 @@ const toolDef: ToolDef = {
 				firstChangedLine,
 				lastChangedLine,
 			} = await execPipeline(
-				normalized,
+				normalizedParams,
 				ctx.cwd,
 				constants.R_OK | constants.W_OK,
 				signal,

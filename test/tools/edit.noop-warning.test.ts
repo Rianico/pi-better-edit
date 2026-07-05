@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import register from "../../index";
-import { lineHash } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 describe("edit tool noop + warnings", () => {
@@ -17,7 +17,7 @@ describe("edit tool noop + warnings", () => {
           path: "sample.txt",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], content_lines: ["bbb"],
+              hash_range_inclusive: [lineHashes("aaa\nbbb\nccc\n")[1], lineHashes("aaa\nbbb\nccc\n")[1]], content_lines: ["bbb"],
             },
           ],
         },
@@ -44,7 +44,7 @@ describe("edit tool noop + warnings", () => {
           path: "sample.txt",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], content_lines: ["BBB", "ccc"],
+              hash_range_inclusive: [lineHashes("aaa\nbbb\nccc\n")[1], lineHashes("aaa\nbbb\nccc\n")[1]], content_lines: ["BBB", "ccc"],
             },
           ],
         },

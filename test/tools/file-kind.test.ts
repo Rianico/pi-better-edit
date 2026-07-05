@@ -9,7 +9,7 @@ import {
 import { join } from "path";
 import register from "../../index";
 import { classifyFileKind, loadFileKindAndText } from "../../src/file-kind";
-import { lineHash } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline";
 import {
 	makeFakePiRegistry,
 	withTempFile,
@@ -375,7 +375,7 @@ describe("file kind guards in tools", () => {
 						path: "sample.c",
             changes: [
               {
-                hash_range_inclusive: [`${lineHash(2, "int")}`, `${lineHash(2, "int")}`], content_lines: ["long"],
+                hash_range_inclusive: [lineHashes("�(\nint\n")[1], lineHashes("�(\nint\n")[1]], content_lines: ["long"],
               },
             ],
 					},
@@ -407,7 +407,7 @@ describe("file kind guards in tools", () => {
 							path: "sample.bin",
               changes: [
                 {
-                  hash_range_inclusive: [`${lineHash(1, "int")}`, `${lineHash(1, "int")}`], content_lines: ["long"],
+                  hash_range_inclusive: [lineHashes("int\n")[0], lineHashes("int\n")[0]], content_lines: ["long"],
                 },
               ],
 						},
@@ -436,7 +436,7 @@ describe("file kind guards in tools", () => {
 							path: "sample.bin",
               changes: [
                 {
-                  hash_range_inclusive: [`${lineHash(1, "a")}`, `${lineHash(1, "a")}`], content_lines: ["A"],
+                  hash_range_inclusive: [lineHashes("a\n")[0], lineHashes("a\n")[0]], content_lines: ["A"],
                 },
               ],
 						},

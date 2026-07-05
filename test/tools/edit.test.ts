@@ -5,7 +5,7 @@ import {
 	editToolSchema,
 	regReplace,
 } from "../../src/replace";
-import { lineHash } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
 import register from "../../index";
 
@@ -107,7 +107,7 @@ describe("regReplace", () => {
 						path: "sample.txt",
 						changes: [
 							{
-								hash_range_inclusive: [`${lineHash(1, "aaa")}`, `${lineHash(1, "aaa")}`], content_lines: null,
+									hash_range_inclusive: [lineHashes("aaa\nbbb\n")[0], lineHashes("aaa\nbbb\n")[0]], content_lines: null,
 							},
 						],
 					},
@@ -147,7 +147,7 @@ describe("regReplace", () => {
 				path: "sample.txt",
 				changes: [
 					{
-						hash_range_inclusive: [lineHash(2, "bbb"), lineHash(2, "bbb")], content_lines: ["BBB"],
+						hash_range_inclusive: [lineHashes("aaa\nbbb\nccc\n")[1], lineHashes("aaa\nbbb\nccc\n")[1]], content_lines: ["BBB"],
 					},
 				],
 			};
@@ -181,9 +181,9 @@ describe("regReplace", () => {
 			expect(rendered).not.toContain("Changes: +1 -1");
 			expect(rendered).not.toContain("Diff preview:");
 			expect(rendered).not.toContain("```diff");
-			expect(rendered).toContain(`${lineHash(2, "BBB")}│BBB`);
+			expect(rendered).toContain(`${lineHashes("aaa\nBBB\nccc\n")[1]}│BBB`);
 			expect(rendered).not.toContain("Updated sample.txt");
-		expect(result.details?.diff).toContain(`+${lineHash(2, "BBB")}`);
+		expect(result.details?.diff).toContain(`+${lineHashes("aaa\nBBB\nccc\n")[1]}`);
 		});
 	});
 });

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import register from "../../index";
-import { lineHash } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 describe("edit tool text shape (token budget)", () => {
@@ -16,7 +16,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.ts",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], content_lines: ["BBB"],
+              hash_range_inclusive: [lineHashes("aaa\nbbb\nccc\n")[1], lineHashes("aaa\nbbb\nccc\n")[1]], content_lines: ["BBB"],
             },
           ],
         },
@@ -31,7 +31,7 @@ describe("edit tool text shape (token budget)", () => {
       expect(text).not.toContain("Updated sample.ts");
       expect(text).not.toContain("Changes: +1 -1");
       expect(text).not.toContain("Updated anchors");
-      expect(result.details?.diff).toContain(`+${lineHash(2, "BBB")}`);
+      expect(result.details?.diff).toContain(`+${lineHashes("aaa\nBBB\nccc\n")[1]}`);
       expect(result.details?.diff).toContain("│BBB");
       expect(result.details?.metrics).toMatchObject({
         added_lines: 1,
@@ -52,7 +52,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.ts",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "bbb")}`, `${lineHash(2, "bbb")}`], content_lines: ["BBB"],
+              hash_range_inclusive: [lineHashes("aaa\nbbb\nccc\n")[1], lineHashes("aaa\nbbb\nccc\n")[1]], content_lines: ["BBB"],
             },
           ],
         },
@@ -81,7 +81,7 @@ describe("edit tool text shape (token budget)", () => {
             path: "sample.txt",
             changes: [
               {
-                hash_range_inclusive: [`${lineHash(1, "only")}`, `${lineHash(1, "only")}`], content_lines: [],
+                hash_range_inclusive: [lineHashes("only\n")[0], lineHashes("only\n")[0]], content_lines: [],
               },
             ],
           },
@@ -106,7 +106,7 @@ describe("edit tool text shape (token budget)", () => {
           path: "sample.txt",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, longLine)}`, `${lineHash(2, longLine)}`], content_lines: [`b${longLine.slice(1)}`],
+              hash_range_inclusive: [lineHashes(`before\n${longLine}\nafter\n`)[1], lineHashes(`before\n${longLine}\nafter\n`)[1]], content_lines: [`b${longLine.slice(1)}`],
             },
           ],
         },

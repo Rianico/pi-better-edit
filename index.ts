@@ -4,7 +4,7 @@ import { join, isAbsolute } from "path";
 import { lineHashes, initHasher, fmtRegion } from "./src/hashline";
 import { regReplace } from "./src/replace";
 import { regRead, formatPaginationHint } from "./src/read";
-import { toLF } from "./src/replace-diff";
+import { toLF, stripBOM } from "./src/replace-diff";
 import { visLines } from "./src/utils";
 import { AUTO_READ_MAX } from "./src/constants";
 
@@ -12,10 +12,15 @@ export default function (pi: ExtensionAPI): void {
   regRead(pi);
   regReplace(pi);
 
+  const debugValue = process.env.PI_HASHLINE_DEBUG;
+
   pi.on("session_start", async (_event, ctx) => {
     const active = pi.getActiveTools();
     pi.setActiveTools(active.filter((t) => t !== "edit"));
     await initHasher();
+    if (debugValue === "1" || debugValue === "true") {
+      ctx.ui.notify("Hashline Edit mode active", "info");
+    }
   });
 
   const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
@@ -40,8 +45,8 @@ export default function (pi: ExtensionAPI): void {
     try {
       const absolutePath = isAbsolute(filePath) ? filePath : join(ctx.cwd, filePath);
       const content = await readFile(absolutePath, "utf-8");
-
-      const normalized = toLF(content);
+      const { text: rawContent } = stripBOM(content);
+      const normalized = toLF(rawContent);
       const visibleLines = visLines(normalized);
 
       if (visibleLines.length === 0) return;
@@ -65,14 +70,9 @@ export default function (pi: ExtensionAPI): void {
           ],
         };
       }
-    } catch {
+    } catch (error) {
+      console.error("Auto-read after write failed:", error);
     }
   });
 
-  const debugValue = process.env.PI_HASHLINE_DEBUG;
-  if (debugValue === "1" || debugValue === "true") {
-    pi.on("session_start", async (_event, ctx) => {
-      ctx.ui.notify("Hashline Edit mode active", "info");
-    });
-  }
 }

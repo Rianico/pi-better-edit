@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   applyEdits,
-  lineHash,
   lineHashes,
   resEdits,
   type Anchor,

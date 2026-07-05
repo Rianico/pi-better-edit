@@ -222,6 +222,31 @@ export function descEdit(edit: RHEdit): string {
 	return `replace ${edit.hash_range_inclusive[0].hash}-${edit.hash_range_inclusive[1].hash}`;
 }
 
+function checkBoundaryDup(
+  adjacentLine: string | undefined,
+  replacementEdge: string | undefined,
+  kind: "trailing" | "leading",
+  survivingLineIndex: number,
+  fileLines: string[],
+  editIndex: number,
+): BDupWarn | null {
+  if (
+    adjacentLine === undefined ||
+    replacementEdge === undefined ||
+    replacementEdge.length === 0 ||
+    replacementEdge !== adjacentLine
+  ) return null;
+  return {
+    kind,
+    survivingLineContent: adjacentLine,
+    survivingLineIndex,
+    occurrence: fileLines.slice(0, survivingLineIndex).filter((l) => l === adjacentLine).length,
+    replacementLineContent: replacementEdge,
+    editIndex,
+  };
+}
+
+
 export function valEdits(
   edits: HEdit[],
   fileLines: string[],
@@ -258,38 +283,12 @@ export function valEdits(
     const endLine = endResolved.line;
     const nextLine = fileLines[endLine];
     const replacementLastLine = edit.content_lines.at(-1);
-    if (
-      nextLine !== undefined &&
-      replacementLastLine !== undefined &&
-      replacementLastLine.length > 0 &&
-      replacementLastLine === nextLine
-    ) {
-      boundaryWarnings.push({
-        kind: "trailing",
-        survivingLineContent: nextLine,
-        survivingLineIndex: endLine,
-        occurrence: fileLines.slice(0, endLine).filter(l => l === nextLine).length,
-        replacementLineContent: replacementLastLine,
-        editIndex: resolved.length,
-      });
-    }
+    const trailing = checkBoundaryDup(nextLine, replacementLastLine, "trailing", endLine, fileLines, resolved.length);
+    if (trailing) boundaryWarnings.push(trailing);
     const prevLine = fileLines[startResolved.line - 2];
     const replacementFirstLine = edit.content_lines[0];
-    if (
-      prevLine !== undefined &&
-      replacementFirstLine !== undefined &&
-      replacementFirstLine.length > 0 &&
-      replacementFirstLine === prevLine
-    ) {
-      boundaryWarnings.push({
-        kind: "leading",
-        survivingLineContent: prevLine,
-        survivingLineIndex: startResolved.line - 2,
-        occurrence: fileLines.slice(0, startResolved.line - 2).filter(l => l === prevLine).length,
-        replacementLineContent: replacementFirstLine,
-        editIndex: resolved.length,
-      });
-    }
+    const leading = checkBoundaryDup(prevLine, replacementFirstLine, "leading", startResolved.line - 2, fileLines, resolved.length);
+    if (leading) boundaryWarnings.push(leading);
     resolved.push({
       hash_range_inclusive: [startResolved, endResolved],
       content_lines: edit.content_lines,

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeEach } from "vitest";
 import { chmod } from "fs/promises";
 import { compPreview } from "../../src/replace";
-import { lineHash } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline";
 import { withTempFile } from "../support/fixtures";
 
 vi.mock("../../src/file-kind", () => ({
@@ -21,7 +21,7 @@ describe("compPreview", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({ kind: "text", text: "aaa\nbbb\nccc\n" });
 
-      const betaRef = lineHash(2, "bbb");
+      const betaRef = lineHashes("aaa\nbbb\nccc\n")[1];
       const preview = await compPreview(
         {
           path: "sample.txt",
@@ -34,7 +34,7 @@ describe("compPreview", () => {
       if (!("diff" in preview)) {
         return;
       }
-      expect(preview.diff).toContain(`+${lineHash(2, "BBB")}`);
+      expect(preview.diff).toContain(`+${lineHashes("aaa\nBBB\nccc\n")[1]}`);
 	      expect(preview.diff).toContain("│BBB");
     });
   });
@@ -46,7 +46,7 @@ describe("compPreview", () => {
         text: "alpha\nbeta\ngamma\n",
       });
 
-      const betaRef = lineHash(2, "beta");
+      const betaRef = lineHashes("alpha\nbeta\ngamma\n")[1];
       const preview = await compPreview(
         {
           path: "sample.txt",
@@ -68,7 +68,7 @@ describe("compPreview", () => {
       vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({ kind: "text", text: "aaa\nbbb\nccc\n" });
 
       await chmod(path, 0o444);
-      const betaRef = lineHash(2, "bbb");
+      const betaRef = lineHashes("aaa\nbbb\nccc\n")[1];
 
       try {
         const preview = await compPreview(
@@ -97,7 +97,7 @@ describe("compPreview", () => {
         new Error("preview should not call classifyFileKind on text paths"),
       );
 
-      const betaRef = lineHash(2, "bbb");
+      const betaRef = lineHashes("aaa\nbbb\nccc\n")[1];
       const preview = await compPreview(
         {
           path: "sample.txt",
@@ -126,7 +126,7 @@ describe("compPreview", () => {
         return { kind: "text", text: "aaa\nbbb\nccc\n" };
       });
 
-      const betaRef = lineHash(2, "bbb");
+      const betaRef = lineHashes("aaa\nbbb\nccc\n")[1];
       const editArgs = {
         path: "sample.txt",
         changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BBB"] }],

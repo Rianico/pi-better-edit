@@ -1,42 +1,18 @@
 import { describe, expect, it } from "vitest";
 import {
 	applyEdits,
-	lineHash,
 	lineHashes,
 	parseText,
 } from "../../src/hashline";
 
-describe("lineHash", () => {
-	it("returns a 3-character string from the URL-safe base64 alphabet", () => {
-		const hash = lineHash(1, "hello");
-		expect(hash).toHaveLength(3);
-		expect(hash).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-	});
-
-	it("trims trailing whitespace without collapsing internal spaces", () => {
-		expect(lineHash(1, "a\t")).toBe(lineHash(1, "a"));
-		expect(lineHash(1, "a  b")).not.toBe(lineHash(1, "a b"));
-	});
-
-	it("strips trailing CR", () => {
-		expect(lineHash(1, "hello\r")).toBe(lineHash(1, "hello"));
-	});
-
-	it("same content produces same hash", () => {
-		const h1 = lineHash(1, "}");
-		const h10 = lineHash(10, "}");
-		expect(h1).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-		expect(h1).toBe(h10);
-	});
-});
 
 describe("strict hashline contract", () => {
 	it("preserves internal spaces when hashing", () => {
-		expect(lineHash(1, "a b")).not.toBe(lineHash(1, "ab"));
+		expect(lineHashes("a b")[0]).not.toBe(lineHashes("ab")[0]);
 	});
 
 	it("trims trailing spaces when hashing", () => {
-		expect(lineHash(1, "value  ")).toBe(lineHash(1, "value"));
+		expect(lineHashes("value  ")[0]).toBe(lineHashes("value")[0]);
 	});
 
 	it("preserves explicit blank trailing line in array input", () => {

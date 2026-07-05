@@ -2,7 +2,6 @@ import { describe, it, expect, vi, beforeEach } from "vitest";
 import register from "../../index";
 import { fmtRegion, lineHashes } from "../../src/hashline";
 import { fmtReadPreview } from "../../src/read";
-import { lineHash } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
 
 vi.mock("../../src/file-kind", () => ({

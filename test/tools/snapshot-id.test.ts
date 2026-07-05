@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import register from "../../index";
-import { lineHash } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 describe("snapshotId surface (details-only after W2)", () => {
@@ -40,7 +40,7 @@ describe("snapshotId surface (details-only after W2)", () => {
             snapshotId: "v1|fake|0|0",
             changes: [
               {
-                hash_range_inclusive: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], content_lines: ["BETA"],
+                hash_range_inclusive: [lineHashes("alpha\nbeta\n")[1], lineHashes("alpha\nbeta\n")[1]], content_lines: ["BETA"],
               },
             ],
           },
@@ -75,7 +75,7 @@ describe("snapshotId surface (details-only after W2)", () => {
             path: "sample.txt",
             changes: [
               {
-                hash_range_inclusive: [`${lineHash(4, "four")}`, `${lineHash(4, "four")}`], content_lines: ["FOUR"],
+                hash_range_inclusive: [lineHashes("one\ntwo\nthree\nfour\nfive\n")[3], lineHashes("one\ntwo\nthree\nfour\nfive\n")[3]], content_lines: ["FOUR"],
               },
             ],
           },
@@ -104,7 +104,7 @@ describe("snapshotId surface (details-only after W2)", () => {
           path: "sample.txt",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], content_lines: ["BETA"],
+              hash_range_inclusive: [lineHashes("alpha\nbeta\n")[1], lineHashes("alpha\nbeta\n")[1]], content_lines: ["BETA"],
             },
           ],
         },
@@ -138,7 +138,7 @@ describe("snapshotId surface (details-only after W2)", () => {
               path: "sample.txt",
               changes: [
                 {
-                  hash_range_inclusive: [`${lineHash(2, "two")}`, `${lineHash(2, "two")}`], content_lines: ["TWO"],
+                  hash_range_inclusive: [lineHashes("one\ntwo\nthree\n")[1], lineHashes("one\ntwo\nthree\n")[1]], content_lines: ["TWO"],
                 },
               ],
             },

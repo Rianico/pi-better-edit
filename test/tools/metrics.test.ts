@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import register from "../../index";
-import { lineHash } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline";
 import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
 
 describe("details.metrics surface (Phase 2 C — host-only observability)", () => {
@@ -41,7 +41,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "a.txt",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], content_lines: ["BETA"],
+              hash_range_inclusive: [lineHashes("alpha\nbeta\ngamma\n")[1], lineHashes("alpha\nbeta\ngamma\n")[1]], content_lines: ["BETA"],
             },
           ],
         },
@@ -73,7 +73,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "b.txt",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], content_lines: ["beta"],
+              hash_range_inclusive: [lineHashes("alpha\nbeta\n")[1], lineHashes("alpha\nbeta\n")[1]], content_lines: ["beta"],
             },
           ],
         },
@@ -103,7 +103,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "c.txt",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "two")}`, `${lineHash(2, "two")}`], content_lines: ["TWO"],
+              hash_range_inclusive: [lineHashes("one\ntwo\nthree\n")[1], lineHashes("one\ntwo\nthree\n")[1]], content_lines: ["TWO"],
             },
           ],
         },
@@ -131,7 +131,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
           path: "e.txt",
           changes: [
             {
-              hash_range_inclusive: [`${lineHash(2, "beta")}`, `${lineHash(2, "beta")}`], content_lines: ["beta"],
+              hash_range_inclusive: [lineHashes("alpha\nbeta\n")[1], lineHashes("alpha\nbeta\n")[1]], content_lines: ["beta"],
             },
           ],
         },

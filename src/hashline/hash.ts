@@ -98,8 +98,5 @@ export function lineHashes(content: string): string[] {
 	return hashes;
 }
 
-export function lineHash(idx: number, line: string): string {
-	return h2s(xxh32(canon(line)));
-}
 
 export { ALPH_RE };
