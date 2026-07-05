@@ -77,6 +77,7 @@ export async function withTempDir(
   try {
     await run(dir);
   } finally {
+    await rm(dir, { recursive: true, force: true });
   }
 }
 
