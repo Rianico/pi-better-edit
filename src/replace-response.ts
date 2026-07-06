@@ -142,7 +142,7 @@ export function buildNoop(input: NoopInput): TResult {
 }
 
 export function buildChanged(input: SuccessInput): TResult {
-	const { result, warnings, snapshotId, originalNormalized, editMeta } = input;
+	const { path, result, warnings, snapshotId, originalNormalized, editMeta } = input;
 
 	const resultLines = visLines(result);
 	const resultHashes = input.resultHashes ?? lineHashes(result);
@@ -150,9 +150,12 @@ export function buildChanged(input: SuccessInput): TResult {
 	const addedLines = cntDiff(diffResult.diff, "+");
 	const removedLines = cntDiff(diffResult.diff, "-");
 	const warningsBlock = warnBlock(warnings);
+	const successPrefix = `Successfully replaced in ${path}.`;
 	const text = resultLines.length === 0
 		? "File is empty. Use replace to insert content."
-		: warningsBlock.trimStart();
+		: warningsBlock
+			? `${successPrefix}${warningsBlock}`
+			: successPrefix;
 
 	const metrics = buildM({
 		classification: "applied",

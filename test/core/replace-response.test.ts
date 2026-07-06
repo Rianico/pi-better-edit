@@ -64,6 +64,7 @@ describe("buildNoop", () => {
 			},
 			warnings: ["Test warning"],
 		});
+
 		expect(result.details.metrics!.warnings).toBe(1);
 	});
 
@@ -201,7 +202,8 @@ describe("buildChanged", () => {
 				lastChangedLine: 51,
 			},
 		});
-		expect(result.content[0].text).toBe("");
+
+		expect(result.content[0].text).toContain("Successfully replaced in src/main.ts");
 	});
 
 	it("shows compact diff preview when anchors omitted due to large edit", () => {
@@ -222,7 +224,8 @@ describe("buildChanged", () => {
 				lastChangedLine: 25,
 			},
 		});
+
 		expect(result.content[0].text).not.toContain("--- Anchors ---");
-		expect(result.content[0].text).toBe("");
+		expect(result.content[0].text).toContain("Successfully replaced in src/main.ts");
 	});
 });

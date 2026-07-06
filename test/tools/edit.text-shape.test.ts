@@ -27,7 +27,7 @@ describe("edit tool text shape (token budget)", () => {
 
       const text = getText(result);
 
-      expect(text).toBe("");
+      expect(text).toContain("Successfully replaced in sample.ts");
       expect(text).not.toContain("Updated sample.ts");
       expect(text).not.toContain("Changes: +1 -1");
       expect(text).not.toContain("Updated anchors");
@@ -63,7 +63,7 @@ describe("edit tool text shape (token budget)", () => {
 
       const text = getText(result);
 
-      expect(text).toBe("");
+      expect(text).toContain("Successfully replaced in sample.ts");
       expect(text).not.toMatch(/use these for subsequent edits/);
     });
   });
@@ -117,7 +117,7 @@ describe("edit tool text shape (token budget)", () => {
 
       const text = getText(result);
 
-      expect(text).toBe("");
+      expect(text).toContain("Successfully replaced in sample.txt");
       expect(text).not.toContain("--- Anchors");
     });
   });

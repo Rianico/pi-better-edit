@@ -84,7 +84,7 @@ describe("snapshotId surface (details-only after W2)", () => {
           { cwd, hasUI: true, ui: { notify() {} } } as any,
         );
 
-        expect(getText(result)).toBe("");
+        expect(getText(result)).toContain("Successfully replaced in sample.txt");
         expect(await readFile(path, "utf-8")).toBe(
           "one\nTWO!\nthree\nFOUR\nfive\n",
         );

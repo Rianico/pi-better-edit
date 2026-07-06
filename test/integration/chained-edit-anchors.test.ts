@@ -20,7 +20,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toBe("");
+      expect(editResult.content[0].text).toContain("Successfully replaced in sample.ts");
 
       const secondRead = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
       const freshRef = secondRead.content[0].text
@@ -36,7 +36,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
 
-      expect(editResult2.content[0].text).toBe("");
+      expect(editResult2.content[0].text).toContain("Successfully replaced in sample.ts");
     });
   });
 
@@ -68,7 +68,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toBe("");
+      expect(editResult.content[0].text).toContain("Successfully replaced in big.ts");
     });
   });
   it("omits anchors when single-line replace expands beyond budget", async () => {
@@ -91,7 +91,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toBe("");
+      expect(editResult.content[0].text).toContain("Successfully replaced in expand.ts");
     });
   });
 
@@ -133,7 +133,7 @@ describe("chained edit anchors", () => {
         undefined,
         ctx,
       );
-      expect(alphaEdit.content[0].text).toBe("");
+      expect(alphaEdit.content[0].text).toContain("Successfully replaced in stale.ts");
     });
   });
 });
