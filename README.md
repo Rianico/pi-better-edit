@@ -1,8 +1,8 @@
 # pi-hashline-edit-pro
 
-A [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) extension that replaces the built-in `read` and `edit` tools with a hash-anchored line-replacing workflow. Strict semantics, no silent relocation, no autocorrection, no fuzzy fallback. 3-character content hashes over a 64-character URL-safe base64 alphabet give 18 bits of entropy per anchor, with perfect hashing (collision resolution) ensuring every line gets a unique anchor.
+A [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) extension that replaces the built-in `read` and `edit` tools with a hash-anchored line-replacing workflow. Strict semantics, no silent relocation, no autocorrection, no fuzzy fallback. Every line gets a unique content hash, so edits stay precise and stale anchors are caught before they reach the file.
 
-Fork of [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by RimuruW. The strict-semantics policy is unchanged. This fork extends the upstream design in two ways: a 3-character hash length with a 64-character alphabet for more entropy, and perfect hashing (collision resolution) that ensures every line in a file gets a unique anchor.
+Fork of [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by RimuruW. The strict-semantics policy is unchanged. This fork extends the upstream design with 3-character hashes and collision resolution for unique per-line anchors.
 
 Every line returned by `read` carries a short content hash. Edits reference those hashes instead of raw text, so the tool can detect stale context and reject outdated changes before they reach the file.
 
@@ -12,8 +12,8 @@ The original uses 2-character hashes of a 16-character alphabet, with the hash b
 
 This fork makes two changes that compound:
 
-1. **Bump hash length to 3 characters** of the 64-char URL-safe base64 alphabet. That gives 18 bits / 262,144 buckets, up from 8 bits / 256 in the upstream.
-2. **Perfect hashing (collision resolution).** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `:R{retry}`) until a unique hash is found. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `import` statements, repeated `}`) get different hashes automatically.
+1. **3-character hash length** over a 64-char URL-safe base64 alphabet (up from 2 characters in the upstream), expanding the hash space from 256 to 262,144 buckets.
+2. **Perfect hashing (collision resolution).** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `:R{retry}`) until a unique hash is found. This ensures every line gets a unique anchor, even within a 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
 
 ## Installation
 
@@ -49,7 +49,7 @@ szJ│  console.log("world");
 _zl│}
 ```
 
-- `HASH` is a 3-character content hash from the URL-safe base64 alphabet `A-Za-z0-9-_` (e.g. `aB3`).
+- `HASH` is a 3-character content hash from the URL-safe base64 alphabet `A-Za-z0-9-_` (e.g. `aB3`). See [Hashing](#hashing) for details.
 
 Optional parameters:
 
@@ -82,7 +82,7 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 
 ### Chained edits
 
-After a successful replace, the response text is empty (warnings are still shown if present). To get fresh anchors for follow-up edits, call `read` on the file first. This avoids token overhead from re-displaying content the model already knows.
+After a successful replace, the response confirms with `Successfully replaced in {path}.` (warnings are still shown if present). To get fresh anchors for follow-up edits, call `read` on the file first. This avoids token overhead from re-displaying content the model already knows.
 
 ### Auto-read after write
 
@@ -122,7 +122,7 @@ The runtime always precomputes the full per-line hash array for a file via `line
 
 ### Bare-prefix detector
 
-With the `│` delimiter format, the bare-prefix detector regex `^\s*[A-Za-z0-9_\-]{3}│` is highly specific. It only matches lines starting with exactly 3 base64 chars and `│`. This eliminates false positives from common code patterns like `init:`, `data:`, `else:`, etc. The detector rejects edit lines matching this pattern with `[E_BARE_HASH_PREFIX]` to prevent the model from accidentally pasting hash anchors into file content.
+With the `│` delimiter format, the bare-prefix detector regex `^\s*[A-Za-z0-9_\-]{3}│` is highly specific. It only matches lines starting with a hash-like prefix. This eliminates false positives from common code patterns like `init:`, `data:`, `else:`, etc. The detector rejects edit lines matching this pattern with `[E_BARE_HASH_PREFIX]` to prevent the model from accidentally pasting hash anchors into file content.
 
 ## Development
 
