@@ -133,7 +133,7 @@ export function assertReq(
   }
 }
 
-async function execPipeline(
+export async function execPipeline(
   params: ReqParams,
   cwd: string,
   accessMode: number,

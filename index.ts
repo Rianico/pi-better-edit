@@ -3,33 +3,69 @@ import { readFile } from "fs/promises";
 import { join, isAbsolute } from "path";
 import { initHasher } from "./src/hashline";
 import { regReplace } from "./src/replace";
+import { regReplaceFlat } from "./src/replace-flat";
 import { regRead, fmtReadPreview } from "./src/read";
 import { toLF, stripBOM } from "./src/replace-diff";
 import { visLines } from "./src/utils";
 import { AUTO_READ_MAX } from "./src/constants";
+import {
+  readReplaceMode,
+  toggleReplaceMode,
+  readAutoRead,
+  toggleAutoRead,
+} from "./src/config";
 
 export default function (pi: ExtensionAPI): void {
   regRead(pi);
+
+  // Register the bulk-mode replace tool by default. The session_start handler
+  // will re-register with the correct mode from the persisted config.
   regReplace(pi);
 
   const debugValue = process.env.PI_HASHLINE_DEBUG;
+  // Initial auto-read from env var; session_start overrides with persisted value
+  const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
+  let autoRead = autoReadValue === "1" || autoReadValue === "true";
 
   pi.on("session_start", async (_event, ctx) => {
     const active = pi.getActiveTools();
     pi.setActiveTools(active.filter((t) => t !== "edit"));
     await initHasher();
+
+    // Re-register the replace tool according to the persisted mode
+    const mode = await readReplaceMode();
+    if (mode === "flat") {
+      regReplaceFlat(pi);
+    } else {
+      regReplace(pi);
+    }
+
+    // Read the persisted auto-read setting (overrides env var default)
+    autoRead = await readAutoRead();
+
     if (debugValue === "1" || debugValue === "true") {
-      ctx.ui.notify("Hashline Edit mode active", "info");
+      ctx.ui.notify(`Hashline Edit mode active (${mode} replace)`, "info");
     }
   });
 
-  const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
-  let autoRead = autoReadValue === "1" || autoReadValue === "true";
+  pi.registerCommand("toggle-replace-mode", {
+    description: "Toggle replace tool between bulk (changes array) and flat (single edit at top level) mode",
+    handler: async (_args, ctx) => {
+      const mode = await toggleReplaceMode();
+      // Re-register the tool with the new mode
+      if (mode === "flat") {
+        regReplaceFlat(pi);
+      } else {
+        regReplace(pi);
+      }
+      ctx.ui.notify(`Replace mode switched to: ${mode}`, "info");
+    },
+  });
 
   pi.registerCommand("toggle-auto-read", {
     description: "Toggle automatic hashline anchors after write operations",
     handler: async (_args, ctx) => {
-      autoRead = !autoRead;
+      autoRead = await toggleAutoRead();
       const state = autoRead ? "enabled" : "disabled";
       ctx.ui.notify(`Auto-read after write: ${state}`, "info");
     },
@@ -63,5 +99,4 @@ export default function (pi: ExtensionAPI): void {
       console.error("Auto-read after write failed:", error);
     }
   });
-
 }

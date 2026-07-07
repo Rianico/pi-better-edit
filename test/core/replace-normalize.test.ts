@@ -115,6 +115,7 @@ describe("normReq", () => {
 		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
 		expect(change.content_lines).toEqual(["new"]);
 	});
+
 	it("handles both file_path and JSON-string edits together", () => {
 		const changesArray = [
 			{ start: "aB3x", end: "aB3x", lines: ["line1"] },
@@ -301,5 +302,137 @@ describe("normReq — change item JSON string coercion", () => {
 		const originalItem = input.changes[0];
 		normReq(input);
 		expect(input.changes[0]).toBe(originalItem);
+	});
+});
+
+describe("normReq — flat format (top-level hash_range_inclusive / content_lines)", () => {
+	it("wraps flat format into a single-element changes array", () => {
+		const input = {
+			path: "test.txt",
+			hash_range_inclusive: ["AAA", "BBB"],
+			content_lines: ["new line"],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(Array.isArray(result.changes)).toBe(true);
+		expect(result.changes).toHaveLength(1);
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+		expect(change.content_lines).toEqual(["new line"]);
+		expect((result as Record<string, unknown>).hash_range_inclusive).toBeUndefined();
+		expect((result as Record<string, unknown>).content_lines).toBeUndefined();
+	});
+
+	it("does not wrap when changes array is already present", () => {
+		const input = {
+			path: "test.txt",
+			changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["existing"] }],
+			hash_range_inclusive: ["CCC", "DDD"],
+			content_lines: ["ignored"],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(Array.isArray(result.changes)).toBe(true);
+		expect(result.changes).toHaveLength(1);
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+		expect(change.content_lines).toEqual(["existing"]);
+	});
+
+	it("handles flat format with file_path alias", () => {
+		const input = {
+			file_path: "src/main.ts",
+			hash_range_inclusive: ["AAA", "BBB"],
+			content_lines: ["new"],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(result.path).toBe("src/main.ts");
+		expect(Array.isArray(result.changes)).toBe(true);
+		expect(result.changes).toHaveLength(1);
+	});
+
+	it("handles flat format with JSON-string hash_range_inclusive", () => {
+		const input = {
+			path: "test.txt",
+			hash_range_inclusive: JSON.stringify(["AAA", "BBB"]),
+			content_lines: ["new"],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+	});
+
+	it("handles flat format with JSON-string content_lines", () => {
+		const input = {
+			path: "test.txt",
+			hash_range_inclusive: ["AAA", "BBB"],
+			content_lines: JSON.stringify(["line1", "line2"]),
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.content_lines).toEqual(["line1", "line2"]);
+	});
+
+	it("handles flat format with both fields as JSON strings", () => {
+		const input = {
+			path: "test.txt",
+			hash_range_inclusive: JSON.stringify(["AAA", "BBB"]),
+			content_lines: JSON.stringify(["a", "b"]),
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
+		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+		expect(change.content_lines).toEqual(["a", "b"]);
+	});
+
+	it("does not mutate the original flat-format input", () => {
+		const input = {
+			path: "test.txt",
+			hash_range_inclusive: ["AAA", "BBB"],
+			content_lines: ["new"],
+		};
+		const origHri = input.hash_range_inclusive;
+		const origCl = input.content_lines;
+		normReq(input);
+		expect(input.hash_range_inclusive).toBe(origHri);
+		expect(input.content_lines).toBe(origCl);
+	});
+
+	it("does not wrap when hash_range_inclusive is not an array", () => {
+		const input = {
+			path: "test.txt",
+			hash_range_inclusive: "not-an-array",
+			content_lines: ["new"],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(result.changes).toBeUndefined();
+		expect(result.hash_range_inclusive).toBe("not-an-array");
+	});
+
+	it("does not wrap when content_lines is not an array", () => {
+		const input = {
+			path: "test.txt",
+			hash_range_inclusive: ["AAA", "BBB"],
+			content_lines: "not-an-array",
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(result.changes).toBeUndefined();
+		expect(result.content_lines).toBe("not-an-array");
+	});
+
+	it("does not wrap when only hash_range_inclusive is present (no content_lines)", () => {
+		const input = {
+			path: "test.txt",
+			hash_range_inclusive: ["AAA", "BBB"],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(result.changes).toBeUndefined();
+	});
+
+	it("does not wrap when only content_lines is present (no hash_range_inclusive)", () => {
+		const input = {
+			path: "test.txt",
+			content_lines: ["new"],
+		};
+		const result = normReq(input) as Record<string, unknown>;
+		expect(result.changes).toBeUndefined();
 	});
 });

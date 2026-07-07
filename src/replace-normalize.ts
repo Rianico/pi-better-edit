@@ -68,6 +68,24 @@ export function normReq(input: unknown): unknown {
   normalizeField(record, "changes", "changes");
   normalizeField(record, "edits", "changes");
 
+  // Handle flat format: hash_range_inclusive and content_lines at top level
+  // (no changes array). Wrap them into a single-element changes array.
+  if (!Array.isArray(record.changes) && has(record, "hash_range_inclusive") && has(record, "content_lines")) {
+    const hri = tryParseJSON(record.hash_range_inclusive, (v): v is string[] =>
+      Array.isArray(v) && v.length === 2 && v.every((i) => typeof i === "string")
+    ) ?? record.hash_range_inclusive;
+
+    const cl = tryParseJSON(record.content_lines, (v): v is string[] =>
+      Array.isArray(v) && v.every((i) => typeof i === "string")
+    ) ?? record.content_lines;
+
+    if (Array.isArray(hri) && Array.isArray(cl)) {
+      record.changes = [{ hash_range_inclusive: hri, content_lines: cl }];
+      delete record.hash_range_inclusive;
+      delete record.content_lines;
+    }
+  }
+
   return record;
 }
 
