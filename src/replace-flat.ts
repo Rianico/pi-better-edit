@@ -72,9 +72,9 @@ export const flatEditToolSchema = Type.Object(
   { additionalProperties: false },
 );
 
-const E_DESC = loadP("../prompts/replace.md");
-const E_SNIPPET = loadP("../prompts/replace-snippet.md");
-const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
+const E_DESC = loadP("../prompts/replace-flat.md");
+const E_SNIPPET = loadP("../prompts/replace-flat-snippet.md");
+const E_GUIDE = loadGuide("../prompts/replace-flat-guidelines.md");
 
 type ToolDef = ToolDefinition<
   typeof flatEditToolSchema,

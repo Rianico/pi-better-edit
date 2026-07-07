@@ -1,13 +1,5 @@
 Replace lines in a text file using HASH anchors from `read`.
 
-Two modes are available, toggled via `/toggle-replace-mode` (persists across sessions):
-
-**Bulk mode (default):** `hash_range_inclusive` and `content_lines` go inside a `changes` array, supporting multiple edits in one call.
-
-**Flat mode:** `hash_range_inclusive` and `content_lines` sit at the top level. Only one edit per call.
-
----
-
 Put all operations on one file in a single `replace` call. Stack every region into the `changes` array, even when they are far apart. Anchors within one call must all come from the same pre-edit read; the runtime applies them atomically against that one snapshot.
 
 How to use:
@@ -18,38 +10,22 @@ read({ path: "src/main.ts" })
 ```
 
 2. Copy the 3-character HASH (before `│`) into `hash_range_inclusive`:
-
-**Bulk mode:**
 ```json
 { "path": "src/main.ts", "changes": [
   { "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 99;"] }
 ] }
 ```
 
-**Flat mode:**
-```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 99;"] }
-```
-
 Examples:
 
 1. Single line replace:
-
-Bulk:
 ```json
 { "path": "src/main.ts", "changes": [
   { "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 1;"] }
 ] }
 ```
 
-Flat:
-```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 1;"] }
-```
-
 2. Range replace (3 lines → 3 new lines):
-
-Bulk:
 ```json
 { "path": "src/main.ts", "changes": [
   { "hash_range_inclusive": ["ZPM", "VRW"], "content_lines": [
@@ -60,16 +36,7 @@ Bulk:
 ] }
 ```
 
-Flat:
-```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["ZPM", "VRW"], "content_lines": [
-  "function greet(name) {",
-  "  return `Hello, ${name}`;",
-  "}"
-] }
-```
-
-3. Multiple regions in one call (bulk mode only — flat mode supports one edit per call):
+3. Multiple regions in one call (delete two non-adjacent ranges):
 ```json
 { "path": "src/server.ts", "changes": [
   { "hash_range_inclusive": ["aB3", "xY7"], "content_lines": [] },
@@ -78,31 +45,17 @@ Flat:
 ```
 
 4. Append after the last line (include the old last line so the new line is added after it):
-
-Bulk:
 ```json
 { "path": "src/main.ts", "changes": [
   { "hash_range_inclusive": ["ZPM", "ZPM"], "content_lines": ["old last line", "new line"] }
 ] }
 ```
 
-Flat:
-```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["ZPM", "ZPM"], "content_lines": ["old last line", "new line"] }
-```
-
 5. Seed content into an empty file (replace the single empty-line hash returned by read):
-
-Bulk:
 ```json
 { "path": "src/main.ts", "changes": [
   { "hash_range_inclusive": ["aB3", "aB3"], "content_lines": ["first line", "second line"] }
 ] }
-```
-
-Flat:
-```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["aB3", "aB3"], "content_lines": ["first line", "second line"] }
 ```
 
 ⚠️ Common mistake: do not copy the `HASH│` prefix into `content_lines`.

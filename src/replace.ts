@@ -102,9 +102,9 @@ interface PipelineResult {
   resultHashes?: string[];
 }
 
-const E_DESC = loadP("../prompts/replace.md");
-const E_SNIPPET = loadP("../prompts/replace-snippet.md");
-const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
+const E_DESC = loadP("../prompts/replace-bulk.md");
+const E_SNIPPET = loadP("../prompts/replace-bulk-snippet.md");
+const E_GUIDE = loadGuide("../prompts/replace-bulk-guidelines.md");
 const ROOT_KS = new Set(["path", "changes"]);
 
 export function assertReq(

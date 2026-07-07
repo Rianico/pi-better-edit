@@ -1,0 +1,1 @@
+Replace lines in a text file via HASH anchors from read, one edit per call (flat mode)

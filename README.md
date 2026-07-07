@@ -60,7 +60,9 @@ Images (JPEG, PNG, GIF, WebP) are passed through as attachments and do not parti
 
 ### `replace` -- hash-anchored modifications
 
-Replaces using the `HASH│content` anchors from `read` output to target lines precisely:
+Replaces using the `HASH│content` anchors from `read` output to target lines precisely. Two modes are available, toggled via `/toggle-replace-mode` (persists across sessions):
+
+**Bulk mode (default):** `hash_range_inclusive` and `content_lines` go inside a `changes` array, supporting multiple edits in one call.
 
 ```json
 {
@@ -71,14 +73,24 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 }
 ```
 
+**Flat mode:** `hash_range_inclusive` and `content_lines` sit at the top level. Only one edit per call.
+
+```json
+{
+  "path": "src/main.ts",
+  "hash_range_inclusive": ["ve7", "ve7"],
+  "content_lines": ["  console.log('hashline');"]
+}
+```
+
 | Field | Description |
 | --- | --- |
 | `hash_range_inclusive` | Inclusive line range `[start_hash, end_hash]` (required). |
 | `content_lines` | Literal replacement content, one string per line (use `[]` to delete the range). |
 
-- **Request structure validation.** The request envelope (`path`, `changes`) and individual edit items are validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`.
+- **Request structure validation.** The request envelope (`path`, `changes` in bulk mode; `path`, `hash_range_inclusive`, `content_lines` in flat mode) and individual edit items are validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`.
 - **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}`.
-- **Batched atomicity.** All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
+- **Batched atomicity (bulk mode).** All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
 
 ### Chained edits
 
@@ -91,13 +103,33 @@ Auto-read is **disabled by default**. When enabled, after a successful `write` t
 1. `write` a file, result includes hashline anchors
 2. `replace` using those anchors directly
 
-Toggle at runtime with the `/toggle-auto-read` command. The current state persists for the session.
+Toggle at runtime with the `/toggle-auto-read` command. The setting persists across sessions in the config file (`~/.config/pi-hashline-edit-pro/config.json`). Set `PI_HASHLINE_AUTO_READ=1` to enable by default on first run.
 
 For large files (>2000 lines), the auto-read output is truncated with a pagination hint. Use `read` with `offset` to see more.
 
 ### Diff for the host
 
 The post-edit diff (with `+`/`-` markers) is exposed to the host UI via `details.diff`. It is intentionally not in the LLM-visible text. The model already knows what it changed and can call `read` for fresh anchors when needed.
+
+### Commands
+
+| Command | Description |
+| --- | --- |
+| `/toggle-replace-mode` | Switch between bulk mode (`changes` array) and flat mode (top-level fields). Persists across sessions. |
+| `/toggle-auto-read` | Toggle automatic hashline anchors after write operations. Persists across sessions. |
+
+### Config file
+
+Settings are stored in `~/.config/pi-hashline-edit-pro/config.json`:
+
+```json
+{
+  "replaceMode": "bulk",
+  "autoRead": false
+}
+```
+
+The file is created automatically when any setting is toggled. Both fields are independent — toggling one never clobbers the other.
 
 ## Design Decisions
 
@@ -107,6 +139,7 @@ The post-edit diff (with `+`/`-` markers) is exposed to the host UI via `details
 - **Atomic writes.** Files are written via temp-file-then-rename to avoid corruption from interrupted writes. Symlink chains are resolved so the target file is updated without replacing the symlink. Hard-linked files are updated in place to preserve the shared inode. File permissions are preserved across atomic renames.
 - **Per-file mutation queue.** Edits queue by the canonical write target, so concurrent edits through different symlink paths still serialize onto the same underlying file.
 - **Boundary duplication warnings.** When the last line of a replacement matches the next surviving line (or the first line matches the preceding one), a warning is emitted. This catches a common LLM pattern where closing delimiters like `}`, `});`, or `} else {` are accidentally duplicated. The warning is a short header followed by a hashline-anchored window: the duplicated pair plus 2 lines of context before and after, shown as plain `HASH│content` rows with post-edit hashes. Seeing the duplication in context (rather than just being told a hash) is what prompts the model to act on it — and since the hashes are current and staleness is per-line, the model can remove the duplicate in one follow-up `replace` without re-reading. No autocorrection is applied — the duplicate stays in the file and the model decides whether to remove it. Raw line comparison (not trimmed) avoids false positives when indentation differs.
+- **Flat mode normalization.** When flat mode is active, the tool's `execute` function wraps the top-level `hash_range_inclusive` and `content_lines` into a single-element `changes` array internally, then runs the same pipeline as bulk mode. The `normReq` function in `replace-normalize.ts` also handles flat format directly, so any code path that normalizes input (e.g. `compPreview`) works with both formats.
 
 ## Hashing
 
@@ -135,7 +168,7 @@ npm test
 
 Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
 
-Set `PI_HASHLINE_AUTO_READ=1` to enable auto-read after write by default (can still be toggled at runtime with `/toggle-auto-read`).
+Set `PI_HASHLINE_AUTO_READ=1` to enable auto-read after write by default on first run (can still be toggled at runtime with `/toggle-auto-read`; the setting persists across sessions once toggled).
 
 ## Credits
 
