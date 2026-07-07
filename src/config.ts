@@ -1,3 +1,4 @@
+import { readFileSync } from "fs";
 import { homedir } from "os";
 import { join } from "path";
 import { readFile, writeFile, mkdir } from "fs/promises";
@@ -36,6 +37,19 @@ export async function readConfig(): Promise<Config> {
   }
 }
 
+export function readConfigSync(): Config {
+  try {
+    const content = readFileSync(configPath(), "utf-8");
+    const parsed = JSON.parse(content) as Partial<Config>;
+    return {
+      replaceMode: parsed.replaceMode === "flat" ? "flat" : "bulk",
+      autoRead: parsed.autoRead === true,
+    };
+  } catch {
+    return { ...DEFAULT_CONFIG };
+  }
+}
+
 export async function writeConfig(config: Config): Promise<void> {
   await mkdir(configDir(), { recursive: true });
   await writeFile(configPath(), JSON.stringify(config, null, 2), "utf-8");
@@ -61,6 +75,11 @@ export async function toggleReplaceMode(): Promise<ReplaceMode> {
 
 export async function readAutoRead(): Promise<boolean> {
   const config = await readConfig();
+  return config.autoRead;
+}
+
+export function readAutoReadSync(): boolean {
+  const config = readConfigSync();
   return config.autoRead;
 }
 

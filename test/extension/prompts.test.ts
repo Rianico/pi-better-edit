@@ -1,5 +1,6 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
+import { loadGuide } from "../../src/prompts";
 
 const replaceBulkPrompt = readFileSync(
   new URL("../../prompts/replace-bulk.md", import.meta.url),
@@ -117,5 +118,55 @@ describe("prompts/read.md (model-facing contract)", () => {
     expect(readPrompt).toMatch(/Images? \(JPEG, PNG, GIF, WebP\)/);
     expect(readPrompt).toMatch(/Binary/);
     expect(readPrompt).toMatch(/directories/);
+  });
+});
+
+describe("prompt template variables (AUTO_READ_GUIDANCE)", () => {
+  it("replace-bulk-guidelines.md contains the template variable", () => {
+    const content = readFileSync(
+      new URL("../../prompts/replace-bulk-guidelines.md", import.meta.url),
+      "utf-8",
+    );
+    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
+  });
+
+  it("replace-flat-guidelines.md contains the template variable", () => {
+    const content = readFileSync(
+      new URL("../../prompts/replace-flat-guidelines.md", import.meta.url),
+      "utf-8",
+    );
+    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
+  });
+
+  it("replace-guidelines.md contains the template variable", () => {
+    const content = readFileSync(
+      new URL("../../prompts/replace-guidelines.md", import.meta.url),
+      "utf-8",
+    );
+    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
+  });
+
+  it("loadGuide replaces AUTO_READ_GUIDANCE with read guidance when auto-read is off", () => {
+    const guidelines = loadGuide("../prompts/replace-bulk-guidelines.md", {
+      AUTO_READ_GUIDANCE: "Call `read` to get fresh anchors for follow-up edits.",
+    });
+    const line = guidelines.find((g) => g.includes("Call `read` to get fresh anchors"));
+    expect(line).toBeTruthy();
+    expect(line).toContain("Call `read` to get fresh anchors for follow-up edits.");
+  });
+
+  it("loadGuide replaces AUTO_READ_GUIDANCE with auto-read message when auto-read is on", () => {
+    const guidelines = loadGuide("../prompts/replace-bulk-guidelines.md", {
+      AUTO_READ_GUIDANCE: "Anchors are provided automatically after write operations when auto-read is enabled.",
+    });
+    const line = guidelines.find((g) => g.includes("Anchors are provided automatically"));
+    expect(line).toBeTruthy();
+    expect(line).toContain("Anchors are provided automatically after write operations when auto-read is enabled.");
+  });
+
+  it("loadGuide without replacements leaves template variable intact", () => {
+    const guidelines = loadGuide("../prompts/replace-bulk-guidelines.md");
+    const line = guidelines.find((g) => g.includes("{{AUTO_READ_GUIDANCE}}"));
+    expect(line).toBeTruthy();
   });
 });

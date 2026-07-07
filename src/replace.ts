@@ -1,14 +1,14 @@
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import type {
-	ExtensionAPI,
-	ToolDefinition,
+  ExtensionAPI,
+  ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { constants } from "fs";
 import {
-	genDiff,
-	restoreEndings,
+  genDiff,
+  restoreEndings,
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
 import { normReq } from "./replace-normalize";
@@ -16,32 +16,33 @@ import { isRec, has, rejectUnknownFields } from "./utils";
 import { MAX_HASH_LINES } from "./constants";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import {
-	applyEdits,
-	lineHashes,
-	resEdits,
-	type HTEdit,
+  applyEdits,
+  lineHashes,
+  resEdits,
+  type HTEdit,
 } from "./hashline";
 import { toCwd } from "./path-utils";
 import { abortIf } from "./runtime";
 import { fileSnap } from "./snapshot";
 import {
-	buildChanged,
-	buildNoop,
-	type RMeta,
-	type RMetrics,
+  buildChanged,
+  buildNoop,
+  type RMeta,
+  type RMetrics,
 } from "./replace-response";
 import {
-	buildAppliedText,
-	mkMdTheme,
-	fmtCall,
-	fmtResultMd,
-	getPreviewInput,
-	getResultText,
-	isApplied,
-	type RPreview,
-	type RRState,
+  buildAppliedText,
+  mkMdTheme,
+  fmtCall,
+  fmtResultMd,
+  getPreviewInput,
+  getResultText,
+  isApplied,
+  type RPreview,
+  type RRState,
 } from "./replace-render";
 import { loadP, loadGuide } from "./prompts";
+import { readAutoReadSync } from "./config";
 
 const contentLinesSchema = Type.Array(Type.String(), {
   description:
@@ -49,12 +50,12 @@ const contentLinesSchema = Type.Array(Type.String(), {
 });
 
 const hashRangeInclSchema = Type.Array(
-	Type.String({ description: "anchor (3-char HASH)" }),
-	{
-		description: "inclusive hash range to replace [start_hash, end_hash]. Each element must be the 3-character hash anchor only; do not include the │ separator or line content.",
-		minItems: 2,
-		maxItems: 2,
-	},
+  Type.String({ description: "anchor (3-char HASH)" }),
+  {
+    description: "inclusive hash range to replace [start_hash, end_hash]. Each element must be the 3-character hash anchor only; do not include the │ separator or line content.",
+    minItems: 2,
+    maxItems: 2,
+  },
 );
 
 const changeItemSchema = Type.Object(
@@ -64,6 +65,7 @@ const changeItemSchema = Type.Object(
   },
   { additionalProperties: false },
 );
+
 export const editToolSchema = Type.Object(
   {
     path: Type.String({ description: "path" }),
@@ -78,12 +80,12 @@ export type ReqParams = {
 };
 
 export type ReplaceDetails = {
-	diff: string;
-	firstChangedLine?: number;
-	snapshotId?: string;
-	classification?: "noop";
-	structureOutline?: string[];
-	metrics?: RMetrics;
+  diff: string;
+  firstChangedLine?: number;
+  snapshotId?: string;
+  classification?: "noop";
+  structureOutline?: string[];
+  metrics?: RMetrics;
 };
 
 interface PipelineResult {
@@ -102,9 +104,6 @@ interface PipelineResult {
   resultHashes?: string[];
 }
 
-const E_DESC = loadP("../prompts/replace-bulk.md");
-const E_SNIPPET = loadP("../prompts/replace-bulk-snippet.md");
-const E_GUIDE = loadGuide("../prompts/replace-bulk-guidelines.md");
 const ROOT_KS = new Set(["path", "changes"]);
 
 export function assertReq(
@@ -180,35 +179,36 @@ export async function execPipeline(
 }
 
 export async function compPreview(
-	request: unknown,
-	cwd: string,
+  request: unknown,
+  cwd: string,
 ): Promise<RPreview> {
-	try {
-		const normalized = normReq(request);
-		assertReq(normalized);
-		const { path, originalNormalized, result, resultHashes } = await execPipeline(
-			normalized,
-			cwd,
-			constants.R_OK,
-		);
+  try {
+    const normalized = normReq(request);
+    assertReq(normalized);
+    const { path, originalNormalized, result, resultHashes } = await execPipeline(
+      normalized,
+      cwd,
+      constants.R_OK,
+    );
 
-		if (originalNormalized === result) {
-			return {
-				error: `No changes made to ${path}. The edits produced identical content.`,
-			};
-		}
+    if (originalNormalized === result) {
+      return {
+        error: `No changes made to ${path}. The edits produced identical content.`,
+      };
+    }
 
-		return { diff: genDiff(originalNormalized, result, 4, resultHashes).diff };
-	} catch (error: unknown) {
-		return { error: error instanceof Error ? error.message : String(error) };
-	}
+    return { diff: genDiff(originalNormalized, result, 4, resultHashes).diff };
+  } catch (error: unknown) {
+    return { error: error instanceof Error ? error.message : String(error) };
+  }
 }
 
 type ToolDef = ToolDefinition<
-	typeof editToolSchema,
-	ReplaceDetails,
-	RRState
+  typeof editToolSchema,
+  ReplaceDetails,
+  RRState
 > & { renderShell?: "default" | "self" };
+
 function reuseText(context: any, content: string): Text {
   const t = context.lastComponent instanceof Text
     ? context.lastComponent
@@ -225,185 +225,198 @@ function reuseMarkdown(context: any, content: string, theme: any): Markdown {
   return m;
 }
 
-const toolDef: ToolDef = {
-	name: "replace",
-	label: "Replace",
-	description: E_DESC,
-	parameters: editToolSchema,
-	promptSnippet: E_SNIPPET,
-	promptGuidelines: E_GUIDE,
-	prepareArguments: (args: unknown) =>
-		normReq(args) as ReqParams,
-	renderShell: "default",
-	renderCall(args, theme, context) {
-		const previewInput = getPreviewInput(args);
-		if (context.executionStarted) {
-			context.state.argsKey = undefined;
-			context.state.preview = undefined;
-			context.state.previewGeneration =
-				(context.state.previewGeneration ?? 0) + 1;
-		} else if (!context.argsComplete || !previewInput) {
-			context.state.argsKey = undefined;
-			context.state.preview = undefined;
-			context.state.previewGeneration =
-				(context.state.previewGeneration ?? 0) + 1;
-		} else {
-			const argsKey = JSON.stringify(previewInput);
-			if (context.state.argsKey !== argsKey) {
-				context.state.argsKey = argsKey;
-				context.state.preview = undefined;
-				const previewGeneration = (context.state.previewGeneration ?? 0) + 1;
-				context.state.previewGeneration = previewGeneration;
-				compPreview(previewInput, context.cwd)
-					.then((preview) => {
-						if (
-							context.state.argsKey === argsKey &&
-							context.state.previewGeneration === previewGeneration
-						) {
-							context.state.preview = preview;
-							context.invalidate();
-						}
-					})
-					.catch((err: unknown) => {
-						if (
-							context.state.argsKey === argsKey &&
-							context.state.previewGeneration === previewGeneration
-						) {
-							context.state.preview = {
-								error: err instanceof Error ? err.message : String(err),
-							};
-							context.invalidate();
-						}
-					});
-			}
-		}
-		const text =
-			(context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-		text.setText(
-			fmtCall(
-				getPreviewInput(args) ?? undefined,
-				context.state as RRState,
-				context.expanded,
-				theme,
-			),
-		);
-		return text;
-	},
+export function buildToolDef(): ToolDef {
+  const autoRead = readAutoReadSync();
+  const readGuidance = autoRead
+    ? "Anchors are provided automatically after write operations when auto-read is enabled."
+    : "Call `read` to get fresh anchors for follow-up edits.";
 
-	renderResult(result, { isPartial }, theme, context) {
-		if (isPartial) {
-			return reuseText(context, theme.fg("warning", "Editing..."));
-		}
+  const E_DESC = loadP("../prompts/replace-bulk.md");
+  const E_SNIPPET = loadP("../prompts/replace-bulk-snippet.md");
+  const E_GUIDE = loadGuide("../prompts/replace-bulk-guidelines.md", {
+    AUTO_READ_GUIDANCE: readGuidance,
+  });
 
-		const typedResult = result as {
-			content?: Array<{ type: string; text?: string }>;
-			details?: ReplaceDetails;
-		};
-		const renderedText = getResultText(typedResult);
+  return {
+    name: "replace",
+    label: "Replace",
+    description: E_DESC,
+    parameters: editToolSchema,
+    promptSnippet: E_SNIPPET,
+    promptGuidelines: E_GUIDE,
+    prepareArguments: (args: unknown) =>
+      normReq(args) as ReqParams,
+    renderShell: "default",
+    renderCall(args, theme, context) {
+      const previewInput = getPreviewInput(args);
+      if (context.executionStarted) {
+        context.state.argsKey = undefined;
+        context.state.preview = undefined;
+        context.state.previewGeneration =
+          (context.state.previewGeneration ?? 0) + 1;
+      } else if (!context.argsComplete || !previewInput) {
+        context.state.argsKey = undefined;
+        context.state.preview = undefined;
+        context.state.previewGeneration =
+          (context.state.previewGeneration ?? 0) + 1;
+      } else {
+        const argsKey = JSON.stringify(previewInput);
+        if (context.state.argsKey !== argsKey) {
+          context.state.argsKey = argsKey;
+          context.state.preview = undefined;
+          const previewGeneration = (context.state.previewGeneration ?? 0) + 1;
+          context.state.previewGeneration = previewGeneration;
+          compPreview(previewInput, context.cwd)
+            .then((preview) => {
+              if (
+                context.state.argsKey === argsKey &&
+                context.state.previewGeneration === previewGeneration
+              ) {
+                context.state.preview = preview;
+                context.invalidate();
+              }
+            })
+            .catch((err: unknown) => {
+              if (
+                context.state.argsKey === argsKey &&
+                context.state.previewGeneration === previewGeneration
+              ) {
+                context.state.preview = {
+                  error: err instanceof Error ? err.message : String(err),
+                };
+                context.invalidate();
+              }
+            });
+        }
+      }
+      const text =
+        (context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+      text.setText(
+        fmtCall(
+          getPreviewInput(args) ?? undefined,
+          context.state as RRState,
+          context.expanded,
+          theme,
+        ),
+      );
+      return text;
+    },
 
-		const renderState = context.state as RRState | undefined;
-		if (renderState) {
-			renderState.preview = undefined;
-			renderState.previewGeneration = (renderState.previewGeneration ?? 0) + 1;
-		}
+    renderResult(result, { isPartial }, theme, context) {
+      if (isPartial) {
+        return reuseText(context, theme.fg("warning", "Editing..."));
+      }
 
-		if (context.isError) {
-			return renderedText
-				? reuseText(context, `\n${theme.fg("error", renderedText)}`)
-				: new Text("", 0, 0);
-		}
+      const typedResult = result as {
+        content?: Array<{ type: string; text?: string }>;
+        details?: ReplaceDetails;
+      };
+      const renderedText = getResultText(typedResult);
 
-		if (isApplied(typedResult.details)) {
-			const appliedText = buildAppliedText(renderedText, typedResult.details, theme);
-			return appliedText ? reuseText(context, appliedText) : new Text("", 0, 0);
-		}
+      const renderState = context.state as RRState | undefined;
+      if (renderState) {
+        renderState.preview = undefined;
+        renderState.previewGeneration = (renderState.previewGeneration ?? 0) + 1;
+      }
 
-		if (!renderedText) return new Text("", 0, 0);
-		return reuseMarkdown(context, fmtResultMd(renderedText), theme);
-	},
+      if (context.isError) {
+        return renderedText
+          ? reuseText(context, `\n${theme.fg("error", renderedText)}`)
+          : new Text("", 0, 0);
+      }
 
-	async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-		const normalized = normReq(params);
-		assertReq(normalized);
-		const normalizedParams = normalized;
-		const path = normalizedParams.path;
-		const absolutePath = toCwd(path, ctx.cwd);
-		const mutationTargetPath = await resolveTarget(absolutePath);
-		return withFileMutationQueue(mutationTargetPath, async () => {
-			abortIf(signal);
+      if (isApplied(typedResult.details)) {
+        const appliedText = buildAppliedText(renderedText, typedResult.details, theme);
+        return appliedText ? reuseText(context, appliedText) : new Text("", 0, 0);
+      }
 
-			const {
-				originalNormalized,
-				result,
-				bom,
-				originalEnding,
-				hadUtf8DecodeErrors,
-				warnings,
-				noopEdits,
-				firstChangedLine,
-				lastChangedLine,
-				resultHashes,
-			} = await execPipeline(
-				normalizedParams,
-				ctx.cwd,
-				constants.R_OK | constants.W_OK,
-				signal,
-			);
+      if (!renderedText) return new Text("", 0, 0);
+      return reuseMarkdown(context, fmtResultMd(renderedText), theme);
+    },
 
-      const editsAttempted = Array.isArray(normalizedParams.changes)
-        ? normalizedParams.changes.length
-        : 0;
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const normalized = normReq(params);
+      assertReq(normalized);
+      const normalizedParams = normalized;
+      const path = normalizedParams.path;
+      const absolutePath = toCwd(path, ctx.cwd);
+      const mutationTargetPath = await resolveTarget(absolutePath);
+      return withFileMutationQueue(mutationTargetPath, async () => {
+        abortIf(signal);
 
-			if (originalNormalized === result) {
-				const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
-			return buildNoop({
-				path,
-				noopEdits,
-				snapshotId: noopSnapshotId,
-				editMeta: {
-					editsAttempted,
-					noopEditsCount: noopEdits?.length ?? 0,
-				},
-				warnings,
-			});
-			}
+        const {
+          originalNormalized,
+          result,
+          bom,
+          originalEnding,
+          hadUtf8DecodeErrors,
+          warnings,
+          noopEdits,
+          firstChangedLine,
+          lastChangedLine,
+          resultHashes,
+        } = await execPipeline(
+          normalizedParams,
+          ctx.cwd,
+          constants.R_OK | constants.W_OK,
+          signal,
+        );
 
-			if (hadUtf8DecodeErrors) {
-				warnings.push(
-					"Non-UTF-8 bytes were shown as U+FFFD; this edit rewrote the file as UTF-8.",
-				);
-			}
+        const editsAttempted = Array.isArray(normalizedParams.changes)
+          ? normalizedParams.changes.length
+          : 0;
 
-			abortIf(signal);
-			await writeAtomic(
-				absolutePath,
-				bom + restoreEndings(result, originalEnding),
-			);
-			const updatedSnapshotId = (await fileSnap(absolutePath))
-				.snapshotId;
+        if (originalNormalized === result) {
+          const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
+          return buildNoop({
+            path,
+            noopEdits,
+            snapshotId: noopSnapshotId,
+            editMeta: {
+              editsAttempted,
+              noopEditsCount: noopEdits?.length ?? 0,
+            },
+            warnings,
+          });
+        }
 
-			const editMeta: RMeta = {
-				editsAttempted,
-				noopEditsCount: noopEdits?.length ?? 0,
-				firstChangedLine,
-				lastChangedLine,
-			};
+        if (hadUtf8DecodeErrors) {
+          warnings.push(
+            "Non-UTF-8 bytes were shown as U+FFFD; this edit rewrote the file as UTF-8.",
+          );
+        }
 
-			const successInput = {
-				path,
-				originalNormalized,
-				result,
-				resultHashes,
-				warnings,
-				snapshotId: updatedSnapshotId,
-				editMeta,
-			};
+        abortIf(signal);
+        await writeAtomic(
+          absolutePath,
+          bom + restoreEndings(result, originalEnding),
+        );
+        const updatedSnapshotId = (await fileSnap(absolutePath))
+          .snapshotId;
 
-			return buildChanged(successInput);
-		});
-	},
-};
+        const editMeta: RMeta = {
+          editsAttempted,
+          noopEditsCount: noopEdits?.length ?? 0,
+          firstChangedLine,
+          lastChangedLine,
+        };
+
+        const successInput = {
+          path,
+          originalNormalized,
+          result,
+          resultHashes,
+          warnings,
+          snapshotId: updatedSnapshotId,
+          editMeta,
+        };
+
+        return buildChanged(successInput);
+      });
+    },
+  };
+}
 
 export function regReplace(pi: ExtensionAPI): void {
-	pi.registerTool(toolDef);
+  pi.registerTool(buildToolDef());
 }
