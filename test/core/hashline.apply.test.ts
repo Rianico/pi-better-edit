@@ -214,8 +214,22 @@ describe("applyEdits — warning heuristics", () => {
 		expect(result.warnings![0]).toContain("│before");
 		expect(result.warnings![0]).toContain("│new two");
 	});
+	it("warns when replacement ends with the next surviving line", () => {
+		const content = "before\nold one\nold two\nafter";
+		const edits: HEdit[] = [
+			{
+				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
+				content_lines: ["new one", "new two", "after"],
+			},
+		];
+		const result = applyEdits(content, edits);
+		expect(result.content).toBe("before\nnew one\nnew two\nafter\nafter");
+		expect(result.warnings).toHaveLength(1);
+		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
+		expect(result.warnings![0]).toContain("│after");
+		expect(result.warnings![0]).toContain("│new two");
+	});
 });
-
 describe("applyEdits — lastChangedLine tracking", () => {
 	it("tracks lastChangedLine when single-line replace expands to multiple lines", () => {
 		const content = "aaa\nbbb\nccc";

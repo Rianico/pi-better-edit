@@ -2,3 +2,4 @@
 - After a successful `replace`, the response text is empty (warnings only). {{AUTO_READ_GUIDANCE}}
 - On `[E_STALE_ANCHOR]`, call `read` to get fresh anchors, copy the 3-character HASH of the start and end of the range you are replacing into `hash_range_inclusive`, and retry.
 - `hash_range_inclusive` replaces the ENTIRE range inclusively. Every line from the first anchor through the second anchor is deleted. Only put the replacement lines in `content_lines` — do not include lines that already exist outside the range.
+- **Preserve leading whitespace (indentation) exactly.** The content after `│` in read output includes all leading spaces and tabs — copy them into `content_lines` unchanged.

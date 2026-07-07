@@ -37,7 +37,7 @@ export function buildIdx(content: string): LIdx {
 		lineStarts,
 		hasTerminalNewline: content.endsWith("\n"),
 	};
-}
+};
 
 type RESpan = {
 	kind: "replace";
@@ -220,7 +220,7 @@ function assemble(
  * `replace` (no `read` round-trip required, since the hashes are current and
  * staleness is per-line). Rows are plain `HASH│content` — no annotations.
  */
-function fmtBoundaryWarning(params: {
+export function fmtBoundaryWarning(params: {
 	kind: "trailing" | "leading";
 	survivingContent: string;
 	matchIndex: number;

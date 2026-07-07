@@ -74,6 +74,7 @@ Rules:
 - To delete a range, use `content_lines: []`.
 - `hash_range_inclusive` elements are HASH anchors only (e.g. `aB3`). Do not include `│` or line content.
 - `content_lines` is literal file content — each string becomes exactly one line in the file. No `HASH│` prefix. A line that happens to start with `+` or `-` is written as-is; the only rejected form is the diff preview's `+HASH│…` row (see `[E_INVALID_PATCH]`).
+- **Preserve leading whitespace (indentation) exactly.** The content after `│` in read output includes all leading spaces and tabs — copy them into `content_lines` unchanged. Dropping indentation will produce broken code.
 - Don't add `""` for spacing unless you actually want a new blank line.
 - Copy anchors from the most recent `read` of the file. Do not guess or construct them.
 - If `content_lines` matches current content, the replace is classified as `noop` (file unchanged).

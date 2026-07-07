@@ -36,4 +36,5 @@ export {
 	applyEdits,
 	fmtRegion,
 	changedRange,
+	fmtBoundaryWarning,
 } from "./apply";
