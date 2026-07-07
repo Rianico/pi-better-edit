@@ -19,93 +19,86 @@ async function withTempHome(run: () => Promise<void>): Promise<void> {
   }
 }
 
+function checkDescription(toolDef: { description: string }, expectAutoMsg: boolean): void {
+  const hasAutoMsg = toolDef.description.includes("Anchors are provided automatically after write operations");
+  const hasReadCall = toolDef.description.includes("Call `read` to get fresh anchors for follow-up edits.");
+  if (expectAutoMsg) {
+    expect(hasAutoMsg).toBe(true);
+    expect(hasReadCall).toBe(false);
+  } else {
+    expect(hasAutoMsg).toBe(false);
+    expect(hasReadCall).toBe(true);
+  }
+}
+
+function checkGuidelines(guidelines: string[], expectAutoMsg: boolean): void {
+  const hasAutoMsg = guidelines.some((g) =>
+    g.includes("Anchors are provided automatically after write operations")
+  );
+  const hasReadCall = guidelines.some((g) =>
+    g.includes("Call `read` to get fresh anchors for follow-up edits.")
+  );
+  if (expectAutoMsg) {
+    expect(hasAutoMsg).toBe(true);
+    expect(hasReadCall).toBe(false);
+  } else {
+    expect(hasAutoMsg).toBe(false);
+    expect(hasReadCall).toBe(true);
+  }
+}
+
 describe("auto-read guidance in bulk mode tool definition", () => {
-  it("includes auto-read message when autoRead is true", async () => {
+  it("shows auto-read message in description and guidelines when autoRead is true", async () => {
     await withTempHome(async () => {
       await writeConfig({ replaceMode: "bulk", autoRead: true });
       const toolDef = buildBulkToolDef();
-      const guidelines = toolDef.promptGuidelines ?? [];
-      const hasAutoMsg = guidelines.some((g) =>
-        g.includes("Anchors are provided automatically after write operations")
-      );
-      expect(hasAutoMsg).toBe(true);
-      const hasReadCall = guidelines.some((g) =>
-        g.includes("Call `read` to get fresh anchors")
-      );
-      expect(hasReadCall).toBe(false);
+      checkDescription(toolDef, true);
+      checkGuidelines(toolDef.promptGuidelines ?? [], true);
     });
   });
 
-  it("includes 'Call `read`' message when autoRead is false", async () => {
+  it("shows 'Call `read`' message in description and guidelines when autoRead is false", async () => {
     await withTempHome(async () => {
       await writeConfig({ replaceMode: "bulk", autoRead: false });
       const toolDef = buildBulkToolDef();
-      const guidelines = toolDef.promptGuidelines ?? [];
-      const hasReadCall = guidelines.some((g) =>
-        g.includes("Call `read` to get fresh anchors")
-      );
-      expect(hasReadCall).toBe(true);
-      const hasAutoMsg = guidelines.some((g) =>
-        g.includes("Anchors are provided automatically")
-      );
-      expect(hasAutoMsg).toBe(false);
+      checkDescription(toolDef, false);
+      checkGuidelines(toolDef.promptGuidelines ?? [], false);
     });
   });
 
   it("defaults to 'Call `read`' when no config file exists", async () => {
     await withTempHome(async () => {
-      // No config file written — defaults to autoRead: false
       const toolDef = buildBulkToolDef();
-      const guidelines = toolDef.promptGuidelines ?? [];
-      const hasReadCall = guidelines.some((g) =>
-        g.includes("Call `read` to get fresh anchors")
-      );
-      expect(hasReadCall).toBe(true);
+      checkDescription(toolDef, false);
+      checkGuidelines(toolDef.promptGuidelines ?? [], false);
     });
   });
 });
 
 describe("auto-read guidance in flat mode tool definition", () => {
-  it("includes auto-read message when autoRead is true", async () => {
+  it("shows auto-read message in description and guidelines when autoRead is true", async () => {
     await withTempHome(async () => {
       await writeConfig({ replaceMode: "flat", autoRead: true });
       const toolDef = buildFlatToolDef();
-      const guidelines = toolDef.promptGuidelines ?? [];
-      const hasAutoMsg = guidelines.some((g) =>
-        g.includes("Anchors are provided automatically after write operations")
-      );
-      expect(hasAutoMsg).toBe(true);
-      const hasReadCall = guidelines.some((g) =>
-        g.includes("Call `read` to get fresh anchors")
-      );
-      expect(hasReadCall).toBe(false);
+      checkDescription(toolDef, true);
+      checkGuidelines(toolDef.promptGuidelines ?? [], true);
     });
   });
 
-  it("includes 'Call `read`' message when autoRead is false", async () => {
+  it("shows 'Call `read`' message in description and guidelines when autoRead is false", async () => {
     await withTempHome(async () => {
       await writeConfig({ replaceMode: "flat", autoRead: false });
       const toolDef = buildFlatToolDef();
-      const guidelines = toolDef.promptGuidelines ?? [];
-      const hasReadCall = guidelines.some((g) =>
-        g.includes("Call `read` to get fresh anchors")
-      );
-      expect(hasReadCall).toBe(true);
-      const hasAutoMsg = guidelines.some((g) =>
-        g.includes("Anchors are provided automatically")
-      );
-      expect(hasAutoMsg).toBe(false);
+      checkDescription(toolDef, false);
+      checkGuidelines(toolDef.promptGuidelines ?? [], false);
     });
   });
 
   it("defaults to 'Call `read`' when no config file exists", async () => {
     await withTempHome(async () => {
       const toolDef = buildFlatToolDef();
-      const guidelines = toolDef.promptGuidelines ?? [];
-      const hasReadCall = guidelines.some((g) =>
-        g.includes("Call `read` to get fresh anchors")
-      );
-      expect(hasReadCall).toBe(true);
+      checkDescription(toolDef, false);
+      checkGuidelines(toolDef.promptGuidelines ?? [], false);
     });
   });
 });

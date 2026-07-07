@@ -94,7 +94,7 @@ Rules:
 - All changes in one call must be non-conflicting. The runtime rejects with `[E_EDIT_CONFLICT]` if two ranges overlap.
 - If `content_lines` matches current content, the replace is classified as `noop` (file unchanged).
 - The `hash_range_inclusive` is inclusive — the entire span from the first anchor through the second anchor is deleted and replaced with `content_lines`. The old lines in that span are gone. If your replacement content includes lines that already exist in the file (e.g. closing brackets), make sure those lines are within your range, otherwise they will appear twice.
-On success, the response text is empty (or contains only warnings if present). Call `read` to get fresh anchors for follow-up edits.
+On success, the response text is empty (or contains only warnings if present). {{AUTO_READ_GUIDANCE}}
 
 ⚠️ Common mistake: `hash_range_inclusive` replaces the ENTIRE range. Every line from the first anchor through the second anchor is deleted and replaced with `content_lines`. Do not include "context" or "surrounding" lines in `content_lines` — they are outside the range and will be preserved automatically.
 

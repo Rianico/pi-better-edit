@@ -231,7 +231,9 @@ export function buildToolDef(): ToolDef {
     ? "Anchors are provided automatically after write operations when auto-read is enabled."
     : "Call `read` to get fresh anchors for follow-up edits.";
 
-  const E_DESC = loadP("../prompts/replace-bulk.md");
+  const E_DESC = loadP("../prompts/replace-bulk.md", {
+    AUTO_READ_GUIDANCE: readGuidance,
+  });
   const E_SNIPPET = loadP("../prompts/replace-bulk-snippet.md");
   const E_GUIDE = loadGuide("../prompts/replace-bulk-guidelines.md", {
     AUTO_READ_GUIDANCE: readGuidance,

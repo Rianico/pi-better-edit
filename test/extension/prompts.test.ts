@@ -169,4 +169,28 @@ describe("prompt template variables (AUTO_READ_GUIDANCE)", () => {
     const line = guidelines.find((g) => g.includes("{{AUTO_READ_GUIDANCE}}"));
     expect(line).toBeTruthy();
   });
+
+  it("replace-bulk.md main description contains the template variable", () => {
+    const content = readFileSync(
+      new URL("../../prompts/replace-bulk.md", import.meta.url),
+      "utf-8",
+    );
+    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
+  });
+
+  it("replace-flat.md main description contains the template variable", () => {
+    const content = readFileSync(
+      new URL("../../prompts/replace-flat.md", import.meta.url),
+      "utf-8",
+    );
+    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
+  });
+
+  it("replace.md main description contains the template variable", () => {
+    const content = readFileSync(
+      new URL("../../prompts/replace.md", import.meta.url),
+      "utf-8",
+    );
+    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
+  });
 });

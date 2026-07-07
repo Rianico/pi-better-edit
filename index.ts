@@ -66,6 +66,13 @@ export default function (pi: ExtensionAPI): void {
     description: "Toggle automatic hashline anchors after write operations",
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
+      // Re-register the tool so prompts reflect the new auto-read setting
+      const mode = await readReplaceMode();
+      if (mode === "flat") {
+        regReplaceFlat(pi);
+      } else {
+        regReplace(pi);
+      }
       const state = autoRead ? "enabled" : "disabled";
       ctx.ui.notify(`Auto-read after write: ${state}`, "info");
     },

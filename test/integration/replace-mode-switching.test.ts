@@ -3,7 +3,7 @@ import { mkdtemp, mkdir, rm, writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import { withTempFile, makeFakePiRegistry, getText } from "../support/fixtures";
 import register from "../../index";
-import { readReplaceMode, writeReplaceMode, toggleReplaceMode } from "../../src/config";
+import { readReplaceMode, writeReplaceMode, toggleReplaceMode, writeAutoRead, readAutoRead } from "../../src/config";
 import { lineHashes } from "../../src/hashline";
 
 // Override HOME so config writes go to a temp dir
@@ -235,6 +235,80 @@ describe("replace mode switching — flat mode end-to-end", () => {
       );
 
       expect(editResult.content[0].text).toContain("Boundary duplication (trailing)");
+    });
+  });
+});
+
+describe("auto-read toggle re-registers tool with updated prompts", () => {
+  it("toggle-auto-read handler re-registers the tool, updating prompts", async () => {
+    await withTempHome(async () => {
+      // Start with autoRead = false (default)
+      const registrations: any[] = [];
+      let commandHandlers: Record<string, Function> = {};
+      const pi = {
+        registerTool(tool: any) { registrations.push(tool); },
+        registerCommand(name: string, def: { handler: Function }) { commandHandlers[name] = def.handler; },
+        on() {},
+        getActiveTools: () => ["read", "edit", "replace"],
+        setActiveTools() {},
+      } as any;
+
+      register(pi);
+
+      // Initial registration: autoRead is false → prompts say "Call `read`"
+      const initialTool = registrations[registrations.length - 1];
+      const initialDesc = initialTool.description;
+      expect(initialDesc).toContain("Call `read` to get fresh anchors for follow-up edits.");
+      expect(initialDesc).not.toContain("Anchors are provided automatically");
+
+      // Toggle auto-read on via the command handler
+      const handler = commandHandlers["toggle-auto-read"];
+      expect(handler).toBeDefined();
+      await handler({}, { ui: { notify() {} } });
+
+      // After toggle: tool was re-registered with updated prompts
+      const updatedTool = registrations[registrations.length - 1];
+      const updatedDesc = updatedTool.description;
+      expect(updatedDesc).toContain("Anchors are provided automatically after write operations when auto-read is enabled.");
+      expect(updatedDesc).not.toContain("Call `read` to get fresh anchors for follow-up edits.");
+
+      // Verify the config was persisted
+      expect(await readAutoRead()).toBe(true);
+    });
+  });
+
+  it("toggle-auto-read handler re-registers with 'Call `read`' when turning auto-read off", async () => {
+    await withTempHome(async () => {
+      // Start with autoRead = true
+      await writeAutoRead(true);
+
+      const registrations: any[] = [];
+      let commandHandlers: Record<string, Function> = {};
+      const pi = {
+        registerTool(tool: any) { registrations.push(tool); },
+        registerCommand(name: string, def: { handler: Function }) { commandHandlers[name] = def.handler; },
+        on() {},
+        getActiveTools: () => ["read", "edit", "replace"],
+        setActiveTools() {},
+      } as any;
+
+      register(pi);
+
+      // Initial registration: autoRead is true → prompts say auto-read message
+      const initialTool = registrations[registrations.length - 1];
+      expect(initialTool.description).toContain("Anchors are provided automatically");
+
+      // Toggle auto-read off via the command handler
+      const handler = commandHandlers["toggle-auto-read"];
+      expect(handler).toBeDefined();
+      await handler({}, { ui: { notify() {} } });
+
+      // After toggle: tool was re-registered with "Call `read`"
+      const updatedTool = registrations[registrations.length - 1];
+      expect(updatedTool.description).toContain("Call `read` to get fresh anchors for follow-up edits.");
+      expect(updatedTool.description).not.toContain("Anchors are provided automatically");
+
+      expect(await readAutoRead()).toBe(false);
     });
   });
 });
