@@ -1,0 +1,109 @@
+import { describe, expect, it } from "vitest";
+import { mkdtemp, mkdir, rm, writeFile, symlink } from "fs/promises";
+import { join } from "path";
+import { fileSnap } from "../../src/snapshot";
+
+async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
+  const dir = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-snapshot-test-"));
+  try {
+    await run(dir);
+  } finally {
+    await rm(dir, { recursive: true, force: true });
+  }
+}
+
+describe("fileSnap", () => {
+  it("returns snapshot info with correct format for an existing file", async () => {
+    await withTempDir(async (dir) => {
+      const filePath = join(dir, "test.ts");
+      await writeFile(filePath, "hello\nworld\n", "utf-8");
+
+      const snap = await fileSnap(filePath);
+
+      expect(snap.snapshotId).toMatch(/^v1\|.+\|.+\|.+$/);
+      expect(snap.snapshotId).toContain("test.ts");
+      expect(typeof snap.mtimeMs).toBe("number");
+      expect(snap.mtimeMs).toBeGreaterThan(0);
+      expect(typeof snap.size).toBe("number");
+      expect(snap.size).toBe(12); // "hello\nworld\n" = 12 bytes
+    });
+  });
+
+  it("returns different snapshotIds for different files", async () => {
+    await withTempDir(async (dir) => {
+      const fileA = join(dir, "a.ts");
+      const fileB = join(dir, "b.ts");
+      await writeFile(fileA, "a\n", "utf-8");
+      await writeFile(fileB, "b\n", "utf-8");
+
+      const snapA = await fileSnap(fileA);
+      const snapB = await fileSnap(fileB);
+
+      expect(snapA.snapshotId).not.toBe(snapB.snapshotId);
+    });
+  });
+
+  it("returns different snapshotIds when file content changes", async () => {
+    await withTempDir(async (dir) => {
+      const filePath = join(dir, "changing.ts");
+      await writeFile(filePath, "original\n", "utf-8");
+
+      const snap1 = await fileSnap(filePath);
+
+      // Wait a tick to ensure mtime changes
+      await new Promise((r) => setTimeout(r, 50));
+      await writeFile(filePath, "modified\n", "utf-8");
+
+      const snap2 = await fileSnap(filePath);
+
+      expect(snap1.snapshotId).not.toBe(snap2.snapshotId);
+    });
+  });
+
+  it("resolves symlinks and returns the canonical path in snapshotId", async () => {
+    await withTempDir(async (dir) => {
+      const realFile = join(dir, "real.ts");
+      const linkPath = join(dir, "link.ts");
+      await writeFile(realFile, "real content\n", "utf-8");
+      await symlink(realFile, linkPath);
+
+      const snap = await fileSnap(linkPath);
+
+      // The snapshotId should contain the resolved (canonical) path
+      expect(snap.snapshotId).toContain("real.ts");
+      expect(snap.size).toBe(13); // "real content\n" = 13 bytes
+    });
+  });
+
+  it("throws on non-existent file", async () => {
+    await withTempDir(async (dir) => {
+      const missingPath = join(dir, "does-not-exist.ts");
+      await expect(fileSnap(missingPath)).rejects.toThrow();
+    });
+  });
+
+  it("returns correct size for empty file", async () => {
+    await withTempDir(async (dir) => {
+      const filePath = join(dir, "empty.ts");
+      await writeFile(filePath, "", "utf-8");
+
+      const snap = await fileSnap(filePath);
+      expect(snap.size).toBe(0);
+    });
+  });
+
+  it("snapshotId format is v1|path|mtimeMs|size", async () => {
+    await withTempDir(async (dir) => {
+      const filePath = join(dir, "format.ts");
+      await writeFile(filePath, "data\n", "utf-8");
+
+      const snap = await fileSnap(filePath);
+      const parts = snap.snapshotId.split("|");
+
+      expect(parts[0]).toBe("v1");
+      expect(parts[1]).toContain("format.ts");
+      expect(parts[2]).toBe(String(snap.mtimeMs));
+      expect(parts[3]).toBe(String(snap.size));
+    });
+  });
+});

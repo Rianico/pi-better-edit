@@ -165,10 +165,18 @@ export async function execPipeline(
 
   const result = anchorResult.content;
 
-  // Compute stable result hashes using diff-based preservation
+  // Collect hashes targeted by the edit for hash-aware diff disambiguation
+  const removedHashes = new Set<string>();
+  for (const edit of resolved) {
+    removedHashes.add(edit.hash_range_inclusive[0].hash);
+    removedHashes.add(edit.hash_range_inclusive[1].hash);
+  }
+
+  // Compute stable result hashes using hash-aware preservation
   const resultHashes = await lineHashes(result, absolutePath, {
     content: originalNormalized,
     hashes: originalHashes,
+    removedHashes,
   });
 
   // Format boundary warnings using stable result hashes

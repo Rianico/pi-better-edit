@@ -124,7 +124,7 @@ export function _lineHashesPure(content: string): string[] {
 export async function lineHashes(
   content: string,
   path?: string,
-  previous?: { content: string; hashes: string[] },
+  previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
 ): Promise<string[]> {
   if (!path) {
     return _lineHashesPure(content);
@@ -137,6 +137,7 @@ export async function lineHashes(
     const newHashes = mapStableHashes(
       previous.content, previous.hashes,
       content,
+      previous.removedHashes,
     );
     store.snapshots[path] = { content, hashes: newHashes };
     await saveHashStore(store);
@@ -157,42 +158,63 @@ export async function lineHashes(
 }
 
 /**
- * Diff old content against new content, preserving hashes for unchanged
- * lines. New/changed lines allocate fresh hashes with collision avoidance.
+ * Maps old hashes to new positions using hash-aware content matching.
+ * Unlike Diff.diffLines (which is content-only and cannot distinguish
+ * identical lines at different positions), this algorithm uses the
+ * removedHashes set to disambiguate: when a line appears multiple times
+ * in the old content and one occurrence was targeted by the edit,
+ * the surviving occurrence is matched to the non-removed hash.
+ * New/changed lines allocate fresh hashes with collision avoidance.
  */
 function mapStableHashes(
   oldContent: string,
   oldHashes: string[],
   newContent: string,
+  removedHashes?: Set<string>,
 ): string[] {
   const newLines = newContent.split("\n");
   const newHashes = new Array<string>(newLines.length);
   const used = new Set<string>();
 
-  const parts = Diff.diffLines(oldContent, newContent);
-  let oldIdx = 0;
-  let newIdx = 0;
-
-  for (const part of parts) {
-    const raw = part.value.split("\n");
-    if (raw[raw.length - 1] === "") raw.pop();
-    const count = raw.length;
-    if (count === 0) continue;
-
-    if (part.added) {
-      newIdx += count;
-    } else if (part.removed) {
-      oldIdx += count;
+  // Build a map from line content to list of (index, hash) for the old content.
+  // We process occurrences left-to-right so that matching preserves order.
+  const contentMap = new Map<string, { index: number; hash: string }[]>();
+  const oldLines = oldContent.split("\n");
+  for (let i = 0; i < oldLines.length; i++) {
+    const line = oldLines[i]!;
+    const entry = { index: i, hash: oldHashes[i]! };
+    const list = contentMap.get(line);
+    if (list) {
+      list.push(entry);
     } else {
-      // unchanged — copy hashes
-      for (let k = 0; k < count; k++) {
-        const h = oldHashes[oldIdx]!;
-        newHashes[newIdx] = h;
-        used.add(h);
-        oldIdx++;
-        newIdx++;
+      contentMap.set(line, [entry]);
+    }
+  }
+
+  // Match each new line to an old occurrence by content.
+  // For lines with duplicate content, prefer occurrences whose hash
+  // was NOT targeted by the edit (those are the survivors).
+  for (let i = 0; i < newLines.length; i++) {
+    const line = newLines[i]!;
+    const candidates = contentMap.get(line);
+    if (!candidates || candidates.length === 0) continue;
+
+    // Find the best match: prefer a non-removed occurrence.
+    // If all remaining occurrences are removed, use the first one anyway
+    // (it will get a fresh hash in the fill step since its hash is in used+removed).
+    let bestIdx = 0;
+    if (removedHashes && removedHashes.size > 0) {
+      for (let j = 0; j < candidates.length; j++) {
+        if (!removedHashes.has(candidates[j]!.hash)) {
+          bestIdx = j;
+          break;
+        }
       }
     }
+
+    const match = candidates.splice(bestIdx, 1)[0]!;
+    newHashes[i] = match.hash;
+    used.add(match.hash);
   }
 
   // Fill remaining (new/changed) lines with fresh hashes
