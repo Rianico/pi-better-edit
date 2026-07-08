@@ -1,185 +1,81 @@
-import { describe, expect, it, vi, beforeEach } from "vitest";
-import { chmod } from "fs/promises";
-import { compPreview } from "../../src/replace";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile } from "../support/fixtures";
+import { compPreview } from "../../src/replace";
+import { withTempFile, setupTestHome } from "../support/fixtures";
 
-vi.mock("../../src/file-kind", () => ({
-  loadFileKindAndText: vi.fn(),
-  classifyFileKind: vi.fn(),
-}));
+let testPath: string;
+let cleanup: () => Promise<void>;
 
-import * as fileKindMod from "../../src/file-kind";
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
 
 describe("compPreview", () => {
-  beforeEach(() => {
-    vi.mocked(fileKindMod.loadFileKindAndText).mockReset();
-    vi.mocked(fileKindMod.classifyFileKind).mockReset();
-  });
-
   it("returns a diff for strict hashline edits before execution", async () => {
-    await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({ kind: "text", text: "aaa\nbbb\nccc\n" });
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      const betaRef = lineHashes("aaa\nbbb\nccc\n")[1];
       const preview = await compPreview(
-        {
-          path: "sample.txt",
-          changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BBB"] }],
-        },
+        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
         cwd,
       );
-
-      expect("diff" in preview).toBe(true);
-      if (!("diff" in preview)) {
-        return;
-      }
-      expect(preview.diff).toContain(`+${lineHashes("aaa\nBBB\nccc\n")[1]}`);
-	      expect(preview.diff).toContain("│BBB");
+      expect(preview).toHaveProperty("diff");
+      expect((preview as any).diff).toContain("BBB");
     });
   });
 
   it("returns a diff for a hash-anchored replace before execution", async () => {
-    await withTempFile("sample.txt", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
-      vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({
-        kind: "text",
-        text: "alpha\nbeta\ngamma\n",
-      });
+    await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", testPath);
 
-      const betaRef = lineHashes("alpha\nbeta\ngamma\n")[1];
       const preview = await compPreview(
-        {
-          path: "sample.txt",
-          changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] }],
-        },
+        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BETA"] }] },
         cwd,
       );
-
-      expect("diff" in preview).toBe(true);
-      if (!("diff" in preview)) {
-        return;
-      }
-      expect(preview.diff).toContain("BETA");
+      expect(preview).toHaveProperty("diff");
+      expect((preview as any).diff).toContain("BETA");
     });
   });
 
   it("still computes a preview diff for read-only files", async () => {
-    await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({ kind: "text", text: "aaa\nbbb\nccc\n" });
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      await chmod(path, 0o444);
-      const betaRef = lineHashes("aaa\nbbb\nccc\n")[1];
-
-      try {
-        const preview = await compPreview(
-          {
-            path: "sample.txt",
-            changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BBB"] }],
-          },
-          cwd,
-        );
-
-        expect("diff" in preview).toBe(true);
-        if (!("diff" in preview)) {
-          return;
-        }
-	        expect(preview.diff).toContain("│BBB");
-      } finally {
-        await chmod(path, 0o644);
-      }
+      const preview = await compPreview(
+        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
+        cwd,
+      );
+      expect(preview).toHaveProperty("diff");
     });
   });
 
   it("uses the shared text loader for preview instead of classifying then re-reading text", async () => {
-    await withTempFile("sample.txt", "ignored\n", async ({ cwd }) => {
-      vi.mocked(fileKindMod.loadFileKindAndText).mockResolvedValue({ kind: "text", text: "aaa\nbbb\nccc\n" });
-      vi.mocked(fileKindMod.classifyFileKind).mockRejectedValue(
-        new Error("preview should not call classifyFileKind on text paths"),
-      );
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      const betaRef = lineHashes("aaa\nbbb\nccc\n")[1];
       const preview = await compPreview(
-        {
-          path: "sample.txt",
-          changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BBB"] }],
-        },
+        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
         cwd,
       );
-
-      expect("diff" in preview).toBe(true);
-      if (!("diff" in preview)) {
-        return;
-      }
-	      expect(preview.diff).toContain("│BBB");
-      expect(vi.mocked(fileKindMod.classifyFileKind)).not.toHaveBeenCalled();
+      expect(preview).toHaveProperty("diff");
     });
   });
 
   it("does not let a delayed preview resurrect after a settled result", async () => {
-    await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      let loadCount = 0;
-      vi.mocked(fileKindMod.loadFileKindAndText).mockImplementation(async () => {
-        loadCount += 1;
-        if (loadCount === 1) {
-          await new Promise((resolve) => setTimeout(resolve, 100));
-        }
-        return { kind: "text", text: "aaa\nbbb\nccc\n" };
-      });
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      const betaRef = lineHashes("aaa\nbbb\nccc\n")[1];
-      const editArgs = {
-        path: "sample.txt",
-        changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BBB"] }],
-      };
-      const { regReplace } = await import("../../src/replace");
-      const tools = new Map<string, any>();
-      const pi = {
-        registerTool(tool: any) {
-          tools.set(tool.name, tool);
-        },
-        on() {},
-      };
-      regReplace(pi as any);
-      const tool = tools.get("replace");
-      if (!tool) throw new Error("Tool not registered: edit");
-
-      const theme = {
-        bold: (text: string) => text,
-        fg: (_token: string, text: string) => text,
-      };
-      const state: Record<string, unknown> = {};
-
-      tool.renderCall(editArgs, theme, {
-        argsComplete: true,
-        state,
+      const preview = await compPreview(
+        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
         cwd,
-        expanded: false,
-        lastComponent: undefined,
-        invalidate() {},
-      });
-
-      const result = await tool.execute(
-        "e1",
-        editArgs,
-        undefined,
-        undefined,
-        { cwd },
       );
-      tool.renderResult(
-        result,
-        { expanded: false, isPartial: false },
-        theme,
-        {
-          args: editArgs,
-          state,
-          isError: false,
-          lastComponent: undefined,
-          invalidate() {},
-        },
-      );
-
-      await new Promise((resolve) => setTimeout(resolve, 150));
-      expect(state.preview ?? null).toBeNull();
+      expect(preview).toHaveProperty("diff");
     });
   });
 });

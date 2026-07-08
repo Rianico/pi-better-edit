@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
-import { lineHashes } from "../../src/hashline";
+import { _lineHashesPure } from "../../src/hashline";
 
 import register from "../../index";
 import { regReplace } from "../../src/replace";
@@ -13,6 +13,31 @@ export async function getWritableTempRoot(): Promise<string> {
   const fallback = join(process.cwd(), ".tmp");
   await mkdir(fallback, { recursive: true });
   return fallback;
+}
+
+/**
+ * Creates a temp HOME directory with an initialized hash store, sets
+ * process.env.HOME to it, and returns a cleanup function that restores
+ * the original HOME and removes the temp directory.
+ * Use in beforeAll/afterAll in test files that need stable hashing.
+ */
+export async function setupTestHome(): Promise<{
+  home: string;
+  testPath: string;
+  cleanup: () => Promise<void>;
+}> {
+  const tmpHome = await mkdtemp(join(await getWritableTempRoot(), "testhome-"));
+  const oldHome = process.env.HOME;
+  process.env.HOME = tmpHome;
+  const testPath = join(tmpHome, "test.txt");
+  return {
+    home: tmpHome,
+    testPath,
+    cleanup: async () => {
+      process.env.HOME = oldHome;
+      await rm(tmpHome, { recursive: true, force: true });
+    },
+  };
 }
 
 async function freshCwd(): Promise<string> {
@@ -152,6 +177,8 @@ export function extractHash(line: string): string {
   return line.split("│")[0]!
 }
 
-export function makeTag(content: string, line: number): { hash: string } {
-  return { hash: lineHashes(content)[line - 1]! };
+export async function makeTag(content: string, line: number, path: string): Promise<{ hash: string }> {
+  const { lineHashes } = await import("../../src/hashline");
+  const hashes = await lineHashes(content, path);
+  return { hash: hashes[line - 1]! };
 }

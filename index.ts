@@ -14,6 +14,7 @@ import {
   readAutoRead,
   toggleAutoRead,
 } from "./src/config";
+import { loadHashStore, pruneHashStore } from "./src/hash-store";
 
 export default function (pi: ExtensionAPI): void {
   regRead(pi);
@@ -31,7 +32,11 @@ export default function (pi: ExtensionAPI): void {
     const active = pi.getActiveTools();
     pi.setActiveTools(active.filter((t) => t !== "edit"));
     await initHasher();
-
+    // Prune stale snapshots (files that no longer exist) on session start
+    try {
+      const store = await loadHashStore();
+      await pruneHashStore(store);
+    } catch { /* best-effort */ }
     // Re-register the replace tool according to the persisted mode
     const mode = await readReplaceMode();
     if (mode === "flat") {
@@ -93,8 +98,7 @@ export default function (pi: ExtensionAPI): void {
 
       if (visLines(normalized).length === 0) return;
 
-      const preview = fmtReadPreview(normalized, { limit: AUTO_READ_MAX });
-      if (!preview.text) return;
+      const preview = await fmtReadPreview(normalized, { limit: AUTO_READ_MAX }, undefined, absolutePath);
 
       return {
         content: [

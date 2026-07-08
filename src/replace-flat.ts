@@ -17,7 +17,6 @@ import { MAX_HASH_LINES } from "./constants";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import {
   applyEdits,
-  lineHashes,
   resEdits,
   type HTEdit,
 } from "./hashline";

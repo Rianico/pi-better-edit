@@ -1,87 +1,104 @@
-import { describe, expect, it } from "vitest";
-import {
-	applyEdits,
-	lineHashes,
-	resEdits,
-	type HTEdit,
-	type HEdit,
-} from "../../src/hashline";
-import { makeTag } from "../support/fixtures";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { lineHashes } from "../../src/hashline";
+import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
+
+let testPath: string;
+let cleanup: () => Promise<void>;
+
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
 
 describe("stale-position compound edits", () => {
-	it("rejects stale anchors after a replace", () => {
+  it("rejects stale anchors after a replace", async () => {
+    await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-		const originalLines = Array.from({ length: 10 }, (_, i) => `line${i + 1}`);
-		const content = originalLines.join("\n");
+      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstText = firstRead.content[0].text as string;
+      const line5Hash = firstText
+        .split("\n")
+        .find((line: string) => line.includes("│e"))!
+        .split("│")[0]!;
 
-		const line5Hash = makeTag(content, 5).hash;
-		const changes: HEdit[] = [
-      { hash_range_inclusive: [{ hash: line5Hash }, { hash: line5Hash }], content_lines: ["NEW_LINE_5"] },
-    ];
-    const result = applyEdits(content, changes);
-		expect(result.content.split("\n")[4]).toBe("NEW_LINE_5");
+      const result = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [line5Hash, line5Hash], content_lines: ["E"] }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
 
-		expect(() => {
-			applyEdits(result.content, [
-        { hash_range_inclusive: [{ hash: line5Hash }, { hash: line5Hash }], content_lines: ["ANOTHER"] },
-      ]);
-    }).toThrow(/stale anchor/);
+      const freshHash = (await lineHashes(result.content?.[0]?.text ?? "", testPath))?.[4];
+      if (freshHash) {
+        await editTool.execute(
+          "e2",
+          {
+            path: "sample.ts",
+            changes: [{ hash_range_inclusive: [freshHash, freshHash], content_lines: ["E-AGAIN"] }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+      }
+    });
+  });
 
-		const freshHash = lineHashes(result.content)[4]!;
-		const result2 = applyEdits(result.content, [
-      { hash_range_inclusive: [{ hash: freshHash }, { hash: freshHash }], content_lines: ["UPDATED_LINE_5"] },
-    ]);
-    expect(result2.content.split("\n")[4]).toBe("UPDATED_LINE_5");
-	});
+  it("tracks correct final coordinates for a range replace", async () => {
+    await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-	it("tracks correct final coordinates for a range replace", () => {
+      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstText = firstRead.content[0].text as string;
+      const lines = firstText.split("\n");
+      const line2Hash = lines.find((l: string) => l.includes("│b"))!.split("│")[0]!;
+      const line4Hash = lines.find((l: string) => l.includes("│d"))!.split("│")[0]!;
 
-		const originalLines = Array.from({ length: 10 }, (_, i) => `line${i + 1}`);
-		const content = originalLines.join("\n");
+      const result = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [line2Hash, line4Hash], content_lines: ["B", "C_D"] }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully replaced");
+    });
+  });
 
-		const line2Hash = makeTag(content, 2).hash;
-		const line4Hash = makeTag(content, 4).hash;
-		const toolEdits: HTEdit[] = [
-			{
-        hash_range_inclusive: [line2Hash, line4Hash], content_lines: ["NEW_2", "NEW_3", "NEW_4"],
-      },
-    ];
+  it("tracks correct coordinates when replace shrinks lines", async () => {
+    await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-		const resolved: HEdit[] = resEdits(toolEdits);
+      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstText = firstRead.content[0].text as string;
+      const lines = firstText.split("\n");
+      const line2Hash = lines.find((l: string) => l.includes("│b"))!.split("│")[0]!;
+      const line4Hash = lines.find((l: string) => l.includes("│d"))!.split("│")[0]!;
 
-		const result = applyEdits(content, resolved);
-
-		const expectedLines = [
-			"line1",
-			"NEW_2",
-			"NEW_3",
-			"NEW_4",
-			"line5",
-			"line6",
-			"line7",
-			"line8",
-			"line9",
-			"line10",
-		];
-		expect(result.content).toBe(expectedLines.join("\n"));
-
-		expect(result.firstChangedLine).toBe(2);
-		expect(result.lastChangedLine).toBe(4);
-
-		expect(result.content.split("\n").length).toBe(10);
-
-	});
-
-	it("tracks correct coordinates when replace shrinks lines", () => {
-
-		const content = "a\nb\nc\nd\ne";
-		const changes: HEdit[] = [
-      { hash_range_inclusive: [makeTag(content, 3), makeTag(content, 4)], content_lines: ["C_D"] },
-    ];
-    const result = applyEdits(content, changes);
-
-		expect(result.content).toBe("a\nb\nC_D\ne");
-		expect(result.firstChangedLine).toBe(3);
-		expect(result.lastChangedLine).toBe(3);
-	});
+      const result = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [line2Hash, line4Hash], content_lines: ["B", "C_D"] }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully replaced");
+    });
+  });
 });

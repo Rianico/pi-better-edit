@@ -1,6 +1,6 @@
 import * as Diff from "diff";
 import {
-  lineHashes,
+  _lineHashesPure,
   ANCHOR_LEN,
   HASH_SEP,
 } from "./hashline";
@@ -48,8 +48,7 @@ export function genDiff(
 ): { diff: string; firstChangedLine: number | undefined } {
   const parts = Diff.diffLines(oldContent, newContent);
   const output: string[] = [];
-  const effectiveNewHashes = newContentHashes ?? lineHashes(newContent);
-
+  const effectiveNewHashes = newContentHashes ?? _lineHashesPure(newContent);
   let oldLineNum = 1;
   let newLineNum = 1;
   let lastWasChange = false;

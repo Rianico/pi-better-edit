@@ -1,8 +1,5 @@
 import type { ReplaceDetails } from "./replace";
 import { genDiff } from "./replace-diff";
-import {
-	lineHashes,
-} from "./hashline";
 import { visLines } from "./utils";
 
 type TResult = {
@@ -46,7 +43,7 @@ export interface SuccessInput {
 	path: string;
 	originalNormalized: string;
 	result: string;
-	resultHashes?: string[];
+	resultHashes: string[];
 	warnings: string[] | undefined;
 	snapshotId: string;
 	editMeta: RMeta;
@@ -142,10 +139,9 @@ export function buildNoop(input: NoopInput): TResult {
 }
 
 export function buildChanged(input: SuccessInput): TResult {
-	const { path, result, warnings, snapshotId, originalNormalized, editMeta } = input;
+	const { path, result, warnings, snapshotId, originalNormalized, editMeta, resultHashes } = input;
 
 	const resultLines = visLines(result);
-	const resultHashes = input.resultHashes ?? lineHashes(result);
 	const diffResult = genDiff(originalNormalized, result, 2, resultHashes);
 	const addedLines = cntDiff(diffResult.diff, "+");
 	const removedLines = cntDiff(diffResult.diff, "-");

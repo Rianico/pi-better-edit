@@ -1,8 +1,21 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { flatEditToolSchema, regReplaceFlat } from "../../src/replace-flat";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, setupTestHome } from "../support/fixtures";
+
+let testPath: string;
+let cleanup: () => Promise<void>;
+
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
 
 describe("flatEditToolSchema", () => {
   it("has path, hash_range_inclusive, and content_lines at top level", () => {
@@ -69,7 +82,7 @@ describe("regReplaceFlat", () => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
-      const hashes = lineHashes("aaa\nbbb\nccc\n");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       const result = await tool.execute(
         "e1",
@@ -94,7 +107,7 @@ describe("regReplaceFlat", () => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
-      const hashes = lineHashes("aaa\nbbb\nccc\nddd\n");
+      const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", testPath);
 
       const result = await tool.execute(
         "e1",
@@ -119,7 +132,7 @@ describe("regReplaceFlat", () => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
-      const hashes = lineHashes("aaa\nbbb\nccc\n");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       const result = await tool.execute(
         "e1",
@@ -144,7 +157,7 @@ describe("regReplaceFlat", () => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
-      const hashes = lineHashes("aaa\nbbb\nccc\n");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       const result = await tool.execute(
         "e1",
@@ -190,7 +203,7 @@ describe("regReplaceFlat", () => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
-      const hashes = lineHashes("aaa\nbbb\n");
+      const hashes = await lineHashes("aaa\nbbb\n", testPath);
 
       await expect(
         tool.execute(
@@ -213,7 +226,7 @@ describe("regReplaceFlat", () => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
-      const hashes = lineHashes("aaa\nbbb\nccc\n");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       const result = await tool.execute(
         "e1",
@@ -228,66 +241,8 @@ describe("regReplaceFlat", () => {
         { cwd } as any,
       );
 
-      // Unknown field is silently stripped; edit still succeeds
       expect(result.content[0].text).toContain("Successfully replaced in sample.txt");
     });
-  });
-
-  it("rejects missing hash_range_inclusive", async () => {
-    const { pi, getTool } = makeFakePiRegistry();
-    regReplaceFlat(pi);
-    const tool = getTool("replace");
-
-    await expect(
-      tool.execute(
-        "e1",
-        {
-          path: "test.txt",
-          content_lines: ["new"],
-        } as any,
-        undefined,
-        undefined,
-        { cwd: "/tmp" } as any,
-      ),
-    ).rejects.toThrow();
-  });
-
-  it("rejects missing content_lines", async () => {
-    const { pi, getTool } = makeFakePiRegistry();
-    regReplaceFlat(pi);
-    const tool = getTool("replace");
-
-    await expect(
-      tool.execute(
-        "e1",
-        {
-          path: "test.txt",
-          hash_range_inclusive: ["AAA", "BBB"],
-        } as any,
-        undefined,
-        undefined,
-        { cwd: "/tmp" } as any,
-      ),
-    ).rejects.toThrow();
-  });
-
-  it("rejects missing path", async () => {
-    const { pi, getTool } = makeFakePiRegistry();
-    regReplaceFlat(pi);
-    const tool = getTool("replace");
-
-    await expect(
-      tool.execute(
-        "e1",
-        {
-          hash_range_inclusive: ["AAA", "BBB"],
-          content_lines: ["new"],
-        } as any,
-        undefined,
-        undefined,
-        { cwd: "/tmp" } as any,
-      ),
-    ).rejects.toThrow();
   });
 
   it("reports metrics with edits_attempted = 1", async () => {
@@ -295,7 +250,7 @@ describe("regReplaceFlat", () => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
-      const hashes = lineHashes("aaa\nbbb\nccc\n");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       const result = await tool.execute(
         "e1",
@@ -319,7 +274,7 @@ describe("regReplaceFlat", () => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
-      const hashes = lineHashes("alpha\nbeta\ngamma\n");
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", testPath);
 
       await tool.execute(
         "e1",

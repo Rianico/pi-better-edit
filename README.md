@@ -92,8 +92,13 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 - **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}`.
 - **Batched atomicity (bulk mode).** All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
 
-### Chained edits
+### Stable hashing across edits
 
+Hashes are now computed with a persistent store (`~/.config/pi-hashline-edit-pro/hash-store.json`) that preserves hashes for unchanged lines across edits. When you replace lines in a file, the runtime diffs the old content against the new content and copies hashes for unchanged lines to their new positions. This means editing one part of a file does not change the hashes of unrelated lines elsewhere — the model can keep using previously seen anchors for untouched regions.
+
+The store contains per-file snapshots: the last known content and hashes for each file. On read, if the file content matches the snapshot, the saved hashes are returned immediately. Stale snapshots (for files that no longer exist) are pruned on session start.
+
+### Chained edits
 After a successful replace, the response confirms with `Successfully replaced in {path}.` (warnings are still shown if present). To get fresh anchors for follow-up edits, call `read` on the file first. This avoids token overhead from re-displaying content the model already knows.
 
 ### Auto-read after write
@@ -140,7 +145,7 @@ The file is created automatically when any setting is toggled. Both fields are i
 - **Per-file mutation queue.** Edits queue by the canonical write target, so concurrent edits through different symlink paths still serialize onto the same underlying file.
 - **Boundary duplication warnings.** When the last line of a replacement matches the next surviving line (or the first line matches the preceding one), a warning is emitted. This catches a common LLM pattern where closing delimiters like `}`, `});`, or `} else {` are accidentally duplicated. The warning is a short header followed by a hashline-anchored window: the duplicated pair plus 2 lines of context before and after, shown as plain `HASH│content` rows with post-edit hashes. Seeing the duplication in context (rather than just being told a hash) is what prompts the model to act on it — and since the hashes are current and staleness is per-line, the model can remove the duplicate in one follow-up `replace` without re-reading. No autocorrection is applied — the duplicate stays in the file and the model decides whether to remove it. Raw line comparison (not trimmed) avoids false positives when indentation differs.
 - **Flat mode normalization.** When flat mode is active, the tool's `execute` function wraps the top-level `hash_range_inclusive` and `content_lines` into a single-element `changes` array internally, then runs the same pipeline as bulk mode. The `normReq` function in `replace-normalize.ts` also handles flat format directly, so any code path that normalizes input (e.g. `compPreview`) works with both formats.
-
+- **Persistent hash store.** `lineHashes` is async and uses a persistent store to preserve hashes for unchanged lines across edits. The store is at `~/.config/pi-hashline-edit-pro/hash-store.json` and is auto-created on first use. It contains per-file snapshots (last known content+hashes). When called from the replace pipeline, it diffs old vs new content and copies hashes for unchanged lines. When called from read, it returns saved hashes if the content matches, otherwise computes fresh hashes via `_lineHashesPure`. Stale snapshots are pruned on session start. This ensures that editing one part of a file does not cascade to change hashes of unrelated lines.
 ## Hashing
 
 Hashes are computed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (xxHash32 via WebAssembly), then mapped to a 3-character string from the URL-safe base64 alphabet `A-Za-z0-9-_`. That's 64 distinct characters, 6 bits per position, 18 bits of entropy per anchor.
@@ -148,9 +153,7 @@ Hashes are computed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (
 The alphabet is sized for an LLM consumer. The model tokenizes, it doesn't squint at pixel glyphs, so the human-readability heuristics used by smaller hand-curated alphabets (no G/L/I/O because they look like digits, no vowels so the hash doesn't accidentally spell a word, no hex digits so it can't be confused with `0xFF`) don't apply. The full 64 chars give maximum entropy per character, with case and digits included.
 
 **Perfect hashing (collision resolution):** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `:R{retry}`) until a unique hash is found. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
-
-The runtime always precomputes the full per-line hash array for a file via `lineHashes(content)`, then looks up by line number during validation and during `read` / `replace` response formatting. There is no per-line recomputation that could disagree with what the model saw in its last read.
-
+The runtime always precomputes the full per-line hash array for a file via `lineHashes(content, path)`, then looks up by line number during validation and during `read` / `replace` response formatting. There is no per-line recomputation that could disagree with what the model saw in its last read. When `path` is provided, `lineHashes` uses a persistent store to preserve hashes for unchanged lines across edits — see [Stable hashing across edits](#stable-hashing-across-edits).
 `HASH_LEN` in `src/hashline/hash.ts` sets the hash body length; bump it to 4 if you need even more entropy without collision resolution.
 
 ### Bare-prefix detector

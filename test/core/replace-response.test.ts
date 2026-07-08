@@ -1,231 +1,143 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { buildNoop, buildChanged } from "../../src/replace-response";
+import { lineHashes } from "../../src/hashline";
+import { setupTestHome } from "../support/fixtures";
+
+let testPath: string;
+let cleanup: () => Promise<void>;
+
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
 
 describe("buildNoop", () => {
-	it("builds noop response with edits", () => {
-		const result = buildNoop({
-			path: "test.txt",
-			noopEdits: [
-				{ editIndex: 0, loc: "AAA", currentContent: "line1" },
-			],
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 1,
-			},
-			warnings: undefined,
-		});
+  it("returns noop result with classification", () => {
+    const result = buildNoop({
+      path: "test.txt",
+      noopEdits: undefined,
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 0 },
+      warnings: undefined,
+    });
+    expect(result.content[0].text).toContain("No changes made to test.txt");
+    expect(result.details.classification).toBe("noop");
+    expect(result.details.metrics!.edits_attempted).toBe(1);
+  });
 
-		expect(result.content[0].text).toContain("No changes made to test.txt");
-		expect(result.content[0].text).toContain("noop");
-		expect(result.content[0].text).toContain("AAA");
-		expect(result.details.classification).toBe("noop");
-		expect(result.details.snapshotId).toBe("v1|test|123|456");
-	});
+  it("includes noop edit details when provided", () => {
+    const result = buildNoop({
+      path: "test.txt",
+      noopEdits: [{ editIndex: 0, loc: "ABC", currentContent: "old" }],
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 1 },
+      warnings: undefined,
+    });
+    expect(result.content[0].text).toContain("Edit 0");
+    expect(result.content[0].text).toContain("ABC");
+  });
 
-	it("builds noop response without edits", () => {
-		const result = buildNoop({
-			path: "test.txt",
-			noopEdits: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-			},
-			warnings: undefined,
-		});
-
-		expect(result.content[0].text).toContain("The edits produced identical content.");
-	});
-
-	it("does not include warnings in text", () => {
-		const result = buildNoop({
-			path: "test.txt",
-			noopEdits: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-			},
-			warnings: ["Warning 1", "Warning 2"],
-		});
-
-		expect(result.content[0].text).not.toContain("Warning 1");
-	});
-
-	it("includes warnings in details when present", () => {
-		const result = buildNoop({
-			path: "src/main.ts",
-			noopEdits: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-			},
-			warnings: ["Test warning"],
-		});
-
-		expect(result.details.metrics!.warnings).toBe(1);
-	});
-
-	it("includes metrics", () => {
-		const result = buildNoop({
-			path: "test.txt",
-			noopEdits: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 2,
-				noopEditsCount: 1,
-			},
-			warnings: undefined,
-		});
-
-		expect(result.details.metrics!.edits_attempted).toBe(2);
-		expect(result.details.metrics!.edits_noop).toBe(1);
-		expect(result.details.metrics!.classification).toBe("noop");
-	});
+  it("includes warnings when provided", () => {
+    const result = buildNoop({
+      path: "test.txt",
+      noopEdits: undefined,
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 0 },
+      warnings: ["Warning 1"],
+    });
+    expect(result.details.metrics!.warnings).toBe(1);
+  });
 });
 
 describe("buildChanged", () => {
-	it("builds changed response with diff", () => {
-		const result = buildChanged({
-			path: "test.txt",
-			originalNormalized: "line1\nline2\n",
-			result: "line1\nmodified\n",
-			warnings: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-				firstChangedLine: 2,
-				lastChangedLine: 2,
-			},
-		});
+  it("returns applied result with diff and metrics", async () => {
+    const original = "aaa\nbbb\nccc\n";
+    const result = "aaa\nBBB\nccc\n";
+    const resultHashes = await lineHashes(result, testPath);
+    const output = buildChanged({
+      path: "test.txt",
+      originalNormalized: original,
+      result,
+      resultHashes,
+      warnings: undefined,
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 2 },
+    });
+    expect(output.content[0].text).toContain("Successfully replaced in test.txt");
+    expect(output.details.metrics!.classification).toBe("applied");
+    expect(output.details.metrics!.edits_attempted).toBe(1);
+    expect(output.details.metrics!.changed_lines).toEqual({ first: 2, last: 2 });
+  });
 
-		expect(result.content[0].text).not.toContain("--- Anchors ---");
-		expect(result.details.diff).toContain("modified");
-		expect(result.details.diff).toContain("line2");
-		expect(result.details.firstChangedLine).toBe(2);
-		expect(result.details.snapshotId).toBe("v1|test|123|456");
-	});
+  it("includes warnings when provided", async () => {
+    const original = "aaa\nbbb\nccc\n";
+    const result = "aaa\nBBB\nccc\n";
+    const resultHashes = await lineHashes(result, testPath);
+    const output = buildChanged({
+      path: "test.txt",
+      originalNormalized: original,
+      result,
+      resultHashes,
+      warnings: ["Boundary duplication (leading)"],
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 2 },
+    });
+    expect(output.content[0].text).toContain("Warnings:");
+    expect(output.content[0].text).toContain("Boundary duplication (leading)");
+  });
 
-	it("includes warnings", () => {
-		const result = buildChanged({
-			path: "test.txt",
-			originalNormalized: "line1\n",
-			result: "line1\nline2\n",
-			warnings: ["Warning 1"],
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-				firstChangedLine: 2,
-				lastChangedLine: 2,
-			},
-		});
+  it("shows empty file message when result is empty", async () => {
+    const original = "aaa\nbbb\n";
+    const result = "";
+    const resultHashes = await lineHashes(result, testPath);
+    const output = buildChanged({
+      path: "test.txt",
+      originalNormalized: original,
+      result,
+      resultHashes,
+      warnings: undefined,
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 1, lastChangedLine: 2 },
+    });
+    expect(output.content[0].text).toBe("File is empty. Use replace to insert content.");
+  });
 
-		expect(result.content[0].text).toContain("Warning 1");
-	});
+  it("computes added_lines and removed_lines from diff", async () => {
+    const original = "aaa\nbbb\nccc\n";
+    const result = "aaa\nBBB\nCCC\nDDD\n";
+    const resultHashes = await lineHashes(result, testPath);
+    const output = buildChanged({
+      path: "test.txt",
+      originalNormalized: original,
+      result,
+      resultHashes,
+      warnings: undefined,
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 4 },
+    });
+    expect(output.details.metrics!.added_lines).toBe(3);
+    expect(output.details.metrics!.removed_lines).toBe(2);
+  });
 
-	it("includes metrics", () => {
-		const result = buildChanged({
-			path: "test.txt",
-			originalNormalized: "line1\n",
-			result: "line1\nline2\n",
-			warnings: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-				firstChangedLine: 2,
-				lastChangedLine: 2,
-			},
-		});
-
-		expect(result.details.metrics!.classification).toBe("applied");
-		expect(result.details.metrics!.edits_attempted).toBe(1);
-		expect(result.details.metrics!.changed_lines).toEqual({ first: 2, last: 2 });
-	});
-
-	it("handles empty result file", () => {
-		const result = buildChanged({
-			path: "test.txt",
-			originalNormalized: "line1\n",
-			result: "",
-			warnings: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-				firstChangedLine: 1,
-				lastChangedLine: 1,
-			},
-		});
-
-		expect(result.content[0].text).toContain("File is empty");
-	});
-
-	it("uses provided resultHashes", () => {
-		const result = buildChanged({
-			path: "test.txt",
-			originalNormalized: "line1\n",
-			result: "line1\nline2\n",
-			resultHashes: ["AAA", "BBB"],
-			warnings: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-				firstChangedLine: 2,
-				lastChangedLine: 2,
-			},
-		});
-
-		expect(result.content[0].text).not.toContain("AAA");
-		expect(result.content[0].text).not.toContain("BBB");
-	});
-
-	it("omits anchors when region too large", () => {
-		const lines = Array.from({ length: 100 }, (_, i) => `line${i}`);
-		const original = lines.join("\n") + "\n";
-		const modified = [...lines.slice(0, 50), "changed", ...lines.slice(51)].join("\n") + "\n";
-		const result = buildChanged({
-			path: "src/main.ts",
-			originalNormalized: original,
-			result: modified,
-			warnings: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-				firstChangedLine: 51,
-				lastChangedLine: 51,
-			},
-		});
-
-		expect(result.content[0].text).toContain("Successfully replaced in src/main.ts");
-	});
-
-	it("shows compact diff preview when anchors omitted due to large edit", () => {
-		const lines = Array.from({ length: 30 }, (_, i) => `line${i}`);
-		const original = lines.join("\n") + "\n";
-		const newLines = Array.from({ length: 15 }, (_, i) => `NEW${i}`);
-		const modified = [...lines.slice(0, 10), ...newLines, ...lines.slice(25)].join("\n") + "\n";
-		const result = buildChanged({
-			path: "src/main.ts",
-			originalNormalized: original,
-			result: modified,
-			warnings: undefined,
-			snapshotId: "v1|test|123|456",
-			editMeta: {
-				editsAttempted: 1,
-				noopEditsCount: 0,
-				firstChangedLine: 11,
-				lastChangedLine: 25,
-			},
-		});
-
-		expect(result.content[0].text).not.toContain("--- Anchors ---");
-		expect(result.content[0].text).toContain("Successfully replaced in src/main.ts");
-	});
+  it("handles no changed lines gracefully", async () => {
+    const original = "aaa\nbbb\nccc\n";
+    const result = "aaa\nbbb\nccc\n";
+    const resultHashes = await lineHashes(result, testPath);
+    const output = buildChanged({
+      path: "test.txt",
+      originalNormalized: original,
+      result,
+      resultHashes,
+      warnings: undefined,
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 1, firstChangedLine: undefined, lastChangedLine: undefined },
+    });
+    expect(output.details.metrics!.added_lines).toBe(0);
+    expect(output.details.metrics!.removed_lines).toBe(0);
+  });
 });

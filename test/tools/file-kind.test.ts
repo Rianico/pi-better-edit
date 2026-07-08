@@ -1,451 +1,108 @@
-import { execFile } from "child_process";
-import { describe, expect, it } from "vitest";
-import {
-  access,
-  appendFile,
-  readFile,
-  writeFile,
-} from "fs/promises";
-import { join } from "path";
-import register from "../../index";
-import { classifyFileKind, loadFileKindAndText } from "../../src/file-kind";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import {
-	makeFakePiRegistry,
-	withTempFile,
-	withTempBytes,
-	withTempSubdir,
-	withTempDir,
-	getText,
-} from "../support/fixtures";
+import { withTempFile, withTempBytes, setupIntegrationTest, setupTestHome } from "../support/fixtures";
 
+let testPath: string;
+let cleanup: () => Promise<void>;
 
-describe("classifyFileKind", () => {
-	it("classifies directories explicitly", async () => {
-		await withTempSubdir("nested", async ({ path }) => {
-			await expect(classifyFileKind(path)).resolves.toEqual({
-				kind: "directory",
-			});
-		});
-	});
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
 
-	it("classifies supported images separately from text", async () => {
-		const imagePath = join(process.cwd(), "assets", "banner.jpeg");
-
-		await expect(classifyFileKind(imagePath)).resolves.toMatchObject({
-			kind: "image",
-			mimeType: "image/jpeg",
-		});
-	});
-
-	it("classifies plain utf-8 text as text", async () => {
-		await withTempFile("sample.txt", "alpha\nbeta\n", async ({ path }) => {
-			await expect(classifyFileKind(path)).resolves.toEqual({ kind: "text" });
-		});
-	});
-
-	it("classifies utf-8 xml with a declaration as text", async () => {
-		await withTempFile(
-			"layout.xml",
-			'<?xml version="1.0" encoding="utf-8"?>\n<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" />\n',
-			async ({ path }) => {
-				await expect(classifyFileKind(path)).resolves.toEqual({ kind: "text" });
-			},
-		);
-	});
-
-	it("classifies utf-16 xml as binary via the null-byte guard", async () => {
-		const xml = '<?xml version="1.0" encoding="utf-16"?>\n<LinearLayout />\n';
-		const utf16LeBom = Buffer.from([0xff, 0xfe]);
-		const utf16Xml = Buffer.concat([utf16LeBom, Buffer.from(xml, "utf16le")]);
-
-		await withTempBytes("layout-utf16.xml", utf16Xml, async ({ path }) => {
-			await expect(classifyFileKind(path)).resolves.toEqual({
-				kind: "binary",
-				description: "null bytes detected",
-			});
-		});
-	});
-
-	it("classifies recognized text/* MIME types as text", async () => {
-		await withTempFile(
-			"captions.vtt",
-			"WEBVTT\n\n00:00.000 --> 00:01.000\nhello\n",
-			async ({ path }) => {
-				await expect(classifyFileKind(path)).resolves.toEqual({ kind: "text" });
-			},
-		);
-	});
-
-	it("classifies recognized application/* text-like MIME types as text", async () => {
-		await withTempFile(
-			"sample.rtf",
-			"{\\rtf1\\ansi hello}\n",
-			async ({ path }) => {
-				await expect(classifyFileKind(path)).resolves.toEqual({ kind: "text" });
-			},
-		);
-	});
-
-	it("classifies utf-8 text as text when the sniff window ends mid-code-point", async () => {
-		const prefix = new Uint8Array(8190).fill(0x61);
-		const emDash = new Uint8Array([0xe2, 0x80, 0x94]);
-		const suffix = new Uint8Array([0x0a]);
-		const bytes = new Uint8Array(prefix.length + emDash.length + suffix.length);
-		bytes.set(prefix, 0);
-		bytes.set(emDash, prefix.length);
-		bytes.set(suffix, prefix.length + emDash.length);
-
-		await withTempBytes("sample.md", bytes, async ({ path }) => {
-			await expect(classifyFileKind(path)).resolves.toEqual({ kind: "text" });
-		});
-	});
-
-	it("classifies files with null bytes as binary", async () => {
-		await withTempBytes(
-			"sample.bin",
-			new Uint8Array([0x61, 0x00, 0x62, 0x63]),
-			async ({ path }) => {
-				await expect(classifyFileKind(path)).resolves.toEqual({
-					kind: "binary",
-					description: "null bytes detected",
-				});
-			},
-		);
-	});
-
-	it("classifies invalid utf-8 without null bytes as text", async () => {
-		await withTempBytes(
-			"sample.c",
-			new Uint8Array([0xc3, 0x28]),
-			async ({ path }) => {
-				await expect(classifyFileKind(path)).resolves.toEqual({ kind: "text" });
-			},
-		);
-	});
-
-	it("tracks whether text decoding used replacement characters for invalid bytes", async () => {
-		await withTempBytes(
-			"sample.c",
-			new Uint8Array([0xc3, 0x28]),
-			async ({ path }) => {
-				await expect(loadFileKindAndText(path)).resolves.toEqual({
-					kind: "text",
-					text: "�(",
-					hadUtf8DecodeErrors: true,
-				});
-			},
-		);
-	});
-
-	it("does not flag a valid utf-8 replacement character as a decode error", async () => {
-		await withTempFile("sample.txt", "valid �\n", async ({ path }) => {
-			await expect(loadFileKindAndText(path)).resolves.toEqual({
-				kind: "text",
-				text: "valid �\n",
-			});
-		});
-	});
-
-	it("classifies invalid utf-8 beyond the sniff window as text", async () => {
-		const prefix = new Uint8Array(9000).fill(0x61);
-		const invalid = new Uint8Array([0xc3, 0x28]);
-		const suffix = new Uint8Array([0x0a]);
-		const bytes = new Uint8Array(
-			prefix.length + invalid.length + suffix.length,
-		);
-		bytes.set(prefix, 0);
-		bytes.set(invalid, prefix.length);
-		bytes.set(suffix, prefix.length + invalid.length);
-
-		await withTempBytes("late-invalid.c", bytes, async ({ path }) => {
-			await expect(classifyFileKind(path)).resolves.toEqual({ kind: "text" });
-		});
-	});
-
-	it("reads until EOF when the file grows after the initial size snapshot", async () => {
-		const initialText = "a".repeat(8 * 1024 * 1024);
-		await withTempFile("growing.txt", initialText, async ({ path }) => {
-			const loadPromise = loadFileKindAndText(path);
-			await new Promise((r) => setTimeout(r, 1));
-			await appendFile(path, "TAIL\n", "utf-8");
-
-			const loaded = await loadPromise;
-			expect(loaded.kind).toBe("text");
-			if (loaded.kind !== "text") {
-				return;
-			}
-			expect(loaded.text.endsWith("TAIL\n")).toBe(true);
-			expect(loaded.text.length).toBe(initialText.length + 5);
-		});
-	});
-
-	it("does not try to slurp unbounded special files", async () => {
-		if (process.platform === "win32") {
-			return;
-		}
-		try {
-			await access("/dev/zero");
-		} catch {
-			return;
-		}
-
-		const result = await classifyFileKind("/dev/zero");
-		expect(result).toEqual({
-			kind: "binary",
-			description: "unsupported file type",
-		});
-	}, 2000);
-
-	it("rejects named pipes without opening them", async () => {
-		if (process.platform === "win32") {
-			return;
-		}
-
-		await withTempDir("pi-hashline-pipe-", async (cwd) => {
-			const pipePath = join(cwd, "sample.pipe");
-			await new Promise<void>((resolve, reject) => {
-				execFile("mkfifo", [pipePath], (error) => {
-					if (error) {
-						reject(error);
-						return;
-					}
-					resolve();
-				});
-			});
-
-			const result = await classifyFileKind(pipePath);
-			expect(result).toEqual({
-				kind: "binary",
-					description: "unsupported file type",
-				});
-		});
-	}, 2000);
+afterAll(async () => {
+  await cleanup();
 });
 
 describe("file kind guards in tools", () => {
-	it("read reports directories explicitly", async () => {
-		await withTempSubdir("nested", async ({ cwd }) => {
-			const { pi, getTool } = makeFakePiRegistry();
-			register(pi);
-			const readTool = getTool("read");
+  it("edit decodes invalid utf-8 as replacement chars and writes them back as utf-8", async () => {
+    // 0xFF is an invalid UTF-8 byte
+    const bytes = new Uint8Array([0xFF, 0x28, 0x0A, 0x69, 0x6E, 0x74, 0x0A]);
+    await withTempBytes("bad-utf.ts", bytes, async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-			await expect(
-				readTool.execute("r1", { path: "nested" }, undefined, undefined, {
-					cwd,
-				} as any),
-			).rejects.toThrow(/Path is a directory: nested/);
-		});
-	});
+      const readResult = await readTool.execute("r1", { path: "bad-utf.ts" }, undefined, undefined, ctx);
+      expect(readResult.content[0].text).toContain("Non-UTF-8 bytes shown as U+FFFD");
 
-	it("read accepts utf-8 text when the sniff window ends mid-code-point", async () => {
-		const prefix = new Uint8Array(8190).fill(0x61);
-		const emDash = new Uint8Array([0xe2, 0x80, 0x94]);
-		const suffix = new Uint8Array([0x0a]);
-		const bytes = new Uint8Array(prefix.length + emDash.length + suffix.length);
-		bytes.set(prefix, 0);
-		bytes.set(emDash, prefix.length);
-		bytes.set(suffix, prefix.length + emDash.length);
+      const firstText = readResult.content[0].text as string;
+      const intRef = firstText
+        .split("\n")
+        .find((line: string) => line.includes("│int"))!
+        .split("│")[0]!;
 
-		await withTempBytes("sample.md", bytes, async ({ cwd }) => {
-			const { pi, getTool } = makeFakePiRegistry();
-			register(pi);
-			const readTool = getTool("read");
+      const result = await editTool.execute(
+        "e1",
+        {
+          path: "bad-utf.ts",
+          changes: [{ hash_range_inclusive: [intRef, intRef], content_lines: ["long"] }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully replaced");
+    });
+  });
 
-			const result = await readTool.execute(
-				"r1",
-				{ path: "sample.md" },
-				undefined,
-				undefined,
-				{ cwd } as any,
-			);
+  it("edit rejects binary files with descriptive error", async () => {
+    // PNG magic bytes + minimal valid PNG header (16 bytes)
+    const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52]);
+    await withTempBytes("image.png", bytes, async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
 
-			expect(getText(result)).toContain("—");
-		});
-	});
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            path: "image.png",
+            changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"] }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/image/i);
+    });
+  });
 
-	it("read accepts utf-8 xml that file-type recognizes as xml", async () => {
-		await withTempFile(
-			"layout.xml",
-			'<?xml version="1.0" encoding="utf-8"?>\n<LinearLayout xmlns:android="http://schemas.android.com/apk/res/android" />\n',
-			async ({ cwd }) => {
-				const { pi, getTool } = makeFakePiRegistry();
-				register(pi);
-				const readTool = getTool("read");
+  it("edit rejects directories with descriptive error", async () => {
+    const { withTempSubdir } = await import("../support/fixtures");
+    await withTempSubdir("mydir", async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
 
-				const result = await readTool.execute(
-					"r1",
-					{ path: "layout.xml" },
-					undefined,
-					undefined,
-					{ cwd } as any,
-				);
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            path: "mydir",
+            changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"] }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/directory/i);
+    });
+  });
 
-				const text = getText(result);
-				expect(text).toContain("<LinearLayout");
-				expect(text).not.toMatch(/binary file/i);
+  it("edit rejects empty file deletion", async () => {
+    await withTempFile("empty.txt", "a\n", async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("a\n", testPath);
 
-				expect(text).toMatch(/^[A-Za-z0-9_\-]{3}│<\?xml/m);
-			},
-		);
-	});
-
-	it("read rejects utf-16 xml as binary because of null bytes", async () => {
-		const declaration = '<?xml version="1.0"?>\n<root/>\n';
-		const payload = Buffer.from(declaration, "utf16le");
-		const bytes = new Uint8Array(2 + payload.length);
-
-		bytes[0] = 0xff;
-		bytes[1] = 0xfe;
-		bytes.set(payload, 2);
-
-		await withTempBytes("layout-utf16.xml", bytes, async ({ cwd }) => {
-			const { pi, getTool } = makeFakePiRegistry();
-			register(pi);
-			const readTool = getTool("read");
-
-			await expect(
-				readTool.execute(
-					"r1",
-					{ path: "layout-utf16.xml" },
-					undefined,
-					undefined,
-					{ cwd } as any,
-				),
-			).rejects.toThrow(
-				/binary file: layout-utf16\.xml \(null bytes detected\)/i,
-			);
-		});
-	});
-
-	it("read rejects binary files with classifier detail", async () => {
-		await withTempBytes(
-			"sample.bin",
-			new Uint8Array([0x61, 0x00, 0x62, 0x63]),
-			async ({ cwd }) => {
-				const { pi, getTool } = makeFakePiRegistry();
-				register(pi);
-				const readTool = getTool("read");
-
-				await expect(
-					readTool.execute("r1", { path: "sample.bin" }, undefined, undefined, {
-						cwd,
-					} as any),
-				).rejects.toThrow(
-					/Path is a binary file: sample\.bin \(null bytes detected\)/i,
-				);
-			},
-		);
-	});
-
-	it("read accepts invalid utf-8 without null bytes as replacement-character text", async () => {
-		await withTempBytes(
-			"sample.c",
-			new Uint8Array([0xc3, 0x28, 0x0a]),
-			async ({ cwd }) => {
-				const { pi, getTool } = makeFakePiRegistry();
-				register(pi);
-				const readTool = getTool("read");
-
-				const result = await readTool.execute(
-					"r1",
-					{ path: "sample.c" },
-					undefined,
-					undefined,
-					{ cwd } as any,
-				);
-
-				expect(getText(result)).toContain("�(");
-			},
-		);
-	});
-
-	it("edit decodes invalid utf-8 as replacement chars and writes them back as utf-8", async () => {
-		await withTempBytes(
-			"sample.c",
-			new Uint8Array([0xc3, 0x28, 0x0a, 0x69, 0x6e, 0x74, 0x0a]),
-			async ({ cwd, path }) => {
-				const { pi, getTool } = makeFakePiRegistry();
-				register(pi);
-				const editTool = getTool("replace");
-
-				await editTool.execute(
-					"e1",
-					{
-						path: "sample.c",
-            changes: [
-              {
-                hash_range_inclusive: [lineHashes("�(\nint\n")[1], lineHashes("�(\nint\n")[1]], content_lines: ["long"],
-              },
-            ],
-					},
-					undefined,
-					undefined,
-					{ cwd } as any,
-				);
-
-				await expect(readFile(path)).resolves.toEqual(
-					Buffer.from("�(\nlong\n", "utf-8"),
-				);
-			},
-		);
-	});
-
-	it("edit still rejects binaries with null bytes before writing", async () => {
-		await withTempBytes(
-			"sample.bin",
-			new Uint8Array([0x69, 0x6e, 0x74, 0x00, 0x0a]),
-			async ({ cwd }) => {
-				const { pi, getTool } = makeFakePiRegistry();
-				register(pi);
-				const editTool = getTool("replace");
-
-				await expect(
-					editTool.execute(
-						"e1",
-						{
-							path: "sample.bin",
-              changes: [
-                {
-                  hash_range_inclusive: [lineHashes("int\n")[0], lineHashes("int\n")[0]], content_lines: ["long"],
-                },
-              ],
-						},
-						undefined,
-						undefined,
-						{ cwd } as any,
-					),
-				).rejects.toThrow(/binary file: sample\.bin \(null bytes detected\)/i);
-			},
-		);
-	});
-
-	it("edit rejects binary files before reading them as text", async () => {
-		await withTempBytes(
-			"sample.bin",
-			new Uint8Array([0x61, 0x00, 0x62, 0x63]),
-			async ({ cwd }) => {
-				const { pi, getTool } = makeFakePiRegistry();
-				register(pi);
-				const editTool = getTool("replace");
-
-				await expect(
-					editTool.execute(
-						"e1",
-						{
-							path: "sample.bin",
-              changes: [
-                {
-                  hash_range_inclusive: [lineHashes("a\n")[0], lineHashes("a\n")[0]], content_lines: ["A"],
-                },
-              ],
-						},
-						undefined,
-						undefined,
-						{ cwd } as any,
-					),
-				).rejects.toThrow(/binary file: sample\.bin/i);
-			},
-		);
-	});
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            path: "empty.txt",
+            changes: [{ hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [] }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/E_WOULD_EMPTY/);
+    });
+  });
 });

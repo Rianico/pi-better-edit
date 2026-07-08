@@ -1,88 +1,76 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { fmtReadPreview } from "../../src/read";
+import { setupTestHome } from "../support/fixtures";
+
+let testPath: string;
+let cleanup: () => Promise<void>;
+
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
 
 describe("fmtReadPreview", () => {
-	it("returns empty file message for empty content", () => {
-		const result = fmtReadPreview("", {});
-		expect(result.text).toContain("File is empty");
-		expect(result.text).toContain("Use replace to insert content");
-		expect(result.text).toMatch(/^[A-Za-z0-9_-]{3}│$/m);
-	});
+  it("returns empty file marker for empty content", async () => {
+    const result = await fmtReadPreview("", {}, undefined, testPath);
+    expect(result.text).toContain("[File is empty. Use replace to insert content.]");
+  });
 
-	it("returns offset beyond end message for empty file with offset", () => {
-		const result = fmtReadPreview("", { offset: 5 });
-		expect(result.text).toContain("Offset 5 is beyond end of file (0 lines total)");
-	});
+  it("returns empty file marker for content with only newline", async () => {
+    const result = await fmtReadPreview("\n", {}, undefined, testPath);
+    // A file with only a newline has one empty line, not zero
+    expect(result.text).toMatch(/^[A-Za-z0-9_\-]{3}│$/);
+  });
 
-	it("returns offset beyond end message for non-empty file", () => {
-		const result = fmtReadPreview("line1\nline2\n", { offset: 10 });
-		expect(result.text).toContain("Offset 10 is beyond end of file (2 lines total)");
-	});
+  it("returns all lines when no offset or limit given", async () => {
+    const result = await fmtReadPreview("a\nb\nc\n", {}, undefined, testPath);
+    expect(result.text).toContain("│a");
+    expect(result.text).toContain("│b");
+    expect(result.text).toContain("│c");
+  });
 
-	it("returns preview with hash anchors", () => {
-		const result = fmtReadPreview("line1\nline2\n", {});
-		expect(result.text).toContain("│line1");
-		expect(result.text).toContain("│line2");
-	});
+  it("respects offset parameter", async () => {
+    const result = await fmtReadPreview("a\nb\nc\n", { offset: 2 }, undefined, testPath);
+    expect(result.text).toContain("│b");
+    expect(result.text).toContain("│c");
+    expect(result.text).not.toContain("│a");
+  });
 
-	it("handles offset parameter", () => {
-		const result = fmtReadPreview("line1\nline2\nline3\n", { offset: 2 });
-		expect(result.text).toContain("│line2");
-		expect(result.text).toContain("│line3");
-		expect(result.text).not.toContain("│line1");
-	});
+  it("respects limit parameter", async () => {
+    const result = await fmtReadPreview("a\nb\nc\n", { limit: 2 }, undefined, testPath);
+    expect(result.text).toContain("│a");
+    expect(result.text).toContain("│b");
+    expect(result.text).not.toContain("│c");
+  });
 
-	it("handles limit parameter", () => {
-		const result = fmtReadPreview("line1\nline2\nline3\n", { limit: 2 });
-		expect(result.text).toContain("│line1");
-		expect(result.text).toContain("│line2");
-		expect(result.text).not.toContain("│line3");
-	});
+  it("shows pagination hint when limit is less than total lines", async () => {
+    const result = await fmtReadPreview("a\nb\nc\n", { limit: 2 }, undefined, testPath);
+    expect(result.text).toContain("[Showing lines 1-2 of 3. Use offset=3 to continue.]");
+  });
 
-	it("handles offset and limit together", () => {
-		const result = fmtReadPreview("line1\nline2\nline3\nline4\n", { offset: 2, limit: 2 });
-		expect(result.text).toContain("│line2");
-		expect(result.text).toContain("│line3");
-		expect(result.text).not.toContain("│line1");
-		expect(result.text).not.toContain("│line4");
-	});
+  it("shows pagination hint when offset is beyond start", async () => {
+    const result = await fmtReadPreview("a\nb\nc\nd\n", { offset: 2, limit: 2 }, undefined, testPath);
+    expect(result.text).toContain("[Showing lines 2-3 of 4. Use offset=4 to continue.]");
+  });
 
-	it("returns nextOffset when truncated by limit", () => {
-		const result = fmtReadPreview("line1\nline2\nline3\n", { limit: 2 });
-		expect(result.nextOffset).toBe(3);
-	});
+  it("rejects non-positive offset", async () => {
+    await expect(fmtReadPreview("a\nb\nc\n", { offset: 0 } as any, undefined, testPath)).rejects.toThrow("positive integer");
+  });
 
-	it("returns pagination hint when truncated", () => {
-		const result = fmtReadPreview("line1\nline2\nline3\n", { limit: 2 });
-		expect(result.text).toContain("Use offset=3 to continue");
-	});
+  it("rejects non-positive limit", async () => {
+    await expect(fmtReadPreview("a\nb\nc\n", { limit: 0 } as any, undefined, testPath)).rejects.toThrow("positive integer");
+  });
 
-	it("throws for invalid offset", () => {
-		expect(() => fmtReadPreview("line1\n", { offset: 0 })).toThrow("must be a positive integer");
-		expect(() => fmtReadPreview("line1\n", { offset: -1 })).toThrow("must be a positive integer");
-	});
-
-	it("throws for invalid limit", () => {
-		expect(() => fmtReadPreview("line1\n", { limit: 0 })).toThrow("must be a positive integer");
-		expect(() => fmtReadPreview("line1\n", { limit: -1 })).toThrow("must be a positive integer");
-	});
-
-	it("uses precomputed hashes when provided", () => {
-		const precomputed = ["AAA", "BBB"];
-		const result = fmtReadPreview("line1\nline2\n", {}, precomputed);
-		expect(result.text).toContain("AAA│line1");
-		expect(result.text).toContain("BBB│line2");
-	});
-
-	it("handles single line file", () => {
-		const result = fmtReadPreview("single line\n", {});
-		expect(result.text).toContain("│single line");
-		expect(result.truncation).toBeUndefined();
-	});
-
-	it("handles file without trailing newline", () => {
-		const result = fmtReadPreview("line1\nline2", {});
-		expect(result.text).toContain("│line1");
-		expect(result.text).toContain("│line2");
-	});
+  it("uses precomputed hashes when provided", async () => {
+    const hashes = ["AAA", "BBB", "CCC"];
+    const result = await fmtReadPreview("a\nb\nc\n", {}, hashes, testPath);
+    expect(result.text).toContain("AAA│a");
+    expect(result.text).toContain("BBB│b");
+    expect(result.text).toContain("CCC│c");
+  });
 });

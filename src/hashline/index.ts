@@ -8,6 +8,7 @@ export {
 	DIFF_MINUS_RE,
 	HL_BARE_PREFIX_RE,
 	lineHashes,
+	_lineHashesPure,
 	initHasher,
 } from "./hash";
 

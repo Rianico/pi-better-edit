@@ -1,5 +1,5 @@
 import { abortIf } from "../runtime";
-import { lineHashes, HASH_SEP } from "./hash";
+import { _lineHashesPure, HASH_SEP } from "./hash";
 import {
 	valEdits,
 	assertNoBarePrefix,
@@ -272,9 +272,9 @@ export function applyEdits(
 	content: string;
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
-	resultHashes?: string[];
 	warnings?: string[];
 	noopEdits?: NEdit[];
+	boundaryWarnings?: BDupWarn[];
 } {
 	abortIf(signal);
 	if (!edits.length)
@@ -292,7 +292,7 @@ export function applyEdits(
   );
 
 	const lineIndex = buildIdx(content);
-	const fileHashes = precomputedHashes ?? lineHashes(content);
+	const fileHashes = precomputedHashes ?? _lineHashesPure(content);
 	const noopEdits: NEdit[] = [];
 	const warnings: string[] = [];
 
@@ -324,37 +324,13 @@ export function applyEdits(
 	assertNotEmpty(content, result);
 	const range = changedRange(content, result);
 
-	const resultLines = result.split("\n");
-	const resultHashes = lineHashes(result);
-	for (const bw of boundaryWarnings) {
-		let seen = 0;
-		let matchIndex = -1;
-		for (let i = 0; i < resultLines.length; i++) {
-			if (resultLines[i] === bw.survivingLineContent) {
-				if (seen === bw.occurrence) { matchIndex = i; break; }
-				seen++;
-			}
-		}
-		if (matchIndex >= 0) {
-			warnings.push(
-				fmtBoundaryWarning({
-					kind: bw.kind,
-					survivingContent: bw.survivingLineContent,
-					matchIndex,
-					resultLines,
-					resultHashes,
-				}),
-			);
-		}
-	}
-
 	return {
 		content: result,
 		firstChangedLine: range?.firstChangedLine,
 		lastChangedLine: range?.lastChangedLine,
-		resultHashes,
 		...(warnings.length ? { warnings } : {}),
 		...(noopEdits.length ? { noopEdits } : {}),
+		...(boundaryWarnings.length ? { boundaryWarnings } : {}),
 	};
 }
 

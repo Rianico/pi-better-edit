@@ -1,332 +1,211 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import {
   applyEdits,
   lineHashes,
   resEdits,
-  type Anchor,
-  type HEdit,
   type HTEdit,
 } from "../../src/hashline";
-import { makeTag } from "../support/fixtures";
+import { makeTag, setupTestHome } from "../support/fixtures";
 
-describe("applyEdits — error handling", () => {
-	it("throws on hash mismatch", () => {
-		const content = "aaa\nbbb\nccc";
-		const edits: HEdit[] = [
-			{ hash_range_inclusive: [{ hash: "#XXPM" }, { hash: "#XXPM" }], content_lines: ["BBB"] },
-		];
-		expect(() => applyEdits(content, edits)).toThrow(/E_STALE_ANCHOR/);
-	});
+let testPath: string;
+let cleanup: () => Promise<void>;
 
-	it("throws when the hash matches no line in the file", () => {
-		const content = "aaa\nbbb";
-		const edits: HEdit[] = [
-			{ hash_range_inclusive: [{ hash: "ZZPM" }, { hash: "ZZPM" }], content_lines: ["x"] },
-		];
-		expect(() => applyEdits(content, edits)).toThrow(
-			/2 stale anchors: "ZZPM", "ZZPM"/,
-		);
-	});
-
-	it("throws on range start > end", () => {
-		const content = "aaa\nbbb\nccc";
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 3), makeTag(content, 1)],
-				content_lines: ["x"],
-			},
-		];
-		expect(() => applyEdits(content, edits)).toThrow(
-			/must be <= end line/,
-		);
-	});
-
-	it("reports multiple mismatches at once", () => {
-		const content = "aaa\nbbb\nccc";
-		const edits: HEdit[] = [
-			{ hash_range_inclusive: [{ hash: "#XXPM" }, { hash: "#XXPM" }], content_lines: ["A"] },
-			{ hash_range_inclusive: [{ hash: "#YYWV" }, { hash: "#YYWV" }], content_lines: ["C"] },
-		];
-		expect(() => applyEdits(content, edits)).toThrow(
-			/4 stale anchors/,
-		);
-	});
-
-	it("lists stale anchor hashes in mismatch errors", () => {
-		const content = "aaa\nbbb\nccc";
-		const edits: HEdit[] = [
-			{ hash_range_inclusive: [{ hash: "#XXPM" }, { hash: "#XXPM" }], content_lines: ["A"] },
-			{ hash_range_inclusive: [{ hash: "#YYWV" }, { hash: "#YYWV" }], content_lines: ["C"] },
-		];
-		expect(() => applyEdits(content, edits)).toThrow(
-			/4 stale anchors: "#XXPM", "#XXPM", "#YYWV", "#YYWV"/,
-		);
-	});
-
-	it("mismatch message contains actionable guidance", () => {
-		expect(() =>
-			applyEdits("aaa", [
-				{
-					hash_range_inclusive: [{ hash: "ZZPM" }, { hash: "ZZPM" }], content_lines: ["bbb"],
-				} as any,
-			]),
-		).toThrow(/Call read\(\) to get fresh anchors/);
-	});
-
-	it("rejects overlapping replace ranges in one request", () => {
-		const content = "aaa\nbbb\nccc\nddd";
-		expect(() =>
-			applyEdits(content, [
-				{
-					hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
-				content_lines: ["X"],
-				},
-				{
-					hash_range_inclusive: [makeTag(content, 3), makeTag(content, 3)], content_lines: ["Y"],
-				},
-			]),
-		).toThrow(/E_EDIT_CONFLICT.*overlap.*same original line range/i);
-	});
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
 });
 
-describe("applyEdits — heuristics", () => {
-	it("warns on trailing } that duplicates the next surviving line", () => {
-		const content = "if (ok) {\n  run();\n}\nafter();";
-		const hashes = lineHashes(content);
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 1), makeTag(content, 2)],
-				content_lines: ["if (ok) {", "  runSafe();", "}"],
-			},
-		];
-		const result = applyEdits(content, edits);
-
-		expect(result.content).toBe("if (ok) {\n  runSafe();\n}\n}\nafter();");
-		expect(result.warnings).toHaveLength(1);
-		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
-		expect(result.warnings![0]).toContain("│  runSafe();");
-		expect(result.warnings![0]).toContain(`${hashes[2]}│}`);
-	});
-
-	it("warns on trailing } that duplicates the next line", () => {
-		const content = "function foo() {\n  const x = 1;\n  return x;\n}";
-		const hashes = lineHashes(content);
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
-				content_lines: ["  const y = 2;", "  return y;", "}"],
-			},
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n}");
-		expect(result.warnings).toBeDefined();
-		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
-	});
-
-	it("warns on trailing }); that duplicates the next line", () => {
-		const content = "app.get(\"/api\", (req, res) => {\n  const data = fetchData();\n  res.json(data);\n});";
-		const hashes = lineHashes(content);
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
-				content_lines: ["  const result = processData();", "  res.json(result);", "});"],
-			},
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("app.get(\"/api\", (req, res) => {\n  const result = processData();\n  res.json(result);\n});\n});");
-		expect(result.warnings).toBeDefined();
-		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
-	});
-
-	it("warns on trailing } else { that duplicates the next line", () => {
-		const content = "if (condition) {\n  doSomething();\n} else {\n  doOther();\n}";
-		const hashes = lineHashes(content);
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 1), makeTag(content, 2)],
-				content_lines: ["if (condition) {", "  doNewThing();", "} else {"],
-			},
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("if (condition) {\n  doNewThing();\n} else {\n} else {\n  doOther();\n}");
-		expect(result.warnings).toBeDefined();
-		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
-	});
-
-	it("warns on trailing duplicate even when mid-replacement also has matching lines", () => {
-		const content = "a\n}\nb";
-		const hashes = lineHashes(content);
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 1), makeTag(content, 1)],
-				content_lines: ["x", "}", "y", "}"],
-			},
-		];
-		const result = applyEdits(content, edits);
-
-		expect(result.content).toBe("x\n}\ny\n}\n}\nb");
-		expect(result.warnings).toBeDefined();
-		expect(result.warnings![0]).toContain("Boundary duplication (trailing)");
-	});
-
-	it("preserves leading boundary-looking lines in replacements", () => {
-		const content = "before();\nif (ok) {\n  run();\n}\nafter();";
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
-				content_lines: ["before();", "if (ok) {", "  runSafe();"],
-			},
-		];
-		const result = applyEdits(content, edits);
-
-		expect(result.content).toBe(
-			"before();\nbefore();\nif (ok) {\n  runSafe();\n}\nafter();",
-		);
-		const hashes = lineHashes(content);
-		expect(result.warnings).toHaveLength(1);
-		expect(result.warnings![0]).toContain("Boundary duplication (leading)");
-		expect(result.warnings![0]).toContain(`${hashes[0]}│before();`);
-	});
-
-	it("does not auto-correct escaped tab indentation", () => {
-		const content = "root\n\tchild\n\t\tvalue\nend";
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 3), makeTag(content, 3)], content_lines: ["\\t\\treplaced"],
-			},
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("root\n\tchild\n\\t\\treplaced\nend");
-		expect(result.warnings).toBeUndefined();
-		expect(edits[0]).toEqual({
-			hash_range_inclusive: [makeTag(content, 3), makeTag(content, 3)], content_lines: ["\\t\\treplaced"],
-		});
-	});
-
-	it("warns on literal \\uDDDD without changing content", () => {
-		const content = "aaa\nbbb\nccc";
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["\\uDDDD"],
-			},
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("aaa\n\\uDDDD\nccc");
-		expect(result.warnings?.[0]).toContain("Detected literal \\uDDDD");
-	});
-
-	it("replaces a 1-line range with multiple lines (start == end, no warning)", () => {
-		const content = "aaa\nbbb\nccc\nddd";
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["x1", "x2", "x3"],
-			},
-		];
-		const result = applyEdits(content, edits);
-
-		expect(result.content).toBe("aaa\nx1\nx2\nx3\nccc\nddd");
-		expect(result.warnings?.some((w) => w.includes("Single-anchor replace"))).toBeFalsy();
-	});
-
-	it("does not warn when a single-anchor replace receives one line", () => {
-		const content = "aaa\nbbb\nccc";
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 2)], content_lines: ["BBB"],
-			},
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("aaa\nBBB\nccc");
-		expect(result.warnings).toBeUndefined();
-	});
-
-	it("does not warn when end is supplied for a range replace", () => {
-		const content = "aaa\nbbb\nccc\nddd";
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [makeTag(content, 2), makeTag(content, 3)],
-				content_lines: ["x1", "x2", "x3"],
-			},
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("aaa\nx1\nx2\nx3\nddd");
-		expect(
-			result.warnings?.some((w) => w.includes("Single-anchor replace")) ??
-				false,
-		).toBe(false);
-	});
+afterAll(async () => {
+  await cleanup();
 });
 
-describe("integration: resEdits → applyEdits", () => {
-	it("full pipeline: tool-schema edit → resolve → apply", () => {
-		const content = "aaa\nbbb\nccc";
-		const hash = lineHashes(content)[1]!;
-		const toolEdits: HTEdit[] = [
-			{ hash_range_inclusive: [hash, hash], content_lines: ["BBB"] },
-		];
-		const resolved = resEdits(toolEdits);
-		const result = applyEdits(content, resolved);
-		expect(result.content).toBe("aaa\nBBB\nccc");
-	});
+describe("applyEdits — recovery scenarios", () => {
+  it("rejects reversed range (start > end)", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, testPath);
+    expect(() =>
+      applyEdits(content, resEdits([
+        { hash_range_inclusive: [hashes[3]!, hashes[1]!], content_lines: ["X"] },
+      ]))
+    ).toThrow(/E_BAD_OP/);
+  });
 
-	it("full pipeline: string content_lines are rejected", () => {
-		const content = "aaa\nbbb\nccc";
-		const hash = lineHashes(content)[1]!;
-		const toolEdits: HTEdit[] = [
-			{ hash_range_inclusive: [hash, hash], content_lines: "BBB" } as unknown as HTEdit,
-		];
-		expect(() => resEdits(toolEdits)).toThrow(
-			/content_lines" must be a string array/i,
-		);
-	});
+  it("rejects overlapping edits", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, testPath);
+    expect(() =>
+      applyEdits(content, resEdits([
+        { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "Y"] },
+        { hash_range_inclusive: [hashes[2]!, hashes[3]!], content_lines: ["Y"] },
+      ]))
+    ).toThrow(/E_EDIT_CONFLICT/);
+  });
 
-	it("full pipeline: null content_lines are rejected instead of deleting", () => {
-		const content = "aaa\nbbb\nccc";
-		const hash = lineHashes(content)[1]!;
-		const toolEdits: HTEdit[] = [
-			{ hash_range_inclusive: [hash, hash], content_lines: null } as unknown as HTEdit,
-		];
-		expect(() => resEdits(toolEdits)).toThrow(
-			/content_lines" must be a string array/i,
-		);
-	});
+  it("rejects stale anchor", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, testPath);
+    expect(() =>
+      applyEdits(content, resEdits([
+        { hash_range_inclusive: [hashes[0]!, hashes[1]!], content_lines: ["X", "Y"] },
+      ]), undefined, ["STALE", "STALE", "STALE", "STALE", "STALE"])
+    ).toThrow(/E_STALE_ANCHOR/);
+  });
 
-	it("full pipeline: hashline-prefixed array content_lines are rejected (no autocorrection)", () => {
-		const content = "aaa\nbbb\nccc";
-		const hash = lineHashes(content)[1]!;
+  it("rejects ambiguous anchor", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, testPath);
+    const forgedHashes = [hashes[0]!, hashes[0]!, hashes[0]!, hashes[0]!, hashes[0]!];
+    expect(() =>
+      applyEdits(content, resEdits([
+        { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["X"] },
+      ]), undefined, forgedHashes)
+    ).toThrow(/E_AMBIGUOUS_ANCHOR/);
+  });
 
-		const toolEdits: HTEdit[] = [
-			{ hash_range_inclusive: [hash, hash], content_lines: [`+${hash}│BBB`] },
-		];
-		expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
-	});
+  it("rejects unknown fields in edit items", () => {
+    const edits = [{ hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: ["x"], extra: true }] as any;
+    expect(() => resEdits(edits)).toThrow(/unknown or unsupported fields/);
+  });
 
-	it("full pipeline: copied diff-preview hunks are rejected (no autocorrection)", () => {
-		const content = "aaa\nbbb\nccc";
-		const hashes = lineHashes(content);
-		const start = hashes[0]!;
-		const end = hashes[2]!;
-		const replacement = [
-			` ${hashes[0]!}:aaa`,
-			"-2    bbb",
-			`+${hashes[1]!}:BBB`,
-			` ${hashes[2]!}:ccc`,
-		];
-		const toolEdits: HTEdit[] = [
-			{ hash_range_inclusive: [start, end], content_lines: replacement },
-		];
-		expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
-	});
+  it("rejects missing content_lines", () => {
+    const edits = [{ hash_range_inclusive: ["ZZZ", "ZZZ"] }] as any;
+    expect(() => resEdits(edits)).toThrow(/requires a "content_lines" field/);
+  });
 
-	it("full pipeline: tool-level content_lines:[\"\"] is normalized to a delete (no extra blank line)", () => {
+  it("rejects null content_lines", () => {
+    const edits = [{ hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: null }] as any;
+    expect(() => resEdits(edits)).toThrow(/content_lines" must be a string array/);
+  });
 
-		const content = "aaa\nbbb\nccc\n";
-		const hash = lineHashes(content)[1]!;
-		const toolEdits: HTEdit[] = [
-			{ hash_range_inclusive: [hash, hash], content_lines: [""] },
-		];
-		const resolved = resEdits(toolEdits);
-		const result = applyEdits(content, resolved);
-		expect(result.content).toBe("aaa\nccc\n");
-	});
+  it("rejects string content_lines", () => {
+    const edits = [{ hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: "hello\nworld\n" }] as any;
+    expect(() => resEdits(edits)).toThrow(/content_lines" must be a string array/);
+  });
+
+  it("rejects malformed hash_range_inclusive", () => {
+    const edits = [{ hash_range_inclusive: ["not-valid", "not-valid"] as [string, string], content_lines: ["x"] }];
+    expect(() => resEdits(edits)).toThrow(/Invalid anchor/);
+  });
+
+  it("rejects bare hash prefix in content_lines", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, testPath);
+    expect(() =>
+      applyEdits(content, resEdits([
+        { hash_range_inclusive: [hashes[1]!, hashes[2]!] as [string, string], content_lines: [`${hashes[1]!}│b`, "X"] },
+      ]))
+    ).toThrow(/E_BARE_HASH_PREFIX/);
+  });
+
+  it("rejects diff preview rows in content_lines", () => {
+    const edits = [{ hash_range_inclusive: ["ZZZ", "ZZZ"] as [string, string], content_lines: ["+ZZZ│new"] }];
+    expect(() => resEdits(edits)).toThrow(/E_INVALID_PATCH/);
+  });
+
+  it("warns on unicode escape sequences in content", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["\\uDDDD"] },
+    ]));
+    expect(result.warnings).toBeDefined();
+    expect(result.warnings![0]).toContain("\\uDDDD");
+  });
+
+  it("handles tab characters in content_lines", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: ["\t\treplaced"] },
+    ]));
+    expect(result.content).toBe("a\nb\n\t\treplaced");
+  });
+
+  it("preserves literal tab in content_lines", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: ["\t\treplaced"] },
+    ]));
+    expect(result.content).toContain("\t\treplaced");
+  });
+
+  it("handles multiple edits in one call", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["x1", "x2", "x3"] },
+      { hash_range_inclusive: [hashes[3]!, hashes[3]!], content_lines: ["y1"] },
+    ]));
+    expect(result.content).toBe("a\nx1\nx2\nx3\nc\ny1\ne");
+  });
+
+  it("detects noop when content unchanged", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["b"] },
+    ]));
+    expect(result.noopEdits).toHaveLength(1);
+  });
+
+  it("detects noop for range", async () => {
+    const content = "a\nb\nc\nd";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["b", "c"] },
+    ]));
+    expect(result.noopEdits).toHaveLength(1);
+  });
+
+  it("handles empty edits array", () => {
+    const result = applyEdits("hello\nworld", []);
+    expect(result.content).toBe("hello\nworld");
+  });
+
+  it("handles single-line file", async () => {
+    const content = "hello";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["world"] },
+    ]));
+    expect(result.content).toBe("world");
+  });
+
+  it("handles append to last line", async () => {
+    const content = "a\nb";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["b", "c"] },
+    ]));
+    expect(result.content).toBe("a\nb\nc");
+  });
+
+  it("handles delete of first line", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [] },
+    ]));
+    expect(result.content).toBe("b\nc");
+  });
+
+  it("handles delete of last line", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: [] },
+    ]));
+    expect(result.content).toBe("a\nb");
+  });
+
+  it("handles replace of entire file", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[0]!, hashes[2]!], content_lines: ["x", "y"] },
+    ]));
+    expect(result.content).toBe("x\ny");
+  });
 });

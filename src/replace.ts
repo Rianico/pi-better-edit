@@ -18,6 +18,7 @@ import { resolveTarget, writeAtomic } from "./fs-write";
 import {
   applyEdits,
   lineHashes,
+  fmtBoundaryWarning,
   resEdits,
   type HTEdit,
 } from "./hashline";
@@ -101,7 +102,7 @@ interface PipelineResult {
   firstChangedLine?: number;
   lastChangedLine?: number;
   originalHashes?: string[];
-  resultHashes?: string[];
+  resultHashes: string[];
 }
 
 const ROOT_KS = new Set(["path", "changes"]);
@@ -152,6 +153,7 @@ export async function execPipeline(
     path, cwd, signal, accessMode, undefined, MAX_HASH_LINES,
   );
 
+  const absolutePath = toCwd(path, cwd);
   const resolved = resEdits(toolEdits);
   const anchorResult = applyEdits(
     originalNormalized,
@@ -161,19 +163,52 @@ export async function execPipeline(
     path,
   );
 
+  const result = anchorResult.content;
+
+  // Compute stable result hashes using diff-based preservation
+  const resultHashes = await lineHashes(result, absolutePath, {
+    content: originalNormalized,
+    hashes: originalHashes,
+  });
+
+  // Format boundary warnings using stable result hashes
+  const resultLines = result.split("\n");
+  const warnings = [...(anchorResult.warnings ?? [])];
+  for (const bw of anchorResult.boundaryWarnings ?? []) {
+    let seen = 0;
+    let matchIndex = -1;
+    for (let i = 0; i < resultLines.length; i++) {
+      if (resultLines[i] === bw.survivingLineContent) {
+        if (seen === bw.occurrence) { matchIndex = i; break; }
+        seen++;
+      }
+    }
+    if (matchIndex >= 0) {
+      warnings.push(
+        fmtBoundaryWarning({
+          kind: bw.kind,
+          survivingContent: bw.survivingLineContent,
+          matchIndex,
+          resultLines,
+          resultHashes,
+        }),
+      );
+    }
+  }
+
   return {
     path,
     toolEdits,
     originalNormalized,
-    result: anchorResult.content,
+    result,
     bom,
     originalEnding,
     hadUtf8DecodeErrors,
-    warnings: [...(anchorResult.warnings ?? [])],
+    warnings,
     noopEdits: anchorResult.noopEdits,
     firstChangedLine: anchorResult.firstChangedLine,
     lastChangedLine: anchorResult.lastChangedLine,
-    resultHashes: anchorResult.resultHashes,
+    resultHashes,
     originalHashes,
   };
 }

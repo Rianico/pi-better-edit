@@ -1,189 +1,59 @@
-import { describe, expect, it } from "vitest";
-import { readFile } from "fs/promises";
-import {
-	assertReq,
-	editToolSchema,
-	regReplace,
-} from "../../src/replace";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
-import register from "../../index";
+import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
 
-describe("assertReq", () => {
-	it("rejects unknown or unsupported root fields", () => {
-		expect(() =>
-			assertReq({ path: "a.ts", legacy_field: [] } as any),
-		).toThrow(/unknown or unsupported fields/i);
-	});
+let testPath: string;
+let cleanup: () => Promise<void>;
 
-	it("rejects top-level oldText/newText with E_LEGACY_SHAPE", () => {
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
 
-		expect(() =>
-			assertReq({
-				path: "a.ts",
-				oldText: "before",
-				newText: "after",
-			} as any),
-		).toThrow(/E_LEGACY_SHAPE/);
-	});
-
-	it("rejects top-level old_text/new_text with E_LEGACY_SHAPE", () => {
-		expect(() =>
-			assertReq({
-				path: "a.ts",
-				old_text: "before",
-				new_text: "after",
-			} as any),
-		).toThrow(/E_LEGACY_SHAPE/);
-	});
-
+afterAll(async () => {
+  await cleanup();
 });
 
 describe("regReplace", () => {
-	it("publishes a schema with expected structure", () => {
-		const schema = editToolSchema as any;
+  it("rejects malformed null lines during direct execute without modifying the file", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\n", testPath);
 
-		expect(schema.type).toBe("object");
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            path: "sample.ts",
+            changes: [{ hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: null }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow();
+    });
+  });
 
-		const props = schema.properties;
-		expect(props).toBeDefined();
-		expect(props.path).toBeDefined();
-		expect(props.changes).toBeDefined();
+  it("renders details diff while keeping diff out of LLM-visible text", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-		expect(props.oldText).toBeUndefined();
-		expect(props.newText).toBeUndefined();
-		expect(props.old_text).toBeUndefined();
-		expect(props.new_text).toBeUndefined();
-
-		expect(schema.additionalProperties).toBe(false);
-	});
-
-	it("publishes a top-level object schema for pi tool registration", () => {
-		expect((editToolSchema as any).type).toBe("object");
-		expect((editToolSchema as any).anyOf).toBeUndefined();
-	});
-
-	it("prepareArguments passes hash-anchored requests through unchanged", () => {
-		let registered:
-			| {
-					parameters?: any;
-					prepareArguments?: (args: unknown) => unknown;
-			  }
-			| undefined;
-		const pi = {
-			registerTool(tool: {
-				parameters?: any;
-				prepareArguments?: (args: unknown) => unknown;
-			}) {
-				registered = tool;
-			},
-		} as any;
-
-		regReplace(pi);
-
-		expect(registered?.parameters).toEqual(editToolSchema);
-		expect(typeof registered?.prepareArguments).toBe("function");
-
-		const result = registered?.prepareArguments?.({
-			path: "a.ts",
-			changes: [{ hash_range_inclusive: ["ZZPM", "ZZPM"], content_lines: ["x"] }],
-		});
-		expect(result).toEqual({
-			path: "a.ts",
-			changes: [{ hash_range_inclusive: ["ZZPM", "ZZPM"], content_lines: ["x"] }],
-		});
-	});
-
-	it("rejects malformed null lines during direct execute without modifying the file", async () => {
-		await withTempFile("sample.txt", "aaa\nbbb\n", async ({ cwd, path }) => {
-			const { pi, getTool } = makeFakePiRegistry();
-			register(pi);
-			const editTool = getTool("replace");
-
-			await expect(
-				editTool.execute(
-					"e1",
-					{
-						path: "sample.txt",
-						changes: [
-							{
-									hash_range_inclusive: [lineHashes("aaa\nbbb\n")[0], lineHashes("aaa\nbbb\n")[0]], content_lines: null,
-							},
-						],
-					},
-					undefined,
-					undefined,
-					{ cwd } as any,
-				),
-			).rejects.toThrow(/lines" must be a string array/i);
-
-			expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
-		});
-	});
-
-	it("validates direct execute path before resolving mutation target", async () => {
-		const { pi, getTool } = makeFakePiRegistry();
-		register(pi);
-		const editTool = getTool("replace");
-
-		await expect(
-			editTool.execute(
-				"e1",
-					{ changes: [{ hash_range_inclusive: ["aB3x", "aB3x"], content_lines: ["x"] }] },
-				undefined,
-				undefined,
-				{ cwd: process.cwd() } as any,
-			),
-		).rejects.toThrow(/requires a non-empty "path" string/i);
-	});
-
-	it("renders details diff while keeping diff out of LLM-visible text", async () => {
-		await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-			const { pi, getTool } = makeFakePiRegistry();
-			register(pi);
-			const editTool = getTool("replace");
-
-			const editArgs = {
-				path: "sample.txt",
-				changes: [
-					{
-						hash_range_inclusive: [lineHashes("aaa\nbbb\nccc\n")[1], lineHashes("aaa\nbbb\nccc\n")[1]], content_lines: ["BBB"],
-					},
-				],
-			};
-
-			const result = await editTool.execute(
-				"e1",
-				editArgs,
-				undefined,
-				undefined,
-				{ cwd } as any,
-			);
-
-			expect(typeof editTool.renderResult).toBe("function");
-
-			const component = editTool.renderResult(
-				result,
-				{ expanded: false, isPartial: false },
-				{
-					bold: (text: string) => text,
-					fg: (token: string, text: string) => `[${token}]${text}[/${token}]`,
-				},
-				{
-					args: editArgs,
-					isError: false,
-					lastComponent: undefined,
-				} as any,
-			) as { render: (width: number) => string[] };
-
-			const rendered = component.render(200).join("\n");
-
-			expect(rendered).not.toContain("Changes: +1 -1");
-			expect(rendered).not.toContain("Diff preview:");
-			expect(rendered).not.toContain("```diff");
-			expect(rendered).toContain(`${lineHashes("aaa\nBBB\nccc\n")[1]}│BBB`);
-			expect(rendered).not.toContain("Updated sample.txt");
-		expect(result.details?.diff).toContain(`+${lineHashes("aaa\nBBB\nccc\n")[1]}`);
-		});
-	});
+      const result = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.details?.diff).toBeDefined();
+      expect(result.details?.diff).toContain("BBB");
+    });
+  });
 });

@@ -46,8 +46,7 @@ export async function readNormFile(
 		}
 	}
 
-	const fileHashes = lineHashes(normalized);
-
+	const fileHashes = await lineHashes(normalized, absolutePath);
 	return {
 		absolutePath,
 		normalized,

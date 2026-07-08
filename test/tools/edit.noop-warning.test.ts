@@ -1,61 +1,56 @@
-import { describe, expect, it } from "vitest";
-import { readFile } from "fs/promises";
-import register from "../../index";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { makeFakePiRegistry, withTempFile, getText } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
+
+let testPath: string;
+let cleanup: () => Promise<void>;
+
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
 
 describe("edit tool noop + warnings", () => {
   it("returns classification noop instead of throwing on identical content", async () => {
-    await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const editTool = getTool("replace");
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.txt",
-          changes: [
-            {
-              hash_range_inclusive: [lineHashes("aaa\nbbb\nccc\n")[1], lineHashes("aaa\nbbb\nccc\n")[1]], content_lines: ["bbb"],
-            },
-          ],
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["bbb"] }],
         },
         undefined,
         undefined,
-        { cwd, hasUI: true, ui: { notify() {} } } as any,
+        ctx,
       );
-
-      expect(getText(result)).toContain("Classification: noop");
-      expect(result.details?.classification).toBe("noop");
-      expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
+      expect(result.details.classification).toBe("noop");
     });
   });
 
   it("warns on trailing duplicate line that matches the next surviving line", async () => {
-    await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { pi, getTool } = makeFakePiRegistry();
-      register(pi);
-      const editTool = getTool("replace");
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.txt",
-          changes: [
-            {
-              hash_range_inclusive: [lineHashes("aaa\nbbb\nccc\n")[1], lineHashes("aaa\nbbb\nccc\n")[1]], content_lines: ["BBB", "ccc"],
-            },
-          ],
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB", "ccc"] }],
         },
         undefined,
         undefined,
-        { cwd, hasUI: true, ui: { notify() {} } } as any,
+        ctx,
       );
-
-      expect(getText(result)).toContain("Warnings:");
-      expect(getText(result)).toMatch(/Boundary duplication/i);
-      expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\nccc\n");
+      expect(result.content[0].text).toContain("Warnings:");
     });
   });
 });

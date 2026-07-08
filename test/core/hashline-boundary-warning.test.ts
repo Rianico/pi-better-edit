@@ -1,8 +1,22 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { fmtBoundaryWarning, lineHashes } from "../../src/hashline";
+import { setupTestHome } from "../support/fixtures";
+
+let testPath: string;
+let cleanup: () => Promise<void>;
+
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
 
 describe("fmtBoundaryWarning", () => {
-  it("formats a leading duplication warning with header and hashline window", () => {
+  it("formats a leading duplication warning with header and hashline window", async () => {
     const resultLines = [
       "before",
       "before",
@@ -10,7 +24,7 @@ describe("fmtBoundaryWarning", () => {
       "new two",
       "after",
     ];
-    const resultHashes = lineHashes(resultLines.join("\n"));
+    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
 
     const output = fmtBoundaryWarning({
       kind: "leading",
@@ -27,9 +41,6 @@ describe("fmtBoundaryWarning", () => {
     // Should contain hashline-anchored rows
     expect(output).toContain("│before");
     expect(output).toContain("│new two");
-    // Should contain hashline-anchored rows (2 context before + 2 dup + 2 after = up to 6)
-    expect(output).toContain("│before");
-    expect(output).toContain("│new two");
     // Each row should have a hash prefix
     for (const line of output.split("\n")) {
       if (line.includes("│")) {
@@ -39,7 +50,7 @@ describe("fmtBoundaryWarning", () => {
     }
   });
 
-  it("formats a trailing duplication warning with header and hashline window", () => {
+  it("formats a trailing duplication warning with header and hashline window", async () => {
     const resultLines = [
       "before",
       "old one",
@@ -47,7 +58,7 @@ describe("fmtBoundaryWarning", () => {
       "new trailing",
       "after",
     ];
-    const resultHashes = lineHashes(resultLines.join("\n"));
+    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
 
     const output = fmtBoundaryWarning({
       kind: "trailing",
@@ -65,14 +76,14 @@ describe("fmtBoundaryWarning", () => {
     expect(output).toContain("│after");
   });
 
-  it("clamps the window to file start when pair is near line 1", () => {
+  it("clamps the window to file start when pair is near line 1", async () => {
     const resultLines = [
       "dup",
       "dup",
       "middle",
       "end",
     ];
-    const resultHashes = lineHashes(resultLines.join("\n"));
+    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
 
     const output = fmtBoundaryWarning({
       kind: "leading",
@@ -88,14 +99,14 @@ describe("fmtBoundaryWarning", () => {
     expect(rows).toHaveLength(4); // 0..3 (pairStart=0, winStart=0, winEnd=min(3, 0+3)=3, so 0..3 = 4 rows)
   });
 
-  it("clamps the window to file end when pair is near the last line", () => {
+  it("clamps the window to file end when pair is near the last line", async () => {
     const resultLines = [
       "start",
       "middle",
       "dup",
       "dup",
     ];
-    const resultHashes = lineHashes(resultLines.join("\n"));
+    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
 
     const output = fmtBoundaryWarning({
       kind: "trailing",
@@ -110,8 +121,7 @@ describe("fmtBoundaryWarning", () => {
     expect(rows[rows.length - 1]).toContain("│dup");
   });
 
-  it("picks the adjacent pair nearest matchIndex when multiple identical lines exist", () => {
-    // File with multiple "dup" lines; the duplication is at positions 3-4
+  it("picks the adjacent pair nearest matchIndex when multiple identical lines exist", async () => {
     const resultLines = [
       "dup",
       "a",
@@ -120,34 +130,31 @@ describe("fmtBoundaryWarning", () => {
       "dup",
       "b",
     ];
-    const resultHashes = lineHashes(resultLines.join("\n"));
+    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
 
     const output = fmtBoundaryWarning({
       kind: "leading",
       survivingContent: "dup",
-      matchIndex: 3, // occurrence index 3 → line 4 (0-based), which is inside the 3-4 pair
+      matchIndex: 3,
       resultLines,
       resultHashes,
     });
 
-    // The window should center on the pair at 3-4 (the one nearest matchIndex=3)
     const rows = output.split("\n").filter((l) => l.includes("│"));
-    // Should include context around the 3-4 pair
     const rowContents = rows.map((r) => r.split("│")[1] ?? "");
     expect(rowContents).toContain("a");
     expect(rowContents).toContain("dup");
     expect(rowContents).toContain("b");
   });
 
-  it("falls back to matchIndex as pairStart when no adjacent pair is found", () => {
+  it("falls back to matchIndex as pairStart when no adjacent pair is found", async () => {
     const resultLines = [
       "alpha",
       "beta",
       "gamma",
     ];
-    const resultHashes = lineHashes(resultLines.join("\n"));
+    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
 
-    // No adjacent pair exists, but we still get a window centered on matchIndex
     const output = fmtBoundaryWarning({
       kind: "leading",
       survivingContent: "beta",
@@ -161,7 +168,7 @@ describe("fmtBoundaryWarning", () => {
     expect(output).toContain("│gamma");
   });
 
-  it("includes exactly 2 lines of context before and after the pair", () => {
+  it("includes exactly 2 lines of context before and after the pair", async () => {
     const resultLines = [
       "ctx1",
       "ctx2",
@@ -170,7 +177,7 @@ describe("fmtBoundaryWarning", () => {
       "ctx3",
       "ctx4",
     ];
-    const resultHashes = lineHashes(resultLines.join("\n"));
+    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
 
     const output = fmtBoundaryWarning({
       kind: "trailing",

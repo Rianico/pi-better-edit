@@ -57,26 +57,26 @@ export function formatPaginationHint(
 	return `[Showing lines ${startLine}-${endLine} of ${totalLines}${sizeSuffix}. Use offset=${nextOffset} to continue.]`;
 }
 
-export function fmtReadPreview(
+export async function fmtReadPreview(
 	text: string,
 	options: { offset?: number; limit?: number },
 	precomputedHashes?: string[],
-): { text: string; truncation?: TruncationResult; nextOffset?: number } {
+	path?: string,
+): Promise<{ text: string; truncation?: TruncationResult; nextOffset?: number }> {
 	const allLines = visLines(text);
 	const totalLines = allLines.length;
 	const startLine = normPosInt(options.offset, "offset") ?? 1;
 	if (totalLines === 0) {
 		if (startLine === 1) {
-			const allHashes = precomputedHashes ?? lineHashes(text);
-			const emptyLineHash = allHashes[0] ?? "";
-			return {
+      const allHashes = precomputedHashes ?? await (path ? lineHashes(text, path) : lineHashes(text));
+      const emptyLineHash = allHashes[0] ?? "";
+      return {
 				text: `${emptyLineHash}${HASH_SEP}\n[File is empty. Use replace to insert content.]`,
 			};
 		}
 		return {
 			text: `Offset ${startLine} is beyond end of file (0 lines total). The file is empty. Use replace to insert content.`,
 		};
-
 	}
 	if (startLine > totalLines) {
 		return {
@@ -89,7 +89,7 @@ export function fmtReadPreview(
 		? Math.min(startLine - 1 + limit, totalLines)
 		: totalLines;
 	const selected = allLines.slice(startLine - 1, endIdx);
-	const allHashes = precomputedHashes ?? lineHashes(text);
+	const allHashes = precomputedHashes ?? await (path ? lineHashes(text, path) : lineHashes(text));
 	const selectedHashes = allHashes.slice(startLine - 1, endIdx);
 	const formatted = fmtRegion(selectedHashes, selected);
 
@@ -171,13 +171,14 @@ export function regRead(pi: ExtensionAPI): void {
 			const { normalized, fileHashes, hadUtf8DecodeErrors } = await readNormFile(
 				rawPath, ctx.cwd, signal, undefined, file,
 			);
-			const preview = fmtReadPreview(
+			const preview = await fmtReadPreview(
 				normalized,
 				{
 					offset: params.offset,
 					limit: params.limit,
 				},
 				fileHashes,
+				absolutePath,
 			);
 			const snapshot = await fileSnap(absolutePath);
 
