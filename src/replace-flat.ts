@@ -238,6 +238,7 @@ export function buildToolDef(): ToolDef {
 
         const {
           originalNormalized,
+          originalHashes,
           result,
           bom,
           originalEnding,
@@ -294,13 +295,13 @@ export function buildToolDef(): ToolDef {
         const successInput = {
           path,
           originalNormalized,
+          originalHashes,
           result,
           resultHashes,
           warnings,
           snapshotId: updatedSnapshotId,
           editMeta,
         };
-
         return buildChanged(successInput);
       });
     },

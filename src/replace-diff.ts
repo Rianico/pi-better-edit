@@ -45,10 +45,25 @@ export function genDiff(
   newContent: string,
   contextLines = 2,
   newContentHashes?: string[],
+  oldHashes?: string[],
 ): { diff: string; firstChangedLine: number | undefined } {
-  const parts = Diff.diffLines(oldContent, newContent);
-  const output: string[] = [];
+  // Annotate each line with its hash so Diff.diffLines can distinguish
+  // identical lines at different positions. The \0 separator cannot appear
+  // in valid text file content.
+  const oldLines = oldContent.split("\n");
+  const effectiveOldHashes = oldHashes ?? _lineHashesPure(oldContent);
+  const annotatedOld = oldLines
+    .map((line, i) => `${line}\0${effectiveOldHashes[i] ?? ""}`)
+    .join("\n");
+
+  const newLines = newContent.split("\n");
   const effectiveNewHashes = newContentHashes ?? _lineHashesPure(newContent);
+  const annotatedNew = newLines
+    .map((line, i) => `${line}\0${effectiveNewHashes[i] ?? ""}`)
+    .join("\n");
+
+  const parts = Diff.diffLines(annotatedOld, annotatedNew);
+  const output: string[] = [];
   let oldLineNum = 1;
   let newLineNum = 1;
   let lastWasChange = false;
@@ -58,18 +73,21 @@ export function genDiff(
     const part = parts[i]!;
     const raw = part.value.split("\n");
     if (raw[raw.length - 1] === "") raw.pop();
+    // Strip \0hash annotation from each line for display
+    const displayLines = raw.map((l) => {
+      const nullIdx = l.indexOf("\0");
+      return nullIdx >= 0 ? l.slice(0, nullIdx) : l;
+    });
 
     if (part.added || part.removed) {
       if (firstChangedLine === undefined) firstChangedLine = newLineNum;
-      for (const line of raw) {
+      for (let k = 0; k < displayLines.length; k++) {
         if (part.added) {
           const hash = effectiveNewHashes[newLineNum - 1];
-          output.push(fmtDiffLine("+", line, hash));
+          output.push(fmtDiffLine("+", displayLines[k]!, hash));
           newLineNum++;
         } else {
-          output.push(
-            fmtDiffLine("-", line, undefined),
-          );
+          output.push(fmtDiffLine("-", displayLines[k]!, undefined));
           oldLineNum++;
         }
       }
@@ -80,18 +98,18 @@ export function genDiff(
     const nextPartIsChange =
       i < parts.length - 1 && (parts[i + 1]!.added || parts[i + 1]!.removed);
     if (lastWasChange || nextPartIsChange) {
-      let linesToShow = raw;
+      let linesToShow = displayLines;
       let skipStart = 0;
       let skipEnd = 0;
       let skipMiddle = 0;
 
       if (!lastWasChange) {
-        skipStart = Math.max(0, raw.length - contextLines);
-        linesToShow = raw.slice(skipStart);
-      } else if (nextPartIsChange && raw.length > contextLines * 2) {
-        const tail = raw.slice(-contextLines);
-        linesToShow = [...raw.slice(0, contextLines), "__ELLIPSIS__", ...tail];
-        skipMiddle = raw.length - contextLines * 2;
+        skipStart = Math.max(0, displayLines.length - contextLines);
+        linesToShow = displayLines.slice(skipStart);
+      } else if (nextPartIsChange && displayLines.length > contextLines * 2) {
+        const tail = displayLines.slice(-contextLines);
+        linesToShow = [...displayLines.slice(0, contextLines), "__ELLIPSIS__", ...tail];
+        skipMiddle = displayLines.length - contextLines * 2;
       } else if (linesToShow.length > contextLines) {
         skipEnd = linesToShow.length - contextLines;
         linesToShow = linesToShow.slice(0, contextLines);
@@ -111,13 +129,12 @@ export function genDiff(
         }
         const hash = effectiveNewHashes[newLineNum - 1];
         output.push(fmtDiffLine(" ", line, hash));
-
         oldLineNum++;
         newLineNum++;
       }
     } else {
-      oldLineNum += raw.length;
-      newLineNum += raw.length;
+      oldLineNum += displayLines.length;
+      newLineNum += displayLines.length;
     }
     lastWasChange = false;
   }

@@ -228,7 +228,7 @@ export async function compPreview(
   try {
     const normalized = normReq(request);
     assertReq(normalized);
-    const { path, originalNormalized, result, resultHashes } = await execPipeline(
+    const { path, originalNormalized, originalHashes, result, resultHashes } = await execPipeline(
       normalized,
       cwd,
       constants.R_OK,
@@ -240,7 +240,7 @@ export async function compPreview(
       };
     }
 
-    return { diff: genDiff(originalNormalized, result, 4, resultHashes).diff };
+    return { diff: genDiff(originalNormalized, result, 4, resultHashes, originalHashes).diff };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
@@ -391,6 +391,7 @@ export function buildToolDef(): ToolDef {
 
         const {
           originalNormalized,
+          originalHashes,
           result,
           bom,
           originalEnding,
@@ -449,13 +450,13 @@ export function buildToolDef(): ToolDef {
         const successInput = {
           path,
           originalNormalized,
+          originalHashes,
           result,
           resultHashes,
           warnings,
           snapshotId: updatedSnapshotId,
           editMeta,
         };
-
         return buildChanged(successInput);
       });
     },

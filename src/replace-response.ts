@@ -40,13 +40,14 @@ export interface NoopInput {
 }
 
 export interface SuccessInput {
-	path: string;
-	originalNormalized: string;
-	result: string;
-	resultHashes: string[];
-	warnings: string[] | undefined;
-	snapshotId: string;
-	editMeta: RMeta;
+  path: string;
+  originalNormalized: string;
+  originalHashes: string[];
+  result: string;
+  resultHashes: string[];
+  warnings: string[] | undefined;
+  snapshotId: string;
+  editMeta: RMeta;
 }
 
 function cntDiff(diff: string, marker: "+" | "-"): number {
@@ -139,39 +140,39 @@ export function buildNoop(input: NoopInput): TResult {
 }
 
 export function buildChanged(input: SuccessInput): TResult {
-	const { path, result, warnings, snapshotId, originalNormalized, editMeta, resultHashes } = input;
+  const { path, result, warnings, snapshotId, originalNormalized, originalHashes, editMeta, resultHashes } = input;
 
-	const resultLines = visLines(result);
-	const diffResult = genDiff(originalNormalized, result, 2, resultHashes);
-	const addedLines = cntDiff(diffResult.diff, "+");
-	const removedLines = cntDiff(diffResult.diff, "-");
-	const warningsBlock = warnBlock(warnings);
-	const successPrefix = `Successfully replaced in ${path}.`;
-	const text = resultLines.length === 0
-		? "File is empty. Use replace to insert content."
-		: warningsBlock
-			? `${successPrefix}${warningsBlock}`
-			: successPrefix;
+  const resultLines = visLines(result);
+  const diffResult = genDiff(originalNormalized, result, 2, resultHashes, originalHashes);
+  const addedLines = cntDiff(diffResult.diff, "+");
+  const removedLines = cntDiff(diffResult.diff, "-");
+  const warningsBlock = warnBlock(warnings);
+  const successPrefix = `Successfully replaced in ${path}.`;
+  const text = resultLines.length === 0
+    ? "File is empty. Use replace to insert content."
+    : warningsBlock
+      ? `${successPrefix}${warningsBlock}`
+      : successPrefix;
 
-	const metrics = buildM({
-		classification: "applied",
-		editsAttempted: editMeta.editsAttempted,
-		noopEditsCount: editMeta.noopEditsCount,
-		warningsCount: warnings?.length ?? 0,
-		firstChangedLine: editMeta.firstChangedLine,
-		lastChangedLine: editMeta.lastChangedLine,
-		addedLines,
-		removedLines,
-	});
+  const metrics = buildM({
+    classification: "applied",
+    editsAttempted: editMeta.editsAttempted,
+    noopEditsCount: editMeta.noopEditsCount,
+    warningsCount: warnings?.length ?? 0,
+    firstChangedLine: editMeta.firstChangedLine,
+    lastChangedLine: editMeta.lastChangedLine,
+    addedLines,
+    removedLines,
+  });
 
-	return {
-		content: [{ type: "text", text }],
-		details: {
-			diff: diffResult.diff,
-			firstChangedLine:
-				editMeta.firstChangedLine ?? diffResult.firstChangedLine,
-			snapshotId,
-			metrics,
-		},
-	};
+  return {
+    content: [{ type: "text", text }],
+    details: {
+      diff: diffResult.diff,
+      firstChangedLine:
+        editMeta.firstChangedLine ?? diffResult.firstChangedLine,
+      snapshotId,
+      metrics,
+    },
+  };
 }
