@@ -47,22 +47,16 @@ export function genDiff(
   newContentHashes?: string[],
   oldHashes?: string[],
 ): { diff: string; firstChangedLine: number | undefined } {
-  // Annotate each line with its hash so Diff.diffLines can distinguish
-  // identical lines at different positions. The \0 separator cannot appear
-  // in valid text file content.
+  // Run Diff.diffLines on raw content only (no hash annotations) so that
+  // lines whose content is identical are never reported as changed even
+  // when their hash differs due to collision resolution or position
+  // tracking. Hashes are used purely for display via fmtDiffLine.
   const oldLines = oldContent.split("\n");
-  const effectiveOldHashes = oldHashes ?? _lineHashesPure(oldContent);
-  const annotatedOld = oldLines
-    .map((line, i) => `${line}\0${effectiveOldHashes[i] ?? ""}`)
-    .join("\n");
-
   const newLines = newContent.split("\n");
+  const effectiveOldHashes = oldHashes ?? _lineHashesPure(oldContent);
   const effectiveNewHashes = newContentHashes ?? _lineHashesPure(newContent);
-  const annotatedNew = newLines
-    .map((line, i) => `${line}\0${effectiveNewHashes[i] ?? ""}`)
-    .join("\n");
 
-  const parts = Diff.diffLines(annotatedOld, annotatedNew);
+  const parts = Diff.diffLines(oldContent, newContent);
   const output: string[] = [];
   let oldLineNum = 1;
   let newLineNum = 1;
@@ -73,11 +67,7 @@ export function genDiff(
     const part = parts[i]!;
     const raw = part.value.split("\n");
     if (raw[raw.length - 1] === "") raw.pop();
-    // Strip \0hash annotation from each line for display
-    const displayLines = raw.map((l) => {
-      const nullIdx = l.indexOf("\0");
-      return nullIdx >= 0 ? l.slice(0, nullIdx) : l;
-    });
+    const displayLines = raw;
 
     if (part.added || part.removed) {
       if (firstChangedLine === undefined) firstChangedLine = newLineNum;
@@ -116,13 +106,13 @@ export function genDiff(
       }
 
       if (skipStart > 0) {
-        output.push(` ...`);
+        output.push(" ...");
         oldLineNum += skipStart;
         newLineNum += skipStart;
       }
       for (const line of linesToShow) {
         if (line === "__ELLIPSIS__") {
-          output.push(` ...`);
+          output.push(" ...");
           oldLineNum += skipMiddle;
           newLineNum += skipMiddle;
           continue;

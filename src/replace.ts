@@ -101,7 +101,7 @@ interface PipelineResult {
   noopEdits?: { editIndex: number; loc: string; currentContent: string }[];
   firstChangedLine?: number;
   lastChangedLine?: number;
-  originalHashes?: string[];
+  originalHashes: string[];
   resultHashes: string[];
 }
 

@@ -58,10 +58,12 @@ describe("buildChanged", () => {
   it("returns applied result with diff and metrics", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nBBB\nccc\n";
+    const originalHashes = await lineHashes(original, testPath);
     const resultHashes = await lineHashes(result, testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
+      originalHashes,
       result,
       resultHashes,
       warnings: undefined,
@@ -77,10 +79,12 @@ describe("buildChanged", () => {
   it("includes warnings when provided", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nBBB\nccc\n";
+    const originalHashes = await lineHashes(original, testPath);
     const resultHashes = await lineHashes(result, testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
+      originalHashes,
       result,
       resultHashes,
       warnings: ["Boundary duplication (leading)"],
@@ -94,10 +98,12 @@ describe("buildChanged", () => {
   it("shows empty file message when result is empty", async () => {
     const original = "aaa\nbbb\n";
     const result = "";
+    const originalHashes = await lineHashes(original, testPath);
     const resultHashes = await lineHashes(result, testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
+      originalHashes,
       result,
       resultHashes,
       warnings: undefined,
@@ -110,10 +116,12 @@ describe("buildChanged", () => {
   it("computes added_lines and removed_lines from diff", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nBBB\nCCC\nDDD\n";
+    const originalHashes = await lineHashes(original, testPath);
     const resultHashes = await lineHashes(result, testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
+      originalHashes,
       result,
       resultHashes,
       warnings: undefined,
@@ -127,10 +135,12 @@ describe("buildChanged", () => {
   it("handles no changed lines gracefully", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nbbb\nccc\n";
+    const originalHashes = await lineHashes(original, testPath);
     const resultHashes = await lineHashes(result, testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
+      originalHashes,
       result,
       resultHashes,
       warnings: undefined,
