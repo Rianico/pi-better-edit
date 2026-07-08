@@ -75,6 +75,20 @@ export const editToolSchema = Type.Object(
   { additionalProperties: false },
 );
 
+/**
+ * Flat-mode schema: hash_range_inclusive and content_lines are at the top
+ * level instead of inside a "changes" array. Only a single edit is supported
+ * per call (no bulk changes).
+ */
+export const flatEditToolSchema = Type.Object(
+  {
+    path: Type.String({ description: "path" }),
+    hash_range_inclusive: hashRangeInclSchema,
+    content_lines: contentLinesSchema,
+  },
+  { additionalProperties: false },
+);
+
 export type ReqParams = {
   path: string;
   changes: HTEdit[];
@@ -165,11 +179,23 @@ export async function execPipeline(
 
   const result = anchorResult.content;
 
-  // Collect hashes targeted by the edit for hash-aware diff disambiguation
+  // Collect hashes targeted by the edit for hash-aware diff disambiguation.
+  // Include every hash in the replaced range, not just the boundary anchors,
+  // so that a surviving line whose content is identical to an interior line
+  // of the edit is not matched to a removed hash.
+  // Use originalHashes.indexOf to find line numbers since resEdits returns
+  // HEdit[] (Anchor = { hash }) not RHEdit[] (RAnchor = { line, hash }).
   const removedHashes = new Set<string>();
   for (const edit of resolved) {
-    removedHashes.add(edit.hash_range_inclusive[0].hash);
-    removedHashes.add(edit.hash_range_inclusive[1].hash);
+    const startHash = edit.hash_range_inclusive[0].hash;
+    const endHash = edit.hash_range_inclusive[1].hash;
+    const startLine = originalHashes.indexOf(startHash);
+    const endLine = originalHashes.indexOf(endHash);
+    if (startLine >= 0 && endLine >= 0) {
+      for (let i = startLine; i <= endLine; i++) {
+        removedHashes.add(originalHashes[i]!);
+      }
+    }
   }
 
   // Compute stable result hashes using hash-aware preservation
@@ -247,12 +273,12 @@ export async function compPreview(
 }
 
 type ToolDef = ToolDefinition<
-  typeof editToolSchema,
+  any,
   ReplaceDetails,
   RRState
 > & { renderShell?: "default" | "self" };
 
-function reuseText(context: any, content: string): Text {
+export function reuseText(context: any, content: string): Text {
   const t = context.lastComponent instanceof Text
     ? context.lastComponent
     : new Text("", 0, 0);
@@ -260,7 +286,7 @@ function reuseText(context: any, content: string): Text {
   return t;
 }
 
-function reuseMarkdown(context: any, content: string, theme: any): Markdown {
+export function reuseMarkdown(context: any, content: string, theme: any): Markdown {
   const m = context.lastComponent instanceof Markdown
     ? context.lastComponent
     : new Markdown("", 0, 0, mkMdTheme(theme));
@@ -268,29 +294,49 @@ function reuseMarkdown(context: any, content: string, theme: any): Markdown {
   return m;
 }
 
-export function buildToolDef(): ToolDef {
+export function buildToolDef(opts: { flat: boolean }): ToolDef {
   const autoRead = readAutoReadSync();
   const readGuidance = autoRead
     ? "Anchors are provided automatically after write operations when auto-read is enabled."
     : "Call `read` to get fresh anchors for follow-up edits.";
 
-  const E_DESC = loadP("../prompts/replace-bulk.md", {
+  const E_DESC = loadP(opts.flat ? "../prompts/replace-flat.md" : "../prompts/replace-bulk.md", {
     AUTO_READ_GUIDANCE: readGuidance,
   });
-  const E_SNIPPET = loadP("../prompts/replace-bulk-snippet.md");
-  const E_GUIDE = loadGuide("../prompts/replace-bulk-guidelines.md", {
+  const E_SNIPPET = loadP(opts.flat ? "../prompts/replace-flat-snippet.md" : "../prompts/replace-bulk-snippet.md");
+  const E_GUIDE = loadGuide(opts.flat ? "../prompts/replace-flat-guidelines.md" : "../prompts/replace-bulk-guidelines.md", {
     AUTO_READ_GUIDANCE: readGuidance,
   });
+
+  const parameters = opts.flat ? flatEditToolSchema : editToolSchema;
 
   return {
     name: "replace",
     label: "Replace",
     description: E_DESC,
-    parameters: editToolSchema,
+    parameters,
     promptSnippet: E_SNIPPET,
     promptGuidelines: E_GUIDE,
-    prepareArguments: (args: unknown) =>
-      normReq(args) as ReqParams,
+    prepareArguments: opts.flat
+      ? (args: unknown) => {
+          // Minimal normalization: file_path → path, JSON string parsing.
+          // The flat-to-canonical conversion happens in execute().
+          if (!isRec(args)) return args as any;
+          const record = { ...args };
+          if (typeof record.path !== "string" && typeof record.file_path === "string") {
+            record.path = record.file_path;
+            delete record.file_path;
+          }
+          if (typeof record.hash_range_inclusive === "string") {
+            try { record.hash_range_inclusive = JSON.parse(record.hash_range_inclusive as string); } catch { /* keep as-is */ }
+          }
+          if (typeof record.content_lines === "string") {
+            try { record.content_lines = JSON.parse(record.content_lines as string); } catch { /* keep as-is */ }
+          }
+          return record as any;
+        }
+      : (args: unknown) =>
+          normReq(args) as ReqParams,
     renderShell: "default",
     renderCall(args, theme, context) {
       const previewInput = getPreviewInput(args);
@@ -380,9 +426,18 @@ export function buildToolDef(): ToolDef {
     },
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const normalized = normReq(params);
-      assertReq(normalized);
-      const normalizedParams = normalized;
+      // Flat mode: wrap top-level fields into a single-element changes array.
+      // Bulk mode: use params as-is after normReq normalization.
+      const canonical = opts.flat
+        ? normReq({
+            path: (params as any).path,
+            changes: [{
+              hash_range_inclusive: (params as any).hash_range_inclusive,
+              content_lines: (params as any).content_lines,
+            }],
+          })
+        : normReq(params);
+      const normalizedParams = canonical as { path: string; changes: HTEdit[] };
       const path = normalizedParams.path;
       const absolutePath = toCwd(path, ctx.cwd);
       const mutationTargetPath = await resolveTarget(absolutePath);
@@ -408,9 +463,11 @@ export function buildToolDef(): ToolDef {
           signal,
         );
 
-        const editsAttempted = Array.isArray(normalizedParams.changes)
-          ? normalizedParams.changes.length
-          : 0;
+        const editsAttempted = opts.flat
+          ? 1
+          : Array.isArray(normalizedParams.changes)
+            ? normalizedParams.changes.length
+            : 0;
 
         if (originalNormalized === result) {
           const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
@@ -464,5 +521,5 @@ export function buildToolDef(): ToolDef {
 }
 
 export function regReplace(pi: ExtensionAPI): void {
-  pi.registerTool(buildToolDef());
+  pi.registerTool(buildToolDef({ flat: false }));
 }

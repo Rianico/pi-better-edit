@@ -159,4 +159,104 @@ describe("stable hashing with duplicate content lines", () => {
       expect(survivingHash).toBe(secondBraceHash);
     });
   });
+
+  it("end-to-end via tool: interior duplicate line (not a boundary) keeps its hash", async () => {
+    // File with duplicate `b` lines. The first `b` is an INTERIOR line of the
+    // edit range (not a boundary). With boundary-only removedHashes, the
+    // interior `b`'s hash would NOT be marked as removed, causing the
+    // surviving `b` to be matched to the wrong occurrence.
+    const file = "a\nb\nc\nb\nd\n";
+    await withTempFile("sample.ts", file, async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      // Read to get hashes
+      const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const lines1 = getText(read1).split("\n");
+
+      // Find the two `b` lines
+      const bLines = lines1.filter((l) => l.endsWith("│b"));
+      expect(bLines).toHaveLength(2);
+      const firstBHash = extractHash(bLines[0]!);
+      const secondBHash = extractHash(bLines[1]!);
+      expect(firstBHash).not.toBe(secondBHash);
+
+      // Find the `a` and `c` lines (boundaries of the edit range)
+      const aHash = extractHash(lines1.find((l) => l.endsWith("│a"))!);
+      const cHash = extractHash(lines1.find((l) => l.endsWith("│c"))!);
+
+      // Remove lines 0-2 (a, b, c). The first `b` is an interior line.
+      await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [aHash, cHash], content_lines: [] }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      // Read again — the surviving `b` should have the SECOND b's hash
+      const read2 = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+      const lines2 = getText(read2).split("\n");
+      const survivingB = lines2.find((l) => l.endsWith("│b"))!;
+      expect(survivingB).toBeTruthy();
+      const survivingHash = extractHash(survivingB);
+      expect(survivingHash).toBe(secondBHash);
+    });
+  });
+
+  it("end-to-end via tool: multi-edit bulk with interior duplicates preserves all surviving hashes", async () => {
+    // File with three identical `b` lines. Two edits in one call remove
+    // ranges that include the first `b` (as interior) and a unique region.
+    // The surviving `b` lines (second and third) must keep their original hashes.
+    const file = "a\nb\nc\nb\nd\ne\nb\nf\n";
+    await withTempFile("sample.ts", file, async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      // Read to get hashes
+      const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const lines1 = getText(read1).split("\n");
+
+      // Find the three `b` lines
+      const bLines = lines1.filter((l) => l.endsWith("│b"));
+      expect(bLines).toHaveLength(3);
+      const firstBHash = extractHash(bLines[0]!);
+      const secondBHash = extractHash(bLines[1]!);
+      const thirdBHash = extractHash(bLines[2]!);
+      expect(new Set([firstBHash, secondBHash, thirdBHash]).size).toBe(3);
+
+      // Find boundary hashes for the two edits
+      const aHash = extractHash(lines1.find((l) => l.endsWith("│a"))!);
+      const cHash = extractHash(lines1.find((l) => l.endsWith("│c"))!);
+      const dHash = extractHash(lines1.find((l) => l.endsWith("│d"))!);
+      const eHash = extractHash(lines1.find((l) => l.endsWith("│e"))!);
+
+      // Two edits in one call:
+      // 1. Remove lines 0-2 (a, b, c) — first `b` is an interior line
+      // 2. Remove lines 4-5 (d, e) — no duplicates
+      await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [
+            { hash_range_inclusive: [aHash, cHash], content_lines: [] },
+            { hash_range_inclusive: [dHash, eHash], content_lines: [] },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      // Read again — the surviving `b` lines should have the second and third b's hashes
+      const read2 = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+      const lines2 = getText(read2).split("\n");
+      const survivingBLines = lines2.filter((l) => l.endsWith("│b"));
+      expect(survivingBLines).toHaveLength(2);
+      const survivingHashes = survivingBLines.map(extractHash);
+      expect(survivingHashes).toContain(secondBHash);
+      expect(survivingHashes).toContain(thirdBHash);
+    });
+  });
 });

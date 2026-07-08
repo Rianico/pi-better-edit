@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
-import { _lineHashesPure } from "../../src/hashline";
+import { _lineHashesPure, initHasher } from "../../src/hashline";
 
 import register from "../../index";
 import { regReplace } from "../../src/replace";
@@ -26,6 +26,7 @@ export async function setupTestHome(): Promise<{
   testPath: string;
   cleanup: () => Promise<void>;
 }> {
+  await initHasher();
   const tmpHome = await mkdtemp(join(await getWritableTempRoot(), "testhome-"));
   const oldHome = process.env.HOME;
   process.env.HOME = tmpHome;
