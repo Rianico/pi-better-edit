@@ -101,14 +101,14 @@ export async function writeAtomic(
     }
   } catch (error: unknown) {
     await tempHandle.close();
-    try { await rm(tempPath, { force: true }); } catch { /* best-effort */ }
+    try { await rm(tempPath, { force: true }); } catch {}
     throw error;
   }
   try {
     await tempHandle.close();
     await rename(tempPath, targetPath);
   } catch (error: unknown) {
-    try { await rm(tempPath, { force: true }); } catch { /* best-effort */ }
+    try { await rm(tempPath, { force: true }); } catch {}
     throw error;
   }
 }

@@ -5,11 +5,6 @@ import { loadHashStore, saveHashStore } from "../hash-store";
 export const HASH_LEN = 3;
 export const ANCHOR_LEN = HASH_LEN;
 
-/**
- * The `│` (U+2502) delimiter between a hash anchor and its line content. This
- * is the wire-format separator in `HASH│content` rows. Kept as a constant so
- * every construction site resolves the same delimiter.
- */
 export const HASH_SEP = "│";
 
 const ALPH =
@@ -74,17 +69,6 @@ function canon(line: string): string {
 	return line.replace(/\r/g, "").trimEnd();
 }
 
-/**
- * Pure hash computation — no I/O, no persistence. Used internally by the
- * stable path and as a fallback when no file path is available.
- * Each line is hashed with xxHash32 over its canonical form (trailing
- * whitespace and CR characters stripped). If the base hash collides with a
- * hash already assigned to an earlier line, a retry counter (`:R{retry}`)
- * is appended to the canonical content and the hash is recomputed until a
- * unique anchor is found. This perfect-hashing step guarantees every line
- * in a file receives a distinct anchor, even when multiple lines contain
- * identical text (e.g. repeated `}` or `import` statements).
- */
 export function _lineHashesPure(content: string): string[] {
 	const lines = content.split("\n");
 	const hashes = new Array<string>(lines.length);
@@ -103,24 +87,6 @@ export function _lineHashesPure(content: string): string[] {
 	return hashes;
 }
 
-/**
- * Stable, persistent-aware hash computation.
- *
- * When `path` is provided, uses the persistent hash store to preserve
- * hashes for unchanged lines across edits. When `previous` is also
- * provided (called from the replace pipeline), diffs the previous content
- * against the new content and copies hashes for unchanged lines to their
- * new positions. New/changed lines allocate fresh hashes with collision
- * avoidance against the preserved set.
- *
- * When `path` is provided without `previous` (called from read), loads
- * the stored snapshot for that path. If the content matches, returns the
- * saved hashes. Otherwise computes fresh hashes via `_lineHashesPure` and
- * saves a new snapshot.
- *
- * When `path` is not provided, falls back to `_lineHashesPure` (for
- * backward compatibility and tests that don't need persistence).
- */
 export async function lineHashes(
   content: string,
   path?: string,
@@ -132,7 +98,6 @@ export async function lineHashes(
 
   const store = await loadHashStore();
 
-  // Case 1: previous content provided (replace pipeline) — diff and preserve
   if (previous) {
     const newHashes = mapStableHashes(
       previous.content, previous.hashes,
@@ -144,28 +109,17 @@ export async function lineHashes(
     return newHashes;
   }
 
-  // Case 2: no previous — check snapshot or compute fresh
   const snapshot = store.snapshots[path];
   if (snapshot && snapshot.content === content) {
     return snapshot.hashes;
   }
 
-  // Compute fresh hashes
   const newHashes = _lineHashesPure(content);
   store.snapshots[path] = { content, hashes: newHashes };
   await saveHashStore(store);
   return newHashes;
 }
 
-/**
- * Maps old hashes to new positions using hash-aware content matching.
- * Unlike Diff.diffLines (which is content-only and cannot distinguish
- * identical lines at different positions), this algorithm uses the
- * removedHashes set to disambiguate: when a line appears multiple times
- * in the old content and one occurrence was targeted by the edit,
- * the surviving occurrence is matched to the non-removed hash.
- * New/changed lines allocate fresh hashes with collision avoidance.
- */
 function mapStableHashes(
   oldContent: string,
   oldHashes: string[],
@@ -176,8 +130,6 @@ function mapStableHashes(
   const newHashes = new Array<string>(newLines.length);
   const used = new Set<string>();
 
-  // Build a map from line content to list of (index, hash) for the old content.
-  // We process occurrences left-to-right so that matching preserves order.
   const contentMap = new Map<string, { index: number; hash: string }[]>();
   const oldLines = oldContent.split("\n");
   for (let i = 0; i < oldLines.length; i++) {
@@ -191,17 +143,11 @@ function mapStableHashes(
     }
   }
 
-  // Match each new line to an old occurrence by content.
-  // For lines with duplicate content, prefer occurrences whose hash
-  // was NOT targeted by the edit (those are the survivors).
   for (let i = 0; i < newLines.length; i++) {
     const line = newLines[i]!;
     const candidates = contentMap.get(line);
     if (!candidates || candidates.length === 0) continue;
 
-    // Find the best match: prefer a non-removed occurrence.
-    // If all remaining occurrences are removed, use the first one anyway
-    // (it will get a fresh hash in the fill step since its hash is in used+removed).
     let bestIdx = 0;
     if (removedHashes && removedHashes.size > 0) {
       for (let j = 0; j < candidates.length; j++) {
@@ -217,7 +163,6 @@ function mapStableHashes(
     used.add(match.hash);
   }
 
-  // Fill remaining (new/changed) lines with fresh hashes
   for (let i = 0; i < newLines.length; i++) {
     if (newHashes[i]) continue;
     const c = canon(newLines[i]!);
@@ -230,7 +175,6 @@ function mapStableHashes(
     used.add(hash);
     newHashes[i] = hash;
   }
-
   return newHashes;
 }
 

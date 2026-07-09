@@ -9,12 +9,6 @@ function tryParseJSON<T>(value: unknown, guard: (v: unknown) => v is T): T | und
   return undefined;
 }
 
-/**
- * Coerces an array of edit items: JSON-string items → objects,
- * JSON-string content_lines → string arrays. Shared by the `changes`
- * and `edits` normalization branches.
- * Returns a warning if any item was a JSON string.
- */
 function coerceEditArray(items: unknown[]): { result: unknown[]; warnings: string[] } {
   const warnings: string[] = [];
   const result = items
@@ -43,12 +37,6 @@ function coerceEditArray(items: unknown[]): { result: unknown[]; warnings: strin
   return { result, warnings };
 }
 
-/**
- * Normalizes a field from `from` to `to`: JSON-string arrays → real arrays,
- * single objects → wrapped in array. Shared by the `changes` and `edits`
- * normalization branches.
- * Returns a warning if the field was a JSON string.
- */
 function normalizeField(
   record: Record<string, unknown>,
   from: string,
@@ -85,6 +73,19 @@ function normalizeField(
   return undefined;
 }
 
+export function normalizeFilePath(record: Record<string, unknown>): void {
+  if (typeof record.path !== "string" && typeof record.file_path === "string") {
+    record.path = record.file_path;
+    delete record.file_path;
+  }
+}
+
+export function tryParseField(record: Record<string, unknown>, field: string): void {
+  if (typeof record[field] === "string") {
+    try { record[field] = JSON.parse(record[field] as string); } catch {}
+  }
+}
+
 export function normReq(input: unknown): unknown {
   if (!isRec(input)) {
     return input;
@@ -93,18 +94,13 @@ export function normReq(input: unknown): unknown {
   const record: Record<string, unknown> = { ...input };
   const warnings: string[] = [];
 
-  if (typeof record.path !== "string" && typeof record.file_path === "string") {
-    record.path = record.file_path;
-    delete record.file_path;
-  }
+  normalizeFilePath(record);
 
   const w1 = normalizeField(record, "changes", "changes");
   if (w1) warnings.push(w1);
   const w2 = normalizeField(record, "edits", "changes");
   if (w2) warnings.push(w2);
 
-  // Handle flat format: hash_range_inclusive and content_lines at top level
-  // (no changes array). Wrap them into a single-element changes array.
   if (!Array.isArray(record.changes) && has(record, "hash_range_inclusive") && has(record, "content_lines")) {
     const hriRaw = record.hash_range_inclusive;
     const hri = tryParseJSON(hriRaw, (v): v is string[] =>

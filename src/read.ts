@@ -41,11 +41,6 @@ function normPosInt(
 	return value;
 }
 
-/**
- * Builds the `[Showing lines A-B of N. Use offset=M to continue.]` hint shared by
- * `fmtReadPreview` and the auto-read-after-write handler. `byteLimit` adds the
- * `(size limit)` suffix used when truncation is byte-driven.
- */
 export function formatPaginationHint(
 	startLine: number,
 	endLine: number,

@@ -11,7 +11,7 @@ import {
   restoreEndings,
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
-import { normReq } from "./replace-normalize";
+import { normReq, normalizeFilePath, tryParseField } from "./replace-normalize";
 import { isRec, has, rejectUnknownFields } from "./utils";
 import { MAX_HASH_LINES } from "./constants";
 import { resolveTarget, writeAtomic } from "./fs-write";
@@ -76,11 +76,6 @@ export const editToolSchema = Type.Object(
   { additionalProperties: false },
 );
 
-/**
- * Flat-mode schema: hash_range_inclusive and content_lines are at the top
- * level instead of inside a "changes" array. Only a single edit is supported
- * per call (no bulk changes).
- */
 export const flatEditToolSchema = Type.Object(
   {
     path: Type.String({ description: "path" }),
@@ -181,12 +176,6 @@ export async function execPipeline(
 
   const result = anchorResult.content;
 
-  // Collect hashes targeted by the edit for hash-aware diff disambiguation.
-  // Include every hash in the replaced range, not just the boundary anchors,
-  // so that a surviving line whose content is identical to an interior line
-  // of the edit is not matched to a removed hash.
-  // Use originalHashes.indexOf to find line numbers since resEdits returns
-  // HEdit[] (Anchor = { hash }) not RHEdit[] (RAnchor = { line, hash }).
   const removedHashes = new Set<string>();
   for (const edit of resolved) {
     const startHash = edit.hash_range_inclusive[0].hash;
@@ -200,14 +189,12 @@ export async function execPipeline(
     }
   }
 
-  // Compute stable result hashes using hash-aware preservation
   const resultHashes = await lineHashes(result, resolvedPath, {
     content: originalNormalized,
     hashes: originalHashes,
     removedHashes,
   });
 
-  // Format boundary warnings using stable result hashes
   const resultLines = result.split("\n");
   const warnings = [...(anchorResult.warnings ?? [])];
   for (const bw of anchorResult.boundaryWarnings ?? []) {
@@ -321,20 +308,11 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
     promptGuidelines: E_GUIDE,
     prepareArguments: opts.flat
       ? (args: unknown) => {
-          // Minimal normalization: file_path → path, JSON string parsing.
-          // The flat-to-canonical conversion happens in execute().
           if (!isRec(args)) return args as any;
           const record = { ...args };
-          if (typeof record.path !== "string" && typeof record.file_path === "string") {
-            record.path = record.file_path;
-            delete record.file_path;
-          }
-          if (typeof record.hash_range_inclusive === "string") {
-            try { record.hash_range_inclusive = JSON.parse(record.hash_range_inclusive as string); } catch { /* keep as-is */ }
-          }
-          if (typeof record.content_lines === "string") {
-            try { record.content_lines = JSON.parse(record.content_lines as string); } catch { /* keep as-is */ }
-          }
+          normalizeFilePath(record);
+          tryParseField(record, "hash_range_inclusive");
+          tryParseField(record, "content_lines");
           return record as any;
         }
       : (args: unknown) =>
@@ -428,8 +406,6 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
     },
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      // Flat mode: wrap top-level fields into a single-element changes array.
-      // Bulk mode: use params as-is after normReq normalization.
       const canonical = opts.flat
         ? normReq({
             path: (params as any).path,

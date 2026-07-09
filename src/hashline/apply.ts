@@ -212,14 +212,6 @@ function assemble(
 	return result;
 }
 
-/**
- * Builds the boundary-duplication warning shown after an edit. A minimal header
- * is followed by a hashline-anchored window: 2 lines of context before the
- * duplicated pair, the pair itself, and 2 lines after. The window carries the
- * post-edit hashes the model needs to remove the duplicate in a follow-up
- * `replace` (no `read` round-trip required, since the hashes are current and
- * staleness is per-line). Rows are plain `HASH│content` — no annotations.
- */
 export function fmtBoundaryWarning(params: {
 	kind: "trailing" | "leading";
 	survivingContent: string;
@@ -232,10 +224,6 @@ export function fmtBoundaryWarning(params: {
 			? "Boundary duplication (trailing): the last replacement line duplicated the next line. This happens when `content_lines` includes a line that was already outside the replaced range. Delete the duplicate — the original line outside the range is still there."
 			: "Boundary duplication (leading): the first replacement line duplicated the previous line. This happens when `content_lines` includes a line that was already outside the replaced range. Delete the duplicate — the original line outside the range is still there.";
 
-	// Locate the adjacent duplicated pair (two identical neighboring lines). The
-	// occurrence-based matchIndex usually lands inside the pair; when a file has
-	// several identical lines we pick the pair nearest matchIndex so the window
-	// frames the duplication this edit introduced, not an unrelated one.
 	let pairStart = -1;
 	let bestDist = Infinity;
 	for (let i = 0; i < params.resultLines.length - 1; i++) {
@@ -284,12 +272,6 @@ export function applyEdits(
 			lastChangedLine: undefined,
 		};
 
-  edits = edits.map((edit) =>
-    edit.content_lines.length === 1 &&
-    edit.content_lines[0] === ""
-      ? { ...edit, content_lines: [] }
-      : edit,
-  );
 
 	const lineIndex = buildIdx(content);
 	const fileHashes = precomputedHashes ?? _lineHashesPure(content);

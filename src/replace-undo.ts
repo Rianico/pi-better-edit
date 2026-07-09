@@ -7,20 +7,8 @@ import { loadHashStore, saveHashStore } from "./hash-store";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { toCwd } from "./path-utils";
 import { toLF, stripBOM, genDiff, restoreEndings } from "./replace-diff";
+import { cntDiff } from "./utils";
 
-function cntDiff(diff: string, marker: "+" | "-"): number {
-  if (!diff) return 0;
-  let count = 0;
-  for (const line of diff.split("\n")) {
-    if (
-      line.startsWith(marker) &&
-      !line.startsWith(`${marker}${marker}${marker}`)
-    ) {
-      count += 1;
-    }
-  }
-  return count;
-}
 
 export function regReplaceUndo(pi: ExtensionAPI): void {
   pi.registerTool({
@@ -56,29 +44,24 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
       }
 
       return withFileMutationQueue(mutationTargetPath, async () => {
-        // Read current file content to compute diff against the pre-replace state
         let currentNormalized = "";
         try {
           const currentRaw = await readFile(mutationTargetPath, "utf-8");
           const { text: currentStripped } = stripBOM(currentRaw);
           currentNormalized = toLF(currentStripped);
         } catch {
-          // File may have been deleted; treat as empty
           currentNormalized = "";
         }
 
-        // Compute diff: old = pre-replace (undo.content), new = current
         const diffResult = genDiff(undo.content, currentNormalized, 0);
         const linesAddedByReplace = cntDiff(diffResult.diff, "+");
         const linesRemovedByReplace = cntDiff(diffResult.diff, "-");
 
-        // Write the pre-edit content back to the file
         await writeAtomic(
           mutationTargetPath,
           undo.bom + restoreEndings(undo.content, undo.originalEnding),
         );
 
-        // Restore the hash store snapshot so the next read returns the same hashes
         const store = await loadHashStore();
         store.snapshots[mutationTargetPath] = {
           content: undo.content,
@@ -86,7 +69,6 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
         };
         await saveHashStore(store);
 
-        // Clear undo so a second call without an intervening replace is a no-op
         clearUndo(mutationTargetPath);
 
         const parts: string[] = [

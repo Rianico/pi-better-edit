@@ -17,16 +17,30 @@ export function cntLines(text: string): number {
 }
 
 export function rejectUnknownFields(
-	obj: Record<string, unknown>,
-	allowed: Set<string>,
-	label: string,
-	hint?: string,
+  obj: Record<string, unknown>,
+  allowed: Set<string>,
+  label: string,
+  hint?: string,
 ): void {
-	const unknown = Object.keys(obj).filter((key) => !allowed.has(key));
-	if (unknown.length > 0) {
-		const suffix = hint ? ` ${hint}` : "";
-		throw new Error(
-			`[E_BAD_SHAPE] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
-		);
-	}
+  const unknown = Object.keys(obj).filter((key) => !allowed.has(key));
+  if (unknown.length > 0) {
+    const suffix = hint ? ` ${hint}` : "";
+    throw new Error(
+      `[E_BAD_SHAPE] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
+    );
+  }
+}
+
+export function cntDiff(diff: string, marker: "+" | "-"): number {
+  if (!diff) return 0;
+  let count = 0;
+  for (const line of diff.split("\n")) {
+    if (
+      line.startsWith(marker) &&
+      !line.startsWith(`${marker}${marker}${marker}`)
+    ) {
+      count += 1;
+    }
+  }
+  return count;
 }

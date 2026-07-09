@@ -1,6 +1,6 @@
 import type { ReplaceDetails } from "./replace";
 import { genDiff } from "./replace-diff";
-import { visLines } from "./utils";
+import { visLines, cntDiff } from "./utils";
 
 type TResult = {
 	content: Array<{ type: "text"; text: string }>;
@@ -50,19 +50,6 @@ export interface SuccessInput {
   editMeta: RMeta;
 }
 
-function cntDiff(diff: string, marker: "+" | "-"): number {
-	if (!diff) return 0;
-	let count = 0;
-	for (const line of diff.split("\n")) {
-		if (
-			line.startsWith(marker) &&
-			!line.startsWith(`${marker}${marker}${marker}`)
-		) {
-			count += 1;
-		}
-	}
-	return count;
-}
 
 function buildM(args: {
 	classification: "applied" | "noop";

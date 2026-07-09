@@ -20,12 +20,9 @@ import { loadHashStore, pruneHashStore } from "./src/hash-store";
 export default function (pi: ExtensionAPI): void {
   regRead(pi);
 
-  // Register the bulk-mode replace tool by default. The session_start handler
-  // will re-register with the correct mode from the persisted config.
   regReplace(pi);
   regReplaceUndo(pi);
   const debugValue = process.env.PI_HASHLINE_DEBUG;
-  // Initial auto-read from env var; session_start overrides with persisted value
   const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
   let autoRead = autoReadValue === "1" || autoReadValue === "true";
 
@@ -33,12 +30,10 @@ export default function (pi: ExtensionAPI): void {
     const active = pi.getActiveTools();
     pi.setActiveTools(active.filter((t) => t !== "edit"));
     await initHasher();
-    // Prune stale snapshots (files that no longer exist) on session start
     try {
       const store = await loadHashStore();
       await pruneHashStore(store);
-    } catch { /* best-effort */ }
-    // Re-register the replace tool according to the persisted mode
+    } catch {}
     const mode = await readReplaceMode();
     if (mode === "flat") {
       regReplaceFlat(pi);
@@ -46,7 +41,6 @@ export default function (pi: ExtensionAPI): void {
       regReplace(pi);
     }
 
-    // Read the persisted auto-read setting (overrides env var default)
     autoRead = await readAutoRead();
 
     if (debugValue === "1" || debugValue === "true") {
@@ -58,7 +52,6 @@ export default function (pi: ExtensionAPI): void {
     description: "Toggle replace tool between bulk (changes array) and flat (single edit at top level) mode",
     handler: async (_args, ctx) => {
       const mode = await toggleReplaceMode();
-      // Re-register the tool with the new mode
       if (mode === "flat") {
         regReplaceFlat(pi);
       } else {
@@ -69,10 +62,9 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("toggle-auto-read", {
-    description: "Toggle automatic hashline anchors after write operations",
+    description: "Toggle automatic hashline anchors after write and replace operations",
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
-      // Re-register the tool so prompts reflect the new auto-read setting
       const mode = await readReplaceMode();
       if (mode === "flat") {
         regReplaceFlat(pi);
@@ -80,13 +72,14 @@ export default function (pi: ExtensionAPI): void {
         regReplace(pi);
       }
       const state = autoRead ? "enabled" : "disabled";
-      ctx.ui.notify(`Auto-read after write: ${state}`, "info");
+      ctx.ui.notify(`Auto-read after write/replace: ${state}`, "info");
     },
   });
 
   pi.on("tool_result", async (event, ctx) => {
     if (!autoRead) return;
-    if (event.toolName !== "write" || event.isError) return;
+    if (event.isError) return;
+    if (event.toolName !== "write" && event.toolName !== "replace") return;
 
     const filePath = (event.input as Record<string, unknown>)?.path;
     if (typeof filePath !== "string") return;
@@ -108,7 +101,7 @@ export default function (pi: ExtensionAPI): void {
         ],
       };
     } catch (error) {
-      console.error("Auto-read after write failed:", error);
+      console.error("Auto-read after write/replace failed:", error);
     }
   });
 }

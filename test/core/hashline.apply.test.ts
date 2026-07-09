@@ -53,26 +53,26 @@ describe("applyEdits — basic operations", () => {
 		expect(result.content).toBe("aaa\nccc");
 	});
 
-	it("treats lines:[\"\"] as a deletion request for replace (no extra blank line)", async () => {
-		const content = "aaa\nbbb\nccc\n";
-		const edits: HEdit[] = [
-			{ hash_range_inclusive: [await makeTag(content, 2, testPath), await makeTag(content, 2, testPath)], content_lines: [""] },
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("aaa\nccc\n");
-	});
+  it("treats lines:[\"\"] as inserting a blank line", async () => {
+    const content = "aaa\nbbb\nccc\n";
+    const edits: HEdit[] = [
+      { hash_range_inclusive: [await makeTag(content, 2, testPath), await makeTag(content, 2, testPath)], content_lines: [""] },
+    ];
+    const result = applyEdits(content, edits);
+    expect(result.content).toBe("aaa\n\nccc\n");
+  });
 
-	it("normalizes lines:[\"\"] to a deletion for replace ranges too", async () => {
-		const content = "aaa\nbbb\nccc\nddd\n";
-		const edits: HEdit[] = [
-			{
-				hash_range_inclusive: [await makeTag(content, 2, testPath), await makeTag(content, 3, testPath)],
-				content_lines: [""],
-			},
-		];
-		const result = applyEdits(content, edits);
-		expect(result.content).toBe("aaa\nddd\n");
-	});
+  it("treats lines:[\"\"] as a blank line for range replaces too", async () => {
+    const content = "aaa\nbbb\nccc\nddd\n";
+    const edits: HEdit[] = [
+      {
+        hash_range_inclusive: [await makeTag(content, 2, testPath), await makeTag(content, 3, testPath)],
+        content_lines: [""],
+      },
+    ];
+    const result = applyEdits(content, edits);
+    expect(result.content).toBe("aaa\n\nddd\n");
+  });
 
 	it("does not normalize multi-element empty arrays (those are blank lines)", async () => {
 		const content = "aaa\nbbb\n";

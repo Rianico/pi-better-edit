@@ -1,7 +1,6 @@
 import { readFileSync } from "fs";
-import { homedir } from "os";
-import { join } from "path";
 import { readFile, writeFile, mkdir } from "fs/promises";
+import { configDir, configPath } from "./paths";
 
 export type ReplaceMode = "bulk" | "flat";
 
@@ -12,17 +11,8 @@ export interface Config {
 
 const DEFAULT_CONFIG: Config = {
   replaceMode: "bulk",
-  autoRead: false,
+  autoRead: false
 };
-
-/** Compute config path lazily so tests can override HOME before calling. */
-function configPath(): string {
-  return join(homedir(), ".config", "pi-hashline-edit-pro", "config.json");
-}
-
-function configDir(): string {
-  return join(homedir(), ".config", "pi-hashline-edit-pro");
-}
 
 export async function readConfig(): Promise<Config> {
   try {

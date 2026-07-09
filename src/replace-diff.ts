@@ -47,10 +47,6 @@ export function genDiff(
   newContentHashes?: string[],
   oldHashes?: string[],
 ): { diff: string; firstChangedLine: number | undefined } {
-  // Run Diff.diffLines on raw content only (no hash annotations) so that
-  // lines whose content is identical are never reported as changed even
-  // when their hash differs due to collision resolution or position
-  // tracking. Hashes are used purely for display via fmtDiffLine.
   const oldLines = oldContent.split("\n");
   const newLines = newContent.split("\n");
   const effectiveOldHashes = oldHashes ?? _lineHashesPure(oldContent);
