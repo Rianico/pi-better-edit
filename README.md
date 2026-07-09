@@ -99,8 +99,8 @@ Hashes are now computed with a persistent store (`~/.config/pi-hashline-edit-pro
 The store contains per-file snapshots: the last known content and hashes for each file. On read, if the file content matches the snapshot, the saved hashes are returned immediately. Stale snapshots (for files that no longer exist) are pruned on session start.
 
 ### Chained edits
-After a successful replace, the response confirms with `Successfully replaced in {path}.` (warnings are still shown if present). When auto-read is enabled, fresh anchors are appended automatically. Otherwise call `read` to get fresh anchors for follow-up edits.
 
+After a successful replace, the response confirms with `Successfully replaced in {path}. Added X line(s), removed Y line(s).` (warnings are still shown if present). When auto-read is enabled, fresh anchors are appended automatically. Otherwise call `read` to get fresh anchors for follow-up edits.
 ### Auto-read after write and replace
 
 Auto-read is **disabled by default**. When enabled, after a successful `write` or `replace` the extension automatically reads the file and appends a `--- Auto-read (hashline anchors) ---` block to the result. This gives the model immediate `HASH│content` anchors for the file without requiring a separate `read` call. The workflow becomes:

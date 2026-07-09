@@ -113,5 +113,6 @@ Error recovery:
 - `[E_BARE_HASH_PREFIX]` — a `content_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `hash_range_inclusive` uses hashes, `content_lines` does not.
 - `[E_INVALID_PATCH]` — a `content_lines` entry matches the diff preview's `+HASH│…` addition-row form. Use literal file content. (Plain `+`/`-` lines are not rejected — they are written literally.)
 - `[E_WOULD_EMPTY]` — edit would empty a non-empty file.
+- `[E_FILE_TOO_LARGE]` — file exceeds the 1,000,000-line edit limit. Use `write` or a non-line-based approach for very large files.
 
 **Undo:** If a replace produced incorrect results, call `undo_last_replace` with the file path to revert the last replace. The tool reports how many lines were removed and restored. After undoing, call `read` to get fresh anchors for a corrected replace.

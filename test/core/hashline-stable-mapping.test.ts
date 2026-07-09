@@ -1,0 +1,437 @@
+import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { lineHashes } from "../../src/hashline";
+import { setupTestHome } from "../support/fixtures";
+
+let testPath: string;
+let cleanup: () => Promise<void>;
+
+beforeAll(async () => {
+  const s = await setupTestHome();
+  testPath = s.testPath;
+  cleanup = s.cleanup;
+});
+
+afterAll(async () => {
+  await cleanup();
+});
+
+/**
+ * Tests for mapStableHashes (exercised via lineHashes with a `previous` parameter).
+ *
+ * These tests focus on the general hash-mapping algorithm — how hashes from an old
+ * version of a file are carried forward to a new version. They do NOT overlap with
+ * the duplicate-content / removedHashes disambiguation tests in
+ * hashline-stable-duplicate.test.ts.
+ *
+ * NOTE: lineHashes uses content.split("\n") internally, so a trailing newline
+ * produces an extra empty-string element. Test strings here deliberately avoid
+ * trailing newlines to keep line counts intuitive.
+ */
+
+describe("mapStableHashes — identity and simple changes", () => {
+  it("preserves all hashes when content is unchanged", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, testPath);
+
+    const result = await lineHashes(content, testPath, {
+      content,
+      hashes,
+    });
+
+    expect(result).toEqual(hashes);
+  });
+
+  it("preserves hashes when appending lines at the end", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nb\nc\nd\ne";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // First 3 lines keep their hashes
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[1]).toBe(oldHashes[1]);
+    expect(result[2]).toBe(oldHashes[2]);
+    // New lines get fresh hashes
+    expect(result).toHaveLength(5);
+    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[4]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    // New hashes are unique and not reused from old
+    expect(result[3]).not.toBe(oldHashes[0]);
+    expect(result[4]).not.toBe(oldHashes[1]);
+  });
+
+  it("preserves hashes when prepending lines at the beginning", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "x\ny\nz\na\nb\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // First 3 lines are new
+    expect(result[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    // Last 3 lines keep their hashes (shifted down)
+    expect(result[3]).toBe(oldHashes[0]);
+    expect(result[4]).toBe(oldHashes[1]);
+    expect(result[5]).toBe(oldHashes[2]);
+  });
+
+  it("preserves hashes when inserting lines in the middle", async () => {
+    const oldContent = "a\nb\ne\nf";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nb\nc\nd\ne\nf";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // First 2 lines keep hashes
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[1]).toBe(oldHashes[1]);
+    // Inserted lines get fresh hashes
+    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    // Last 2 lines keep their hashes (shifted down)
+    expect(result[4]).toBe(oldHashes[2]);
+    expect(result[5]).toBe(oldHashes[3]);
+  });
+
+  it("preserves hashes when deleting lines (no duplicates)", async () => {
+    const oldContent = "a\nb\nc\nd\ne";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nc\ne";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // Surviving lines keep their hashes
+    expect(result[0]).toBe(oldHashes[0]); // "a"
+    expect(result[1]).toBe(oldHashes[2]); // "c"
+    expect(result[2]).toBe(oldHashes[4]); // "e"
+    expect(result).toHaveLength(3);
+  });
+
+  it("preserves hashes when replacing a line with different content", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nX\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // Unchanged lines keep hashes
+    expect(result[0]).toBe(oldHashes[0]); // "a"
+    expect(result[2]).toBe(oldHashes[2]); // "c"
+    // Changed line gets a new hash
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).not.toBe(oldHashes[1]);
+  });
+});
+
+describe("mapStableHashes — multiple changes combined", () => {
+  it("handles simultaneous insert, delete, and modify", async () => {
+    const oldContent = "a\nb\nc\nd\ne";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    // Delete "b", modify "d" to "D", insert "x" after "c"
+    const newContent = "a\nc\nx\nD\ne";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    expect(result[0]).toBe(oldHashes[0]); // "a" unchanged
+    expect(result[1]).toBe(oldHashes[2]); // "c" unchanged (shifted up)
+    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/); // "x" is new
+    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/); // "D" is modified
+    expect(result[3]).not.toBe(oldHashes[3]);
+    expect(result[4]).toBe(oldHashes[4]); // "e" unchanged (shifted up)
+  });
+
+  it("handles deleting the first and last lines", async () => {
+    const oldContent = "a\nb\nc\nd";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "b\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe(oldHashes[1]); // "b"
+    expect(result[1]).toBe(oldHashes[2]); // "c"
+  });
+
+  it("handles replacing the entire content with completely different lines", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "x\ny\nz";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // All lines are new — none of the old hashes should survive
+    expect(result).toHaveLength(3);
+    for (const hash of result) {
+      expect(oldHashes).not.toContain(hash);
+    }
+  });
+});
+
+describe("mapStableHashes — edge cases", () => {
+  it("handles empty old content (starting from scratch)", async () => {
+    const oldContent = "";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nb\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    expect(result).toHaveLength(3);
+    for (const hash of result) {
+      expect(hash).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    }
+  });
+
+  it("handles single-line old content becoming multi-line", async () => {
+    const oldContent = "a";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nb\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    expect(result[0]).toBe(oldHashes[0]); // "a" keeps its hash
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/); // "b" is new
+    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/); // "c" is new
+  });
+
+  it("handles multi-line old content becoming single-line", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "b";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(oldHashes[1]); // "b" keeps its hash
+  });
+
+  it("handles content with only newlines", async () => {
+    // "\n\n\n" split gives ["", "", "", ""] — 4 elements (3 newlines = 4 lines)
+    const oldContent = "\n\n\n";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "\n\n\n\n";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // First 4 blank lines keep their hashes
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[1]).toBe(oldHashes[1]);
+    expect(result[2]).toBe(oldHashes[2]);
+    expect(result[3]).toBe(oldHashes[3]);
+    // 5th blank line is new
+    expect(result[4]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[4]).not.toBe(oldHashes[0]);
+  });
+
+  it("handles content with carriage returns (\\r\\n)", async () => {
+    // canon() strips \r, so "a\r" and "a" have the same canonical form
+    // and thus the same hash. But the content map uses raw lines, so
+    // "a\r" !== "a" and they won't match in the content map.
+    // This means hashes are NOT preserved across \r\n → \n conversion.
+    const oldContent = "a\r\nb\r\nc\r\n";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nb\nc\nd";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // "a\r" !== "a", "b\r" !== "b", "c\r" !== "c" — no matches
+    // But the hashes for "a", "b", "c" in the new content will be the
+    // SAME as oldHashes[0], oldHashes[1], oldHashes[2] because canon()
+    // normalizes them to the same string before hashing.
+    // So the hashes match by value even though the content map didn't match them.
+    expect(result).toHaveLength(4);
+    // "a" gets the same hash as "a\r" (same canonical form)
+    expect(result[0]).toBe(oldHashes[0]);
+    // "b" gets the same hash as "b\r"
+    expect(result[1]).toBe(oldHashes[1]);
+    // "c" gets the same hash as "c\r"
+    expect(result[2]).toBe(oldHashes[2]);
+    // "d" is genuinely new
+    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+  });
+});
+
+describe("mapStableHashes — removedHashes edge cases", () => {
+  it("ignores removedHashes entries that don't exist in old content", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nb\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes: new Set(["ZZZ", "YYY"]),
+    });
+
+    // Non-existent removedHashes should be ignored
+    expect(result).toEqual(oldHashes);
+  });
+
+  it("works correctly with empty removedHashes set", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nX\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes: new Set(),
+    });
+
+    // Unchanged lines keep hashes
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[2]).toBe(oldHashes[2]);
+    // Changed line gets new hash
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).not.toBe(oldHashes[1]);
+  });
+
+  it("works correctly with undefined removedHashes", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nX\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // Same as empty set — unchanged lines keep hashes
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[2]).toBe(oldHashes[2]);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).not.toBe(oldHashes[1]);
+  });
+});
+
+describe("mapStableHashes — hash uniqueness guarantees", () => {
+  it("produces unique hashes for all lines in the result", async () => {
+    const oldContent = "a\nb\nc\nd\ne";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    // Complex transformation
+    const newContent = "x\na\nz\nc\ny\ne\nw";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    const unique = new Set(result);
+    expect(unique.size).toBe(result.length);
+  });
+
+  it("reuses the same hash for lines with the same canonical form despite different trailing whitespace", async () => {
+    // canon() trims trailing whitespace before hashing, so "x  " and "x"
+    // have the same canonical form and thus the same hash value.
+    // The content map uses raw lines, so "x  " won't match "x" in the map,
+    // but the hash computed for "x" will be identical to the hash of "x  ".
+    const oldContent = "x  \ny";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "x\ny";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // "x" has the same canonical form as "x  ", so it gets the same hash
+    // (even though the content map didn't match them as raw strings)
+    expect(result[0]).toBe(oldHashes[0]);
+    // "y" is identical in both, so it keeps its hash via content map
+    expect(result[1]).toBe(oldHashes[1]);
+  });
+});
+
+describe("mapStableHashes — ordering and position stability", () => {
+  it("preserves hashes when lines are reordered", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "c\na\nb";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // Each line should keep its hash (content-based matching)
+    expect(result[0]).toBe(oldHashes[2]); // "c" moved to position 0
+    expect(result[1]).toBe(oldHashes[0]); // "a" moved to position 1
+    expect(result[2]).toBe(oldHashes[1]); // "b" moved to position 2
+  });
+
+  it("preserves hashes when a line appears multiple times in new content", async () => {
+    const oldContent = "a\nb";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\na\nb";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // First "a" gets the old hash, second "a" gets a new hash (collision resolved)
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).not.toBe(oldHashes[0]);
+    // "b" keeps its hash
+    expect(result[2]).toBe(oldHashes[1]);
+  });
+
+  it("preserves hashes when a line appears fewer times in new content", async () => {
+    const oldContent = "a\na\nb";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nb";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    // The surviving "a" should get one of the old "a" hashes
+    expect(result[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(oldHashes.slice(0, 2)).toContain(result[0]);
+    // "b" keeps its hash
+    expect(result[1]).toBe(oldHashes[2]);
+  });
+});

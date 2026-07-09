@@ -91,6 +91,7 @@ Rules:
 - `content_lines` is literal file content — each string becomes exactly one line in the file. No `HASH│` prefix. A line that happens to start with `+` or `-` is written as-is; the only rejected form is the diff preview's `+HASH│…` row (see `[E_INVALID_PATCH]`).
 - **Preserve leading whitespace (indentation) exactly.** The content after `│` in read output includes all leading spaces and tabs — copy them into `content_lines` unchanged. Dropping indentation will produce broken code.
 - Don't add `""` for spacing unless you actually want a new blank line.
+- `changes`, `hash_range_inclusive`, and `content_lines` must be native JSON values, not JSON strings. Do not serialize them — pass them as proper arrays and strings.
 - Copy anchors from the most recent `read` of the file. Do not guess or construct them.
 - All changes in one call must be non-conflicting. The runtime rejects with `[E_EDIT_CONFLICT]` if two ranges overlap.
 - If `content_lines` matches current content, the replace is classified as `noop` (file unchanged).
@@ -127,5 +128,6 @@ Error recovery:
 - `[E_BARE_HASH_PREFIX]` — a `content_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `hash_range_inclusive` uses hashes, `content_lines` does not.
 - `[E_INVALID_PATCH]` — a `content_lines` entry matches the diff preview's `+HASH│…` addition-row form. Use literal file content. (Plain `+`/`-` lines are not rejected — they are written literally.)
 - `[E_WOULD_EMPTY]` — edit would empty a non-empty file.
+- `[E_FILE_TOO_LARGE]` — file exceeds the 1,000,000-line edit limit. Use `write` or a non-line-based approach for very large files.
 
 **Undo:** If a replace produced incorrect results, call `undo_last_replace` with the file path to revert the last replace. The tool reports how many lines were removed and restored. After undoing, call `read` to get fresh anchors for a corrected replace.
