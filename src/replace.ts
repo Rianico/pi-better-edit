@@ -62,25 +62,25 @@ const hashRangeInclSchema = Type.Array(
 
 const changeItemSchema = Type.Object(
   {
-    hash_range_inclusive: hashRangeInclSchema,
     content_lines: contentLinesSchema,
+    hash_range_inclusive: hashRangeInclSchema,
   },
   { additionalProperties: false },
 );
 
 export const editToolSchema = Type.Object(
   {
-    path: Type.String({ description: "path" }),
     changes: Type.Array(changeItemSchema, { description: "changes over $path" }),
+    path: Type.String({ description: "path" }),
   },
   { additionalProperties: false },
 );
 
 export const flatEditToolSchema = Type.Object(
   {
-    path: Type.String({ description: "path" }),
-    hash_range_inclusive: hashRangeInclSchema,
     content_lines: contentLinesSchema,
+    hash_range_inclusive: hashRangeInclSchema,
+    path: Type.String({ description: "path" }),
   },
   { additionalProperties: false },
 );
