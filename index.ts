@@ -33,7 +33,9 @@ export default function (pi: ExtensionAPI): void {
     try {
       const store = await loadHashStore();
       await pruneHashStore(store);
-    } catch {}
+    } catch (err) {
+      console.error("Failed to load or prune hash store:", err);
+    }
     const mode = await readReplaceMode();
     if (mode === "flat") {
       regReplaceFlat(pi);

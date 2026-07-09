@@ -343,6 +343,96 @@ describe("mapStableHashes — removedHashes edge cases", () => {
     expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[1]);
   });
+
+  it("removedHashes causes a different content match to be selected for duplicate lines", async () => {
+    const oldContent = "a\nb\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const firstBHash = oldHashes[1]!;
+    const secondBHash = oldHashes[2]!;
+    expect(firstBHash).not.toBe(secondBHash);
+
+    const newContent = "a\nb\nc";
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes: new Set([firstBHash]),
+    });
+
+    expect(result[1]).toBe(secondBHash);
+  });
+
+  it("removedHashes with all candidates removed still picks the first candidate", async () => {
+    const oldContent = "a\nb\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const firstBHash = oldHashes[1]!;
+    const secondBHash = oldHashes[2]!;
+
+    const newContent = "a\nb\nc";
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes: new Set([firstBHash, secondBHash]),
+    });
+
+    expect(result[1]).toBe(firstBHash);
+  });
+
+  it("removedHashes with three duplicates picks the first non-removed candidate", async () => {
+    const oldContent = "a\nb\nb\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const firstBHash = oldHashes[1]!;
+    const secondBHash = oldHashes[2]!;
+    const thirdBHash = oldHashes[3]!;
+    expect(new Set([firstBHash, secondBHash, thirdBHash]).size).toBe(3);
+
+    const newContent = "a\nb\nc";
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes: new Set([firstBHash, thirdBHash]),
+    });
+
+    expect(result[1]).toBe(secondBHash);
+  });
+
+  it("removedHashes does not affect content-map misses (new lines)", async () => {
+    const oldContent = "a\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const newContent = "a\nX\nc";
+
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes: new Set([oldHashes[0]!]),
+    });
+
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).not.toBe(oldHashes[0]);
+    expect(result[1]).not.toBe(oldHashes[1]);
+    expect(result[1]).not.toBe(oldHashes[2]);
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[2]).toBe(oldHashes[2]);
+  });
+
+  it("removedHashes with duplicate lines and content-map miss on a different line", async () => {
+    const oldContent = "a\nb\nb\nc";
+    const oldHashes = await lineHashes(oldContent, testPath);
+    const firstBHash = oldHashes[1]!;
+    const secondBHash = oldHashes[2]!;
+
+    const newContent = "a\nb\nX\nc";
+    const result = await lineHashes(newContent, testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes: new Set([firstBHash]),
+    });
+
+    expect(result[1]).toBe(secondBHash);
+    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[2]).not.toBe(firstBHash);
+    expect(result[2]).not.toBe(secondBHash);
+    expect(result[3]).toBe(oldHashes[3]);
+  });
 });
 
 describe("mapStableHashes — hash uniqueness guarantees", () => {
