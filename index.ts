@@ -4,6 +4,7 @@ import { join, isAbsolute } from "path";
 import { initHasher } from "./src/hashline";
 import { regReplace } from "./src/replace";
 import { regReplaceFlat } from "./src/replace-flat";
+import { regReplaceUndo } from "./src/replace-undo";
 import { regRead, fmtReadPreview } from "./src/read";
 import { toLF, stripBOM } from "./src/replace-diff";
 import { visLines } from "./src/utils";
@@ -22,7 +23,7 @@ export default function (pi: ExtensionAPI): void {
   // Register the bulk-mode replace tool by default. The session_start handler
   // will re-register with the correct mode from the persisted config.
   regReplace(pi);
-
+  regReplaceUndo(pi);
   const debugValue = process.env.PI_HASHLINE_DEBUG;
   // Initial auto-read from env var; session_start overrides with persisted value
   const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;

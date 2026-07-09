@@ -27,13 +27,14 @@ describe("edit tool file mutation queue", () => {
         undefined, undefined, ctx,
       );
       expect(r1.content[0].text).toContain("Successfully replaced");
-
+      expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const r2 = await editTool.execute(
         "e2",
         { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BETA"] }] },
         undefined, undefined, ctx,
       );
       expect(r2.content[0].text).toContain("Successfully replaced");
+      expect(r2.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     });
   });
 
@@ -50,13 +51,14 @@ describe("edit tool file mutation queue", () => {
         undefined, undefined, ctx,
       );
       expect(r1.content[0].text).toContain("Successfully replaced");
-
+      expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const r2 = await editTool.execute(
         "e2",
         { path: "link.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BETA"] }] },
         undefined, undefined, ctx,
       );
       expect(r2.content[0].text).toContain("Successfully replaced");
+      expect(r2.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     });
   });
 
@@ -81,14 +83,14 @@ describe("edit tool file mutation queue", () => {
       undefined, undefined, ctx,
     );
     expect(r1.content[0].text).toContain("Successfully replaced");
-
+    expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     const r2 = await editTool.execute(
       "e2",
       { path: "linkdir/sub/target.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BETA"] }] },
       undefined, undefined, ctx,
     );
     expect(r2.content[0].text).toContain("Successfully replaced");
-
+    expect(r2.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     const { rm } = await import("fs/promises");
     await rm(tmpDir, { recursive: true, force: true });
   });

@@ -75,6 +75,7 @@ describe("stale-position compound edits", () => {
         ctx,
       );
       expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Added 2 line(s), removed 3 line(s).");
     });
   });
 
@@ -99,6 +100,7 @@ describe("stale-position compound edits", () => {
         ctx,
       );
       expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Added 2 line(s), removed 3 line(s).");
     });
   });
 });

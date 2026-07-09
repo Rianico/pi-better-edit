@@ -71,6 +71,7 @@ describe("buildChanged", () => {
       editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 2 },
     });
     expect(output.content[0].text).toContain("Successfully replaced in test.txt");
+    expect(output.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     expect(output.details.metrics!.classification).toBe("applied");
     expect(output.details.metrics!.edits_attempted).toBe(1);
     expect(output.details.metrics!.changed_lines).toEqual({ first: 2, last: 2 });
@@ -130,6 +131,7 @@ describe("buildChanged", () => {
     });
     expect(output.details.metrics!.added_lines).toBe(3);
     expect(output.details.metrics!.removed_lines).toBe(2);
+    expect(output.content[0].text).toContain("Added 3 line(s), removed 2 line(s).");
   });
 
   it("handles no changed lines gracefully", async () => {

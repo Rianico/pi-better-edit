@@ -32,6 +32,7 @@ describe("replace mode switching — flat mode tool behavior", () => {
         ctx,
       );
       expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     });
   });
 
@@ -51,6 +52,7 @@ describe("replace mode switching — flat mode tool behavior", () => {
         ctx,
       );
       expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     });
   });
 });

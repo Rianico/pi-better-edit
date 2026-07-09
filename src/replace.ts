@@ -44,6 +44,7 @@ import {
 } from "./replace-render";
 import { loadP, loadGuide } from "./prompts";
 import { readAutoReadSync } from "./config";
+import { saveUndo } from "./undo-store";
 
 const contentLinesSchema = Type.Array(Type.String(), {
   description:
@@ -168,6 +169,7 @@ export async function execPipeline(
   );
 
   const absolutePath = toCwd(path, cwd);
+  const resolvedPath = await resolveTarget(absolutePath);
   const resolved = resEdits(toolEdits);
   const anchorResult = applyEdits(
     originalNormalized,
@@ -199,7 +201,7 @@ export async function execPipeline(
   }
 
   // Compute stable result hashes using hash-aware preservation
-  const resultHashes = await lineHashes(result, absolutePath, {
+  const resultHashes = await lineHashes(result, resolvedPath, {
     content: originalNormalized,
     hashes: originalHashes,
     removedHashes,
@@ -437,6 +439,7 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
             }],
           })
         : normReq(params);
+      const normWarnings = (canonical as Record<string, unknown>)._normWarnings as string[] | undefined;
       const normalizedParams = canonical as { path: string; changes: HTEdit[] };
       const path = normalizedParams.path;
       const absolutePath = toCwd(path, ctx.cwd);
@@ -469,6 +472,10 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
             ? normalizedParams.changes.length
             : 0;
 
+        if (normWarnings) {
+          warnings.push(...normWarnings);
+        }
+
         if (originalNormalized === result) {
           const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
           return buildNoop({
@@ -494,6 +501,12 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
           absolutePath,
           bom + restoreEndings(result, originalEnding),
         );
+        saveUndo(mutationTargetPath, {
+          content: originalNormalized,
+          bom,
+          originalEnding,
+          hashes: originalHashes,
+        });
         const updatedSnapshotId = (await fileSnap(absolutePath))
           .snapshotId;
 

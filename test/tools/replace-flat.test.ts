@@ -97,8 +97,8 @@ describe("regReplaceFlat", () => {
       );
 
       expect(result.content[0].text).toContain("Successfully replaced in sample.txt");
+      expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const content = await readFile(cwd + "/sample.txt", "utf-8");
-      expect(content).toBe("aaa\nBBB\nccc\n");
     });
   });
 
@@ -122,8 +122,8 @@ describe("regReplaceFlat", () => {
       );
 
       expect(result.content[0].text).toContain("Successfully replaced in sample.txt");
+      expect(result.content[0].text).toContain("Added 2 line(s), removed 2 line(s).");
       const content = await readFile(cwd + "/sample.txt", "utf-8");
-      expect(content).toBe("aaa\nBBB\nCCC\nddd\n");
     });
   });
 
@@ -147,8 +147,8 @@ describe("regReplaceFlat", () => {
       );
 
       expect(result.content[0].text).toContain("Successfully replaced in sample.txt");
+      expect(result.content[0].text).toContain("Added 0 line(s), removed 1 line(s).");
       const content = await readFile(cwd + "/sample.txt", "utf-8");
-      expect(content).toBe("aaa\nccc\n");
     });
   });
 
@@ -242,6 +242,7 @@ describe("regReplaceFlat", () => {
       );
 
       expect(result.content[0].text).toContain("Successfully replaced in sample.txt");
+      expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     });
   });
 

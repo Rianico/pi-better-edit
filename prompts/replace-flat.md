@@ -79,7 +79,8 @@ Rules:
 - Copy anchors from the most recent `read` of the file. Do not guess or construct them.
 - If `content_lines` matches current content, the replace is classified as `noop` (file unchanged).
 - The `hash_range_inclusive` is inclusive — the entire span from the first anchor through the second anchor is deleted and replaced with `content_lines`. The old lines in that span are gone. If your replacement content includes lines that already exist in the file (e.g. closing brackets), make sure those lines are within your range, otherwise they will appear twice.
-On success, the response text is empty (or contains only warnings if present). {{AUTO_READ_GUIDANCE}}
+- `hash_range_inclusive` and `content_lines` must be native JSON values, not JSON strings. Do not serialize them — pass them as a proper array and array of strings respectively.
+On success, the response text shows the line change summary (e.g. "Added 3 line(s), removed 1 line(s).") plus any warnings if present. {{AUTO_READ_GUIDANCE}}
 
 ⚠️ Common mistake: `hash_range_inclusive` replaces the ENTIRE range. Every line from the first anchor through the second anchor is deleted and replaced with `content_lines`. Do not include "context" or "surrounding" lines in `content_lines` — they are outside the range and will be preserved automatically.
 
@@ -112,3 +113,5 @@ Error recovery:
 - `[E_BARE_HASH_PREFIX]` — a `content_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `hash_range_inclusive` uses hashes, `content_lines` does not.
 - `[E_INVALID_PATCH]` — a `content_lines` entry matches the diff preview's `+HASH│…` addition-row form. Use literal file content. (Plain `+`/`-` lines are not rejected — they are written literally.)
 - `[E_WOULD_EMPTY]` — edit would empty a non-empty file.
+
+**Undo:** If a replace produced incorrect results, call `last_replace_undo` with the file path to revert the last replace. The tool reports how many lines were removed and restored. After undoing, call `read` to get fresh anchors for a corrected replace.

@@ -12,11 +12,12 @@ The strict-semantics policy of the original is preserved verbatim. This fork is 
 ## Project Structure & Module Organization
 
 - `index.ts` is the extension entrypoint; it registers the custom `read`/`replace` tools, disables the built-in `edit` tool, and registers the `/toggle-auto-read` and `/toggle-replace-mode` commands. It also contains the auto-read-after-write handler (disabled by default; controlled by `PI_HASHLINE_AUTO_READ` env var or the `/toggle-auto-read` command). On `session_start` it reads the persisted config and re-registers the replace tool in the correct mode.
-- `src/` contains the implementation, split by responsibility: `read.ts`, `replace.ts`, `replace-flat.ts`, `replace-normalize.ts`, `replace-diff.ts`, `replace-response.ts`, `replace-render.ts`, `config.ts`, `hash-store.ts`, `file-kind.ts`, `fs-write.ts`, `snapshot.ts`, `utils.ts`, and small runtime/path helpers. The hashline engine is in `src/hashline/` with sub-modules: `hash.ts`, `parse.ts`, `resolve.ts`, `apply.ts`, and `index.ts` (re-exports).
+- `src/` contains the implementation, split by responsibility: `read.ts`, `replace.ts`, `replace-flat.ts`, `replace-undo.ts`, `undo-store.ts`, `replace-normalize.ts`, `replace-diff.ts`, `replace-response.ts`, `replace-render.ts`, `config.ts`, `hash-store.ts`, `file-kind.ts`, `fs-write.ts`, `snapshot.ts`, `utils.ts`, and small runtime/path helpers. The hashline engine is in `src/hashline/` with sub-modules: `hash.ts`, `parse.ts`, `resolve.ts`, `apply.ts`, and `index.ts` (re-exports).
   - `config.ts` manages persistent settings (`~/.config/pi-hashline-edit-pro/config.json`): replace mode and auto-read toggle. Uses lazy path computation so tests can override `HOME`.
   - `hash-store.ts` manages the persistent hash store (`~/.config/pi-hashline-edit-pro/hash-store.json`): per-file snapshots of last-known content and hashes. Used by the async `lineHashes` to preserve hashes for unchanged lines across edits.
   - `replace-flat.ts` registers a replace tool with a flat schema (`hash_range_inclusive`/`content_lines` at the top level, no `changes` array). Shares the pipeline via `execPipeline` from `replace.ts`.
-
+  - `undo-store.ts` provides an in-memory store for the last pre-edit state per file path. Used by the replace pipeline to save undo info and by `last_replace_undo` to revert.
+  - `replace-undo.ts` registers the `last_replace_undo` tool. On execution it reads the undo store, writes the pre-edit content back atomically, restores the hash store snapshot, and reports line counts.
 ## Build, Test, & Development Commands
 
 - `npm install` — install dependencies.
@@ -98,8 +99,7 @@ The 3-character anchors are compact and efficient. Each anchor costs 3 character
 
 Rules:
 
-- `text` carries only what the model needs for its next step: noop classification, warnings, error codes. After a successful edit, the response text is empty (or contains only warnings). The LLM can call `read` for fresh anchors. Line counts (`added_lines`/`removed_lines`) go to `details.metrics`, not to `text`.
-- Full diffs, structural outlines, range payloads, snapshot fingerprints, metrics — host UI only, route to `details`.
+- `text` carries only what the model needs for its next step: noop classification, line change summary, warnings, error codes. After a successful edit, the response text shows the line change summary (e.g. "Added 3 line(s), removed 1 line(s).") plus any warnings if present. The LLM can call `read` for fresh anchors. Full diffs and detailed metrics go to `details`.
 - Never duplicate in `text` what anchors already express. No fallback outlines, no usage boilerplate, no verbose headers.
 - New output fields default to `details`; moving one into `text` needs a justification beyond "the LLM might want it".
 

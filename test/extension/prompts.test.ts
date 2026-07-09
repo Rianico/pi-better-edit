@@ -39,8 +39,8 @@ describe("prompts/replace-bulk.md (bulk-mode model-facing contract)", () => {
     expect(replaceBulkPrompt).toMatch(/Do not include.*│.*line content/i);
   });
 
-  it("documents that response is empty after successful edit", () => {
-    expect(replaceBulkPrompt).toContain("response text is empty");
+  it("documents line change summary after successful edit", () => {
+    expect(replaceBulkPrompt).toContain("line change summary");
   });
 
   it("documents error recovery", () => {
@@ -78,8 +78,8 @@ describe("prompts/replace-flat.md (flat-mode model-facing contract)", () => {
     expect(replaceFlatPrompt).toMatch(/Do not include.*│.*line content/i);
   });
 
-  it("documents that response is empty after successful edit", () => {
-    expect(replaceFlatPrompt).toContain("response text is empty");
+  it("documents line change summary after successful edit", () => {
+    expect(replaceFlatPrompt).toContain("line change summary");
   });
 
   it("documents error recovery", () => {

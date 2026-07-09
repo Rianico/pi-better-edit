@@ -21,7 +21,7 @@ describe("chained edit anchors", () => {
       );
 
       expect(editResult.content[0].text).toContain("Successfully replaced in sample.ts");
-
+      expect(editResult.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const secondRead = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
       const freshRef = secondRead.content[0].text
         .split("\n")
@@ -37,6 +37,7 @@ describe("chained edit anchors", () => {
       );
 
       expect(editResult2.content[0].text).toContain("Successfully replaced in sample.ts");
+      expect(editResult2.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     });
   });
 

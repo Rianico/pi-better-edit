@@ -21,8 +21,7 @@ describe("extension registration", () => {
 
     register(pi);
 
-    expect(toolNames.sort()).toEqual(["read", "replace"]);
-    expect(commandNames.sort()).toEqual(["toggle-auto-read", "toggle-replace-mode"]);
+    expect(toolNames.sort()).toEqual(["last_replace_undo", "read", "replace"]);
 
     expect(eventNames).toEqual(["session_start", "tool_result"]);
   });

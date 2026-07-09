@@ -52,6 +52,7 @@ describe("regReplace", () => {
         ctx,
       );
       expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       expect(result.details?.diff).toBeDefined();
       expect(result.details?.diff).toContain("BBB");
     });

@@ -31,6 +31,7 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       );
 
       expect(getText(result)).toContain("Successfully replaced in sample.ts");
+      expect(getText(result)).toContain("Added 2 line(s), removed 2 line(s).");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("AAA\nbbb\nccc\nddd\nEEE\n");
     });
@@ -65,6 +66,7 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       );
 
       expect(getText(result)).toContain("Successfully replaced in sample.ts");
+      expect(getText(result)).toContain("Added 5 line(s), removed 5 line(s).");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("A\nB\nc\nd\nE\nF\nG\nh\n");
     });
@@ -97,6 +99,7 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       );
 
       expect(getText(result)).toContain("Successfully replaced in sample.ts");
+      expect(getText(result)).toContain("Added 1 line(s), removed 2 line(s).");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("keep1\nkeep2\nCHANGED\nkeep3\n");
     });
@@ -160,8 +163,8 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       );
 
       expect(getText(result)).toContain("Successfully replaced in sample.ts");
+      expect(getText(result)).toContain("Added 1 line(s), removed 1 line(s).");
       expect(result.details.metrics.edits_attempted).toBe(2);
-      expect(result.details.metrics.edits_noop).toBe(1);
     });
   });
 

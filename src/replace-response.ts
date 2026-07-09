@@ -148,11 +148,14 @@ export function buildChanged(input: SuccessInput): TResult {
   const removedLines = cntDiff(diffResult.diff, "-");
   const warningsBlock = warnBlock(warnings);
   const successPrefix = `Successfully replaced in ${path}.`;
+  const lineSummary = addedLines > 0 || removedLines > 0
+    ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
+    : "";
   const text = resultLines.length === 0
     ? "File is empty. Use replace to insert content."
     : warningsBlock
-      ? `${successPrefix}${warningsBlock}`
-      : successPrefix;
+      ? `${successPrefix}${lineSummary}${warningsBlock}`
+      : `${successPrefix}${lineSummary}`;
 
   const metrics = buildM({
     classification: "applied",
