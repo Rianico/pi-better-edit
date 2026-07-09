@@ -286,7 +286,7 @@ export function reuseMarkdown(context: any, content: string, theme: any): Markdo
 export function buildToolDef(opts: { flat: boolean }): ToolDef {
   const autoRead = readAutoReadSync();
   const readGuidance = autoRead
-    ? "Anchors are provided automatically after write operations when auto-read is enabled."
+    ? "Anchors are provided automatically after write and replace operations when auto-read is enabled."
     : "Call `read` to get fresh anchors for follow-up edits.";
 
   const E_DESC = loadP(opts.flat ? "../prompts/replace-flat.md" : "../prompts/replace-bulk.md", {

@@ -1,0 +1,1 @@
+Undo the last replace operation on a file, reverting it to its previous state. Use this when a replace produced incorrect results (e.g., wrong content, duplicated lines, broken syntax). After undoing, call `read` to get fresh anchors for a corrected replace.

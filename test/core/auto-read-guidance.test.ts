@@ -20,7 +20,7 @@ async function withTempHome(run: () => Promise<void>): Promise<void> {
 }
 
 function checkDescription(toolDef: { description: string }, expectAutoMsg: boolean): void {
-  const hasAutoMsg = toolDef.description.includes("Anchors are provided automatically after write operations");
+  const hasAutoMsg = toolDef.description.includes("Anchors are provided automatically after write and replace operations");
   const hasReadCall = toolDef.description.includes("Call `read` to get fresh anchors for follow-up edits.");
   if (expectAutoMsg) {
     expect(hasAutoMsg).toBe(true);
@@ -33,7 +33,7 @@ function checkDescription(toolDef: { description: string }, expectAutoMsg: boole
 
 function checkGuidelines(guidelines: string[], expectAutoMsg: boolean): void {
   const hasAutoMsg = guidelines.some((g) =>
-    g.includes("Anchors are provided automatically after write operations")
+    g.includes("Anchors are provided automatically after write and replace operations")
   );
   const hasReadCall = guidelines.some((g) =>
     g.includes("Call `read` to get fresh anchors for follow-up edits.")

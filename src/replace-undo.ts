@@ -8,16 +8,16 @@ import { resolveTarget, writeAtomic } from "./fs-write";
 import { toCwd } from "./path-utils";
 import { toLF, stripBOM, genDiff, restoreEndings } from "./replace-diff";
 import { cntDiff } from "./utils";
+import { loadP, loadGuide } from "./prompts";
 
 
 export function regReplaceUndo(pi: ExtensionAPI): void {
   pi.registerTool({
-    name: "last_replace_undo",
+    name: "undo_last_replace",
     label: "Undo Last Replace",
-    description:
-      "Undo the last replace operation on a file, reverting it to its previous state. " +
-      "Use this when a replace produced incorrect results (e.g., wrong content, duplicated lines, broken syntax). " +
-      "After undoing, call `read` to get fresh anchors for a corrected replace.",
+    description: loadP("../prompts/undo-last-replace.md"),
+    promptSnippet: loadP("../prompts/undo-last-replace-snippet.md"),
+    promptGuidelines: loadGuide("../prompts/undo-last-replace-guidelines.md"),
     parameters: Type.Object({
       path: Type.String({
         description: "Path to the file to undo the last replace on",

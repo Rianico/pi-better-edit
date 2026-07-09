@@ -99,11 +99,11 @@ Hashes are now computed with a persistent store (`~/.config/pi-hashline-edit-pro
 The store contains per-file snapshots: the last known content and hashes for each file. On read, if the file content matches the snapshot, the saved hashes are returned immediately. Stale snapshots (for files that no longer exist) are pruned on session start.
 
 ### Chained edits
-After a successful replace, the response confirms with `Successfully replaced in {path}.` (warnings are still shown if present). To get fresh anchors for follow-up edits, call `read` on the file first. This avoids token overhead from re-displaying content the model already knows.
+After a successful replace, the response confirms with `Successfully replaced in {path}.` (warnings are still shown if present). When auto-read is enabled, fresh anchors are appended automatically. Otherwise call `read` to get fresh anchors for follow-up edits.
 
-### Auto-read after write
+### Auto-read after write and replace
 
-Auto-read is **disabled by default**. When enabled, after a successful `write` the extension automatically reads the file and appends a `--- Auto-read (hashline anchors) ---` block to the result. This gives the model immediate `HASH│content` anchors for the newly written file without requiring a separate `read` call. The workflow becomes:
+Auto-read is **disabled by default**. When enabled, after a successful `write` or `replace` the extension automatically reads the file and appends a `--- Auto-read (hashline anchors) ---` block to the result. This gives the model immediate `HASH│content` anchors for the file without requiring a separate `read` call. The workflow becomes:
 
 1. `write` a file, result includes hashline anchors
 2. `replace` using those anchors directly
@@ -121,7 +121,7 @@ The post-edit diff (with `+`/`-` markers) is exposed to the host UI via `details
 | Command | Description |
 | --- | --- |
 | `/toggle-replace-mode` | Switch between bulk mode (`changes` array) and flat mode (top-level fields). Persists across sessions. |
-| `/toggle-auto-read` | Toggle automatic hashline anchors after write operations. Persists across sessions. |
+| `/toggle-auto-read` | Toggle automatic hashline anchors after write and replace operations. Persists across sessions. |
 
 ### Config file
 
@@ -171,7 +171,7 @@ npm test
 
 Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
 
-Set `PI_HASHLINE_AUTO_READ=1` to enable auto-read after write by default on first run (can still be toggled at runtime with `/toggle-auto-read`; the setting persists across sessions once toggled).
+Set `PI_HASHLINE_AUTO_READ=1` to enable auto-read after write and replace by default on first run (can still be toggled at runtime with `/toggle-auto-read`; the setting persists across sessions once toggled).
 
 ## Credits
 

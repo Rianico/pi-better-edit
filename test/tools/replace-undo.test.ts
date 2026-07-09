@@ -22,11 +22,11 @@ afterAll(async () => {
   await cleanup();
 });
 
-describe("last_replace_undo", () => {
+describe("undo_last_replace", () => {
   it("returns error when there is no undo history", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
-      const undo = getTool("last_replace_undo");
+      const undo = getTool("undo_last_replace");
 
       const result = await undo.execute(
         "u1",
@@ -45,7 +45,7 @@ describe("last_replace_undo", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
-      const undo = getTool("last_replace_undo");
+      const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       // Perform a replace: change "bbb" to "BBB"
@@ -97,7 +97,7 @@ describe("last_replace_undo", () => {
     await withTempFile("sample.ts", "aaa\nccc\n", async ({ cwd }) => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
-      const undo = getTool("last_replace_undo");
+      const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nccc\n", testPath);
 
       // Replace single line with two lines (addition)
@@ -138,7 +138,7 @@ describe("last_replace_undo", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
-      const undo = getTool("last_replace_undo");
+      const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       // Delete the middle line
@@ -177,7 +177,7 @@ describe("last_replace_undo", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
-      const undo = getTool("last_replace_undo");
+      const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       // Replace 2 lines with 3 different lines
@@ -218,7 +218,7 @@ describe("last_replace_undo", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
-      const undo = getTool("last_replace_undo");
+      const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       // Perform a replace
@@ -263,7 +263,7 @@ describe("last_replace_undo", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
-      const undo = getTool("last_replace_undo");
+      const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
       // Perform a replace
@@ -310,7 +310,7 @@ describe("last_replace_undo", () => {
     await withTempFile("sample.ts", "line1\nline2\n", async ({ cwd }) => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
-      const undo = getTool("last_replace_undo");
+      const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("line1\nline2\n", testPath);
 
       // Perform a flat-mode replace (single change at top level)
