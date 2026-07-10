@@ -56,7 +56,7 @@ Optional parameters:
 - `offset` -- start reading from this line number (1-indexed).
 - `limit` -- maximum number of lines to return.
 
-Images (JPEG, PNG, GIF, WebP) are passed through as attachments and do not participate in the hashline protocol. Binary and directory paths are rejected with a descriptive error. Empty files return an advisory suggesting using replace to insert content.
+Images (JPEG, PNG, GIF, WebP) are passed through as attachments and do not participate in the hashline protocol. Binary and directory paths are rejected with a descriptive error. Empty files are returned as a single empty-line hash (`HASH│`). Use replace on that hash to insert content.
 
 ### `replace` -- hash-anchored modifications
 
@@ -66,9 +66,10 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 
 ```json
 {
-  "path": "src/main.ts",
   "changes": [
     { "content_lines": ["  console.log('hashline');"], "hash_range_inclusive": ["ve7", "ve7"] }
+  ],
+  "path": "src/main.ts"
 }
 ```
 
@@ -93,7 +94,7 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 
 ### Stable hashing across edits
 
-Hashes are now computed with a persistent store (`~/.config/pi-hashline-edit-pro/hash-store.json`) that preserves hashes for unchanged lines across edits. When you replace lines in a file, the runtime diffs the old content against the new content and copies hashes for unchanged lines to their new positions. This means editing one part of a file does not change the hashes of unrelated lines elsewhere — the model can keep using previously seen anchors for untouched regions.
+Hashes are now computed with a persistent store (`~/.config/pi-hashline-edit-pro/hash-store.json`) that preserves hashes for unchanged lines across edits. When you replace lines in a file, the runtime maps the old content against the new content and copies hashes for unchanged lines to their new positions. This means editing one part of a file does not change the hashes of unrelated lines elsewhere — the model can keep using previously seen anchors for untouched regions.
 
 The store contains per-file snapshots: the last known content and hashes for each file. On read, if the file content matches the snapshot, the saved hashes are returned immediately. Stale snapshots (for files that no longer exist) are pruned on session start.
 
@@ -144,7 +145,7 @@ The file is created automatically when any setting is toggled. Both fields are i
 - **Per-file mutation queue.** Edits queue by the canonical write target, so concurrent edits through different symlink paths still serialize onto the same underlying file.
 - **Boundary duplication warnings.** When the last line of a replacement matches the next surviving line (or the first line matches the preceding one), a warning is emitted. This catches a common LLM pattern where closing delimiters like `}`, `});`, or `} else {` are accidentally duplicated. The warning is a short header followed by a hashline-anchored window: the duplicated pair plus 2 lines of context before and after, shown as plain `HASH│content` rows with post-edit hashes. Seeing the duplication in context (rather than just being told a hash) is what prompts the model to act on it — and since the hashes are current and staleness is per-line, the model can remove the duplicate in one follow-up `replace` without re-reading. No autocorrection is applied — the duplicate stays in the file and the model decides whether to remove it. Raw line comparison (not trimmed) avoids false positives when indentation differs.
 - **Flat mode normalization.** When flat mode is active, the tool's `execute` function wraps the top-level `hash_range_inclusive` and `content_lines` into a single-element `changes` array internally, then runs the same pipeline as bulk mode. The `normReq` function in `replace-normalize.ts` also handles flat format directly, so any code path that normalizes input (e.g. `compPreview`) works with both formats.
-- **Persistent hash store.** `lineHashes` is async and uses a persistent store to preserve hashes for unchanged lines across edits. The store is at `~/.config/pi-hashline-edit-pro/hash-store.json` and is auto-created on first use. It contains per-file snapshots (last known content+hashes). When called from the replace pipeline, it diffs old vs new content and copies hashes for unchanged lines. When called from read, it returns saved hashes if the content matches, otherwise computes fresh hashes via `_lineHashesPure`. Stale snapshots are pruned on session start. This ensures that editing one part of a file does not cascade to change hashes of unrelated lines.
+- **Persistent hash store.** `lineHashes` is async and uses a persistent store to preserve hashes for unchanged lines across edits. The store is at `~/.config/pi-hashline-edit-pro/hash-store.json` and is auto-created on first use. It contains per-file snapshots (last known content+hashes). When called from the replace pipeline, it maps old vs new content and copies hashes for unchanged lines. When called from read, it returns saved hashes if the content matches, otherwise computes fresh hashes via `_lineHashesPure`. Stale snapshots are pruned on session start. This ensures that editing one part of a file does not cascade to change hashes of unrelated lines.
 ## Hashing
 
 Hashes are computed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (xxHash32 via WebAssembly), then mapped to a 3-character string from the URL-safe base64 alphabet `A-Za-z0-9-_`. That's 64 distinct characters, 6 bits per position, 18 bits of entropy per anchor.
@@ -157,7 +158,7 @@ The runtime always precomputes the full per-line hash array for a file via `line
 
 ### Bare-prefix detector
 
-With the `│` delimiter format, the bare-prefix detector regex `^\s*[A-Za-z0-9_\-]{3}│` is highly specific. It only matches lines starting with a hash-like prefix. This eliminates false positives from common code patterns like `init:`, `data:`, `else:`, etc. The detector rejects edit lines matching this pattern with `[E_BARE_HASH_PREFIX]` to prevent the model from accidentally pasting hash anchors into file content.
+With the `│` delimiter format, the bare-prefix detector regex `^\s*([A-Za-z0-9_\-]{3})│` is highly specific. It only matches lines starting with a hash-like prefix. This eliminates false positives from common code patterns like `init:`, `data:`, `else:`, etc. The detector rejects edit lines matching this pattern with `[E_BARE_HASH_PREFIX]` to prevent the model from accidentally pasting hash anchors into file content.
 
 ## Development
 
