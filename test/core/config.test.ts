@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import {
@@ -15,16 +15,15 @@ import {
 // We override the config path by manipulating the homedir. The config module
 // uses os.homedir() → ~/.config/pi-hashline-edit-pro/config.json. We create
 // a temp dir and set HOME so the module writes there instead.
-const origHome = process.env.HOME;
 let tmpHome: string;
 
 async function withTempHome(run: () => Promise<void>): Promise<void> {
   tmpHome = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-config-test-"));
-  process.env.HOME = tmpHome;
+  vi.stubEnv('HOME', tmpHome);
   try {
     await run();
   } finally {
-    process.env.HOME = origHome;
+    vi.unstubAllEnvs();
     await rm(tmpHome, { recursive: true, force: true });
   }
 }

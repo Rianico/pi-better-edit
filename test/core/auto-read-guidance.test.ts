@@ -1,20 +1,19 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { buildToolDef as buildBulkToolDef } from "../../src/replace";
 import { buildToolDefFlat } from "../../src/replace-flat";
 import { writeConfig } from "../../src/config";
 
-const origHome = process.env.HOME;
 let tmpHome: string;
 
 async function withTempHome(run: () => Promise<void>): Promise<void> {
   tmpHome = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-auto-read-test-"));
-  process.env.HOME = tmpHome;
+  vi.stubEnv('HOME', tmpHome);
   try {
     await run();
   } finally {
-    process.env.HOME = origHome;
+    vi.unstubAllEnvs();
     await rm(tmpHome, { recursive: true, force: true });
   }
 }

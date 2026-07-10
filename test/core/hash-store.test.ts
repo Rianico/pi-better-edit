@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import {
@@ -8,16 +8,15 @@ import {
   type HashStore,
 } from "../../src/hash-store";
 
-const origHome = process.env.HOME;
 let tmpHome: string;
 
 async function withTempHome(run: () => Promise<void>): Promise<void> {
   tmpHome = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-hashstore-test-"));
-  process.env.HOME = tmpHome;
+  vi.stubEnv('HOME', tmpHome);
   try {
     await run();
   } finally {
-    process.env.HOME = origHome;
+    vi.unstubAllEnvs();
     await rm(tmpHome, { recursive: true, force: true });
   }
 }

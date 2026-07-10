@@ -1,5 +1,6 @@
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
+import { vi } from "vitest";
 import { _lineHashesPure, initHasher } from "../../src/hashline";
 
 import register from "../../index";
@@ -16,9 +17,9 @@ export async function getWritableTempRoot(): Promise<string> {
 }
 
 /**
- * Creates a temp HOME directory with an initialized hash store, sets
- * process.env.HOME to it, and returns a cleanup function that restores
- * the original HOME and removes the temp directory.
+ * Creates a temp HOME directory with an initialized hash store, stubs
+ * process.env.HOME via vi.stubEnv, and returns a cleanup function that
+ * unstubs HOME and removes the temp directory.
  * Use in beforeAll/afterAll in test files that need stable hashing.
  */
 export async function setupTestHome(): Promise<{
@@ -28,14 +29,13 @@ export async function setupTestHome(): Promise<{
 }> {
   await initHasher();
   const tmpHome = await mkdtemp(join(await getWritableTempRoot(), "testhome-"));
-  const oldHome = process.env.HOME;
-  process.env.HOME = tmpHome;
+  vi.stubEnv('HOME', tmpHome);
   const testPath = join(tmpHome, "test.txt");
   return {
     home: tmpHome,
     testPath,
     cleanup: async () => {
-      process.env.HOME = oldHome;
+      vi.unstubAllEnvs();
       await rm(tmpHome, { recursive: true, force: true });
     },
   };
