@@ -5,7 +5,7 @@ import { _lineHashesPure, initHasher } from "../../src/hashline";
 
 import register from "../../index";
 import { regReplace } from "../../src/replace";
-
+import { regReplaceFlat } from "../../src/replace-flat";
 /**
  * Shared temp-root for the suite (under the repo's `.tmp/`, which is gitignored).
  * Centralized so every helper resolves the same writable root.
@@ -152,6 +152,21 @@ export function makeFakeReplaceRegistry() {
 export function setupIntegrationTest(cwd: string) {
   const { pi, getTool } = makeFakePiRegistry();
   register(pi);
+  const ctx = { cwd, ui: { notify() {} } } as any;
+  return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };
+}
+
+/**
+ * Sets up a flat-mode integration test environment.
+ * Registers the flat-mode replace tool (top-level hash_range_inclusive / content_lines,
+ * no `changes` array) instead of the bulk-mode tool.
+ */
+export function setupFlatIntegrationTest(cwd: string) {
+  const { pi, getTool } = makeFakePiRegistry();
+  // Register read and undo tools from the main entrypoint
+  register(pi);
+  // Override the replace tool with the flat-mode variant
+  regReplaceFlat(pi);
   const ctx = { cwd, ui: { notify() {} } } as any;
   return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };
 }

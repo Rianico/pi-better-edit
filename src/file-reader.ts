@@ -6,7 +6,7 @@ import { toCwd } from "./path-utils";
 import { detectEnding, toLF, stripBOM } from "./replace-diff";
 import { abortIf } from "./runtime";
 import { assertText, valAccess } from "./validation";
-
+import { visLines } from "./utils";
 export interface NormFile {
   absolutePath: string;
   normalized: string;
@@ -40,7 +40,7 @@ export async function readNormFile(
   const normalized = toLF(rawContent);
 
   if (maxLines !== undefined) {
-    const lineCount = normalized.split("\n").length;
+    const lineCount = visLines(normalized).length;
     if (lineCount > maxLines) {
       throw new Error(
         `[E_FILE_TOO_LARGE] ${path} has ${lineCount} lines, exceeding the ${maxLines}-line edit limit. Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.`,

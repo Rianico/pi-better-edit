@@ -75,48 +75,49 @@ function assertAligned(
 	}
 }
 
+
 export function fmtMismatch(
-	mismatches: HMismatch[],
-	fileLines: string[],
-	fileHashes: string[],
-	filePath?: string,
-	): string {
-	assertAligned(fileLines, fileHashes, "fmtMismatch");
+  mismatches: HMismatch[],
+  fileLines: string[],
+  fileHashes: string[],
+  filePath?: string,
+): string {
+  assertAligned(fileLines, fileHashes, "fmtMismatch");
 
-	const out: string[] = [];
-	const notFound = mismatches.filter((m) => m.kind === "not_found");
-	const ambiguous = mismatches.filter((m) => m.kind === "ambiguous");
+  const out: string[] = [];
+  const notFound = mismatches.filter((m) => m.kind === "not_found");
+  const ambiguous = mismatches.filter((m) => m.kind === "ambiguous");
 
-	const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
-	if (notFound.length > 0) {
-		out.push(
-			`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
-		);
-	}
-	if (ambiguous.length > 0) {
-		if (out.length > 0) out.push("");
-		out.push(
-			`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
-		);
-		for (const m of ambiguous) {
-			const sample = (m.candidates ?? []).slice(0, 5);
-			const more =
-				(m.candidates?.length ?? 0) > sample.length
-					? `, ... (+${(m.candidates?.length ?? 0) - sample.length} more)`
-					: "";
-			const lines = sample
-				.map((line) => {
-					const content = fileLines[line - 1] ?? "";
-					return `    ${line}: ${fileHashes[line - 1]}│${content}`;
-				})
-				.join("\n");
-				out.push(
-					`  Hash "${m.ref.hash}" matches lines ${sample.join(", ")}${more}.\n${lines}`,
-				);
-		}
-	}
+  const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
+  if (notFound.length > 0) {
+    out.push(
+      `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
+    );
+  }
+  if (ambiguous.length > 0) {
+    if (out.length > 0) out.push("");
+    out.push(
+      `[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
+    );
+    for (const m of ambiguous) {
+      const sample = (m.candidates ?? []).slice(0, 5);
+      const more =
+        (m.candidates?.length ?? 0) > sample.length
+          ? `, ... (+${(m.candidates?.length ?? 0) - sample.length} more)`
+          : "";
+      const lines = sample
+        .map((line) => {
+          const content = fileLines[line - 1] ?? "";
+          return `    ${line}: ${fileHashes[line - 1]}│${content}`;
+        })
+        .join("\n");
+        out.push(
+          `  Hash "${m.ref.hash}" matches lines ${sample.join(", ")}${more}.\n${lines}`,
+        );
+    }
+  }
 
-	return out.join("\n");
+  return out.join("\n");
 }
 
 const ITEM_KS = new Set(["hash_range_inclusive", "content_lines"]);
