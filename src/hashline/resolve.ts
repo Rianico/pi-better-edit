@@ -9,10 +9,10 @@ export type RAnchor = {
 	hashMatched: boolean;
 };
 
-export type HEdit = { hash_range_inclusive: [Anchor, Anchor]; content_lines: string[] };
+export type HEdit = { content_lines: string[]; hash_range_inclusive: [Anchor, Anchor] };
 export type RHEdit = {
-  hash_range_inclusive: [RAnchor, RAnchor];
   content_lines: string[];
+  hash_range_inclusive: [RAnchor, RAnchor];
 };
 
 interface HMismatch {
@@ -37,8 +37,8 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-  hash_range_inclusive: [string, string];
   content_lines: string[];
+  hash_range_inclusive: [string, string];
 };
 
 function resAnchor(
@@ -120,7 +120,7 @@ export function fmtMismatch(
   return out.join("\n");
 }
 
-const ITEM_KS = new Set(["hash_range_inclusive", "content_lines"]);
+const ITEM_KS = new Set(["content_lines", "hash_range_inclusive"]);
 
 function isStrArr(value: unknown): value is string[] {
 	return (
@@ -137,7 +137,7 @@ function isStrPair(value: unknown): value is [string, string] {
 }
 
 function assertItem(edit: Record<string, unknown>, index: number): void {
-  rejectUnknownFields(edit, ITEM_KS, `Edit ${index}`, "Each edit takes only { hash_range_inclusive, content_lines }.");
+  rejectUnknownFields(edit, ITEM_KS, `Edit ${index}`, "Each edit takes only { content_lines, hash_range_inclusive }.");
 
   if ("hash_range_inclusive" in edit && !isStrPair(edit.hash_range_inclusive)) {
     throw new Error(
@@ -164,8 +164,8 @@ export function resEdits(edits: HTEdit[]): HEdit[] {
 
     const replaceLines = parseText(edit.content_lines);
     result.push({
-      hash_range_inclusive: [parseHashRef(edit.hash_range_inclusive[0]), parseHashRef(edit.hash_range_inclusive[1])],
       content_lines: replaceLines,
+      hash_range_inclusive: [parseHashRef(edit.hash_range_inclusive[0]), parseHashRef(edit.hash_range_inclusive[1])],
     });
   }
   return result;
@@ -215,7 +215,7 @@ export function assertNoBarePrefix(
       : `${matchedCount} match file line hashes — strong evidence the prefix was copied from read output.`;
 
   throw new Error(
-    `[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (${locations}). Example: ${JSON.stringify(exampleLine)}. ${linesHint} Remove the "HASH│" prefix from each affected content_lines entry; keep only the literal line content that appears after "│" in read output. Remember: hash_range_inclusive uses hash anchors, content_lines uses file content only.`
+    `[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (${locations}). Example: ${JSON.stringify(exampleLine)}. ${linesHint} Remove the "HASH│" prefix from each affected content_lines entry; keep only the literal line content that appears after "│" in read output. Remember: content_lines uses file content only, hash_range_inclusive uses hash anchors.`
   );
 }
 
@@ -291,8 +291,8 @@ export function valEdits(
     const leading = checkBoundaryDup(prevLine, replacementFirstLine, "leading", startResolved.line - 2, fileLines, resolved.length);
     if (leading) boundaryWarnings.push(leading);
     resolved.push({
-      hash_range_inclusive: [startResolved, endResolved],
       content_lines: edit.content_lines,
+      hash_range_inclusive: [startResolved, endResolved],
     });
   }
 

@@ -127,7 +127,7 @@ export function assertReq(
   for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"]) {
     if (has(request, legacyKey)) {
       throw new Error(
-        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}.`
+        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {content_lines: [...], hash_range_inclusive: ["<START>", "<END>"]}.`
       );
     }
   }
@@ -139,7 +139,7 @@ export function assertReq(
   }
 
   if (!Array.isArray(request.changes)) {
-    throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { hash_range_inclusive: ["<START>", "<END>"], content_lines: [...] }.');
+    throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { content_lines: [...], hash_range_inclusive: ["<START>", "<END>"] }.');
   }
 }
 

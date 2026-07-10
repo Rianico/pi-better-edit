@@ -11,64 +11,62 @@ read({ path: "src/main.ts" })
 
 2. Copy the 3-character HASH (before `│`) into `hash_range_inclusive`:
 ```json
-{ "path": "src/main.ts", "changes": [
+{ "changes": [
   { "content_lines": ["const x = 99;"], "hash_range_inclusive": ["MQX", "MQX"] }
-] }
+], "path": "src/main.ts" }
 ```
 
 Examples:
 
 1. Single line replace:
 ```json
-{ "path": "src/main.ts", "changes": [
+{ "changes": [
   { "content_lines": ["const x = 1;"], "hash_range_inclusive": ["MQX", "MQX"] }
-] }
+], "path": "src/main.ts" }
 ```
 
 2. Range replace (3 lines → 3 new lines):
 ```json
-{ "path": "src/main.ts", "changes": [
+{ "changes": [
   { "content_lines": [
     "function greet(name) {",
     "  return `Hello, ${name}`;",
     "}"
   ], "hash_range_inclusive": ["ZPM", "VRW"] }
-] }
+], "path": "src/main.ts" }
 ```
 
 3. Multiple regions in one call (delete two non-adjacent ranges):
 ```json
-{ "path": "src/server.ts", "changes": [
+{ "changes": [
   { "content_lines": [], "hash_range_inclusive": ["aB3", "xY7"] },
   { "content_lines": [], "hash_range_inclusive": ["MQX", "ZPM"] }
-] }
+], "path": "src/server.ts" }
 ```
 
 4. Append after the last line (include the old last line so the new line is added after it):
 ```json
-{ "path": "src/main.ts", "changes": [
+{ "changes": [
   { "content_lines": ["old last line", "new line"], "hash_range_inclusive": ["ZPM", "ZPM"] }
-] }
+], "path": "src/main.ts" }
 ```
 
 5. Seed content into an empty file (replace the single empty-line hash returned by read):
 ```json
-{ "path": "src/main.ts", "changes": [
+{ "changes": [
   { "content_lines": ["first line", "second line"], "hash_range_inclusive": ["aB3", "aB3"] }
-] }
+], "path": "src/main.ts" }
 ```
 
 ⚠️ Common mistake: do not copy the `HASH│` prefix into `content_lines`.
 
 Wrong:
 ```json
-{ "hash_range_inclusive": ["F4T", "F4T"], "content_lines": ["F4T│import { x } from \"./x\";"] }
-```
+{ "content_lines": ["F4T│import { x } from \"./x\";"], "hash_range_inclusive": ["F4T", "F4T"] }
 
 Right:
 ```json
-{ "hash_range_inclusive": ["F4T", "F4T"], "content_lines": ["import { x } from \"./x\";"] }
-```
+{ "content_lines": ["import { x } from \"./x\";"], "hash_range_inclusive": ["F4T", "F4T"] }
 
 `hash_range_inclusive` uses the hash anchor. `content_lines` uses literal file content only — the same text that appears after the `│` in `read` output.
 
@@ -76,13 +74,11 @@ Right:
 
 Wrong:
 ```json
-{ "hash_range_inclusive": ["F4T│import { x } from \"./x\";", "F4T│import { x } from \"./x\";"], "content_lines": [...] }
-```
+{ "content_lines": [...], "hash_range_inclusive": ["F4T│import { x } from \"./x\";", "F4T│import { x } from \"./x\";"] }
 
 Right:
 ```json
-{ "hash_range_inclusive": ["F4T", "F4T"], "content_lines": [...] }
-```
+{ "content_lines": [...], "hash_range_inclusive": ["F4T", "F4T"] }
 
 Rules:
 - `hash_range_inclusive` is a pair `[start, end]`. A single-line replace is `hash_range_inclusive: ["X", "X"]`.
@@ -107,14 +103,12 @@ function greet() {
 ```
 A model might write:
 ```json
-{ "hash_range_inclusive": ["X", "Y"], "content_lines": ["  const y = 2;", "  return y;", "}"] }
-```
+{ "content_lines": ["  const y = 2;", "  return y;", "}"], "hash_range_inclusive": ["X", "Y"] }
 This produces `function greet() {\n  const y = 2;\n  return y;\n}\n}` — the `}` appears twice because it was already on line 4 (outside the range) AND in `content_lines`.
 
 Right: Only include the new lines that belong in the range:
 ```json
-{ "hash_range_inclusive": ["X", "Y"], "content_lines": ["  const y = 2;", "  return y;"] }
-```
+{ "content_lines": ["  const y = 2;", "  return y;"], "hash_range_inclusive": ["X", "Y"] }
 The `}` on line 4 is outside the range and stays in place.
 
 Error recovery:
@@ -122,10 +116,10 @@ Error recovery:
 - `[E_BAD_REF]` — malformed HASH. Re-read and try again.
 - `[E_BAD_OP]` — invalid operation (e.g. start line > end line).
 - `[E_BAD_SHAPE]` — malformed request or change item (missing fields, wrong types, unknown fields).
-- `[E_LEGACY_SHAPE]` — old `oldText`/`newText` or `old_text`/`new_text` format detected. Use `{hash_range_inclusive, content_lines}` instead.
+- `[E_LEGACY_SHAPE]` — old `oldText`/`newText` or `old_text`/`new_text` format detected. Use `{content_lines, hash_range_inclusive}` instead.
 - `[E_EDIT_CONFLICT]` — two changes overlap on the same line range. Make changes non-overlapping.
 - `[E_AMBIGUOUS_ANCHOR]` — hash collision. Call `read` to get fresh anchors.
-- `[E_BARE_HASH_PREFIX]` — a `content_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `hash_range_inclusive` uses hashes, `content_lines` does not.
+- `[E_BARE_HASH_PREFIX]` — a `content_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `content_lines` uses file content only, `hash_range_inclusive` uses hash anchors.
 - `[E_INVALID_PATCH]` — a `content_lines` entry matches the diff preview's `+HASH│…` addition-row form. Use literal file content. (Plain `+`/`-` lines are not rejected — they are written literally.)
 - `[E_WOULD_EMPTY]` — edit would empty a non-empty file.
 - `[E_FILE_TOO_LARGE]` — file exceeds the 1,000,000-line edit limit. Use `write` or a non-line-based approach for very large files.

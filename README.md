@@ -68,8 +68,7 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 {
   "path": "src/main.ts",
   "changes": [
-    { "hash_range_inclusive": ["ve7", "ve7"], "content_lines": ["  console.log('hashline');"] }
-  ]
+    { "content_lines": ["  console.log('hashline');"], "hash_range_inclusive": ["ve7", "ve7"] }
 }
 ```
 
@@ -77,9 +76,9 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 
 ```json
 {
-  "path": "src/main.ts",
+  "content_lines": ["  console.log('hashline');"],
   "hash_range_inclusive": ["ve7", "ve7"],
-  "content_lines": ["  console.log('hashline');"]
+  "path": "src/main.ts"
 }
 ```
 
@@ -89,7 +88,7 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 | `content_lines` | Literal replacement content, one string per line (use `[]` to delete the range). |
 
 - **Request structure validation.** The request envelope (`path`, `changes` in bulk mode; `path`, `hash_range_inclusive`, `content_lines` in flat mode) and individual edit items are validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`.
-- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}`.
+- **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{content_lines: [...], hash_range_inclusive: ["<START>", "<END>"]}`.
 - **Batched atomicity (bulk mode).** All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
 
 ### Stable hashing across edits
