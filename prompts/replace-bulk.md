@@ -12,7 +12,7 @@ read({ path: "src/main.ts" })
 2. Copy the 3-character HASH (before `│`) into `hash_range_inclusive`:
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 99;"] }
+  { "content_lines": ["const x = 99;"], "hash_range_inclusive": ["MQX", "MQX"] }
 ] }
 ```
 
@@ -21,40 +21,40 @@ Examples:
 1. Single line replace:
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 1;"] }
+  { "content_lines": ["const x = 1;"], "hash_range_inclusive": ["MQX", "MQX"] }
 ] }
 ```
 
 2. Range replace (3 lines → 3 new lines):
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["ZPM", "VRW"], "content_lines": [
+  { "content_lines": [
     "function greet(name) {",
     "  return `Hello, ${name}`;",
     "}"
-  ] }
+  ], "hash_range_inclusive": ["ZPM", "VRW"] }
 ] }
 ```
 
 3. Multiple regions in one call (delete two non-adjacent ranges):
 ```json
 { "path": "src/server.ts", "changes": [
-  { "hash_range_inclusive": ["aB3", "xY7"], "content_lines": [] },
-  { "hash_range_inclusive": ["MQX", "ZPM"], "content_lines": [] }
+  { "content_lines": [], "hash_range_inclusive": ["aB3", "xY7"] },
+  { "content_lines": [], "hash_range_inclusive": ["MQX", "ZPM"] }
 ] }
 ```
 
 4. Append after the last line (include the old last line so the new line is added after it):
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["ZPM", "ZPM"], "content_lines": ["old last line", "new line"] }
+  { "content_lines": ["old last line", "new line"], "hash_range_inclusive": ["ZPM", "ZPM"] }
 ] }
 ```
 
 5. Seed content into an empty file (replace the single empty-line hash returned by read):
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["aB3", "aB3"], "content_lines": ["first line", "second line"] }
+  { "content_lines": ["first line", "second line"], "hash_range_inclusive": ["aB3", "aB3"] }
 ] }
 ```
 

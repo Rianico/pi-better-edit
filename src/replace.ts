@@ -11,7 +11,7 @@ import {
   restoreEndings,
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
-import { normReq, normalizeFilePath, tryParseField } from "./replace-normalize";
+import { normReq, normalizeFilePath } from "./replace-normalize";
 import { isRec, has, rejectUnknownFields } from "./utils";
 import { MAX_HASH_LINES } from "./constants";
 import { resolveTarget, writeAtomic } from "./fs-write";
@@ -311,8 +311,6 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
           if (!isRec(args)) return args as any;
           const record = { ...args };
           normalizeFilePath(record);
-          tryParseField(record, "hash_range_inclusive");
-          tryParseField(record, "content_lines");
           return record as any;
         }
       : (args: unknown) =>
@@ -408,14 +406,17 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const canonical = opts.flat
         ? normReq({
+            content_lines: (params as any).content_lines,
+            hash_range_inclusive: (params as any).hash_range_inclusive,
             path: (params as any).path,
             changes: [{
-              hash_range_inclusive: (params as any).hash_range_inclusive,
               content_lines: (params as any).content_lines,
+              hash_range_inclusive: (params as any).hash_range_inclusive,
             }],
           })
         : normReq(params);
-      const normWarnings = (canonical as Record<string, unknown>)._normWarnings as string[] | undefined;
+
+
       const normalizedParams = canonical as { path: string; changes: HTEdit[] };
       const path = normalizedParams.path;
       const absolutePath = toCwd(path, ctx.cwd);
@@ -447,10 +448,6 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
           : Array.isArray(normalizedParams.changes)
             ? normalizedParams.changes.length
             : 0;
-
-        if (normWarnings) {
-          warnings.push(...normWarnings);
-        }
 
         if (originalNormalized === result) {
           const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;

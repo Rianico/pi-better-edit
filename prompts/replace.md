@@ -22,13 +22,13 @@ read({ path: "src/main.ts" })
 **Bulk mode:**
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 99;"] }
+  { "content_lines": ["const x = 99;"], "hash_range_inclusive": ["MQX", "MQX"] }
 ] }
 ```
 
 **Flat mode:**
 ```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 99;"] }
+{ "content_lines": ["const x = 99;"], "hash_range_inclusive": ["MQX", "MQX"], "path": "src/main.ts" }
 ```
 
 Examples:
@@ -38,13 +38,13 @@ Examples:
 Bulk:
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 1;"] }
+  { "content_lines": ["const x = 1;"], "hash_range_inclusive": ["MQX", "MQX"] }
 ] }
 ```
 
 Flat:
 ```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["MQX", "MQX"], "content_lines": ["const x = 1;"] }
+{ "content_lines": ["const x = 1;"], "hash_range_inclusive": ["MQX", "MQX"], "path": "src/main.ts" }
 ```
 
 2. Range replace (3 lines → 3 new lines):
@@ -52,28 +52,28 @@ Flat:
 Bulk:
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["ZPM", "VRW"], "content_lines": [
+  { "content_lines": [
     "function greet(name) {",
     "  return `Hello, ${name}`;",
     "}"
-  ] }
+  ], "hash_range_inclusive": ["ZPM", "VRW"] }
 ] }
 ```
 
 Flat:
 ```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["ZPM", "VRW"], "content_lines": [
-  "function greet(name) {",
-  "  return `Hello, ${name}`;",
-  "}"
-] }
+{ "content_lines": [
+    "function greet(name) {",
+    "  return `Hello, ${name}`;",
+    "}"
+  ], "hash_range_inclusive": ["ZPM", "VRW"], "path": "src/main.ts" }
 ```
 
 3. Multiple regions in one call (bulk mode only — flat mode supports one edit per call):
 ```json
 { "path": "src/server.ts", "changes": [
-  { "hash_range_inclusive": ["aB3", "xY7"], "content_lines": [] },
-  { "hash_range_inclusive": ["MQX", "ZPM"], "content_lines": [] }
+  { "content_lines": [], "hash_range_inclusive": ["aB3", "xY7"] },
+  { "content_lines": [], "hash_range_inclusive": ["MQX", "ZPM"] }
 ] }
 ```
 
@@ -82,13 +82,13 @@ Flat:
 Bulk:
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["ZPM", "ZPM"], "content_lines": ["old last line", "new line"] }
+  { "content_lines": ["old last line", "new line"], "hash_range_inclusive": ["ZPM", "ZPM"] }
 ] }
 ```
 
 Flat:
 ```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["ZPM", "ZPM"], "content_lines": ["old last line", "new line"] }
+{ "content_lines": ["old last line", "new line"], "hash_range_inclusive": ["ZPM", "ZPM"], "path": "src/main.ts" }
 ```
 
 5. Seed content into an empty file (replace the single empty-line hash returned by read):
@@ -96,13 +96,13 @@ Flat:
 Bulk:
 ```json
 { "path": "src/main.ts", "changes": [
-  { "hash_range_inclusive": ["aB3", "aB3"], "content_lines": ["first line", "second line"] }
+  { "content_lines": ["first line", "second line"], "hash_range_inclusive": ["aB3", "aB3"] }
 ] }
 ```
 
 Flat:
 ```json
-{ "path": "src/main.ts", "hash_range_inclusive": ["aB3", "aB3"], "content_lines": ["first line", "second line"] }
+{ "content_lines": ["first line", "second line"], "hash_range_inclusive": ["aB3", "aB3"], "path": "src/main.ts" }
 ```
 
 ⚠️ Common mistake: do not copy the `HASH│` prefix into `content_lines`.

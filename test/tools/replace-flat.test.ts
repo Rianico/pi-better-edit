@@ -53,29 +53,7 @@ describe("regReplaceFlat", () => {
     expect(result.file_path).toBeUndefined();
   });
 
-  it("prepareArguments parses JSON-string hash_range_inclusive", () => {
-    const { pi, getTool } = makeFakePiRegistry();
-    regReplaceFlat(pi);
-    const tool = getTool("replace");
-    const result = tool.prepareArguments({
-      path: "test.txt",
-      hash_range_inclusive: JSON.stringify(["AAA", "BBB"]),
-      content_lines: ["new"],
-    });
-    expect(result.hash_range_inclusive).toEqual(["AAA", "BBB"]);
-  });
 
-  it("prepareArguments parses JSON-string content_lines", () => {
-    const { pi, getTool } = makeFakePiRegistry();
-    regReplaceFlat(pi);
-    const tool = getTool("replace");
-    const result = tool.prepareArguments({
-      path: "test.txt",
-      hash_range_inclusive: ["AAA", "BBB"],
-      content_lines: JSON.stringify(["a", "b"]),
-    });
-    expect(result.content_lines).toEqual(["a", "b"]);
-  });
 
   it("replaces a single line via flat mode execute", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
