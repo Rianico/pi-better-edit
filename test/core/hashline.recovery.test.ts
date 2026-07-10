@@ -80,7 +80,7 @@ describe("applyEdits — recovery scenarios", () => {
 
   it("rejects string content_lines", () => {
     const edits = [{ hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: "hello\nworld\n" }] as any;
-    expect(() => resEdits(edits)).toThrow(/content_lines" must be a string array/);
+    expect(() => resEdits(edits)).toThrow(/must be a native JSON array of strings, not a JSON string/);
   });
 
   it("rejects malformed hash_range_inclusive", () => {

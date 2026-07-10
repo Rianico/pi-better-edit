@@ -67,17 +67,29 @@ describe("parseText", () => {
 		expect(parseText(null)).toEqual([]);
 	});
 
-	it("splits string on newline", () => {
-		expect(parseText("a\nb")).toEqual(["a", "b"]);
-	});
+  it("rejects string input with clear error (must use array)", () => {
+    expect(() => parseText("a\nb")).toThrow(
+      /must be a native JSON array of strings, not a JSON string/,
+    );
+  });
 
-	it("removes trailing blank line from string input", () => {
-		expect(parseText("a\nb\n")).toEqual(["a", "b"]);
-	});
+  it("rejects string input with trailing newline", () => {
+    expect(() => parseText("a\nb\n")).toThrow(
+      /must be a native JSON array of strings, not a JSON string/,
+    );
+  });
 
-	it("preserves a trailing whitespace-only content line in string input", () => {
-		expect(parseText("a\nb\n  ")).toEqual(["a", "b", "  "]);
-	});
+  it("rejects string input with trailing whitespace", () => {
+    expect(() => parseText("a\nb\n  ")).toThrow(
+      /must be a native JSON array of strings, not a JSON string/,
+    );
+  });
+
+  it("rejects empty string input", () => {
+    expect(() => parseText("")).toThrow(
+      /must be a native JSON array of strings, not a JSON string/,
+    );
+  });
 
 	it("passes through array input verbatim", () => {
 		const input = ["a", "b"];
@@ -92,10 +104,9 @@ describe("parseText", () => {
 		expect(parseText(["+added"])).toEqual(["+added"]);
 	});
 
-	it("returns empty string as a single empty line for blank content", () => {
-		expect(parseText("")).toEqual([""]);
-	});
-
+  it("returns empty string as a single empty line for blank content (array input)", () => {
+    expect(parseText([""])).toEqual([""]);
+  });
 	it("rejects array input that contains HASH| prefixes", () => {
 		expect(() => parseText(["+aB3│foo", "+xYp│bar"])).toThrow(
 			/^\[E_INVALID_PATCH\]/,
@@ -114,8 +125,10 @@ describe("parseText", () => {
 		).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 
-	it("rejects string-form rendered diff hunks", () => {
-		const input = " aB3│keep\n-10    old\n+xYp│new\n mNo│after";
-		expect(() => parseText(input)).toThrow(/^\[E_INVALID_PATCH\]/);
-	});
+  it("rejects string-form rendered diff hunks (string input rejected before prefix check)", () => {
+    const input = " aB3│keep\n-10    old\n+xYp│new\n mNo│after";
+    expect(() => parseText(input)).toThrow(
+      /must be a native JSON array of strings, not a JSON string/,
+    );
+  });
 });

@@ -56,13 +56,13 @@ function assertNoPrefixes(lines: string[]): void {
 }
 
 export function parseText(edit: string[] | string | null): string[] {
-	if (edit === null) return [];
-	const lines =
-		typeof edit === "string"
-			? (edit.endsWith("\n") ? edit.slice(0, -1) : edit)
-					.replaceAll("\r", "")
-					.split("\n")
-			: edit;
-	assertNoPrefixes(lines);
-	return lines;
+  if (edit === null) return [];
+  if (typeof edit === "string") {
+    throw new Error(
+      `[E_BAD_SHAPE] "content_lines" must be a native JSON array of strings, not a JSON string.`
+      + ` Do not serialize the array (e.g. '["line1", "line2"]') — pass it as a proper JSON array: ["line1", "line2"].`
+    );
+  }
+  assertNoPrefixes(edit);
+  return edit;
 }

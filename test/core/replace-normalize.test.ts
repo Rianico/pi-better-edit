@@ -106,16 +106,15 @@ describe("normReq — content_lines handling", () => {
 		expect(changes[0]!.content_lines).toEqual(["line1", "line2"]);
 	});
 
-	it("leaves non-JSON string content_lines as-is for downstream validation", () => {
-		const input = {
-			path: "test.txt",
-			changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: "not json" }],
-		};
-		const result = normReq(input) as Record<string, unknown>;
-		const changes = result.changes as Array<Record<string, unknown>>;
-		expect(typeof changes[0]!.content_lines).toBe("string");
-		expect(changes[0]!.content_lines).toBe("not json");
-	});
+  it("rejects non-JSON string content_lines with clear error", () => {
+    const input = {
+      path: "test.txt",
+      changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: "not json" }],
+    };
+    expect(() => normReq(input)).toThrow(
+      /must be a native JSON array of strings, not a JSON string/,
+    );
+  });
 });
 
 describe("normReq — change item handling", () => {
@@ -208,16 +207,16 @@ describe("normReq — flat format (top-level hash_range_inclusive / content_line
 		expect(result.hash_range_inclusive).toBe("not-an-array");
 	});
 
-	it("does not wrap when content_lines is not an array", () => {
-		const input = {
-			path: "test.txt",
-			hash_range_inclusive: ["AAA", "BBB"],
-			content_lines: "not-an-array",
-		};
-		const result = normReq(input) as Record<string, unknown>;
-		expect(result.changes).toBeUndefined();
-		expect(result.content_lines).toBe("not-an-array");
-	});
+  it("rejects non-JSON string content_lines in flat format with clear error", () => {
+    const input = {
+      path: "test.txt",
+      hash_range_inclusive: ["AAA", "BBB"],
+      content_lines: "not-an-array",
+    };
+    expect(() => normReq(input)).toThrow(
+      /must be a native JSON array of strings, not a JSON string/,
+    );
+  });
 
 	it("does not wrap when only hash_range_inclusive is present (no content_lines)", () => {
 		const input = {

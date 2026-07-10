@@ -46,7 +46,7 @@ describe("strict edit input (no autocorrection)", () => {
       } as unknown as HTEdit,
     ];
     expect(() => resEdits(toolEdits)).toThrow(
-      /content_lines" must be a string array/i,
+      /must be a native JSON array of strings, not a JSON string/i,
     );
 	});
 

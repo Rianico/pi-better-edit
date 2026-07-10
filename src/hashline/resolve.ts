@@ -148,6 +148,13 @@ function assertItem(edit: Record<string, unknown>, index: number): void {
     throw new Error(`[E_BAD_SHAPE] Edit ${index} requires a "content_lines" field. Provide the replacement lines (use [] to delete).`);
   }
   if ("content_lines" in edit && !isStrArr(edit.content_lines)) {
+    const val = edit.content_lines;
+    if (typeof val === "string") {
+      throw new Error(
+        `[E_BAD_SHAPE] Edit ${index} field "content_lines" must be a native JSON array of strings, not a JSON string.`
+        + ` Do not serialize the array (e.g. '["line1", "line2"]') — pass it as a proper JSON array: ["line1", "line2"].`
+      );
+    }
     throw new Error(`[E_BAD_SHAPE] Edit ${index} field "content_lines" must be a string array.`);
   }
   if (!isStrPair(edit.hash_range_inclusive)) {

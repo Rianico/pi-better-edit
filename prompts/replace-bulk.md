@@ -80,6 +80,18 @@ Right:
 ```json
 { "content_lines": [...], "hash_range_inclusive": ["F4T", "F4T"] }
 
+⚠️ Common mistake: do not serialize `content_lines` as a JSON string.
+
+Wrong:
+```json
+{ "changes": [{ "content_lines": "[\"line1\", \"line2\"]", "hash_range_inclusive": ["F4T", "F4T"] }], "path": "src/main.ts" }
+
+Right:
+```json
+{ "changes": [{ "content_lines": ["line1", "line2"], "hash_range_inclusive": ["F4T", "F4T"] }], "path": "src/main.ts" }
+
+`content_lines` must be a native JSON array of strings, not a string that looks like an array. Pass it as a proper JSON array value.
+
 Rules:
 - `hash_range_inclusive` is a pair `[start, end]`. A single-line replace is `hash_range_inclusive: ["X", "X"]`.
 - To delete a range, use `content_lines: []`.

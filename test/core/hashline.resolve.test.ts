@@ -42,17 +42,17 @@ describe("resEdits", () => {
 		expect(() => resEdits(edits)).toThrow(/Invalid anchor/);
 	});
 
-	it("rejects string content_lines input", () => {
-		const edits: HTEdit[] = [
-			{
-				hash_range_inclusive: ["ZZP", "ZZP"],
+  it("rejects string content_lines input", () => {
+    const edits: HTEdit[] = [
+      {
+        hash_range_inclusive: ["ZZP", "ZZP"],
         content_lines: "hello\nworld\n",
-			} as unknown as HTEdit,
-		];
-		expect(() => resEdits(edits)).toThrow(
-      /content_lines" must be a string array/i,
-		);
-	});
+      } as unknown as HTEdit,
+    ];
+    expect(() => resEdits(edits)).toThrow(
+      /must be a native JSON array of strings, not a JSON string/i,
+    );
+  });
 
 	it("rejects null content_lines input", () => {
 		const edits: HTEdit[] = [
