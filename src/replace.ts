@@ -297,7 +297,7 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
     AUTO_READ_GUIDANCE: readGuidance,
   });
 
-  const parameters = opts.flat ? flatEditToolSchema : editToolSchema;
+  const parameters = editToolSchema;
 
   return {
     name: "replace",

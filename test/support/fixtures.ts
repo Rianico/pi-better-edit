@@ -2,7 +2,7 @@ import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { vi } from "vitest";
 import { _lineHashesPure, initHasher } from "../../src/hashline";
-
+import { Compile } from "typebox/compile";
 import register from "../../index";
 import { regReplace } from "../../src/replace";
 import { regReplaceFlat } from "../../src/replace-flat";
@@ -121,6 +121,32 @@ export function makeFakePiRegistry() {
   return {
     pi: {
       registerTool(tool: any) {
+        // Simulate the Pi harness pipeline: prepareArguments is called
+        // before execute, transforming raw model params into the format
+        // that execute expects. This catches mismatches between the
+        // prepareArguments return value and the execute implementation.
+        const originalExecute = tool.execute;
+        const validator = Compile(tool.parameters);
+        tool.execute = async function(
+          toolCallId: string,
+          params: unknown,
+          signal: AbortSignal | undefined,
+          onUpdate: unknown,
+          ctx: unknown,
+        ) {
+          const prepared = tool.prepareArguments
+            ? tool.prepareArguments(params)
+            : params;
+          // Validate prepared args against the schema, matching the Pi harness
+          if (!validator.Check(prepared)) {
+            const errors = [...validator.Errors(prepared)]
+              .map((e: any) => `  - ${e.message}`)
+              .join("\n");
+            const msg = "[E_BAD_SHAPE] Schema validation failed for tool \"" + tool.name + "\" after prepareArguments. The prepareArguments return value does not match the registered schema.\n" + errors;
+            throw new Error(msg);
+          }
+          return originalExecute.call(this, toolCallId, prepared, signal, onUpdate, ctx);
+        };
         tools.set(tool.name, tool);
       },
       registerCommand() {},

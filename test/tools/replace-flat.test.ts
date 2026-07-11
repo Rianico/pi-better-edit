@@ -2,8 +2,8 @@ import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { flatEditToolSchema, regReplaceFlat } from "../../src/replace-flat";
+import { editToolSchema } from "../../src/replace";
 import { makeFakePiRegistry, withTempFile, setupTestHome } from "../support/fixtures";
-
 let testPath: string;
 let cleanup: () => Promise<void>;
 
@@ -37,7 +37,7 @@ describe("regReplaceFlat", () => {
     const tool = getTool("replace");
     expect(tool).toBeDefined();
     expect(tool.name).toBe("replace");
-    expect(tool.parameters).toBe(flatEditToolSchema);
+    expect(tool.parameters).toBe(editToolSchema);
   });
 
   it("prepareArguments normalizes file_path to path", () => {
@@ -199,28 +199,29 @@ describe("regReplaceFlat", () => {
     });
   });
 
-  it("silently ignores unknown fields at top level (schema validation in Pi framework)", async () => {
+  it("rejects unknown fields at top level via schema validation", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
       regReplaceFlat(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      const result = await tool.execute(
-        "e1",
-        {
-          path: "sample.txt",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!],
-          content_lines: ["BBB"],
-          unknown_field: "bad",
-        } as any,
-        undefined,
-        undefined,
-        { cwd } as any,
-      );
-
-      expect(result.content[0].text).toContain("Successfully replaced in sample.txt");
-      expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
+      // The test wrapper now validates against the schema, matching the Pi harness.
+      // Unknown fields are rejected by schema validation.
+      await expect(
+        tool.execute(
+          "e1",
+          {
+            path: "sample.txt",
+            hash_range_inclusive: [hashes[1]!, hashes[1]!],
+            content_lines: ["BBB"],
+            unknown_field: "bad",
+          } as any,
+          undefined,
+          undefined,
+          { cwd } as any,
+        ),
+      ).rejects.toThrow(/E_BAD_SHAPE/);
     });
   });
 
