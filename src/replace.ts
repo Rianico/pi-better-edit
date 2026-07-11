@@ -311,7 +311,7 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
           if (!isRec(args)) return args as any;
           const record = { ...args };
           normalizeFilePath(record);
-          return record as any;
+          return normReq(record) as any;
         }
       : (args: unknown) =>
           normReq(args) as ReqParams,
@@ -404,17 +404,7 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
     },
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const canonical = opts.flat
-        ? normReq({
-            content_lines: (params as any).content_lines,
-            hash_range_inclusive: (params as any).hash_range_inclusive,
-            path: (params as any).path,
-            changes: [{
-              content_lines: (params as any).content_lines,
-              hash_range_inclusive: (params as any).hash_range_inclusive,
-            }],
-          })
-        : normReq(params);
+      const canonical = normReq(params);
 
 
       const normalizedParams = canonical as { path: string; changes: HTEdit[] };

@@ -200,27 +200,28 @@ describe("flat mode replace — end-to-end", () => {
     });
   });
 
-  it("flat mode rejects bulk changes array format", async () => {
-    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+  it("flat mode normalizes bulk changes array format via normReq", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupFlatIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      // The flat mode tool expects top-level hash_range_inclusive / content_lines.
-      // Passing a `changes` array should fail because the flat mode execute
-      // wraps top-level fields into changes, and when changes is already present
-      // the wrapping produces undefined field values.
-      await expect(
-        editTool.execute(
-          "e1",
-          {
-            path: "sample.ts",
-            changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }],
-          },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      ).rejects.toThrow();
+      // The flat mode tool now calls normReq in prepareArguments,
+      // which handles the changes array correctly.
+      const editResult = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(editResult.content[0].text).toContain("Successfully replaced");
+      const { readFile } = await import("fs/promises");
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nBBB\nccc\n");
     });
   });
 });
