@@ -7,6 +7,7 @@ import { regReplaceFlat } from "./src/replace-flat";
 import { regReplaceUndo } from "./src/replace-undo";
 import { regRead, fmtReadPreview } from "./src/read";
 import { toLF, stripBOM } from "./src/replace-diff";
+import { resolveTarget } from "./src/fs-write";
 import { visLines } from "./src/utils";
 import { AUTO_READ_MAX } from "./src/constants";
 import {
@@ -88,13 +89,14 @@ export default function (pi: ExtensionAPI): void {
 
     try {
       const absolutePath = isAbsolute(filePath) ? filePath : join(ctx.cwd, filePath);
-      const content = await readFile(absolutePath, "utf-8");
+      const resolvedPath = await resolveTarget(absolutePath);
+      const content = await readFile(resolvedPath, "utf-8");
       const { text: rawContent } = stripBOM(content);
       const normalized = toLF(rawContent);
 
       if (visLines(normalized).length === 0) return;
 
-      const preview = await fmtReadPreview(normalized, { limit: AUTO_READ_MAX }, undefined, absolutePath);
+      const preview = await fmtReadPreview(normalized, { limit: AUTO_READ_MAX }, undefined, resolvedPath);
 
       return {
         content: [
