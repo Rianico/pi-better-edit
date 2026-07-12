@@ -1,6 +1,7 @@
 import xxhash from "xxhash-wasm";
 import * as Diff from "diff";
 import { loadHashStore, saveHashStore } from "../hash-store";
+import { MAX_HASH_RETRIES } from "../constants";
 
 export const HASH_LEN = 3;
 export const ANCHOR_LEN = HASH_LEN;
@@ -79,6 +80,7 @@ export function _lineHashesPure(content: string): string[] {
 		let retry = 0;
 		while (assigned.has(hash)) {
 			retry++;
+			if (retry > MAX_HASH_RETRIES) throw new Error("Hash space exhausted");
 			hash = h2s(xxh32(`${c}:R${retry}`));
 		}
 		assigned.add(hash);
@@ -170,6 +172,7 @@ function mapStableHashes(
     let hash = h2s(xxh32(c));
     while (used.has(hash)) {
       retry++;
+      if (retry > MAX_HASH_RETRIES) throw new Error("Hash space exhausted");
       hash = h2s(xxh32(`${c}:R${retry}`));
     }
     used.add(hash);

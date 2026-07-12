@@ -1,15 +1,12 @@
 import { isRec, has } from "./utils";
-
+import { CONTENT_LINES_NOT_STRING_MSG } from "./constants";
 function assertContentLinesNotString(
-  value: unknown,
-  label: string,
+	value: unknown,
+	label: string,
 ): void {
-  if (typeof value === "string") {
-    throw new Error(
-      `[E_BAD_SHAPE] ${label}: "content_lines" must be a native JSON array of strings, not a JSON string.`
-      + ` Do not serialize the array (e.g. '["line1", "line2"]') — pass it as a proper JSON array: ["line1", "line2"].`
-    );
-  }
+	if (typeof value === "string") {
+		throw new Error(CONTENT_LINES_NOT_STRING_MSG);
+	}
 }
 
 export function normalizeFilePath(record: Record<string, unknown>): void {

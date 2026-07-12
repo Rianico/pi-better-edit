@@ -2,6 +2,7 @@ import { abortIf } from "../runtime";
 import { rejectUnknownFields } from "../utils";
 import { HL_BARE_PREFIX_RE } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
+import { CONTENT_LINES_NOT_STRING_MSG } from "../constants";
 
 export type RAnchor = {
 	line: number;
@@ -25,7 +26,6 @@ export interface BDupWarn {
 	kind: "trailing" | "leading";
 	survivingLineContent: string;
 	survivingLineIndex: number;
-	occurrence: number;
 	replacementLineContent: string;
 	editIndex: number;
 }
@@ -48,16 +48,12 @@ export type HTEdit = {
   hash_range_inclusive: [string, string];
 };
 
-function resAnchor(
+function resAnchorFromMap(
 	ref: Anchor,
-	fileLines: string[],
-	fileHashes: string[],
+	hashIndex: Map<string, number[]>,
 ): RAnchor | HMismatch {
-	const hashMatches: number[] = [];
-	for (let i = 0; i < fileHashes.length; i++) {
-		if (fileHashes[i] === ref.hash) hashMatches.push(i + 1);
-	}
-	if (hashMatches.length === 0) {
+	const hashMatches = hashIndex.get(ref.hash);
+	if (!hashMatches || hashMatches.length === 0) {
 		return { ref, kind: "not_found" };
 	}
 	if (hashMatches.length === 1) {
@@ -157,10 +153,7 @@ function assertItem(edit: Record<string, unknown>, index: number): void {
   if ("content_lines" in edit && !isStrArr(edit.content_lines)) {
     const val = edit.content_lines;
     if (typeof val === "string") {
-      throw new Error(
-        `[E_BAD_SHAPE] Edit ${index} field "content_lines" must be a native JSON array of strings, not a JSON string.`
-        + ` Do not serialize the array (e.g. '["line1", "line2"]') — pass it as a proper JSON array: ["line1", "line2"].`
-      );
+      throw new Error(CONTENT_LINES_NOT_STRING_MSG);
     }
     throw new Error(`[E_BAD_SHAPE] Edit ${index} field "content_lines" must be a string array.`);
   }
@@ -238,24 +231,22 @@ export function descEdit(edit: RHEdit): string {
 }
 
 function checkBoundaryDup(
-  adjacentLine: string | undefined,
-  replacementEdge: string | undefined,
-  kind: "trailing" | "leading",
-  survivingLineIndex: number,
-  fileLines: string[],
-  editIndex: number,
+	adjacentLine: string | undefined,
+	replacementEdge: string | undefined,
+	kind: "trailing" | "leading",
+	survivingLineIndex: number,
+	editIndex: number,
 ): BDupWarn | null {
-  if (
-    adjacentLine === undefined ||
-    replacementEdge === undefined ||
-    replacementEdge.length === 0 ||
-    replacementEdge !== adjacentLine
-  ) return null;
+	if (
+		adjacentLine === undefined ||
+		replacementEdge === undefined ||
+		replacementEdge.length === 0 ||
+		replacementEdge !== adjacentLine
+	) return null;
   return {
     kind,
     survivingLineContent: adjacentLine,
     survivingLineIndex,
-    occurrence: fileLines.slice(0, survivingLineIndex).filter((l) => l === adjacentLine).length,
     replacementLineContent: replacementEdge,
     editIndex,
   };
@@ -263,54 +254,62 @@ function checkBoundaryDup(
 
 
 export function valEdits(
-  edits: HEdit[],
-  fileLines: string[],
-  fileHashes: string[],
-  warnings: string[],
-  signal: AbortSignal | undefined,
+	edits: HEdit[],
+	fileLines: string[],
+	fileHashes: string[],
+	warnings: string[],
+	signal: AbortSignal | undefined,
 ): { resolved: RHEdit[]; mismatches: HMismatch[]; boundaryWarnings: BDupWarn[] } {
-  assertAligned(fileLines, fileHashes, "valEdits");
-  const resolved: RHEdit[] = [];
-  const mismatches: HMismatch[] = [];
-  const boundaryWarnings: BDupWarn[] = [];
+	assertAligned(fileLines, fileHashes, "valEdits");
+	const resolved: RHEdit[] = [];
+	const mismatches: HMismatch[] = [];
+	const boundaryWarnings: BDupWarn[] = [];
 
-  const tryResolve = (ref: Anchor): RAnchor | undefined => {
-    const result = resAnchor(ref, fileLines, fileHashes);
-    if ("kind" in result) {
-      mismatches.push(result);
-      return undefined;
-    }
-    return result;
-  };
+	const hashIndex = new Map<string, number[]>();
+	for (let i = 0; i < fileHashes.length; i++) {
+		const h = fileHashes[i]!;
+		const list = hashIndex.get(h) ?? [];
+		list.push(i + 1);
+		hashIndex.set(h, list);
+	}
 
-  for (const edit of edits) {
-    abortIf(signal);
-    const startResolved = tryResolve(edit.hash_range_inclusive[0]);
-    const endResolved = tryResolve(edit.hash_range_inclusive[1]);
-    if (!startResolved || !endResolved) {
-      continue;
-    }
-    if (startResolved.line > endResolved.line) {
-      throw new Error(
-        `[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_range_inclusive[0].hash} and ${edit.hash_range_inclusive[1].hash}).`,
-      );
-    }
-    const endLine = endResolved.line;
-    const nextLine = fileLines[endLine];
-    const replacementLastLine = edit.content_lines.at(-1);
-    const trailing = checkBoundaryDup(nextLine, replacementLastLine, "trailing", endLine, fileLines, resolved.length);
-    if (trailing) boundaryWarnings.push(trailing);
-    const prevLine = fileLines[startResolved.line - 2];
-    const replacementFirstLine = edit.content_lines[0];
-    const leading = checkBoundaryDup(prevLine, replacementFirstLine, "leading", startResolved.line - 2, fileLines, resolved.length);
-    if (leading) boundaryWarnings.push(leading);
-    resolved.push({
-      content_lines: edit.content_lines,
-      hash_range_inclusive: [startResolved, endResolved],
-    });
-  }
+	const tryResolve = (ref: Anchor): RAnchor | undefined => {
+		const result = resAnchorFromMap(ref, hashIndex);
+		if ("kind" in result) {
+			mismatches.push(result);
+			return undefined;
+		}
+		return result;
+	};
 
-  return { resolved, mismatches, boundaryWarnings };
+	for (const edit of edits) {
+		abortIf(signal);
+		const startResolved = tryResolve(edit.hash_range_inclusive[0]);
+		const endResolved = tryResolve(edit.hash_range_inclusive[1]);
+		if (!startResolved || !endResolved) {
+			continue;
+		}
+		if (startResolved.line > endResolved.line) {
+			throw new Error(
+				`[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_range_inclusive[0].hash} and ${edit.hash_range_inclusive[1].hash}).`,
+			);
+		}
+		const endLine = endResolved.line;
+		const nextLine = fileLines[endLine];
+		const replacementLastLine = edit.content_lines.at(-1);
+		const trailing = checkBoundaryDup(nextLine, replacementLastLine, "trailing", endLine, resolved.length);
+		if (trailing) boundaryWarnings.push(trailing);
+		const prevLine = fileLines[startResolved.line - 2];
+		const replacementFirstLine = edit.content_lines[0];
+		const leading = checkBoundaryDup(prevLine, replacementFirstLine, "leading", startResolved.line - 2, resolved.length);
+		if (leading) boundaryWarnings.push(leading);
+		resolved.push({
+			content_lines: edit.content_lines,
+			hash_range_inclusive: [startResolved, endResolved],
+		});
+	}
+
+	return { resolved, mismatches, boundaryWarnings };
 }
 
 export { warnUnicodeEsc };

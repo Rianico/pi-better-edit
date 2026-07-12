@@ -1,13 +1,14 @@
 import { randomUUID } from "crypto";
 import {
-  lstat,
-  mkdir,
-  open,
-  readlink,
-  rename,
-  rm,
-  stat,
-  writeFile,
+	lstat,
+	mkdir,
+	open,
+	readlink,
+	rename,
+	rm,
+	stat,
+	writeFile,
+	copyFile,
 } from "fs/promises";
 import { dirname, join, parse, resolve, sep } from "path";
 import { errCode } from "./validation";
@@ -108,6 +109,17 @@ export async function writeAtomic(
     await tempHandle.close();
     await rename(tempPath, targetPath);
   } catch (error: unknown) {
+    if (errCode(error) === "EXDEV") {
+      try {
+        await tempHandle.close();
+        await copyFile(tempPath, targetPath);
+        await rm(tempPath, { force: true });
+        return;
+      } catch {
+        try { await rm(tempPath, { force: true }); } catch {}
+        throw error;
+      }
+    }
     try { await rm(tempPath, { force: true }); } catch {}
     throw error;
   }

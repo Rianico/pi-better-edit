@@ -5,6 +5,7 @@ import {
 	HL_PREFIX_PLUS_RE,
 	DIFF_MINUS_RE,
 } from "./hash";
+import { CONTENT_LINES_NOT_STRING_MSG } from "../constants";
 
 export type Anchor = { hash: string };
 
@@ -58,10 +59,7 @@ function assertNoPrefixes(lines: string[]): void {
 export function parseText(edit: string[] | string | null): string[] {
   if (edit === null) return [];
   if (typeof edit === "string") {
-    throw new Error(
-      `[E_BAD_SHAPE] "content_lines" must be a native JSON array of strings, not a JSON string.`
-      + ` Do not serialize the array (e.g. '["line1", "line2"]') — pass it as a proper JSON array: ["line1", "line2"].`
-    );
+    throw new Error(CONTENT_LINES_NOT_STRING_MSG);
   }
   assertNoPrefixes(edit);
   return edit;
