@@ -25,13 +25,13 @@ export {
 	type HTEdit,
 	type NEdit,
 	type BDupWarn,
+	type AutoFix,
 	descEdit,
 	resEdits,
 	valEdits,
 	assertNoBarePrefix,
 	fmtMismatch,
 } from "./resolve";
-
 export {
 	buildIdx,
 	applyEdits,

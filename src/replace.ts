@@ -18,7 +18,6 @@ import { resolveTarget, writeAtomic } from "./fs-write";
 import {
   applyEdits,
   lineHashes,
-  fmtBoundaryWarning,
   resEdits,
   type HTEdit,
 } from "./hashline";
@@ -195,30 +194,7 @@ export async function execPipeline(
     removedHashes,
   });
 
-  const resultLines = result.split("\n");
   const warnings = [...(anchorResult.warnings ?? [])];
-  for (const bw of anchorResult.boundaryWarnings ?? []) {
-    let seen = 0;
-    let matchIndex = -1;
-    for (let i = 0; i < resultLines.length; i++) {
-      if (resultLines[i] === bw.survivingLineContent) {
-        if (seen === bw.occurrence) { matchIndex = i; break; }
-        seen++;
-      }
-    }
-    if (matchIndex >= 0) {
-      warnings.push(
-        fmtBoundaryWarning({
-          kind: bw.kind,
-          survivingContent: bw.survivingLineContent,
-          matchIndex,
-          resultLines,
-          resultHashes,
-        }),
-      );
-    }
-  }
-
   return {
     path,
     toolEdits,

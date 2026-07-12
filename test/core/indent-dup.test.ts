@@ -15,27 +15,29 @@ afterAll(async () => {
   await cleanup();
 });
 
-describe("indentation difference in boundary check", () => {
-  it("does NOT warn when indentation differs even if trimmed content matches", async () => {
-    // "  foo" (replacement) vs "bar" (previous) — different indentation, no match
+describe("indentation difference in boundary auto-fix", () => {
+  it("auto-fixes leading duplication when indentation matches exactly", async () => {
+    // "  foo" (replacement) matches "  foo" (previous) exactly — same indentation
     const file = "  foo\nbar\n  baz";
     const hashes = await lineHashes(file, testPath);
     const result = applyEdits(file, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["  foo", "  bar"] },
     ]));
-    // The first replacement line "  foo" matches the previous line "  foo" exactly
-    // (same indentation), so this IS a leading duplication warning
-    expect(result.boundaryWarnings ?? []).toHaveLength(1);
-    expect(result.boundaryWarnings![0]!.kind).toBe("leading");
+    // The leading "  foo" is auto-fixed (stripped), so no duplicate
+    expect(result.content).toBe("  foo\n  bar\n  baz");
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("leading");
   });
 
-  it("DOES warn when both indentation and content match exactly", async () => {
+  it("auto-fixes leading duplication when both indentation and content match exactly", async () => {
     const file = "  foo\n  bar\n  baz";
     const hashes = await lineHashes(file, testPath);
     const result = applyEdits(file, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["  foo", "  new"] },
     ]));
-    expect(result.boundaryWarnings).toHaveLength(1);
-    expect(result.boundaryWarnings![0]!.kind).toBe("leading");
+    // The leading "  foo" is auto-fixed (stripped), so no duplicate
+    expect(result.content).toBe("  foo\n  new\n  baz");
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("leading");
   });
 });

@@ -5,4 +5,3 @@
 - **Preserve leading whitespace (indentation) exactly.** The content after `│` in read output includes all leading spaces and tabs — copy them into `content_lines` unchanged.
 - **`content_lines` must be a native JSON array of strings**, not a JSON string. Do NOT serialize it: `"content_lines": "[\"line1\", \"line2\"]"` is WRONG. Use `"content_lines": ["line1", "line2"]` instead.
 - Two modes are available: bulk (default, uses `changes` array) and flat (top-level `hash_range_inclusive`/`content_lines`). Toggle with `/toggle-replace-mode`.
-- If the response includes a "Boundary duplication" warning, the edge line of your `content_lines` matches a line outside the replaced range. Remove that line from `content_lines` — the original is still in the file outside the range.

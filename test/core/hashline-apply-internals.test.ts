@@ -51,53 +51,59 @@ describe("resAnchor (via valEdits)", () => {
   });
 });
 
-describe("checkBoundaryDup (via valEdits)", () => {
-  it("detects trailing duplication", async () => {
+describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
+  it("auto-fixes trailing duplication", async () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "d"] },
     ]));
-    expect(result.boundaryWarnings).toBeDefined();
-    expect(result.boundaryWarnings).toHaveLength(1);
-    expect(result.boundaryWarnings![0]!.kind).toBe("trailing");
+    // The trailing "d" is auto-fixed (stripped), so no duplicate
+    expect(result.content).toBe("a\nX\nd");
+    expect(result.autoFixes).toBeDefined();
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("trailing");
   });
 
-  it("detects leading duplication", async () => {
+  it("auto-fixes leading duplication", async () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["a", "X"] },
     ]));
-    expect(result.boundaryWarnings).toHaveLength(1);
-    expect(result.boundaryWarnings![0]!.kind).toBe("leading");
+    // The leading "a" is auto-fixed (stripped), so no duplicate
+    expect(result.content).toBe("a\nX\nd");
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("leading");
   });
 
-  it("does not warn when replacement does not duplicate adjacent lines", async () => {
+  it("does not auto-fix when replacement does not duplicate adjacent lines", async () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "Y"] },
     ]));
-    expect(result.boundaryWarnings ?? []).toHaveLength(0);
+    expect(result.autoFixes ?? []).toHaveLength(0);
   });
 
-  it("does not warn when replacement edge is empty string", async () => {
+  it("does not auto-fix when replacement edge is empty string", async () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: [] },
     ]));
-    expect(result.boundaryWarnings ?? []).toHaveLength(0);
+    expect(result.autoFixes ?? []).toHaveLength(0);
   });
 
-  it("detects both trailing and leading in one edit", async () => {
+  it("auto-fixes both trailing and leading in one edit", async () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["a", "d"] },
     ]));
-    expect(result.boundaryWarnings).toHaveLength(2);
+    // Both "a" and "d" are auto-fixed (stripped), so the edit becomes a deletion
+    expect(result.content).toBe("a\nd");
+    expect(result.autoFixes).toHaveLength(2);
   });
 });
 
@@ -232,35 +238,43 @@ describe("resSpans (via applyEdits)", () => {
   });
 });
 
-describe("fmtBoundaryWarning (via applyEdits)", () => {
-  it("trailing warning contains header and hashline rows", async () => {
+describe("auto-fix via applyEdits", () => {
+  it("auto-fixes trailing duplication", async () => {
     const content = "before\nold one\nold two\nafter";
     const hashes = await lineHashes(content, testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["new one", "new two", "after"] },
     ]));
-    expect(result.boundaryWarnings).toHaveLength(1);
-    expect(result.boundaryWarnings![0]!.kind).toBe("trailing");
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("trailing");
+    expect(result.autoFixes![0]!.removedLine).toBe("after");
+    // No duplicate in result
+    expect(result.content).toBe("before\nnew one\nnew two\nafter");
   });
 
-  it("leading warning contains header and hashline rows", async () => {
+  it("auto-fixes leading duplication", async () => {
     const content = "before\nold one\nold two\nafter";
     const hashes = await lineHashes(content, testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["before", "new one", "new two"] },
     ]));
-    expect(result.boundaryWarnings).toHaveLength(1);
-    expect(result.boundaryWarnings![0]!.kind).toBe("leading");
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("leading");
+    expect(result.autoFixes![0]!.removedLine).toBe("before");
+    // No duplicate in result
+    expect(result.content).toBe("before\nnew one\nnew two\nafter");
   });
 
-  it("warning window includes context lines around the duplicate pair", async () => {
+  it("auto-fixes both leading and trailing in one edit", async () => {
     const content = "ctx1\nctx2\nold1\nold2\nctx3\nctx4";
     const hashes = await lineHashes(content, testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[2]!, hashes[3]!], content_lines: ["ctx2", "dup", "dup", "ctx3"] },
     ]));
-    // Both leading (ctx2) and trailing (ctx3) duplication detected
-    expect(result.boundaryWarnings).toBeDefined();
-    expect(result.boundaryWarnings).toHaveLength(2);
+    // Both leading (ctx2) and trailing (ctx3) duplication auto-fixed
+    expect(result.autoFixes).toBeDefined();
+    expect(result.autoFixes).toHaveLength(2);
+    // No duplicates in result
+    expect(result.content).toBe("ctx1\nctx2\ndup\ndup\nctx3\nctx4");
   });
 });

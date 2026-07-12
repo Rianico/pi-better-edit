@@ -30,6 +30,13 @@ export interface BDupWarn {
 	editIndex: number;
 }
 
+export interface AutoFix {
+  kind: "trailing" | "leading";
+  editIndex: number;
+  removedLine: string;
+}
+
+
 export interface NEdit {
 	editIndex: number;
 	loc: string;

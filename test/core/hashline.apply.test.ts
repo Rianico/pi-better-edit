@@ -209,8 +209,8 @@ describe("applyEdits — noop detection", () => {
 	});
 });
 
-describe("applyEdits — warning heuristics", () => {
-	it("warns when replacement starts with the previous surviving line", async () => {
+describe("applyEdits — auto-fix heuristics", () => {
+	it("auto-fixes leading duplication by stripping the first replacement line", async () => {
 		const content = "before\nold one\nold two\nafter";
 		const edits: HEdit[] = [
 			{
@@ -221,12 +221,14 @@ describe("applyEdits — warning heuristics", () => {
 
 		const result = applyEdits(content, edits);
 
-		expect(result.content).toBe("before\nbefore\nnew one\nnew two\nafter");
-		expect(result.boundaryWarnings).toHaveLength(1);
-		expect(result.boundaryWarnings![0]!.kind).toBe("leading");
+		// The leading "before" is auto-fixed (stripped), so no duplicate
+		expect(result.content).toBe("before\nnew one\nnew two\nafter");
+		expect(result.autoFixes).toHaveLength(1);
+		expect(result.autoFixes![0]!.kind).toBe("leading");
+		expect(result.autoFixes![0]!.removedLine).toBe("before");
 	});
 
-	it("warns when replacement ends with the next surviving line", async () => {
+	it("auto-fixes trailing duplication by stripping the last replacement line", async () => {
 		const content = "before\nold one\nold two\nafter";
 		const edits: HEdit[] = [
 			{
@@ -234,10 +236,14 @@ describe("applyEdits — warning heuristics", () => {
 				content_lines: ["new one", "new two", "after"],
 			},
 		];
+
 		const result = applyEdits(content, edits);
-		expect(result.content).toBe("before\nnew one\nnew two\nafter\nafter");
-		expect(result.boundaryWarnings).toHaveLength(1);
-		expect(result.boundaryWarnings![0]!.kind).toBe("trailing");
+
+		// The trailing "after" is auto-fixed (stripped), so no duplicate
+		expect(result.content).toBe("before\nnew one\nnew two\nafter");
+		expect(result.autoFixes).toHaveLength(1);
+		expect(result.autoFixes![0]!.kind).toBe("trailing");
+		expect(result.autoFixes![0]!.removedLine).toBe("after");
 	});
 });
 

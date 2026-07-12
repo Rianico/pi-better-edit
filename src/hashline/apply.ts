@@ -10,6 +10,7 @@ import {
 	type NEdit,
 	type HEdit,
 	type BDupWarn,
+	type AutoFix,
 } from "./resolve";
 import { cntLines } from "../utils";
 
@@ -262,7 +263,7 @@ export function applyEdits(
 	lastChangedLine: number | undefined;
 	warnings?: string[];
 	noopEdits?: NEdit[];
-	boundaryWarnings?: BDupWarn[];
+	autoFixes?: AutoFix[];
 } {
 	abortIf(signal);
 	if (!edits.length)
@@ -272,13 +273,12 @@ export function applyEdits(
 			lastChangedLine: undefined,
 		};
 
-
 	const lineIndex = buildIdx(content);
 	const fileHashes = precomputedHashes ?? _lineHashesPure(content);
 	const noopEdits: NEdit[] = [];
 	const warnings: string[] = [];
 
-	const { resolved, mismatches, boundaryWarnings } = valEdits(
+	const { resolved: initialResolved, mismatches, boundaryWarnings } = valEdits(
 		edits,
 		lineIndex.fileLines,
 		fileHashes,
@@ -293,6 +293,47 @@ export function applyEdits(
 
 	assertNoBarePrefix(edits, lineIndex.fileLines, fileHashes);
 	warnUnicodeEsc(edits, warnings);
+
+	// Auto-fix boundary duplications: strip the offending line from content_lines
+	let resolved = initialResolved;
+	let autoFixes: AutoFix[] | undefined;
+	if (boundaryWarnings.length > 0) {
+		autoFixes = [];
+		// Deep-copy edits so we don't mutate the originals
+		const correctedEdits: import("./resolve").HEdit[] = edits.map(e => ({
+			...e,
+			content_lines: [...e.content_lines],
+		}));
+		for (const bw of boundaryWarnings) {
+			const edit = correctedEdits[bw.editIndex];
+			if (!edit) continue;
+			if (bw.kind === "trailing") {
+				const removed = edit.content_lines.pop();
+				if (removed !== undefined) {
+					autoFixes.push({ kind: "trailing", editIndex: bw.editIndex, removedLine: removed });
+				}
+			} else {
+				const removed = edit.content_lines.shift();
+				if (removed !== undefined) {
+					autoFixes.push({ kind: "leading", editIndex: bw.editIndex, removedLine: removed });
+				}
+			}
+		}
+		// Re-validate with corrected edits
+		const correctedResult = valEdits(
+			correctedEdits,
+			lineIndex.fileLines,
+			fileHashes,
+			warnings,
+			signal,
+		);
+		if (correctedResult.mismatches.length) {
+			throw new Error(
+				fmtMismatch(correctedResult.mismatches, lineIndex.fileLines, fileHashes, filePath),
+			);
+		}
+		resolved = correctedResult.resolved;
+	}
 
 	const orderedSpans = resSpans(
 		resolved,
@@ -312,7 +353,7 @@ export function applyEdits(
 		lastChangedLine: range?.lastChangedLine,
 		...(warnings.length ? { warnings } : {}),
 		...(noopEdits.length ? { noopEdits } : {}),
-		...(boundaryWarnings.length ? { boundaryWarnings } : {}),
+		...(autoFixes ? { autoFixes } : {}),
 	};
 }
 

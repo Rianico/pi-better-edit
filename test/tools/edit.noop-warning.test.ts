@@ -35,12 +35,12 @@ describe("edit tool noop + warnings", () => {
     });
   });
 
-  it("warns on trailing duplicate line that matches the next surviving line", async () => {
-    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+  it("auto-fixes trailing duplicate silently, file is correct", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      const result = await editTool.execute(
+      await editTool.execute(
         "e1",
         {
           path: "sample.ts",
@@ -50,7 +50,11 @@ describe("edit tool noop + warnings", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Warnings:");
+
+      // Trailing "ccc" was auto-fixed — file should have no duplicate
+      const { readFile } = await import("fs/promises");
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nBBB\nccc\n");
     });
   });
 });
