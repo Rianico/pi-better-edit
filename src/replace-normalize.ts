@@ -43,7 +43,6 @@ export function normReq(input: unknown): unknown {
 
   normalizeFilePath(record);
 
-  // Early validation: reject string-typed content_lines at the top level
   if (has(record, "content_lines") && typeof record.content_lines === "string") {
     assertContentLinesNotString(record.content_lines, "Top-level");
   }
@@ -51,7 +50,6 @@ export function normReq(input: unknown): unknown {
   normalizeField(record, "changes", "changes");
   normalizeField(record, "edits", "changes");
 
-  // Validate items in the changes array before wrapping flat format
   if (Array.isArray(record.changes)) {
     for (let i = 0; i < record.changes.length; i++) {
       const item = record.changes[i];

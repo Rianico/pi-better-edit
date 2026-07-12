@@ -206,8 +206,6 @@ describe("regReplaceFlat", () => {
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      // The test wrapper now validates against the schema, matching the Pi harness.
-      // Unknown fields are rejected by schema validation.
       await expect(
         tool.execute(
           "e1",

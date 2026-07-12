@@ -1,6 +1,7 @@
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { stat } from "fs/promises";
 import { hashStorePath, hashStoreDir } from "./paths";
+import { errCode } from "./validation";
 
 export interface FileSnapshot {
   content: string;
@@ -20,7 +21,10 @@ export async function loadHashStore(): Promise<HashStore> {
       version: 1,
       snapshots: parsed.snapshots ?? {},
     };
-  } catch {
+  } catch (error: unknown) {
+    if (errCode(error) !== "ENOENT") {
+      console.error("Hash store corrupted, creating fresh store:", error);
+    }
     await mkdir(hashStoreDir(), { recursive: true });
     const defaultStore: HashStore = {
       version: 1,

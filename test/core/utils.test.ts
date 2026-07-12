@@ -179,7 +179,6 @@ describe("rejectUnknownFields", () => {
     const allowed = new Set(["path"]);
     const fn = () => rejectUnknownFields(obj, allowed, "Request");
     expect(fn).toThrow();
-    // The error should end with a single period from the template, not a double period
     expect(fn).toThrow(/\.$/);
   });
 
@@ -194,7 +193,6 @@ describe("rejectUnknownFields", () => {
     const obj = Object.create(proto);
     obj.own = "value";
     const allowed = new Set(["own"]);
-    // "inherited" is on the prototype, not own — Object.keys won't include it
     expect(() => rejectUnknownFields(obj, allowed, "Request")).not.toThrow();
   });
 

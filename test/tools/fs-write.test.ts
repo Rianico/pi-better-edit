@@ -131,12 +131,10 @@ describe("writeAtomic", () => {
       const hardlink = join(dir, "hardlink.txt");
       await writeFile(original, "shared content");
       await link(original, hardlink);
-      // Both files now share the same inode (nlink === 2)
       await writeAtomic(original, "updated shared");
       const content1 = await readFile(original, "utf-8");
       const content2 = await readFile(hardlink, "utf-8");
       expect(content1).toBe("updated shared");
-      // Hard-linked files share the same inode, so both see the update
       expect(content2).toBe("updated shared");
     });
   });

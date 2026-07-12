@@ -30,7 +30,6 @@ describe("fmtReadPreview", () => {
     const result = await fmtReadPreview(text, {}, undefined, testPath);
     expect(result.text).toContain("│alpha");
     expect(result.text).toContain("│beta");
-    // No line should be just HASH│ (empty content after separator)
     const lines = result.text.split("\n");
     const emptyContentLines = lines.filter((l) => /^[A-Za-z0-9_\-]{3}│$/.test(l));
     expect(emptyContentLines).toHaveLength(0);

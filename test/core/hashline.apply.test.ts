@@ -221,7 +221,6 @@ describe("applyEdits — auto-fix heuristics", () => {
 
 		const result = applyEdits(content, edits);
 
-		// The leading "before" is auto-fixed (stripped), so no duplicate
 		expect(result.content).toBe("before\nnew one\nnew two\nafter");
 		expect(result.autoFixes).toHaveLength(1);
 		expect(result.autoFixes![0]!.kind).toBe("leading");
@@ -239,7 +238,6 @@ describe("applyEdits — auto-fix heuristics", () => {
 
 		const result = applyEdits(content, edits);
 
-		// The trailing "after" is auto-fixed (stripped), so no duplicate
 		expect(result.content).toBe("before\nnew one\nnew two\nafter");
 		expect(result.autoFixes).toHaveLength(1);
 		expect(result.autoFixes![0]!.kind).toBe("trailing");

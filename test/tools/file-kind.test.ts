@@ -17,7 +17,6 @@ afterAll(async () => {
 
 describe("file kind guards in tools", () => {
   it("edit decodes invalid utf-8 as replacement chars and writes them back as utf-8", async () => {
-    // 0xFF is an invalid UTF-8 byte
     const bytes = new Uint8Array([0xFF, 0x28, 0x0A, 0x69, 0x6E, 0x74, 0x0A]);
     await withTempBytes("bad-utf.ts", bytes, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -47,7 +46,6 @@ describe("file kind guards in tools", () => {
   });
 
   it("edit rejects binary files with descriptive error", async () => {
-    // PNG magic bytes + minimal valid PNG header (16 bytes)
     const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52]);
     await withTempBytes("image.png", bytes, async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);

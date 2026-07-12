@@ -58,7 +58,6 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "d"] },
     ]));
-    // The trailing "d" is auto-fixed (stripped), so no duplicate
     expect(result.content).toBe("a\nX\nd");
     expect(result.autoFixes).toBeDefined();
     expect(result.autoFixes).toHaveLength(1);
@@ -71,7 +70,6 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["a", "X"] },
     ]));
-    // The leading "a" is auto-fixed (stripped), so no duplicate
     expect(result.content).toBe("a\nX\nd");
     expect(result.autoFixes).toHaveLength(1);
     expect(result.autoFixes![0]!.kind).toBe("leading");
@@ -101,7 +99,6 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["a", "d"] },
     ]));
-    // Both "a" and "d" are auto-fixed (stripped), so the edit becomes a deletion
     expect(result.content).toBe("a\nd");
     expect(result.autoFixes).toHaveLength(2);
   });
@@ -248,7 +245,6 @@ describe("auto-fix via applyEdits", () => {
     expect(result.autoFixes).toHaveLength(1);
     expect(result.autoFixes![0]!.kind).toBe("trailing");
     expect(result.autoFixes![0]!.removedLine).toBe("after");
-    // No duplicate in result
     expect(result.content).toBe("before\nnew one\nnew two\nafter");
   });
 
@@ -261,7 +257,6 @@ describe("auto-fix via applyEdits", () => {
     expect(result.autoFixes).toHaveLength(1);
     expect(result.autoFixes![0]!.kind).toBe("leading");
     expect(result.autoFixes![0]!.removedLine).toBe("before");
-    // No duplicate in result
     expect(result.content).toBe("before\nnew one\nnew two\nafter");
   });
 
@@ -271,10 +266,8 @@ describe("auto-fix via applyEdits", () => {
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[2]!, hashes[3]!], content_lines: ["ctx2", "dup", "dup", "ctx3"] },
     ]));
-    // Both leading (ctx2) and trailing (ctx3) duplication auto-fixed
     expect(result.autoFixes).toBeDefined();
     expect(result.autoFixes).toHaveLength(2);
-    // No duplicates in result
     expect(result.content).toBe("ctx1\nctx2\ndup\ndup\nctx3\nctx4");
   });
 });

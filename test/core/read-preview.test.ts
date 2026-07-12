@@ -23,7 +23,6 @@ describe("fmtReadPreview", () => {
 
   it("returns empty file marker for content with only newline", async () => {
     const result = await fmtReadPreview("\n", {}, undefined, testPath);
-    // A file with only a newline has one empty line, not zero
     expect(result.text).toMatch(/^[A-Za-z0-9_\-]{3}│$/);
   });
 

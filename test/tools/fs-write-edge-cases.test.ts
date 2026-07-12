@@ -10,9 +10,6 @@ import { join } from "path";
 import { resolveTarget, writeAtomic } from "../../src/fs-write";
 import { withTempDir } from "../support/fixtures";
 
-// ---------------------------------------------------------------------------
-// resolveTarget — additional edge cases
-// ---------------------------------------------------------------------------
 
 describe("resolveTarget — file symlinks", () => {
   it("resolves a path where the final component is a symlink to a file", async () => {
@@ -59,7 +56,6 @@ describe("resolveTarget — relative and .. symlink targets", () => {
       const link = join(deep, "link.txt");
       await mkdir(deep, { recursive: true });
       await writeFile(realFile, "data");
-      // From a/b/c, ../../target.txt resolves to a/target.txt
       await symlink("../../target.txt", link);
       const resolved = await resolveTarget(link);
       expect(resolved).toBe(realFile);
@@ -97,7 +93,6 @@ describe("resolveTarget — path edge cases", () => {
       const missingTarget = join(dir, "nonexistent");
       await symlink(missingTarget, link);
       const resolved = await resolveTarget(link);
-      // resolveTarget resolves the symlink to its target path
       expect(resolved).toBe(missingTarget);
     });
   });
@@ -133,9 +128,6 @@ describe("resolveTarget — path edge cases", () => {
   });
 });
 
-// ---------------------------------------------------------------------------
-// writeAtomic — additional edge cases
-// ---------------------------------------------------------------------------
 
 describe("writeAtomic — file symlink target", () => {
   it("writes through a file symlink (final component is a symlink)", async () => {

@@ -38,10 +38,8 @@ describe("fmtBoundaryWarning", () => {
     expect(output).toContain(
       "the first replacement line duplicated the previous line",
     );
-    // Should contain hashline-anchored rows
     expect(output).toContain("│before");
     expect(output).toContain("│new two");
-    // Each row should have a hash prefix
     for (const line of output.split("\n")) {
       if (line.includes("│")) {
         const hash = line.split("│")[0]!;
@@ -94,7 +92,6 @@ describe("fmtBoundaryWarning", () => {
     });
 
     const rows = output.split("\n").filter((l) => l.includes("│"));
-    // Window should start at line 0 (no negative index)
     expect(rows[0]).toContain("│dup");
     expect(rows).toHaveLength(4); // 0..3 (pairStart=0, winStart=0, winEnd=min(3, 0+3)=3, so 0..3 = 4 rows)
   });
@@ -117,7 +114,6 @@ describe("fmtBoundaryWarning", () => {
     });
 
     const rows = output.split("\n").filter((l) => l.includes("│"));
-    // Window should end at the last line (no overflow)
     expect(rows[rows.length - 1]).toContain("│dup");
   });
 

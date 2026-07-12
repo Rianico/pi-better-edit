@@ -1,6 +1,7 @@
 import { readFileSync } from "fs";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { configDir, configPath } from "./paths";
+import { errCode } from "./validation";
 
 export type ReplaceMode = "bulk" | "flat";
 
@@ -22,7 +23,10 @@ export async function readConfig(): Promise<Config> {
       replaceMode: parsed.replaceMode === "flat" ? "flat" : "bulk",
       autoRead: parsed.autoRead === true,
     };
-  } catch {
+  } catch (error: unknown) {
+    if (errCode(error) !== "ENOENT") {
+      console.error("Config file corrupted, using defaults:", error);
+    }
     return { ...DEFAULT_CONFIG };
   }
 }
@@ -35,7 +39,10 @@ export function readConfigSync(): Config {
       replaceMode: parsed.replaceMode === "flat" ? "flat" : "bulk",
       autoRead: parsed.autoRead === true,
     };
-  } catch {
+  } catch (error: unknown) {
+    if (errCode(error) !== "ENOENT") {
+      console.error("Config file corrupted, using defaults:", error);
+    }
     return { ...DEFAULT_CONFIG };
   }
 }

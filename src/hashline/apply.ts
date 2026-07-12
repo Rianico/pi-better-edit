@@ -294,12 +294,10 @@ export function applyEdits(
 	assertNoBarePrefix(edits, lineIndex.fileLines, fileHashes);
 	warnUnicodeEsc(edits, warnings);
 
-	// Auto-fix boundary duplications: strip the offending line from content_lines
 	let resolved = initialResolved;
 	let autoFixes: AutoFix[] | undefined;
 	if (boundaryWarnings.length > 0) {
 		autoFixes = [];
-		// Deep-copy edits so we don't mutate the originals
 		const correctedEdits: import("./resolve").HEdit[] = edits.map(e => ({
 			...e,
 			content_lines: [...e.content_lines],
@@ -319,7 +317,6 @@ export function applyEdits(
 				}
 			}
 		}
-		// Re-validate with corrected edits
 		const correctedResult = valEdits(
 			correctedEdits,
 			lineIndex.fileLines,

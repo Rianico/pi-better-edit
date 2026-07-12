@@ -15,18 +15,6 @@ afterAll(async () => {
   await cleanup();
 });
 
-/**
- * Tests for mapStableHashes (exercised via lineHashes with a `previous` parameter).
- *
- * These tests focus on the general hash-mapping algorithm — how hashes from an old
- * version of a file are carried forward to a new version. They do NOT overlap with
- * the duplicate-content / removedHashes disambiguation tests in
- * hashline-stable-duplicate.test.ts.
- *
- * NOTE: lineHashes uses content.split("\n") internally, so a trailing newline
- * produces an extra empty-string element. Test strings here deliberately avoid
- * trailing newlines to keep line counts intuitive.
- */
 
 describe("mapStableHashes — identity and simple changes", () => {
   it("preserves all hashes when content is unchanged", async () => {
@@ -51,15 +39,12 @@ describe("mapStableHashes — identity and simple changes", () => {
       hashes: oldHashes,
     });
 
-    // First 3 lines keep their hashes
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
     expect(result[2]).toBe(oldHashes[2]);
-    // New lines get fresh hashes
     expect(result).toHaveLength(5);
     expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[4]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-    // New hashes are unique and not reused from old
     expect(result[3]).not.toBe(oldHashes[0]);
     expect(result[4]).not.toBe(oldHashes[1]);
   });
@@ -74,11 +59,9 @@ describe("mapStableHashes — identity and simple changes", () => {
       hashes: oldHashes,
     });
 
-    // First 3 lines are new
     expect(result[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-    // Last 3 lines keep their hashes (shifted down)
     expect(result[3]).toBe(oldHashes[0]);
     expect(result[4]).toBe(oldHashes[1]);
     expect(result[5]).toBe(oldHashes[2]);
@@ -94,13 +77,10 @@ describe("mapStableHashes — identity and simple changes", () => {
       hashes: oldHashes,
     });
 
-    // First 2 lines keep hashes
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
-    // Inserted lines get fresh hashes
     expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-    // Last 2 lines keep their hashes (shifted down)
     expect(result[4]).toBe(oldHashes[2]);
     expect(result[5]).toBe(oldHashes[3]);
   });
@@ -115,7 +95,6 @@ describe("mapStableHashes — identity and simple changes", () => {
       hashes: oldHashes,
     });
 
-    // Surviving lines keep their hashes
     expect(result[0]).toBe(oldHashes[0]); // "a"
     expect(result[1]).toBe(oldHashes[2]); // "c"
     expect(result[2]).toBe(oldHashes[4]); // "e"
@@ -132,10 +111,8 @@ describe("mapStableHashes — identity and simple changes", () => {
       hashes: oldHashes,
     });
 
-    // Unchanged lines keep hashes
     expect(result[0]).toBe(oldHashes[0]); // "a"
     expect(result[2]).toBe(oldHashes[2]); // "c"
-    // Changed line gets a new hash
     expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[1]);
   });
@@ -145,7 +122,6 @@ describe("mapStableHashes — multiple changes combined", () => {
   it("handles simultaneous insert, delete, and modify", async () => {
     const oldContent = "a\nb\nc\nd\ne";
     const oldHashes = await lineHashes(oldContent, testPath);
-    // Delete "b", modify "d" to "D", insert "x" after "c"
     const newContent = "a\nc\nx\nD\ne";
 
     const result = await lineHashes(newContent, testPath, {
@@ -186,7 +162,6 @@ describe("mapStableHashes — multiple changes combined", () => {
       hashes: oldHashes,
     });
 
-    // All lines are new — none of the old hashes should survive
     expect(result).toHaveLength(3);
     for (const hash of result) {
       expect(oldHashes).not.toContain(hash);
@@ -241,7 +216,6 @@ describe("mapStableHashes — edge cases", () => {
   });
 
   it("handles content with only newlines", async () => {
-    // "\n\n\n" split gives ["", "", "", ""] — 4 elements (3 newlines = 4 lines)
     const oldContent = "\n\n\n";
     const oldHashes = await lineHashes(oldContent, testPath);
     const newContent = "\n\n\n\n";
@@ -251,21 +225,15 @@ describe("mapStableHashes — edge cases", () => {
       hashes: oldHashes,
     });
 
-    // First 4 blank lines keep their hashes
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
     expect(result[2]).toBe(oldHashes[2]);
     expect(result[3]).toBe(oldHashes[3]);
-    // 5th blank line is new
     expect(result[4]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[4]).not.toBe(oldHashes[0]);
   });
 
   it("handles content with carriage returns (\\r\\n)", async () => {
-    // canon() strips \r, so "a\r" and "a" have the same canonical form
-    // and thus the same hash. But the content map uses raw lines, so
-    // "a\r" !== "a" and they won't match in the content map.
-    // This means hashes are NOT preserved across \r\n → \n conversion.
     const oldContent = "a\r\nb\r\nc\r\n";
     const oldHashes = await lineHashes(oldContent, testPath);
     const newContent = "a\nb\nc\nd";
@@ -275,19 +243,10 @@ describe("mapStableHashes — edge cases", () => {
       hashes: oldHashes,
     });
 
-    // "a\r" !== "a", "b\r" !== "b", "c\r" !== "c" — no matches
-    // But the hashes for "a", "b", "c" in the new content will be the
-    // SAME as oldHashes[0], oldHashes[1], oldHashes[2] because canon()
-    // normalizes them to the same string before hashing.
-    // So the hashes match by value even though the content map didn't match them.
     expect(result).toHaveLength(4);
-    // "a" gets the same hash as "a\r" (same canonical form)
     expect(result[0]).toBe(oldHashes[0]);
-    // "b" gets the same hash as "b\r"
     expect(result[1]).toBe(oldHashes[1]);
-    // "c" gets the same hash as "c\r"
     expect(result[2]).toBe(oldHashes[2]);
-    // "d" is genuinely new
     expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
   });
 });
@@ -304,7 +263,6 @@ describe("mapStableHashes — removedHashes edge cases", () => {
       removedHashes: new Set(["ZZZ", "YYY"]),
     });
 
-    // Non-existent removedHashes should be ignored
     expect(result).toEqual(oldHashes);
   });
 
@@ -319,10 +277,8 @@ describe("mapStableHashes — removedHashes edge cases", () => {
       removedHashes: new Set(),
     });
 
-    // Unchanged lines keep hashes
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[2]).toBe(oldHashes[2]);
-    // Changed line gets new hash
     expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[1]);
   });
@@ -337,7 +293,6 @@ describe("mapStableHashes — removedHashes edge cases", () => {
       hashes: oldHashes,
     });
 
-    // Same as empty set — unchanged lines keep hashes
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[2]).toBe(oldHashes[2]);
     expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
@@ -439,7 +394,6 @@ describe("mapStableHashes — hash uniqueness guarantees", () => {
   it("produces unique hashes for all lines in the result", async () => {
     const oldContent = "a\nb\nc\nd\ne";
     const oldHashes = await lineHashes(oldContent, testPath);
-    // Complex transformation
     const newContent = "x\na\nz\nc\ny\ne\nw";
 
     const result = await lineHashes(newContent, testPath, {
@@ -452,10 +406,6 @@ describe("mapStableHashes — hash uniqueness guarantees", () => {
   });
 
   it("reuses the same hash for lines with the same canonical form despite different trailing whitespace", async () => {
-    // canon() trims trailing whitespace before hashing, so "x  " and "x"
-    // have the same canonical form and thus the same hash value.
-    // The content map uses raw lines, so "x  " won't match "x" in the map,
-    // but the hash computed for "x" will be identical to the hash of "x  ".
     const oldContent = "x  \ny";
     const oldHashes = await lineHashes(oldContent, testPath);
     const newContent = "x\ny";
@@ -465,10 +415,7 @@ describe("mapStableHashes — hash uniqueness guarantees", () => {
       hashes: oldHashes,
     });
 
-    // "x" has the same canonical form as "x  ", so it gets the same hash
-    // (even though the content map didn't match them as raw strings)
     expect(result[0]).toBe(oldHashes[0]);
-    // "y" is identical in both, so it keeps its hash via content map
     expect(result[1]).toBe(oldHashes[1]);
   });
 });
@@ -484,7 +431,6 @@ describe("mapStableHashes — ordering and position stability", () => {
       hashes: oldHashes,
     });
 
-    // Each line should keep its hash (content-based matching)
     expect(result[0]).toBe(oldHashes[2]); // "c" moved to position 0
     expect(result[1]).toBe(oldHashes[0]); // "a" moved to position 1
     expect(result[2]).toBe(oldHashes[1]); // "b" moved to position 2
@@ -500,11 +446,9 @@ describe("mapStableHashes — ordering and position stability", () => {
       hashes: oldHashes,
     });
 
-    // First "a" gets the old hash, second "a" gets a new hash (collision resolved)
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[0]);
-    // "b" keeps its hash
     expect(result[2]).toBe(oldHashes[1]);
   });
 
@@ -518,10 +462,8 @@ describe("mapStableHashes — ordering and position stability", () => {
       hashes: oldHashes,
     });
 
-    // The surviving "a" should get one of the old "a" hashes
     expect(result[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
     expect(oldHashes.slice(0, 2)).toContain(result[0]);
-    // "b" keeps its hash
     expect(result[1]).toBe(oldHashes[2]);
   });
 });

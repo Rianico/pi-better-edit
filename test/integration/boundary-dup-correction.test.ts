@@ -29,7 +29,6 @@ describe("boundary duplication auto-fix", () => {
         ctx,
       );
 
-      // File should be correct — duplicate was auto-fixed
       const content = await readFile(path, "utf-8");
       expect(content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n");
     });
@@ -122,13 +121,11 @@ describe("boundary duplication auto-fix", () => {
         ctx,
       );
 
-      // After auto-fix, there should be 3 } lines (not 4)
       const read2 = await readTool.execute("r2", { path: "multi.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");
       const braceLines2 = lines2.filter(l => l.endsWith("│}"));
       expect(braceLines2.length).toBe(3);
 
-      // The surviving } at index 1 should have its original hash
       const matchingBraces = braceLines2.filter(l => extractHash(l) === survivingBraceHash);
       expect(matchingBraces.length).toBe(1);
       const survivingIndex = braceLines2.findIndex(l => extractHash(l) === survivingBraceHash);
@@ -166,11 +163,9 @@ describe("boundary duplication auto-fix", () => {
       );
 
       const edit1Text = getText(edit1);
-      // The trailing "}" is auto-fixed, leaving content_lines identical to original → noop
       expect(edit1Text).toContain("No changes made");
       expect(edit1Text).toContain("noop");
 
-      // File should be unchanged
       const { readFile } = await import("fs/promises");
       const content = await readFile(path, "utf-8");
       expect(content).toBe(file);

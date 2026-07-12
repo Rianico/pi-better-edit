@@ -21,12 +21,10 @@ describe("flat mode replace — end-to-end", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupFlatIntegrationTest(cwd);
 
-      // Read to get hashes
       const readResult = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const lines = getText(readResult).split("\n");
       const betaHash = extractHash(lines.find((l: string) => l.includes("│bbb"))!);
 
-      // Edit via flat mode (top-level hash_range_inclusive / content_lines, no changes array)
       const editResult = await editTool.execute(
         "e1",
         {
@@ -42,7 +40,6 @@ describe("flat mode replace — end-to-end", () => {
       expect(editResult.content[0].text).toContain("Successfully replaced");
       expect(editResult.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
 
-      // Verify file content on disk
       const content = await readFile(path, "utf-8");
       expect(content).toBe("aaa\nBBB\nccc\n");
     });
@@ -117,7 +114,6 @@ describe("flat mode replace — end-to-end", () => {
         .find((line: string) => line.includes("│bbb"))!
         .split("│")[0]!;
 
-      // First edit succeeds
       await editTool.execute(
         "e1",
         {
@@ -130,7 +126,6 @@ describe("flat mode replace — end-to-end", () => {
         ctx,
       );
 
-      // Second edit with stale anchor fails
       await expect(
         editTool.execute(
           "e2",
@@ -205,8 +200,6 @@ describe("flat mode replace — end-to-end", () => {
       const { ctx, editTool } = setupFlatIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      // The flat mode tool now calls normReq in prepareArguments,
-      // which handles the changes array correctly.
       const editResult = await editTool.execute(
         "e1",
         {

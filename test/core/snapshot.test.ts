@@ -50,7 +50,6 @@ describe("fileSnap", () => {
 
       const snap1 = await fileSnap(filePath);
 
-      // Wait a tick to ensure mtime changes
       await new Promise((r) => setTimeout(r, 50));
       await writeFile(filePath, "modified\n", "utf-8");
 
@@ -69,7 +68,6 @@ describe("fileSnap", () => {
 
       const snap = await fileSnap(linkPath);
 
-      // The snapshotId should contain the resolved (canonical) path
       expect(snap.snapshotId).toContain("real.ts");
       expect(snap.size).toBe(13); // "real content\n" = 13 bytes
     });

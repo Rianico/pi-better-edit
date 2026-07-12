@@ -17,13 +17,11 @@ afterAll(async () => {
 
 describe("indentation difference in boundary auto-fix", () => {
   it("auto-fixes leading duplication when indentation matches exactly", async () => {
-    // "  foo" (replacement) matches "  foo" (previous) exactly — same indentation
     const file = "  foo\nbar\n  baz";
     const hashes = await lineHashes(file, testPath);
     const result = applyEdits(file, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["  foo", "  bar"] },
     ]));
-    // The leading "  foo" is auto-fixed (stripped), so no duplicate
     expect(result.content).toBe("  foo\n  bar\n  baz");
     expect(result.autoFixes).toHaveLength(1);
     expect(result.autoFixes![0]!.kind).toBe("leading");
@@ -35,7 +33,6 @@ describe("indentation difference in boundary auto-fix", () => {
     const result = applyEdits(file, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["  foo", "  new"] },
     ]));
-    // The leading "  foo" is auto-fixed (stripped), so no duplicate
     expect(result.content).toBe("  foo\n  new\n  baz");
     expect(result.autoFixes).toHaveLength(1);
     expect(result.autoFixes![0]!.kind).toBe("leading");

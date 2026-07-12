@@ -51,7 +51,6 @@ describe("edit tool noop + warnings", () => {
         ctx,
       );
 
-      // Trailing "ccc" was auto-fixed — file should have no duplicate
       const { readFile } = await import("fs/promises");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("aaa\nBBB\nccc\n");

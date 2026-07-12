@@ -15,7 +15,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       const line3Hash = extractHash(lines1.find((l) => l.includes("│ccc"))!);
       const line5Hash = extractHash(lines1.find((l) => l.includes("│eee"))!);
 
-      // Edit line 1 and line 5 in one call (non-overlapping)
       const result = await editTool.execute(
         "e1",
         {
@@ -50,7 +49,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       const line5Hash = extractHash(lines1.find((l) => l.includes("│e"))!);
       const line7Hash = extractHash(lines1.find((l) => l.includes("│g"))!);
 
-      // Replace lines 1-2 and lines 5-7 in one call
       const result = await editTool.execute(
         "e1",
         {
@@ -83,7 +81,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       const removeHash = extractHash(lines1.find((l) => l.includes("│remove"))!);
       const changeHash = extractHash(lines1.find((l) => l.includes("│change"))!);
 
-      // Delete line 2, replace line 4
       const result = await editTool.execute(
         "e1",
         {
@@ -117,7 +114,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       const line2Hash = extractHash(lines1.find((l) => l.includes("│b"))!);
       const line3Hash = extractHash(lines1.find((l) => l.includes("│c"))!);
 
-      // Two edits that overlap on line 2
       await expect(
         editTool.execute(
           "e1",
@@ -147,7 +143,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       const line1Hash = extractHash(lines1.find((l) => l.includes("│aaa"))!);
       const line2Hash = extractHash(lines1.find((l) => l.includes("│bbb"))!);
 
-      // Edit 0 is a noop (same content), edit 1 is a real change
       const result = await editTool.execute(
         "e1",
         {
@@ -209,7 +204,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       const alphaHash = extractHash(lines1.find((l) => l.includes("│alpha"))!);
       const gammaHash = extractHash(lines1.find((l) => l.includes("│gamma"))!);
 
-      // Edit alpha and gamma, leave beta unchanged
       await editTool.execute(
         "e1",
         {
@@ -224,7 +218,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
         ctx,
       );
 
-      // Read again — beta's hash should be the same
       const read2 = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");
 
@@ -232,7 +225,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       expect(betaLine2).toBeTruthy();
       const betaHash2 = extractHash(betaLine2);
 
-      // The original beta hash should still match
       const betaLine1 = lines1.find((l) => l.includes("│beta"))!;
       const betaHash1 = extractHash(betaLine1);
       expect(betaHash2).toBe(betaHash1);

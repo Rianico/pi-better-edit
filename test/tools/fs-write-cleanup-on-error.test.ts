@@ -1,10 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-// ---------------------------------------------------------------------------
-// Mock setup: temp file cleanup when writeFile or chmod on the temp handle
-// fails.  These tests verify that the temp file is removed even when the
-// write or chmod step throws, not only when rename fails.
-// ---------------------------------------------------------------------------
 
 const rmMock = vi.fn(async () => undefined);
 const handleCloseMock = vi.fn(async () => undefined);
@@ -55,12 +50,10 @@ describe("writeAtomic — temp file cleanup on write failure", () => {
       "write failed",
     );
 
-    // The temp file should be cleaned up
     expect(rmMock).toHaveBeenCalledWith(
       expect.stringMatching(/\.tmp-/),
       { force: true },
     );
-    // The handle should have been closed
     expect(handleCloseMock).toHaveBeenCalled();
   });
 
@@ -73,7 +66,6 @@ describe("writeAtomic — temp file cleanup on write failure", () => {
       "chmod failed",
     );
 
-    // The temp file should be cleaned up
     expect(rmMock).toHaveBeenCalledWith(
       expect.stringMatching(/\.tmp-/),
       { force: true },

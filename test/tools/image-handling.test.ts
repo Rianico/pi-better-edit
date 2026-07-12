@@ -4,7 +4,6 @@ import { join } from "path";
 import register from "../../index";
 import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
 
-// Minimal valid PNG (1x1 red pixel)
 const minimalPng = Buffer.from(
 	"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
 	"base64",

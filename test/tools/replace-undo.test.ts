@@ -48,7 +48,6 @@ describe("undo_last_replace", () => {
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      // Perform a replace: change "bbb" to "BBB"
       await editTool.execute(
         "e1",
         {
@@ -65,14 +64,12 @@ describe("undo_last_replace", () => {
         ctx,
       );
 
-      // Verify the file was changed
       const afterReplace = await readFile(
         new URL(`file://${cwd}/sample.ts`),
         "utf-8",
       );
       expect(afterReplace).toBe("aaa\nBBB\nccc\n");
 
-      // Undo the replace
       const undoResult = await undo.execute(
         "u1",
         { path: "sample.ts" },
@@ -84,7 +81,6 @@ describe("undo_last_replace", () => {
       expect(undoResult.isError).toBeFalsy();
       expect(getText(undoResult)).toMatch(/undone last replace/i);
 
-      // Verify the file is restored
       const afterUndo = await readFile(
         new URL(`file://${cwd}/sample.ts`),
         "utf-8",
@@ -100,7 +96,6 @@ describe("undo_last_replace", () => {
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nccc\n", testPath);
 
-      // Replace single line with two lines (addition)
       await editTool.execute(
         "e1",
         {
@@ -126,9 +121,6 @@ describe("undo_last_replace", () => {
       );
 
       const text = getText(undoResult);
-      // The replace changed 1 line (ccc) into 2 lines (BBB, B2):
-      //   +2 lines added by replace → removed by undo
-      //   -1 line removed by replace → restored by undo
       expect(text).toMatch(/removed 2 line/i);
       expect(text).toMatch(/restored 1 line/i);
     });
@@ -141,7 +133,6 @@ describe("undo_last_replace", () => {
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      // Delete the middle line
       await editTool.execute(
         "e1",
         {
@@ -167,7 +158,6 @@ describe("undo_last_replace", () => {
       );
 
       const text = getText(undoResult);
-      // The replace removed 1 line, so undo should say "restored 1 line(s)"
       expect(text).toMatch(/restored 1 line/i);
       expect(text).toMatch(/removed 0 line/i);
     });
@@ -180,7 +170,6 @@ describe("undo_last_replace", () => {
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      // Replace 2 lines with 3 different lines
       await editTool.execute(
         "e1",
         {
@@ -206,9 +195,6 @@ describe("undo_last_replace", () => {
       );
 
       const text = getText(undoResult);
-      // Replace: 2 lines → 3 lines = +1 added, 0 removed (net)
-      // Actually: 2 old lines removed, 3 new lines added
-      // So undo: removed 3 lines (the XXX/YYY/ZZZ), restored 2 lines (bbb/ccc)
       expect(text).toMatch(/removed 3 line/i);
       expect(text).toMatch(/restored 2 line/i);
     });
@@ -221,7 +207,6 @@ describe("undo_last_replace", () => {
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      // Perform a replace
       await editTool.execute(
         "e1",
         {
@@ -238,7 +223,6 @@ describe("undo_last_replace", () => {
         ctx,
       );
 
-      // Undo
       await undo.execute(
         "u1",
         { path: "sample.ts" },
@@ -247,12 +231,8 @@ describe("undo_last_replace", () => {
         ctx,
       );
 
-      // Check hash store snapshot matches restored content
       const store = await loadHashStore();
       const absPath = new URL(`file://${cwd}/sample.ts`).pathname;
-      // On Windows the URL might have a different format, but on Linux/Mac
-      // the pathname is the absolute path. The hash store uses the resolved
-      // absolute path from resolveTarget, which is the same as the URL pathname.
       const snapshot = store.snapshots[absPath] ?? store.snapshots[`/${cwd}/sample.ts`];
       expect(snapshot).toBeDefined();
       expect(snapshot!.content).toBe("aaa\nbbb\nccc\n");
@@ -266,7 +246,6 @@ describe("undo_last_replace", () => {
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
 
-      // Perform a replace
       await editTool.execute(
         "e1",
         {
@@ -283,7 +262,6 @@ describe("undo_last_replace", () => {
         ctx,
       );
 
-      // First undo succeeds
       const first = await undo.execute(
         "u1",
         { path: "sample.ts" },
@@ -293,7 +271,6 @@ describe("undo_last_replace", () => {
       );
       expect(first.isError).toBeFalsy();
 
-      // Second undo fails
       const second = await undo.execute(
         "u2",
         { path: "sample.ts" },
@@ -313,8 +290,6 @@ describe("undo_last_replace", () => {
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("line1\nline2\n", testPath);
 
-      // Perform a flat-mode replace (single change at top level)
-      // The replace tool's execute normalizes flat format internally
       await editTool.execute(
         "e1",
         {
@@ -327,14 +302,12 @@ describe("undo_last_replace", () => {
         ctx,
       );
 
-      // Verify file changed
       const afterReplace = await readFile(
         new URL(`file://${cwd}/sample.ts`),
         "utf-8",
       );
       expect(afterReplace).toBe("LINE1\nline2\n");
 
-      // Undo
       const undoResult = await undo.execute(
         "u1",
         { path: "sample.ts" },

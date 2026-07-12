@@ -6,22 +6,12 @@ import { Compile } from "typebox/compile";
 import register from "../../index";
 import { regReplace } from "../../src/replace";
 import { regReplaceFlat } from "../../src/replace-flat";
-/**
- * Shared temp-root for the suite (under the repo's `.tmp/`, which is gitignored).
- * Centralized so every helper resolves the same writable root.
- */
 export async function getWritableTempRoot(): Promise<string> {
   const fallback = join(process.cwd(), ".tmp");
   await mkdir(fallback, { recursive: true });
   return fallback;
 }
 
-/**
- * Creates a temp HOME directory with an initialized hash store, stubs
- * process.env.HOME via vi.stubEnv, and returns a cleanup function that
- * unstubs HOME and removes the temp directory.
- * Use in beforeAll/afterAll in test files that need stable hashing.
- */
 export async function setupTestHome(): Promise<{
   home: string;
   testPath: string;
@@ -60,7 +50,6 @@ export async function withTempFile(
   }
 }
 
-/** Creates a fresh cwd, writes `bytes` to `name`, and cleans up. */
 export async function withTempBytes(
   name: string,
   bytes: Uint8Array,
@@ -76,7 +65,6 @@ export async function withTempBytes(
   }
 }
 
-/** Creates a fresh cwd, makes `name` within it, and cleans up. */
 export async function withTempSubdir(
   name: string,
   run: (args: { cwd: string; path: string }) => Promise<void>,
@@ -91,10 +79,6 @@ export async function withTempSubdir(
   }
 }
 
-/**
- * Creates a fresh mkdtemp dir under `.tmp/` and cleans up. For tests that create
- * multiple files themselves; the callback receives only the dir.
- */
 export async function withTempDir(
   prefix: string,
   run: (dir: string) => Promise<void>,
@@ -107,11 +91,6 @@ export async function withTempDir(
   }
 }
 
-/**
- * Creates a fresh mkdtemp dir under `.tmp/` and returns the path.
- * Caller is responsible for cleanup. For tests that need the dir path
- * to create files manually.
- */
 export async function makeTempDir(prefix: string): Promise<string> {
   return mkdtemp(join(await getWritableTempRoot(), prefix));
 }
@@ -121,10 +100,6 @@ export function makeFakePiRegistry() {
   return {
     pi: {
       registerTool(tool: any) {
-        // Simulate the Pi harness pipeline: prepareArguments is called
-        // before execute, transforming raw model params into the format
-        // that execute expects. This catches mismatches between the
-        // prepareArguments return value and the execute implementation.
         const originalExecute = tool.execute;
         const validator = Compile(tool.parameters);
         tool.execute = async function(
@@ -137,7 +112,6 @@ export function makeFakePiRegistry() {
           const prepared = tool.prepareArguments
             ? tool.prepareArguments(params)
             : params;
-          // Validate prepared args against the schema, matching the Pi harness
           if (!validator.Check(prepared)) {
             const errors = [...validator.Errors(prepared)]
               .map((e: any) => `  - ${e.message}`)
@@ -160,7 +134,6 @@ export function makeFakePiRegistry() {
   };
 }
 
-/** Registers only `replace` and returns the tool handle. */
 export function makeFakeReplaceRegistry() {
   const tools = new Map<string, any>();
   const pi = {
@@ -182,16 +155,9 @@ export function setupIntegrationTest(cwd: string) {
   return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };
 }
 
-/**
- * Sets up a flat-mode integration test environment.
- * Registers the flat-mode replace tool (top-level hash_range_inclusive / content_lines,
- * no `changes` array) instead of the bulk-mode tool.
- */
 export function setupFlatIntegrationTest(cwd: string) {
   const { pi, getTool } = makeFakePiRegistry();
-  // Register read and undo tools from the main entrypoint
   register(pi);
-  // Override the replace tool with the flat-mode variant
   regReplaceFlat(pi);
   const ctx = { cwd, ui: { notify() {} } } as any;
   return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };

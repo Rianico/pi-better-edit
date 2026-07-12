@@ -4,9 +4,6 @@ import { join } from "path";
 import register from "../../index";
 import { withTempDir } from "../support/fixtures";
 
-/**
- * Creates a fake Pi API that captures event handlers (on) and tool registrations.
- */
 function makeFakePi() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const tools = new Map<string, unknown>();
@@ -193,7 +190,6 @@ describe("auto-read handler", () => {
     const handler = handlers.get("tool_result");
     expect(handler).toBeDefined();
 
-    // Path points to a non-existent file; handler should catch and return nothing
     const result = await handler!(
       {
         toolName: "write",
