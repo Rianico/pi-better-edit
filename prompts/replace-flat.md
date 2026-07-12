@@ -1,17 +1,5 @@
 Replace lines in a text file using HASH anchors from `read`. Only one edit per call (no bulk `changes` array — `hash_range_inclusive` and `content_lines` sit at the top level).
 
-How to use:
-
-1. Call `read` to get HASH anchors:
-```
-read({ path: "src/main.ts" })
-```
-
-2. Copy the 3-character HASH (before `│`) into `hash_range_inclusive`:
-```json
-{ "content_lines": ["const x = 99;"], "hash_range_inclusive": ["MQX", "MQX"], "path": "src/main.ts" }
-```
-
 Examples:
 
 1. Single line replace:
@@ -36,11 +24,6 @@ Examples:
 4. Append after the last line (include the old last line so the new line is added after it):
 ```json
 { "content_lines": ["old last line", "new line"], "hash_range_inclusive": ["ZPM", "ZPM"], "path": "src/main.ts" }
-```
-
-5. Seed content into an empty file (replace the single empty-line hash returned by read):
-```json
-{ "content_lines": ["first line", "second line"], "hash_range_inclusive": ["aB3", "aB3"], "path": "src/main.ts" }
 ```
 
 ⚠️ Common mistake: do not copy the `HASH│` prefix into `content_lines`.
@@ -108,17 +91,5 @@ Right: Only include the new lines that belong in the range:
 ```json
 { "content_lines": ["  const y = 2;", "  return y;"], "hash_range_inclusive": ["X", "Y"] }
 The `}` on line 4 is outside the range and stays in place.
-
-Error recovery:
-- `[E_STALE_ANCHOR]` — the anchored line's content changed since the last read. Call `read` to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into `hash_range_inclusive` and retry. (Staleness is per-line: editing or appending lines does not invalidate anchors for lines whose content is unchanged, so anchors for untouched regions stay valid across edits.)
-- `[E_BAD_REF]` — malformed HASH. Re-read and try again.
-- `[E_BAD_OP]` — invalid operation (e.g. start line > end line).
-- `[E_BAD_SHAPE]` — malformed request or change item (missing fields, wrong types, unknown fields).
-- `[E_LEGACY_SHAPE]` — old `oldText`/`newText` or `old_text`/`new_text` format detected. Use `{content_lines, hash_range_inclusive}` instead.
-- `[E_AMBIGUOUS_ANCHOR]` — hash collision. Call `read` to get fresh anchors.
-- `[E_BARE_HASH_PREFIX]` — a `content_lines` entry starts with `HASH│`. Remove the hash prefix; keep only the literal line content that appears after `│` in `read` output. `content_lines` uses file content only, `hash_range_inclusive` uses hash anchors.
-- `[E_INVALID_PATCH]` — a `content_lines` entry matches the diff preview's `+HASH│…` addition-row form. Use literal file content. (Plain `+`/`-` lines are not rejected — they are written literally.)
-- `[E_WOULD_EMPTY]` — edit would empty a non-empty file.
-- `[E_FILE_TOO_LARGE]` — file exceeds the 1,000,000-line edit limit. Use `write` or a non-line-based approach for very large files.
 
 **Undo:** If a replace produced incorrect results, call `undo_last_replace` with the file path to revert the last replace. The tool reports how many lines were removed and restored. After undoing, call `read` to get fresh anchors for a corrected replace.

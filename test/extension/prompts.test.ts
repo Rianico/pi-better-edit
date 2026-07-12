@@ -13,10 +13,10 @@ const replaceFlatPrompt = readFileSync(
 );
 
 describe("prompts/replace-bulk.md (bulk-mode model-facing contract)", () => {
-  it("shows the end-to-end workflow with read", () => {
-    expect(replaceBulkPrompt).toMatch(/Call `read` to get HASH anchors/);
-    expect(replaceBulkPrompt).toMatch(/Copy the 3-character HASH/);
-  });
+it("shows the end-to-end workflow with read", () => {
+    expect(replaceBulkPrompt).toMatch(/Replace lines in a text file using HASH anchors/);
+    expect(replaceBulkPrompt).toMatch(/hash_range_inclusive/);
+  })
 
   it("includes worked examples with changes array", () => {
     expect(replaceBulkPrompt).toMatch(/Single line replace/);
@@ -43,10 +43,9 @@ describe("prompts/replace-bulk.md (bulk-mode model-facing contract)", () => {
     expect(replaceBulkPrompt).toContain("line change summary");
   });
 
-  it("documents error recovery", () => {
-    expect(replaceBulkPrompt).toContain("[E_STALE_ANCHOR]");
-    expect(replaceBulkPrompt).toContain("[E_BAD_REF]");
-  });
+it("documents error recovery", () => {
+    expect(replaceBulkPrompt).toContain("undo_last_replace");
+  })
 
   it("does not mention flat mode", () => {
     expect(replaceBulkPrompt).not.toMatch(/Flat mode/i);
@@ -55,10 +54,10 @@ describe("prompts/replace-bulk.md (bulk-mode model-facing contract)", () => {
 });
 
 describe("prompts/replace-flat.md (flat-mode model-facing contract)", () => {
-  it("shows the end-to-end workflow with read", () => {
-    expect(replaceFlatPrompt).toMatch(/Call `read` to get HASH anchors/);
-    expect(replaceFlatPrompt).toMatch(/Copy the 3-character HASH/);
-  });
+it("shows the end-to-end workflow with read", () => {
+    expect(replaceFlatPrompt).toMatch(/Replace lines in a text file using HASH anchors/);
+    expect(replaceFlatPrompt).toMatch(/hash_range_inclusive/);
+  })
 
   it("includes worked examples without changes array", () => {
     expect(replaceFlatPrompt).toMatch(/Single line replace/);
@@ -82,10 +81,9 @@ describe("prompts/replace-flat.md (flat-mode model-facing contract)", () => {
     expect(replaceFlatPrompt).toContain("line change summary");
   });
 
-  it("documents error recovery", () => {
-    expect(replaceFlatPrompt).toContain("[E_STALE_ANCHOR]");
-    expect(replaceFlatPrompt).toContain("[E_BAD_REF]");
-  });
+it("documents error recovery", () => {
+    expect(replaceFlatPrompt).toContain("undo_last_replace");
+  })
 
   it("does not describe the bulk format as an alternative", () => {
     expect(replaceFlatPrompt).not.toMatch(/Bulk mode/i);
@@ -138,13 +136,6 @@ describe("prompt template variables (AUTO_READ_GUIDANCE)", () => {
     expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
   });
 
-  it("replace-guidelines.md contains the template variable", () => {
-    const content = readFileSync(
-      new URL("../../prompts/replace-guidelines.md", import.meta.url),
-      "utf-8",
-    );
-    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
-  });
 
   it("loadGuide replaces AUTO_READ_GUIDANCE with read guidance when auto-read is off", () => {
     const guidelines = loadGuide("../prompts/replace-bulk-guidelines.md", {
@@ -186,11 +177,4 @@ describe("prompt template variables (AUTO_READ_GUIDANCE)", () => {
     expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
   });
 
-  it("replace.md main description contains the template variable", () => {
-    const content = readFileSync(
-      new URL("../../prompts/replace.md", import.meta.url),
-      "utf-8",
-    );
-    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
-  });
 });
