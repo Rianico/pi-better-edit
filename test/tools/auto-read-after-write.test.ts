@@ -320,4 +320,61 @@ describe("auto-read after write", () => {
       await rm(cwd, { recursive: true, force: true });
     }
   });
+
+  it("does not append anchors for empty files", async () => {
+    const cwd = await makeTempDir("auto-read-test-empty-");
+    await writeFile(join(cwd, "empty.txt"), "", "utf-8");
+    try {
+      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const handler = getToolResultHandler();
+      expect(handler).toBeDefined();
+
+      const writeResult = await handler!(
+        {
+          toolName: "write",
+          toolCallId: "write-1",
+          input: { path: "empty.txt", content: "" },
+          content: [{ type: "text", text: "Successfully wrote 0 bytes to empty.txt" }],
+          details: undefined,
+          isError: false,
+        },
+        { cwd },
+      );
+
+      expect(writeResult).toBeUndefined();
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("triggers for replace tool results", async () => {
+    const cwd = await makeTempDir("auto-read-test-replace-");
+    await writeFile(join(cwd, "replace.txt"), "alpha\nbeta\n", "utf-8");
+    try {
+      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const handler = getToolResultHandler();
+
+      const replaceResult = await handler!(
+        {
+          toolName: "replace",
+          toolCallId: "replace-1",
+          input: { path: "replace.txt", changes: [{ hash_range_inclusive: ["abc", "abc"], content_lines: ["BETA"] }] },
+          content: [{ type: "text", text: "Successfully replaced in replace.txt. Added 1 line(s), removed 1 line(s)." }],
+          details: undefined,
+          isError: false,
+        },
+        { cwd },
+      );
+
+      expect(replaceResult).toBeDefined();
+      expect(replaceResult!.content).toHaveLength(2);
+
+      const autoReadText = replaceResult!.content![1]!.text!;
+      expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
+      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│alpha/);
+      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│beta/);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
 });
