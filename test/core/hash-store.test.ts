@@ -162,6 +162,24 @@ describe("hash-store — saveHashStore", () => {
       expect(Object.keys(loaded.snapshots)).toHaveLength(3);
     });
   });
+
+  it("produces valid JSON that can be parsed back", async () => {
+    await withTempHome(async () => {
+      const store: HashStore = {
+        version: 1,
+        snapshots: {
+          "/a.ts": { content: "x\n", hashes: ["AAA"] },
+          "/b.ts": { content: "y\n", hashes: ["BBB"] },
+        },
+      };
+      await saveHashStore(store);
+      const raw = await readFile(storePath(), "utf-8");
+      const parsed = JSON.parse(raw);
+      expect(parsed.version).toBe(1);
+      expect(parsed.snapshots["/a.ts"].content).toBe("x\n");
+      expect(parsed.snapshots["/b.ts"].content).toBe("y\n");
+    });
+  });
 });
 
 describe("hash-store — pruneHashStore", () => {

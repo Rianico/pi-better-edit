@@ -1,7 +1,8 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
+import { readFile, mkdir } from "fs/promises";
 import { stat } from "fs/promises";
 import { hashStorePath, hashStoreDir } from "./paths";
 import { errCode } from "./validation";
+import { writeAtomic } from "./fs-write";
 
 export interface FileSnapshot {
   content: string;
@@ -30,14 +31,14 @@ export async function loadHashStore(): Promise<HashStore> {
       version: 1,
       snapshots: {},
     };
-    await writeFile(hashStorePath(), JSON.stringify(defaultStore), "utf-8");
+    await writeAtomic(hashStorePath(), JSON.stringify(defaultStore));
     return defaultStore;
   }
 }
 
 export async function saveHashStore(store: HashStore): Promise<void> {
   await mkdir(hashStoreDir(), { recursive: true });
-  await writeFile(hashStorePath(), JSON.stringify(store, null, 2), "utf-8");
+  await writeAtomic(hashStorePath(), JSON.stringify(store, null, 2));
 }
 
 export async function pruneHashStore(store: HashStore): Promise<void> {
