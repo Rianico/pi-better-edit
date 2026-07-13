@@ -91,18 +91,48 @@ describe("hash-store — loadHashStore", () => {
     });
   });
 
-  it("handles null snapshots field gracefully", async () => {
+  it("salvages valid entries and drops structurally corrupt ones", async () => {
     await withTempHome(async () => {
       const dir = join(tmpHome, ".config", "pi-hashline-edit-pro");
       await mkdir(dir, { recursive: true });
-      await writeFile(storePath(), JSON.stringify({ version: 1, snapshots: null }), "utf-8");
+      await writeFile(storePath(), JSON.stringify({
+        version: 1,
+        snapshots: {
+          "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
+          "/missing-hashes.ts": { content: "x\n" },
+          "/null-content.ts": { content: null, hashes: ["DEF"] },
+          "/hashes-not-array.ts": { content: "y\n", hashes: "not-an-array" },
+          "/hash-not-string.ts": { content: "z\n", hashes: [42] },
+          "/also-valid.ts": { content: "good\n", hashes: ["XYZ"] },
+        },
+      }), "utf-8");
+
+      const store = await loadHashStore();
+      expect(store.version).toBe(1);
+      expect(Object.keys(store.snapshots)).toHaveLength(2);
+      expect(store.snapshots["/valid.ts"]).toEqual({ content: "ok\n", hashes: ["ABC"] });
+      expect(store.snapshots["/also-valid.ts"]).toEqual({ content: "good\n", hashes: ["XYZ"] });
+      expect(store.snapshots["/missing-hashes.ts"]).toBeUndefined();
+      expect(store.snapshots["/null-content.ts"]).toBeUndefined();
+      expect(store.snapshots["/hashes-not-array.ts"]).toBeUndefined();
+      expect(store.snapshots["/hash-not-string.ts"]).toBeUndefined();
+    });
+  });
+
+  it("returns empty snapshots when snapshots field is an array", async () => {
+    await withTempHome(async () => {
+      const dir = join(tmpHome, ".config", "pi-hashline-edit-pro");
+      await mkdir(dir, { recursive: true });
+      await writeFile(storePath(), JSON.stringify({
+        version: 1,
+        snapshots: ["not-an-object"],
+      }), "utf-8");
 
       const store = await loadHashStore();
       expect(store.snapshots).toEqual({});
     });
   });
 });
-
 describe("hash-store — saveHashStore", () => {
   it("writes store to disk", async () => {
     await withTempHome(async () => {

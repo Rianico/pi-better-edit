@@ -3,7 +3,16 @@ import { stat } from "fs/promises";
 import { hashStorePath, hashStoreDir } from "./paths";
 import { errCode } from "./validation";
 import { writeAtomic } from "./fs-write";
-
+function isValidSnapshot(value: unknown): value is FileSnapshot {
+  if (typeof value !== "object" || value === null) return false;
+  const v = value as Record<string, unknown>;
+  if (typeof v.content !== "string") return false;
+  if (!Array.isArray(v.hashes)) return false;
+  for (const h of v.hashes) {
+    if (typeof h !== "string") return false;
+  }
+  return true;
+}
 export interface FileSnapshot {
   content: string;
   hashes: string[];
@@ -18,10 +27,16 @@ export async function loadHashStore(): Promise<HashStore> {
   try {
     const content = await readFile(hashStorePath(), "utf-8");
     const parsed = JSON.parse(content) as Partial<HashStore>;
-    return {
-      version: 1,
-      snapshots: parsed.snapshots ?? {},
-    };
+    const raw = parsed.snapshots;
+    const snapshots: Record<string, FileSnapshot> = {};
+    if (raw && typeof raw === "object" && !Array.isArray(raw)) {
+      for (const [key, value] of Object.entries(raw)) {
+        if (isValidSnapshot(value)) {
+          snapshots[key] = value;
+        }
+      }
+    }
+    return { version: 1, snapshots };
   } catch (error: unknown) {
     if (errCode(error) !== "ENOENT") {
       console.error("Hash store corrupted, creating fresh store:", error);
