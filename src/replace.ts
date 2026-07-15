@@ -475,3 +475,11 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
 export function regReplace(pi: ExtensionAPI): void {
   pi.registerTool(buildToolDef({ flat: false }));
 }
+
+export function buildToolDefFlat() {
+  return buildToolDef({ flat: true });
+}
+
+export function regReplaceFlat(pi: ExtensionAPI): void {
+  pi.registerTool(buildToolDef({ flat: true }));
+}

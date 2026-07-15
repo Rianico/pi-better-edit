@@ -1,13 +1,9 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { readFile } from "fs/promises";
-import { join, isAbsolute } from "path";
 import { initHasher } from "./src/hashline";
 import { regReplace } from "./src/replace";
 import { regReplaceFlat } from "./src/replace-flat";
 import { regReplaceUndo } from "./src/replace-undo";
 import { regRead, fmtReadPreview } from "./src/read";
-import { toLF, stripBOM } from "./src/replace-diff";
-import { resolveTarget } from "./src/fs-write";
 import { visLines } from "./src/utils";
 import { AUTO_READ_MAX } from "./src/constants";
 import {
@@ -16,6 +12,7 @@ import {
   toggleAutoRead,
 } from "./src/config";
 import { loadHashStore, pruneHashStore } from "./src/hash-store";
+import { readNormFile } from "./src/file-reader";
 
 export default function (pi: ExtensionAPI): void {
   regRead(pi);
@@ -84,15 +81,11 @@ function registerReplaceTool(pi: ExtensionAPI, mode: string): void {
     if (typeof filePath !== "string") return;
 
     try {
-      const absolutePath = isAbsolute(filePath) ? filePath : join(ctx.cwd, filePath);
-      const resolvedPath = await resolveTarget(absolutePath);
-      const content = await readFile(resolvedPath, "utf-8");
-      const { text: rawContent } = stripBOM(content);
-      const normalized = toLF(rawContent);
+      const { normalized, fileHashes, absolutePath } = await readNormFile(filePath, ctx.cwd, undefined);
 
       if (visLines(normalized).length === 0) return;
 
-      const preview = await fmtReadPreview(normalized, { limit: AUTO_READ_MAX }, undefined, resolvedPath);
+      const preview = await fmtReadPreview(normalized, { limit: AUTO_READ_MAX }, fileHashes, absolutePath);
 
       return {
         content: [
