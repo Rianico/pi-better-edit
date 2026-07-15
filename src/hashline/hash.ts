@@ -70,20 +70,25 @@ function canon(line: string): string {
 	return line.replace(/\r/g, "").trimEnd();
 }
 
+function nextUniqueHash(content: string, used: Set<string>): string {
+	let retry = 0;
+	let hash = h2s(xxh32(content));
+	while (used.has(hash)) {
+		retry++;
+		if (retry > MAX_HASH_RETRIES) throw new Error("Hash space exhausted");
+		hash = h2s(xxh32(`${content}:R${retry}`));
+	}
+	used.add(hash);
+	return hash;
+}
+
 export function _lineHashesPure(content: string): string[] {
 	const lines = content.split("\n");
 	const hashes = new Array<string>(lines.length);
 	const assigned = new Set<string>();
 	for (let i = 0; i < lines.length; i++) {
 		const c = canon(lines[i]!);
-		let hash = h2s(xxh32(c));
-		let retry = 0;
-		while (assigned.has(hash)) {
-			retry++;
-			if (retry > MAX_HASH_RETRIES) throw new Error("Hash space exhausted");
-			hash = h2s(xxh32(`${c}:R${retry}`));
-		}
-		assigned.add(hash);
+		const hash = nextUniqueHash(c, assigned);
 		hashes[i] = hash;
 	}
 	return hashes;
@@ -168,14 +173,7 @@ function mapStableHashes(
   for (let i = 0; i < newLines.length; i++) {
     if (newHashes[i]) continue;
     const c = canon(newLines[i]!);
-    let retry = 0;
-    let hash = h2s(xxh32(c));
-    while (used.has(hash)) {
-      retry++;
-      if (retry > MAX_HASH_RETRIES) throw new Error("Hash space exhausted");
-      hash = h2s(xxh32(`${c}:R${retry}`));
-    }
-    used.add(hash);
+    const hash = nextUniqueHash(c, used);
     newHashes[i] = hash;
   }
   return newHashes;
