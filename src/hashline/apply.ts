@@ -12,7 +12,7 @@ import {
 	type BDupWarn,
 	type AutoFix,
 } from "./resolve";
-import { cntLines } from "../utils";
+import { visLines } from "../utils";
 
 type LIdx = {
 	fileLines: string[];
@@ -377,14 +377,14 @@ export function changedRange(
 	if (original.length === 0) {
 		return {
 			firstChangedLine: 1,
-			lastChangedLine: cntLines(result),
+			lastChangedLine: visLines(result).length,
 		};
 	}
 
 	if (result.startsWith(original) && original.endsWith("\n")) {
 		return {
-			firstChangedLine: cntLines(original) + 1,
-			lastChangedLine: cntLines(result),
+			firstChangedLine: visLines(original).length + 1,
+			lastChangedLine: visLines(result).length,
 		};
 	}
 
@@ -417,7 +417,7 @@ export function changedRange(
 	const firstChangedLine = idxToLine(firstDiff + 1, result);
 	let lastChangedLine: number;
 	if (lastRes < firstDiff) {
-		lastChangedLine = result.length === 0 ? 1 : cntLines(result);
+		lastChangedLine = result.length === 0 ? 1 : visLines(result).length;
 	} else if (
 		firstDiff === 0 &&
 		original.length > 0 &&

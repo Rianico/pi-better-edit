@@ -12,9 +12,6 @@ export function visLines(text: string): string[] {
   return text.endsWith("\n") ? lines.slice(0, -1) : lines;
 }
 
-export function cntLines(text: string): number {
-	return visLines(text).length;
-}
 
 export function rejectUnknownFields(
   obj: Record<string, unknown>,

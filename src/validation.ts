@@ -34,9 +34,6 @@ export function valKind(file: LFile, path: string): asserts file is { kind: "tex
 	}
 }
 
-export function assertText(file: LFile, path: string): asserts file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
-	valKind(file, path);
-}
 
 export function isText(file: LFile): file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
 	return file.kind === "text";

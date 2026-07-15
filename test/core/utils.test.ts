@@ -91,29 +91,6 @@ describe("visLines", () => {
   });
 });
 
-describe("cntLines", () => {
-  it("returns 0 for empty string", () => {
-    expect(cntLines("")).toBe(0);
-  });
-
-  it("counts lines without trailing newline", () => {
-    expect(cntLines("a\nb\nc")).toBe(3);
-  });
-
-  it("counts lines with trailing newline (trailing blank excluded)", () => {
-    expect(cntLines("a\nb\nc\n")).toBe(3);
-  });
-
-  it("counts a single line", () => {
-    expect(cntLines("hello")).toBe(1);
-    expect(cntLines("hello\n")).toBe(1);
-  });
-
-  it("counts blank lines correctly", () => {
-    expect(cntLines("\n")).toBe(1);
-    expect(cntLines("\n\n")).toBe(2);
-  });
-});
 
 describe("rejectUnknownFields", () => {
   it("does not throw when all fields are allowed", () => {
