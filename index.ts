@@ -11,9 +11,8 @@ import { resolveTarget } from "./src/fs-write";
 import { visLines } from "./src/utils";
 import { AUTO_READ_MAX } from "./src/constants";
 import {
-  readReplaceMode,
+  readConfig,
   toggleReplaceMode,
-  readAutoRead,
   toggleAutoRead,
 } from "./src/config";
 import { loadHashStore, pruneHashStore } from "./src/hash-store";
@@ -37,14 +36,14 @@ export default function (pi: ExtensionAPI): void {
     } catch (err) {
       console.error("Failed to load or prune hash store:", err);
     }
-    const mode = await readReplaceMode();
+    const mode = (await readConfig()).replaceMode;
     if (mode === "flat") {
       regReplaceFlat(pi);
     } else {
       regReplace(pi);
     }
 
-    autoRead = await readAutoRead();
+    autoRead = (await readConfig()).autoRead;
 
     if (debugValue === "1" || debugValue === "true") {
       ctx.ui.notify(`Hashline Edit mode active (${mode} replace)`, "info");
@@ -68,7 +67,7 @@ export default function (pi: ExtensionAPI): void {
     description: "Toggle automatic hashline anchors after write and replace operations",
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
-      const mode = await readReplaceMode();
+      const mode = (await readConfig()).replaceMode;
       if (mode === "flat") {
         regReplaceFlat(pi);
       } else {

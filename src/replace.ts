@@ -42,7 +42,7 @@ import {
   type RRState,
 } from "./replace-render";
 import { loadP, loadGuide } from "./prompts";
-import { readAutoReadSync } from "./config";
+import { readConfigSync } from "./config";
 import { saveUndo } from "./undo-store";
 
 const contentLinesSchema = Type.Array(Type.String(), {
@@ -260,7 +260,7 @@ export function reuseMarkdown(context: any, content: string, theme: any): Markdo
 }
 
 export function buildToolDef(opts: { flat: boolean }): ToolDef {
-  const autoRead = readAutoReadSync();
+  const autoRead = readConfigSync().autoRead;
   const readGuidance = autoRead
     ? "Anchors are provided automatically after write and replace operations when auto-read is enabled."
     : "Call `read` to get fresh anchors for follow-up edits.";

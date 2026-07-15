@@ -52,16 +52,6 @@ export async function writeConfig(config: Config): Promise<void> {
   await writeFile(configPath(), JSON.stringify(config, null, 2), "utf-8");
 }
 
-export async function readReplaceMode(): Promise<ReplaceMode> {
-  const config = await readConfig();
-  return config.replaceMode;
-}
-
-export async function writeReplaceMode(mode: ReplaceMode): Promise<void> {
-  const config = await readConfig();
-  config.replaceMode = mode;
-  await writeConfig(config);
-}
 
 export async function toggleReplaceMode(): Promise<ReplaceMode> {
   const config = await readConfig();
@@ -70,21 +60,6 @@ export async function toggleReplaceMode(): Promise<ReplaceMode> {
   return config.replaceMode;
 }
 
-export async function readAutoRead(): Promise<boolean> {
-  const config = await readConfig();
-  return config.autoRead;
-}
-
-export function readAutoReadSync(): boolean {
-  const config = readConfigSync();
-  return config.autoRead;
-}
-
-export async function writeAutoRead(value: boolean): Promise<void> {
-  const config = await readConfig();
-  config.autoRead = value;
-  await writeConfig(config);
-}
 
 export async function toggleAutoRead(): Promise<boolean> {
   const config = await readConfig();
