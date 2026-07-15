@@ -22,6 +22,15 @@ export default function (pi: ExtensionAPI): void {
 
   regReplace(pi);
   regReplaceUndo(pi);
+
+function registerReplaceTool(pi: ExtensionAPI, mode: string): void {
+  if (mode === "flat") {
+    regReplaceFlat(pi);
+  } else {
+    regReplace(pi);
+  }
+}
+
   const debugValue = process.env.PI_HASHLINE_DEBUG;
   const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
   let autoRead = autoReadValue === "1" || autoReadValue === "true";
@@ -37,11 +46,7 @@ export default function (pi: ExtensionAPI): void {
       console.error("Failed to load or prune hash store:", err);
     }
     const mode = (await readConfig()).replaceMode;
-    if (mode === "flat") {
-      regReplaceFlat(pi);
-    } else {
-      regReplace(pi);
-    }
+    registerReplaceTool(pi, mode);
 
     autoRead = (await readConfig()).autoRead;
 
@@ -54,11 +59,7 @@ export default function (pi: ExtensionAPI): void {
     description: "Toggle replace tool between bulk (changes array) and flat (single edit at top level) mode",
     handler: async (_args, ctx) => {
       const mode = await toggleReplaceMode();
-      if (mode === "flat") {
-        regReplaceFlat(pi);
-      } else {
-        regReplace(pi);
-      }
+      registerReplaceTool(pi, mode);
       ctx.ui.notify(`Replace mode switched to: ${mode}`, "info");
     },
   });
@@ -68,11 +69,7 @@ export default function (pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
       const mode = (await readConfig()).replaceMode;
-      if (mode === "flat") {
-        regReplaceFlat(pi);
-      } else {
-        regReplace(pi);
-      }
+      registerReplaceTool(pi, mode);
       const state = autoRead ? "enabled" : "disabled";
       ctx.ui.notify(`Auto-read after write/replace: ${state}`, "info");
     },

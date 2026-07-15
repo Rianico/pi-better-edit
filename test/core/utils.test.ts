@@ -3,7 +3,6 @@ import {
   isRec,
   has,
   visLines,
-  cntLines,
   rejectUnknownFields,
 } from "../../src/utils";
 
