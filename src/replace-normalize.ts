@@ -34,6 +34,17 @@ function normalizeField(
     record[to] = raw;
   } else if (isRec(raw)) {
     record[to] = [raw];
+  } else if (typeof raw === "string") {
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        record[to] = parsed;
+      } else if (isRec(parsed)) {
+        record[to] = [parsed];
+      }
+    } catch {
+      // not valid JSON, leave as-is for downstream validation
+    }
   }
   if (from !== to) delete record[from];
 }

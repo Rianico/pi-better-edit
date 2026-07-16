@@ -158,15 +158,40 @@ describe("normReq — change item handling", () => {
 		expect(changes[0]).toEqual({ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["line1"] });
 	});
 
-	it("leaves non-JSON string items as-is for downstream validation", () => {
-		const input = {
-			path: "test.txt",
-			changes: ["not json"],
-		};
-		const result = normReq(input) as Record<string, unknown>;
-		const changes = result.changes as Array<unknown>;
-		expect(changes[0]).toBe("not json");
-	});
+  it("leaves non-JSON string items as-is for downstream validation", () => {
+    const input = {
+      path: "test.txt",
+      changes: ["not json"],
+    };
+    const result = normReq(input) as Record<string, unknown>;
+    const changes = result.changes as Array<unknown>;
+    expect(changes[0]).toBe("not json");
+  });
+
+  it("auto-recovers JSON-string changes array", () => {
+    const input = {
+      path: "test.txt",
+      changes: '[{"hash_range_inclusive": ["AAA", "BBB"], "content_lines": ["line1"]}]'
+    };
+    const result = normReq(input) as Record<string, unknown>;
+    const changes = result.changes as Array<Record<string, unknown>>;
+    expect(Array.isArray(changes)).toBe(true);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.content_lines).toEqual(["line1"]);
+    expect(changes[0]!.hash_range_inclusive).toEqual(["AAA", "BBB"]);
+  });
+
+  it("auto-recovers JSON-string single change object", () => {
+    const input = {
+      path: "test.txt",
+      changes: '{"hash_range_inclusive": ["AAA", "BBB"], "content_lines": ["line1"]}'
+    };
+    const result = normReq(input) as Record<string, unknown>;
+    const changes = result.changes as Array<Record<string, unknown>>;
+    expect(Array.isArray(changes)).toBe(true);
+    expect(changes).toHaveLength(1);
+    expect(changes[0]!.content_lines).toEqual(["line1"]);
+  });
 });
 
 describe("normReq — flat format (top-level hash_range_inclusive / content_lines)", () => {

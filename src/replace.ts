@@ -113,10 +113,11 @@ interface PipelineResult {
   resultHashes: string[];
 }
 
-const ROOT_KS = new Set(["path", "changes"]);
+const ROOT_KS = new Set(["path", "changes", "content_lines", "hash_range_inclusive"]);
 
 export function assertReq(
   request: unknown,
+  flat?: boolean
 ): asserts request is ReqParams {
   if (!isRec(request)) {
     throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
@@ -137,10 +138,14 @@ export function assertReq(
   }
 
   if (!Array.isArray(request.changes)) {
+    if (flat) {
+      throw new Error(
+        '[E_BAD_SHAPE] Edit request requires both "content_lines" and "hash_range_inclusive" at the top level.',
+      );
+    }
     throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { content_lines: [...], hash_range_inclusive: ["<START>", "<END>"] }.');
   }
 }
-
 export async function execPipeline(
   params: ReqParams,
   cwd: string,
@@ -217,10 +222,11 @@ export async function execPipeline(
 export async function compPreview(
   request: unknown,
   cwd: string,
+  flat?: boolean
 ): Promise<RPreview> {
   try {
     const normalized = normReq(request);
-    assertReq(normalized);
+    assertReq(normalized, flat);
     const { path, originalNormalized, originalHashes, result, resultHashes } = await execPipeline(
       normalized,
       cwd,
@@ -352,7 +358,7 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
           context.state.preview = undefined;
           const previewGeneration = (context.state.previewGeneration ?? 0) + 1;
           context.state.previewGeneration = previewGeneration;
-          compPreview(previewInput, context.cwd)
+          compPreview(previewInput, context.cwd, opts.flat)
             .then((preview) => {
               if (
                 context.state.argsKey === argsKey &&

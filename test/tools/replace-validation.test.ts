@@ -63,10 +63,25 @@ describe("assertReq", () => {
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
-	it("throws for non-array edits", () => {
-		expect(() => assertReq({ path: "test.txt", changes: "not array" }))
-			.toThrow("[E_BAD_SHAPE]");
-	});
+  it("throws for non-array edits", () => {
+    expect(() => assertReq({ path: "test.txt", changes: "not array" }))
+      .toThrow("[E_BAD_SHAPE]");
+  });
+
+  it("throws with flat-mode hint when content_lines present but no hash_range_inclusive", () => {
+    expect(() => assertReq({ path: "test.txt", content_lines: ["a"] }, true))
+      .toThrow(/content_lines/);
+  });
+
+  it("throws with flat-mode hint when hash_range_inclusive present but no content_lines", () => {
+    expect(() => assertReq({ path: "test.txt", hash_range_inclusive: ["AAA", "BBB"] }, true))
+      .toThrow(/hash_range_inclusive/);
+  });
+
+  it("throws with bulk-mode message when neither changes nor flat fields present", () => {
+    expect(() => assertReq({ path: "test.txt" }))
+      .toThrow(/changes/);
+  });
 
 	it("does not throw for valid request", () => {
 		expect(() => assertReq({
