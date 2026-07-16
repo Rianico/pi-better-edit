@@ -14,6 +14,20 @@ import {
 } from "./resolve";
 import { visLines } from "../utils";
 
+function lastNonEmptyIndex(lines: string[]): number {
+	for (let i = lines.length - 1; i >= 0; i--) {
+		if (lines[i]!.length > 0) return i;
+	}
+	return -1;
+}
+
+function firstNonEmptyIndex(lines: string[]): number {
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i]!.length > 0) return i;
+	}
+	return -1;
+}
+
 type LIdx = {
 	fileLines: string[];
 	lineStarts: number[];
@@ -306,13 +320,15 @@ export function applyEdits(
 			const edit = correctedEdits[bw.editIndex];
 			if (!edit) continue;
 			if (bw.kind === "trailing") {
-				const removed = edit.content_lines.pop();
-				if (removed !== undefined) {
+				const idx = lastNonEmptyIndex(edit.content_lines);
+				if (idx >= 0) {
+					const removed = edit.content_lines.splice(idx, 1)[0];
 					autoFixes.push({ kind: "trailing", editIndex: bw.editIndex, removedLine: removed });
 				}
 			} else {
-				const removed = edit.content_lines.shift();
-				if (removed !== undefined) {
+				const idx = firstNonEmptyIndex(edit.content_lines);
+				if (idx >= 0) {
+					const removed = edit.content_lines.splice(idx, 1)[0];
 					autoFixes.push({ kind: "leading", editIndex: bw.editIndex, removedLine: removed });
 				}
 			}

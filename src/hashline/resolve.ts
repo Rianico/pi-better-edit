@@ -230,6 +230,20 @@ export function descEdit(edit: RHEdit): string {
 	return `replace ${edit.hash_range_inclusive[0].hash}-${edit.hash_range_inclusive[1].hash}`;
 }
 
+function lastNonEmpty(lines: string[]): string | undefined {
+	for (let i = lines.length - 1; i >= 0; i--) {
+		if (lines[i]!.length > 0) return lines[i]!;
+	}
+	return undefined;
+}
+
+function firstNonEmpty(lines: string[]): string | undefined {
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i]!.length > 0) return lines[i]!;
+	}
+	return undefined;
+}
+
 function checkBoundaryDup(
 	adjacentLine: string | undefined,
 	replacementEdge: string | undefined,
@@ -296,11 +310,11 @@ export function valEdits(
 		}
 		const endLine = endResolved.line;
 		const nextLine = fileLines[endLine];
-		const replacementLastLine = edit.content_lines.at(-1);
+		const replacementLastLine = lastNonEmpty(edit.content_lines);
 		const trailing = checkBoundaryDup(nextLine, replacementLastLine, "trailing", endLine, resolved.length);
 		if (trailing) boundaryWarnings.push(trailing);
 		const prevLine = fileLines[startResolved.line - 2];
-		const replacementFirstLine = edit.content_lines[0];
+		const replacementFirstLine = firstNonEmpty(edit.content_lines);
 		const leading = checkBoundaryDup(prevLine, replacementFirstLine, "leading", startResolved.line - 2, resolved.length);
 		if (leading) boundaryWarnings.push(leading);
 		resolved.push({

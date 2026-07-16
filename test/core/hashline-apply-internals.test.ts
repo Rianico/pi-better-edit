@@ -82,6 +82,30 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
     expect(result.autoFixes ?? []).toHaveLength(0);
   });
 
+  it("auto-fixes trailing duplication when content_lines has trailing empty lines", async () => {
+    const content = "a\nb\nc\nd";
+    const hashes = await lineHashes(content, home.testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "d", ""] },
+    ]));
+    expect(result.content).toBe("a\nX\n\nd");
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("trailing");
+    expect(result.autoFixes![0]!.removedLine).toBe("d");
+  });
+
+  it("auto-fixes leading duplication when content_lines has leading empty lines", async () => {
+    const content = "a\nb\nc\nd";
+    const hashes = await lineHashes(content, home.testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["", "a", "X"] },
+    ]));
+    expect(result.content).toBe("a\n\nX\nd");
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("leading");
+    expect(result.autoFixes![0]!.removedLine).toBe("a");
+  });
+
   it("auto-fixes both trailing and leading in one edit", async () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
