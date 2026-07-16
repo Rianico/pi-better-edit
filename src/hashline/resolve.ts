@@ -1,5 +1,4 @@
-import { abortIf } from "../utils";
-import { rejectUnknownFields } from "../utils";
+import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty } from "../utils";
 import { HL_BARE_PREFIX_RE } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 import { CONTENT_LINES_NOT_STRING_MSG } from "../constants";
@@ -240,19 +239,6 @@ export function descEdit(edit: RHEdit): string {
 	return `replace ${edit.hash_range_inclusive[0].hash}-${edit.hash_range_inclusive[1].hash}`;
 }
 
-function lastNonEmpty(lines: string[]): string | undefined {
-	for (let i = lines.length - 1; i >= 0; i--) {
-		if (lines[i]!.length > 0) return lines[i]!;
-	}
-	return undefined;
-}
-
-function firstNonEmpty(lines: string[]): string | undefined {
-	for (let i = 0; i < lines.length; i++) {
-		if (lines[i]!.length > 0) return lines[i]!;
-	}
-	return undefined;
-}
 
 function checkBoundaryDup(
 	adjacentLine: string | undefined,

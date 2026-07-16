@@ -1,4 +1,4 @@
-import { abortIf } from "../utils";
+import { abortIf, visLines, lastNonEmptyIndex, firstNonEmptyIndex } from "../utils";
 import { _lineHashesPure, HASH_SEP } from "./hash";
 import {
 	valEdits,
@@ -12,21 +12,6 @@ import {
 	type BDupWarn,
 	type AutoFix,
 } from "./resolve";
-import { visLines } from "../utils";
-
-function lastNonEmptyIndex(lines: string[]): number {
-	for (let i = lines.length - 1; i >= 0; i--) {
-		if (lines[i]!.length > 0) return i;
-	}
-	return -1;
-}
-
-function firstNonEmptyIndex(lines: string[]): number {
-	for (let i = 0; i < lines.length; i++) {
-		if (lines[i]!.length > 0) return i;
-	}
-	return -1;
-}
 
 type LIdx = {
 	fileLines: string[];

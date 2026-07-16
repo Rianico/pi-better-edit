@@ -52,3 +52,27 @@ export function errCode(error: unknown): string | undefined {
 	}
 	return undefined;
 }
+
+export function lastNonEmptyIndex(lines: string[]): number {
+	for (let i = lines.length - 1; i >= 0; i--) {
+		if (lines[i]!.length > 0) return i;
+	}
+	return -1;
+}
+
+export function firstNonEmptyIndex(lines: string[]): number {
+	for (let i = 0; i < lines.length; i++) {
+		if (lines[i]!.length > 0) return i;
+	}
+	return -1;
+}
+
+export function lastNonEmpty(lines: string[]): string | undefined {
+	const idx = lastNonEmptyIndex(lines);
+	return idx >= 0 ? lines[idx] : undefined;
+}
+
+export function firstNonEmpty(lines: string[]): string | undefined {
+	const idx = firstNonEmptyIndex(lines);
+	return idx >= 0 ? lines[idx] : undefined;
+}
