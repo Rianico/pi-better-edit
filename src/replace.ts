@@ -273,34 +273,23 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
 
   const modeExamples = opts.flat
     ? [
-        "", "1. Single line replace:", "```json", "{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"], \"path\": \"src/main.ts\" }", "```", "", "2. Range replace (3 lines \u2192 3 new lines):", "```json", "{ \"content_lines\": [", "    \"function greet(name) {\",", "    \"  return `Hello, ${name}`;\",", "    \"}\"", "  ], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"], \"path\": \"src/main.ts\" }", "```", "", "3. Delete a range:", "```json", "{ \"content_lines\": [], \"hash_range_inclusive\": [\"aB3\", \"xY7\"], \"path\": \"src/server.ts\" }", "```", "", "4. Append after the last line (include the old last line so the new line is added after it):", "```json", "{ \"content_lines\": [\"old last line\", \"new line\"], \"hash_range_inclusive\": [\"ZPM\", \"ZPM\"], \"path\": \"src/main.ts\" }", "```",
+        "", "Single line:", "{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"], \"path\": \"src/main.ts\" }", "", "Range replace:", "{ \"content_lines\": [\"function greet() {\", \"  return 1;\", \"}\"], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"], \"path\": \"src/main.ts\" }",
       ].join("\n")
     : [
-        "", "1. Single line replace:", "```json", "{ \"changes\": [", "  { \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"] }", "], \"path\": \"src/main.ts\" }", "```", "", "2. Range replace (3 lines \u2192 3 new lines):", "```json", "{ \"changes\": [", "  { \"content_lines\": [", "    \"function greet(name) {\",", "    \"  return `Hello, ${name}`;\",", "    \"}\"", "  ], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"] }", "], \"path\": \"src/main.ts\" }", "```", "", "3. Multiple regions in one call (delete two non-adjacent ranges):", "```json", "{ \"changes\": [", "  { \"content_lines\": [], \"hash_range_inclusive\": [\"aB3\", \"xY7\"] },", "  { \"content_lines\": [], \"hash_range_inclusive\": [\"MQX\", \"ZPM\"] }", "], \"path\": \"src/server.ts\" }", "```", "", "4. Append after the last line (include the old last line so the new line is added after it):", "```json", "{ \"changes\": [", "  { \"content_lines\": [\"old last line\", \"new line\"], \"hash_range_inclusive\": [\"ZPM\", \"ZPM\"] }", "], \"path\": \"src/main.ts\" }", "```",
+        "", "Single line:", "{ \"changes\": [{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"] }], \"path\": \"src/main.ts\" }", "", "Range replace:", "{ \"changes\": [{ \"content_lines\": [\"function greet() {\", \"  return 1;\", \"}\"], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"] }], \"path\": \"src/main.ts\" }",
       ].join("\n")
 
-  const modeRulesMid1 = opts.flat
+  const modeRules = opts.flat
     ? ""
-    : "- `changes`, `hash_range_inclusive`, and `content_lines` must be native JSON values, not JSON strings. Do not serialize them \u2014 pass them as proper arrays and strings."
+    : "- Multiple edits in one call must not overlap. Overlapping ranges are rejected with [E_EDIT_CONFLICT]."
 
-  const modeRulesMid2 = opts.flat
-    ? ""
-    : "- All changes in one call must be non-conflicting. The runtime rejects with `[E_EDIT_CONFLICT]` if two ranges overlap."
-
-  const modeRulesEnd = opts.flat
+  const modeRequestStructure = opts.flat
     ? [
-        "- The `hash_range_inclusive` is inclusive \u2014 the entire span from the first anchor through the second anchor is deleted and replaced with `content_lines`. The old lines in that span are gone. If your replacement content includes lines that already exist in the file (e.g. closing brackets), make sure those lines are within your range, otherwise they will appear twice.",
-        "- `hash_range_inclusive` and `content_lines` must be native JSON values, not JSON strings. Do not serialize them \u2014 pass them as a proper array and array of strings respectively.",
-      ].join("\n") + "\n"
-    : ""
-
-  const clSerializeWrong = opts.flat
-    ? '{ "content_lines": "[\\"line1\\", \\"line2\\"]", "hash_range_inclusive": ["F4T", "F4T"], "path": "src/main.ts" }'
-    : '{ "changes": [{ "content_lines": "[\\"line1\\", \\"line2\\"]", "hash_range_inclusive": ["F4T", "F4T"] }], "path": "src/main.ts" }'
-
-  const clSerializeRight = opts.flat
-    ? '{ "content_lines": ["line1", "line2"], "hash_range_inclusive": ["F4T", "F4T"], "path": "src/main.ts" }'
-    : '{ "changes": [{ "content_lines": ["line1", "line2"], "hash_range_inclusive": ["F4T", "F4T"] }], "path": "src/main.ts" }'
+        "Flat mode:", "```json", "{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"], \"path\": \"...\" }", "```",
+      ].join("\n")
+    : [
+        "Bulk mode (default):", "```json", "{ \"changes\": [{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"] }], \"path\": \"...\" }", "```",
+      ].join("\n")
 
   const modePrefix = opts.flat
     ? "one edit per call (flat mode)"
@@ -313,11 +302,8 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
   const E_DESC = loadP("../prompts/replace.md", {
     MODE_DESCRIPTION: modeDesc,
     MODE_EXAMPLES: modeExamples,
-    MODE_RULES_MID1: modeRulesMid1,
-    MODE_RULES_MID2: modeRulesMid2,
-    MODE_RULES_END: modeRulesEnd,
-    CL_SERIALIZE_WRONG: clSerializeWrong,
-    CL_SERIALIZE_RIGHT: clSerializeRight,
+    MODE_RULES: modeRules,
+    MODE_REQUEST_STRUCTURE: modeRequestStructure,
     AUTO_READ_GUIDANCE: readGuidance,
   });
   const E_SNIPPET = loadP("../prompts/replace-snippet.md", {

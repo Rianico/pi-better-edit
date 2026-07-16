@@ -1,5 +1,7 @@
 Read a text file. Each line is returned as `HASH│content`.
 
+Key rule: line numbers are NOT part of the output. Use the 3-char HASH to reference lines in replace calls. A HASH may change when the line content changes.
+
 HASH format:
 - The HASH is 3 characters from the URL-safe base64 alphabet `A-Za-z0-9-_` (e.g. `aB3`, `4yN`, `-qk`).
 - The content after the `│` separator is the line verbatim.

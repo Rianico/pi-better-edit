@@ -16,9 +16,7 @@ describe("prompts/replace.md (model-facing contract)", () => {
   it("includes template placeholders for mode-specific content", () => {
     expect(replacePrompt).toContain("{{MODE_EXAMPLES}}");
     expect(replacePrompt).toContain("{{MODE_DESCRIPTION}}");
-    expect(replacePrompt).toContain("{{MODE_RULES_MID1}}");
-    expect(replacePrompt).toContain("{{MODE_RULES_MID2}}");
-    expect(replacePrompt).toContain("{{MODE_RULES_END}}");
+    expect(replacePrompt).toContain("{{MODE_RULES}}");
   });
 
   it("requires hash_range_inclusive pair", () => {
@@ -26,11 +24,11 @@ describe("prompts/replace.md (model-facing contract)", () => {
   });
 
   it("tells the model not to include HASH or line content in anchors", () => {
-    expect(replacePrompt).toMatch(/Do not include.*│.*line content/i);
+    expect(replacePrompt).toMatch(/Never include the HASH│ prefix/i);
   });
 
   it("documents line change summary after successful edit", () => {
-    expect(replacePrompt).toContain("line change summary");
+    expect(replacePrompt).toContain("change summary");
   });
 
   it("documents error recovery", () => {
@@ -40,11 +38,7 @@ describe("prompts/replace.md (model-facing contract)", () => {
   it("contains template variables for mode-specific content", () => {
     expect(replacePrompt).toContain("{{MODE_DESCRIPTION}}");
     expect(replacePrompt).toContain("{{MODE_EXAMPLES}}");
-    expect(replacePrompt).toContain("{{MODE_RULES_MID1}}");
-    expect(replacePrompt).toContain("{{MODE_RULES_MID2}}");
-    expect(replacePrompt).toContain("{{MODE_RULES_END}}");
-    expect(replacePrompt).toContain("{{CL_SERIALIZE_WRONG}}");
-    expect(replacePrompt).toContain("{{CL_SERIALIZE_RIGHT}}");
+    expect(replacePrompt).toContain("{{MODE_RULES}}");
   });
 });
 
