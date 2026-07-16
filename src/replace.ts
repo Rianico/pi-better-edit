@@ -268,7 +268,7 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
     : "Call `read` to get fresh anchors for follow-up edits.";
 
   const modeDesc = opts.flat
-    ? " Only one edit per call (no bulk `changes` array \u2014 `hash_range_inclusive` and `content_lines` sit at the top level)."
+    ? " Only one edit per call. The `hash_range_inclusive` and `content_lines` fields sit at the top level of the request object."
     : "\n\nPut all operations on one file in a single `replace` call. Stack every region into the `changes` array, even when they are far apart. Anchors within one call must all come from the same pre-edit read; the runtime applies them atomically against that one snapshot.";
 
   const modeExamples = opts.flat
@@ -296,7 +296,7 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
     : "batching all changes to a file in one call"
 
   const modeGuidePrefix = opts.flat
-    ? "- Use `replace` with HASH anchors for all file changes. Only one edit per call (flat mode \u2014 no `changes` array)."
+    ? "- Use `replace` with HASH anchors for all file changes. Only one edit per call."
     : "- Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call."
 
   const E_DESC = loadP("../prompts/replace.md", {
