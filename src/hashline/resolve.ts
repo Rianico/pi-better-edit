@@ -94,7 +94,7 @@ export function fmtMismatch(
   const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
   if (notFound.length > 0) {
     out.push(
-      `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
+      `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
     );
   }
   if (ambiguous.length > 0) {
@@ -153,9 +153,19 @@ function assertItem(edit: Record<string, unknown>, index: number): void {
   if ("content_lines" in edit && !isStrArr(edit.content_lines)) {
     const val = edit.content_lines;
     if (typeof val === "string") {
-      throw new Error(CONTENT_LINES_NOT_STRING_MSG);
+      try {
+        const parsed = JSON.parse(val);
+        if (Array.isArray(parsed)) {
+          edit.content_lines = parsed;
+        } else {
+          throw new Error(CONTENT_LINES_NOT_STRING_MSG);
+        }
+      } catch {
+        throw new Error(CONTENT_LINES_NOT_STRING_MSG);
+      }
+    } else {
+      throw new Error(`[E_BAD_SHAPE] Edit ${index} field "content_lines" must be a string array.`);
     }
-    throw new Error(`[E_BAD_SHAPE] Edit ${index} field "content_lines" must be a string array.`);
   }
   if (!isStrPair(edit.hash_range_inclusive)) {
     throw new Error(
