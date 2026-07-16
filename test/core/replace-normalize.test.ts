@@ -115,8 +115,38 @@ describe("normReq — content_lines handling", () => {
       /must be a native JSON array of strings, not a JSON string/,
     );
   });
-});
 
+  it("auto-recovers JSON-string content_lines in changes item", () => {
+    const input = {
+      path: "test.txt",
+      changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: '["line1", "line2"]' }],
+    };
+    const result = normReq(input) as Record<string, unknown>;
+    const changes = result.changes as Array<Record<string, unknown>>;
+    expect(changes[0]!.content_lines).toEqual(["line1", "line2"]);
+  });
+
+  it("auto-recovers JSON-string content_lines at top level (flat format)", () => {
+    const input = {
+      path: "test.txt",
+      hash_range_inclusive: ["AAA", "BBB"],
+      content_lines: '["new line"]'
+    };
+    const result = normReq(input) as Record<string, unknown>;
+    const changes = result.changes as Array<Record<string, unknown>>;
+    expect(changes[0]!.content_lines).toEqual(["new line"]);
+  });
+
+  it("rejects JSON-string content_lines that parses to non-array", () => {
+    const input = {
+      path: "test.txt",
+      changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: '"just a string"' }],
+    };
+    expect(() => normReq(input)).toThrow(
+      /must be a native JSON array of strings, not a JSON string/,
+    );
+  });
+});
 describe("normReq — change item handling", () => {
 	it("leaves object items unchanged", () => {
 		const input = {

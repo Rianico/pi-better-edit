@@ -54,6 +54,29 @@ describe("resEdits", () => {
     );
   });
 
+  it("auto-recovers JSON-string content_lines", () => {
+    const edits: HTEdit[] = [
+      {
+        hash_range_inclusive: ["ZZP", "ZZP"],
+        content_lines: '["line1", "line2"]'
+      } as unknown as HTEdit,
+    ];
+    const resolved = resEdits(edits);
+    expect(resolved[0]!.content_lines).toEqual(["line1", "line2"]);
+  });
+
+  it("rejects JSON-string content_lines that parses to non-array", () => {
+    const edits: HTEdit[] = [
+      {
+        hash_range_inclusive: ["ZZP", "ZZP"],
+        content_lines: '"just a string"'
+      } as unknown as HTEdit,
+    ];
+    expect(() => resEdits(edits)).toThrow(
+      /must be a native JSON array of strings, not a JSON string/i,
+    );
+  });
+
 	it("rejects null content_lines input", () => {
 		const edits: HTEdit[] = [
 			{
