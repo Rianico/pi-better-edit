@@ -1,22 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
-import { join } from "path";
-import { buildToolDef as buildBulkToolDef } from "../../src/replace";
-import { buildToolDefFlat } from "../../src/replace-flat";
-import { writeConfig } from "../../src/config";
-
-let tmpHome: string;
-
-async function withTempHome(run: () => Promise<void>): Promise<void> {
-  tmpHome = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-auto-read-test-"));
-  vi.stubEnv('HOME', tmpHome);
-  try {
-    await run();
-  } finally {
-    vi.unstubAllEnvs();
-    await rm(tmpHome, { recursive: true, force: true });
-  }
-}
+import { describe, expect, it } from "vitest";
+import { buildToolDef as buildBulkToolDef, buildToolDefFlat } from "../../src/replace";
 
 function checkDescription(toolDef: { description: string }, expectAutoMsg: boolean): void {
   const hasAutoMsg = toolDef.description.includes("Anchors are provided automatically after write and replace operations");
@@ -47,57 +30,41 @@ function checkGuidelines(guidelines: string[], expectAutoMsg: boolean): void {
 }
 
 describe("auto-read guidance in bulk mode tool definition", () => {
-  it("shows auto-read message in description and guidelines when autoRead is true", async () => {
-    await withTempHome(async () => {
-      await writeConfig({ replaceMode: "bulk", autoRead: true });
-      const toolDef = buildBulkToolDef({ flat: false });
-      checkDescription(toolDef, true);
-      checkGuidelines(toolDef.promptGuidelines ?? [], true);
-    });
+  it("shows auto-read message in description and guidelines when autoRead is true", () => {
+    const toolDef = buildBulkToolDef({ flat: false, autoRead: true });
+    checkDescription(toolDef, true);
+    checkGuidelines(toolDef.promptGuidelines ?? [], true);
   });
 
-  it("shows 'Call `read`' message in description and guidelines when autoRead is false", async () => {
-    await withTempHome(async () => {
-      await writeConfig({ replaceMode: "bulk", autoRead: false });
-      const toolDef = buildBulkToolDef({ flat: false });
-      checkDescription(toolDef, false);
-      checkGuidelines(toolDef.promptGuidelines ?? [], false);
-    });
+  it("shows 'Call `read`' message in description and guidelines when autoRead is false", () => {
+    const toolDef = buildBulkToolDef({ flat: false, autoRead: false });
+    checkDescription(toolDef, false);
+    checkGuidelines(toolDef.promptGuidelines ?? [], false);
   });
 
-  it("defaults to 'Call `read`' when no config file exists", async () => {
-    await withTempHome(async () => {
-      const toolDef = buildBulkToolDef({ flat: false });
-      checkDescription(toolDef, false);
-      checkGuidelines(toolDef.promptGuidelines ?? [], false);
-    });
+  it("defaults to 'Call `read`' when autoRead is not provided", () => {
+    const toolDef = buildBulkToolDef({ flat: false });
+    checkDescription(toolDef, false);
+    checkGuidelines(toolDef.promptGuidelines ?? [], false);
   });
 });
 
 describe("auto-read guidance in flat mode tool definition", () => {
-  it("shows auto-read message in description and guidelines when autoRead is true", async () => {
-    await withTempHome(async () => {
-      await writeConfig({ replaceMode: "flat", autoRead: true });
-      const toolDef = buildToolDefFlat();
-      checkDescription(toolDef, true);
-      checkGuidelines(toolDef.promptGuidelines ?? [], true);
-    });
+  it("shows auto-read message in description and guidelines when autoRead is true", () => {
+    const toolDef = buildToolDefFlat(true);
+    checkDescription(toolDef, true);
+    checkGuidelines(toolDef.promptGuidelines ?? [], true);
   });
 
-  it("shows 'Call `read`' message in description and guidelines when autoRead is false", async () => {
-    await withTempHome(async () => {
-      await writeConfig({ replaceMode: "flat", autoRead: false });
-      const toolDef = buildToolDefFlat();
-      checkDescription(toolDef, false);
-      checkGuidelines(toolDef.promptGuidelines ?? [], false);
-    });
+  it("shows 'Call `read`' message in description and guidelines when autoRead is false", () => {
+    const toolDef = buildToolDefFlat(false);
+    checkDescription(toolDef, false);
+    checkGuidelines(toolDef.promptGuidelines ?? [], false);
   });
 
-  it("defaults to 'Call `read`' when no config file exists", async () => {
-    await withTempHome(async () => {
-      const toolDef = buildToolDefFlat();
-      checkDescription(toolDef, false);
-      checkGuidelines(toolDef.promptGuidelines ?? [], false);
-    });
+  it("defaults to 'Call `read`' when autoRead is not provided", () => {
+    const toolDef = buildToolDefFlat();
+    checkDescription(toolDef, false);
+    checkGuidelines(toolDef.promptGuidelines ?? [], false);
   });
 });

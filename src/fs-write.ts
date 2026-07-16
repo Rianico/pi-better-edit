@@ -11,7 +11,7 @@ import {
 	copyFile,
 } from "fs/promises";
 import { dirname, join, parse, resolve, sep } from "path";
-import { errCode } from "./validation";
+import { errCode } from "./utils";
 
 export async function resolveTarget(path: string): Promise<string> {
   const absolutePath = resolve(path);

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile, symlink } from "fs/promises";
 import { join } from "path";
-import { fileSnap } from "../../src/snapshot";
+import { fileSnap } from "../../src/file-reader";
 
 async function withTempDir(run: (dir: string) => Promise<void>): Promise<void> {
   const dir = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-snapshot-test-"));

@@ -1,4 +1,4 @@
-import { abortIf } from "../runtime";
+import { abortIf } from "../utils";
 import { rejectUnknownFields } from "../utils";
 import { HL_BARE_PREFIX_RE } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";

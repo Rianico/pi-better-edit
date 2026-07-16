@@ -1,7 +1,6 @@
-import { readFileSync } from "fs";
 import { readFile, writeFile, mkdir } from "fs/promises";
 import { configDir, configPath } from "./paths";
-import { errCode } from "./validation";
+import { errCode } from "./utils";
 
 export type ReplaceMode = "bulk" | "flat";
 export interface Config {
@@ -24,17 +23,6 @@ function parseConfig(content: string): Config {
 export async function readConfig(): Promise<Config> {
   try {
     const content = await readFile(configPath(), "utf-8");
-    return parseConfig(content);
-  } catch (error: unknown) {
-    if (errCode(error) !== "ENOENT") {
-      console.error("Config file corrupted, using defaults:", error);
-    }
-    return { ...DEFAULT_CONFIG };
-  }
-}
-export function readConfigSync(): Config {
-  try {
-    const content = readFileSync(configPath(), "utf-8");
     return parseConfig(content);
   } catch (error: unknown) {
     if (errCode(error) !== "ENOENT") {

@@ -41,3 +41,14 @@ export function cntDiff(diff: string, marker: "+" | "-"): number {
   }
   return count;
 }
+
+export function abortIf(signal?: AbortSignal): void {
+  if (signal?.aborted) throw new Error("Operation aborted");
+}
+
+export function errCode(error: unknown): string | undefined {
+	if (error instanceof Error) {
+		return (error as NodeJS.ErrnoException).code;
+	}
+	return undefined;
+}

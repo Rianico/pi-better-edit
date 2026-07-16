@@ -1,7 +1,7 @@
 import { readFile, mkdir } from "fs/promises";
 import { stat } from "fs/promises";
 import { hashStorePath, hashStoreDir } from "./paths";
-import { errCode } from "./validation";
+import { errCode } from "./utils";
 import { writeAtomic } from "./fs-write";
 function isValidSnapshot(value: unknown): value is FileSnapshot {
   if (typeof value !== "object" || value === null) return false;

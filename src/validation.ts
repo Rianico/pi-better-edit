@@ -1,6 +1,7 @@
 import { constants } from "fs";
 import { access as fsAccess } from "fs/promises";
 import type { LFile } from "./file-kind";
+import { errCode } from "./utils";
 
 export async function valAccess(
 	absolutePath: string,
@@ -39,9 +40,3 @@ export function isText(file: LFile): file is { kind: "text"; text: string; hadUt
 	return file.kind === "text";
 }
 
-export function errCode(error: unknown): string | undefined {
-	if (error instanceof Error) {
-		return (error as NodeJS.ErrnoException).code;
-	}
-	return undefined;
-}

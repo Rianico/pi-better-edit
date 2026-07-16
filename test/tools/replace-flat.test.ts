@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { flatEditToolSchema, regReplaceFlat } from "../../src/replace-flat";
+import { flatEditToolSchema, regReplaceFlat } from "../../src/replace";
 import { editToolSchema } from "../../src/replace";
 import { makeFakePiRegistry, withTempFile, useTestHome } from "../support/fixtures";
 const home = useTestHome();

@@ -12,7 +12,7 @@ import {
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
 import { normReq, normalizeFilePath } from "./replace-normalize";
-import { isRec, has, rejectUnknownFields } from "./utils";
+import { isRec, has, rejectUnknownFields, abortIf } from "./utils";
 import { MAX_HASH_LINES } from "./constants";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import {
@@ -21,9 +21,8 @@ import {
   resEdits,
   type HTEdit,
 } from "./hashline";
-import { toCwd } from "./path-utils";
-import { abortIf } from "./runtime";
-import { fileSnap } from "./snapshot";
+import { toCwd } from "./paths";
+import { fileSnap } from "./file-reader";
 import {
   buildChanged,
   buildNoop,
@@ -42,8 +41,8 @@ import {
   type RRState,
 } from "./replace-render";
 import { loadP, loadGuide } from "./prompts";
-import { readConfigSync } from "./config";
-import { saveUndo } from "./undo-store";
+import { saveUndo } from "./replace-undo";
+import { loadHashStore, type HashStore } from "./hash-store";
 
 const contentLinesSchema = Type.Array(Type.String(), {
   description:
@@ -147,6 +146,7 @@ export async function execPipeline(
   cwd: string,
   accessMode: number,
   signal?: AbortSignal,
+  store?: HashStore,
 ): Promise<PipelineResult> {
 
   const path = params.path;
@@ -158,8 +158,10 @@ export async function execPipeline(
     throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "changes" array.');
   }
 
+  const hashStore = store ?? await loadHashStore();
+
   const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors } = await readNormFile(
-    path, cwd, signal, accessMode, undefined, MAX_HASH_LINES,
+    path, cwd, signal, accessMode, undefined, MAX_HASH_LINES, hashStore,
   );
 
   const absolutePath = toCwd(path, cwd);
@@ -192,7 +194,7 @@ export async function execPipeline(
     content: originalNormalized,
     hashes: originalHashes,
     removedHashes,
-  });
+  }, hashStore);
 
   const warnings = [...(anchorResult.warnings ?? [])];
   return {
@@ -259,17 +261,70 @@ export function reuseMarkdown(context: any, content: string, theme: any): Markdo
   return m;
 }
 
-export function buildToolDef(opts: { flat: boolean }): ToolDef {
-  const autoRead = readConfigSync().autoRead;
+export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolDef {
+  const autoRead = opts.autoRead ?? false;
   const readGuidance = autoRead
     ? "Anchors are provided automatically after write and replace operations when auto-read is enabled."
     : "Call `read` to get fresh anchors for follow-up edits.";
 
-  const E_DESC = loadP(opts.flat ? "../prompts/replace-flat.md" : "../prompts/replace-bulk.md", {
+  const modeDesc = opts.flat
+    ? " Only one edit per call (no bulk `changes` array \u2014 `hash_range_inclusive` and `content_lines` sit at the top level)."
+    : "\n\nPut all operations on one file in a single `replace` call. Stack every region into the `changes` array, even when they are far apart. Anchors within one call must all come from the same pre-edit read; the runtime applies them atomically against that one snapshot.";
+
+  const modeExamples = opts.flat
+    ? [
+        "", "1. Single line replace:", "```json", "{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"], \"path\": \"src/main.ts\" }", "```", "", "2. Range replace (3 lines \u2192 3 new lines):", "```json", "{ \"content_lines\": [", "    \"function greet(name) {\",", "    \"  return `Hello, ${name}`;\",", "    \"}\"", "  ], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"], \"path\": \"src/main.ts\" }", "```", "", "3. Delete a range:", "```json", "{ \"content_lines\": [], \"hash_range_inclusive\": [\"aB3\", \"xY7\"], \"path\": \"src/server.ts\" }", "```", "", "4. Append after the last line (include the old last line so the new line is added after it):", "```json", "{ \"content_lines\": [\"old last line\", \"new line\"], \"hash_range_inclusive\": [\"ZPM\", \"ZPM\"], \"path\": \"src/main.ts\" }", "```",
+      ].join("\n")
+    : [
+        "", "1. Single line replace:", "```json", "{ \"changes\": [", "  { \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"] }", "], \"path\": \"src/main.ts\" }", "```", "", "2. Range replace (3 lines \u2192 3 new lines):", "```json", "{ \"changes\": [", "  { \"content_lines\": [", "    \"function greet(name) {\",", "    \"  return `Hello, ${name}`;\",", "    \"}\"", "  ], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"] }", "], \"path\": \"src/main.ts\" }", "```", "", "3. Multiple regions in one call (delete two non-adjacent ranges):", "```json", "{ \"changes\": [", "  { \"content_lines\": [], \"hash_range_inclusive\": [\"aB3\", \"xY7\"] },", "  { \"content_lines\": [], \"hash_range_inclusive\": [\"MQX\", \"ZPM\"] }", "], \"path\": \"src/server.ts\" }", "```", "", "4. Append after the last line (include the old last line so the new line is added after it):", "```json", "{ \"changes\": [", "  { \"content_lines\": [\"old last line\", \"new line\"], \"hash_range_inclusive\": [\"ZPM\", \"ZPM\"] }", "], \"path\": \"src/main.ts\" }", "```",
+      ].join("\n")
+
+  const modeRulesMid1 = opts.flat
+    ? ""
+    : "- `changes`, `hash_range_inclusive`, and `content_lines` must be native JSON values, not JSON strings. Do not serialize them \u2014 pass them as proper arrays and strings."
+
+  const modeRulesMid2 = opts.flat
+    ? ""
+    : "- All changes in one call must be non-conflicting. The runtime rejects with `[E_EDIT_CONFLICT]` if two ranges overlap."
+
+  const modeRulesEnd = opts.flat
+    ? [
+        "- The `hash_range_inclusive` is inclusive \u2014 the entire span from the first anchor through the second anchor is deleted and replaced with `content_lines`. The old lines in that span are gone. If your replacement content includes lines that already exist in the file (e.g. closing brackets), make sure those lines are within your range, otherwise they will appear twice.",
+        "- `hash_range_inclusive` and `content_lines` must be native JSON values, not JSON strings. Do not serialize them \u2014 pass them as a proper array and array of strings respectively.",
+      ].join("\n") + "\n"
+    : ""
+
+  const clSerializeWrong = opts.flat
+    ? '{ "content_lines": "[\\"line1\\", \\"line2\\"]", "hash_range_inclusive": ["F4T", "F4T"], "path": "src/main.ts" }'
+    : '{ "changes": [{ "content_lines": "[\\"line1\\", \\"line2\\"]", "hash_range_inclusive": ["F4T", "F4T"] }], "path": "src/main.ts" }'
+
+  const clSerializeRight = opts.flat
+    ? '{ "content_lines": ["line1", "line2"], "hash_range_inclusive": ["F4T", "F4T"], "path": "src/main.ts" }'
+    : '{ "changes": [{ "content_lines": ["line1", "line2"], "hash_range_inclusive": ["F4T", "F4T"] }], "path": "src/main.ts" }'
+
+  const modePrefix = opts.flat
+    ? "one edit per call (flat mode)"
+    : "batching all changes to a file in one call"
+
+  const modeGuidePrefix = opts.flat
+    ? "- Use `replace` with HASH anchors for all file changes. Only one edit per call (flat mode \u2014 no `changes` array)."
+    : "- Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call."
+
+  const E_DESC = loadP("../prompts/replace.md", {
+    MODE_DESCRIPTION: modeDesc,
+    MODE_EXAMPLES: modeExamples,
+    MODE_RULES_MID1: modeRulesMid1,
+    MODE_RULES_MID2: modeRulesMid2,
+    MODE_RULES_END: modeRulesEnd,
+    CL_SERIALIZE_WRONG: clSerializeWrong,
+    CL_SERIALIZE_RIGHT: clSerializeRight,
     AUTO_READ_GUIDANCE: readGuidance,
   });
-  const E_SNIPPET = loadP(opts.flat ? "../prompts/replace-flat-snippet.md" : "../prompts/replace-bulk-snippet.md");
-  const E_GUIDE = loadGuide(opts.flat ? "../prompts/replace-flat-guidelines.md" : "../prompts/replace-bulk-guidelines.md", {
+  const E_SNIPPET = loadP("../prompts/replace-snippet.md", {
+    MODE_PREFIX: modePrefix,
+  });
+  const E_GUIDE = loadGuide("../prompts/replace-guidelines.md", {
+    MODE_PREFIX: modeGuidePrefix,
     AUTO_READ_GUIDANCE: readGuidance,
   });
 
@@ -472,14 +527,14 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
   };
 }
 
-export function regReplace(pi: ExtensionAPI): void {
-  pi.registerTool(buildToolDef({ flat: false }));
+export function regReplace(pi: ExtensionAPI, autoRead?: boolean): void {
+  pi.registerTool(buildToolDef({ flat: false, autoRead }));
 }
 
-export function buildToolDefFlat() {
-  return buildToolDef({ flat: true });
+export function buildToolDefFlat(autoRead?: boolean) {
+  return buildToolDef({ flat: true, autoRead });
 }
 
-export function regReplaceFlat(pi: ExtensionAPI): void {
-  pi.registerTool(buildToolDef({ flat: true }));
+export function regReplaceFlat(pi: ExtensionAPI, autoRead?: boolean): void {
+  pi.registerTool(buildToolDef({ flat: true, autoRead }));
 }

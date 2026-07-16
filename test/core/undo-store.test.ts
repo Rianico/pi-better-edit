@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeEach } from "vitest";
-import { saveUndo, getUndo, clearUndo } from "../../src/undo-store";
+import { saveUndo, getUndo, clearUndo } from "../../src/replace-undo";
 
 describe("undo-store", () => {
   beforeEach(() => {

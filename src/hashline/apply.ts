@@ -1,4 +1,4 @@
-import { abortIf } from "../runtime";
+import { abortIf } from "../utils";
 import { _lineHashesPure, HASH_SEP } from "./hash";
 import {
 	valEdits,

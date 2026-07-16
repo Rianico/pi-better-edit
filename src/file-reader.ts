@@ -1,12 +1,14 @@
 import { constants } from "fs";
+import { stat } from "fs/promises";
 import { lineHashes } from "./hashline";
 import { loadFileKindAndText, type LFile } from "./file-kind";
 import { resolveTarget } from "./fs-write";
-import { toCwd } from "./path-utils";
+import { toCwd } from "./paths";
 import { detectEnding, toLF, stripBOM } from "./replace-diff";
-import { abortIf } from "./runtime";
+import { abortIf } from "./utils";
 import { valKind, valAccess } from "./validation";
 import { visLines } from "./utils";
+import type { HashStore } from "./hash-store";
 export interface NormFile {
   absolutePath: string;
   normalized: string;
@@ -16,6 +18,26 @@ export interface NormFile {
   hadUtf8DecodeErrors: boolean;
 }
 
+export type SnapInfo = {
+  snapshotId: string;
+  mtimeMs: number;
+  size: number;
+};
+
+function fmtSnapId(canonicalPath: string, info: { mtimeMs: number; size: number }): string {
+  return `v1|${canonicalPath}|${info.mtimeMs}|${info.size}`;
+}
+
+export async function fileSnap(absolutePath: string): Promise<SnapInfo> {
+  const canonicalPath = await resolveTarget(absolutePath);
+  const stats = await stat(canonicalPath);
+  return {
+    snapshotId: fmtSnapId(canonicalPath, stats),
+    mtimeMs: stats.mtimeMs,
+    size: stats.size,
+  };
+}
+
 export async function readNormFile(
   path: string,
   cwd: string,
@@ -23,6 +45,7 @@ export async function readNormFile(
   accessMode: number = constants.R_OK,
   preloadedFile?: LFile,
   maxLines?: number,
+  store?: HashStore,
 ): Promise<NormFile> {
   const absolutePath = toCwd(path, cwd);
   const resolvedPath = await resolveTarget(absolutePath);
@@ -48,7 +71,7 @@ export async function readNormFile(
     }
   }
 
-  const fileHashes = await lineHashes(normalized, resolvedPath);
+  const fileHashes = await lineHashes(normalized, resolvedPath, undefined, store);
   return {
     absolutePath: resolvedPath,
     normalized,

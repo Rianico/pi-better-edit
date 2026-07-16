@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { abortIf } from "../../src/runtime";
+import { abortIf } from "../../src/utils";
 
 describe("abortIf", () => {
   it("does nothing when signal is undefined", () => {

@@ -2,13 +2,32 @@ import { readFile } from "fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { getUndo, clearUndo } from "./undo-store";
 import { loadHashStore, saveHashStore } from "./hash-store";
 import { resolveTarget, writeAtomic } from "./fs-write";
-import { toCwd } from "./path-utils";
+import { toCwd } from "./paths";
 import { toLF, stripBOM, genDiff, restoreEndings } from "./replace-diff";
 import { cntDiff } from "./utils";
 import { loadP, loadGuide } from "./prompts";
+export interface UndoEntry {
+  content: string;
+  bom: string;
+  originalEnding: "\r\n" | "\n";
+  hashes: string[];
+}
+
+const undoMap = new Map<string, UndoEntry>();
+
+export function saveUndo(path: string, entry: UndoEntry): void {
+  undoMap.set(path, entry);
+}
+
+export function getUndo(path: string): UndoEntry | undefined {
+  return undoMap.get(path);
+}
+
+export function clearUndo(path: string): void {
+  undoMap.delete(path);
+}
 
 
 export function regReplaceUndo(pi: ExtensionAPI): void {

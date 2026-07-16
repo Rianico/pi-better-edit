@@ -1,5 +1,5 @@
 import { homedir } from "os";
-import { join, dirname } from "path";
+import { isAbsolute, resolve as resolvePath, join, dirname } from "path";
 
 
 export function configDir(): string {
@@ -16,4 +16,15 @@ export function hashStorePath(): string {
 
 export function hashStoreDir(): string {
   return dirname(hashStorePath());
+}
+
+function expand(filePath: string): string {
+  if (filePath === "~") return homedir();
+  if (filePath.startsWith("~/")) return homedir() + filePath.slice(1);
+  return filePath;
+}
+
+export function toCwd(filePath: string, cwd: string): string {
+  const expanded = expand(filePath);
+  return isAbsolute(expanded) ? expanded : resolvePath(cwd, expanded);
 }

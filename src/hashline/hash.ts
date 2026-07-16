@@ -1,6 +1,6 @@
 import xxhash from "xxhash-wasm";
 import * as Diff from "diff";
-import { loadHashStore, saveHashStore } from "../hash-store";
+import { loadHashStore, saveHashStore, type HashStore } from "../hash-store";
 import { MAX_HASH_RETRIES } from "../constants";
 
 export const HASH_LEN = 3;
@@ -98,12 +98,13 @@ export async function lineHashes(
   content: string,
   path?: string,
   previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
+  store?: HashStore,
 ): Promise<string[]> {
   if (!path) {
     return _lineHashesPure(content);
   }
 
-  const store = await loadHashStore();
+  const hashStore = store ?? await loadHashStore();
 
   if (previous) {
     const newHashes = mapStableHashes(
@@ -111,19 +112,19 @@ export async function lineHashes(
       content,
       previous.removedHashes,
     );
-    store.snapshots[path] = { content, hashes: newHashes };
-    await saveHashStore(store);
+    hashStore.snapshots[path] = { content, hashes: newHashes };
+    await saveHashStore(hashStore);
     return newHashes;
   }
 
-  const snapshot = store.snapshots[path];
+  const snapshot = hashStore.snapshots[path];
   if (snapshot && snapshot.content === content) {
     return snapshot.hashes;
   }
 
   const newHashes = _lineHashesPure(content);
-  store.snapshots[path] = { content, hashes: newHashes };
-  await saveHashStore(store);
+  hashStore.snapshots[path] = { content, hashes: newHashes };
+  await saveHashStore(hashStore);
   return newHashes;
 }
 

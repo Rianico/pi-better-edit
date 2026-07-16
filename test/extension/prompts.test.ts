@@ -2,93 +2,49 @@ import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 import { loadGuide } from "../../src/prompts";
 
-const replaceBulkPrompt = readFileSync(
-  new URL("../../prompts/replace-bulk.md", import.meta.url),
+const replacePrompt = readFileSync(
+  new URL("../../prompts/replace.md", import.meta.url),
   "utf-8",
 );
 
-const replaceFlatPrompt = readFileSync(
-  new URL("../../prompts/replace-flat.md", import.meta.url),
-  "utf-8",
-);
+describe("prompts/replace.md (model-facing contract)", () => {
+  it("shows the end-to-end workflow with read", () => {
+    expect(replacePrompt).toMatch(/Replace lines in a text file using HASH anchors/);
+    expect(replacePrompt).toMatch(/hash_range_inclusive/);
+  });
 
-describe("prompts/replace-bulk.md (bulk-mode model-facing contract)", () => {
-it("shows the end-to-end workflow with read", () => {
-    expect(replaceBulkPrompt).toMatch(/Replace lines in a text file using HASH anchors/);
-    expect(replaceBulkPrompt).toMatch(/hash_range_inclusive/);
-  })
-
-  it("includes worked examples with changes array", () => {
-    expect(replaceBulkPrompt).toMatch(/Single line replace/);
-    expect(replaceBulkPrompt).toMatch(/Range replace/);
-    expect(replaceBulkPrompt).toMatch(/Multiple regions in one call/);
-    expect(replaceBulkPrompt).toContain('"content_lines": []');
-    expect(replaceBulkPrompt).toContain('"changes"');
+  it("includes template placeholders for mode-specific content", () => {
+    expect(replacePrompt).toContain("{{MODE_EXAMPLES}}");
+    expect(replacePrompt).toContain("{{MODE_DESCRIPTION}}");
+    expect(replacePrompt).toContain("{{MODE_RULES_MID1}}");
+    expect(replacePrompt).toContain("{{MODE_RULES_MID2}}");
+    expect(replacePrompt).toContain("{{MODE_RULES_END}}");
   });
 
   it("requires hash_range_inclusive pair", () => {
-    expect(replaceBulkPrompt).toMatch(/hash_range_inclusive/i);
-  });
-
-  it("declares that edits must be non-conflicting", () => {
-    expect(replaceBulkPrompt).toContain("[E_EDIT_CONFLICT]");
-    expect(replaceBulkPrompt).toMatch(/non-conflicting/);
+    expect(replacePrompt).toMatch(/hash_range_inclusive/i);
   });
 
   it("tells the model not to include HASH or line content in anchors", () => {
-    expect(replaceBulkPrompt).toMatch(/Do not include.*│.*line content/i);
+    expect(replacePrompt).toMatch(/Do not include.*│.*line content/i);
   });
 
   it("documents line change summary after successful edit", () => {
-    expect(replaceBulkPrompt).toContain("line change summary");
+    expect(replacePrompt).toContain("line change summary");
   });
 
-it("documents error recovery", () => {
-    expect(replaceBulkPrompt).toContain("undo_last_replace");
-  })
-
-  it("does not mention flat mode", () => {
-    expect(replaceBulkPrompt).not.toMatch(/Flat mode/i);
-    expect(replaceBulkPrompt).not.toMatch(/top.level/);
-  });
-});
-
-describe("prompts/replace-flat.md (flat-mode model-facing contract)", () => {
-it("shows the end-to-end workflow with read", () => {
-    expect(replaceFlatPrompt).toMatch(/Replace lines in a text file using HASH anchors/);
-    expect(replaceFlatPrompt).toMatch(/hash_range_inclusive/);
-  })
-
-  it("includes worked examples without changes array", () => {
-    expect(replaceFlatPrompt).toMatch(/Single line replace/);
-    expect(replaceFlatPrompt).toMatch(/Range replace/);
-    expect(replaceFlatPrompt).not.toContain('"changes"');
+  it("documents error recovery", () => {
+    expect(replacePrompt).toContain("undo_last_replace");
   });
 
-  it("requires hash_range_inclusive pair", () => {
-    expect(replaceFlatPrompt).toMatch(/hash_range_inclusive/i);
-  });
-
-  it("documents that only one edit per call is allowed", () => {
-    expect(replaceFlatPrompt).toMatch(/Only one edit per call/i);
-  });
-
-  it("tells the model not to include HASH or line content in anchors", () => {
-    expect(replaceFlatPrompt).toMatch(/Do not include.*│.*line content/i);
-  });
-
-  it("documents line change summary after successful edit", () => {
-    expect(replaceFlatPrompt).toContain("line change summary");
-  });
-
-it("documents error recovery", () => {
-    expect(replaceFlatPrompt).toContain("undo_last_replace");
-  })
-
-  it("does not describe the bulk format as an alternative", () => {
-    expect(replaceFlatPrompt).not.toMatch(/Bulk mode/i);
-    expect(replaceFlatPrompt).not.toMatch(/go inside a `changes` array/i);
-    expect(replaceFlatPrompt).not.toMatch(/Multiple regions in one call/i);
+  it("contains template variables for mode-specific content", () => {
+    expect(replacePrompt).toContain("{{MODE_DESCRIPTION}}");
+    expect(replacePrompt).toContain("{{MODE_EXAMPLES}}");
+    expect(replacePrompt).toContain("{{MODE_RULES_MID1}}");
+    expect(replacePrompt).toContain("{{MODE_RULES_MID2}}");
+    expect(replacePrompt).toContain("{{MODE_RULES_END}}");
+    expect(replacePrompt).toContain("{{CL_SERIALIZE_WRONG}}");
+    expect(replacePrompt).toContain("{{CL_SERIALIZE_RIGHT}}");
   });
 });
 
@@ -120,26 +76,22 @@ describe("prompts/read.md (model-facing contract)", () => {
 });
 
 describe("prompt template variables (AUTO_READ_GUIDANCE)", () => {
-  it("replace-bulk-guidelines.md contains the template variable", () => {
+  it("replace-guidelines.md contains the template variable", () => {
     const content = readFileSync(
-      new URL("../../prompts/replace-bulk-guidelines.md", import.meta.url),
+      new URL("../../prompts/replace-guidelines.md", import.meta.url),
       "utf-8",
     );
     expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
   });
 
-  it("replace-flat-guidelines.md contains the template variable", () => {
-    const content = readFileSync(
-      new URL("../../prompts/replace-flat-guidelines.md", import.meta.url),
-      "utf-8",
-    );
-    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
+  it("replace.md main description contains the template variable", () => {
+    expect(replacePrompt).toContain("{{AUTO_READ_GUIDANCE}}");
   });
-
 
   it("loadGuide replaces AUTO_READ_GUIDANCE with read guidance when auto-read is off", () => {
-    const guidelines = loadGuide("../prompts/replace-bulk-guidelines.md", {
+    const guidelines = loadGuide("../prompts/replace-guidelines.md", {
       AUTO_READ_GUIDANCE: "Call `read` to get fresh anchors for follow-up edits.",
+      MODE_PREFIX: "- Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call.",
     });
     const line = guidelines.find((g) => g.includes("Call `read` to get fresh anchors"));
     expect(line).toBeTruthy();
@@ -147,8 +99,9 @@ describe("prompt template variables (AUTO_READ_GUIDANCE)", () => {
   });
 
   it("loadGuide replaces AUTO_READ_GUIDANCE with auto-read message when auto-read is on", () => {
-    const guidelines = loadGuide("../prompts/replace-bulk-guidelines.md", {
+    const guidelines = loadGuide("../prompts/replace-guidelines.md", {
       AUTO_READ_GUIDANCE: "Anchors are provided automatically after write operations when auto-read is enabled.",
+      MODE_PREFIX: "- Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call.",
     });
     const line = guidelines.find((g) => g.includes("Anchors are provided automatically"));
     expect(line).toBeTruthy();
@@ -156,25 +109,8 @@ describe("prompt template variables (AUTO_READ_GUIDANCE)", () => {
   });
 
   it("loadGuide without replacements leaves template variable intact", () => {
-    const guidelines = loadGuide("../prompts/replace-bulk-guidelines.md");
+    const guidelines = loadGuide("../prompts/replace-guidelines.md");
     const line = guidelines.find((g) => g.includes("{{AUTO_READ_GUIDANCE}}"));
     expect(line).toBeTruthy();
   });
-
-  it("replace-bulk.md main description contains the template variable", () => {
-    const content = readFileSync(
-      new URL("../../prompts/replace-bulk.md", import.meta.url),
-      "utf-8",
-    );
-    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
-  });
-
-  it("replace-flat.md main description contains the template variable", () => {
-    const content = readFileSync(
-      new URL("../../prompts/replace-flat.md", import.meta.url),
-      "utf-8",
-    );
-    expect(content).toContain("{{AUTO_READ_GUIDANCE}}");
-  });
-
 });

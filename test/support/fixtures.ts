@@ -4,8 +4,7 @@ import { beforeAll, afterAll, vi } from "vitest";
 import { _lineHashesPure, initHasher } from "../../src/hashline";
 import { Compile } from "typebox/compile";
 import register from "../../index";
-import { regReplace } from "../../src/replace";
-import { regReplaceFlat } from "../../src/replace-flat";
+import { regReplace, regReplaceFlat } from "../../src/replace";
 export async function getWritableTempRoot(): Promise<string> {
   const fallback = join(process.cwd(), ".tmp");
   await mkdir(fallback, { recursive: true });

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import * as os from "os";
 import { resolve } from "path";
-import { toCwd } from "../../src/path-utils";
+import { toCwd } from "../../src/paths";
 
 describe("toCwd", () => {
   const cwd = "/home/user/project";

@@ -28,26 +28,13 @@ describe("extension registration", () => {
 });
 
 describe("tool prompt file references", () => {
-  it("replace.ts (shared factory) loads both bulk and flat prompts", () => {
+  it("replace.ts loads the consolidated replace.md prompt", () => {
     const source = readFileSync(
       new URL("../../src/replace.ts", import.meta.url),
       "utf-8",
     );
-    expect(source).toContain("../prompts/replace-bulk.md");
-    expect(source).toContain("../prompts/replace-bulk-snippet.md");
-    expect(source).toContain("../prompts/replace-bulk-guidelines.md");
-    expect(source).toContain("../prompts/replace-flat.md");
-    expect(source).toContain("../prompts/replace-flat-snippet.md");
-    expect(source).toContain("../prompts/replace-flat-guidelines.md");
-  });
-
-  it("replace-flat.ts delegates to replace.ts (no prompt references)", () => {
-    const source = readFileSync(
-      new URL("../../src/replace-flat.ts", import.meta.url),
-      "utf-8",
-    );
-    expect(source).not.toContain("../prompts/");
-    expect(source).toContain("buildToolDef");
-    expect(source).toContain("regReplaceFlat");
+    expect(source).toContain("../prompts/replace.md");
+    expect(source).toContain("../prompts/replace-snippet.md");
+    expect(source).toContain("../prompts/replace-guidelines.md");
   });
 });
