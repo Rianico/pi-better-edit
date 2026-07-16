@@ -1,25 +1,14 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("edit tool text shape (token budget)", () => {
   it("changed mode keeps only anchors in LLM-visible text and line counts in details", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const result = await editTool.execute(
         "e1",
@@ -41,7 +30,7 @@ describe("edit tool text shape (token budget)", () => {
   it("changed mode uses short anchor header without instructional clause", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const result = await editTool.execute(
         "e1",
@@ -61,7 +50,7 @@ describe("edit tool text shape (token budget)", () => {
   it("changed mode rejects deleting all content from a non-empty file", async () => {
     await withTempFile("sample.ts", "only\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("only\n", testPath);
+      const hashes = await lineHashes("only\n", home.testPath);
 
       await expect(
         editTool.execute(
@@ -82,7 +71,7 @@ describe("edit tool text shape (token budget)", () => {
     const longLine = "x".repeat(5000);
     await withTempFile("sample.ts", `before\n${longLine}\nafter\n`, async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes(`before\n${longLine}\nafter\n`, testPath);
+      const hashes = await lineHashes(`before\n${longLine}\nafter\n`, home.testPath);
 
       const result = await editTool.execute(
         "e1",

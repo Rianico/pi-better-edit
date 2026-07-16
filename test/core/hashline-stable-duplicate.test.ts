@@ -1,25 +1,14 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes, applyEdits, type HEdit } from "../../src/hashline";
-import { setupTestHome, withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import { useTestHome, withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("stable hashing with duplicate content lines", () => {
   it("removing the first of two identical lines preserves the second line's hash", async () => {
     const content = "function a() {\n  return 1;\n}\n\nfunction b() {\n  return 2;\n}\n";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
 
     const firstBraceHash = hashes[2]!;
     const secondBraceHash = hashes[6]!;
@@ -32,11 +21,11 @@ describe("stable hashing with duplicate content lines", () => {
       },
     ];
 
-    const result = applyEdits(content, edits, undefined, hashes, testPath);
+    const result = applyEdits(content, edits, undefined, hashes, home.testPath);
     const newContent = result.content;
     expect(newContent).toBe("\nfunction b() {\n  return 2;\n}\n");
 
-    const resultHashes = await lineHashes(newContent, testPath, {
+    const resultHashes = await lineHashes(newContent, home.testPath, {
       content,
       hashes,
       removedHashes: new Set([hashes[0]!, firstBraceHash]),
@@ -47,7 +36,7 @@ describe("stable hashing with duplicate content lines", () => {
 
   it("removing the second of two identical lines preserves the first line's hash", async () => {
     const content = "function a() {\n  return 1;\n}\n\nfunction b() {\n  return 2;\n}\n";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
 
     const firstBraceHash = hashes[2]!;
     const secondBraceHash = hashes[6]!;
@@ -59,11 +48,11 @@ describe("stable hashing with duplicate content lines", () => {
       },
     ];
 
-    const result = applyEdits(content, edits, undefined, hashes, testPath);
+    const result = applyEdits(content, edits, undefined, hashes, home.testPath);
     const newContent = result.content;
     expect(newContent).toBe("function a() {\n  return 1;\n}\n\n");
 
-    const resultHashes = await lineHashes(newContent, testPath, {
+    const resultHashes = await lineHashes(newContent, home.testPath, {
       content,
       hashes,
       removedHashes: new Set([hashes[4]!, secondBraceHash]),
@@ -74,7 +63,7 @@ describe("stable hashing with duplicate content lines", () => {
 
   it("removing a unique line between two identical lines preserves both brace hashes", async () => {
     const content = "a\n}\nb\n}\nc\n}\nd\n";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
 
     const brace1 = hashes[1]!;
     const brace2 = hashes[3]!;
@@ -88,11 +77,11 @@ describe("stable hashing with duplicate content lines", () => {
       },
     ];
 
-    const result = applyEdits(content, edits, undefined, hashes, testPath);
+    const result = applyEdits(content, edits, undefined, hashes, home.testPath);
     const newContent = result.content;
     expect(newContent).toBe("a\n}\n}\nc\n}\nd\n");
 
-    const resultHashes = await lineHashes(newContent, testPath, {
+    const resultHashes = await lineHashes(newContent, home.testPath, {
       content,
       hashes,
       removedHashes: new Set([hashes[2]!]),

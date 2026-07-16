@@ -1,20 +1,9 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupFlatIntegrationTest, setupTestHome, getText, extractHash } from "../support/fixtures";
+import { withTempFile, setupFlatIntegrationTest, useTestHome, getText, extractHash } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("flat mode replace — end-to-end", () => {
   it("reads a file and replaces a single line via flat mode", async () => {
@@ -198,7 +187,7 @@ describe("flat mode replace — end-to-end", () => {
   it("flat mode normalizes bulk changes array format via normReq", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupFlatIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const editResult = await editTool.execute(
         "e1",

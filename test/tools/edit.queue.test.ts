@@ -1,25 +1,14 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("edit tool file mutation queue", () => {
   it("uses the same queue key for repeated edits to the same path", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 
       const r1 = await editTool.execute(
         "e1",
@@ -43,7 +32,7 @@ describe("edit tool file mutation queue", () => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const { symlink } = await import("fs/promises");
       await symlink(cwd + "/target.ts", cwd + "/link.ts");
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 
       const r1 = await editTool.execute(
         "e1",
@@ -75,7 +64,7 @@ describe("edit tool file mutation queue", () => {
     await symlink(subDir, join(linkDir, "sub"));
 
     const { ctx, editTool } = setupIntegrationTest(tmpDir);
-    const hashes = await lineHashes("alpha\nbeta\ngamma\n", testPath);
+    const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 
     const r1 = await editTool.execute(
       "e1",

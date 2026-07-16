@@ -4,7 +4,6 @@ import { configDir, configPath } from "./paths";
 import { errCode } from "./validation";
 
 export type ReplaceMode = "bulk" | "flat";
-
 export interface Config {
   replaceMode: ReplaceMode;
   autoRead: boolean;
@@ -15,14 +14,17 @@ const DEFAULT_CONFIG: Config = {
   autoRead: false
 };
 
+function parseConfig(content: string): Config {
+  const parsed = JSON.parse(content) as Partial<Config>;
+  return {
+    replaceMode: parsed.replaceMode === "flat" ? "flat" : "bulk",
+    autoRead: parsed.autoRead === true,
+  };
+}
 export async function readConfig(): Promise<Config> {
   try {
     const content = await readFile(configPath(), "utf-8");
-    const parsed = JSON.parse(content) as Partial<Config>;
-    return {
-      replaceMode: parsed.replaceMode === "flat" ? "flat" : "bulk",
-      autoRead: parsed.autoRead === true,
-    };
+    return parseConfig(content);
   } catch (error: unknown) {
     if (errCode(error) !== "ENOENT") {
       console.error("Config file corrupted, using defaults:", error);
@@ -30,15 +32,10 @@ export async function readConfig(): Promise<Config> {
     return { ...DEFAULT_CONFIG };
   }
 }
-
 export function readConfigSync(): Config {
   try {
     const content = readFileSync(configPath(), "utf-8");
-    const parsed = JSON.parse(content) as Partial<Config>;
-    return {
-      replaceMode: parsed.replaceMode === "flat" ? "flat" : "bulk",
-      autoRead: parsed.autoRead === true,
-    };
+    return parseConfig(content);
   } catch (error: unknown) {
     if (errCode(error) !== "ENOENT") {
       console.error("Config file corrupted, using defaults:", error);
@@ -46,7 +43,6 @@ export function readConfigSync(): Config {
     return { ...DEFAULT_CONFIG };
   }
 }
-
 export async function writeConfig(config: Config): Promise<void> {
   await mkdir(configDir(), { recursive: true });
   await writeFile(configPath(), JSON.stringify(config, null, 2), "utf-8");

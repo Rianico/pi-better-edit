@@ -1,19 +1,8 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("snapshotId surface (details-only after W2)", () => {
   it("edit succeeds even when the file changed on disk between read and edit, as long as anchors still match", async () => {

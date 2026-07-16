@@ -5,22 +5,11 @@ import { loadHashStore } from "../../src/hash-store";
 import {
   withTempFile,
   setupIntegrationTest,
-  setupTestHome,
+  useTestHome,
   getText,
 } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("undo_last_replace", () => {
   it("returns error when there is no undo history", async () => {
@@ -46,7 +35,7 @@ describe("undo_last_replace", () => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       await editTool.execute(
         "e1",
@@ -94,7 +83,7 @@ describe("undo_last_replace", () => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
-      const hashes = await lineHashes("aaa\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nccc\n", home.testPath);
 
       await editTool.execute(
         "e1",
@@ -131,7 +120,7 @@ describe("undo_last_replace", () => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       await editTool.execute(
         "e1",
@@ -168,7 +157,7 @@ describe("undo_last_replace", () => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       await editTool.execute(
         "e1",
@@ -205,7 +194,7 @@ describe("undo_last_replace", () => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       await editTool.execute(
         "e1",
@@ -244,7 +233,7 @@ describe("undo_last_replace", () => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       await editTool.execute(
         "e1",
@@ -288,7 +277,7 @@ describe("undo_last_replace", () => {
       const { pi, getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
-      const hashes = await lineHashes("line1\nline2\n", testPath);
+      const hashes = await lineHashes("line1\nline2\n", home.testPath);
 
       await editTool.execute(
         "e1",

@@ -1,20 +1,9 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { buildNoop, buildChanged } from "../../src/replace-response";
 import { lineHashes } from "../../src/hashline";
-import { setupTestHome } from "../support/fixtures";
+import { useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("buildNoop", () => {
   it("returns noop result with classification", () => {
@@ -58,8 +47,8 @@ describe("buildChanged", () => {
   it("returns applied result with diff and metrics", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nBBB\nccc\n";
-    const originalHashes = await lineHashes(original, testPath);
-    const resultHashes = await lineHashes(result, testPath);
+    const originalHashes = await lineHashes(original, home.testPath);
+    const resultHashes = await lineHashes(result, home.testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
@@ -80,8 +69,8 @@ describe("buildChanged", () => {
   it("includes warnings when provided", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nBBB\nccc\n";
-    const originalHashes = await lineHashes(original, testPath);
-    const resultHashes = await lineHashes(result, testPath);
+    const originalHashes = await lineHashes(original, home.testPath);
+    const resultHashes = await lineHashes(result, home.testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
@@ -99,8 +88,8 @@ describe("buildChanged", () => {
   it("shows empty file message when result is empty", async () => {
     const original = "aaa\nbbb\n";
     const result = "";
-    const originalHashes = await lineHashes(original, testPath);
-    const resultHashes = await lineHashes(result, testPath);
+    const originalHashes = await lineHashes(original, home.testPath);
+    const resultHashes = await lineHashes(result, home.testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
@@ -117,8 +106,8 @@ describe("buildChanged", () => {
   it("computes added_lines and removed_lines from diff", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nBBB\nCCC\nDDD\n";
-    const originalHashes = await lineHashes(original, testPath);
-    const resultHashes = await lineHashes(result, testPath);
+    const originalHashes = await lineHashes(original, home.testPath);
+    const resultHashes = await lineHashes(result, home.testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,
@@ -137,8 +126,8 @@ describe("buildChanged", () => {
   it("handles no changed lines gracefully", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nbbb\nccc\n";
-    const originalHashes = await lineHashes(original, testPath);
-    const resultHashes = await lineHashes(result, testPath);
+    const originalHashes = await lineHashes(original, home.testPath);
+    const resultHashes = await lineHashes(result, home.testPath);
     const output = buildChanged({
       path: "test.txt",
       originalNormalized: original,

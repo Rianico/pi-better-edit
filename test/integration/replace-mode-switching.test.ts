@@ -1,25 +1,14 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("replace mode switching — flat mode tool behavior", () => {
   it("flat mode tool accepts top-level hash_range_inclusive and content_lines", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const result = await editTool.execute(
         "e1",
@@ -39,7 +28,7 @@ describe("replace mode switching — flat mode tool behavior", () => {
   it("flat mode tool rejects bulk changes array format", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const result = await editTool.execute(
         "e1",

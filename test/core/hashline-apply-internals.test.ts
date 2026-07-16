@@ -5,25 +5,14 @@ import {
   resEdits,
   type HTEdit,
 } from "../../src/hashline";
-import { makeTag, setupTestHome } from "../support/fixtures";
+import { makeTag, useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("resAnchor (via valEdits)", () => {
   it("resolves a hash that exists exactly once", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "Y"] },
     ]));
@@ -41,7 +30,7 @@ describe("resAnchor (via valEdits)", () => {
 
   it("reports ambiguous when hash matches multiple lines (synthetic collision)", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const forgedHashes = [hashes[0]!, hashes[0]!, hashes[0]!, hashes[0]!, hashes[0]!];
     expect(() =>
       applyEdits(content, resEdits([
@@ -54,7 +43,7 @@ describe("resAnchor (via valEdits)", () => {
 describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
   it("auto-fixes trailing duplication", async () => {
     const content = "a\nb\nc\nd";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "d"] },
     ]));
@@ -66,7 +55,7 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
 
   it("auto-fixes leading duplication", async () => {
     const content = "a\nb\nc\nd";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["a", "X"] },
     ]));
@@ -77,7 +66,7 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
 
   it("does not auto-fix when replacement does not duplicate adjacent lines", async () => {
     const content = "a\nb\nc\nd";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "Y"] },
     ]));
@@ -86,7 +75,7 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
 
   it("does not auto-fix when replacement edge is empty string", async () => {
     const content = "a\nb\nc\nd";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: [] },
     ]));
@@ -95,7 +84,7 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
 
   it("auto-fixes both trailing and leading in one edit", async () => {
     const content = "a\nb\nc\nd";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["a", "d"] },
     ]));
@@ -107,7 +96,7 @@ describe("checkBoundaryDup (via valEdits) — auto-fix", () => {
 describe("resToSpan (via applyEdits)", () => {
   it("branch: non-empty replacement in middle of file", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "Y"] },
     ]));
@@ -116,7 +105,7 @@ describe("resToSpan (via applyEdits)", () => {
 
   it("branch: empty replacement (deletion) in middle of file", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: [] },
     ]));
@@ -125,7 +114,7 @@ describe("resToSpan (via applyEdits)", () => {
 
   it("branch: empty replacement covering entire file", async () => {
     const content = "a\nb\nc";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     expect(() =>
       applyEdits(content, resEdits([
         { hash_range_inclusive: [hashes[0]!, hashes[2]!], content_lines: [] },
@@ -135,7 +124,7 @@ describe("resToSpan (via applyEdits)", () => {
 
   it("branch: empty replacement ending at last line (not full file)", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[2]!, hashes[4]!], content_lines: [] },
     ]));
@@ -144,7 +133,7 @@ describe("resToSpan (via applyEdits)", () => {
 
   it("branch: noop detection returns null span", async () => {
     const content = "a\nb\nc";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["b"] },
     ]));
@@ -153,7 +142,7 @@ describe("resToSpan (via applyEdits)", () => {
 
   it("branch: replacement at first line", async () => {
     const content = "a\nb\nc";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["X"] },
     ]));
@@ -162,7 +151,7 @@ describe("resToSpan (via applyEdits)", () => {
 
   it("branch: replacement at last line", async () => {
     const content = "a\nb\nc";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: ["X"] },
     ]));
@@ -171,7 +160,7 @@ describe("resToSpan (via applyEdits)", () => {
 
   it("branch: deletion of first line only", async () => {
     const content = "a\nb\nc";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [] },
     ]));
@@ -180,7 +169,7 @@ describe("resToSpan (via applyEdits)", () => {
 
   it("branch: deletion of last line only", async () => {
     const content = "a\nb\nc";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: [] },
     ]));
@@ -191,7 +180,7 @@ describe("resToSpan (via applyEdits)", () => {
 describe("assemble (via applyEdits)", () => {
   it("applies multiple non-overlapping edits in correct order", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["A"] },
       { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: ["C"] },
@@ -202,7 +191,7 @@ describe("assemble (via applyEdits)", () => {
 
   it("applies edits bottom-up so earlier edits don't shift later offsets", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [] },
       { hash_range_inclusive: [hashes[4]!, hashes[4]!], content_lines: [] },
@@ -214,7 +203,7 @@ describe("assemble (via applyEdits)", () => {
 describe("resSpans (via applyEdits)", () => {
   it("deduplicates identical edits", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const hash = hashes[1]!;
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hash, hash], content_lines: ["X"] },
@@ -225,7 +214,7 @@ describe("resSpans (via applyEdits)", () => {
 
   it("throws on overlapping edits", async () => {
     const content = "a\nb\nc\nd\ne";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     expect(() =>
       applyEdits(content, resEdits([
         { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X"] },
@@ -238,7 +227,7 @@ describe("resSpans (via applyEdits)", () => {
 describe("auto-fix via applyEdits", () => {
   it("auto-fixes trailing duplication", async () => {
     const content = "before\nold one\nold two\nafter";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["new one", "new two", "after"] },
     ]));
@@ -250,7 +239,7 @@ describe("auto-fix via applyEdits", () => {
 
   it("auto-fixes leading duplication", async () => {
     const content = "before\nold one\nold two\nafter";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["before", "new one", "new two"] },
     ]));
@@ -262,7 +251,7 @@ describe("auto-fix via applyEdits", () => {
 
   it("auto-fixes both leading and trailing in one edit", async () => {
     const content = "ctx1\nctx2\nold1\nold2\nctx3\nctx4";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
     const result = applyEdits(content, resEdits([
       { hash_range_inclusive: [hashes[2]!, hashes[3]!], content_lines: ["ctx2", "dup", "dup", "ctx3"] },
     ]));

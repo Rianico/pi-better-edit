@@ -1,6 +1,6 @@
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
-import { vi } from "vitest";
+import { beforeAll, afterAll, vi } from "vitest";
 import { _lineHashesPure, initHasher } from "../../src/hashline";
 import { Compile } from "typebox/compile";
 import register from "../../index";
@@ -29,6 +29,22 @@ export async function setupTestHome(): Promise<{
       await rm(tmpHome, { recursive: true, force: true });
     },
   };
+}
+export function useTestHome(): { testPath: string } {
+  const state: { testPath: string } = { testPath: "" };
+  let cleanup: (() => Promise<void>) | undefined;
+
+  beforeAll(async () => {
+    const s = await setupTestHome();
+    state.testPath = s.testPath;
+    cleanup = s.cleanup;
+  });
+
+  afterAll(async () => {
+    await cleanup?.();
+  });
+
+  return state;
 }
 
 async function freshCwd(): Promise<string> {

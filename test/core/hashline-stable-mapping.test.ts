@@ -1,27 +1,16 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { setupTestHome } from "../support/fixtures";
+import { useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 
 describe("mapStableHashes — identity and simple changes", () => {
   it("preserves all hashes when content is unchanged", async () => {
     const content = "a\nb\nc";
-    const hashes = await lineHashes(content, testPath);
+    const hashes = await lineHashes(content, home.testPath);
 
-    const result = await lineHashes(content, testPath, {
+    const result = await lineHashes(content, home.testPath, {
       content,
       hashes,
     });
@@ -31,10 +20,10 @@ describe("mapStableHashes — identity and simple changes", () => {
 
   it("preserves hashes when appending lines at the end", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nb\nc\nd\ne";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -51,10 +40,10 @@ describe("mapStableHashes — identity and simple changes", () => {
 
   it("preserves hashes when prepending lines at the beginning", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "x\ny\nz\na\nb\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -69,10 +58,10 @@ describe("mapStableHashes — identity and simple changes", () => {
 
   it("preserves hashes when inserting lines in the middle", async () => {
     const oldContent = "a\nb\ne\nf";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nb\nc\nd\ne\nf";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -87,10 +76,10 @@ describe("mapStableHashes — identity and simple changes", () => {
 
   it("preserves hashes when deleting lines (no duplicates)", async () => {
     const oldContent = "a\nb\nc\nd\ne";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nc\ne";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -103,10 +92,10 @@ describe("mapStableHashes — identity and simple changes", () => {
 
   it("preserves hashes when replacing a line with different content", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nX\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -121,10 +110,10 @@ describe("mapStableHashes — identity and simple changes", () => {
 describe("mapStableHashes — multiple changes combined", () => {
   it("handles simultaneous insert, delete, and modify", async () => {
     const oldContent = "a\nb\nc\nd\ne";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nc\nx\nD\ne";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -139,10 +128,10 @@ describe("mapStableHashes — multiple changes combined", () => {
 
   it("handles deleting the first and last lines", async () => {
     const oldContent = "a\nb\nc\nd";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "b\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -154,10 +143,10 @@ describe("mapStableHashes — multiple changes combined", () => {
 
   it("handles replacing the entire content with completely different lines", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "x\ny\nz";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -172,10 +161,10 @@ describe("mapStableHashes — multiple changes combined", () => {
 describe("mapStableHashes — edge cases", () => {
   it("handles empty old content (starting from scratch)", async () => {
     const oldContent = "";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nb\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -188,10 +177,10 @@ describe("mapStableHashes — edge cases", () => {
 
   it("handles single-line old content becoming multi-line", async () => {
     const oldContent = "a";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nb\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -203,10 +192,10 @@ describe("mapStableHashes — edge cases", () => {
 
   it("handles multi-line old content becoming single-line", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "b";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -217,10 +206,10 @@ describe("mapStableHashes — edge cases", () => {
 
   it("handles content with only newlines", async () => {
     const oldContent = "\n\n\n";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "\n\n\n\n";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -235,10 +224,10 @@ describe("mapStableHashes — edge cases", () => {
 
   it("handles content with carriage returns (\\r\\n)", async () => {
     const oldContent = "a\r\nb\r\nc\r\n";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nb\nc\nd";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -254,10 +243,10 @@ describe("mapStableHashes — edge cases", () => {
 describe("mapStableHashes — removedHashes edge cases", () => {
   it("ignores removedHashes entries that don't exist in old content", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nb\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
       removedHashes: new Set(["ZZZ", "YYY"]),
@@ -268,10 +257,10 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
   it("works correctly with empty removedHashes set", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nX\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
       removedHashes: new Set(),
@@ -285,10 +274,10 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
   it("works correctly with undefined removedHashes", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nX\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -301,13 +290,13 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
   it("removedHashes causes a different content match to be selected for duplicate lines", async () => {
     const oldContent = "a\nb\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const firstBHash = oldHashes[1]!;
     const secondBHash = oldHashes[2]!;
     expect(firstBHash).not.toBe(secondBHash);
 
     const newContent = "a\nb\nc";
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
       removedHashes: new Set([firstBHash]),
@@ -318,12 +307,12 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
   it("removedHashes with all candidates removed still picks the first candidate", async () => {
     const oldContent = "a\nb\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const firstBHash = oldHashes[1]!;
     const secondBHash = oldHashes[2]!;
 
     const newContent = "a\nb\nc";
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
       removedHashes: new Set([firstBHash, secondBHash]),
@@ -334,14 +323,14 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
   it("removedHashes with three duplicates picks the first non-removed candidate", async () => {
     const oldContent = "a\nb\nb\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const firstBHash = oldHashes[1]!;
     const secondBHash = oldHashes[2]!;
     const thirdBHash = oldHashes[3]!;
     expect(new Set([firstBHash, secondBHash, thirdBHash]).size).toBe(3);
 
     const newContent = "a\nb\nc";
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
       removedHashes: new Set([firstBHash, thirdBHash]),
@@ -352,10 +341,10 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
   it("removedHashes does not affect content-map misses (new lines)", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nX\nc";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
       removedHashes: new Set([oldHashes[0]!]),
@@ -371,12 +360,12 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
   it("removedHashes with duplicate lines and content-map miss on a different line", async () => {
     const oldContent = "a\nb\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const firstBHash = oldHashes[1]!;
     const secondBHash = oldHashes[2]!;
 
     const newContent = "a\nb\nX\nc";
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
       removedHashes: new Set([firstBHash]),
@@ -393,10 +382,10 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 describe("mapStableHashes — hash uniqueness guarantees", () => {
   it("produces unique hashes for all lines in the result", async () => {
     const oldContent = "a\nb\nc\nd\ne";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "x\na\nz\nc\ny\ne\nw";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -407,10 +396,10 @@ describe("mapStableHashes — hash uniqueness guarantees", () => {
 
   it("reuses the same hash for lines with the same canonical form despite different trailing whitespace", async () => {
     const oldContent = "x  \ny";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "x\ny";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -423,10 +412,10 @@ describe("mapStableHashes — hash uniqueness guarantees", () => {
 describe("mapStableHashes — ordering and position stability", () => {
   it("preserves hashes when lines are reordered", async () => {
     const oldContent = "a\nb\nc";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "c\na\nb";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -438,10 +427,10 @@ describe("mapStableHashes — ordering and position stability", () => {
 
   it("preserves hashes when a line appears multiple times in new content", async () => {
     const oldContent = "a\nb";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\na\nb";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });
@@ -454,10 +443,10 @@ describe("mapStableHashes — ordering and position stability", () => {
 
   it("preserves hashes when a line appears fewer times in new content", async () => {
     const oldContent = "a\na\nb";
-    const oldHashes = await lineHashes(oldContent, testPath);
+    const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nb";
 
-    const result = await lineHashes(newContent, testPath, {
+    const result = await lineHashes(newContent, home.testPath, {
       content: oldContent,
       hashes: oldHashes,
     });

@@ -1,19 +1,8 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("stale-position compound edits", () => {
   it("rejects stale anchors after a replace", async () => {
@@ -38,7 +27,7 @@ describe("stale-position compound edits", () => {
         ctx,
       );
 
-      const freshHash = (await lineHashes(result.content?.[0]?.text ?? "", testPath))?.[4];
+      const freshHash = (await lineHashes(result.content?.[0]?.text ?? "", home.testPath))?.[4];
       if (freshHash) {
         await editTool.execute(
           "e2",

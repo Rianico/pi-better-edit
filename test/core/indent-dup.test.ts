@@ -1,24 +1,13 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes, resEdits, applyEdits } from "../../src/hashline";
-import { setupTestHome } from "../support/fixtures";
+import { useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("indentation difference in boundary auto-fix", () => {
   it("auto-fixes leading duplication when indentation matches exactly", async () => {
     const file = "  foo\nbar\n  baz";
-    const hashes = await lineHashes(file, testPath);
+    const hashes = await lineHashes(file, home.testPath);
     const result = applyEdits(file, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["  foo", "  bar"] },
     ]));
@@ -29,7 +18,7 @@ describe("indentation difference in boundary auto-fix", () => {
 
   it("auto-fixes leading duplication when both indentation and content match exactly", async () => {
     const file = "  foo\n  bar\n  baz";
-    const hashes = await lineHashes(file, testPath);
+    const hashes = await lineHashes(file, home.testPath);
     const result = applyEdits(file, resEdits([
       { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["  foo", "  new"] },
     ]));

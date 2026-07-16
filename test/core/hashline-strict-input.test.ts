@@ -5,25 +5,14 @@ import {
 	resEdits,
 	type HTEdit,
 } from "../../src/hashline";
-import { setupTestHome } from "../support/fixtures";
+import { useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("strict edit input (no autocorrection)", () => {
 	it("rejects bare HASH| prefix in content with E_BARE_HASH_PREFIX", async () => {
 		const file = "foo\nbar";
-		const hashes = await lineHashes(file, testPath);
+		const hashes = await lineHashes(file, home.testPath);
 		const toolEdits: HTEdit[] = [
       { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [`${hashes[0]!}│foo`] },
     ];
@@ -86,7 +75,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 	}
 
 	it("rejects with E_BARE_HASH_PREFIX when a bare prefix matches an existing file line hash", async () => {
-		const hashes = await lineHashes(file, testPath);
+		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		const betaHash = hashes[1]!;
 		let caught: Error | undefined;
@@ -104,7 +93,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 	});
 
 	it("rejects valid literal 'HHHH:' content when HHHH exists in the file hash set", async () => {
-		const hashes = await lineHashes(file, testPath);
+		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		const gammaHash = hashes[2]!;
 		let caught: Error | undefined;
@@ -121,7 +110,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 	});
 
 	it("rejects even when bare prefixes miss the file hash set (no 'strong signal' gate)", async () => {
-		const hashes = await lineHashes(file, testPath);
+		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		let caught: Error | undefined;
 		try {
@@ -137,7 +126,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 	});
 
 	it("reports the edit index and content_lines index for each offending line", async () => {
-		const hashes = await lineHashes(file, testPath);
+		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		let caught: Error | undefined;
 		try {
@@ -154,7 +143,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 	});
 
 	it("accepts a single legit 'TS: TypeScript' line without warning", async () => {
-		const hashes = await lineHashes(file, testPath);
+		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		const result = applyTool([
       { hash_range_inclusive: [anchor, anchor], content_lines: ["TS: TypeScript"] },
@@ -164,7 +153,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 	});
 
 	it("does not false-positive on shorter valid-content prefixes like '#' or '+'", async () => {
-		const hashes = await lineHashes(file, testPath);
+		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		const result = applyTool([
       { hash_range_inclusive: [anchor, anchor], content_lines: ["# heading"] },

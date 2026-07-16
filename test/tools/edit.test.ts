@@ -1,25 +1,14 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, setupTestHome } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("regReplace", () => {
   it("rejects malformed null lines during direct execute without modifying the file", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\n", home.testPath);
 
       await expect(
         editTool.execute(
@@ -39,7 +28,7 @@ describe("regReplace", () => {
   it("renders details diff while keeping diff out of LLM-visible text", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const result = await editTool.execute(
         "e1",

@@ -1,19 +1,8 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { fmtBoundaryWarning, lineHashes } from "../../src/hashline";
-import { setupTestHome } from "../support/fixtures";
+import { useTestHome } from "../support/fixtures";
 
-let testPath: string;
-let cleanup: () => Promise<void>;
-
-beforeAll(async () => {
-  const s = await setupTestHome();
-  testPath = s.testPath;
-  cleanup = s.cleanup;
-});
-
-afterAll(async () => {
-  await cleanup();
-});
+const home = useTestHome();
 
 describe("fmtBoundaryWarning", () => {
   it("formats a leading duplication warning with header and hashline window", async () => {
@@ -24,7 +13,7 @@ describe("fmtBoundaryWarning", () => {
       "new two",
       "after",
     ];
-    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
+    const resultHashes = await lineHashes(resultLines.join("\n"), home.testPath);
 
     const output = fmtBoundaryWarning({
       kind: "leading",
@@ -56,7 +45,7 @@ describe("fmtBoundaryWarning", () => {
       "new trailing",
       "after",
     ];
-    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
+    const resultHashes = await lineHashes(resultLines.join("\n"), home.testPath);
 
     const output = fmtBoundaryWarning({
       kind: "trailing",
@@ -81,7 +70,7 @@ describe("fmtBoundaryWarning", () => {
       "middle",
       "end",
     ];
-    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
+    const resultHashes = await lineHashes(resultLines.join("\n"), home.testPath);
 
     const output = fmtBoundaryWarning({
       kind: "leading",
@@ -103,7 +92,7 @@ describe("fmtBoundaryWarning", () => {
       "dup",
       "dup",
     ];
-    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
+    const resultHashes = await lineHashes(resultLines.join("\n"), home.testPath);
 
     const output = fmtBoundaryWarning({
       kind: "trailing",
@@ -126,7 +115,7 @@ describe("fmtBoundaryWarning", () => {
       "dup",
       "b",
     ];
-    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
+    const resultHashes = await lineHashes(resultLines.join("\n"), home.testPath);
 
     const output = fmtBoundaryWarning({
       kind: "leading",
@@ -149,7 +138,7 @@ describe("fmtBoundaryWarning", () => {
       "beta",
       "gamma",
     ];
-    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
+    const resultHashes = await lineHashes(resultLines.join("\n"), home.testPath);
 
     const output = fmtBoundaryWarning({
       kind: "leading",
@@ -173,7 +162,7 @@ describe("fmtBoundaryWarning", () => {
       "ctx3",
       "ctx4",
     ];
-    const resultHashes = await lineHashes(resultLines.join("\n"), testPath);
+    const resultHashes = await lineHashes(resultLines.join("\n"), home.testPath);
 
     const output = fmtBoundaryWarning({
       kind: "trailing",
