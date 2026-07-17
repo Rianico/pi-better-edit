@@ -266,6 +266,32 @@ export function reuseMarkdown(context: any, content: string, theme: any): Markdo
   m.setText(content);
   return m;
 }
+const MODE_CFG = {
+  flat: {
+    desc: " Only one edit per call. The `hash_range_inclusive` and `content_lines` fields sit at the top level of the request object.",
+    examples: [
+      "", "Single line:", "{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"], \"path\": \"src/main.ts\" }", "", "Range replace:", "{ \"content_lines\": [\"function greet() {\", \"  return 1;\", \"}\"], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"], \"path\": \"src/main.ts\" }",
+    ].join("\n"),
+    rules: "",
+    requestStructure: [
+      "Flat mode:", "```json", "{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"], \"path\": \"...\" }", "```",
+    ].join("\n"),
+    prefix: "one edit per call (flat mode)",
+    guidePrefix: "- Use `replace` with HASH anchors for all file changes. Only one edit per call.",
+  },
+  bulk: {
+    desc: "\n\nPut all operations on one file in a single `replace` call. Stack every region into the `changes` array, even when they are far apart. Anchors within one call must all come from the same pre-edit read; the runtime applies them atomically against that one snapshot.",
+    examples: [
+      "", "Single line:", "{ \"changes\": [{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"] }], \"path\": \"src/main.ts\" }", "", "Range replace:", "{ \"changes\": [{ \"content_lines\": [\"function greet() {\", \"  return 1;\", \"}\"], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"] }], \"path\": \"src/main.ts\" }",
+    ].join("\n"),
+    rules: "- Multiple edits in one call must not overlap. Overlapping ranges are rejected with [E_EDIT_CONFLICT].",
+    requestStructure: [
+      "Bulk mode (default):", "```json", "{ \"changes\": [{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"] }], \"path\": \"...\" }", "```",
+    ].join("\n"),
+    prefix: "batching all changes to a file in one call",
+    guidePrefix: "- Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call.",
+  },
+} as const;
 
 export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolDef {
   const autoRead = opts.autoRead ?? false;
@@ -273,50 +299,20 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
     ? "Anchors are provided automatically after write and replace operations when auto-read is enabled."
     : "Call `read` to get fresh anchors for follow-up edits.";
 
-  const modeDesc = opts.flat
-    ? " Only one edit per call. The `hash_range_inclusive` and `content_lines` fields sit at the top level of the request object."
-    : "\n\nPut all operations on one file in a single `replace` call. Stack every region into the `changes` array, even when they are far apart. Anchors within one call must all come from the same pre-edit read; the runtime applies them atomically against that one snapshot.";
-
-  const modeExamples = opts.flat
-    ? [
-        "", "Single line:", "{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"], \"path\": \"src/main.ts\" }", "", "Range replace:", "{ \"content_lines\": [\"function greet() {\", \"  return 1;\", \"}\"], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"], \"path\": \"src/main.ts\" }",
-      ].join("\n")
-    : [
-        "", "Single line:", "{ \"changes\": [{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"] }], \"path\": \"src/main.ts\" }", "", "Range replace:", "{ \"changes\": [{ \"content_lines\": [\"function greet() {\", \"  return 1;\", \"}\"], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"] }], \"path\": \"src/main.ts\" }",
-      ].join("\n")
-
-  const modeRules = opts.flat
-    ? ""
-    : "- Multiple edits in one call must not overlap. Overlapping ranges are rejected with [E_EDIT_CONFLICT]."
-
-  const modeRequestStructure = opts.flat
-    ? [
-        "Flat mode:", "```json", "{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"], \"path\": \"...\" }", "```",
-      ].join("\n")
-    : [
-        "Bulk mode (default):", "```json", "{ \"changes\": [{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"] }], \"path\": \"...\" }", "```",
-      ].join("\n")
-
-  const modePrefix = opts.flat
-    ? "one edit per call (flat mode)"
-    : "batching all changes to a file in one call"
-
-  const modeGuidePrefix = opts.flat
-    ? "- Use `replace` with HASH anchors for all file changes. Only one edit per call."
-    : "- Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call."
+  const cfg = MODE_CFG[opts.flat ? "flat" : "bulk"];
 
   const E_DESC = loadP("../prompts/replace.md", {
-    MODE_DESCRIPTION: modeDesc,
-    MODE_EXAMPLES: modeExamples,
-    MODE_RULES: modeRules,
-    MODE_REQUEST_STRUCTURE: modeRequestStructure,
+    MODE_DESCRIPTION: cfg.desc,
+    MODE_EXAMPLES: cfg.examples,
+    MODE_RULES: cfg.rules,
+    MODE_REQUEST_STRUCTURE: cfg.requestStructure,
     AUTO_READ_GUIDANCE: readGuidance,
   });
   const E_SNIPPET = loadP("../prompts/replace-snippet.md", {
-    MODE_PREFIX: modePrefix,
+    MODE_PREFIX: cfg.prefix,
   });
   const E_GUIDE = loadGuide("../prompts/replace-guidelines.md", {
-    MODE_PREFIX: modeGuidePrefix,
+    MODE_PREFIX: cfg.guidePrefix,
     AUTO_READ_GUIDANCE: readGuidance,
   });
 
