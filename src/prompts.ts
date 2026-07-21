@@ -4,7 +4,7 @@ export function loadP(relativePath: string, replacements?: Record<string, string
   let content = readFileSync(new URL(relativePath, import.meta.url), "utf-8").trim();
   if (replacements) {
     for (const [key, value] of Object.entries(replacements)) {
-      content = content.replaceAll(`{{${key}}}`, value);
+      content = content.split(`{{${key}}}`).join(value);
     }
   }
   return content;
@@ -14,7 +14,7 @@ export function loadGuide(relativePath: string, replacements?: Record<string, st
   let content = readFileSync(new URL(relativePath, import.meta.url), "utf-8");
   if (replacements) {
     for (const [key, value] of Object.entries(replacements)) {
-      content = content.replaceAll(`{{${key}}}`, value);
+      content = content.split(`{{${key}}}`).join(value);
     }
   }
   return content
