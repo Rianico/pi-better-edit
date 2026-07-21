@@ -111,6 +111,8 @@ interface PipelineResult {
   lastChangedLine?: number;
   originalHashes: string[];
   resultHashes: string[];
+  totalAddedLines: number;
+  totalRemovedLines: number;
 }
 
 const ROOT_KS = new Set(["path", "changes", "content_lines", "hash_range_inclusive"]);
@@ -202,6 +204,21 @@ export async function execPipeline(
   }, hashStore);
 
   const warnings = [...(anchorResult.warnings ?? [])];
+
+  let totalAddedLines = 0;
+  let totalRemovedLines = 0;
+  const noopIndices = new Set(anchorResult.noopEdits?.map((n) => n.editIndex) ?? []);
+  for (let i = 0; i < resolved.length; i++) {
+    if (noopIndices.has(i)) continue;
+    const edit = resolved[i]!;
+    const startLine = originalHashes.indexOf(edit.hash_range_inclusive[0].hash);
+    const endLine = originalHashes.indexOf(edit.hash_range_inclusive[1].hash);
+    if (startLine >= 0 && endLine >= 0) {
+      totalRemovedLines += endLine - startLine + 1;
+    }
+    totalAddedLines += edit.content_lines.length;
+  }
+
   return {
     path,
     toolEdits,
@@ -216,6 +233,8 @@ export async function execPipeline(
     lastChangedLine: anchorResult.lastChangedLine,
     resultHashes,
     originalHashes,
+    totalAddedLines,
+    totalRemovedLines,
   };
 }
 
@@ -445,6 +464,8 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
           firstChangedLine,
           lastChangedLine,
           resultHashes,
+          totalAddedLines,
+          totalRemovedLines,
         } = await execPipeline(
           normalizedParams,
           ctx.cwd,
@@ -467,6 +488,8 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
             editMeta: {
               editsAttempted,
               noopEditsCount: noopEdits?.length ?? 0,
+              addedLines: 0,
+              removedLines: 0,
             },
             warnings,
           });
@@ -497,6 +520,8 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
           noopEditsCount: noopEdits?.length ?? 0,
           firstChangedLine,
           lastChangedLine,
+          addedLines: totalAddedLines,
+          removedLines: totalRemovedLines,
         };
 
         const successInput = {

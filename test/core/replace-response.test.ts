@@ -11,7 +11,7 @@ describe("buildNoop", () => {
       path: "test.txt",
       noopEdits: undefined,
       snapshotId: "snap1",
-      editMeta: { editsAttempted: 1, noopEditsCount: 0 },
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, addedLines: 0, removedLines: 0 },
       warnings: undefined,
     });
     expect(result.content[0].text).toContain("No changes made to test.txt");
@@ -24,7 +24,7 @@ describe("buildNoop", () => {
       path: "test.txt",
       noopEdits: [{ editIndex: 0, loc: "ABC", currentContent: "old" }],
       snapshotId: "snap1",
-      editMeta: { editsAttempted: 1, noopEditsCount: 1 },
+      editMeta: { editsAttempted: 1, noopEditsCount: 1, addedLines: 0, removedLines: 0 },
       warnings: undefined,
     });
     expect(result.content[0].text).toContain("Edit 0");
@@ -36,7 +36,7 @@ describe("buildNoop", () => {
       path: "test.txt",
       noopEdits: undefined,
       snapshotId: "snap1",
-      editMeta: { editsAttempted: 1, noopEditsCount: 0 },
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, addedLines: 0, removedLines: 0 },
       warnings: ["Warning 1"],
     });
     expect(result.details.metrics!.warnings).toBe(1);
@@ -57,7 +57,7 @@ describe("buildChanged", () => {
       resultHashes,
       warnings: undefined,
       snapshotId: "snap1",
-      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 2 },
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 2, addedLines: 1, removedLines: 1 },
     });
     expect(output.content[0].text).toContain("Successfully replaced in test.txt");
     expect(output.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
@@ -79,7 +79,7 @@ describe("buildChanged", () => {
       resultHashes,
       warnings: ["Boundary duplication (leading)"],
       snapshotId: "snap1",
-      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 2 },
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 2, addedLines: 1, removedLines: 1 },
     });
     expect(output.content[0].text).toContain("Warnings:");
     expect(output.content[0].text).toContain("Boundary duplication (leading)");
@@ -98,12 +98,12 @@ describe("buildChanged", () => {
       resultHashes,
       warnings: undefined,
       snapshotId: "snap1",
-      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 1, lastChangedLine: 2 },
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 1, lastChangedLine: 2, addedLines: 0, removedLines: 2 },
     });
     expect(output.content[0].text).toBe("File is empty. Use replace to insert content.");
   });
 
-  it("computes added_lines and removed_lines from diff", async () => {
+  it("computes added_lines and removed_lines from editMeta", async () => {
     const original = "aaa\nbbb\nccc\n";
     const result = "aaa\nBBB\nCCC\nDDD\n";
     const originalHashes = await lineHashes(original, home.testPath);
@@ -116,7 +116,7 @@ describe("buildChanged", () => {
       resultHashes,
       warnings: undefined,
       snapshotId: "snap1",
-      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 4 },
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 4, addedLines: 3, removedLines: 2 },
     });
     expect(output.details.metrics!.added_lines).toBe(3);
     expect(output.details.metrics!.removed_lines).toBe(2);
@@ -136,7 +136,7 @@ describe("buildChanged", () => {
       resultHashes,
       warnings: undefined,
       snapshotId: "snap1",
-      editMeta: { editsAttempted: 1, noopEditsCount: 1, firstChangedLine: undefined, lastChangedLine: undefined },
+      editMeta: { editsAttempted: 1, noopEditsCount: 1, firstChangedLine: undefined, lastChangedLine: undefined, addedLines: 0, removedLines: 0 },
     });
     expect(output.details.metrics!.added_lines).toBe(0);
     expect(output.details.metrics!.removed_lines).toBe(0);

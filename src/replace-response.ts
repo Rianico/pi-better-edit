@@ -19,10 +19,12 @@ export type RMetrics = {
 };
 
 export type RMeta = {
-	editsAttempted: number;
-	noopEditsCount: number;
-	firstChangedLine?: number;
-	lastChangedLine?: number;
+  editsAttempted: number;
+  noopEditsCount: number;
+  firstChangedLine?: number;
+  lastChangedLine?: number;
+  addedLines: number;
+  removedLines: number;
 };
 
 type NEditEntry = {
@@ -131,8 +133,8 @@ export function buildChanged(input: SuccessInput): TResult {
 
   const resultLines = visLines(result);
   const diffResult = genDiff(originalNormalized, result, 2, resultHashes, originalHashes);
-  const addedLines = cntDiff(diffResult.diff, "+");
-  const removedLines = cntDiff(diffResult.diff, "-");
+  const addedLines = editMeta.addedLines;
+  const removedLines = editMeta.removedLines;
   const warningsBlock = warnBlock(warnings);
   const successPrefix = `Successfully replaced in ${path}.`;
   const lineSummary = addedLines > 0 || removedLines > 0
