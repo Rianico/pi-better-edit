@@ -167,12 +167,10 @@ export async function execPipeline(
 
   const hashStore = store ?? await loadHashStore();
 
-  const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors } = await readNormFile(
+  const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors, absolutePath } = await readNormFile(
     path, cwd, signal, accessMode, undefined, MAX_HASH_LINES, hashStore,
   );
 
-  const absolutePath = toCwd(path, cwd);
-  const resolvedPath = await resolveTarget(absolutePath);
   const resolved = resEdits(toolEdits);
   const anchorResult = applyEdits(
     originalNormalized,
@@ -197,7 +195,7 @@ export async function execPipeline(
     }
   }
 
-  const resultHashes = await lineHashes(result, resolvedPath, {
+  const resultHashes = await lineHashes(result, absolutePath, {
     content: originalNormalized,
     hashes: originalHashes,
     removedHashes,

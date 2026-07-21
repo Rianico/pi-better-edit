@@ -166,6 +166,7 @@ function mapStableHashes(
       }
     }
 
+    if (removedHashes?.has(candidates[bestIdx]!.hash)) continue;
     const match = candidates.splice(bestIdx, 1)[0]!;
     newHashes[i] = match.hash;
     used.add(match.hash);

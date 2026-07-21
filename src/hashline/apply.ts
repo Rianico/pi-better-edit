@@ -252,7 +252,7 @@ export function fmtBoundaryWarning(params: {
 
 export function applyEdits(
 	content: string,
-	edits: import("./resolve").HEdit[],
+	edits: HEdit[],
 	signal?: AbortSignal,
 	precomputedHashes?: string[],
 	filePath?: string,
@@ -297,7 +297,7 @@ export function applyEdits(
 	let autoFixes: AutoFix[] | undefined;
 	if (boundaryWarnings.length > 0) {
 		autoFixes = [];
-		const correctedEdits: import("./resolve").HEdit[] = edits.map(e => ({
+		const correctedEdits: HEdit[] = edits.map(e => ({
 			...e,
 			content_lines: [...e.content_lines],
 		}));
