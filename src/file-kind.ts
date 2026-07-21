@@ -31,9 +31,6 @@ export type LFile =
   | { kind: "text"; text: string; hadUtf8DecodeErrors?: true }
   | { kind: "binary"; description: string };
 
-function hasNull(buffer: Uint8Array): boolean {
-  return buffer.includes(0);
-}
 
 export async function loadFileKindAndText(
   filePath: string,
@@ -82,12 +79,7 @@ export async function loadFileKindAndText(
         description: detectedMimeType,
       };
     }
-    if (hasNull(sample)) {
-      return {
-        kind: "binary",
-        description: "null bytes detected",
-      };
-    }
+
 
     const decoder = new TextDecoder("utf-8");
     const fatalDecoder = new TextDecoder("utf-8", { fatal: true });
@@ -121,17 +113,10 @@ export async function loadFileKindAndText(
       }
 
       const chunk = buffer.subarray(0, chunkBytesRead);
-      if (hasNull(chunk)) {
-        return {
-          kind: "binary",
-          description: "null bytes detected",
-        };
-      }
       noteUtf8Err(chunk);
       parts.push(decoder.decode(chunk, { stream: true }));
       position += chunkBytesRead;
     }
-
     noteUtf8Err();
     parts.push(decoder.decode());
 

@@ -35,14 +35,12 @@ describe("loadFileKindAndText", () => {
 		});
 	});
 
-	it("detects null bytes and returns binary kind", async () => {
+	it("allows null bytes in text content (valid in JS string literals)", async () => {
 		await withTempFile("placeholder.txt", "x", async ({ cwd }) => {
 			const binPath = join(cwd, "binary.bin");
 			await writeFile(binPath, Buffer.from([0x48, 0x00, 0x65, 0x6c, 0x6c, 0x6f]));
 			const result = await loadFileKindAndText(binPath);
-			if (result.kind === "binary") {
-				expect(result.description).toContain("null bytes");
-			}
+			expect(result.kind).toBe("text");
 		});
 	});
 
@@ -76,12 +74,12 @@ describe("classifyFileKind", () => {
 		});
 	});
 
-	it("classifies a binary file as binary", async () => {
+	it("classifies a file with only null bytes as text when no binary MIME is detected", async () => {
 		await withTempFile("placeholder.txt", "x", async ({ cwd }) => {
 			const binPath = join(cwd, "binary.bin");
 			await writeFile(binPath, Buffer.from([0x00, 0x61]));
 			const result = await classifyFileKind(binPath);
-			expect(result.kind).toBe("binary");
+			expect(result.kind).toBe("text");
 		});
 	});
 });
