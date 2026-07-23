@@ -1,23 +1,23 @@
-import initSqlJs, { type Database as DatabaseType, type SqlValue } from "sql.js";
 import { readFileSync, writeFileSync, existsSync } from "fs";
 import { readFile, rename, mkdir, stat } from "fs/promises";
 import { hashStorePath, hashStoreDir, legacyHashStorePath } from "./paths";
 import { errCode } from "./utils";
 import { initHasher, contentChecksum } from "./hashline/hasher";
-import { HASH_STORE_VERSION } from "./constants";
+import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
+import initSqlJs from "sql.js";
 
-type SqlParams = SqlValue[];
+type SqlParams = (string | number)[];
 
 interface Prepared {
-  get: (...params: SqlParams) => Record<string, SqlValue> | undefined;
-  allPaths: (...params: SqlParams) => Record<string, SqlValue>[];
+  get: (...params: SqlParams) => Record<string, unknown> | undefined;
+  allPaths: (...params: SqlParams) => Record<string, unknown>[];
   deleteOne: (...params: SqlParams) => void;
   upsert: (...params: SqlParams) => void;
 }
 
 export interface HashStore {
-  readonly db: DatabaseType;
   readonly stmts: Prepared;
+  readonly engine: "better-sqlite3" | "sql.js";
 }
 
 interface LegacySnapshot {
@@ -36,60 +36,88 @@ function isValidSnapshot(value: unknown): value is LegacySnapshot {
   return true;
 }
 
-let cachedStore: { path: string; store: HashStore; filePath: string } | null = null;
+// ── Backend handle abstraction ──────────────────────────────────────
 
-let sqlJsInit: Promise<void> | null = null;
-let DatabaseCtor!: new (data?: ArrayLike<number> | null) => DatabaseType;
-
-function makeGetter(db: DatabaseType, sql: string) {
-  return (...params: SqlParams) => {
-    const stmt = db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    let result: Record<string, SqlValue> | undefined;
-    if (stmt.step()) {
-      result = stmt.getAsObject() as Record<string, SqlValue>;
-    }
-    stmt.free();
-    return result;
-  };
+interface BackendHandle {
+  store: HashStore;
+  close: () => void;
+  transact: (fn: () => void) => void;
+  prepare: (sql: string) => { run: (...params: unknown[]) => void; free: () => void };
 }
 
-function makeAll(db: DatabaseType, sql: string) {
-  return (...params: SqlParams) => {
-    const stmt = db.prepare(sql);
-    if (params.length > 0) stmt.bind(params);
-    const results: Record<string, SqlValue>[] = [];
-    while (stmt.step()) {
-      results.push(stmt.getAsObject() as Record<string, SqlValue>);
-    }
-    stmt.free();
-    return results;
-  };
-}
+let cachedHandle: { path: string; handle: BackendHandle } | null = null;
 
-function makeRun(db: DatabaseType, sql: string) {
-  return (...params: SqlParams) => {
-    if (params.length > 0) {
-      db.run(sql, params);
-    } else {
-      db.run(sql);
-    }
-  };
-}
+// ── better-sqlite3 backend ──────────────────────────────────────────
 
-function saveDb(storePath: string, db: DatabaseType): void {
-  const data = db.export();
-  writeFileSync(storePath, Buffer.from(data));
-}
+let BetterDatabase: any = undefined;
 
-function openDatabase(storePath: string): HashStore {
-  let db: DatabaseType;
-  if (existsSync(storePath)) {
-    const fileBuffer = readFileSync(storePath);
-    db = new DatabaseCtor(new Uint8Array(fileBuffer));
-  } else {
-    db = new DatabaseCtor();
+async function tryLoadBetter(): Promise<boolean> {
+  if (BetterDatabase !== undefined) return BetterDatabase !== null;
+  try {
+    const mod = await import("better-sqlite3");
+    BetterDatabase = mod.default || mod;
+    return true;
+  } catch {
+    BetterDatabase = null;
+    return false;
   }
+}
+
+function openBetterDb(storePath: string): BackendHandle {
+  const db = new BetterDatabase(storePath);
+  db.pragma("journal_mode = WAL");
+  db.pragma("synchronous = NORMAL");
+  db.pragma(`busy_timeout = ${HASH_STORE_BUSY_TIMEOUT}`);
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS snapshots (" +
+      "path TEXT PRIMARY KEY, " +
+      "checksum TEXT NOT NULL, " +
+      "line_count INTEGER NOT NULL, " +
+      "hashes TEXT NOT NULL, " +
+      "updated_at INTEGER NOT NULL" +
+    ")"
+  );
+
+  const getStmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
+  const allStmt = db.prepare("SELECT path FROM snapshots");
+  const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
+  const upsertStmt = db.prepare(
+    "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
+    "ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at"
+  );
+
+  const stmts: Prepared = {
+    get: (...params) => getStmt.get(...params) as Record<string, unknown> | undefined,
+    allPaths: (...params) => allStmt.all(...params) as Record<string, unknown>[],
+    deleteOne: (...params) => { delStmt.run(...params); },
+    upsert: (...params) => { upsertStmt.run(...params); },
+  };
+
+  return {
+    store: { stmts, engine: "better-sqlite3" },
+    close: () => { db.close(); },
+    transact: (fn) => { db.transaction(fn).immediate(); },
+    prepare: (sql) => {
+      const stmt = db.prepare(sql);
+      return { run: (...params) => stmt.run(...params), free: () => {} };
+    },
+  };
+}
+
+// ── sql.js backend ──────────────────────────────────────────────────
+
+let SqlJsDatabase: any = null;
+let sqlJsPromise: Promise<void> | null = null;
+
+async function ensureSqlJs(): Promise<void> {
+  if (sqlJsPromise) return sqlJsPromise;
+  sqlJsPromise = initSqlJs().then((SQL) => { SqlJsDatabase = SQL.Database; });
+  return sqlJsPromise;
+}
+
+function openSqlJsDb(storePath: string): BackendHandle {
+  const data = existsSync(storePath) ? new Uint8Array(readFileSync(storePath)) : undefined;
+  const db = new SqlJsDatabase(data);
 
   db.run(
     "CREATE TABLE IF NOT EXISTS snapshots (" +
@@ -100,33 +128,127 @@ function openDatabase(storePath: string): HashStore {
       "updated_at INTEGER NOT NULL" +
     ")"
   );
-  saveDb(storePath, db);
 
-  const get = makeGetter(db, "SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
-  const allPaths = makeAll(db, "SELECT path FROM snapshots");
-  const deleteOne = makeRun(db, "DELETE FROM snapshots WHERE path = ?");
-  const upsert = makeRun(
-    db,
+  const getStmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
+  const allStmt = db.prepare("SELECT path FROM snapshots");
+  const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
+  const upsertStmt = db.prepare(
     "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
     "ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at"
   );
 
-  const stmts: Prepared = { get, allPaths, deleteOne, upsert };
-  return { db, stmts };
+  const stmts: Prepared = {
+    get: (...params) => {
+      getStmt.bind(params);
+      let result: Record<string, unknown> | undefined;
+      if (getStmt.step()) result = getStmt.getAsObject() as Record<string, unknown>;
+      getStmt.reset();
+      return result;
+    },
+    allPaths: (...params) => {
+      if (params.length > 0) allStmt.bind(params);
+      const results: Record<string, unknown>[] = [];
+      while (allStmt.step()) results.push(allStmt.getAsObject() as Record<string, unknown>);
+      allStmt.reset();
+      return results;
+    },
+    deleteOne: (...params) => {
+      delStmt.bind(params);
+      delStmt.step();
+      delStmt.reset();
+    },
+    upsert: (...params) => {
+      upsertStmt.bind(params);
+      upsertStmt.step();
+      upsertStmt.reset();
+    },
+  };
+
+  function save() {
+    writeFileSync(storePath, Buffer.from(db.export()));
+  }
+
+  return {
+    store: { stmts, engine: "sql.js" },
+    close: () => { db.close(); },
+    transact: (fn) => {
+      db.run("BEGIN IMMEDIATE");
+      try { fn(); db.run("COMMIT"); save(); } catch (e) { db.run("ROLLBACK"); throw e; }
+    },
+    prepare: (sql) => {
+      const stmt = db.prepare(sql);
+      return {
+        run: (...params) => { stmt.bind(params); stmt.step(); stmt.reset(); },
+        free: () => { stmt.free(); },
+      };
+    },
+  };
 }
 
-function withTransaction(db: DatabaseType, fn: () => void): void {
-  db.run("BEGIN IMMEDIATE");
-  try {
-    fn();
-    db.run("COMMIT");
-  } catch (e) {
-    db.run("ROLLBACK");
-    throw e;
+// ── Init ────────────────────────────────────────────────────────────
+
+let backendPromise: Promise<void> | null = null;
+
+async function initBackend(): Promise<void> {
+  if (backendPromise) return backendPromise;
+  backendPromise = (async () => {
+    const hasBetter = await tryLoadBetter();
+    if (!hasBetter) await ensureSqlJs();
+  })();
+  return backendPromise;
+}
+
+// ── Public API ──────────────────────────────────────────────────────
+
+export async function loadHashStore(): Promise<HashStore> {
+  const storePath = hashStorePath();
+  if (cachedHandle && cachedHandle.path === storePath) {
+    return cachedHandle.handle.store;
+  }
+
+  shutdownHashStore();
+
+  await initHasher();
+  await mkdir(hashStoreDir(), { recursive: true });
+  await initBackend();
+
+  const existed = existsSync(storePath);
+
+  let handle: BackendHandle;
+  if (BetterDatabase) {
+    handle = openBetterDb(storePath);
+  } else {
+    await ensureSqlJs();
+    handle = openSqlJsDb(storePath);
+  }
+
+  if (!existed) {
+    await migrateLegacy(handle);
+  }
+
+  cachedHandle = { path: storePath, handle };
+  return handle.store;
+}
+
+export function shutdownHashStore(): void {
+  if (cachedHandle) {
+    cachedHandle.handle.close();
+    cachedHandle = null;
   }
 }
 
-async function migrateLegacy(store: HashStore, storePath: string): Promise<void> {
+// ── Internal helpers ────────────────────────────────────────────────
+
+function withStore(store: HashStore, fn: () => void): void {
+  const h = cachedHandle?.handle;
+  if (h && h.store === store) {
+    h.transact(fn);
+  } else {
+    fn();
+  }
+}
+
+async function migrateLegacy(handle: BackendHandle): Promise<void> {
   const legacyPath = legacyHashStorePath();
   let content: string;
   try {
@@ -161,16 +283,13 @@ async function migrateLegacy(store: HashStore, storePath: string): Promise<void>
   }
 
   if (rows.length > 0) {
-    withTransaction(store.db, () => {
-      const stmt = store.db.prepare(
+    handle.transact(() => {
+      const stmt = handle.prepare(
         "INSERT OR REPLACE INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)"
       );
-      for (const row of rows) {
-        stmt.run(row);
-      }
+      for (const row of rows) stmt.run(...row);
       stmt.free();
     });
-    saveDb(storePath, store.db);
   }
 
   try {
@@ -180,40 +299,7 @@ async function migrateLegacy(store: HashStore, storePath: string): Promise<void>
   }
 }
 
-export async function loadHashStore(): Promise<HashStore> {
-  const storePath = hashStorePath();
-  if (cachedStore && cachedStore.path === storePath) {
-    return cachedStore.store;
-  }
-
-  shutdownHashStore();
-
-  await initHasher();
-  await mkdir(hashStoreDir(), { recursive: true });
-
-  if (!sqlJsInit) {
-    sqlJsInit = initSqlJs().then((SQL) => {
-      DatabaseCtor = SQL.Database;
-    });
-  }
-  await sqlJsInit;
-
-  const existed = existsSync(storePath);
-  const store = openDatabase(storePath);
-  if (!existed) {
-    await migrateLegacy(store, storePath);
-  }
-
-  cachedStore = { path: storePath, store, filePath: storePath };
-  return store;
-}
-
-export function shutdownHashStore(): void {
-  if (cachedStore) {
-    cachedStore.store.db.close();
-    cachedStore = null;
-  }
-}
+// ── Snapshot operations ─────────────────────────────────────────────
 
 export function getSnapshot(
   store: HashStore,
@@ -234,17 +320,15 @@ export function upsertSnapshot(
   hashes: string[],
 ): void {
   const hashesJson = JSON.stringify(hashes);
-  withTransaction(store.db, () => {
+  withStore(store, () => {
     store.stmts.upsert(path, checksum, lineCount, hashesJson, Date.now());
   });
-  if (cachedStore) saveDb(cachedStore.filePath, store.db);
 }
 
 export function deleteSnapshot(store: HashStore, path: string): void {
-  withTransaction(store.db, () => {
+  withStore(store, () => {
     store.stmts.deleteOne(path);
   });
-  if (cachedStore) saveDb(cachedStore.filePath, store.db);
 }
 
 export async function pruneMissing(store: HashStore): Promise<void> {
@@ -258,12 +342,9 @@ export async function pruneMissing(store: HashStore): Promise<void> {
     }
   }
   if (missing.length === 0) return;
-  withTransaction(store.db, () => {
-    for (const path of missing) {
-      store.stmts.deleteOne(path);
-    }
+  withStore(store, () => {
+    for (const path of missing) store.stmts.deleteOne(path);
   });
-  if (cachedStore) saveDb(cachedStore.filePath, store.db);
 }
 
 export { HASH_STORE_VERSION };

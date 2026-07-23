@@ -176,7 +176,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
       await writeLegacyStore(home, ["not-an-object"]);
 
       const store = await loadHashStore();
-      const paths = store.stmts.allPaths() as { path: string }[];
+      const paths = store.stmts.allPaths();
       expect(paths).toEqual([]);
     });
   });
@@ -184,8 +184,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
   it("does not run migration when no legacy file exists", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      const paths = store.stmts.allPaths() as { path: string }[];
-      expect(paths).toEqual([]);
+      expect(store.stmts.allPaths()).toEqual([]);
       expect(existsSync(`${legacyPath(home)}.bak`)).toBe(false);
     });
   });

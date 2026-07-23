@@ -43,7 +43,8 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "postinstall": "node scripts/ensure-better-sqlite3.js"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.74.0",
