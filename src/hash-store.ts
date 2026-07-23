@@ -129,44 +129,41 @@ function openSqlJsDb(storePath: string): BackendHandle {
     ")"
   );
 
-  const getStmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
-  const allStmt = db.prepare("SELECT path FROM snapshots");
-  const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
-  const upsertStmt = db.prepare(
-    "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
-    "ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at"
-  );
-
-  const stmts: Prepared = {
-    get: (...params) => {
-      getStmt.bind(params);
-      let result: Record<string, unknown> | undefined;
-      if (getStmt.step()) result = getStmt.getAsObject() as Record<string, unknown>;
-      getStmt.reset();
-      return result;
-    },
-    allPaths: (...params) => {
-      if (params.length > 0) allStmt.bind(params);
-      const results: Record<string, unknown>[] = [];
-      while (allStmt.step()) results.push(allStmt.getAsObject() as Record<string, unknown>);
-      allStmt.reset();
-      return results;
-    },
-    deleteOne: (...params) => {
-      delStmt.bind(params);
-      delStmt.step();
-      delStmt.reset();
-    },
-    upsert: (...params) => {
-      upsertStmt.bind(params);
-      upsertStmt.step();
-      upsertStmt.reset();
-    },
-  };
-
   function save() {
     writeFileSync(storePath, Buffer.from(db.export()));
   }
+
+  save();
+
+  const stmts: Prepared = {
+    get: (...params) => {
+      const stmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
+      stmt.bind(params);
+      let result: Record<string, unknown> | undefined;
+      if (stmt.step()) result = stmt.getAsObject() as Record<string, unknown>;
+      stmt.free();
+      return result;
+    },
+    allPaths: (...params) => {
+      const stmt = db.prepare("SELECT path FROM snapshots");
+      if (params.length > 0) stmt.bind(params);
+      const results: Record<string, unknown>[] = [];
+      while (stmt.step()) results.push(stmt.getAsObject() as Record<string, unknown>);
+      stmt.free();
+      return results;
+    },
+    deleteOne: (...params) => {
+      if (params.length > 0) db.run("DELETE FROM snapshots WHERE path = ?", params);
+      else db.run("DELETE FROM snapshots WHERE path = ?");
+    },
+    upsert: (...params) => {
+      db.run(
+        "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
+        "ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at",
+        params
+      );
+    },
+  };
 
   return {
     store: { stmts, engine: "sql.js" },
