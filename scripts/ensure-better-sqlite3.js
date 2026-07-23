@@ -3,15 +3,17 @@ const fs = require("fs");
 const path = require("path");
 
 const root = path.resolve(__dirname, "..");
+const bsqlDir = path.join(root, "node_modules", "better-sqlite3");
 
 try {
-  require(path.join(root, "node_modules", "better-sqlite3"));
+  require(bsqlDir);
   process.exit(0);
 } catch (e) {
   const msg = e && typeof e.message === "string" ? e.message : String(e);
   if (/GLIBC|Cannot find module|dlo|not found/i.test(msg)) {
     console.error("better-sqlite3 prebuilt incompatible, rebuilding from source...");
-    const prebuildDir = path.join(root, "node_modules", "better-sqlite3", "prebuilds");
+
+    const prebuildDir = path.join(bsqlDir, "prebuilds");
     if (fs.existsSync(prebuildDir)) {
       const platform = process.platform + "-" + process.arch;
       const prebuilt = path.join(prebuildDir, platform + ".node");
@@ -20,11 +22,17 @@ try {
         console.error("Removed incompatible prebuilt:", platform + ".node");
       }
     }
+
+    const buildDir = path.join(bsqlDir, "build");
+    if (fs.existsSync(buildDir)) {
+      fs.rmSync(buildDir, { recursive: true, force: true });
+    }
+
     try {
-      execSync("npm rebuild better-sqlite3", {
-        cwd: root,
+      execSync("npx --yes node-gyp rebuild", {
+        cwd: bsqlDir,
         stdio: "inherit",
-        timeout: 120000,
+        timeout: 300000,
       });
       console.error("better-sqlite3 rebuilt successfully from source.");
     } catch (rebuildErr) {
