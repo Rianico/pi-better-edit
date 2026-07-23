@@ -1,8 +1,9 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile, stat } from "fs/promises";
-import { existsSync, readFileSync, writeFileSync } from "fs";
+import { existsSync } from "fs";
 import { join } from "path";
-import initSqlJs from "sql.js";
+import Database from "better-sqlite3";
+
 import {
   loadHashStore,
   shutdownHashStore,
@@ -261,17 +262,14 @@ describe("hash-store — concurrency (issue #10)", () => {
       const store = await loadHashStore();
       await put(store, "/a.ts", "alpha\n", ["AA"]);
 
-      const SQL = await initSqlJs();
-      const fileBuffer = readFileSync(sqlitePath(home));
-      const second = new SQL.Database(new Uint8Array(fileBuffer));
-      second.run(
+      const second = new Database(sqlitePath(home));
+      const ins = second.prepare(
         "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)",
-        ["/b.ts", contentChecksum("beta\n"), "beta\n".split("\n").length, JSON.stringify(["BB"]), Date.now()]
       );
-      const data = second.export();
+      second.transaction(() => {
+        ins.run("/b.ts", contentChecksum("beta\n"), "beta\n".split("\n").length, JSON.stringify(["BB"]), Date.now());
+      }).immediate();
       second.close();
-
-      writeFileSync(sqlitePath(home), Buffer.from(data));
 
       shutdownHashStore();
       const reloaded = await loadHashStore();
