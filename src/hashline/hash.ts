@@ -99,6 +99,7 @@ export async function lineHashes(
   path?: string,
   previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
   store?: HashStore,
+  persist?: boolean,
 ): Promise<string[]> {
   if (!path) {
     return _lineHashesPure(content);
@@ -112,8 +113,10 @@ export async function lineHashes(
       content,
       previous.removedHashes,
     );
-    hashStore.snapshots[path] = { content, hashes: newHashes };
-    await saveHashStore(hashStore);
+    if (persist !== false) {
+      hashStore.snapshots[path] = { content, hashes: newHashes };
+      await saveHashStore(hashStore);
+    }
     return newHashes;
   }
 
@@ -123,8 +126,10 @@ export async function lineHashes(
   }
 
   const newHashes = _lineHashesPure(content);
-  hashStore.snapshots[path] = { content, hashes: newHashes };
-  await saveHashStore(hashStore);
+  if (persist !== false) {
+    hashStore.snapshots[path] = { content, hashes: newHashes };
+    await saveHashStore(hashStore);
+  }
   return newHashes;
 }
 

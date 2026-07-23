@@ -154,6 +154,7 @@ export async function execPipeline(
   accessMode: number,
   signal?: AbortSignal,
   store?: HashStore,
+  noPersist?: boolean,
 ): Promise<PipelineResult> {
 
   const path = params.path;
@@ -199,7 +200,7 @@ export async function execPipeline(
     content: originalNormalized,
     hashes: originalHashes,
     removedHashes,
-  }, hashStore);
+  }, hashStore, noPersist !== true);
 
   const warnings = [...(anchorResult.warnings ?? [])];
 
@@ -248,6 +249,9 @@ export async function compPreview(
       normalized,
       cwd,
       constants.R_OK,
+      undefined,
+      undefined,
+      true,
     );
 
     if (originalNormalized === result) {
