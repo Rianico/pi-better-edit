@@ -1,8 +1,8 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile, stat } from "fs/promises";
-import { existsSync } from "fs";
+import { existsSync, readFileSync, writeFileSync } from "fs";
 import { join } from "path";
-import Database from "better-sqlite3";
+import initSqlJs from "sql.js";
 import {
   loadHashStore,
   shutdownHashStore,
@@ -176,7 +176,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
       await writeLegacyStore(home, ["not-an-object"]);
 
       const store = await loadHashStore();
-      const paths = store.stmts.allPaths.all();
+      const paths = store.stmts.allPaths() as { path: string }[];
       expect(paths).toEqual([]);
     });
   });
@@ -184,7 +184,8 @@ describe("hash-store — migration from legacy hash-store.json", () => {
   it("does not run migration when no legacy file exists", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      expect(store.stmts.allPaths.all()).toEqual([]);
+      const paths = store.stmts.allPaths() as { path: string }[];
+      expect(paths).toEqual([]);
       expect(existsSync(`${legacyPath(home)}.bak`)).toBe(false);
     });
   });
@@ -261,15 +262,19 @@ describe("hash-store — concurrency (issue #10)", () => {
       const store = await loadHashStore();
       await put(store, "/a.ts", "alpha\n", ["AA"]);
 
-      const second = new Database(sqlitePath(home));
-      const ins = second.prepare(
+      const SQL = await initSqlJs();
+      const fileBuffer = readFileSync(sqlitePath(home));
+      const second = new SQL.Database(new Uint8Array(fileBuffer));
+      second.run(
         "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)",
+        ["/b.ts", contentChecksum("beta\n"), "beta\n".split("\n").length, JSON.stringify(["BB"]), Date.now()]
       );
-      second.transaction(() => {
-        ins.run("/b.ts", contentChecksum("beta\n"), "beta\n".split("\n").length, JSON.stringify(["BB"]), Date.now());
-      }).immediate();
+      const data = second.export();
       second.close();
 
+      writeFileSync(sqlitePath(home), Buffer.from(data));
+
+      shutdownHashStore();
       const reloaded = await loadHashStore();
       expect(getSnapshot(reloaded, "/a.ts", "alpha\n")).toEqual(["AA"]);
       expect(getSnapshot(reloaded, "/b.ts", "beta\n")).toEqual(["BB"]);

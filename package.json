@@ -1,6 +1,6 @@
 {
   "name": "pi-hashline-edit-pro",
-  "version": "0.17.0",
+  "version": "0.17.1",
   "description": "Strict hashline read/replace tool for pi-coding-agent with hash-anchored edits (3-char, 18-bit, perfect hashing)",
   "main": "index.ts",
   "repository": {
@@ -31,9 +31,9 @@
     ]
   },
   "dependencies": {
-    "better-sqlite3": "^13.0.1",
     "diff": "^8.0.2",
     "file-type": "^21.3.0",
+    "sql.js": "1.11",
     "xxhash-wasm": "^1.1.0"
   },
   "peerDependencies": {
@@ -47,12 +47,9 @@
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.74.0",
-    "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
+    "@types/sql.js": "^1.4.11",
     "typescript": "^5.8.0",
     "vitest": "^4.1.8"
-  },
-  "allowScripts": {
-    "better-sqlite3@13.0.1": true
   }
 }
