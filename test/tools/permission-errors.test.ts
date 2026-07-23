@@ -4,6 +4,7 @@ import { mkdtempSync, rmSync, writeFileSync } from "fs";
 import { join } from "path";
 import register from "../../index";
 import { makeFakePiRegistry } from "../support/fixtures";
+import { shutdownHashStore } from "../../src/hash-store";
 
 const isRoot = typeof process.getuid === "function" && process.getuid() === 0;
 const isWindows = process.platform === "win32";
@@ -16,9 +17,11 @@ describe.skipIf(isRoot || isWindows)("permission errors", () => {
     tempRoot = join(process.cwd(), ".tmp");
     mkdirSync(tempRoot, { recursive: true });
     tempDir = mkdtempSync(join(tempRoot, "pi-perm-test-"));
+    process.env.HOME = tempDir;
   });
 
   afterAll(() => {
+    shutdownHashStore();
     rmSync(tempDir, { recursive: true, force: true });
   });
 

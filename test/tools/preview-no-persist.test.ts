@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { compPreview } from "../../src/replace";
-import { loadHashStore } from "../../src/hash-store";
+import { loadHashStore, getSnapshot } from "../../src/hash-store";
 import { withTempFile, useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
@@ -19,11 +19,9 @@ describe("compPreview no-persist guarantee", () => {
       const hashes = await lineHashes(content, absolutePath);
 
       const storeBefore = await loadHashStore();
-      const snapshotBefore = storeBefore.snapshots[absolutePath];
-      expect(snapshotBefore).toBeDefined();
-      expect(snapshotBefore!.content).toBe(content);
-      expect(snapshotBefore!.hashes).toEqual(hashes);
-
+      const beforeHashes = getSnapshot(storeBefore, absolutePath, content);
+      expect(beforeHashes).toBeDefined();
+      expect(beforeHashes).toEqual(hashes);
       const bHash = hashes[1]!;
       const cHash = hashes[2]!;
 
@@ -39,10 +37,9 @@ describe("compPreview no-persist guarantee", () => {
       expect(preview).toHaveProperty("diff");
 
       const storeAfter = await loadHashStore();
-      const snapshotAfter = storeAfter.snapshots[absolutePath];
-      expect(snapshotAfter).toBeDefined();
-      expect(snapshotAfter!.content).toBe(content);
-      expect(snapshotAfter!.hashes).toEqual(hashes);
+      const afterHashes = getSnapshot(storeAfter, absolutePath, content);
+      expect(afterHashes).toBeDefined();
+      expect(afterHashes).toEqual(hashes);
     });
   });
 
@@ -66,9 +63,7 @@ describe("compPreview no-persist guarantee", () => {
       );
 
       const store = await loadHashStore();
-      const snapshot = store.snapshots[absolutePath];
-      expect(snapshot).toBeDefined();
-      expect(snapshot!.content).toBe(content);
+      expect(getSnapshot(store, absolutePath, content)).toEqual(hashes);
     });
   });
 

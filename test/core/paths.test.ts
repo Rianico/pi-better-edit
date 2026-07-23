@@ -20,7 +20,7 @@ describe("configPath", () => {
 describe("hashStorePath", () => {
   it("returns the hash store file path", () => {
     const path = hashStorePath();
-    expect(path).toBe(join(configDir(), "hash-store.json"));
+    expect(path).toBe(join(configDir(), "hash-store.sqlite"));
   });
 });
 

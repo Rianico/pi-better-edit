@@ -1,7 +1,13 @@
-import xxhash from "xxhash-wasm";
-import * as Diff from "diff";
-import { loadHashStore, saveHashStore, type HashStore } from "../hash-store";
 import { MAX_HASH_RETRIES } from "../constants";
+import {
+  loadHashStore,
+  type HashStore,
+  getSnapshot,
+  upsertSnapshot,
+} from "../hash-store";
+import { xxh32, contentChecksum, initHasher } from "./hasher";
+
+export { initHasher };
 
 export const HASH_LEN = 3;
 export const ANCHOR_LEN = HASH_LEN;
@@ -41,30 +47,6 @@ export const DIFF_MINUS_RE = /^-\s*\d+\s{4}/;
 
 export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
 
-type Hasher = { h32(input: string, seed?: number): number };
-let hasherP: Promise<Hasher> | null = null;
-let hasher: Hasher | null = null;
-
-function getH(): Hasher {
-	if (hasher) return hasher;
-	throw new Error("xxhash-wasm not initialized yet. This should not happen.");
-}
-
-hasherP = xxhash().then((h) => {
-	hasher = h;
-	return h;
-}).catch((err) => {
-	console.error("xxhash-wasm initialization failed:", err);
-	throw err;
-});
-
-export function initHasher(): Promise<Hasher> {
-	return hasherP!
-}
-
-function xxh32(input: string, seed = 0): number {
-	return getH().h32(input, seed) >>> 0;
-}
 
 function canon(line: string): string {
 	return line.replace(/\r/g, "").trimEnd();
@@ -114,21 +96,19 @@ export async function lineHashes(
       previous.removedHashes,
     );
     if (persist !== false) {
-      hashStore.snapshots[path] = { content, hashes: newHashes };
-      await saveHashStore(hashStore);
+      upsertSnapshot(hashStore, path, contentChecksum(content), content.split("\n").length, newHashes);
     }
     return newHashes;
   }
 
-  const snapshot = hashStore.snapshots[path];
-  if (snapshot && snapshot.content === content) {
-    return snapshot.hashes;
+  const cached = getSnapshot(hashStore, path, content);
+  if (cached) {
+    return cached;
   }
 
   const newHashes = _lineHashesPure(content);
   if (persist !== false) {
-    hashStore.snapshots[path] = { content, hashes: newHashes };
-    await saveHashStore(hashStore);
+    upsertSnapshot(hashStore, path, contentChecksum(content), content.split("\n").length, newHashes);
   }
   return newHashes;
 }

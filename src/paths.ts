@@ -2,8 +2,13 @@ import { homedir } from "os";
 import { isAbsolute, resolve as resolvePath, join, dirname } from "path";
 
 
+function homeBase(): string {
+  const envHome = process.env.HOME;
+  return envHome && envHome.length > 0 ? envHome : homedir();
+}
+
 export function configDir(): string {
-  return join(homedir(), ".config", "pi-hashline-edit-pro");
+  return join(homeBase(), ".config", "pi-hashline-edit-pro");
 }
 
 export function configPath(): string {
@@ -11,6 +16,10 @@ export function configPath(): string {
 }
 
 export function hashStorePath(): string {
+  return join(configDir(), "hash-store.sqlite");
+}
+
+export function legacyHashStorePath(): string {
   return join(configDir(), "hash-store.json");
 }
 
@@ -19,8 +28,9 @@ export function hashStoreDir(): string {
 }
 
 function expand(filePath: string): string {
-  if (filePath === "~") return homedir();
-  if (filePath.startsWith("~/")) return homedir() + filePath.slice(1);
+  const home = homeBase();
+  if (filePath === "~") return home;
+  if (filePath.startsWith("~/")) return home + filePath.slice(1);
   return filePath;
 }
 

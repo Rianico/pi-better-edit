@@ -5,6 +5,7 @@ import { _lineHashesPure, initHasher } from "../../src/hashline";
 import { Compile } from "typebox/compile";
 import register from "../../index";
 import { regReplace, regReplaceFlat } from "../../src/replace";
+import { shutdownHashStore } from "../../src/hash-store";
 export async function getWritableTempRoot(): Promise<string> {
   const fallback = join(process.cwd(), ".tmp");
   await mkdir(fallback, { recursive: true });
@@ -47,7 +48,9 @@ export function useTestHome(): { testPath: string } {
 }
 
 async function freshCwd(): Promise<string> {
-  return mkdtemp(join(await getWritableTempRoot(), "pi-hashline-test-"));
+  const cwd = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-test-"));
+  process.env.HOME = cwd;
+  return cwd;
 }
 
 export async function withTempFile(
@@ -61,6 +64,7 @@ export async function withTempFile(
     await writeFile(path, content, "utf-8");
     await run({ cwd, path });
   } finally {
+    shutdownHashStore();
     await rm(cwd, { recursive: true, force: true });
   }
 }
@@ -76,6 +80,7 @@ export async function withTempBytes(
     await writeFile(path, bytes);
     await run({ cwd, path });
   } finally {
+    shutdownHashStore();
     await rm(cwd, { recursive: true, force: true });
   }
 }
@@ -90,6 +95,7 @@ export async function withTempSubdir(
     await mkdir(path, { recursive: true });
     await run({ cwd, path });
   } finally {
+    shutdownHashStore();
     await rm(cwd, { recursive: true, force: true });
   }
 }
@@ -99,15 +105,19 @@ export async function withTempDir(
   run: (dir: string) => Promise<void>,
 ): Promise<void> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), prefix));
+  process.env.HOME = dir;
   try {
     await run(dir);
   } finally {
+    shutdownHashStore();
     await rm(dir, { recursive: true, force: true });
   }
 }
 
 export async function makeTempDir(prefix: string): Promise<string> {
-  return mkdtemp(join(await getWritableTempRoot(), prefix));
+  const dir = await mkdtemp(join(await getWritableTempRoot(), prefix));
+  process.env.HOME = dir;
+  return dir;
 }
 
 export function makeFakePiRegistry() {

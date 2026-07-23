@@ -1,320 +1,310 @@
-import { describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile, readFile } from "fs/promises";
+import { describe, expect, it, vi, beforeAll } from "vitest";
+import { mkdtemp, mkdir, rm, writeFile, stat } from "fs/promises";
+import { existsSync } from "fs";
 import { join } from "path";
+import Database from "better-sqlite3";
 import {
   loadHashStore,
-  saveHashStore,
-  pruneHashStore,
+  shutdownHashStore,
+  getSnapshot,
+  upsertSnapshot,
+  deleteSnapshot,
+  pruneMissing,
   type HashStore,
 } from "../../src/hash-store";
+import { initHasher, contentChecksum } from "../../src/hashline/hasher";
 
 let tmpHome: string;
 
-async function withTempHome(run: () => Promise<void>): Promise<void> {
+beforeAll(async () => {
+  await initHasher();
+});
+
+async function withTempHome(run: (home: string) => Promise<void>): Promise<void> {
   tmpHome = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-hashstore-test-"));
-  vi.stubEnv('HOME', tmpHome);
+  vi.stubEnv("HOME", tmpHome);
   try {
-    await run();
+    await run(tmpHome);
   } finally {
+    shutdownHashStore();
     vi.unstubAllEnvs();
     await rm(tmpHome, { recursive: true, force: true });
   }
 }
 
-function storePath(): string {
-  return join(tmpHome, ".config", "pi-hashline-edit-pro", "hash-store.json");
+function configHome(home: string): string {
+  return join(home, ".config", "pi-hashline-edit-pro");
+}
+
+function sqlitePath(home: string): string {
+  return join(configHome(home), "hash-store.sqlite");
+}
+
+function legacyPath(home: string): string {
+  return join(configHome(home), "hash-store.json");
+}
+
+async function put(
+  store: HashStore,
+  path: string,
+  content: string,
+  hashes: string[],
+): Promise<void> {
+  upsertSnapshot(store, path, contentChecksum(content), content.split("\n").length, hashes);
+}
+
+async function writeLegacyStore(home: string, snapshots: unknown): Promise<void> {
+  await mkdir(configHome(home), { recursive: true });
+  await writeFile(legacyPath(home), JSON.stringify({ version: 1, snapshots }), "utf-8");
 }
 
 describe("hash-store — loadHashStore", () => {
-  it("returns default store when no file exists", async () => {
-    await withTempHome(async () => {
+  it("opens a fresh sqlite database when none exists", async () => {
+    await withTempHome(async (home) => {
       const store = await loadHashStore();
-      expect(store.version).toBe(1);
-      expect(store.snapshots).toEqual({});
+      expect(existsSync(sqlitePath(home))).toBe(true);
+      expect(getSnapshot(store, "/none.ts", "x\n")).toBeUndefined();
     });
   });
 
-  it("creates the store file when none exists", async () => {
+  it("creates the config directory", async () => {
     await withTempHome(async () => {
       await loadHashStore();
-      const content = await readFile(storePath(), "utf-8");
-      const parsed = JSON.parse(content);
-      expect(parsed.version).toBe(1);
-      expect(parsed.snapshots).toEqual({});
-    });
-  });
-
-  it("returns parsed store when file exists with valid data", async () => {
-    await withTempHome(async () => {
-      const initial: HashStore = {
-        version: 1,
-        snapshots: {
-          "/path/to/file.ts": { content: "hello\n", hashes: ["aB3", "xY7"] },
-        },
-      };
-      await mkdir(join(tmpHome, ".config", "pi-hashline-edit-pro"), { recursive: true });
-      await writeFile(storePath(), JSON.stringify(initial), "utf-8");
-
-      const store = await loadHashStore();
-      expect(store.version).toBe(1);
-      expect(store.snapshots["/path/to/file.ts"]).toBeDefined();
-      expect(store.snapshots["/path/to/file.ts"]!.content).toBe("hello\n");
-      expect(store.snapshots["/path/to/file.ts"]!.hashes).toEqual(["aB3", "xY7"]);
-    });
-  });
-
-  it("returns default store for corrupt JSON and overwrites the file", async () => {
-    await withTempHome(async () => {
-      const dir = join(tmpHome, ".config", "pi-hashline-edit-pro");
-      await mkdir(dir, { recursive: true });
-      await writeFile(storePath(), "not valid json", "utf-8");
-
-      const store = await loadHashStore();
-      expect(store.version).toBe(1);
-      expect(store.snapshots).toEqual({});
-
-      // Verify the file was overwritten with valid JSON
-      const content = await readFile(storePath(), "utf-8");
-      const parsed = JSON.parse(content);
-      expect(parsed.version).toBe(1);
-    });
-  });
-
-  it("handles missing snapshots field gracefully", async () => {
-    await withTempHome(async () => {
-      const dir = join(tmpHome, ".config", "pi-hashline-edit-pro");
-      await mkdir(dir, { recursive: true });
-      await writeFile(storePath(), JSON.stringify({ version: 1 }), "utf-8");
-
-      const store = await loadHashStore();
-      expect(store.snapshots).toEqual({});
-    });
-  });
-
-  it("salvages valid entries and drops structurally corrupt ones", async () => {
-    await withTempHome(async () => {
-      const dir = join(tmpHome, ".config", "pi-hashline-edit-pro");
-      await mkdir(dir, { recursive: true });
-      await writeFile(storePath(), JSON.stringify({
-        version: 1,
-        snapshots: {
-          "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
-          "/missing-hashes.ts": { content: "x\n" },
-          "/null-content.ts": { content: null, hashes: ["DEF"] },
-          "/hashes-not-array.ts": { content: "y\n", hashes: "not-an-array" },
-          "/hash-not-string.ts": { content: "z\n", hashes: [42] },
-          "/also-valid.ts": { content: "good\n", hashes: ["XYZ"] },
-        },
-      }), "utf-8");
-
-      const store = await loadHashStore();
-      expect(store.version).toBe(1);
-      expect(Object.keys(store.snapshots)).toHaveLength(2);
-      expect(store.snapshots["/valid.ts"]).toEqual({ content: "ok\n", hashes: ["ABC"] });
-      expect(store.snapshots["/also-valid.ts"]).toEqual({ content: "good\n", hashes: ["XYZ"] });
-      expect(store.snapshots["/missing-hashes.ts"]).toBeUndefined();
-      expect(store.snapshots["/null-content.ts"]).toBeUndefined();
-      expect(store.snapshots["/hashes-not-array.ts"]).toBeUndefined();
-      expect(store.snapshots["/hash-not-string.ts"]).toBeUndefined();
-    });
-  });
-
-  it("returns empty snapshots when snapshots field is an array", async () => {
-    await withTempHome(async () => {
-      const dir = join(tmpHome, ".config", "pi-hashline-edit-pro");
-      await mkdir(dir, { recursive: true });
-      await writeFile(storePath(), JSON.stringify({
-        version: 1,
-        snapshots: ["not-an-object"],
-      }), "utf-8");
-
-      const store = await loadHashStore();
-      expect(store.snapshots).toEqual({});
-    });
-  });
-});
-describe("hash-store — saveHashStore", () => {
-  it("writes store to disk", async () => {
-    await withTempHome(async () => {
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          "/a.ts": { content: "x\n", hashes: ["AAA"] },
-        },
-      };
-      await saveHashStore(store);
-
-      const content = await readFile(storePath(), "utf-8");
-      const parsed = JSON.parse(content);
-      expect(parsed.version).toBe(1);
-      expect(parsed.snapshots["/a.ts"].content).toBe("x\n");
-    });
-  });
-
-  it("creates the config directory if it does not exist", async () => {
-    await withTempHome(async () => {
-      const store: HashStore = { version: 1, snapshots: {} };
-      await saveHashStore(store);
-
-      // Should not throw — directory was created
-      const content = await readFile(storePath(), "utf-8");
-      expect(JSON.parse(content).version).toBe(1);
-    });
-  });
-
-  it("round-trips through load and save", async () => {
-    await withTempHome(async () => {
-      const original: HashStore = {
-        version: 1,
-        snapshots: {
-          "/a.ts": { content: "a\n", hashes: ["AAA"] },
-          "/b.ts": { content: "b\nc\n", hashes: ["BBB", "CCC"] },
-        },
-      };
-      await saveHashStore(original);
-      const loaded = await loadHashStore();
-      expect(loaded).toEqual(original);
-    });
-  });
-
-  it("preserves all snapshots when saving multiple entries", async () => {
-    await withTempHome(async () => {
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          "/1.ts": { content: "1\n", hashes: ["111"] },
-          "/2.ts": { content: "2\n", hashes: ["222"] },
-          "/3.ts": { content: "3\n", hashes: ["333"] },
-        },
-      };
-      await saveHashStore(store);
-      const loaded = await loadHashStore();
-      expect(Object.keys(loaded.snapshots)).toHaveLength(3);
-    });
-  });
-
-  it("produces valid JSON that can be parsed back", async () => {
-    await withTempHome(async () => {
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          "/a.ts": { content: "x\n", hashes: ["AAA"] },
-          "/b.ts": { content: "y\n", hashes: ["BBB"] },
-        },
-      };
-      await saveHashStore(store);
-      const raw = await readFile(storePath(), "utf-8");
-      const parsed = JSON.parse(raw);
-      expect(parsed.version).toBe(1);
-      expect(parsed.snapshots["/a.ts"].content).toBe("x\n");
-      expect(parsed.snapshots["/b.ts"].content).toBe("y\n");
+      const s = await stat(configHome(tmpHome));
+      expect(s.isDirectory()).toBe(true);
     });
   });
 });
 
-describe("hash-store — pruneHashStore", () => {
+describe("hash-store — snapshot get / upsert / delete", () => {
+  it("round-trips a snapshot by path and content matching checksum", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const content = "hello\nworld\n";
+      const hashes = ["aB3", "xY7"];
+      await put(store, "/path/to/file.ts", content, hashes);
+
+      expect(getSnapshot(store, "/path/to/file.ts", content)).toEqual(hashes);
+    });
+  });
+
+  it("returns undefined when content changed (checksum mismatch)", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "aaa\nbbb\n", ["A", "B"]);
+
+      expect(getSnapshot(store, "/p.ts", "aaa\nbbb\n")).toEqual(["A", "B"]);
+      expect(getSnapshot(store, "/p.ts", "aaa\nBBB\n")).toBeUndefined();
+    });
+  });
+
+  it("overwrites an existing path with new content+hashes", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "old\n", ["O"]);
+      await put(store, "/p.ts", "new\n", ["N"]);
+
+      expect(getSnapshot(store, "/p.ts", "old\n")).toBeUndefined();
+      expect(getSnapshot(store, "/p.ts", "new\n")).toEqual(["N"]);
+    });
+  });
+
+  it("keeps unrelated snapshots intact when upserting another path", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const aContent = "a\nb\nc\nd\ne\n".repeat(50);
+      const aHashes = aContent.split("\n").map((_, i) => `A${i}`);
+      await put(store, "/big.ts", aContent, aHashes);
+      await put(store, "/small.ts", "x\n", ["X"]);
+
+      expect(getSnapshot(store, "/big.ts", aContent)).toEqual(aHashes);
+      expect(getSnapshot(store, "/small.ts", "x\n")).toEqual(["X"]);
+    });
+  });
+
+  it("deletes a snapshot", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["X"]);
+      deleteSnapshot(store, "/p.ts");
+      expect(getSnapshot(store, "/p.ts", "x\n")).toBeUndefined();
+    });
+  });
+});
+
+describe("hash-store — migration from legacy hash-store.json", () => {
+  it("imports valid legacy snapshots and renames the file to .bak", async () => {
+    await withTempHome(async (home) => {
+      await writeLegacyStore(home, {
+        "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
+        "/also.ts": { content: "good\nmore\n", hashes: ["XYZ", "QWE"] },
+      });
+
+      const store = await loadHashStore();
+
+      expect(getSnapshot(store, "/valid.ts", "ok\n")).toEqual(["ABC"]);
+      expect(getSnapshot(store, "/also.ts", "good\nmore\n")).toEqual(["XYZ", "QWE"]);
+      expect(existsSync(legacyPath(home))).toBe(false);
+      expect(existsSync(`${legacyPath(home)}.bak`)).toBe(true);
+    });
+  });
+
+  it("drops structurally invalid legacy entries, keeps valid ones", async () => {
+    await withTempHome(async (home) => {
+      await writeLegacyStore(home, {
+        "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
+        "/missing-hashes.ts": { content: "x\n" },
+        "/null-content.ts": { content: null, hashes: ["DEF"] },
+        "/hashes-not-array.ts": { content: "y\n", hashes: "not-an-array" },
+        "/hash-not-string.ts": { content: "z\n", hashes: [42] },
+        "/also-valid.ts": { content: "good\n", hashes: ["XYZ"] },
+      });
+
+      const store = await loadHashStore();
+
+      expect(getSnapshot(store, "/valid.ts", "ok\n")).toEqual(["ABC"]);
+      expect(getSnapshot(store, "/also-valid.ts", "good\n")).toEqual(["XYZ"]);
+      expect(getSnapshot(store, "/missing-hashes.ts", "x\n")).toBeUndefined();
+      expect(getSnapshot(store, "/null-content.ts", "")).toBeUndefined();
+      expect(getSnapshot(store, "/hashes-not-array.ts", "y\n")).toBeUndefined();
+      expect(getSnapshot(store, "/hash-not-string.ts", "z\n")).toBeUndefined();
+    });
+  });
+
+  it("ignores a legacy snapshots field that is an array", async () => {
+    await withTempHome(async (home) => {
+      await writeLegacyStore(home, ["not-an-object"]);
+
+      const store = await loadHashStore();
+      const paths = store.stmts.allPaths.all();
+      expect(paths).toEqual([]);
+    });
+  });
+
+  it("does not run migration when no legacy file exists", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      expect(store.stmts.allPaths.all()).toEqual([]);
+      expect(existsSync(`${legacyPath(home)}.bak`)).toBe(false);
+    });
+  });
+
+  it("migrates only once even if legacy file reappears", async () => {
+    await withTempHome(async (home) => {
+      await writeLegacyStore(home, {
+        "/one.ts": { content: "1\n", hashes: ["AAA"] },
+      });
+      const first = await loadHashStore();
+      expect(getSnapshot(first, "/one.ts", "1\n")).toEqual(["AAA"]);
+      expect(existsSync(`${legacyPath(home)}.bak`)).toBe(true);
+
+      await writeFile(legacyPath(home), JSON.stringify({
+        version: 1,
+        snapshots: { "/two.ts": { content: "2\n", hashes: ["BBB"] } },
+      }), "utf-8");
+
+      const second = await loadHashStore();
+      expect(getSnapshot(second, "/two.ts", "2\n")).toBeUndefined();
+      expect(getSnapshot(second, "/one.ts", "1\n")).toEqual(["AAA"]);
+    });
+  });
+});
+
+describe("hash-store — pruneMissing", () => {
   it("removes snapshots for files that no longer exist", async () => {
     await withTempHome(async () => {
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          "/nonexistent/file.ts": { content: "old\n", hashes: ["ZZZ"] },
-        },
-      };
-      await pruneHashStore(store);
-      expect(store.snapshots).toEqual({});
+      const store = await loadHashStore();
+      await put(store, "/gone.ts", "old\n", ["ZZZ"]);
+      await pruneMissing(store);
+      expect(getSnapshot(store, "/gone.ts", "old\n")).toBeUndefined();
     });
   });
 
   it("keeps snapshots for files that still exist", async () => {
-    await withTempHome(async () => {
-      const existingFile = join(tmpHome, "existing.ts");
-      await writeFile(existingFile, "hello\n", "utf-8");
+    await withTempHome(async (home) => {
+      const existing = join(home, "keep.ts");
+      await writeFile(existing, "keep\n", "utf-8");
 
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          [existingFile]: { content: "hello\n", hashes: ["ABC"] },
-        },
-      };
-      await pruneHashStore(store);
-      expect(store.snapshots[existingFile]).toBeDefined();
+      const store = await loadHashStore();
+      await put(store, existing, "keep\n", ["KEP"]);
+      await put(store, "/gone.ts", "gone\n", ["GON"]);
+      await pruneMissing(store);
+
+      expect(getSnapshot(store, existing, "keep\n")).toEqual(["KEP"]);
+      expect(getSnapshot(store, "/gone.ts", "gone\n")).toBeUndefined();
     });
   });
 
-  it("removes stale entries while keeping valid ones", async () => {
-    await withTempHome(async () => {
-      const existingFile = join(tmpHome, "keep.ts");
-      await writeFile(existingFile, "keep\n", "utf-8");
+  it("prunes against live rows, not a stale snapshot", async () => {
+    await withTempHome(async (home) => {
+      const keep = join(home, "keep.ts");
+      const grown = join(home, "grow.ts");
+      await writeFile(keep, "keep\n", "utf-8");
+      await writeFile(grown, "grow\n", "utf-8");
 
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          [existingFile]: { content: "keep\n", hashes: ["KEP"] },
-          "/gone.ts": { content: "gone\n", hashes: ["GON"] },
-        },
-      };
-      await pruneHashStore(store);
-      expect(store.snapshots[existingFile]).toBeDefined();
-      expect(store.snapshots["/gone.ts"]).toBeUndefined();
+      const store = await loadHashStore();
+      await put(store, keep, "keep\n", ["KEP"]);
+      await put(store, "/gone.ts", "gone\n", ["GON"]);
+      await put(store, grown, "grow\n", ["GRW"]);
+      await pruneMissing(store);
+
+      expect(getSnapshot(store, keep, "keep\n")).toEqual(["KEP"]);
+      expect(getSnapshot(store, grown, "grow\n")).toEqual(["GRW"]);
+      expect(getSnapshot(store, "/gone.ts", "gone\n")).toBeUndefined();
+    });
+  });
+});
+
+describe("hash-store — concurrency (issue #10)", () => {
+  it("preserves snapshots written by a separately-opened connection", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/a.ts", "alpha\n", ["AA"]);
+
+      const second = new Database(sqlitePath(home));
+      const ins = second.prepare(
+        "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)",
+      );
+      second.transaction(() => {
+        ins.run("/b.ts", contentChecksum("beta\n"), "beta\n".split("\n").length, JSON.stringify(["BB"]), Date.now());
+      }).immediate();
+      second.close();
+
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/a.ts", "alpha\n")).toEqual(["AA"]);
+      expect(getSnapshot(reloaded, "/b.ts", "beta\n")).toEqual(["BB"]);
     });
   });
 
-  it("does nothing when all snapshots reference existing files", async () => {
+  it("a fresh reopen sees snapshots written by a prior session", async () => {
     await withTempHome(async () => {
-      const f1 = join(tmpHome, "a.ts");
-      const f2 = join(tmpHome, "b.ts");
-      await writeFile(f1, "a\n", "utf-8");
-      await writeFile(f2, "b\n", "utf-8");
+      const a = await loadHashStore();
+      await put(a, "/first.ts", "one\n", ["1"]);
+      shutdownHashStore();
 
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          [f1]: { content: "a\n", hashes: ["AAA"] },
-          [f2]: { content: "b\n", hashes: ["BBB"] },
-        },
-      };
-      const snapshotCount = Object.keys(store.snapshots).length;
-      await pruneHashStore(store);
-      expect(Object.keys(store.snapshots)).toHaveLength(snapshotCount);
+      const b = await loadHashStore();
+      await put(b, "/second.ts", "two\n", ["2"]);
+      shutdownHashStore();
+
+      const c = await loadHashStore();
+      expect(getSnapshot(c, "/first.ts", "one\n")).toEqual(["1"]);
+      expect(getSnapshot(c, "/second.ts", "two\n")).toEqual(["2"]);
     });
   });
+});
 
-  it("persists the pruned store to disk when entries are removed", async () => {
+describe("hash-store — incremental writes (issue #8)", () => {
+  it("upserting a new path does not alter an existing path's stored hashes", async () => {
     await withTempHome(async () => {
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          "/gone.ts": { content: "x\n", hashes: ["XXX"] },
-        },
-      };
-      await pruneHashStore(store);
+      const store = await loadHashStore();
+      const bigContent = "x\n".repeat(2000);
+      const bigHashes = bigContent.split("\n").map((_, i) => `H${i}`);
+      await put(store, "/big.ts", bigContent, bigHashes);
+      const before = getSnapshot(store, "/big.ts", bigContent);
 
-      const loaded = await loadHashStore();
-      expect(loaded.snapshots).toEqual({});
-    });
-  });
+      await put(store, "/other.ts", "y\n", ["YY"]);
 
-  it("does not persist when no entries are removed", async () => {
-    await withTempHome(async () => {
-      const existingFile = join(tmpHome, "stay.ts");
-      await writeFile(existingFile, "stay\n", "utf-8");
-
-      const store: HashStore = {
-        version: 1,
-        snapshots: {
-          [existingFile]: { content: "stay\n", hashes: ["STY"] },
-        },
-      };
-      // Save initial state
-      await saveHashStore(store);
-
-      // Prune — should not change anything
-      await pruneHashStore(store);
-
-      // Load and verify
-      const loaded = await loadHashStore();
-      expect(loaded.snapshots[existingFile]).toBeDefined();
+      expect(getSnapshot(store, "/big.ts", bigContent)).toEqual(before);
     });
   });
 });

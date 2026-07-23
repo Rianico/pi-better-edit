@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { loadHashStore } from "../../src/hash-store";
+import { loadHashStore, getSnapshot } from "../../src/hash-store";
 import {
   withTempFile,
   setupIntegrationTest,
@@ -222,9 +222,9 @@ describe("undo_last_replace", () => {
 
       const store = await loadHashStore();
       const absPath = new URL(`file://${cwd}/sample.ts`).pathname;
-      const snapshot = store.snapshots[absPath] ?? store.snapshots[`/${cwd}/sample.ts`];
-      expect(snapshot).toBeDefined();
-      expect(snapshot!.content).toBe("aaa\nbbb\nccc\n");
+      const undoHashes = getSnapshot(store, absPath, "aaa\nbbb\nccc\n")
+        ?? getSnapshot(store, `/${cwd}/sample.ts`, "aaa\nbbb\nccc\n");
+      expect(undoHashes).toBeDefined();
     });
   });
 

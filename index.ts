@@ -10,7 +10,7 @@ import {
   toggleReplaceMode,
   toggleAutoRead,
 } from "./src/config";
-import { loadHashStore, pruneHashStore } from "./src/hash-store";
+import { loadHashStore, pruneMissing } from "./src/hash-store";
 import { readNormFile } from "./src/file-reader";
 
 export default function (pi: ExtensionAPI): void {
@@ -36,7 +36,7 @@ function registerReplaceTool(pi: ExtensionAPI, mode: string, autoRead?: boolean)
     await initHasher();
     try {
       const store = await loadHashStore();
-      await pruneHashStore(store);
+      await pruneMissing(store);
     } catch (err) {
       console.error("Failed to load or prune hash store:", err);
     }
