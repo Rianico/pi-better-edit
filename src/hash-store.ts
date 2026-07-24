@@ -215,8 +215,11 @@ export async function loadHashStore(): Promise<HashStore> {
   if (BetterDatabase) {
     try {
       handle = openBetterDb(storePath);
-    } catch (error) {
-      console.error('better-sqlite3 native binding failed, falling back to sql.js:', error);
+    } catch {
+      const debug = process.env.PI_HASHLINE_DEBUG === "1" || process.env.PI_HASHLINE_DEBUG === "true";
+      if (debug) {
+        console.error('better-sqlite3 native binding failed, falling back to sql.js');
+      }
       BetterDatabase = null;
       await ensureSqlJs();
       handle = openSqlJsDb(storePath);
