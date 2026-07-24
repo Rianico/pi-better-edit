@@ -213,7 +213,14 @@ export async function loadHashStore(): Promise<HashStore> {
 
   let handle: BackendHandle;
   if (BetterDatabase) {
-    handle = openBetterDb(storePath);
+    try {
+      handle = openBetterDb(storePath);
+    } catch (error) {
+      console.error('better-sqlite3 native binding failed, falling back to sql.js:', error);
+      BetterDatabase = null;
+      await ensureSqlJs();
+      handle = openSqlJsDb(storePath);
+    }
   } else {
     await ensureSqlJs();
     handle = openSqlJsDb(storePath);
