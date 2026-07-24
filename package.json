@@ -1,6 +1,7 @@
 {
   "name": "pi-hashline-edit-pro",
   "version": "0.17.5",
+  "type": "module",
   "description": "Strict hashline read/replace tool for pi-coding-agent with hash-anchored edits (3-char, 18-bit, perfect hashing)",
   "main": "index.ts",
   "repository": {
@@ -45,15 +46,19 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "lint": "eslint 'src/**/*.ts' 'index.ts'",
     "typecheck": "tsc --noEmit",
     "postinstall": "node scripts/ensure-better-sqlite3.js"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.74.0",
+    "@eslint/js": "^10.0.1",
     "@types/better-sqlite3": "^7.6.13",
     "@types/node": "^22.0.0",
     "@types/sql.js": "^1.4.11",
+    "eslint": "^10.7.0",
     "typescript": "^5.8.0",
+    "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.8"
   },
   "allowScripts": {

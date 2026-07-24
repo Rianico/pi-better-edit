@@ -1,6 +1,6 @@
 import type { ReplaceDetails } from "./replace";
 import { genDiff } from "./replace-diff";
-import { visLines, cntDiff } from "./utils";
+import { visLines } from "./utils";
 
 type TResult = {
 	content: Array<{ type: "text"; text: string }>;

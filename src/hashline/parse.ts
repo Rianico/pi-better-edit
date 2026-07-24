@@ -1,7 +1,6 @@
 import {
 	ANCHOR_LEN,
 	ALPH_RE,
-	HASH_CLASS,
 	HL_PREFIX_PLUS_RE,
 	DIFF_MINUS_RE,
 } from "./hash";

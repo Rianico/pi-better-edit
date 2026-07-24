@@ -1,7 +1,7 @@
 import { isRec, has } from "./utils";
 import { CONTENT_LINES_NOT_STRING_MSG } from "./constants";
 
-function tryParseContentLines(record: Record<string, unknown>, key: string, label: string): void {
+function tryParseContentLines(record: Record<string, unknown>, key: string): void {
   const val = record[key];
   if (typeof val !== "string") return;
   try {
@@ -11,7 +11,7 @@ function tryParseContentLines(record: Record<string, unknown>, key: string, labe
       return;
     }
   } catch {
-    // fall through to error
+    
   }
   throw new Error(CONTENT_LINES_NOT_STRING_MSG);
 }
@@ -43,7 +43,7 @@ function normalizeField(
         record[to] = [parsed];
       }
     } catch {
-      // not valid JSON, leave as-is for downstream validation
+      
     }
   }
   if (from !== to) delete record[from];
@@ -59,7 +59,7 @@ export function normReq(input: unknown): unknown {
   normalizeFilePath(record);
 
   if (has(record, "content_lines") && typeof record.content_lines === "string") {
-    tryParseContentLines(record, "content_lines", "Top-level");
+    tryParseContentLines(record, "content_lines");
   }
 
   normalizeField(record, "changes", "changes");
@@ -69,7 +69,7 @@ export function normReq(input: unknown): unknown {
     for (let i = 0; i < record.changes.length; i++) {
       const item = record.changes[i];
       if (isRec(item) && has(item, "content_lines") && typeof item.content_lines === "string") {
-        tryParseContentLines(item, "content_lines", `changes[${i}]`);
+        tryParseContentLines(item, "content_lines");
       }
     }
   }

@@ -36,7 +36,7 @@ function isValidSnapshot(value: unknown): value is LegacySnapshot {
   return true;
 }
 
-// ── Backend handle abstraction ──────────────────────────────────────
+
 
 interface BackendHandle {
   store: HashStore;
@@ -47,7 +47,7 @@ interface BackendHandle {
 
 let cachedHandle: { path: string; handle: BackendHandle } | null = null;
 
-// ── better-sqlite3 backend ──────────────────────────────────────────
+
 
 let BetterDatabase: any = undefined;
 
@@ -104,7 +104,7 @@ function openBetterDb(storePath: string): BackendHandle {
   };
 }
 
-// ── sql.js backend ──────────────────────────────────────────────────
+
 
 let SqlJsDatabase: any = null;
 let sqlJsPromise: Promise<void> | null = null;
@@ -182,7 +182,7 @@ function openSqlJsDb(storePath: string): BackendHandle {
   };
 }
 
-// ── Init ────────────────────────────────────────────────────────────
+
 
 let backendPromise: Promise<void> | null = null;
 
@@ -195,7 +195,7 @@ async function initBackend(): Promise<void> {
   return backendPromise;
 }
 
-// ── Public API ──────────────────────────────────────────────────────
+
 
 export async function loadHashStore(): Promise<HashStore> {
   const storePath = hashStorePath();
@@ -234,7 +234,7 @@ export function shutdownHashStore(): void {
   }
 }
 
-// ── Internal helpers ────────────────────────────────────────────────
+
 
 function withStore(store: HashStore, fn: () => void): void {
   const h = cachedHandle?.handle;
@@ -296,7 +296,7 @@ async function migrateLegacy(handle: BackendHandle): Promise<void> {
   }
 }
 
-// ── Snapshot operations ─────────────────────────────────────────────
+
 
 export function getSnapshot(
   store: HashStore,

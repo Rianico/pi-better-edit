@@ -45,16 +45,12 @@ export function genDiff(
   newContent: string,
   contextLines = 2,
   newContentHashes?: string[],
-  oldHashes?: string[],
+  _oldHashes?: string[],
 ): { diff: string; firstChangedLine: number | undefined } {
-  const oldLines = oldContent.split("\n");
-  const newLines = newContent.split("\n");
-  const effectiveOldHashes = oldHashes ?? _lineHashesPure(oldContent);
   const effectiveNewHashes = newContentHashes ?? _lineHashesPure(newContent);
 
   const parts = Diff.diffLines(oldContent, newContent);
   const output: string[] = [];
-  let oldLineNum = 1;
   let newLineNum = 1;
   let lastWasChange = false;
   let firstChangedLine: number | undefined;
@@ -74,7 +70,6 @@ export function genDiff(
           newLineNum++;
         } else {
           output.push(fmtDiffLine("-", displayLines[k]!, undefined));
-          oldLineNum++;
         }
       }
       lastWasChange = true;
@@ -86,7 +81,6 @@ export function genDiff(
     if (lastWasChange || nextPartIsChange) {
       let linesToShow = displayLines;
       let skipStart = 0;
-      let skipEnd = 0;
       let skipMiddle = 0;
 
       if (!lastWasChange) {
@@ -97,29 +91,24 @@ export function genDiff(
         linesToShow = [...displayLines.slice(0, contextLines), "__ELLIPSIS__", ...tail];
         skipMiddle = displayLines.length - contextLines * 2;
       } else if (linesToShow.length > contextLines) {
-        skipEnd = linesToShow.length - contextLines;
         linesToShow = linesToShow.slice(0, contextLines);
       }
 
       if (skipStart > 0) {
         output.push(" ...");
-        oldLineNum += skipStart;
         newLineNum += skipStart;
       }
       for (const line of linesToShow) {
         if (line === "__ELLIPSIS__") {
           output.push(" ...");
-          oldLineNum += skipMiddle;
           newLineNum += skipMiddle;
           continue;
         }
         const hash = effectiveNewHashes[newLineNum - 1];
         output.push(fmtDiffLine(" ", line, hash));
-        oldLineNum++;
         newLineNum++;
       }
     } else {
-      oldLineNum += displayLines.length;
       newLineNum += displayLines.length;
     }
     lastWasChange = false;

@@ -25,7 +25,7 @@ export const HASH_CLASS = `[${ALPH_SAFE}]{${HASH_LEN}}`;
 function h2s(h: number): string {
 	const totalBits = HASH_LEN * ALPH_BITS;
 	const shift = 32 - totalBits;
-	let n = h >>> shift;
+	const n = h >>> shift;
 	let out = "";
 	for (let j = 0; j < HASH_LEN; j++) {
 		out +=
