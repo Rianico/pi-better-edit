@@ -142,12 +142,13 @@ function mapStableHashes(
     if (!candidates || candidates.length === 0) continue;
 
     let bestIdx = 0;
-    if (removedHashes && removedHashes.size > 0) {
-      for (let j = 0; j < candidates.length; j++) {
-        if (!removedHashes.has(candidates[j]!.hash)) {
-          bestIdx = j;
-          break;
-        }
+    let bestDist = Infinity;
+    for (let j = 0; j < candidates.length; j++) {
+      if (removedHashes?.has(candidates[j]!.hash)) continue;
+      const dist = Math.abs(candidates[j]!.index - i);
+      if (dist < bestDist) {
+        bestDist = dist;
+        bestIdx = j;
       }
     }
 
