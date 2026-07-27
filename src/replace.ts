@@ -313,8 +313,6 @@ const MODE_CFG = {
 } as const;
 
 export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolDef {
-  const autoRead = opts.autoRead ?? false;
-
   const cfg = MODE_CFG[opts.flat ? "flat" : "bulk"];
 
   const E_DESC = loadP("../prompts/replace.md");
@@ -337,7 +335,13 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
           if (!isRec(args)) return args as any;
           const record = { ...args };
           normalizeFilePath(record);
-          return normReq(record) as any;
+          if (has(record, "content_lines") && typeof record.content_lines === "string") {
+            try {
+              const parsed = JSON.parse(record.content_lines as string);
+              if (Array.isArray(parsed)) record.content_lines = parsed;
+            } catch {}
+          }
+          return record;
         }
       : (args: unknown) =>
           normReq(args) as ReqParams,

@@ -184,7 +184,7 @@ describe("flat mode replace — end-to-end", () => {
     });
   });
 
-  it("flat mode normalizes bulk changes array format via normReq", async () => {
+  it("works with flat format hash_range_inclusive and content_lines", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupFlatIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -193,7 +193,8 @@ describe("flat mode replace — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
         },
         undefined,
         undefined,

@@ -26,7 +26,7 @@ describe("regReplaceFlat", () => {
     const tool = getTool("replace");
     expect(tool).toBeDefined();
     expect(tool.name).toBe("replace");
-    expect(tool.parameters).toBe(editToolSchema);
+    expect(tool.parameters).toBe(flatEditToolSchema);
   });
 
   it("prepareArguments normalizes file_path to path", () => {
