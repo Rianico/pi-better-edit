@@ -68,7 +68,7 @@ const changeItemSchema = Type.Object(
 
 export const editToolSchema = Type.Object(
   {
-    changes: Type.Array(changeItemSchema, { description: "Array of edits. Each edit has hash_range_inclusive (selects line range by 3-char hashes) and content_lines (replacement text)." }),
+    changes: Type.Array(changeItemSchema, { description: "Array of edits. Each edit pairs content_lines (literal file content, one string per line) with hash_range_inclusive (inclusive [start_hash, end_hash] — pair of 3-char hashes from read output)." }),
     path: Type.String({ description: "Path to edit" }),
   },
   { additionalProperties: false },

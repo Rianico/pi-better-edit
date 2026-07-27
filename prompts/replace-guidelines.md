@@ -1,3 +1,2 @@
-- `replace`: hash_range_inclusive replaces every line from first anchor through last anchor inclusively.
+- `replace`: Provide hash_range_inclusive [start_hash, end_hash] targeting lines by their 3-char hashes (replaces every line from first anchor through last anchor inclusively), and content_lines as a native JSON array of strings for the replacement text.
 - `replace`: preserve leading whitespace exactly as it appears after │ in read output.
-- `replace`: content_lines must be a native JSON array of strings, not a serialized string.
