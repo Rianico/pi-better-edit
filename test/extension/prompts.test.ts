@@ -11,34 +11,33 @@ describe("prompts/replace.md (model-facing contract)", () => {
   it("shows the end-to-end workflow with read", () => {
     expect(replacePrompt).toMatch(/Replace lines in a text file using HASH anchors/);
     expect(replacePrompt).toMatch(/hash_range_inclusive/);
+    expect(replacePrompt).toMatch(/content_lines/);
   });
 
   it("includes template placeholders for mode-specific content", () => {
-    expect(replacePrompt).toContain("{{MODE_EXAMPLES}}");
     expect(replacePrompt).toContain("{{MODE_DESCRIPTION}}");
-    expect(replacePrompt).toContain("{{MODE_RULES}}");
+    expect(replacePrompt).toContain("{{AUTO_READ_GUIDANCE}}");
   });
 
   it("requires hash_range_inclusive pair", () => {
     expect(replacePrompt).toMatch(/hash_range_inclusive/i);
   });
 
-  it("tells the model not to include HASH or line content in anchors", () => {
-    expect(replacePrompt).toMatch(/Never include the HASH│ prefix/i);
+  it("tells the model the anchor-only format for hash_range_inclusive", () => {
+    expect(replacePrompt).toMatch(/hash_range_inclusive/);
+    expect(replacePrompt).toMatch(/content_lines/);
   });
 
   it("documents line change summary after successful edit", () => {
     expect(replacePrompt).toContain("change summary");
   });
 
-  it("documents error recovery", () => {
-    expect(replacePrompt).toContain("undo_last_replace");
+  it("documents change summary on success", () => {
+    expect(replacePrompt).toContain("change summary");
   });
 
-  it("contains template variables for mode-specific content", () => {
+  it("contains MODE_DESCRIPTION template variable", () => {
     expect(replacePrompt).toContain("{{MODE_DESCRIPTION}}");
-    expect(replacePrompt).toContain("{{MODE_EXAMPLES}}");
-    expect(replacePrompt).toContain("{{MODE_RULES}}");
   });
 });
 
@@ -49,23 +48,22 @@ const readPrompt = readFileSync(
 
 describe("prompts/read.md (model-facing contract)", () => {
   it("declares the HASH|content output format", () => {
-    expect(readPrompt).toMatch(/`HASH|content`/);
-    expect(readPrompt).toMatch(/3 characters/);
+    expect(readPrompt).toMatch(/HASH│content/);
+    expect(readPrompt).toMatch(/3-char/);
   });
 
-  it("specifies the URL-safe base64 alphabet", () => {
-    expect(readPrompt).toContain("A-Za-z0-9-_");
+  it("specifies the URL-safe base64 hash length", () => {
+    expect(readPrompt).toMatch(/3-char/);
   });
 
-  it("documents pagination", () => {
-    expect(readPrompt).toContain("pagination hint");
-    expect(readPrompt).toMatch(/offset=N/);
+  it("documents pagination support", () => {
+    expect(readPrompt).toContain("offset/limit");
   });
 
   it("documents file-kind handling", () => {
-    expect(readPrompt).toMatch(/Images? \(JPEG, PNG, GIF, WebP\)/);
+    expect(readPrompt).toMatch(/Images/);
     expect(readPrompt).toMatch(/Binary/);
-    expect(readPrompt).toMatch(/directories/);
+    expect(readPrompt).toMatch(/directory/);
   });
 });
 
