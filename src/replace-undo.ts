@@ -40,7 +40,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
     promptGuidelines: loadGuide("../prompts/undo-last-replace-guidelines.md"),
     parameters: Type.Object({
       path: Type.String({
-        description: "Path to the file to undo the last replace on",
+        description: "Path to the file to undo",
       }),
     }),
 

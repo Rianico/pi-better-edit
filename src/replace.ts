@@ -46,13 +46,13 @@ import { loadHashStore, type HashStore } from "./hash-store";
 
 const contentLinesSchema = Type.Array(Type.String(), {
   description:
-    "literal replacement file content, one string per line. Must not include the HASH│ prefix from read output.",
+    "Literal file content, one string per line. No HASH│ prefix."
 });
 
 const hashRangeInclSchema = Type.Array(
-  Type.String({ description: "anchor (3-char HASH)" }),
+  Type.String({ description: "3-char HASH anchor" }),
   {
-    description: "inclusive hash range to replace [start_hash, end_hash]. Each element must be the 3-character hash anchor only; do not include the │ separator or line content.",
+    description: "Inclusive [start_hash, end_hash] range from read output. Only the 3-char hash, no │ or line content.",
     minItems: 2,
     maxItems: 2,
   },
@@ -68,8 +68,8 @@ const changeItemSchema = Type.Object(
 
 export const editToolSchema = Type.Object(
   {
-    changes: Type.Array(changeItemSchema, { description: "changes over $path" }),
-    path: Type.String({ description: "path" }),
+    changes: Type.Array(changeItemSchema, { description: "Edits over path, each with content_lines and hash_range_inclusive" }),
+    path: Type.String({ description: "Path to edit" }),
   },
   { additionalProperties: false },
 );

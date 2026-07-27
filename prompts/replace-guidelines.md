@@ -1,6 +1,6 @@
-{{MODE_PREFIX}}
-- After a successful replace, the response shows the change summary. {{AUTO_READ_GUIDANCE}}
-- On [E_STALE_ANCHOR], call read to get fresh anchors, copy the 3-character HASH of the start and end of the range into hash_range_inclusive, and retry.
-- hash_range_inclusive replaces the ENTIRE range inclusively. Every line from the first anchor through the second anchor is deleted. Only put replacement lines in content_lines — do not include lines that already exist outside the range.
-- Preserve leading whitespace exactly. The content after │ in read output includes all leading spaces and tabs — copy them into content_lines unchanged.
-- content_lines must be a native JSON array of strings, not a JSON string.
+- `replace`: {{MODE_PREFIX}}
+- `replace`: after success, response shows change summary. {{AUTO_READ_GUIDANCE}}
+- `replace`: on [E_STALE_ANCHOR], call `read` for fresh anchors, copy the 3-char HASH of the range into hash_range_inclusive, and retry.
+- `replace`: hash_range_inclusive replaces every line from first anchor through last anchor inclusively. Put replacement lines only in content_lines — not lines that already exist outside the range.
+- `replace`: preserve leading whitespace exactly as it appears after │ in read output.
+- `replace`: content_lines must be a native JSON array of strings, not a serialized string.

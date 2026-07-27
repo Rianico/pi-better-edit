@@ -1,1 +1,1 @@
-Read a text file and return HASH│content lines
+Read a file; each line returned as HASH│content
