@@ -46,13 +46,13 @@ import { loadHashStore, type HashStore } from "./hash-store";
 
 const contentLinesSchema = Type.Array(Type.String(), {
   description:
-    "Literal file content, one string per line. No HASH│ prefix."
+    "Literal file content, one string per line."
 });
 
 const hashRangeInclSchema = Type.Array(
-  Type.String({ description: "3-char HASH anchor" }),
+  Type.String({ description: "A 3-char HASH from read output" }),
   {
-    description: "Inclusive [start_hash, end_hash] range from read output. Only the 3-char hash, no │ or line content.",
+    description: "Inclusive [start_hash, end_hash] — pair of 3-char hashes from read output.",
     minItems: 2,
     maxItems: 2,
   },
@@ -68,7 +68,7 @@ const changeItemSchema = Type.Object(
 
 export const editToolSchema = Type.Object(
   {
-    changes: Type.Array(changeItemSchema, { description: "Edits over path, each with content_lines and hash_range_inclusive" }),
+    changes: Type.Array(changeItemSchema, { description: "Array of edits. Each edit has hash_range_inclusive (selects line range by 3-char hashes) and content_lines (replacement text)." }),
     path: Type.String({ description: "Path to edit" }),
   },
   { additionalProperties: false },
@@ -78,7 +78,7 @@ export const flatEditToolSchema = Type.Object(
   {
     content_lines: contentLinesSchema,
     hash_range_inclusive: hashRangeInclSchema,
-    path: Type.String({ description: "path" }),
+    path: Type.String({ description: "Path to edit" }),
   },
   { additionalProperties: false },
 );
@@ -297,8 +297,7 @@ const MODE_CFG = {
     requestStructure: [
       "Flat mode:", "```json", "{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"], \"path\": \"...\" }", "```",
     ].join("\n"),
-    prefix: "one edit per call (flat mode)",
-    guidePrefix: "- Use `replace` with HASH anchors for all file changes. Only one edit per call.",
+    prefix: "performing one edit per call",
   },
   bulk: {
     desc: "\n\nPut all operations on one file in a single `replace` call. Stack every region into the `changes` array, even when they are far apart. Anchors within one call must all come from the same pre-edit read; the runtime applies them atomically against that one snapshot.",
@@ -310,34 +309,21 @@ const MODE_CFG = {
       "Bulk mode (default):", "```json", "{ \"changes\": [{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"] }], \"path\": \"...\" }", "```",
     ].join("\n"),
     prefix: "batching all changes to a file in one call",
-    guidePrefix: "- Use `replace` with HASH anchors for all file changes; batch every change to one file into a single `replace` call.",
   },
 } as const;
 
 export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolDef {
   const autoRead = opts.autoRead ?? false;
-  const readGuidance = autoRead
-    ? "Anchors are provided automatically after write and replace operations when auto-read is enabled."
-    : "Call `read` to get fresh anchors for follow-up edits.";
 
   const cfg = MODE_CFG[opts.flat ? "flat" : "bulk"];
 
-  const E_DESC = loadP("../prompts/replace.md", {
-    MODE_DESCRIPTION: cfg.desc,
-    MODE_EXAMPLES: cfg.examples,
-    MODE_RULES: cfg.rules,
-    MODE_REQUEST_STRUCTURE: cfg.requestStructure,
-    AUTO_READ_GUIDANCE: readGuidance,
-  });
+  const E_DESC = loadP("../prompts/replace.md");
   const E_SNIPPET = loadP("../prompts/replace-snippet.md", {
     MODE_PREFIX: cfg.prefix,
   });
-  const E_GUIDE = loadGuide("../prompts/replace-guidelines.md", {
-    MODE_PREFIX: cfg.guidePrefix,
-    AUTO_READ_GUIDANCE: readGuidance,
-  });
+  const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
 
-  const parameters = editToolSchema;
+  const parameters = opts.flat ? flatEditToolSchema : editToolSchema;
 
   return {
     name: "replace",

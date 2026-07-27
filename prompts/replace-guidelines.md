@@ -1,6 +1,3 @@
-- `replace`: {{MODE_PREFIX}}
-- `replace`: after success, response shows change summary. {{AUTO_READ_GUIDANCE}}
-- `replace`: on [E_STALE_ANCHOR], call `read` for fresh anchors, copy the 3-char HASH of the range into hash_range_inclusive, and retry.
-- `replace`: hash_range_inclusive replaces every line from first anchor through last anchor inclusively. Put replacement lines only in content_lines — not lines that already exist outside the range.
+- `replace`: hash_range_inclusive replaces every line from first anchor through last anchor inclusively.
 - `replace`: preserve leading whitespace exactly as it appears after │ in read output.
 - `replace`: content_lines must be a native JSON array of strings, not a serialized string.

@@ -1,3 +1,3 @@
-Replace lines in a text file using HASH anchors from read's HASH│content output.{{MODE_DESCRIPTION}}
+Replace lines in a text file using HASH anchors from read's HASH│content output.
 
-Uses hash_range_inclusive [start_hash, end_hash] to target lines and content_lines (literal replacement text) for new content. Use content_lines: [] to delete. Stale anchors rejected with [E_STALE_ANCHOR] — no silent relocation. Edits validate against the pre-edit snapshot before any file I/O. On success the response shows the change summary. {{AUTO_READ_GUIDANCE}}
+Provide hash_range_inclusive [start_hash, end_hash] targeting lines by their 3-char hashes, and content_lines for the replacement text. Use content_lines: [] to delete a range.
