@@ -18,4 +18,4 @@ function cleanNodeModules(nm) {
 
 const pkgDir = path.resolve(__dirname, "..");
 cleanNodeModules(path.resolve(pkgDir, "node_modules"));
-cleanNodeModules(path.resolve(pkgDir, "..", "node_modules"));
+cleanNodeModules(path.resolve(pkgDir, ".."));
