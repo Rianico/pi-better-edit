@@ -1,10 +1,10 @@
-import { readFileSync, writeFileSync, existsSync } from "fs";
+import { existsSync } from "fs";
 import { readFile, rename, mkdir, stat } from "fs/promises";
+import { DatabaseSync } from "node:sqlite";
 import { hashStorePath, hashStoreDir, legacyHashStorePath } from "./paths";
 import { errCode } from "./utils";
 import { initHasher, contentChecksum } from "./hashline/hasher";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
-import initSqlJs from "sql.js";
 
 type SqlParams = (string | number)[];
 
@@ -17,7 +17,7 @@ interface Prepared {
 
 export interface HashStore {
   readonly stmts: Prepared;
-  readonly engine: "better-sqlite3" | "sql.js";
+  readonly engine: "node:sqlite";
 }
 
 interface LegacySnapshot {
@@ -36,38 +36,15 @@ function isValidSnapshot(value: unknown): value is LegacySnapshot {
   return true;
 }
 
+let cachedDb: { path: string; db: DatabaseSync; stmts: Prepared } | null = null;
 
-
-interface BackendHandle {
-  store: HashStore;
-  close: () => void;
-  transact: (fn: () => void) => void;
-  prepare: (sql: string) => { run: (...params: unknown[]) => void; free: () => void };
-}
-
-let cachedHandle: { path: string; handle: BackendHandle } | null = null;
-
-
-
-let BetterDatabase: any = undefined;
-
-async function tryLoadBetter(): Promise<boolean> {
-  if (BetterDatabase !== undefined) return BetterDatabase !== null;
-  try {
-    const mod = await import("better-sqlite3");
-    BetterDatabase = mod.default || mod;
-    return true;
-  } catch {
-    BetterDatabase = null;
-    return false;
-  }
-}
-
-function openBetterDb(storePath: string): BackendHandle {
-  const db = new BetterDatabase(storePath);
-  db.pragma("journal_mode = WAL");
-  db.pragma("synchronous = NORMAL");
-  db.pragma(`busy_timeout = ${HASH_STORE_BUSY_TIMEOUT}`);
+function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
+  const db = new DatabaseSync(storePath, {
+    timeout: HASH_STORE_BUSY_TIMEOUT,
+    defensive: false,
+  } as any);
+  db.exec("PRAGMA journal_mode = WAL");
+  db.exec("PRAGMA synchronous = NORMAL");
   db.exec(
     "CREATE TABLE IF NOT EXISTS snapshots (" +
       "path TEXT PRIMARY KEY, " +
@@ -93,169 +70,54 @@ function openBetterDb(storePath: string): BackendHandle {
     upsert: (...params) => { upsertStmt.run(...params); },
   };
 
-  return {
-    store: { stmts, engine: "better-sqlite3" },
-    close: () => { db.close(); },
-    transact: (fn) => { db.transaction(fn).immediate(); },
-    prepare: (sql) => {
-      const stmt = db.prepare(sql);
-      return { run: (...params) => stmt.run(...params), free: () => {} };
-    },
-  };
+  return { db, stmts };
 }
-
-
-
-let SqlJsDatabase: any = null;
-let sqlJsPromise: Promise<void> | null = null;
-
-async function ensureSqlJs(): Promise<void> {
-  if (sqlJsPromise) return sqlJsPromise;
-  sqlJsPromise = initSqlJs().then((SQL) => { SqlJsDatabase = SQL.Database; });
-  return sqlJsPromise;
-}
-
-function openSqlJsDb(storePath: string): BackendHandle {
-  const data = existsSync(storePath) ? new Uint8Array(readFileSync(storePath)) : undefined;
-  const db = new SqlJsDatabase(data);
-
-  db.run(
-    "CREATE TABLE IF NOT EXISTS snapshots (" +
-      "path TEXT PRIMARY KEY, " +
-      "checksum TEXT NOT NULL, " +
-      "line_count INTEGER NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
-    ")"
-  );
-
-  function save() {
-    writeFileSync(storePath, Buffer.from(db.export()));
-  }
-
-  save();
-
-  const stmts: Prepared = {
-    get: (...params) => {
-      const stmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
-      stmt.bind(params);
-      let result: Record<string, unknown> | undefined;
-      if (stmt.step()) result = stmt.getAsObject() as Record<string, unknown>;
-      stmt.free();
-      return result;
-    },
-    allPaths: (...params) => {
-      const stmt = db.prepare("SELECT path FROM snapshots");
-      if (params.length > 0) stmt.bind(params);
-      const results: Record<string, unknown>[] = [];
-      while (stmt.step()) results.push(stmt.getAsObject() as Record<string, unknown>);
-      stmt.free();
-      return results;
-    },
-    deleteOne: (...params) => {
-      if (params.length > 0) db.run("DELETE FROM snapshots WHERE path = ?", params);
-      else db.run("DELETE FROM snapshots WHERE path = ?");
-    },
-    upsert: (...params) => {
-      db.run(
-        "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
-        "ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at",
-        params
-      );
-    },
-  };
-
-  return {
-    store: { stmts, engine: "sql.js" },
-    close: () => { db.close(); },
-    transact: (fn) => {
-      db.run("BEGIN IMMEDIATE");
-      try { fn(); db.run("COMMIT"); save(); } catch (e) { db.run("ROLLBACK"); throw e; }
-    },
-    prepare: (sql) => {
-      const stmt = db.prepare(sql);
-      return {
-        run: (...params) => { stmt.bind(params); stmt.step(); stmt.reset(); },
-        free: () => { stmt.free(); },
-      };
-    },
-  };
-}
-
-
-
-let backendPromise: Promise<void> | null = null;
-
-async function initBackend(): Promise<void> {
-  if (backendPromise) return backendPromise;
-  backendPromise = (async () => {
-    const hasBetter = await tryLoadBetter();
-    if (!hasBetter) await ensureSqlJs();
-  })();
-  return backendPromise;
-}
-
-
 
 export async function loadHashStore(): Promise<HashStore> {
   const storePath = hashStorePath();
-  if (cachedHandle && cachedHandle.path === storePath) {
-    return cachedHandle.handle.store;
+  if (cachedDb && cachedDb.path === storePath && cachedDb.db.isOpen) {
+    return { stmts: cachedDb.stmts, engine: "node:sqlite" };
   }
 
   shutdownHashStore();
 
   await initHasher();
   await mkdir(hashStoreDir(), { recursive: true });
-  await initBackend();
 
   const existed = existsSync(storePath);
-
-  let handle: BackendHandle;
-  if (BetterDatabase) {
-    try {
-      handle = openBetterDb(storePath);
-    } catch {
-      const debug = process.env.PI_HASHLINE_DEBUG === "1" || process.env.PI_HASHLINE_DEBUG === "true";
-      if (debug) {
-        console.error('better-sqlite3 native binding failed, falling back to sql.js');
-      }
-      BetterDatabase = null;
-      await ensureSqlJs();
-      handle = openSqlJsDb(storePath);
-    }
-  } else {
-    await ensureSqlJs();
-    handle = openSqlJsDb(storePath);
-  }
+  const { db, stmts } = openDb(storePath);
 
   if (!existed) {
-    await migrateLegacy(handle);
+    await migrateLegacy(db);
   }
 
-  cachedHandle = { path: storePath, handle };
-  return handle.store;
+  cachedDb = { path: storePath, db, stmts };
+  return { stmts, engine: "node:sqlite" };
 }
 
 export function shutdownHashStore(): void {
-  if (cachedHandle) {
-    cachedHandle.handle.close();
-    cachedHandle = null;
+  if (cachedDb) {
+    cachedDb.db.close();
+    cachedDb = null;
   }
 }
 
-
-
-function withStore(store: HashStore, fn: () => void): void {
-  const h = cachedHandle?.handle;
-  if (h && h.store === store) {
-    h.transact(fn);
+function withStore(fn: () => void): void {
+  if (cachedDb) {
+    cachedDb.db.exec("BEGIN IMMEDIATE");
+    try {
+      fn();
+      cachedDb.db.exec("COMMIT");
+    } catch (e) {
+      cachedDb.db.exec("ROLLBACK");
+      throw e;
+    }
   } else {
     fn();
   }
 }
 
-async function migrateLegacy(handle: BackendHandle): Promise<void> {
+async function migrateLegacy(db: DatabaseSync): Promise<void> {
   const legacyPath = legacyHashStorePath();
   let content: string;
   try {
@@ -290,13 +152,17 @@ async function migrateLegacy(handle: BackendHandle): Promise<void> {
   }
 
   if (rows.length > 0) {
-    handle.transact(() => {
-      const stmt = handle.prepare(
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      const stmt = db.prepare(
         "INSERT OR REPLACE INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)"
       );
       for (const row of rows) stmt.run(...row);
-      stmt.free();
-    });
+      db.exec("COMMIT");
+    } catch (e) {
+      db.exec("ROLLBACK");
+      throw e;
+    }
   }
 
   try {
@@ -305,8 +171,6 @@ async function migrateLegacy(handle: BackendHandle): Promise<void> {
     console.error("Failed to rename legacy hash store after migration:", error);
   }
 }
-
-
 
 export function getSnapshot(
   store: HashStore,
@@ -327,13 +191,13 @@ export function upsertSnapshot(
   hashes: string[],
 ): void {
   const hashesJson = JSON.stringify(hashes);
-  withStore(store, () => {
+  withStore(() => {
     store.stmts.upsert(path, checksum, lineCount, hashesJson, Date.now());
   });
 }
 
 export function deleteSnapshot(store: HashStore, path: string): void {
-  withStore(store, () => {
+  withStore(() => {
     store.stmts.deleteOne(path);
   });
 }
@@ -349,7 +213,7 @@ export async function pruneMissing(store: HashStore): Promise<void> {
     }
   }
   if (missing.length === 0) return;
-  withStore(store, () => {
+  withStore(() => {
     for (const path of missing) store.stmts.deleteOne(path);
   });
 }

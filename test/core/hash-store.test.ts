@@ -2,7 +2,7 @@ import { describe, expect, it, vi, beforeAll } from "vitest";
 import { mkdtemp, mkdir, rm, writeFile, stat } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
-import Database from "better-sqlite3";
+import { DatabaseSync } from "node:sqlite";
 
 import {
   loadHashStore,
@@ -262,13 +262,13 @@ describe("hash-store — concurrency (issue #10)", () => {
       const store = await loadHashStore();
       await put(store, "/a.ts", "alpha\n", ["AA"]);
 
-      const second = new Database(sqlitePath(home));
+      const second = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
       const ins = second.prepare(
         "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)",
       );
-      second.transaction(() => {
-        ins.run("/b.ts", contentChecksum("beta\n"), "beta\n".split("\n").length, JSON.stringify(["BB"]), Date.now());
-      }).immediate();
+      second.exec("BEGIN IMMEDIATE");
+      ins.run("/b.ts", contentChecksum("beta\n"), "beta\n".split("\n").length, JSON.stringify(["BB"]), Date.now());
+      second.exec("COMMIT");
       second.close();
 
       shutdownHashStore();
