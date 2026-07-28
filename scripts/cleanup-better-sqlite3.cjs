@@ -1,8 +1,7 @@
 const fs = require("fs");
 const path = require("path");
 
-function cleanNodeModules(baseDir) {
-  const nm = path.resolve(baseDir, "node_modules");
+function cleanNodeModules(nm) {
   if (!fs.existsSync(nm)) return;
   const entries = fs.readdirSync(nm, { withFileTypes: true });
   for (const entry of entries) {
@@ -18,5 +17,5 @@ function cleanNodeModules(baseDir) {
 }
 
 const pkgDir = path.resolve(__dirname, "..");
-cleanNodeModules(pkgDir);
-cleanNodeModules(path.resolve(pkgDir, ".."));
+cleanNodeModules(path.resolve(pkgDir, "node_modules"));
+cleanNodeModules(path.resolve(pkgDir, "..", "node_modules"));
