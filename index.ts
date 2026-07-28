@@ -13,12 +13,6 @@ import {
 import { loadHashStore, pruneMissing } from "./src/hash-store";
 import { readNormFile } from "./src/file-reader";
 
-export default function (pi: ExtensionAPI): void {
-  regRead(pi);
-
-  regReplace(pi);
-  regReplaceUndo(pi);
-
 function registerReplaceTool(pi: ExtensionAPI, mode: string, autoRead?: boolean): void {
   if (mode === "flat") {
     regReplaceFlat(pi, autoRead);
@@ -26,6 +20,13 @@ function registerReplaceTool(pi: ExtensionAPI, mode: string, autoRead?: boolean)
     regReplace(pi, autoRead);
   }
 }
+
+export default function (pi: ExtensionAPI): void {
+  regRead(pi);
+
+  regReplace(pi);
+  regReplaceUndo(pi);
+
   const debugValue = process.env.PI_HASHLINE_DEBUG;
   const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
   let autoRead = autoReadValue === "1" || autoReadValue === "true";
@@ -80,7 +81,7 @@ function registerReplaceTool(pi: ExtensionAPI, mode: string, autoRead?: boolean)
     if (typeof filePath !== "string") return;
 
     try {
-      const { normalized, fileHashes, absolutePath } = await readNormFile(filePath, ctx.cwd, undefined);
+      const { normalized, fileHashes, absolutePath } = await readNormFile(filePath, ctx.cwd);
 
       if (visLines(normalized).length === 0) return;
 

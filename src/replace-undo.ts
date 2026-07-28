@@ -9,6 +9,7 @@ import { toCwd } from "./paths";
 import { toLF, stripBOM, genDiff, restoreEndings } from "./replace-diff";
 import { cntDiff } from "./utils";
 import { loadP, loadGuide } from "./prompts";
+import { buildMetrics } from "./replace-response";
 export interface UndoEntry {
   content: string;
   bom: string;
@@ -107,11 +108,14 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
             },
           ],
           details: {
-            metrics: {
-              added_lines: linesRemovedByReplace,
-              removed_lines: linesAddedByReplace,
-              classification: "applied" as const,
-            },
+            metrics: buildMetrics({
+              classification: "applied",
+              editsAttempted: 1,
+              noopEditsCount: 0,
+              warningsCount: 0,
+              addedLines: linesRemovedByReplace,
+              removedLines: linesAddedByReplace,
+            }),
           },
         };
       });

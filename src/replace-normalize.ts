@@ -1,7 +1,7 @@
 import { isRec, has } from "./utils";
 import { CONTENT_LINES_NOT_STRING_MSG } from "./constants";
 
-function tryParseContentLines(record: Record<string, unknown>, key: string): void {
+export function tryParseContentLines(record: Record<string, unknown>, key: string): void {
   const val = record[key];
   if (typeof val !== "string") return;
   try {

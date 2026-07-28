@@ -81,24 +81,19 @@ export async function loadFileKindAndText(
     }
 
 
-    const decoder = new TextDecoder("utf-8");
-    const fatalDecoder = new TextDecoder("utf-8", { fatal: true });
+    const decoder = new TextDecoder("utf-8", { fatal: false });
     let hadUtf8DecodeErrors = false;
-    const noteUtf8Err = (chunk?: Uint8Array): void => {
-      if (hadUtf8DecodeErrors) return;
-      try {
-        fatalDecoder.decode(chunk, { stream: chunk !== undefined });
-      } catch (error: unknown) {
-        if (error instanceof TypeError) {
-          hadUtf8DecodeErrors = true;
-          return;
-        }
-        throw error;
-      }
-    };
+    const parts: string[] = [];
 
-    noteUtf8Err(sample);
-    const parts: string[] = [decoder.decode(sample, { stream: true })];
+    function decodeChunk(chunk: Uint8Array, stream: boolean): string {
+      const decoded = decoder.decode(chunk, { stream });
+      if (!hadUtf8DecodeErrors && decoded.includes("\uFFFD")) {
+        hadUtf8DecodeErrors = true;
+      }
+      return decoded;
+    }
+
+    parts.push(decodeChunk(sample, true));
 
     let position = bytesRead;
     while (true) {
@@ -113,12 +108,10 @@ export async function loadFileKindAndText(
       }
 
       const chunk = buffer.subarray(0, chunkBytesRead);
-      noteUtf8Err(chunk);
-      parts.push(decoder.decode(chunk, { stream: true }));
+      parts.push(decodeChunk(chunk, true));
       position += chunkBytesRead;
     }
-    noteUtf8Err();
-    parts.push(decoder.decode());
+    parts.push(decodeChunk(new Uint8Array(0), false));
 
     return {
       kind: "text",

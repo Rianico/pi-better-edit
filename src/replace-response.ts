@@ -53,7 +53,7 @@ export interface SuccessInput {
 }
 
 
-function buildM(args: {
+export function buildMetrics(args: {
 	classification: "applied" | "noop";
 	editsAttempted: number;
 	noopEditsCount: number;
@@ -109,7 +109,7 @@ export function buildNoop(input: NoopInput): TResult {
 
 	const text = `No changes made to ${path}\nClassification: noop\n${noopDetailsText}`;
 
-	const metrics = buildM({
+	const metrics = buildMetrics({
 		classification: "noop",
 		editsAttempted: editMeta.editsAttempted,
 		noopEditsCount: editMeta.noopEditsCount,
@@ -146,7 +146,7 @@ export function buildChanged(input: SuccessInput): TResult {
       ? `${successPrefix}${lineSummary}${warningsBlock}`
       : `${successPrefix}${lineSummary}`;
 
-  const metrics = buildM({
+  const metrics = buildMetrics({
     classification: "applied",
     editsAttempted: editMeta.editsAttempted,
     noopEditsCount: editMeta.noopEditsCount,

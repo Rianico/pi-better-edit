@@ -163,9 +163,9 @@ export function regRead(pi: ExtensionAPI): void {
 				) => ReturnType<typeof builtinRead.execute>;
 				return executeBuiltinRead(_toolCallId, params, signal, _onUpdate, ctx);
 			}
-			const { normalized, fileHashes, hadUtf8DecodeErrors } = await readNormFile(
-				rawPath, ctx.cwd, signal, undefined, file,
-			);
+      const { normalized, fileHashes, hadUtf8DecodeErrors } = await readNormFile(
+        rawPath, ctx.cwd, { signal, preloadedFile: file },
+      );
 			const preview = await fmtReadPreview(
 				normalized,
 				{

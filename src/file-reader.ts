@@ -38,23 +38,29 @@ export async function fileSnap(absolutePath: string): Promise<SnapInfo> {
   };
 }
 
+export interface ReadNormOptions {
+  signal?: AbortSignal;
+  accessMode?: number;
+  preloadedFile?: LFile;
+  maxLines?: number;
+  store?: HashStore;
+}
+
 export async function readNormFile(
   path: string,
   cwd: string,
-  signal: AbortSignal | undefined,
-  accessMode: number = constants.R_OK,
-  preloadedFile?: LFile,
-  maxLines?: number,
-  store?: HashStore,
+  options?: ReadNormOptions,
 ): Promise<NormFile> {
   const absolutePath = toCwd(path, cwd);
   const resolvedPath = await resolveTarget(absolutePath);
+  const signal = options?.signal;
+  const accessMode = options?.accessMode ?? constants.R_OK;
 
   abortIf(signal);
   await valAccess(resolvedPath, path, accessMode);
 
   abortIf(signal);
-  const file = preloadedFile ?? (await loadFileKindAndText(resolvedPath));
+  const file = options?.preloadedFile ?? (await loadFileKindAndText(resolvedPath));
   valKind(file, path);
 
   abortIf(signal);
@@ -62,16 +68,16 @@ export async function readNormFile(
   const originalEnding = detectEnding(rawContent);
   const normalized = toLF(rawContent);
 
-  if (maxLines !== undefined) {
+  if (options?.maxLines !== undefined) {
     const lineCount = visLines(normalized).length;
-    if (lineCount > maxLines) {
+    if (lineCount > options.maxLines) {
       throw new Error(
-        `[E_FILE_TOO_LARGE] ${path} has ${lineCount} lines, exceeding the ${maxLines}-line edit limit. Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.`,
+        `[E_FILE_TOO_LARGE] ${path} has ${lineCount} lines, exceeding the ${options.maxLines}-line edit limit. Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.`,
       );
     }
   }
 
-  const fileHashes = await lineHashes(normalized, resolvedPath, undefined, store);
+  const fileHashes = await lineHashes(normalized, resolvedPath, undefined, options?.store);
   return {
     absolutePath: resolvedPath,
     normalized,

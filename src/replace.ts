@@ -11,7 +11,7 @@ import {
   restoreEndings,
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
-import { normReq, normalizeFilePath } from "./replace-normalize";
+import { normReq, normalizeFilePath, tryParseContentLines } from "./replace-normalize";
 import { isRec, has, rejectUnknownFields, abortIf } from "./utils";
 import { MAX_HASH_LINES } from "./constants";
 import { resolveTarget, writeAtomic } from "./fs-write";
@@ -148,13 +148,17 @@ export function assertReq(
     throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { content_lines: [...], hash_range_inclusive: ["<START>", "<END>"] }.');
   }
 }
+export interface ExecPipelineOptions {
+  accessMode?: number;
+  signal?: AbortSignal;
+  store?: HashStore;
+  noPersist?: boolean;
+}
+
 export async function execPipeline(
   params: ReqParams,
   cwd: string,
-  accessMode: number,
-  signal?: AbortSignal,
-  store?: HashStore,
-  noPersist?: boolean,
+  options?: ExecPipelineOptions,
 ): Promise<PipelineResult> {
 
   const path = params.path;
@@ -166,17 +170,17 @@ export async function execPipeline(
     throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "changes" array.');
   }
 
-  const hashStore = store ?? await loadHashStore();
+  const hashStore = options?.store ?? await loadHashStore();
 
   const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors, absolutePath } = await readNormFile(
-    path, cwd, signal, accessMode, undefined, MAX_HASH_LINES, hashStore,
+    path, cwd, { signal: options?.signal, accessMode: options?.accessMode, maxLines: MAX_HASH_LINES, store: hashStore },
   );
 
   const resolved = resEdits(toolEdits);
   const anchorResult = applyEdits(
     originalNormalized,
     resolved,
-    signal,
+    options?.signal,
     originalHashes,
     path,
   );
@@ -196,6 +200,7 @@ export async function execPipeline(
     }
   }
 
+  const noPersist = options?.noPersist;
   const resultHashes = await lineHashes(result, absolutePath, {
     content: originalNormalized,
     hashes: originalHashes,
@@ -248,10 +253,7 @@ export async function compPreview(
     const { path, originalNormalized, originalHashes, result, resultHashes } = await execPipeline(
       normalized,
       cwd,
-      constants.R_OK,
-      undefined,
-      undefined,
-      true,
+      { accessMode: constants.R_OK, noPersist: true },
     );
 
     if (originalNormalized === result) {
@@ -336,10 +338,7 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
           const record = { ...args };
           normalizeFilePath(record);
           if (has(record, "content_lines") && typeof record.content_lines === "string") {
-            try {
-              const parsed = JSON.parse(record.content_lines as string);
-              if (Array.isArray(parsed)) record.content_lines = parsed;
-            } catch {}
+            tryParseContentLines(record, "content_lines");
           }
           return record;
         }
@@ -461,8 +460,7 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
         } = await execPipeline(
           normalizedParams,
           ctx.cwd,
-          constants.R_OK | constants.W_OK,
-          signal,
+          { accessMode: constants.R_OK | constants.W_OK, signal },
         );
 
         const editsAttempted = opts.flat
