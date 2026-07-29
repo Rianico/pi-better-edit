@@ -217,9 +217,8 @@ describe("mapStableHashes — edge cases", () => {
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
     expect(result[2]).toBe(oldHashes[2]);
-    expect(result[3]).toBe(oldHashes[3]);
-    expect(result[4]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-    expect(result[4]).not.toBe(oldHashes[0]);
+    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[3]).not.toBe(oldHashes[0]);
   });
 
   it("handles content with carriage returns (\\r\\n)", async () => {

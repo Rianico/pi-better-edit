@@ -1,4 +1,5 @@
 import { MAX_HASH_RETRIES } from "../constants";
+import { splitLines } from "../utils";
 import {
   loadHashStore,
   type HashStore,
@@ -6,7 +7,6 @@ import {
   upsertSnapshot,
 } from "../hash-store";
 import { xxh32, contentChecksum, initHasher } from "./hasher";
-
 export { initHasher };
 
 export const HASH_LEN = 3;
@@ -65,15 +65,15 @@ function nextUniqueHash(content: string, used: Set<string>): string {
 }
 
 export function _lineHashesPure(content: string): string[] {
-	const lines = content.split("\n");
-	const hashes = new Array<string>(lines.length);
-	const assigned = new Set<string>();
-	for (let i = 0; i < lines.length; i++) {
-		const c = canon(lines[i]!);
-		const hash = nextUniqueHash(c, assigned);
-		hashes[i] = hash;
-	}
-	return hashes;
+  const lines = splitLines(content);
+  const hashes = new Array<string>(lines.length);
+  const assigned = new Set<string>();
+  for (let i = 0; i < lines.length; i++) {
+    const c = canon(lines[i]!);
+    const hash = nextUniqueHash(c, assigned);
+    hashes[i] = hash;
+  }
+  return hashes;
 }
 
 export async function lineHashes(
@@ -96,7 +96,7 @@ export async function lineHashes(
       previous.removedHashes,
     );
     if (persist !== false) {
-      upsertSnapshot(hashStore, path, contentChecksum(content), content.split("\n").length, newHashes);
+      upsertSnapshot(hashStore, path, contentChecksum(content), splitLines(content).length, newHashes);
     }
     return newHashes;
   }
@@ -108,7 +108,7 @@ export async function lineHashes(
 
   const newHashes = _lineHashesPure(content);
   if (persist !== false) {
-    upsertSnapshot(hashStore, path, contentChecksum(content), content.split("\n").length, newHashes);
+    upsertSnapshot(hashStore, path, contentChecksum(content), splitLines(content).length, newHashes);
   }
   return newHashes;
 }
@@ -119,12 +119,12 @@ function mapStableHashes(
   newContent: string,
   removedHashes?: Set<string>,
 ): string[] {
-  const newLines = newContent.split("\n");
+  const newLines = splitLines(newContent);
   const newHashes = new Array<string>(newLines.length);
   const used = new Set<string>();
 
   const contentMap = new Map<string, { index: number; hash: string }[]>();
-  const oldLines = oldContent.split("\n");
+  const oldLines = splitLines(oldContent);
   for (let i = 0; i < oldLines.length; i++) {
     const line = oldLines[i]!;
     const entry = { index: i, hash: oldHashes[i]! };

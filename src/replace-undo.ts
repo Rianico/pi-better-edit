@@ -7,7 +7,7 @@ import { contentChecksum } from "./hashline/hasher";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { toCwd } from "./paths";
 import { toLF, stripBOM, genDiff, restoreEndings } from "./replace-diff";
-import { cntDiff } from "./utils";
+import { cntDiff, splitLines } from "./utils";
 import { loadP, loadGuide } from "./prompts";
 import { buildMetrics } from "./replace-response";
 export interface UndoEntry {
@@ -84,7 +84,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
         );
 
         const store = await loadHashStore();
-        upsertSnapshot(store, mutationTargetPath, contentChecksum(undo.content), undo.content.split("\n").length, undo.hashes);
+        upsertSnapshot(store, mutationTargetPath, contentChecksum(undo.content), splitLines(undo.content).length, undo.hashes);
 
         clearUndo(mutationTargetPath);
 

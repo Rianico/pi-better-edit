@@ -1,4 +1,4 @@
-import { abortIf, visLines, lastNonEmptyIndex, firstNonEmptyIndex } from "../utils";
+import { abortIf, splitLines, lastNonEmptyIndex, firstNonEmptyIndex } from "../utils";
 import { _lineHashesPure, HASH_SEP } from "./hash";
 import {
 	valEdits,
@@ -18,22 +18,22 @@ type LIdx = {
 };
 
 export function buildIdx(content: string): LIdx {
-	const fileLines = content.split("\n");
-	const lineStarts: number[] = [];
-	let offset = 0;
+  const fileLines = splitLines(content);
+  const lineStarts: number[] = [];
+  let offset = 0;
 
-	for (let index = 0; index < fileLines.length; index++) {
-		lineStarts.push(offset);
-		offset += fileLines[index]!.length;
-		if (index < fileLines.length - 1) {
-			offset += 1;
-		}
-	}
+  for (let index = 0; index < fileLines.length; index++) {
+    lineStarts.push(offset);
+    offset += fileLines[index]!.length;
+    if (index < fileLines.length - 1) {
+      offset += 1;
+    }
+  }
 
-	return {
-		fileLines,
-		lineStarts,
-	};
+  return {
+    fileLines,
+    lineStarts,
+  };
 };
 
 type RESpan = {
@@ -124,16 +124,26 @@ function resToSpan(
     };
   }
 
+  if (content.endsWith("\n")) {
+    return {
+      kind: "replace",
+      index,
+      label,
+      start: lineStarts[startLine - 1]!,
+      end: content.length,
+      replacement: "",
+    };
+  }
+
   return {
     kind: "replace",
     index,
     label,
     start: Math.max(0, lineStarts[startLine - 1]! - 1),
-    end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
+    end: content.length,
     replacement: "",
   };
 }
-
 function assertNoConflict(spans: RESpan[]): void {
 	for (let leftIndex = 0; leftIndex < spans.length; leftIndex++) {
 		const left = spans[leftIndex]!;
@@ -375,14 +385,14 @@ export function changedRange(
 	if (original.length === 0) {
 		return {
 			firstChangedLine: 1,
-			lastChangedLine: visLines(result).length,
+			lastChangedLine: splitLines(result).length,
 		};
 	}
 
 	if (result.startsWith(original) && original.endsWith("\n")) {
 		return {
-			firstChangedLine: visLines(original).length + 1,
-			lastChangedLine: visLines(result).length,
+			firstChangedLine: splitLines(original).length + 1,
+			lastChangedLine: splitLines(result).length,
 		};
 	}
 
@@ -415,7 +425,7 @@ export function changedRange(
 	const firstChangedLine = idxToLine(firstDiff + 1, result);
 	let lastChangedLine: number;
 	if (lastRes < firstDiff) {
-		lastChangedLine = result.length === 0 ? 1 : visLines(result).length;
+		lastChangedLine = result.length === 0 ? 1 : splitLines(result).length;
 	} else if (
 		firstDiff === 0 &&
 		original.length > 0 &&

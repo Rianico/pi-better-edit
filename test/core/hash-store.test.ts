@@ -14,7 +14,7 @@ import {
   type HashStore,
 } from "../../src/hash-store";
 import { initHasher, contentChecksum } from "../../src/hashline/hasher";
-
+import { splitLines } from "../../src/utils";
 let tmpHome: string;
 
 beforeAll(async () => {
@@ -51,9 +51,8 @@ async function put(
   content: string,
   hashes: string[],
 ): Promise<void> {
-  upsertSnapshot(store, path, contentChecksum(content), content.split("\n").length, hashes);
+  upsertSnapshot(store, path, contentChecksum(content), splitLines(content).length, hashes);
 }
-
 async function writeLegacyStore(home: string, snapshots: unknown): Promise<void> {
   await mkdir(configHome(home), { recursive: true });
   await writeFile(legacyPath(home), JSON.stringify({ version: 1, snapshots }), "utf-8");
@@ -267,9 +266,8 @@ describe("hash-store — concurrency (issue #10)", () => {
         "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)",
       );
       second.exec("BEGIN IMMEDIATE");
-      ins.run("/b.ts", contentChecksum("beta\n"), "beta\n".split("\n").length, JSON.stringify(["BB"]), Date.now());
+      ins.run("/b.ts", contentChecksum("beta\n"), splitLines("beta\n").length, JSON.stringify(["BB"]), Date.now());
       second.exec("COMMIT");
-      second.close();
 
       shutdownHashStore();
       const reloaded = await loadHashStore();

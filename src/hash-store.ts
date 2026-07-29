@@ -2,10 +2,9 @@ import { existsSync } from "fs";
 import { readFile, rename, mkdir, stat } from "fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { hashStorePath, hashStoreDir, legacyHashStorePath } from "./paths";
-import { errCode } from "./utils";
+import { errCode, splitLines } from "./utils";
 import { initHasher, contentChecksum } from "./hashline/hasher";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
-
 type SqlParams = (string | number)[];
 
 interface Prepared {
@@ -145,12 +144,11 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
     rows.push([
       key,
       contentChecksum(value.content),
-      value.content.split("\n").length,
+      splitLines(value.content).length,
       JSON.stringify(value.hashes),
       Date.now(),
     ]);
   }
-
   if (rows.length > 0) {
     db.exec("BEGIN IMMEDIATE");
     try {
@@ -178,7 +176,7 @@ export function getSnapshot(
   content: string,
 ): string[] | undefined {
   const checksum = contentChecksum(content);
-  const lineCount = content.split("\n").length;
+  const lineCount = splitLines(content).length;
   const row = store.stmts.get(path, checksum, lineCount);
   return row ? (JSON.parse(row.hashes as string) as string[]) : undefined;
 }

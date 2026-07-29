@@ -4,8 +4,8 @@ import {
 	lineHashes,
 	parseText,
 } from "../../src/hashline";
+import { splitLines } from "../../src/utils";
 import { useTestHome } from "../support/fixtures";
-
 const home = useTestHome();
 
 describe("strict hashline contract", () => {
@@ -152,7 +152,7 @@ describe("perfect hashing", () => {
 		const cases = ["", "\n", "a", "a\n", "a\nb\nc\n"];
 		for (const file of cases) {
 			const hashes = await lineHashes(file, home.testPath);
-			expect(hashes).toHaveLength(file.split("\n").length);
+			expect(hashes).toHaveLength(splitLines(file).length);
 		}
 	});
 });
