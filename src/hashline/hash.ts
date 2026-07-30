@@ -21,22 +21,6 @@ const ALPH_SAFE = ALPH.replace(/-/g, "\\-");
 const ALPH_RE = new RegExp(`^[${ALPH_SAFE}]+$`);
 export const HASH_CLASS = `[${ALPH_SAFE}]{${HASH_LEN}}`;
 
-function h2s(h: number): string {
-	const totalBits = HASH_LEN * ALPH_BITS;
-	const shift = 32 - totalBits;
-	const n = h >>> shift;
-	let out = "";
-	for (let j = 0; j < HASH_LEN; j++) {
-		out +=
-			ALPH[
-				(n >>> ((HASH_LEN - 1 - j) * ALPH_BITS)) &
-					ALPH_MASK
-			]!
-			;
-	}
-	return out;
-}
-
 function idxToHash(idx: number): string {
   let out = "";
   for (let j = 0; j < HASH_LEN; j++) {
@@ -80,8 +64,8 @@ function nextZeroBit(bits: Uint32Array, start: number): number {
 
   if (start >= totalBits) start = 0;
 
-  let wordIdx = start >>> 5;
-  let bitOffset = start & 31;
+  const wordIdx = start >>> 5;
+  const bitOffset = start & 31;
 
   let word = bits[wordIdx];
   for (let b = bitOffset; b < 32; b++) {
