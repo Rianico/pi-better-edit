@@ -13,7 +13,7 @@ The original uses 2-character hashes of a 16-character alphabet, with the hash b
 This fork makes two changes that compound:
 
 1. **3-character hash length** over a 64-char URL-safe base64 alphabet (up from 2 characters in the upstream), expanding the hash space from 256 to 262,144 buckets.
-2. **Perfect hashing (collision resolution).** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `:R{retry}`) until a unique hash is found. This ensures every line gets a unique anchor, even within a 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
+2. **Perfect hashing (collision resolution).** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the next available hash is assigned from a bitset (32KB, 262,144 bits) using a hint cursor for O(1) amortized lookup. This ensures every line gets a unique anchor, even within a 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
 
 ## Installation
 
@@ -156,7 +156,7 @@ The alphabet is sized for an LLM consumer. The model tokenizes, it doesn't squin
 
 Before hashing, each line is normalized: carriage returns are stripped and trailing whitespace is trimmed. This `canon()` normalization prevents insignificant whitespace changes from cascade-triggering hash churn across the file. Two lines that differ only in trailing spaces or `\r` characters produce the same hash, so anchor stability is preserved across editor-save cycles that add or remove trailing whitespace.
 
-**Perfect hashing (collision resolution):** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the hash is incremented (using a retry counter: `:R{retry}`) until a unique hash is found. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
+**Perfect hashing (collision resolution):** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the next available hash is assigned from a bitset (32KB, 262,144 bits) using a hint cursor for O(1) amortized lookup. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
 The runtime always precomputes the full per-line hash array for a file via `lineHashes(content, path)`, then looks up by line number during validation and during `read` / `replace` response formatting. There is no per-line recomputation that could disagree with what the model saw in its last read. When `path` is provided, `lineHashes` uses a persistent store to preserve hashes for unchanged lines across edits — see [Stable hashing across edits](#stable-hashing-across-edits).
 `HASH_LEN` in `src/hashline/hash.ts` sets the hash body length; bump it to 4 if you need even more entropy without collision resolution.
 
