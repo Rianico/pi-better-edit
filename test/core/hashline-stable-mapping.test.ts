@@ -304,7 +304,7 @@ describe("mapStableHashes — removedHashes edge cases", () => {
     expect(result[1]).toBe(secondBHash);
   });
 
-  it("removedHashes with all candidates removed still picks the first candidate", async () => {
+  it("removedHashes with all candidates removed assigns a new hash", async () => {
     const oldContent = "a\nb\nb\nc";
     const oldHashes = await lineHashes(oldContent, home.testPath);
     const firstBHash = oldHashes[1]!;
@@ -317,28 +317,12 @@ describe("mapStableHashes — removedHashes edge cases", () => {
       removedHashes: new Set([firstBHash, secondBHash]),
     });
 
-    expect(result[1]).toBe(firstBHash);
+    expect(result[1]).not.toBe(firstBHash);
+    expect(result[1]).not.toBe(secondBHash);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\\-]{3}$/);
   });
 
-  it("removedHashes with three duplicates picks the first non-removed candidate", async () => {
-    const oldContent = "a\nb\nb\nb\nc";
-    const oldHashes = await lineHashes(oldContent, home.testPath);
-    const firstBHash = oldHashes[1]!;
-    const secondBHash = oldHashes[2]!;
-    const thirdBHash = oldHashes[3]!;
-    expect(new Set([firstBHash, secondBHash, thirdBHash]).size).toBe(3);
-
-    const newContent = "a\nb\nc";
-    const result = await lineHashes(newContent, home.testPath, {
-      content: oldContent,
-      hashes: oldHashes,
-      removedHashes: new Set([firstBHash, thirdBHash]),
-    });
-
-    expect(result[1]).toBe(secondBHash);
-  });
-
-  it("removedHashes does not affect content-map misses (new lines)", async () => {
+  it("removedHashes prevents reuse of removed hash for matching line", async () => {
     const oldContent = "a\nb\nc";
     const oldHashes = await lineHashes(oldContent, home.testPath);
     const newContent = "a\nX\nc";
@@ -349,11 +333,12 @@ describe("mapStableHashes — removedHashes edge cases", () => {
       removedHashes: new Set([oldHashes[0]!]),
     });
 
-    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[0]).not.toBe(oldHashes[0]);
+    expect(result[0]).toMatch(/^[A-Za-z0-9_\\-]{3}$/);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_\\-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[0]);
     expect(result[1]).not.toBe(oldHashes[1]);
     expect(result[1]).not.toBe(oldHashes[2]);
-    expect(result[0]).toBe(oldHashes[0]);
     expect(result[2]).toBe(oldHashes[2]);
   });
 

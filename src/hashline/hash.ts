@@ -1,4 +1,3 @@
-import { MAX_HASH_RETRIES } from "../constants";
 import { splitLines } from "../utils";
 import {
   loadHashStore,
@@ -32,10 +31,24 @@ function h2s(h: number): string {
 			ALPH[
 				(n >>> ((HASH_LEN - 1 - j) * ALPH_BITS)) &
 					ALPH_MASK
-			]!;
+			]!
+			;
 	}
 	return out;
 }
+
+function idxToHash(idx: number): string {
+  let out = "";
+  for (let j = 0; j < HASH_LEN; j++) {
+    out += ALPH[(idx >>> ((HASH_LEN - 1 - j) * ALPH_BITS)) & ALPH_MASK]!;
+  }
+  return out;
+}
+
+const HASH_TABLE: string[] = Array.from(
+  { length: 262_144 },
+  (_, i) => idxToHash(i),
+);
 
 export const HL_PREFIX_RE = new RegExp(
 	`^\\s*(?:>>>|>>)?\\s*${HASH_CLASS}│`,
@@ -47,31 +60,83 @@ export const DIFF_MINUS_RE = /^-\s*\d+\s{4}/;
 
 export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
 
-
 function canon(line: string): string {
 	return line.replace(/\r/g, "").trimEnd();
 }
 
-function nextUniqueHash(content: string, used: Set<string>): string {
-	let retry = 0;
-	let hash = h2s(xxh32(content));
-	while (used.has(hash)) {
-		retry++;
-		if (retry > MAX_HASH_RETRIES) throw new Error("Hash space exhausted");
-		hash = h2s(xxh32(`${content}:R${retry}`));
-	}
-	used.add(hash);
-	return hash;
+const BITSET_WORDS = 8192;
+
+function getBit(bits: Uint32Array, idx: number): boolean {
+  return (bits[idx >>> 5] >>> (idx & 31) & 1) !== 0;
+}
+
+function setBit(bits: Uint32Array, idx: number): void {
+  bits[idx >>> 5] |= 1 << (idx & 31);
+}
+
+function nextZeroBit(bits: Uint32Array, start: number): number {
+  const totalWords = bits.length;
+  const totalBits = totalWords * 32;
+
+  if (start >= totalBits) start = 0;
+
+  let wordIdx = start >>> 5;
+  let bitOffset = start & 31;
+
+  let word = bits[wordIdx];
+  for (let b = bitOffset; b < 32; b++) {
+    if ((word >>> b & 1) === 0) return wordIdx * 32 + b;
+  }
+
+  for (let w = wordIdx + 1; w < totalWords; w++) {
+    word = bits[w];
+    if (~word !== 0) {
+      for (let b = 0; b < 32; b++) {
+        if ((word >>> b & 1) === 0) return w * 32 + b;
+      }
+    }
+  }
+
+  for (let w = 0; w < wordIdx; w++) {
+    word = bits[w];
+    if (~word !== 0) {
+      for (let b = 0; b < 32; b++) {
+        if ((word >>> b & 1) === 0) return w * 32 + b;
+      }
+    }
+  }
+
+  word = bits[wordIdx];
+  for (let b = 0; b < bitOffset; b++) {
+    if ((word >>> b & 1) === 0) return wordIdx * 32 + b;
+  }
+
+  throw new Error("Hash space exhausted");
+}
+
+function assignHash(used: Uint32Array, baseIdx: number, hint: { value: number }): string {
+  if (!getBit(used, baseIdx)) {
+    setBit(used, baseIdx);
+    hint.value = baseIdx + 1;
+    return HASH_TABLE[baseIdx];
+  }
+  const start = hint.value > baseIdx + 1 ? hint.value : baseIdx + 1;
+  const nextIdx = nextZeroBit(used, start);
+  setBit(used, nextIdx);
+  hint.value = nextIdx + 1;
+  return HASH_TABLE[nextIdx];
 }
 
 export function _lineHashesPure(content: string): string[] {
   const lines = splitLines(content);
   const hashes = new Array<string>(lines.length);
-  const assigned = new Set<string>();
+  const used = new Uint32Array(BITSET_WORDS);
+  const hint = { value: 0 };
+
   for (let i = 0; i < lines.length; i++) {
     const c = canon(lines[i]!);
-    const hash = nextUniqueHash(c, assigned);
-    hashes[i] = hash;
+    const baseIdx = xxh32(c) >>> 14;
+    hashes[i] = assignHash(used, baseIdx, hint);
   }
   return hashes;
 }
@@ -113,6 +178,16 @@ export async function lineHashes(
   return newHashes;
 }
 
+function hashToIndex(hash: string): number {
+  let idx = 0;
+  for (let j = 0; j < HASH_LEN; j++) {
+    const charIdx = ALPH.indexOf(hash[j]!);
+    if (charIdx < 0) return -1;
+    idx = (idx << ALPH_BITS) | charIdx;
+  }
+  return idx;
+}
+
 function mapStableHashes(
   oldContent: string,
   oldHashes: string[],
@@ -121,7 +196,15 @@ function mapStableHashes(
 ): string[] {
   const newLines = splitLines(newContent);
   const newHashes = new Array<string>(newLines.length);
-  const used = new Set<string>();
+  const used = new Uint32Array(BITSET_WORDS);
+  const hint = { value: 0 };
+
+  if (removedHashes) {
+    for (const hash of removedHashes) {
+      const idx = hashToIndex(hash);
+      if (idx >= 0) setBit(used, idx);
+    }
+  }
 
   const contentMap = new Map<string, { index: number; hash: string }[]>();
   const oldLines = splitLines(oldContent);
@@ -155,14 +238,18 @@ function mapStableHashes(
     if (removedHashes?.has(candidates[bestIdx]!.hash)) continue;
     const match = candidates.splice(bestIdx, 1)[0]!;
     newHashes[i] = match.hash;
-    used.add(match.hash);
+    const matchIdx = hashToIndex(match.hash);
+    if (matchIdx >= 0) {
+      setBit(used, matchIdx);
+      if (matchIdx + 1 > hint.value) hint.value = matchIdx + 1;
+    }
   }
 
   for (let i = 0; i < newLines.length; i++) {
     if (newHashes[i]) continue;
     const c = canon(newLines[i]!);
-    const hash = nextUniqueHash(c, used);
-    newHashes[i] = hash;
+    const baseIdx = xxh32(c) >>> 14;
+    newHashes[i] = assignHash(used, baseIdx, hint);
   }
   return newHashes;
 }

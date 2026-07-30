@@ -148,11 +148,52 @@ export function assertReq(
     throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { content_lines: [...], hash_range_inclusive: ["<START>", "<END>"] }.');
   }
 }
+
 export interface ExecPipelineOptions {
   accessMode?: number;
   signal?: AbortSignal;
   store?: HashStore;
   noPersist?: boolean;
+}
+
+function collectRemovedHashes(
+  resolved: { hash_range_inclusive: [{ hash: string }, { hash: string }] }[],
+  originalHashes: string[],
+): Set<string> {
+  const removedHashes = new Set<string>();
+  for (const edit of resolved) {
+    const startHash = edit.hash_range_inclusive[0].hash;
+    const endHash = edit.hash_range_inclusive[1].hash;
+    const startLine = originalHashes.indexOf(startHash);
+    const endLine = originalHashes.indexOf(endHash);
+    if (startLine >= 0 && endLine >= 0) {
+      for (let i = startLine; i <= endLine; i++) {
+        removedHashes.add(originalHashes[i]!);
+      }
+    }
+  }
+  return removedHashes;
+}
+
+function countLineChanges(
+  resolved: { hash_range_inclusive: [{ hash: string }, { hash: string }]; content_lines: string[] }[],
+  originalHashes: string[],
+  noopEdits: { editIndex: number }[] | undefined,
+): { totalAddedLines: number; totalRemovedLines: number } {
+  let totalAddedLines = 0;
+  let totalRemovedLines = 0;
+  const noopIndices = new Set(noopEdits?.map((n) => n.editIndex) ?? []);
+  for (let i = 0; i < resolved.length; i++) {
+    if (noopIndices.has(i)) continue;
+    const edit = resolved[i]!;
+    const startLine = originalHashes.indexOf(edit.hash_range_inclusive[0].hash);
+    const endLine = originalHashes.indexOf(edit.hash_range_inclusive[1].hash);
+    if (startLine >= 0 && endLine >= 0) {
+      totalRemovedLines += endLine - startLine + 1;
+    }
+    totalAddedLines += edit.content_lines.length;
+  }
+  return { totalAddedLines, totalRemovedLines };
 }
 
 export async function execPipeline(
@@ -187,18 +228,7 @@ export async function execPipeline(
 
   const result = anchorResult.content;
 
-  const removedHashes = new Set<string>();
-  for (const edit of resolved) {
-    const startHash = edit.hash_range_inclusive[0].hash;
-    const endHash = edit.hash_range_inclusive[1].hash;
-    const startLine = originalHashes.indexOf(startHash);
-    const endLine = originalHashes.indexOf(endHash);
-    if (startLine >= 0 && endLine >= 0) {
-      for (let i = startLine; i <= endLine; i++) {
-        removedHashes.add(originalHashes[i]!);
-      }
-    }
-  }
+  const removedHashes = collectRemovedHashes(resolved, originalHashes);
 
   const noPersist = options?.noPersist;
   const resultHashes = await lineHashes(result, absolutePath, {
@@ -209,19 +239,9 @@ export async function execPipeline(
 
   const warnings = [...(anchorResult.warnings ?? [])];
 
-  let totalAddedLines = 0;
-  let totalRemovedLines = 0;
-  const noopIndices = new Set(anchorResult.noopEdits?.map((n) => n.editIndex) ?? []);
-  for (let i = 0; i < resolved.length; i++) {
-    if (noopIndices.has(i)) continue;
-    const edit = resolved[i]!;
-    const startLine = originalHashes.indexOf(edit.hash_range_inclusive[0].hash);
-    const endLine = originalHashes.indexOf(edit.hash_range_inclusive[1].hash);
-    if (startLine >= 0 && endLine >= 0) {
-      totalRemovedLines += endLine - startLine + 1;
-    }
-    totalAddedLines += edit.content_lines.length;
-  }
+  const { totalAddedLines, totalRemovedLines } = countLineChanges(
+    resolved, originalHashes, anchorResult.noopEdits,
+  );
 
   return {
     path,
@@ -289,6 +309,7 @@ export function reuseMarkdown(context: any, content: string, theme: any): Markdo
   m.setText(content);
   return m;
 }
+
 const MODE_CFG = {
   flat: {
     desc: " Only one edit per call. The `hash_range_inclusive` and `content_lines` fields sit at the top level of the request object.",
@@ -434,7 +455,6 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const canonical = normReq(params);
-
 
       const normalizedParams = canonical as { path: string; changes: HTEdit[] };
       const path = normalizedParams.path;

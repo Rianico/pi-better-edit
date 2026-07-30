@@ -308,3 +308,19 @@ describe("hash-store — incremental writes (issue #8)", () => {
     });
   });
 });
+
+describe("hash-store — WAL checkpoint on shutdown", () => {
+  it("truncates the WAL file after shutdownHashStore", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["X"]);
+
+      const walPath = sqlitePath(home) + "-wal";
+      expect(existsSync(walPath)).toBe(true);
+
+      shutdownHashStore();
+
+      expect(existsSync(walPath)).toBe(false);
+    });
+  });
+});

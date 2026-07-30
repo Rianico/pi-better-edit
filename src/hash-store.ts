@@ -36,7 +36,7 @@ function isValidSnapshot(value: unknown): value is LegacySnapshot {
 }
 
 let cachedDb: { path: string; db: DatabaseSync; stmts: Prepared } | null = null;
-
+let exitHandlerRegistered = false;
 function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
   const db = new DatabaseSync(storePath, {
     timeout: HASH_STORE_BUSY_TIMEOUT,
@@ -91,11 +91,27 @@ export async function loadHashStore(): Promise<HashStore> {
   }
 
   cachedDb = { path: storePath, db, stmts };
+
+  if (!exitHandlerRegistered) {
+    exitHandlerRegistered = true;
+    process.once("exit", () => shutdownHashStore());
+    for (const sig of ["SIGINT", "SIGTERM"] as const) {
+      process.once(sig, () => {
+        shutdownHashStore();
+        process.kill(process.pid, sig);
+      });
+    }
+  }
+
   return { stmts, engine: "node:sqlite" };
 }
 
 export function shutdownHashStore(): void {
   if (cachedDb) {
+    try {
+      cachedDb.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+    } catch {
+    }
     cachedDb.db.close();
     cachedDb = null;
   }
