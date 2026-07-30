@@ -1,2 +1,0 @@
-- `undo_last_replace`: call with the file path to revert the last replace on that file.
-- `undo_last_replace`: only the most recent replace per file is tracked.
