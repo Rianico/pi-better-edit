@@ -1,0 +1,1 @@
+- `undo_last_replace`: reverts only the most recent replace on the file — any write to the file clears the undo history, so call it immediately after a bad replace.

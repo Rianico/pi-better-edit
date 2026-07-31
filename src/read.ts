@@ -2,8 +2,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
 	createReadTool,
 	formatSize,
-	DEFAULT_MAX_BYTES,
-	DEFAULT_MAX_LINES,
 	truncateHead,
 	type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
@@ -18,10 +16,7 @@ import { visLines } from "./utils";
 import { loadP, loadGuide } from "./prompts";
 import { valAccess } from "./validation";
 
-const R_DESC = loadP("../prompts/read.md", {
-	DEFAULT_MAX_LINES: String(DEFAULT_MAX_LINES),
-	DEFAULT_MAX_BYTES: formatSize(DEFAULT_MAX_BYTES),
-});
+const R_DESC = loadP("../prompts/read.md");
 
 const R_SNIPPET = loadP("../prompts/read-snippet.md");
 const R_GUIDE = loadGuide("../prompts/read-guidelines.md");

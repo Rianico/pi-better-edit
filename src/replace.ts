@@ -68,7 +68,7 @@ const changeItemSchema = Type.Object(
 
 export const editToolSchema = Type.Object(
   {
-    changes: Type.Array(changeItemSchema, { description: "Array of edits. Each edit pairs content_lines (literal file content, one string per line) with hash_range_inclusive (inclusive [start_hash, end_hash] — pair of 3-char hashes from read output)." }),
+    changes: Type.Array(changeItemSchema, { description: "Array of edits applied atomically against the same pre-edit snapshot." }),
     path: Type.String({ description: "Path to edit" }),
   },
   { additionalProperties: false },
@@ -324,25 +324,9 @@ export function reuseMarkdown(context: any, content: string, theme: any): Markdo
 
 const MODE_CFG = {
   flat: {
-    desc: " Only one edit per call. The `hash_range_inclusive` and `content_lines` fields sit at the top level of the request object.",
-    examples: [
-      "", "Single line:", "{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"], \"path\": \"src/main.ts\" }", "", "Range replace:", "{ \"content_lines\": [\"function greet() {\", \"  return 1;\", \"}\"], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"], \"path\": \"src/main.ts\" }",
-    ].join("\n"),
-    rules: "",
-    requestStructure: [
-      "Flat mode:", "```json", "{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"], \"path\": \"...\" }", "```",
-    ].join("\n"),
     prefix: "performing one edit per call",
   },
   bulk: {
-    desc: "\n\nPut all operations on one file in a single `replace` call. Stack every region into the `changes` array, even when they are far apart. Anchors within one call must all come from the same pre-edit read; the runtime applies them atomically against that one snapshot.",
-    examples: [
-      "", "Single line:", "{ \"changes\": [{ \"content_lines\": [\"const x = 1;\"], \"hash_range_inclusive\": [\"MQX\", \"MQX\"] }], \"path\": \"src/main.ts\" }", "", "Range replace:", "{ \"changes\": [{ \"content_lines\": [\"function greet() {\", \"  return 1;\", \"}\"], \"hash_range_inclusive\": [\"ZPM\", \"VRW\"] }], \"path\": \"src/main.ts\" }",
-    ].join("\n"),
-    rules: "- Multiple edits in one call must not overlap. Overlapping ranges are rejected with [E_EDIT_CONFLICT].",
-    requestStructure: [
-      "Bulk mode (default):", "```json", "{ \"changes\": [{ \"content_lines\": [...], \"hash_range_inclusive\": [\"aB3\", \"xY7\"] }], \"path\": \"...\" }", "```",
-    ].join("\n"),
     prefix: "batching all changes to a file in one call",
   },
 } as const;

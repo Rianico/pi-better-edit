@@ -1,2 +1,2 @@
-- `replace`: Provide hash_range_inclusive [start_hash, end_hash] targeting lines by their 3-char hashes (replaces every line from first anchor through last anchor inclusively), and content_lines as a native JSON array of strings for the replacement text.
-- `replace`: preserve leading whitespace exactly as it appears after │ in read output.
+- `replace`: content_lines is a native JSON array of strings — never a serialized JSON string; strip the HASH│ prefix from read output and keep leading whitespace exactly as shown after │; no line numbers or diff markers.
+- `replace`: hash_range_inclusive must use only anchors from the most recent read of the same file; on [E_STALE_ANCHOR], re-read the file and retry with fresh anchors.
