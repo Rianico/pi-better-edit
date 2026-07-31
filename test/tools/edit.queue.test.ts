@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll, afterAll } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome, getWritableTempRoot } from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -54,7 +54,7 @@ describe("edit tool file mutation queue", () => {
   it("canonicalizes the queue key when a parent directory is a symlink", async () => {
     const { mkdtemp, mkdir, symlink, writeFile } = await import("fs/promises");
     const { join } = await import("path");
-    const tmpDir = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-test-"));
+    const tmpDir = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-test-"));
     const subDir = join(tmpDir, "sub");
     await mkdir(subDir, { recursive: true });
     const filePath = join(subDir, "target.ts");

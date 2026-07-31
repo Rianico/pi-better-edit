@@ -7,11 +7,11 @@ import {
   readConfig,
   writeConfig,
 } from "../../src/config";
-
+import { getWritableTempRoot } from "../support/fixtures";
 let tmpHome: string;
 
 async function withTempHome(run: () => Promise<void>): Promise<void> {
-  tmpHome = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-config-test-"));
+  tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-config-test-"));
   vi.stubEnv('HOME', tmpHome);
   try {
     await run();

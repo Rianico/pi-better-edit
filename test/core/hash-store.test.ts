@@ -15,14 +15,15 @@ import {
 } from "../../src/hash-store";
 import { initHasher, contentChecksum } from "../../src/hashline/hasher";
 import { splitLines } from "../../src/utils";
-let tmpHome: string;
+import { getWritableTempRoot } from "../support/fixtures";
 
+let tmpHome: string;
 beforeAll(async () => {
   await initHasher();
 });
 
 async function withTempHome(run: (home: string) => Promise<void>): Promise<void> {
-  tmpHome = await mkdtemp(join(process.cwd(), ".tmp", "pi-hashline-hashstore-test-"));
+  tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-hashstore-test-"));
   vi.stubEnv("HOME", tmpHome);
   try {
     await run(tmpHome);
