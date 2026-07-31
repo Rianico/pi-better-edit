@@ -133,7 +133,7 @@ describe("CRLF line ending preservation", () => {
 });
 
 describe("UTF-8 BOM handling", () => {
-  it("strips the BOM when reading and does not restore it on write", async () => {
+  it("strips the BOM for display and restores it on write", async () => {
     await withTempFile("bom.ts", "alpha\nbeta\n", async ({ cwd, path }) => {
       const { readFile, writeFile } = await import("fs/promises");
       await writeFile(path, "\uFEFFalpha\nbeta\n", "utf-8");
@@ -141,6 +141,7 @@ describe("UTF-8 BOM handling", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const readResult = await readTool.execute("r1", { path: "bom.ts" }, undefined, undefined, ctx);
+      expect(readResult.content[0].text).not.toContain("\uFEFF");
       const betaRef = readResult.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│beta"))!
@@ -155,8 +156,7 @@ describe("UTF-8 BOM handling", () => {
       );
 
       const content = await readFile(path, "utf-8");
-      expect(content).not.toContain("\uFEFF");
-      expect(content).toBe("alpha\nBETA\n");
+      expect(content).toBe("\uFEFFalpha\nBETA\n");
     });
   });
 });

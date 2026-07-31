@@ -125,6 +125,19 @@ describe("parseText", () => {
 		).toThrow(/^\[E_INVALID_PATCH\]/);
 	});
 
+	it("rejects padded diff-preview deletion rows (the -   │ format genDiff emits)", () => {
+		expect(() => parseText([" aB3│keep", "-   │old", " xYp│after"])).toThrow(/^\[E_INVALID_PATCH\]/);
+	});
+
+	it("rejects minus-prefixed hash rows", () => {
+		expect(() => parseText(["-aB3│old"])).toThrow(/^\[E_INVALID_PATCH\]/);
+		expect(() => parseText(["- aB3│old"])).toThrow(/^\[E_INVALID_PATCH\]/);
+	});
+
+	it("accepts literal minus-prefixed content that is not a diff row", () => {
+		expect(parseText(["-   something", "-abc", "- old style"])).toEqual(["-   something", "-abc", "- old style"]);
+	});
+
   it("rejects string-form rendered diff hunks (string input rejected before prefix check)", () => {
     const input = " aB3│keep\n-10    old\n+xYp│new\n mNo│after";
     expect(() => parseText(input)).toThrow(

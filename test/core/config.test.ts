@@ -8,9 +8,6 @@ import {
   writeConfig,
 } from "../../src/config";
 
-// We override the config path by manipulating the homedir. The config module
-// uses os.homedir() → ~/.config/pi-hashline-edit-pro/config.json. We create
-// a temp dir and set HOME so the module writes there instead.
 let tmpHome: string;
 
 async function withTempHome(run: () => Promise<void>): Promise<void> {

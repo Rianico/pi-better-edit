@@ -1,15 +1,7 @@
-import { describe, expect, it, beforeEach } from "vitest";
+import { describe, expect, it } from "vitest";
 import { saveUndo, getUndo, clearUndo } from "../../src/replace-undo";
 
 describe("undo-store", () => {
-  beforeEach(() => {
-    // Clear all entries by iterating — the module-level Map persists across tests
-    // within this file, so we need a fresh slate each time.
-    // We use a workaround: saveUndo a sentinel and clear it.
-    // Since clearUndo only deletes one key, we rely on the fact that
-    // no cross-test leakage is possible because each test uses unique paths.
-  });
-
   it("round-trips a single entry", () => {
     saveUndo("/a.ts", {
       content: "hello\nworld",

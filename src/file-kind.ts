@@ -81,7 +81,7 @@ export async function loadFileKindAndText(
     }
 
 
-    const decoder = new TextDecoder("utf-8", { fatal: false });
+    const decoder = new TextDecoder("utf-8", { fatal: false, ignoreBOM: true });
     let hadUtf8DecodeErrors = false;
     const parts: string[] = [];
 

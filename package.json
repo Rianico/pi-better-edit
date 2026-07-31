@@ -40,6 +40,9 @@
     "@earendil-works/pi-coding-agent": ">=0.74.0",
     "@earendil-works/pi-tui": "*"
   },
+  "engines": {
+    "node": ">=22.13.0"
+  },
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",

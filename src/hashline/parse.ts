@@ -2,6 +2,7 @@ import {
 	ANCHOR_LEN,
 	ALPH_RE,
 	HL_PREFIX_PLUS_RE,
+	HL_PREFIX_MINUS_RE,
 	DIFF_MINUS_RE,
 } from "./hash";
 import { CONTENT_LINES_NOT_STRING_MSG } from "../constants";
@@ -46,10 +47,11 @@ function assertNoPrefixes(lines: string[]): void {
 		if (!line.length) continue;
 		if (
 			HL_PREFIX_PLUS_RE.test(line) ||
+			HL_PREFIX_MINUS_RE.test(line) ||
 			DIFF_MINUS_RE.test(line)
 		) {
 			throw new Error(
-			`[E_INVALID_PATCH] "content_lines" must contain literal file content. Offending line looks like the diff preview's +HASH│ row: ${JSON.stringify(line)}. Use literal file content only — plain + or - lines are written literally.`
+			`[E_INVALID_PATCH] "content_lines" must contain literal file content. Offending line looks like a diff preview row (e.g. +HASH│ or -HASH│): ${JSON.stringify(line)}. Use literal file content only — plain + or - lines are written literally.`
 			);
 		}
 	}

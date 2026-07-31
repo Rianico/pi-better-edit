@@ -67,4 +67,30 @@ describe("compPreview", () => {
       expect(preview).toHaveProperty("diff");
     });
   });
+
+  it("flat-mode preview rejects a bulk changes array like the flat schema does", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const preview = await compPreview(
+        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
+        cwd,
+        true,
+      );
+      expect(preview).toHaveProperty("error");
+      expect((preview as { error: string }).error).toMatch(/changes/i);
+    });
+  });
+
+  it("flat-mode preview still accepts flat-format requests", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const preview = await compPreview(
+        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        cwd,
+        true,
+      );
+      expect(preview).toHaveProperty("diff");
+      expect((preview as { diff: string }).diff).toContain("BBB");
+    });
+  });
 });

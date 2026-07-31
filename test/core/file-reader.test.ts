@@ -17,12 +17,12 @@ describe("readNormFile", () => {
 		});
 	});
 
-	it("handles UTF-8 files with BOM (BOM stripped by TextDecoder)", async () => {
+	it("preserves a UTF-8 BOM in the bom field", async () => {
 		await withTempFile("bom.txt", "hello", async ({ cwd, path }) => {
 			const { writeFile } = await import("fs/promises");
 			await writeFile(path, "\uFEFFhello\n", "utf-8");
 			const result = await readNormFile("bom.txt", cwd);
-			expect(result.bom).toBe("");
+			expect(result.bom).toBe("\uFEFF");
 			expect(result.normalized).toBe("hello\n");
 		});
 	});

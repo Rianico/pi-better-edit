@@ -8,6 +8,7 @@ import {
   useTestHome,
   getText,
 } from "../support/fixtures";
+import register from "../../index";
 
 const home = useTestHome();
 
@@ -311,6 +312,79 @@ describe("undo_last_replace", () => {
         "utf-8",
       );
       expect(afterUndo).toBe("line1\nline2\n");
+    });
+  });
+});
+
+function makePiWithToolResultCapture() {
+  const handlers = new Map<string, (...args: unknown[]) => unknown>();
+  const tools = new Map<string, any>();
+  const pi = {
+    registerTool(tool: any) {
+      tools.set(tool.name, tool);
+    },
+    registerCommand() {},
+    on(event: string, handler: (...args: unknown[]) => unknown) {
+      handlers.set(event, handler);
+    },
+    getActiveTools() {
+      return [];
+    },
+    setActiveTools() {},
+  } as any;
+  return { pi, handlers, tools };
+}
+
+describe("undo cleared after write", () => {
+  it("a successful write clears the undo history for that path", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { pi, handlers, tools } = makePiWithToolResultCapture();
+      register(pi);
+      const editTool = tools.get("replace")!;
+      const undo = tools.get("undo_last_replace")!;
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
+        undefined, undefined, { cwd } as any,
+      );
+
+      const handler = handlers.get("tool_result")!;
+      await handler(
+        { toolName: "write", toolCallId: "w1", input: { path: "sample.ts", content: "new\ncontent\n" }, content: [], details: undefined, isError: false },
+        { cwd } as any,
+      );
+
+      const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      expect(undoResult.isError).toBe(true);
+      expect(getText(undoResult)).toMatch(/no undo history/i);
+    });
+  });
+
+  it("a failed write keeps the undo history", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { pi, handlers, tools } = makePiWithToolResultCapture();
+      register(pi);
+      const editTool = tools.get("replace")!;
+      const undo = tools.get("undo_last_replace")!;
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
+        undefined, undefined, { cwd } as any,
+      );
+
+      const handler = handlers.get("tool_result")!;
+      await handler(
+        { toolName: "write", toolCallId: "w1", input: { path: "sample.ts" }, content: [], details: undefined, isError: true },
+        { cwd } as any,
+      );
+
+      const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      expect(undoResult.isError).toBeFalsy();
+      expect(getText(undoResult)).toMatch(/undone last replace/i);
     });
   });
 });

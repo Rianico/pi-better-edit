@@ -117,6 +117,19 @@ interface PipelineResult {
 
 const ROOT_KS = new Set(["path", "changes", "content_lines", "hash_range_inclusive"]);
 
+const LEGACY_KS = ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"];
+
+export function assertNoLegacyKeys(request: unknown): void {
+  if (!isRec(request)) return;
+  for (const legacyKey of LEGACY_KS) {
+    if (has(request, legacyKey)) {
+      throw new Error(
+        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {content_lines: [...], hash_range_inclusive: ["<START>", "<END>"]}.`
+      );
+    }
+  }
+}
+
 export function assertReq(
   request: unknown,
   flat?: boolean
@@ -125,13 +138,7 @@ export function assertReq(
     throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
   }
 
-  for (const legacyKey of ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"]) {
-    if (has(request, legacyKey)) {
-      throw new Error(
-        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {content_lines: [...], hash_range_inclusive: ["<START>", "<END>"]}.`
-      );
-    }
-  }
+  assertNoLegacyKeys(request);
 
   rejectUnknownFields(request, ROOT_KS, "Edit request");
 
@@ -269,6 +276,11 @@ export async function compPreview(
 ): Promise<RPreview> {
   try {
     const normalized = normReq(request);
+    if (flat && isRec(request) && Array.isArray(request.changes)) {
+      return {
+        error: `[E_BAD_SHAPE] Flat mode does not accept a "changes" array. Send content_lines and hash_range_inclusive at the top level (one edit per call), or use bulk mode for multiple edits per call.`
+      };
+    }
     assertReq(normalized, flat);
     const { path, originalNormalized, originalHashes, result, resultHashes } = await execPipeline(
       normalized,
@@ -355,6 +367,7 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
     promptGuidelines: E_GUIDE,
     prepareArguments: opts.flat
       ? (args: unknown) => {
+          assertNoLegacyKeys(args);
           if (!isRec(args)) return args as any;
           const record = { ...args };
           normalizeFilePath(record);
@@ -363,8 +376,10 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
           }
           return record;
         }
-      : (args: unknown) =>
-          normReq(args) as ReqParams,
+      : (args: unknown) => {
+          assertNoLegacyKeys(args);
+          return normReq(args) as ReqParams;
+        },
     renderShell: "default",
     renderCall(args, theme, context) {
       const previewInput = getPreviewInput(args);
