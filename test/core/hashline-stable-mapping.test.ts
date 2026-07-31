@@ -440,3 +440,74 @@ describe("mapStableHashes — ordering and position stability", () => {
     expect(result[1]).toBe(oldHashes[2]);
   });
 });
+
+describe("mapStableHashes — nearest-candidate selection", () => {
+  it("prefers the nearest surviving candidate when closer ones are removed", async () => {
+    const oldContent = "x\nx\nx\nx\nx";
+    const oldHashes = await lineHashes(oldContent, home.testPath);
+    const removedHashes = new Set(oldHashes.slice(1, 4));
+
+    const result = await lineHashes("x\nx", home.testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes,
+    });
+
+    expect(result).toHaveLength(2);
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[1]).toBe(oldHashes[4]);
+  });
+
+  it("breaks index ties toward the earlier line", async () => {
+    const oldContent = "dup\ndup\ndup";
+    const oldHashes = await lineHashes(oldContent, home.testPath);
+
+    const result = await lineHashes("dup", home.testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(result[0]).toBe(oldHashes[0]);
+  });
+
+  it("assigns fresh hashes when every candidate is removed", async () => {
+    const oldContent = "same\nsame";
+    const oldHashes = await lineHashes(oldContent, home.testPath);
+    const removedHashes = new Set(oldHashes);
+
+    const result = await lineHashes("same", home.testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes,
+    });
+
+    expect(result).toHaveLength(1);
+    expect(removedHashes.has(result[0])).toBe(false);
+  });
+
+  it("keeps uniqueness when interleaving duplicates and removed candidates", async () => {
+    const oldContent = Array.from({ length: 2_000 }, (_, i) =>
+      i % 2 === 0 ? "dup" : `u${i}`,
+    ).join("\n");
+    const oldHashes = await lineHashes(oldContent, home.testPath);
+    const removedHashes = new Set(
+      oldHashes.filter((_, i) => i % 4 === 0),
+    );
+
+    const newLines = Array.from({ length: 1_500 }, (_, i) =>
+      i % 2 === 0 ? "dup" : `n${i}`,
+    );
+    const result = await lineHashes(newLines.join("\n"), home.testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes,
+    });
+
+    expect(result).toHaveLength(1_500);
+    expect(new Set(result).size).toBe(1_500);
+    for (const hash of result) {
+      expect(removedHashes.has(hash)).toBe(false);
+    }
+  }, 120_000);
+});

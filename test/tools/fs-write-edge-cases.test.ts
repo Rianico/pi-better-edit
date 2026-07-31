@@ -224,3 +224,50 @@ describe("writeAtomic — large and binary content", () => {
     });
   });
 });
+
+describe("writeAtomic — stale temp file sweep", () => {
+  it("removes orphaned temp files older than the threshold", async () => {
+    await withTempDir("fs-write-sweep-", async (dir) => {
+      const stale = join(dir, ".tmp-stale-orphan");
+      const fresh = join(dir, ".tmp-fresh-orphan");
+      await writeFile(stale, "leftover");
+      await writeFile(fresh, "leftover");
+      const { utimes } = await import("fs/promises");
+      const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(stale, oldTime, oldTime);
+
+      await writeAtomic(join(dir, "target.txt"), "content");
+
+      await expect(readFile(stale, "utf-8")).rejects.toThrow();
+      await expect(readFile(fresh, "utf-8")).resolves.toBe("leftover");
+      await expect(readFile(join(dir, "target.txt"), "utf-8")).resolves.toBe(
+        "content",
+      );
+    });
+  });
+
+  it("does not remove fresh temp files from concurrent writers", async () => {
+    await withTempDir("fs-write-sweep-", async (dir) => {
+      const fresh = join(dir, ".tmp-concurrent");
+      await writeFile(fresh, "in progress");
+
+      await writeAtomic(join(dir, "target.txt"), "content");
+
+      await expect(readFile(fresh, "utf-8")).resolves.toBe("in progress");
+    });
+  });
+
+  it("leaves unrelated dotfiles untouched", async () => {
+    await withTempDir("fs-write-sweep-", async (dir) => {
+      const dotfile = join(dir, ".gitignore");
+      await writeFile(dotfile, "node_modules");
+      const { utimes } = await import("fs/promises");
+      const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(dotfile, oldTime, oldTime);
+
+      await writeAtomic(join(dir, "target.txt"), "content");
+
+      await expect(readFile(dotfile, "utf-8")).resolves.toBe("node_modules");
+    });
+  });
+});

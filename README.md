@@ -94,7 +94,7 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 
 ### Stable hashing across edits
 
-Hashes are now computed with a persistent store (`~/.config/pi-hashline-edit-pro/hash-store.sqlite`) that preserves hashes for unchanged lines across edits. When you replace lines in a file, the runtime maps the old content against the new content and copies hashes for unchanged lines to their new positions. This means editing one part of a file does not change the hashes of unrelated lines elsewhere — the model can keep using previously seen anchors for untouched regions.
+Hashes are now computed with a persistent store (`~/.config/pi-hashline-edit-pro/hash-store.sqlite`) that preserves hashes for unchanged lines across edits. When you replace lines in a file, the runtime maps the old content against the new content and copies hashes for unchanged lines to their new positions. This means editing one part of a file does not change the hashes of unrelated lines elsewhere — the model can keep using previously seen anchors for untouched regions. A replace that produces identical content (a no-op, reported as "No changes made") never rotates hashes: no file change means no anchor change, so previously read anchors remain valid after a no-op.
 
 The store is a SQLite database (WAL journal mode) keyed by canonical file path. Each snapshot stores a 64-bit content checksum (`xxhash64`) plus the per-line hashes, not the full text, so a cache hit is a single keyed lookup and a one-row write. Reads, replaces, undo, and pruning all share one transactional store, so concurrent Pi sessions editing different files never silently clobber each other's snapshots (per-path writers serialize via `BEGIN IMMEDIATE`; same-path concurrent edits still fail safe — stale anchors are rejected by content matching). Stale snapshots (for files that no longer exist) are pruned on session start.
 
@@ -138,6 +138,22 @@ Settings are stored in `~/.config/pi-hashline-edit-pro/config.json`:
 
 The file is created automatically when any setting is toggled. Both fields are independent — toggling one never clobbers the other.
 
+### Error codes
+
+| Code | Meaning |
+| --- | --- |
+| `[E_BAD_SHAPE]` | Request envelope or edit item has unknown, missing, or wrongly-typed fields. |
+| `[E_BAD_REF]` | An anchor in `hash_range_inclusive` is not a bare 3-char hash. |
+| `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; call `read` for fresh anchors. |
+| `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
+| `[E_INVALID_PATCH]` | `content_lines` contains diff-preview rows (`+HASH│`, `-HASH│`, `-   │`, `-N   `). |
+| `[E_BARE_HASH_PREFIX]` | A `content_lines` entry starts with a hash-like `HASH│` prefix. |
+| `[E_LEGACY_SHAPE]` | The request uses the unsupported `oldText`/`newText` dialect. |
+| `[E_BAD_OP]` | Range start line is after range end line. |
+| `[E_EDIT_CONFLICT]` | Two edits in one batch overlap the same original lines. |
+| `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
+| `[E_FILE_TOO_LARGE]` | The file exceeds the 262,144-line hashline limit. |
+
 ## Design Decisions
 
 - **Stale anchors fail (per-line).** A hash mismatch means that specific line's content changed since the last `read`; the error tells the model to call `read()` to get fresh anchors, then copy the 3-character HASH of the start and end of the range being replaced into `hash_range_inclusive` of the next replace call. Because staleness is per-line, editing or appending lines does **not** invalidate anchors for lines whose content is unchanged — anchors for untouched regions stay valid across edits to other regions.
@@ -149,7 +165,7 @@ The file is created automatically when any setting is toggled. Both fields are i
 - **Per-file mutation queue.** Edits queue by the canonical write target, so concurrent edits through different symlink paths still serialize onto the same underlying file.
 - **Boundary duplication auto-fix.** When the last line of a replacement matches the next surviving line (or the first line matches the preceding one), the runtime automatically strips the duplicate from `content_lines` before applying the edit. This catches a common LLM pattern where closing delimiters like `}`, `});`, or `} else {` are accidentally duplicated. The auto-fix is completely silent — the model sees a normal successful edit. The duplicate never reaches the file. Raw line comparison (not trimmed) avoids false positives when indentation differs.
 - **Flat mode normalization.** When flat mode is active, the tool's `execute` function wraps the top-level `hash_range_inclusive` and `content_lines` into a single-element `changes` array internally, then runs the same pipeline as bulk mode. The `normReq` function in `replace-normalize.ts` also handles flat format directly, so any code path that normalizes input (e.g. `compPreview`) works with both formats.
-- **Persistent hash store.** `lineHashes` is async and uses a persistent store to preserve hashes for unchanged lines across edits. The store is a SQLite database at `~/.config/pi-hashline-edit-pro/hash-store.sqlite` (per-path snapshots keyed by resolved path storing a 64-bit content checksum + line hashes; auto-created on first use). When called from the replace pipeline, it maps old vs new content and copies hashes for unchanged lines. When called from read, it returns saved hashes if the content's checksum matches, otherwise computes fresh hashes via `_lineHashesPure`. Stale snapshots are pruned on session start. This ensures that editing one part of a file does not cascade to change hashes of unrelated lines. Per-operation work scales with the target file, not cumulative history.
+- **Persistent hash store.** `lineHashes` is async and uses a persistent store to preserve hashes for unchanged lines across edits. The store is a SQLite database at `~/.config/pi-hashline-edit-pro/hash-store.sqlite` (per-path snapshots keyed by resolved path storing a 64-bit content checksum + line hashes; auto-created on first use). When called from the replace pipeline, it maps old vs new content and copies hashes for unchanged lines. When called from read, it returns saved hashes if the content's checksum matches, otherwise computes fresh hashes via `_lineHashesPure`. Stale snapshots are pruned on session start. This ensures that editing one part of a file does not cascade to change hashes of unrelated lines. Per-operation work scales with the target file, not cumulative history. If the database is corrupt or unreadable it is quarantined (renamed to `hash-store.sqlite.corrupt-<timestamp>`) and rebuilt from content on the next session start — the store is a cache, never a source of truth.
 ## Hashing
 
 Hashes are computed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (xxHash32 via WebAssembly), then mapped to a 3-character string from the URL-safe base64 alphabet `A-Za-z0-9-_`. That's 64 distinct characters, 6 bits per position, 18 bits of entropy per anchor.
@@ -161,6 +177,8 @@ Before hashing, each line is normalized: carriage returns are stripped and trail
 **Perfect hashing (collision resolution):** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the next available hash is assigned from a bitset (32KB, 262,144 bits) using a hint cursor for O(1) amortized lookup. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
 The runtime always precomputes the full per-line hash array for a file via `lineHashes(content, path)`, then looks up by line number during validation and during `read` / `replace` response formatting. There is no per-line recomputation that could disagree with what the model saw in its last read. When `path` is provided, `lineHashes` uses a persistent store to preserve hashes for unchanged lines across edits — see [Stable hashing across edits](#stable-hashing-across-edits).
 `HASH_LEN` in `src/hashline/hash.ts` sets the hash body length; bump it to 4 if you need even more entropy without collision resolution.
+
+The 3-character space holds 262,144 unique anchors, so files are capped at 262,144 lines: `read` and `replace` reject larger files with `[E_FILE_TOO_LARGE]` (use `write` or a non-line-based approach for very large files).
 
 ### Bare-prefix detector
 

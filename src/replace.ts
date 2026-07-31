@@ -13,12 +13,11 @@ import {
 import { readNormFile } from "./file-reader";
 import { normReq, normalizeFilePath, tryParseContentLines } from "./replace-normalize";
 import { isRec, has, rejectUnknownFields, abortIf } from "./utils";
-import { MAX_HASH_LINES } from "./constants";
 import { resolveTarget, writeAtomic } from "./fs-write";
-import {
-  applyEdits,
+import { applyEdits,
   lineHashes,
   resEdits,
+  MAX_HASH_LINES,
   type HTEdit,
 } from "./hashline";
 import { toCwd } from "./paths";
@@ -166,9 +165,11 @@ export interface ExecPipelineOptions {
 function collectRemovedHashes(
   resolved: { hash_range_inclusive: [{ hash: string }, { hash: string }] }[],
   originalHashes: string[],
+  skipIndices?: Set<number>,
 ): Set<string> {
   const removedHashes = new Set<string>();
-  for (const edit of resolved) {
+  for (const [index, edit] of resolved.entries()) {
+    if (skipIndices?.has(index)) continue;
     const startHash = edit.hash_range_inclusive[0].hash;
     const endHash = edit.hash_range_inclusive[1].hash;
     const startLine = originalHashes.indexOf(startHash);
@@ -234,16 +235,20 @@ export async function execPipeline(
   );
 
   const result = anchorResult.content;
-
-  const removedHashes = collectRemovedHashes(resolved, originalHashes);
+  const isNoop = result === originalNormalized;
 
   const noPersist = options?.noPersist;
-  const resultHashes = await lineHashes(result, absolutePath, {
-    content: originalNormalized,
-    hashes: originalHashes,
-    removedHashes,
-  }, hashStore, noPersist !== true);
-
+  const noopIndices = new Set(anchorResult.noopEdits?.map((n) => n.editIndex) ?? []);
+  const removedHashes = isNoop
+    ? undefined
+    : collectRemovedHashes(resolved, originalHashes, noopIndices);
+  const resultHashes = isNoop
+    ? originalHashes
+    : await lineHashes(result, absolutePath, {
+        content: originalNormalized,
+        hashes: originalHashes,
+        removedHashes,
+      }, hashStore, noPersist !== true);
   const warnings = [...(anchorResult.warnings ?? [])];
 
   const { totalAddedLines, totalRemovedLines } = countLineChanges(

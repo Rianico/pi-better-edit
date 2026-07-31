@@ -21,6 +21,9 @@ const ALPH_SAFE = ALPH.replace(/-/g, "\\-");
 const ALPH_RE = new RegExp(`^[${ALPH_SAFE}]+$`);
 export const HASH_CLASS = `[${ALPH_SAFE}]{${HASH_LEN}}`;
 
+export const HASH_SPACE = ALPH.length ** HASH_LEN;
+export const MAX_HASH_LINES = HASH_SPACE;
+
 function idxToHash(idx: number): string {
   let out = "";
   for (let j = 0; j < HASH_LEN; j++) {
@@ -30,7 +33,7 @@ function idxToHash(idx: number): string {
 }
 
 const HASH_TABLE: string[] = Array.from(
-  { length: 262_144 },
+  { length: HASH_SPACE },
   (_, i) => idxToHash(i),
 );
 
@@ -51,7 +54,7 @@ function canon(line: string): string {
 	return line.replace(/\r/g, "").trimEnd();
 }
 
-const BITSET_WORDS = 8192;
+const BITSET_WORDS = Math.ceil(HASH_SPACE / 32);
 
 function getBit(bits: Uint32Array, idx: number): boolean {
   return (bits[idx >>> 5] >>> (idx & 31) & 1) !== 0;
@@ -98,7 +101,9 @@ function nextZeroBit(bits: Uint32Array, start: number): number {
     if ((word >>> b & 1) === 0) return wordIdx * 32 + b;
   }
 
-  throw new Error("Hash space exhausted");
+  throw new Error(
+    `[E_FILE_TOO_LARGE] Cannot allocate a unique hash anchor: the file exceeds the ${HASH_SPACE}-line limit for ${HASH_LEN}-char hashline anchors. For very large files use write or a non-line-based approach.`,
+  );
 }
 
 function assignHash(used: Uint32Array, baseIdx: number, hint: { value: number }): string {
@@ -175,6 +180,47 @@ function hashToIndex(hash: string): number {
   return idx;
 }
 
+function findNearestCandidate(
+  candidates: { index: number; hash: string }[],
+  target: number,
+  removedHashes?: Set<string>,
+): number {
+  let lo = 0;
+  let hi = candidates.length;
+  while (lo < hi) {
+    const mid = (lo + hi) >>> 1;
+    if (candidates[mid]!.index < target) lo = mid + 1;
+    else hi = mid;
+  }
+  let left = lo - 1;
+  let right = lo;
+  while (left >= 0 || right < candidates.length) {
+    let bestPos = -1;
+    let bestDist = Infinity;
+    if (left >= 0) {
+      const candidate = candidates[left]!;
+      if (!removedHashes?.has(candidate.hash)) {
+        bestPos = left;
+        bestDist = target - candidate.index;
+      }
+    }
+    if (right < candidates.length) {
+      const candidate = candidates[right]!;
+      if (!removedHashes?.has(candidate.hash)) {
+        const dist = candidate.index - target;
+        if (dist < bestDist) {
+          bestPos = right;
+          bestDist = dist;
+        }
+      }
+    }
+    if (bestPos >= 0) return bestPos;
+    left--;
+    right++;
+  }
+  return -1;
+}
+
 function mapStableHashes(
   oldContent: string,
   oldHashes: string[],
@@ -211,18 +257,8 @@ function mapStableHashes(
     const candidates = contentMap.get(line);
     if (!candidates || candidates.length === 0) continue;
 
-    let bestIdx = 0;
-    let bestDist = Infinity;
-    for (let j = 0; j < candidates.length; j++) {
-      if (removedHashes?.has(candidates[j]!.hash)) continue;
-      const dist = Math.abs(candidates[j]!.index - i);
-      if (dist < bestDist) {
-        bestDist = dist;
-        bestIdx = j;
-      }
-    }
-
-    if (removedHashes?.has(candidates[bestIdx]!.hash)) continue;
+    const bestIdx = findNearestCandidate(candidates, i, removedHashes);
+    if (bestIdx < 0) continue;
     const match = candidates.splice(bestIdx, 1)[0]!;
     newHashes[i] = match.hash;
     const matchIdx = hashToIndex(match.hash);

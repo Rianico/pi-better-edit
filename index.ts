@@ -5,6 +5,7 @@ import { regReplaceUndo, clearUndo } from "./src/replace-undo";
 import { regRead, fmtReadPreview } from "./src/read";
 import { visLines } from "./src/utils";
 import { AUTO_READ_MAX } from "./src/constants";
+import { MAX_HASH_LINES } from "./src/hashline";
 import {
   readConfig,
   toggleReplaceMode,
@@ -92,8 +93,9 @@ export default function (pi: ExtensionAPI): void {
     if (typeof filePath !== "string") return;
 
     try {
-      const { normalized, fileHashes, absolutePath } = await readNormFile(filePath, ctx.cwd);
-
+      const { normalized, fileHashes, absolutePath } = await readNormFile(
+        filePath, ctx.cwd, { maxLines: MAX_HASH_LINES },
+      );
       if (visLines(normalized).length === 0) return;
 
       const preview = await fmtReadPreview(normalized, { limit: AUTO_READ_MAX }, fileHashes, absolutePath);

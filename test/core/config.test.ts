@@ -95,3 +95,14 @@ describe("config — readConfig / writeConfig (field isolation)", () => {
     });
   });
 });
+
+describe("config — atomic writes", () => {
+  it("leaves no temp files behind after writeConfig", async () => {
+    await withTempHome(async () => {
+      await writeConfig({ replaceMode: "flat", autoRead: true });
+      const { readdir } = await import("fs/promises");
+      const entries = await readdir(join(tmpHome, ".config", "pi-hashline-edit-pro"));
+      expect(entries).toEqual(["config.json"]);
+    });
+  });
+});

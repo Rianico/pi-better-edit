@@ -40,8 +40,7 @@ let exitHandlerRegistered = false;
 function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
   const db = new DatabaseSync(storePath, {
     timeout: HASH_STORE_BUSY_TIMEOUT,
-    defensive: false,
-  } as any);
+  });
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
   db.exec(
@@ -72,6 +71,36 @@ function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
   return { db, stmts };
 }
 
+function isHealthy(db: DatabaseSync): boolean {
+  try {
+    const row = db.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
+    return row?.quick_check === "ok";
+  } catch {
+    return false;
+  }
+}
+
+async function quarantineStore(storePath: string): Promise<void> {
+  const suffix = `.corrupt-${Date.now()}`;
+  for (const candidate of [storePath, `${storePath}-wal`, `${storePath}-shm`]) {
+    try {
+      await rename(candidate, `${candidate}${suffix}`);
+    } catch (error) {
+      if (errCode(error) !== "ENOENT") {
+        console.error("Failed to quarantine corrupt hash store file:", error);
+      }
+    }
+  }
+}
+
+function shutdownDb(db: DatabaseSync): void {
+  try {
+    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+  } catch {
+  }
+  db.close();
+}
+
 export async function loadHashStore(): Promise<HashStore> {
   const storePath = hashStorePath();
   if (cachedDb && cachedDb.path === storePath && cachedDb.db.isOpen) {
@@ -83,13 +112,27 @@ export async function loadHashStore(): Promise<HashStore> {
   await initHasher();
   await mkdir(hashStoreDir(), { recursive: true });
 
-  const existed = existsSync(storePath);
-  const { db, stmts } = openDb(storePath);
+  let existed = existsSync(storePath);
+  let opened: { db: DatabaseSync; stmts: Prepared };
+  try {
+    opened = openDb(storePath);
+  } catch (error) {
+    console.error("Hash store failed to open, rebuilding:", error);
+    await quarantineStore(storePath);
+    existed = false;
+    opened = openDb(storePath);
+  }
+  if (!isHealthy(opened.db)) {
+    shutdownDb(opened.db);
+    await quarantineStore(storePath);
+    existed = false;
+    opened = openDb(storePath);
+  }
+  const { db, stmts } = opened;
 
   if (!existed) {
     await migrateLegacy(db);
   }
-
   cachedDb = { path: storePath, db, stmts };
 
   if (!exitHandlerRegistered) {
@@ -108,11 +151,7 @@ export async function loadHashStore(): Promise<HashStore> {
 
 export function shutdownHashStore(): void {
   if (cachedDb) {
-    try {
-      cachedDb.db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-    } catch {
-    }
-    cachedDb.db.close();
+    shutdownDb(cachedDb.db);
     cachedDb = null;
   }
 }

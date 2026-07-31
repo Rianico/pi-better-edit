@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lineHashes, _lineHashesPure } from "../../src/hashline";
-import { MAX_HASH_RETRIES } from "../../src/constants";
+import { lineHashes, _lineHashesPure, HASH_SPACE } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
@@ -184,8 +183,8 @@ describe("hash collision stress tests", () => {
 
   it("throws a clear error when hash space is exhausted", () => {
     const line = "x";
-    const content = Array.from({ length: MAX_HASH_RETRIES + 2 }, () => line).join("\n");
-    expect(() => _lineHashesPure(content)).toThrow("Hash space exhausted");
+    const content = Array.from({ length: HASH_SPACE + 1 }, () => line).join("\n");
+    expect(() => _lineHashesPure(content)).toThrow("E_FILE_TOO_LARGE");
   }, 300_000);
 });
 

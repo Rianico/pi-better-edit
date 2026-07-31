@@ -2,9 +2,11 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const rmMock = vi.fn(async () => undefined);
 const renameMock = vi.fn(async () => undefined);
+const handleSyncMock = vi.fn(async () => undefined);
 const openMock = vi.fn(async () => ({
   writeFile: vi.fn(async () => undefined),
   chmod: vi.fn(async () => undefined),
+  sync: handleSyncMock,
   close: vi.fn(async () => undefined),
 }));
 const mkdirMock = vi.fn(async () => undefined);
@@ -26,6 +28,7 @@ describe("writeAtomic temp-file cleanup", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     renameMock.mockResolvedValue(undefined);
+    handleSyncMock.mockResolvedValue(undefined);
   });
 
   it("removes the temp file when rename fails", async () => {

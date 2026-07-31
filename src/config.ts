@@ -1,6 +1,7 @@
-import { readFile, writeFile, mkdir } from "fs/promises";
-import { configDir, configPath } from "./paths";
+import { readFile } from "fs/promises";
+import { configPath } from "./paths";
 import { errCode } from "./utils";
+import { writeAtomic } from "./fs-write";
 
 export type ReplaceMode = "bulk" | "flat";
 export interface Config {
@@ -32,8 +33,7 @@ export async function readConfig(): Promise<Config> {
   }
 }
 export async function writeConfig(config: Config): Promise<void> {
-  await mkdir(configDir(), { recursive: true });
-  await writeFile(configPath(), JSON.stringify(config, null, 2), "utf-8");
+  await writeAtomic(configPath(), JSON.stringify(config, null, 2));
 }
 
 

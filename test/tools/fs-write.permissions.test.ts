@@ -4,9 +4,11 @@ const writeFileMock = vi.fn(async () => undefined);
 const handleWriteFileMock = vi.fn(async () => undefined);
 const handleChmodMock = vi.fn(async () => undefined);
 const handleCloseMock = vi.fn(async () => undefined);
+const handleSyncMock = vi.fn(async () => undefined);
 const openMock = vi.fn(async () => ({
 	writeFile: handleWriteFileMock,
 	chmod: handleChmodMock,
+	sync: handleSyncMock,
 	close: handleCloseMock,
 }));
 const renameMock = vi.fn(async () => undefined);
@@ -31,6 +33,7 @@ describe("writeAtomic permissions", () => {
 		openMock.mockResolvedValue({
 			writeFile: handleWriteFileMock,
 			chmod: handleChmodMock,
+			sync: handleSyncMock,
 			close: handleCloseMock,
 		});
 		statMock.mockResolvedValue({ mode: 0o100600, nlink: 1 });

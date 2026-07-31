@@ -3,6 +3,7 @@ import {
 	lstat,
 	mkdir,
 	open,
+	readdir,
 	readlink,
 	rename,
 	rm,
@@ -71,6 +72,44 @@ export async function resolveTarget(path: string): Promise<string> {
   return resParts(root, parts);
 }
 
+const TEMP_PREFIX = ".tmp-";
+const STALE_TEMP_MS = 60 * 60 * 1000;
+const sweptDirs = new Set<string>();
+
+async function sweepStaleTemps(dir: string): Promise<void> {
+  if (sweptDirs.has(dir)) return;
+  sweptDirs.add(dir);
+  try {
+    const entries = await readdir(dir, { withFileTypes: true });
+    const now = Date.now();
+    for (const entry of entries) {
+      if (!entry.isFile() || !entry.name.startsWith(TEMP_PREFIX)) continue;
+      const tempPath = join(dir, entry.name);
+      try {
+        const stats = await stat(tempPath);
+        if (now - stats.mtimeMs > STALE_TEMP_MS) {
+          await rm(tempPath, { force: true });
+        }
+      } catch {
+      }
+    }
+  } catch {
+  }
+}
+
+async function syncDir(dir: string): Promise<void> {
+  if (process.platform === "win32") return;
+  try {
+    const handle = await open(dir, "r");
+    try {
+      await handle.sync();
+    } finally {
+      await handle.close();
+    }
+  } catch {
+  }
+}
+
 export async function writeAtomic(
   path: string,
   content: string,
@@ -92,7 +131,8 @@ export async function writeAtomic(
   }
 
   const dir = dirname(targetPath);
-  const tempPath = join(dir, `.tmp-${randomUUID()}`);
+  await sweepStaleTemps(dir);
+  const tempPath = join(dir, `${TEMP_PREFIX}${randomUUID()}`);
   await mkdir(dir, { recursive: true });
   const tempHandle = await open(tempPath, "wx", 0o600);
   try {
@@ -100,6 +140,7 @@ export async function writeAtomic(
     if (existingStats) {
       await tempHandle.chmod(existingStats.mode & 0o7777);
     }
+    await tempHandle.sync();
   } catch (error: unknown) {
     await tempHandle.close();
     try { await rm(tempPath, { force: true }); } catch {}
@@ -108,12 +149,13 @@ export async function writeAtomic(
   try {
     await tempHandle.close();
     await rename(tempPath, targetPath);
+    await syncDir(dir);
   } catch (error: unknown) {
     if (errCode(error) === "EXDEV") {
       try {
-        await tempHandle.close();
         await copyFile(tempPath, targetPath);
         await rm(tempPath, { force: true });
+        await syncDir(dir);
         return;
       } catch {
         try { await rm(tempPath, { force: true }); } catch {}

@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile, stat } from "fs/promises";
+import { mkdtemp, mkdir, rm, writeFile, stat, readdir } from "fs/promises";
 import { existsSync } from "fs";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
@@ -321,6 +321,44 @@ describe("hash-store — WAL checkpoint on shutdown", () => {
       shutdownHashStore();
 
       expect(existsSync(walPath)).toBe(false);
+    });
+  });
+});
+
+describe("hash-store — corrupt database recovery", () => {
+  it("rebuilds the store when the database file is corrupt", async () => {
+    await withTempHome(async (home) => {
+      await mkdir(configHome(home), { recursive: true });
+      await writeFile(sqlitePath(home), "this is not a sqlite database", "utf-8");
+
+      const store = await loadHashStore();
+      expect(getSnapshot(store, "/x.ts", "a\n")).toBeUndefined();
+
+      upsertSnapshot(store, "/x.ts", contentChecksum("a\n"), 1, ["AAA"]);
+      expect(getSnapshot(store, "/x.ts", "a\n")).toEqual(["AAA"]);
+    });
+  });
+
+  it("quarantines the corrupt file instead of deleting it", async () => {
+    await withTempHome(async (home) => {
+      await mkdir(configHome(home), { recursive: true });
+      await writeFile(sqlitePath(home), "garbage bytes", "utf-8");
+
+      await loadHashStore();
+
+      const entries = await readdir(configHome(home));
+      expect(entries.some((name) => name.includes(".corrupt-"))).toBe(true);
+      expect(existsSync(sqlitePath(home))).toBe(true);
+    });
+  });
+
+  it("keeps working when the store is healthy", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      upsertSnapshot(store, "/p.ts", contentChecksum("b\n"), 1, ["BBB"]);
+      expect(getSnapshot(store, "/p.ts", "b\n")).toEqual(["BBB"]);
+      const entries = await readdir(configHome(home));
+      expect(entries.some((name) => name.includes(".corrupt-"))).toBe(false);
     });
   });
 });

@@ -5,9 +5,11 @@ const rmMock = vi.fn(async () => undefined);
 const handleCloseMock = vi.fn(async () => undefined);
 const handleWriteFileMock = vi.fn(async () => undefined);
 const handleChmodMock = vi.fn(async () => undefined);
+const handleSyncMock = vi.fn(async () => undefined);
 const openMock = vi.fn(async () => ({
   writeFile: handleWriteFileMock,
   chmod: handleChmodMock,
+  sync: handleSyncMock,
   close: handleCloseMock,
 }));
 const renameMock = vi.fn(async () => undefined);
@@ -35,6 +37,7 @@ describe("writeAtomic — temp file cleanup on write failure", () => {
     openMock.mockResolvedValue({
       writeFile: handleWriteFileMock,
       chmod: handleChmodMock,
+      sync: handleSyncMock,
       close: handleCloseMock,
     });
     renameMock.mockResolvedValue(undefined);

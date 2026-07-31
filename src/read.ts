@@ -8,7 +8,7 @@ import {
 import { Type } from "typebox";
 import { loadFileKindAndText } from "./file-kind";
 import { readNormFile } from "./file-reader";
-import { lineHashes, fmtRegion, HASH_SEP } from "./hashline";
+import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline";
 import { toCwd } from "./paths";
 import { abortIf } from "./utils";
 import { fileSnap } from "./file-reader";
@@ -159,7 +159,7 @@ export function regRead(pi: ExtensionAPI): void {
 				return executeBuiltinRead(_toolCallId, params, signal, _onUpdate, ctx);
 			}
       const { normalized, fileHashes, hadUtf8DecodeErrors } = await readNormFile(
-        rawPath, ctx.cwd, { signal, preloadedFile: file },
+        rawPath, ctx.cwd, { signal, preloadedFile: file, maxLines: MAX_HASH_LINES },
       );
 			const preview = await fmtReadPreview(
 				normalized,
