@@ -85,8 +85,12 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
           undo.bom + restoreEndings(undo.content, undo.originalEnding),
         );
 
-        const store = await loadHashStore();
-        upsertSnapshot(store, mutationTargetPath, contentChecksum(undo.content), splitLines(undo.content).length, undo.hashes);
+        try {
+          const store = await loadHashStore();
+          upsertSnapshot(store, mutationTargetPath, contentChecksum(undo.content), splitLines(undo.content).length, undo.hashes);
+        } catch (error) {
+          console.error("Failed to restore hash store snapshot after undo:", error);
+        }
 
         clearUndo(mutationTargetPath);
 

@@ -32,10 +32,16 @@ function idxToHash(idx: number): string {
   return out;
 }
 
-const HASH_TABLE: string[] = Array.from(
-  { length: HASH_SPACE },
-  (_, i) => idxToHash(i),
-);
+const hashCache = new Map<number, string>();
+
+function hashAt(idx: number): string {
+  let hash = hashCache.get(idx);
+  if (hash === undefined) {
+    hash = idxToHash(idx);
+    hashCache.set(idx, hash);
+  }
+  return hash;
+}
 
 export const HL_PREFIX_PLUS_RE = new RegExp(
 	`^\\+\\s*${HASH_CLASS}│`,
@@ -107,13 +113,13 @@ function assignHash(used: Uint32Array, baseIdx: number, hint: { value: number })
   if (!getBit(used, baseIdx)) {
     setBit(used, baseIdx);
     hint.value = baseIdx + 1;
-    return HASH_TABLE[baseIdx];
+    return hashAt(baseIdx);
   }
   const start = hint.value > baseIdx + 1 ? hint.value : baseIdx + 1;
   const nextIdx = nextZeroBit(used, start);
   setBit(used, nextIdx);
   hint.value = nextIdx + 1;
-  return HASH_TABLE[nextIdx];
+  return hashAt(nextIdx);
 }
 
 export function _lineHashesPure(content: string): string[] {

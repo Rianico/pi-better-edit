@@ -7,6 +7,7 @@ import {
   symlink,
   link,
   chmod,
+  utimes,
   open,
 } from "fs/promises";
 import { join } from "path";
@@ -179,6 +180,24 @@ describe("writeAtomic", () => {
       await writeAtomic(filePath, content);
       const read = await readFile(filePath, "utf-8");
       expect(read).toBe(content);
+    });
+  });
+
+  it("sweeps only its own stale temp files, never user files with a .tmp- prefix", async () => {
+    await withTempDir("fs-write-test-", async (dir) => {
+      const userFile = join(dir, ".tmp-user-notes.txt");
+      await writeFile(userFile, "precious");
+      const stale = new Date(Date.now() - 2 * 60 * 60 * 1000);
+      await utimes(userFile, stale, stale);
+      const ownTemp = join(dir, ".tmp-12345678-1234-1234-1234-123456789abc");
+      await writeFile(ownTemp, "stale temp");
+      await utimes(ownTemp, stale, stale);
+
+      const target = join(dir, "target.txt");
+      await writeAtomic(target, "content");
+
+      expect(await readFile(userFile, "utf-8")).toBe("precious");
+      await expect(stat(ownTemp)).rejects.toThrow();
     });
   });
 });

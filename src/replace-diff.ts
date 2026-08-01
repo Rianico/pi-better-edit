@@ -45,7 +45,6 @@ export function genDiff(
   newContent: string,
   contextLines = 2,
   newContentHashes?: string[],
-  _oldHashes?: string[],
 ): { diff: string; firstChangedLine: number | undefined } {
   const effectiveNewHashes = newContentHashes ?? _lineHashesPure(newContent);
 

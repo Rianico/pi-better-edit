@@ -59,7 +59,9 @@ function assertNoPrefixes(lines: string[]): void {
 }
 
 export function parseText(edit: string[] | string | null): string[] {
-  if (edit === null) return [];
+  if (edit === null) {
+    throw new Error('[E_BAD_SHAPE] "content_lines" must be a string array; use [] to delete a range.');
+  }
   if (typeof edit === "string") {
     throw new Error(CONTENT_LINES_NOT_STRING_MSG);
   }

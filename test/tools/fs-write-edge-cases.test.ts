@@ -226,20 +226,24 @@ describe("writeAtomic — large and binary content", () => {
 });
 
 describe("writeAtomic — stale temp file sweep", () => {
-  it("removes orphaned temp files older than the threshold", async () => {
+  it("removes its own stale UUID temp files but never user files with a .tmp- prefix", async () => {
     await withTempDir("fs-write-sweep-", async (dir) => {
-      const stale = join(dir, ".tmp-stale-orphan");
-      const fresh = join(dir, ".tmp-fresh-orphan");
+      const stale = join(dir, ".tmp-12345678-1234-1234-1234-123456789abc");
+      const fresh = join(dir, ".tmp-fedcba98-7654-4321-8765-abcdefabcdef");
+      const userFile = join(dir, ".tmp-user-notes");
       await writeFile(stale, "leftover");
       await writeFile(fresh, "leftover");
+      await writeFile(userFile, "precious");
       const { utimes } = await import("fs/promises");
       const oldTime = new Date(Date.now() - 2 * 60 * 60 * 1000);
       await utimes(stale, oldTime, oldTime);
+      await utimes(userFile, oldTime, oldTime);
 
       await writeAtomic(join(dir, "target.txt"), "content");
 
       await expect(readFile(stale, "utf-8")).rejects.toThrow();
       await expect(readFile(fresh, "utf-8")).resolves.toBe("leftover");
+      await expect(readFile(userFile, "utf-8")).resolves.toBe("precious");
       await expect(readFile(join(dir, "target.txt"), "utf-8")).resolves.toBe(
         "content",
       );
@@ -248,7 +252,7 @@ describe("writeAtomic — stale temp file sweep", () => {
 
   it("does not remove fresh temp files from concurrent writers", async () => {
     await withTempDir("fs-write-sweep-", async (dir) => {
-      const fresh = join(dir, ".tmp-concurrent");
+      const fresh = join(dir, ".tmp-abcdefab-cdef-1234-5678-abcdefabcdef");
       await writeFile(fresh, "in progress");
 
       await writeAtomic(join(dir, "target.txt"), "content");

@@ -63,8 +63,8 @@ describe("parseHashRef", () => {
 });
 
 describe("parseText", () => {
-	it("returns [] for null", () => {
-		expect(parseText(null)).toEqual([]);
+	it("rejects null with a clear error (use [] to delete)", () => {
+		expect(() => parseText(null)).toThrow(/^\[E_BAD_SHAPE\].*string array/);
 	});
 
   it("rejects string input with clear error (must use array)", () => {

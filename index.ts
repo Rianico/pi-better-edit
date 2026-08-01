@@ -15,11 +15,11 @@ import { loadHashStore, pruneMissing } from "./src/hash-store";
 import { readNormFile } from "./src/file-reader";
 import { toCwd } from "./src/paths";
 import { resolveTarget } from "./src/fs-write";
-function registerReplaceTool(pi: ExtensionAPI, mode: string, autoRead?: boolean): void {
+function registerReplaceTool(pi: ExtensionAPI, mode: string): void {
   if (mode === "flat") {
-    regReplaceFlat(pi, autoRead);
+    regReplaceFlat(pi);
   } else {
-    regReplace(pi, autoRead);
+    regReplace(pi);
   }
 }
 
@@ -46,7 +46,7 @@ export default function (pi: ExtensionAPI): void {
     const config = await readConfig();
     const mode = config.replaceMode;
     autoRead = config.autoRead;
-    registerReplaceTool(pi, mode, autoRead);
+    registerReplaceTool(pi, mode);
 
 
     if (debugValue === "1" || debugValue === "true") {
@@ -58,7 +58,7 @@ export default function (pi: ExtensionAPI): void {
     description: "Toggle replace tool between bulk (changes array) and flat (single edit at top level) mode",
     handler: async (_args, ctx) => {
       const mode = await toggleReplaceMode();
-      registerReplaceTool(pi, mode, autoRead);
+      registerReplaceTool(pi, mode);
       ctx.ui.notify(`Replace mode switched to: ${mode}`, "info");
     },
   });
@@ -68,7 +68,7 @@ export default function (pi: ExtensionAPI): void {
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
       const mode = (await readConfig()).replaceMode;
-      registerReplaceTool(pi, mode, autoRead);
+      registerReplaceTool(pi, mode);
       const state = autoRead ? "enabled" : "disabled";
       ctx.ui.notify(`Auto-read after write/replace: ${state}`, "info");
     },

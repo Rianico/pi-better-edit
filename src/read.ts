@@ -30,7 +30,7 @@ function normPosInt(
 	}
 
 	if (!Number.isInteger(value) || value < 1) {
-		throw new Error(`Read request field "${name}" must be a positive integer.`);
+		throw new Error(`[E_BAD_SHAPE] Read request field "${name}" must be a positive integer.`);
 	}
 
 	return value;

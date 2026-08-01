@@ -40,6 +40,55 @@ describe("applyEdits — recovery scenarios", () => {
     ).toThrow(/E_STALE_ANCHOR/);
   });
 
+  it("shows current context around the resolved anchor when only one anchor of a range is stale", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, home.testPath);
+    const staleStart = "ZZZ";
+    let caught: Error | undefined;
+    try {
+      applyEdits(content, resEdits([
+        { hash_range_inclusive: [staleStart, hashes[2]!], content_lines: ["X"] },
+      ]));
+    } catch (error) {
+      caught = error as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught!.message).toMatch(/E_STALE_ANCHOR/);
+    expect(caught!.message).toMatch(/Current context around resolved anchor/);
+    expect(caught!.message).toContain(` 3: ${hashes[2]}│c`);
+  });
+
+  it("shows context anchored on the start when only the end is stale", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, home.testPath);
+    const staleEnd = "ZZZ";
+    let caught: Error | undefined;
+    try {
+      applyEdits(content, resEdits([
+        { hash_range_inclusive: [hashes[0]!, staleEnd], content_lines: ["X"] },
+      ]));
+    } catch (error) {
+      caught = error as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught!.message).toMatch(/Current context around resolved anchor/);
+    expect(caught!.message).toContain(` 1: ${hashes[0]}│a`);
+  });
+
+  it("omits context when both anchors are stale", async () => {
+    const content = "a\nb\nc";
+    let caught: Error | undefined;
+    try {
+      applyEdits(content, resEdits([
+        { hash_range_inclusive: ["ZZZ", "YYY"], content_lines: ["X"] },
+      ]));
+    } catch (error) {
+      caught = error as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught!.message).not.toMatch(/Current context around resolved anchor/);
+  });
+
   it("rejects ambiguous anchor", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);

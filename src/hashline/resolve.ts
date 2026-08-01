@@ -19,6 +19,7 @@ interface HMismatch {
 	ref: Anchor;
 	kind: "not_found" | "ambiguous";
 	candidates?: number[];
+	context?: RAnchor;
 }
 
 export interface BDupWarn {
@@ -95,6 +96,18 @@ export function fmtMismatch(
     out.push(
       `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
     );
+    for (const m of notFound) {
+      const ctx = m.context;
+      if (!ctx) continue;
+      const from = Math.max(1, ctx.line - 1);
+      const to = Math.min(fileLines.length, ctx.line + 1);
+      const rows: string[] = [];
+      for (let ln = from; ln <= to; ln++) {
+        rows.push(`    ${ln}: ${fileHashes[ln - 1]}│${clipLine(fileLines[ln - 1] ?? "")}`);
+      }
+      out.push("");
+      out.push(`  Current context around resolved anchor "${ctx.hash}" (line ${ctx.line}):\n${rows.join("\n")}`);
+    }
   }
   if (ambiguous.length > 0) {
     if (out.length > 0) out.push("");
@@ -297,6 +310,13 @@ export function valEdits(
 		const startResolved = tryResolve(edit.hash_range_inclusive[0]);
 		const endResolved = tryResolve(edit.hash_range_inclusive[1]);
 		if (!startResolved || !endResolved) {
+			if (!startResolved && endResolved) {
+				const startMismatch = mismatches.findLast((m) => m.ref === edit.hash_range_inclusive[0]);
+				if (startMismatch && startMismatch.kind === "not_found") startMismatch.context = endResolved;
+			} else if (startResolved && !endResolved) {
+				const endMismatch = mismatches.findLast((m) => m.ref === edit.hash_range_inclusive[1]);
+				if (endMismatch && endMismatch.kind === "not_found") endMismatch.context = startResolved;
+			}
 			continue;
 		}
 		if (startResolved.line > endResolved.line) {

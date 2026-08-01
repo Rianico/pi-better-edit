@@ -287,7 +287,7 @@ export async function compPreview(
       };
     }
     assertReq(normalized, flat);
-    const { path, originalNormalized, originalHashes, result, resultHashes } = await execPipeline(
+    const { path, originalNormalized, result, resultHashes } = await execPipeline(
       normalized,
       cwd,
       { accessMode: constants.R_OK, noPersist: true },
@@ -299,7 +299,7 @@ export async function compPreview(
       };
     }
 
-    return { diff: genDiff(originalNormalized, result, 4, resultHashes, originalHashes).diff };
+    return { diff: genDiff(originalNormalized, result, 4, resultHashes).diff };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : String(error) };
   }
@@ -336,7 +336,7 @@ const MODE_CFG = {
   },
 } as const;
 
-export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolDef {
+export function buildToolDef(opts: { flat: boolean }): ToolDef {
   const cfg = MODE_CFG[opts.flat ? "flat" : "bulk"];
 
   const E_DESC = loadP("../prompts/replace.md");
@@ -554,14 +554,14 @@ export function buildToolDef(opts: { flat: boolean; autoRead?: boolean }): ToolD
   };
 }
 
-export function regReplace(pi: ExtensionAPI, autoRead?: boolean): void {
-  pi.registerTool(buildToolDef({ flat: false, autoRead }));
+export function regReplace(pi: ExtensionAPI): void {
+  pi.registerTool(buildToolDef({ flat: false }));
 }
 
-export function buildToolDefFlat(autoRead?: boolean) {
-  return buildToolDef({ flat: true, autoRead });
+export function buildToolDefFlat() {
+  return buildToolDef({ flat: true });
 }
 
-export function regReplaceFlat(pi: ExtensionAPI, autoRead?: boolean): void {
-  pi.registerTool(buildToolDef({ flat: true, autoRead }));
+export function regReplaceFlat(pi: ExtensionAPI): void {
+  pi.registerTool(buildToolDef({ flat: true }));
 }
