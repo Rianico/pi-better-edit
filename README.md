@@ -103,9 +103,9 @@ On first run after upgrading, a one-time migration imports the previous `hash-st
 ### Chained edits
 
 After a successful replace, the response confirms with `Successfully replaced in {path}. Added X line(s), removed Y line(s).` (warnings are still shown if present). When auto-read is enabled, fresh anchors are appended automatically. Otherwise call `read` to get fresh anchors for follow-up edits.
-### Auto-read after write and replace
+### Auto-read after write, replace, and undo
 
-Auto-read is **disabled by default**. When enabled, after a successful `write` or `replace` the extension automatically reads the file and appends a `--- Auto-read (hashline anchors) ---` block to the result. This gives the model immediate `HASH│content` anchors for the file without requiring a separate `read` call. The workflow becomes:
+Auto-read is **disabled by default**. When enabled, after a successful `write`, `replace`, or `undo_last_replace` the extension automatically reads the file and appends a `--- Auto-read (hashline anchors) ---` block to the result. This gives the model immediate `HASH│content` anchors for the file without requiring a separate `read` call. The workflow becomes:
 
 1. `write` a file, result includes hashline anchors
 2. `replace` using those anchors directly

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	applyEdits,
 	lineHashes,
@@ -28,7 +28,6 @@ describe("strict edit input (no autocorrection)", () => {
 	});
 
 	it("rejects string content_lines before patch-prefix validation", () => {
-		const file = "foo\nbar";
 		const toolEdits: HTEdit[] = [
 			{
         hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: `+ZZZ:foo`,
@@ -40,7 +39,6 @@ describe("strict edit input (no autocorrection)", () => {
 	});
 
 	it("rejects diff deletion rows in array form", () => {
-		const file = "foo\nbar";
 		const toolEdits: HTEdit[] = [
       { hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: ["-1    foo"] },
     ];
@@ -48,7 +46,6 @@ describe("strict edit input (no autocorrection)", () => {
 	});
 
 	it("accepts plain literal content unchanged", () => {
-		const file = "foo\nbar";
 		const toolEdits: HTEdit[] = [
       { hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: ["bar"] },
     ];
@@ -58,7 +55,6 @@ describe("strict edit input (no autocorrection)", () => {
 	});
 
 	it("preserves '#' comment lines that do not match the strict prefix", () => {
-		const file = "foo\nbar";
 		const toolEdits: HTEdit[] = [
       { hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: ["# keep me"] },
     ];

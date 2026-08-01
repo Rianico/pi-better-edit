@@ -1,8 +1,5 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
-
-const home = useTestHome();
+import { describe, expect, it } from "vitest";
+import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 describe("snapshotId surface (details-only after W2)", () => {
   it("edit succeeds even when the file changed on disk between read and edit, as long as anchors still match", async () => {

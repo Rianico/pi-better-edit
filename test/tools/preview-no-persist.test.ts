@@ -1,17 +1,14 @@
 import { describe, expect, it } from "vitest";
-import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { compPreview } from "../../src/replace";
 import { loadHashStore, getSnapshot } from "../../src/hash-store";
-import { withTempFile, useTestHome } from "../support/fixtures";
-
-const home = useTestHome();
+import { withTempFile } from "../support/fixtures";
 
 describe("compPreview no-persist guarantee", () => {
 
   it("does not persist hypothetical result to hash store", async () => {
     const content = "a\nb\nc\nb\nd\n";
-    await withTempFile("sample.txt", content, async ({ cwd, path: filePath }) => {
+    await withTempFile("sample.txt", content, async ({ cwd }) => {
       const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
         await (await import("../../src/paths")).toCwd("sample.txt", cwd)
       );
@@ -45,7 +42,7 @@ describe("compPreview no-persist guarantee", () => {
 
   it("does not leave hypothetical snapshot behind after abandoned preview", async () => {
     const content = "a\nb\nc\nd\n";
-    await withTempFile("sample.txt", content, async ({ cwd, path: filePath }) => {
+    await withTempFile("sample.txt", content, async ({ cwd }) => {
       const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
         await (await import("../../src/paths")).toCwd("sample.txt", cwd)
       );
@@ -69,7 +66,7 @@ describe("compPreview no-persist guarantee", () => {
 
   it("does not invalidate anchors that were valid before preview", async () => {
     const content = "a\nb\nc\nb\nd\n";
-    await withTempFile("sample.txt", content, async ({ cwd, path: filePath }) => {
+    await withTempFile("sample.txt", content, async ({ cwd }) => {
       const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
         await (await import("../../src/paths")).toCwd("sample.txt", cwd)
       );

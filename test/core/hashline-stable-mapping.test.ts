@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import { lineHashes } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
 
@@ -32,8 +32,8 @@ describe("mapStableHashes — identity and simple changes", () => {
     expect(result[1]).toBe(oldHashes[1]);
     expect(result[2]).toBe(oldHashes[2]);
     expect(result).toHaveLength(5);
-    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-    expect(result[4]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[3]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+    expect(result[4]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[3]).not.toBe(oldHashes[0]);
     expect(result[4]).not.toBe(oldHashes[1]);
   });
@@ -48,9 +48,9 @@ describe("mapStableHashes — identity and simple changes", () => {
       hashes: oldHashes,
     });
 
-    expect(result[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[0]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+    expect(result[2]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[3]).toBe(oldHashes[0]);
     expect(result[4]).toBe(oldHashes[1]);
     expect(result[5]).toBe(oldHashes[2]);
@@ -68,8 +68,8 @@ describe("mapStableHashes — identity and simple changes", () => {
 
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
-    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[2]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+    expect(result[3]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[4]).toBe(oldHashes[2]);
     expect(result[5]).toBe(oldHashes[3]);
   });
@@ -84,9 +84,9 @@ describe("mapStableHashes — identity and simple changes", () => {
       hashes: oldHashes,
     });
 
-    expect(result[0]).toBe(oldHashes[0]); // "a"
-    expect(result[1]).toBe(oldHashes[2]); // "c"
-    expect(result[2]).toBe(oldHashes[4]); // "e"
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[1]).toBe(oldHashes[2]);
+    expect(result[2]).toBe(oldHashes[4]);
     expect(result).toHaveLength(3);
   });
 
@@ -100,9 +100,9 @@ describe("mapStableHashes — identity and simple changes", () => {
       hashes: oldHashes,
     });
 
-    expect(result[0]).toBe(oldHashes[0]); // "a"
-    expect(result[2]).toBe(oldHashes[2]); // "c"
-    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[2]).toBe(oldHashes[2]);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[1]);
   });
 });
@@ -118,12 +118,12 @@ describe("mapStableHashes — multiple changes combined", () => {
       hashes: oldHashes,
     });
 
-    expect(result[0]).toBe(oldHashes[0]); // "a" unchanged
-    expect(result[1]).toBe(oldHashes[2]); // "c" unchanged (shifted up)
-    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/); // "x" is new
-    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/); // "D" is modified
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[1]).toBe(oldHashes[2]);
+    expect(result[2]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+    expect(result[3]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[3]).not.toBe(oldHashes[3]);
-    expect(result[4]).toBe(oldHashes[4]); // "e" unchanged (shifted up)
+    expect(result[4]).toBe(oldHashes[4]);
   });
 
   it("handles deleting the first and last lines", async () => {
@@ -137,8 +137,8 @@ describe("mapStableHashes — multiple changes combined", () => {
     });
 
     expect(result).toHaveLength(2);
-    expect(result[0]).toBe(oldHashes[1]); // "b"
-    expect(result[1]).toBe(oldHashes[2]); // "c"
+    expect(result[0]).toBe(oldHashes[1]);
+    expect(result[1]).toBe(oldHashes[2]);
   });
 
   it("handles replacing the entire content with completely different lines", async () => {
@@ -171,7 +171,7 @@ describe("mapStableHashes — edge cases", () => {
 
     expect(result).toHaveLength(3);
     for (const hash of result) {
-      expect(hash).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+      expect(hash).toMatch(/^[A-Za-z0-9_-]{3}$/);
     }
   });
 
@@ -185,9 +185,9 @@ describe("mapStableHashes — edge cases", () => {
       hashes: oldHashes,
     });
 
-    expect(result[0]).toBe(oldHashes[0]); // "a" keeps its hash
-    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/); // "b" is new
-    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/); // "c" is new
+    expect(result[0]).toBe(oldHashes[0]);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+    expect(result[2]).toMatch(/^[A-Za-z0-9_-]{3}$/);
   });
 
   it("handles multi-line old content becoming single-line", async () => {
@@ -201,7 +201,7 @@ describe("mapStableHashes — edge cases", () => {
     });
 
     expect(result).toHaveLength(1);
-    expect(result[0]).toBe(oldHashes[1]); // "b" keeps its hash
+    expect(result[0]).toBe(oldHashes[1]);
   });
 
   it("handles content with only newlines", async () => {
@@ -217,7 +217,7 @@ describe("mapStableHashes — edge cases", () => {
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
     expect(result[2]).toBe(oldHashes[2]);
-    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[3]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[3]).not.toBe(oldHashes[0]);
   });
 
@@ -235,7 +235,7 @@ describe("mapStableHashes — edge cases", () => {
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[1]).toBe(oldHashes[1]);
     expect(result[2]).toBe(oldHashes[2]);
-    expect(result[3]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[3]).toMatch(/^[A-Za-z0-9_-]{3}$/);
   });
 });
 
@@ -267,7 +267,7 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[2]).toBe(oldHashes[2]);
-    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[1]);
   });
 
@@ -283,7 +283,7 @@ describe("mapStableHashes — removedHashes edge cases", () => {
 
     expect(result[0]).toBe(oldHashes[0]);
     expect(result[2]).toBe(oldHashes[2]);
-    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[1]);
   });
 
@@ -356,7 +356,7 @@ describe("mapStableHashes — removedHashes edge cases", () => {
     });
 
     expect(result[1]).toBe(secondBHash);
-    expect(result[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[2]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[2]).not.toBe(firstBHash);
     expect(result[2]).not.toBe(secondBHash);
     expect(result[3]).toBe(oldHashes[3]);
@@ -404,9 +404,9 @@ describe("mapStableHashes — ordering and position stability", () => {
       hashes: oldHashes,
     });
 
-    expect(result[0]).toBe(oldHashes[2]); // "c" moved to position 0
-    expect(result[1]).toBe(oldHashes[0]); // "a" moved to position 1
-    expect(result[2]).toBe(oldHashes[1]); // "b" moved to position 2
+    expect(result[0]).toBe(oldHashes[2]);
+    expect(result[1]).toBe(oldHashes[0]);
+    expect(result[2]).toBe(oldHashes[1]);
   });
 
   it("preserves hashes when a line appears multiple times in new content", async () => {
@@ -420,7 +420,7 @@ describe("mapStableHashes — ordering and position stability", () => {
     });
 
     expect(result[0]).toBe(oldHashes[0]);
-    expect(result[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[1]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(result[1]).not.toBe(oldHashes[0]);
     expect(result[2]).toBe(oldHashes[1]);
   });
@@ -435,7 +435,7 @@ describe("mapStableHashes — ordering and position stability", () => {
       hashes: oldHashes,
     });
 
-    expect(result[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+    expect(result[0]).toMatch(/^[A-Za-z0-9_-]{3}$/);
     expect(oldHashes.slice(0, 2)).toContain(result[0]);
     expect(result[1]).toBe(oldHashes[2]);
   });

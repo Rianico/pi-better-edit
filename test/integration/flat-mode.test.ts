@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { withTempFile, setupFlatIntegrationTest, useTestHome, getText, extractHash } from "../support/fixtures";

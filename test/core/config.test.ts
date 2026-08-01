@@ -1,5 +1,5 @@
-import { describe, expect, it, vi } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile, readFile } from "fs/promises";
+import { describe, expect, it, vi, afterEach } from "vitest";
+import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import {
   toggleReplaceMode,
@@ -103,6 +103,60 @@ describe("config — atomic writes", () => {
       const { readdir } = await import("fs/promises");
       const entries = await readdir(join(tmpHome, ".config", "pi-hashline-edit-pro"));
       expect(entries).toEqual(["config.json"]);
+    });
+  });
+});
+
+describe("config — PI_HASHLINE_AUTO_READ env defaults", () => {
+  const savedEnv = process.env.PI_HASHLINE_AUTO_READ;
+
+  afterEach(() => {
+    if (savedEnv === undefined) {
+      delete process.env.PI_HASHLINE_AUTO_READ;
+    } else {
+      process.env.PI_HASHLINE_AUTO_READ = savedEnv;
+    }
+  });
+
+  it("seeds autoRead from env when no config file exists", async () => {
+    process.env.PI_HASHLINE_AUTO_READ = "1";
+    await withTempHome(async () => {
+      const config = await readConfig();
+      expect(config.autoRead).toBe(true);
+      expect(config.replaceMode).toBe("bulk");
+    });
+  });
+
+  it("accepts 'true' as an enabling value", async () => {
+    process.env.PI_HASHLINE_AUTO_READ = "true";
+    await withTempHome(async () => {
+      expect((await readConfig()).autoRead).toBe(true);
+    });
+  });
+
+  it("ignores other env values", async () => {
+    process.env.PI_HASHLINE_AUTO_READ = "0";
+    await withTempHome(async () => {
+      expect((await readConfig()).autoRead).toBe(false);
+    });
+  });
+
+  it("config file wins over env var", async () => {
+    process.env.PI_HASHLINE_AUTO_READ = "1";
+    await withTempHome(async () => {
+      await writeConfig({ replaceMode: "bulk", autoRead: false });
+      expect((await readConfig()).autoRead).toBe(false);
+    });
+  });
+
+  it("toggleReplaceMode does not drop env-seeded autoRead", async () => {
+    process.env.PI_HASHLINE_AUTO_READ = "1";
+    await withTempHome(async () => {
+      const mode = await toggleReplaceMode();
+      expect(mode).toBe("flat");
+      const config = await readConfig();
+      expect(config.replaceMode).toBe("flat");
+      expect(config.autoRead).toBe(true);
     });
   });
 });

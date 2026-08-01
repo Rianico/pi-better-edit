@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveTarget, writeAtomic } from "../../src/fs-write";
-import { mkdtemp, writeFile, mkdir, rm, readFile, symlink } from "fs/promises";
+import { mkdtemp, writeFile, rm, readFile, symlink } from "fs/promises";
 import { join } from "path";
 
 describe("resolveTarget", () => {

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { loadHashStore, getSnapshot } from "../../src/hash-store";
@@ -15,7 +15,7 @@ const home = useTestHome();
 describe("undo_last_replace", () => {
   it("returns error when there is no undo history", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const { pi, getTool, ctx } = setupIntegrationTest(cwd);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
       const undo = getTool("undo_last_replace");
 
       const result = await undo.execute(
@@ -33,7 +33,7 @@ describe("undo_last_replace", () => {
 
   it("restores file content after a single-line replace", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const { pi, getTool, ctx } = setupIntegrationTest(cwd);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -81,7 +81,7 @@ describe("undo_last_replace", () => {
 
   it("reports correct line counts for an addition", async () => {
     await withTempFile("sample.ts", "aaa\nccc\n", async ({ cwd }) => {
-      const { pi, getTool, ctx } = setupIntegrationTest(cwd);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nccc\n", home.testPath);
@@ -118,7 +118,7 @@ describe("undo_last_replace", () => {
 
   it("reports correct line counts for a deletion", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const { pi, getTool, ctx } = setupIntegrationTest(cwd);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -155,7 +155,7 @@ describe("undo_last_replace", () => {
 
   it("reports correct line counts for a mixed replace", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const { pi, getTool, ctx } = setupIntegrationTest(cwd);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -192,7 +192,7 @@ describe("undo_last_replace", () => {
 
   it("restores hash store snapshot after undo", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const { pi, getTool, ctx } = setupIntegrationTest(cwd);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -231,7 +231,7 @@ describe("undo_last_replace", () => {
 
   it("second undo call returns error (undo clears after use)", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const { pi, getTool, ctx } = setupIntegrationTest(cwd);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -275,7 +275,7 @@ describe("undo_last_replace", () => {
 
   it("undo works after flat-mode replace", async () => {
     await withTempFile("sample.ts", "line1\nline2\n", async ({ cwd }) => {
-      const { pi, getTool, ctx } = setupIntegrationTest(cwd);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
       const undo = getTool("undo_last_replace");
       const hashes = await lineHashes("line1\nline2\n", home.testPath);

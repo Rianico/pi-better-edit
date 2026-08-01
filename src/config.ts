@@ -21,6 +21,14 @@ function parseConfig(content: string): Config {
     autoRead: parsed.autoRead === true,
   };
 }
+
+function envDefaultConfig(): Partial<Config> {
+  const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
+  return autoReadValue === "1" || autoReadValue === "true"
+    ? { autoRead: true }
+    : {};
+}
+
 export async function readConfig(): Promise<Config> {
   try {
     const content = await readFile(configPath(), "utf-8");
@@ -29,7 +37,7 @@ export async function readConfig(): Promise<Config> {
     if (errCode(error) !== "ENOENT") {
       console.error("Config file corrupted, using defaults:", error);
     }
-    return { ...DEFAULT_CONFIG };
+    return { ...DEFAULT_CONFIG, ...envDefaultConfig() };
   }
 }
 export async function writeConfig(config: Config): Promise<void> {

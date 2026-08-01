@@ -202,4 +202,35 @@ describe("auto-read handler", () => {
 
     expect(result).toBeUndefined();
   });
+
+  it("enables auto-read via env var when session starts with no config file", async () => {
+    await withTempDir("auto-read-session-", async (dir) => {
+      const filePath = join(dir, "session.txt");
+      await writeFile(filePath, "hello\nworld\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+
+      const sessionStart = handlers.get("session_start");
+      expect(sessionStart).toBeDefined();
+      await sessionStart!({}, { cwd: dir, ui: { notify() {} } });
+
+      const handler = handlers.get("tool_result");
+      const result = await handler!(
+        {
+          toolName: "write",
+          isError: false,
+          input: { path: "session.txt" },
+          content: [{ type: "text", text: "File written." }],
+        },
+        { cwd: dir },
+      );
+
+      expect(result).toBeDefined();
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content).toHaveLength(2);
+      expect(content[1].text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(content[1].text).toContain("│hello");
+    });
+  });
 });

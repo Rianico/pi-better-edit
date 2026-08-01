@@ -1,7 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { loadP, loadGuide } from "../../src/prompts";
-import { DEFAULT_MAX_LINES, DEFAULT_MAX_BYTES, formatSize } from "@earendil-works/pi-coding-agent";
-
 describe("loadP", () => {
 	it("loads a prompt file", () => {
 		const prompt = loadP("../prompts/read-snippet.md");

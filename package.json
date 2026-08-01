@@ -46,7 +46,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
-    "lint": "eslint 'src/**/*.ts' 'index.ts'",
+    "lint": "eslint 'src/**/*.ts' 'index.ts' 'test/**/*.ts'",
     "typecheck": "tsc --noEmit"
   },
   "devDependencies": {

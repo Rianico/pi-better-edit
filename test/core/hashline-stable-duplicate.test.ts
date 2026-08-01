@@ -1,5 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { readFile } from "fs/promises";
+import { describe, expect, it } from "vitest";
 import { lineHashes, applyEdits, type HEdit } from "../../src/hashline";
 import { useTestHome, withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
@@ -94,7 +93,7 @@ describe("stable hashing with duplicate content lines", () => {
 
   it("end-to-end via tool: removing one of two identical lines preserves the correct hash", async () => {
     const file = "function a() {\n  return 1;\n}\n\nfunction b() {\n  return 2;\n}\n";
-    await withTempFile("sample.ts", file, async ({ cwd, path }) => {
+    await withTempFile("sample.ts", file, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);

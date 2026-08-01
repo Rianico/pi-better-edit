@@ -94,7 +94,7 @@ describe("boundary duplication auto-fix", () => {
 
   it("trailing } with multiple identical lines: auto-fix preserves correct hash", async () => {
     const file = "if (a) {\n  x();\n}\nif (b) {\n  y();\n}\nif (c) {\n  z();\n}\n";
-    await withTempFile("multi.ts", file, async ({ cwd, path }) => {
+    await withTempFile("multi.ts", file, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const read1 = await readTool.execute("r1", { path: "multi.ts" }, undefined, undefined, ctx);

@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
+import { describe, expect, it, afterEach } from "vitest";
 import { rm, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
@@ -370,6 +370,37 @@ describe("auto-read after write", () => {
       expect(replaceResult!.content).toHaveLength(2);
 
       const autoReadText = replaceResult!.content![1]!.text!;
+      expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
+      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│alpha/);
+      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│beta/);
+    } finally {
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("triggers for undo_last_replace tool results", async () => {
+    const cwd = await makeTempDir("auto-read-test-undo-");
+    await writeFile(join(cwd, "undo.txt"), "alpha\nbeta\n", "utf-8");
+    try {
+      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const handler = getToolResultHandler();
+
+      const undoResult = await handler!(
+        {
+          toolName: "undo_last_replace",
+          toolCallId: "undo-1",
+          input: { path: "undo.txt" },
+          content: [{ type: "text", text: "Undone last replace on undo.txt." }],
+          details: undefined,
+          isError: false,
+        },
+        { cwd },
+      );
+
+      expect(undoResult).toBeDefined();
+      expect(undoResult!.content).toHaveLength(2);
+
+      const autoReadText = undoResult!.content![1]!.text!;
       expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
       expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│alpha/);
       expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│beta/);

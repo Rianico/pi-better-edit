@@ -12,7 +12,6 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
       const lines1 = getText(read1).split("\n");
 
       const line1Hash = extractHash(lines1.find((l) => l.includes("│aaa"))!);
-      const line3Hash = extractHash(lines1.find((l) => l.includes("│ccc"))!);
       const line5Hash = extractHash(lines1.find((l) => l.includes("│eee"))!);
 
       const result = await editTool.execute(
@@ -195,7 +194,7 @@ describe("multi-edit bulk mode — multiple changes in one call", () => {
 
   it("preserves unchanged line hashes after a multi-edit", async () => {
     const file = "alpha\nbeta\ngamma\n";
-    await withTempFile("sample.ts", file, async ({ cwd, path }) => {
+    await withTempFile("sample.ts", file, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);

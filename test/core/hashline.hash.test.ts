@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	applyEdits,
 	lineHashes,
@@ -38,9 +38,9 @@ describe("perfect hashing", () => {
 	it("returns one hash per line, indexed 0-based by line number", async () => {
 		const hashes = await lineHashes("alpha\nbeta\ngamma", home.testPath);
 		expect(hashes).toHaveLength(3);
-		expect(hashes[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-		expect(hashes[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-		expect(hashes[2]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+		expect(hashes[0]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+		expect(hashes[1]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+		expect(hashes[2]).toMatch(/^[A-Za-z0-9_-]{3}$/);
 	});
 
 	it("assigns different hashes to identical content at different positions", async () => {

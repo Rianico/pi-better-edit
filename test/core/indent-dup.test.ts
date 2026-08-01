@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import { lineHashes, resEdits, applyEdits } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
 

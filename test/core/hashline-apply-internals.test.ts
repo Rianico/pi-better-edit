@@ -1,11 +1,10 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
   applyEdits,
   lineHashes,
   resEdits,
-  type HTEdit,
 } from "../../src/hashline";
-import { makeTag, useTestHome } from "../support/fixtures";
+import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
 

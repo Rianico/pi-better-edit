@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdtemp, mkdir, rm, writeFile, symlink } from "fs/promises";
+import { mkdtemp, rm, writeFile, symlink } from "fs/promises";
 import { join } from "path";
 import { fileSnap } from "../../src/file-reader";
 import { getWritableTempRoot } from "../support/fixtures";
@@ -25,7 +25,7 @@ describe("fileSnap", () => {
       expect(typeof snap.mtimeMs).toBe("number");
       expect(snap.mtimeMs).toBeGreaterThan(0);
       expect(typeof snap.size).toBe("number");
-      expect(snap.size).toBe(12); // "hello\nworld\n" = 12 bytes
+      expect(snap.size).toBe(12);
     });
   });
 
@@ -69,7 +69,7 @@ describe("fileSnap", () => {
       const snap = await fileSnap(linkPath);
 
       expect(snap.snapshotId).toContain("real.ts");
-      expect(snap.size).toBe(13); // "real content\n" = 13 bytes
+      expect(snap.size).toBe(13);
     });
   });
 

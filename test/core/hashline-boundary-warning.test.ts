@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import { fmtBoundaryWarning, lineHashes } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
 
@@ -32,7 +32,7 @@ describe("fmtBoundaryWarning", () => {
     for (const line of output.split("\n")) {
       if (line.includes("│")) {
         const hash = line.split("│")[0]!;
-        expect(hash).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+        expect(hash).toMatch(/^[A-Za-z0-9_-]{3}$/);
       }
     }
   });
@@ -82,7 +82,7 @@ describe("fmtBoundaryWarning", () => {
 
     const rows = output.split("\n").filter((l) => l.includes("│"));
     expect(rows[0]).toContain("│dup");
-    expect(rows).toHaveLength(4); // 0..3 (pairStart=0, winStart=0, winEnd=min(3, 0+3)=3, so 0..3 = 4 rows)
+    expect(rows).toHaveLength(4);
   });
 
   it("clamps the window to file end when pair is near the last line", async () => {
@@ -173,7 +173,7 @@ describe("fmtBoundaryWarning", () => {
     });
 
     const rows = output.split("\n").filter((l) => l.includes("│"));
-    expect(rows).toHaveLength(6); // 2 before + 2 dup + 2 after
+    expect(rows).toHaveLength(6);
     expect(rows[0]).toContain("│ctx1");
     expect(rows[1]).toContain("│ctx2");
     expect(rows[2]).toContain("│dup");

@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
-import { fmtRegion, lineHashes } from "../../src/hashline";
+import { describe, expect, it } from "vitest";
+import { fmtRegion } from "../../src/hashline";
 import { fmtReadPreview } from "../../src/read";
 import { useTestHome } from "../support/fixtures";
 
@@ -20,7 +20,7 @@ describe("fmtReadPreview", () => {
     expect(result.text).toContain("│alpha");
     expect(result.text).toContain("│beta");
     const lines = result.text.split("\n");
-    const emptyContentLines = lines.filter((l) => /^[A-Za-z0-9_\-]{3}│$/.test(l));
+    const emptyContentLines = lines.filter((l) => /^[A-Za-z0-9_-]{3}│$/.test(l));
     expect(emptyContentLines).toHaveLength(0);
   });
 

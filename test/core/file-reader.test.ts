@@ -11,8 +11,8 @@ describe("readNormFile", () => {
 			expect(result.bom).toBe("");
 			expect(result.originalEnding).toBe("\n");
 			expect(result.fileHashes).toHaveLength(2);
-			expect(result.fileHashes[0]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
-			expect(result.fileHashes[1]).toMatch(/^[A-Za-z0-9_\-]{3}$/);
+			expect(result.fileHashes[0]).toMatch(/^[A-Za-z0-9_-]{3}$/);
+			expect(result.fileHashes[1]).toMatch(/^[A-Za-z0-9_-]{3}$/);
 			expect(result.hadUtf8DecodeErrors).toBe(false);
 		});
 	});
@@ -66,9 +66,6 @@ describe("readNormFile", () => {
 		await withTempFile("data.txt", "aaa\nbbb\nccc", async ({ cwd }) => {
 			const result = await readNormFile("data.txt", cwd);
 			expect(result.fileHashes).toHaveLength(3);
-
-			for (const hash of result.fileHashes) {
-			}
 
 			expect(result.fileHashes[0]).not.toBe(result.fileHashes[1]);
 			expect(result.fileHashes[1]).not.toBe(result.fileHashes[2]);

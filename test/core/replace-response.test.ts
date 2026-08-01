@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import { buildNoop, buildChanged } from "../../src/replace-response";
 import { lineHashes } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";

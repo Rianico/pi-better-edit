@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll, afterAll } from "vitest";
+import { describe, expect, it } from "vitest";
 import { lineHashes } from "../../src/hashline";
 import { withTempFile, setupIntegrationTest, useTestHome, getWritableTempRoot } from "../support/fixtures";
 

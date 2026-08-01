@@ -87,8 +87,11 @@ export default function (pi: ExtensionAPI): void {
       }
     }
     if (!autoRead) return;
-    if (event.toolName !== "write" && event.toolName !== "replace") return;
-
+    if (
+      event.toolName !== "write" &&
+      event.toolName !== "replace" &&
+      event.toolName !== "undo_last_replace"
+    ) return;
     const filePath = (event.input as Record<string, unknown>)?.path;
     if (typeof filePath !== "string") return;
 
