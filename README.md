@@ -12,8 +12,8 @@ The original uses 2-character hashes of a 16-character alphabet, with the hash b
 
 This fork makes two changes that compound:
 
-1. **3-character hash length** over a 64-char URL-safe base64 alphabet (up from 2 characters in the upstream), expanding the hash space from 256 to 262,144 buckets.
-2. **Perfect hashing (collision resolution).** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the next available hash is assigned from a bitset (32KB, 262,144 bits) using a hint cursor for O(1) amortized lookup. This ensures every line gets a unique anchor, even within a 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
+1. **3-character hash length** over a 62-char alphanumeric alphabet (up from 2 characters in the upstream), expanding the hash space from 256 to 238,328 buckets.
+2. **Perfect hashing (collision resolution).** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the next available hash is assigned from a bitset (238,328 bits) using a hint cursor for O(1) amortized lookup. This ensures every line gets a unique anchor, even within a 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
 
 ## Installation
 
@@ -49,7 +49,7 @@ szJ│  console.log("world");
 _zl│}
 ```
 
-- `HASH` is a 3-character content hash from the URL-safe base64 alphabet `A-Za-z0-9-_` (e.g. `aB3`). See [Hashing](#hashing) for details.
+- `HASH` is a 3-character content hash from the alphanumeric alphabet `A-Za-z0-9` (e.g. `aB3`). See [Hashing](#hashing) for details.
 
 Optional parameters:
 
@@ -169,13 +169,13 @@ The file is created automatically when any setting is toggled. Both fields are i
 | `[E_BAD_OP]` | Range start line is after range end line. |
 | `[E_EDIT_CONFLICT]` | Two edits in one batch overlap the same original lines. |
 | `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
-| `[E_FILE_TOO_LARGE]` | The file exceeds the 262,144-line hashline limit. |
+| `[E_FILE_TOO_LARGE]` | The file exceeds the 238,328-line hashline limit. |
 
 ## Design Decisions
 
 - **Stale anchors fail (per-line).** A hash mismatch means that specific line's content changed since the last `read`; the error tells the model to call `read()` to get fresh anchors, then copy the 3-character HASH of the start and end of the range being replaced into `hash_range_inclusive` of the next replace call. When a range has one stale and one still-valid anchor, the error also shows the current lines (with fresh hashes) around the resolved anchor, so the model can re-locate the range without a full re-read. Because staleness is per-line, editing or appending lines does **not** invalidate anchors for lines whose content is unchanged — anchors for untouched regions stay valid across edits to other regions.
 - **No fallback relocation.** Mismatched anchors are never silently relocated to a "close enough" line. This trades convenience for correctness.
-- **Strict patch content.** If `content_lines` contains diff-preview rows — `+HASH│` addition prefixes, `-HASH│` or `-   │` deletion rows (the padded format the diff preview emits), or `-N   ` numbered deletion rows — the edit is rejected with `[E_INVALID_PATCH]`. This narrowly guards against pasting the tool's own diff-preview rows back as content; standard unified-diff lines (`+x`, `-x`, ` x`, `@@ … @@`) are **not** rejected — they are written literally, since literal content must never be silently altered. Bare `HASH│` content (the first 4 chars of a `content_lines` entry looking like 3 base64 chars + `│`) is rejected with `[E_BARE_HASH_PREFIX]`. When the suspect's prefix happens to match a real file-line anchor, the error message flags that as strong evidence the model copied an anchor from the read output.
+- **Strict patch content.** If `content_lines` contains diff-preview rows — `+HASH│` addition prefixes, `-HASH│` or `-   │` deletion rows (the padded format the diff preview emits), or `-N   ` numbered deletion rows — the edit is rejected with `[E_INVALID_PATCH]`. This narrowly guards against pasting the tool's own diff-preview rows back as content; standard unified-diff lines (`+x`, `-x`, ` x`, `@@ … @@`) are **not** rejected — they are written literally, since literal content must never be silently altered. Bare `HASH│` content (the first 4 chars of a `content_lines` entry looking like 3 alphanumeric chars + `│`) is rejected with `[E_BARE_HASH_PREFIX]`. When the suspect's prefix happens to match a real file-line anchor, the error message flags that as strong evidence the model copied an anchor from the read output.
 
 - **BOM preservation.** A UTF-8 BOM is stripped for display and hashing but restored on write, so edits (and undo) never silently strip a BOM from a file that has one.
 - **Atomic writes.** Files are written via temp-file-then-rename to avoid corruption from interrupted writes. Symlink chains are resolved so the target file is updated without replacing the symlink. Hard-linked files are updated in place to preserve the shared inode. File permissions are preserved across atomic renames.
@@ -185,17 +185,17 @@ The file is created automatically when any setting is toggled. Both fields are i
 - **Persistent hash store.** `lineHashes` is async and uses a persistent store to preserve hashes for unchanged lines across edits. The store is a SQLite database at `~/.config/pi-hashline-edit-pro/hash-store.sqlite` (per-path snapshots keyed by resolved path storing a 64-bit content checksum + line hashes; auto-created on first use). When called from the replace pipeline, it maps old vs new content and copies hashes for unchanged lines. When called from read, it returns saved hashes if the content's checksum matches, otherwise computes fresh hashes via `_lineHashesPure`. Stale snapshots are pruned on session start. This ensures that editing one part of a file does not cascade to change hashes of unrelated lines. Per-operation work scales with the target file, not cumulative history. If the database is corrupt or unreadable it is quarantined (renamed to `hash-store.sqlite.corrupt-<timestamp>`) and rebuilt from content on the next session start — the store is a cache, never a source of truth.
 ## Hashing
 
-Hashes are computed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (xxHash32 via WebAssembly), then mapped to a 3-character string from the URL-safe base64 alphabet `A-Za-z0-9-_`. That's 64 distinct characters, 6 bits per position, 18 bits of entropy per anchor.
+Hashes are computed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (xxHash32 via WebAssembly), then mapped to a 3-character string from the alphanumeric alphabet `A-Za-z0-9`. That's 62 distinct characters, 62³ = 238,328 possible anchors (≈17.9 bits of entropy per anchor).
 
-The alphabet is sized for an LLM consumer. The model tokenizes, it doesn't squint at pixel glyphs, so the human-readability heuristics used by smaller hand-curated alphabets (no G/L/I/O because they look like digits, no vowels so the hash doesn't accidentally spell a word, no hex digits so it can't be confused with `0xFF`) don't apply. The full 64 chars give maximum entropy per character, with case and digits included.
+The alphabet is sized for an LLM consumer. The model tokenizes, it doesn't squint at pixel glyphs, so the human-readability heuristics used by smaller hand-curated alphabets (no G/L/I/O because they look like digits, no vowels so the hash doesn't accidentally spell a word, no hex digits so it can't be confused with `0xFF`) don't apply — case and digits are all included. The URL-safe specials `-` and `_` are deliberately excluded: a hash starting with `-` is shape-identical to a diff-preview deletion row (`-HASH│`), and `-`/`_` at a line start are markdown-active (list bullet, emphasis), so they invite mis-copying and false `[E_INVALID_PATCH]`/`[E_BARE_HASH_PREFIX]` rejections. The 9% hash-space cost (238,328 vs 262,144) is irrelevant for real files.
 
 Before hashing, each line is normalized: carriage returns are stripped and trailing whitespace is trimmed. This `canon()` normalization prevents insignificant whitespace changes from cascade-triggering hash churn across the file. Two lines that differ only in trailing spaces or `\r` characters produce the same hash, so anchor stability is preserved across editor-save cycles that add or remove trailing whitespace.
 
-**Perfect hashing (collision resolution):** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the next available hash is assigned from a bitset (32KB, 262,144 bits) using a hint cursor for O(1) amortized lookup. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
+**Perfect hashing (collision resolution):** When computing hashes for a file, if a line's base hash collides with an already-assigned hash, the next available hash is assigned from a bitset (238,328 bits) using a hint cursor for O(1) amortized lookup. This ensures every line in a file gets a unique anchor, even with the shorter 3-character hash space. Two byte-identical lines (e.g. repeated `}` or repeated `import` statements) get different hashes automatically.
 The runtime always precomputes the full per-line hash array for a file via `lineHashes(content, path)`, then looks up by line number during validation and during `read` / `replace` response formatting. There is no per-line recomputation that could disagree with what the model saw in its last read. When `path` is provided, `lineHashes` uses a persistent store to preserve hashes for unchanged lines across edits — see [Stable hashing across edits](#stable-hashing-across-edits).
 `HASH_LEN` in `src/hashline/hash.ts` sets the hash body length; bump it to 4 if you need even more entropy without collision resolution.
 
-The 3-character space holds 262,144 unique anchors, so files are capped at 262,144 lines: `read` and `replace` reject larger files with `[E_FILE_TOO_LARGE]` (use `write` or a non-line-based approach for very large files).
+The 3-character space holds 238,328 unique anchors, so files are capped at 238,328 lines: `read` and `replace` reject larger files with `[E_FILE_TOO_LARGE]` (use `write` or a non-line-based approach for very large files).
 
 ### Bare-prefix detector
 

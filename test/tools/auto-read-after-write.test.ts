@@ -136,8 +136,8 @@ describe("auto-read after write", () => {
 
       const autoReadText = writeResult!.content![1]!.text!;
       expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
-      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│hello/);
-      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│world/);
+      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│hello/);
+      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│world/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -268,7 +268,7 @@ describe("auto-read after write", () => {
       const autoReadText = writeResult!.content![1]!.text!;
 
       const lines = autoReadText.split("\n");
-      const hashlinePattern = /^[A-Za-z0-9_-]{3}│/;
+      const hashlinePattern = /^[A-Za-z0-9]{3}│/;
 
       const headerIndex = lines.findIndex((l) =>
         l.includes("--- Auto-read (hashline anchors) ---"),
@@ -345,7 +345,7 @@ describe("auto-read after write", () => {
       const text = (writeResult as { content: Array<{ type: string; text: string }> }).content[1].text;
       expect(text).toContain("--- Auto-read (hashline anchors) ---");
       expect(text).toContain("[File is empty. Use replace to insert content.]");
-      expect(text).toMatch(/^[A-Za-z0-9_-]{3}│/m);
+      expect(text).toMatch(/^[A-Za-z0-9]{3}│/m);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -375,8 +375,8 @@ describe("auto-read after write", () => {
 
       const autoReadText = replaceResult!.content![1]!.text!;
       expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
-      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│alpha/);
-      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│beta/);
+      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│alpha/);
+      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│beta/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
@@ -406,8 +406,8 @@ describe("auto-read after write", () => {
 
       const autoReadText = undoResult!.content![1]!.text!;
       expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
-      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│alpha/);
-      expect(autoReadText).toMatch(/[A-Za-z0-9_-]{3}│beta/);
+      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│alpha/);
+      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│beta/);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

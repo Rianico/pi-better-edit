@@ -137,7 +137,7 @@ describe("flat mode replace — end-to-end", () => {
 
       const readResult = await readTool.execute("r1", { path: "empty.ts" }, undefined, undefined, ctx);
       const emptyHash = getText(readResult).split("\n")[0]!.split("│")[0]!;
-      expect(emptyHash).toMatch(/^[A-Za-z0-9_-]{3}$/);
+      expect(emptyHash).toMatch(/^[A-Za-z0-9]{3}$/);
 
       await editTool.execute(
         "e1",

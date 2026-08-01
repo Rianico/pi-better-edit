@@ -12,7 +12,7 @@ describe("fmtReadPreview", () => {
 
   it("returns empty file marker for content with only newline", async () => {
     const result = await fmtReadPreview("\n", {}, undefined, home.testPath);
-    expect(result.text).toMatch(/^[A-Za-z0-9_-]{3}│$/);
+    expect(result.text).toMatch(/^[A-Za-z0-9]{3}│$/);
   });
 
   it("returns all lines when no offset or limit given", async () => {

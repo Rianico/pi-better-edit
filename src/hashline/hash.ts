@@ -14,9 +14,7 @@ export const ANCHOR_LEN = HASH_LEN;
 export const HASH_SEP = "│";
 
 const ALPH =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_";
-const ALPH_BITS = 6;
-const ALPH_MASK = (1 << ALPH_BITS) - 1;
+	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 const ALPH_SAFE = ALPH.replace(/-/g, "\\-");
 const ALPH_RE = new RegExp(`^[${ALPH_SAFE}]+$`);
 export const HASH_CLASS = `[${ALPH_SAFE}]{${HASH_LEN}}`;
@@ -27,7 +25,8 @@ export const MAX_HASH_LINES = HASH_SPACE;
 function idxToHash(idx: number): string {
   let out = "";
   for (let j = 0; j < HASH_LEN; j++) {
-    out += ALPH[(idx >>> ((HASH_LEN - 1 - j) * ALPH_BITS)) & ALPH_MASK]!;
+    out = ALPH[idx % ALPH.length]! + out;
+    idx = Math.floor(idx / ALPH.length);
   }
   return out;
 }
@@ -69,22 +68,24 @@ function setBit(bits: Uint32Array, idx: number): void {
 
 function nextZeroBit(bits: Uint32Array, start: number): number {
   const totalWords = bits.length;
-  const totalBits = totalWords * 32;
+  const totalBits = HASH_SPACE;
+  const lastWordBits = HASH_SPACE - (totalWords - 1) * 32;
 
   if (start >= totalBits) start = 0;
 
   const wordIdx = start >>> 5;
   const bitOffset = start & 31;
+  const wordBits = (w: number): number => (w === totalWords - 1 ? lastWordBits : 32);
 
   let word = bits[wordIdx];
-  for (let b = bitOffset; b < 32; b++) {
+  for (let b = bitOffset; b < wordBits(wordIdx); b++) {
     if ((word >>> b & 1) === 0) return wordIdx * 32 + b;
   }
 
   for (let w = wordIdx + 1; w < totalWords; w++) {
     word = bits[w];
     if (~word !== 0) {
-      for (let b = 0; b < 32; b++) {
+      for (let b = 0; b < wordBits(w); b++) {
         if ((word >>> b & 1) === 0) return w * 32 + b;
       }
     }
@@ -93,7 +94,7 @@ function nextZeroBit(bits: Uint32Array, start: number): number {
   for (let w = 0; w < wordIdx; w++) {
     word = bits[w];
     if (~word !== 0) {
-      for (let b = 0; b < 32; b++) {
+      for (let b = 0; b < wordBits(w); b++) {
         if ((word >>> b & 1) === 0) return w * 32 + b;
       }
     }
@@ -130,7 +131,7 @@ export function _lineHashesPure(content: string): string[] {
 
   for (let i = 0; i < lines.length; i++) {
     const c = canon(lines[i]!);
-    const baseIdx = xxh32(c) >>> 14;
+    const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
     hashes[i] = assignHash(used, baseIdx, hint);
   }
   return hashes;
@@ -178,7 +179,7 @@ function hashToIndex(hash: string): number {
   for (let j = 0; j < HASH_LEN; j++) {
     const charIdx = ALPH.indexOf(hash[j]!);
     if (charIdx < 0) return -1;
-    idx = (idx << ALPH_BITS) | charIdx;
+    idx = idx * ALPH.length + charIdx;
   }
   return idx;
 }
@@ -289,7 +290,7 @@ function mapStableHashes(
   for (let i = 0; i < newLines.length; i++) {
     if (newHashes[i]) continue;
     const c = canon(newLines[i]!);
-    const baseIdx = xxh32(c) >>> 14;
+    const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
     newHashes[i] = assignHash(used, baseIdx, hint);
   }
 

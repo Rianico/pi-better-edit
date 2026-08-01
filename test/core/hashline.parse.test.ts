@@ -9,7 +9,7 @@ describe("parseHashRef", () => {
 
 	it("rejects trailing content after the anchor", () => {
 		expect(() => parseHashRef("aB3:const x = 1;")).toThrow(
-			/Expected a 3-char base64 anchor/,
+			/Expected a 3-char alphanumeric anchor/,
 		);
 	});
 
@@ -28,10 +28,12 @@ describe("parseHashRef", () => {
 		expect(() => parseHashRef("-#aB3")).toThrow(/E_BAD_REF/);
 	});
 
-	it("accepts a hash that starts with - in the body (alphabet char, not a marker)", () => {
-		expect(parseHashRef("-qk")).toEqual({ hash: "-qk" });
-		expect(parseHashRef("-_-")).toEqual({ hash: "-_-" });
-		expect(parseHashRef("---")).toEqual({ hash: "---" });
+	it("rejects - and _ anywhere in the anchor (not in the alphabet)", () => {
+		expect(() => parseHashRef("-qk")).toThrow(/E_BAD_REF/);
+		expect(() => parseHashRef("-_-")).toThrow(/E_BAD_REF/);
+		expect(() => parseHashRef("---")).toThrow(/E_BAD_REF/);
+		expect(() => parseHashRef("aB_")).toThrow(/E_BAD_REF/);
+		expect(() => parseHashRef("aB-")).toThrow(/E_BAD_REF/);
 	});
 
 	it("rejects + as a hash body character (not in alphabet)", () => {

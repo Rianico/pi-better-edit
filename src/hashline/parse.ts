@@ -14,7 +14,7 @@ function diagRef(ref: string): string {
 	const trimmed = ref.trim();
 
 	if (!trimmed.length) {
-		return `[E_BAD_REF] Invalid anchor. Expected a 3-char base64 anchor (e.g. "aB3").`;
+		return `[E_BAD_REF] Invalid anchor. Expected a 3-char alphanumeric anchor (e.g. "aB3").`;
 	}
 
 	if (/^\d+/.test(trimmed)) {
@@ -25,7 +25,7 @@ function diagRef(ref: string): string {
 		return `[E_BAD_REF] Invalid anchor "${trimmed}". hash_range_inclusive must contain the 3-char hash only — remove everything from "│" onward.`;
 	}
 
-	return `[E_BAD_REF] Invalid anchor "${trimmed}". Expected a 3-char base64 anchor (e.g. "aB3").`;
+	return `[E_BAD_REF] Invalid anchor "${trimmed}". Expected a 3-char alphanumeric anchor (e.g. "aB3").`;
 }
 
 function parseRef(ref: string): Anchor {

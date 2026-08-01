@@ -24,8 +24,9 @@ describe("prompts/read.md (model-facing contract)", () => {
     expect(readPrompt).toMatch(/3-char/);
   });
 
-  it("specifies the URL-safe base64 hash length", () => {
+  it("specifies the alphanumeric hash alphabet", () => {
     expect(readPrompt).toMatch(/3-char/);
+    expect(readPrompt).toContain("alphanumeric");
   });
 
   it("documents pagination support", () => {
