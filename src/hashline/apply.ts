@@ -219,44 +219,6 @@ function assemble(
 	return result;
 }
 
-export function fmtBoundaryWarning(params: {
-	kind: "trailing" | "leading";
-	survivingContent: string;
-	matchIndex: number;
-	resultLines: string[];
-	resultHashes: string[];
-}): string {
-	const header =
-		params.kind === "trailing"
-			? "Boundary duplication (trailing): the last replacement line duplicated the next line. This happens when `content_lines` includes a line that was already outside the replaced range. Delete the duplicate — the original line outside the range is still there."
-			: "Boundary duplication (leading): the first replacement line duplicated the previous line. This happens when `content_lines` includes a line that was already outside the replaced range. Delete the duplicate — the original line outside the range is still there.";
-
-	let pairStart = -1;
-	let bestDist = Infinity;
-	for (let i = 0; i < params.resultLines.length - 1; i++) {
-		if (
-			params.resultLines[i] === params.survivingContent &&
-			params.resultLines[i + 1] === params.survivingContent
-		) {
-			const dist = Math.abs(i - params.matchIndex);
-			if (dist < bestDist) {
-				bestDist = dist;
-				pairStart = i;
-			}
-		}
-	}
-	if (pairStart < 0) pairStart = params.matchIndex;
-
-	const winStart = Math.max(0, pairStart - 2);
-	const winEnd = Math.min(params.resultLines.length - 1, pairStart + 3);
-
-	const rows: string[] = [];
-	for (let i = winStart; i <= winEnd; i++) {
-		rows.push(`${params.resultHashes[i]}${HASH_SEP}${params.resultLines[i]}`);
-	}
-	return `${header}\n\n${rows.join("\n")}`;
-}
-
 export function applyEdits(
 	content: string,
 	edits: HEdit[],

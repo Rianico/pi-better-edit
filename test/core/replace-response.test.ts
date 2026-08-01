@@ -41,6 +41,19 @@ describe("buildNoop", () => {
     });
     expect(result.details.metrics!.warnings).toBe(1);
   });
+
+  it("clips long currentContent in noop details", () => {
+    const result = buildNoop({
+      path: "test.txt",
+      noopEdits: [{ editIndex: 0, loc: "ABC", currentContent: "old\n".repeat(300) }],
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 1, addedLines: 0, removedLines: 0 },
+      warnings: undefined,
+    });
+    expect(result.content[0].text).toContain("Edit 0");
+    expect(result.content[0].text).not.toContain("old\n".repeat(300));
+    expect(result.content[0].text).toContain("...");
+  });
 });
 
 describe("buildChanged", () => {

@@ -13,6 +13,7 @@ import {
   pruneMissing,
   type HashStore,
 } from "../../src/hash-store";
+import { HASH_STORE_VERSION } from "../../src/constants";
 import { initHasher, contentChecksum } from "../../src/hashline/hasher";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";
@@ -392,6 +393,73 @@ describe("hash-store — corrupt database recovery", () => {
       expect(getSnapshot(store, "/p.ts", "b\n")).toEqual(["BBB"]);
       const entries = await readdir(configHome(home));
       expect(entries.some((name) => name.includes(".corrupt-"))).toBe(false);
+    });
+  });
+});
+
+describe("hash-store — schema versioning", () => {
+  it("writes the current version on first open", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["X"]);
+      shutdownHashStore();
+
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const row = db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined;
+      db.close();
+
+      expect(row?.value).toBe(String(HASH_STORE_VERSION));
+    });
+  });
+
+  it("keeps snapshots when the stored version matches", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["X"]);
+      shutdownHashStore();
+
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["X"]);
+    });
+  });
+
+  it("invalidates all snapshots when the stored version differs", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["X"]);
+      shutdownHashStore();
+
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      db.prepare("UPDATE meta SET value = '999' WHERE key = 'version'").run();
+      db.close();
+
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toBeUndefined();
+
+      const check = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const row = check.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined;
+      check.close();
+      expect(row?.value).toBe(String(HASH_STORE_VERSION));
+    });
+  });
+
+  it("keeps snapshots from a pre-versioning database and writes the version", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["X"]);
+      shutdownHashStore();
+
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      db.exec("DROP TABLE meta");
+      db.close();
+
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["X"]);
+
+      const check = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const row = check.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined;
+      check.close();
+      expect(row?.value).toBe(String(HASH_STORE_VERSION));
     });
   });
 });

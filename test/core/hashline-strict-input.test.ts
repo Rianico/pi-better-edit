@@ -156,4 +156,23 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
     ], hashes);
     expect(result.warnings ?? []).toEqual([]);
 	});
+
+	it("clips long suspect lines in the E_BARE_HASH_PREFIX message", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const betaHash = hashes[1]!;
+		const longLine = `${betaHash}│${'y'.repeat(500)}`;
+		let caught: Error | undefined;
+		try {
+      applyTool([
+        { hash_range_inclusive: [anchor, anchor], content_lines: [longLine] },
+      ], hashes);
+    } catch (e) {
+      caught = e as Error;
+    }
+		expect(caught).toBeDefined();
+		expect(caught!.message).toMatch(/^\[E_BARE_HASH_PREFIX\]/);
+		expect(caught!.message).not.toContain("y".repeat(500));
+		expect(caught!.message).toContain("...");
+	});
 });

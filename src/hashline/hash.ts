@@ -37,9 +37,6 @@ const HASH_TABLE: string[] = Array.from(
   (_, i) => idxToHash(i),
 );
 
-export const HL_PREFIX_RE = new RegExp(
-	`^\\s*(?:>>>|>>)?\\s*${HASH_CLASS}│`,
-);
 export const HL_PREFIX_PLUS_RE = new RegExp(
 	`^\\+\\s*${HASH_CLASS}│`,
 );

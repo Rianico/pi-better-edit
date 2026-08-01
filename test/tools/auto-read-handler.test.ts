@@ -158,7 +158,7 @@ describe("auto-read handler", () => {
     expect(result).toBeUndefined();
   });
 
-  it("returns nothing when the written file is empty", async () => {
+  it("returns the empty-file anchor when the written file is empty", async () => {
     await withTempDir("auto-read-", async (dir) => {
       const filePath = join(dir, "empty.txt");
       await writeFile(filePath, "", "utf-8");
@@ -174,7 +174,37 @@ describe("auto-read handler", () => {
           toolName: "write",
           isError: false,
           input: { path: "empty.txt" },
-          content: [],
+          content: [{ type: "text", text: "File written." }],
+        },
+        { cwd: dir },
+      );
+
+      expect(result).toBeDefined();
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content[1].text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(content[1].text).toContain("[File is empty. Use replace to insert content.]");
+      expect(content[1].text).toMatch(/^[A-Za-z0-9_-]{3}│/m);
+    });
+  });
+
+  it("returns nothing for a noop replace (anchors are unchanged)", async () => {
+    await withTempDir("auto-read-noop-", async (dir) => {
+      const filePath = join(dir, "noop.txt");
+      await writeFile(filePath, "hello\nworld\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+
+      const handler = handlers.get("tool_result");
+      expect(handler).toBeDefined();
+
+      const result = await handler!(
+        {
+          toolName: "replace",
+          isError: false,
+          input: { path: "noop.txt" },
+          details: { metrics: { classification: "noop" } },
+          content: [{ type: "text", text: "No changes made to noop.txt" }],
         },
         { cwd: dir },
       );

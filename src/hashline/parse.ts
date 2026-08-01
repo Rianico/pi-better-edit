@@ -6,6 +6,7 @@ import {
 	DIFF_MINUS_RE,
 } from "./hash";
 import { CONTENT_LINES_NOT_STRING_MSG } from "../constants";
+import { clipLine } from "../utils";
 
 export type Anchor = { hash: string };
 
@@ -51,7 +52,7 @@ function assertNoPrefixes(lines: string[]): void {
 			DIFF_MINUS_RE.test(line)
 		) {
 			throw new Error(
-			`[E_INVALID_PATCH] "content_lines" must contain literal file content. Offending line looks like a diff preview row (e.g. +HASH│ or -HASH│): ${JSON.stringify(line)}. Use literal file content only — plain + or - lines are written literally.`
+			`[E_INVALID_PATCH] "content_lines" must contain literal file content. Offending line looks like a diff preview row (e.g. +HASH│ or -HASH│): ${JSON.stringify(clipLine(line))}. Use literal file content only — plain + or - lines are written literally.`
 			);
 		}
 	}

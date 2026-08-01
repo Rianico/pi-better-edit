@@ -46,6 +46,7 @@
   "scripts": {
     "test": "vitest run",
     "test:watch": "vitest",
+    "test:coverage": "vitest run --coverage",
     "lint": "eslint 'src/**/*.ts' 'index.ts' 'test/**/*.ts'",
     "typecheck": "tsc --noEmit"
   },
@@ -53,6 +54,7 @@
     "@earendil-works/pi-coding-agent": "^0.74.0",
     "@eslint/js": "^10.0.1",
     "@types/node": "^24.0.0",
+    "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.7.0",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.65.0",

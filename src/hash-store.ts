@@ -53,7 +53,20 @@ function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
       "updated_at INTEGER NOT NULL" +
     ")"
   );
-
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS meta (" +
+      "key TEXT PRIMARY KEY, " +
+      "value TEXT NOT NULL" +
+    ")"
+  );
+  const versionRow = db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined;
+  if (versionRow && versionRow.value !== String(HASH_STORE_VERSION)) {
+    db.exec("DELETE FROM snapshots");
+  }
+  db.prepare(
+    "INSERT INTO meta (key, value) VALUES ('version', ?) " +
+    "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
+  ).run(String(HASH_STORE_VERSION));
   const getStmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
   const allStmt = db.prepare("SELECT path FROM snapshots");
   const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
@@ -284,5 +297,3 @@ export async function pruneMissing(store: HashStore): Promise<void> {
     for (const path of missing) store.stmts.deleteOne(path);
   });
 }
-
-export { HASH_STORE_VERSION };

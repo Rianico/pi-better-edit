@@ -1,4 +1,4 @@
-import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty } from "../utils";
+import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty, clipLine } from "../utils";
 import { HL_BARE_PREFIX_RE } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 import { CONTENT_LINES_NOT_STRING_MSG } from "../constants";
@@ -109,7 +109,7 @@ export function fmtMismatch(
           : "";
       const lines = sample
         .map((line) => {
-          const content = fileLines[line - 1] ?? "";
+          const content = clipLine(fileLines[line - 1] ?? "");
           return `    ${line}: ${fileHashes[line - 1]}│${content}`;
         })
         .join("\n");
@@ -223,7 +223,7 @@ export function assertNoBarePrefix(
   const matched = suspects.filter((s) => fileHashSet.has(s.hash));
   const matchedCount = matched.length;
 
-  const exampleLine = `${suspects[0]!.hash}│${suspects[0]!.line}`;
+  const exampleLine = `${suspects[0]!.hash}│${clipLine(suspects[0]!.line)}`;
 
   const linesHint =
     matchedCount === 0

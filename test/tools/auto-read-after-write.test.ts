@@ -321,7 +321,7 @@ describe("auto-read after write", () => {
     }
   });
 
-  it("does not append anchors for empty files", async () => {
+  it("appends the empty-file anchor for empty files", async () => {
     const cwd = await makeTempDir("auto-read-test-empty-");
     await writeFile(join(cwd, "empty.txt"), "", "utf-8");
     try {
@@ -341,7 +341,11 @@ describe("auto-read after write", () => {
         { cwd },
       );
 
-      expect(writeResult).toBeUndefined();
+      expect(writeResult).toBeDefined();
+      const text = (writeResult as { content: Array<{ type: string; text: string }> }).content[1].text;
+      expect(text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(text).toContain("[File is empty. Use replace to insert content.]");
+      expect(text).toMatch(/^[A-Za-z0-9_-]{3}│/m);
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }

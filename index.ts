@@ -3,7 +3,7 @@ import { initHasher } from "./src/hashline";
 import { regReplace, regReplaceFlat } from "./src/replace";
 import { regReplaceUndo, clearUndo } from "./src/replace-undo";
 import { regRead, fmtReadPreview } from "./src/read";
-import { visLines } from "./src/utils";
+import type { RMetrics } from "./src/replace-response";
 import { AUTO_READ_MAX } from "./src/constants";
 import { MAX_HASH_LINES } from "./src/hashline";
 import {
@@ -95,17 +95,17 @@ export default function (pi: ExtensionAPI): void {
     const filePath = (event.input as Record<string, unknown>)?.path;
     if (typeof filePath !== "string") return;
 
+    const metrics = (event.details as { metrics?: RMetrics } | undefined)?.metrics;
+    if (event.toolName !== "write" && metrics?.classification === "noop") return;
+
     try {
       const { normalized, fileHashes, absolutePath } = await readNormFile(
         filePath, ctx.cwd, { maxLines: MAX_HASH_LINES },
       );
-      if (visLines(normalized).length === 0) return;
 
       const changedLines =
         event.toolName === "replace" || event.toolName === "undo_last_replace"
-          ? (event.details as
-              | { metrics?: { changed_lines?: { first: number; last: number } } }
-              | undefined)?.metrics?.changed_lines
+          ? metrics?.changed_lines
           : undefined;
       let offset: number | undefined;
       let limit = AUTO_READ_MAX;

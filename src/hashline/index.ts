@@ -5,7 +5,6 @@ export {
 	HASH_CLASS,
 	HASH_SPACE,
 	MAX_HASH_LINES,
-	HL_PREFIX_RE,
 	HL_PREFIX_PLUS_RE,
 	HL_PREFIX_MINUS_RE,
 	DIFF_MINUS_RE,
@@ -40,5 +39,4 @@ export {
 	applyEdits,
 	fmtRegion,
 	changedRange,
-	fmtBoundaryWarning,
 } from "./apply";

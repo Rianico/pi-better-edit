@@ -1,6 +1,6 @@
 import type { ReplaceDetails } from "./replace";
 import { genDiff } from "./replace-diff";
-import { visLines } from "./utils";
+import { visLines, clipLine } from "./utils";
 
 type TResult = {
 	content: Array<{ type: "text"; text: string }>;
@@ -102,7 +102,7 @@ export function buildNoop(input: NoopInput): TResult {
 		? noopEdits
 				.map(
 					(edit) =>
-						`Edit ${edit.editIndex}: replacement for ${edit.loc} is identical to current content:\n  ${edit.loc}: ${edit.currentContent}`,
+						`Edit ${edit.editIndex}: replacement for ${edit.loc} is identical to current content:\n  ${edit.loc}: ${clipLine(edit.currentContent)}`,
 				)
 				.join("\n")
 		: "The edits produced identical content.";

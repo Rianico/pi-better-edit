@@ -82,3 +82,8 @@ export function firstNonEmpty(lines: string[]): string | undefined {
 	const idx = firstNonEmptyIndex(lines);
 	return idx >= 0 ? lines[idx] : undefined;
 }
+
+export function clipLine(line: string, maxLen = 200): string {
+	const flat = line.replace(/\n/g, "\\n");
+	return flat.length > maxLen ? `${flat.slice(0, maxLen)}...` : flat;
+}

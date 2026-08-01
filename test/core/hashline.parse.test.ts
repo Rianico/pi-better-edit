@@ -144,4 +144,18 @@ describe("parseText", () => {
       /must be a native JSON array of strings, not a JSON string/,
     );
   });
+
+  it("clips long offending lines in the E_INVALID_PATCH message", () => {
+    const longLine = `+aB3│${'x'.repeat(500)}`;
+    let caught: Error | undefined;
+    try {
+      parseText([longLine]);
+    } catch (e) {
+      caught = e as Error;
+    }
+    expect(caught).toBeDefined();
+    expect(caught!.message).toMatch(/^\[E_INVALID_PATCH\]/);
+    expect(caught!.message).not.toContain("x".repeat(500));
+    expect(caught!.message).toContain("...");
+  });
 });
