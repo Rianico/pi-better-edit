@@ -102,7 +102,7 @@ export default function (pi: ExtensionAPI): void {
       if (visLines(normalized).length === 0) return;
 
       const changedLines =
-        event.toolName === "replace"
+        event.toolName === "replace" || event.toolName === "undo_last_replace"
           ? (event.details as
               | { metrics?: { changed_lines?: { first: number; last: number } } }
               | undefined)?.metrics?.changed_lines

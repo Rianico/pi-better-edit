@@ -10,6 +10,7 @@ import { toLF, stripBOM, genDiff, restoreEndings } from "./replace-diff";
 import { cntDiff, splitLines } from "./utils";
 import { loadP, loadGuide } from "./prompts";
 import { buildMetrics } from "./replace-response";
+import { changedRange } from "./hashline";
 export interface UndoEntry {
   content: string;
   bom: string;
@@ -77,6 +78,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
         const diffResult = genDiff(undo.content, currentNormalized, 0);
         const linesAddedByReplace = cntDiff(diffResult.diff, "+");
         const linesRemovedByReplace = cntDiff(diffResult.diff, "-");
+        const restoredRange = changedRange(currentNormalized, undo.content);
 
         await writeAtomic(
           mutationTargetPath,
@@ -113,6 +115,8 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
               editsAttempted: 1,
               noopEditsCount: 0,
               warningsCount: 0,
+              firstChangedLine: restoredRange?.firstChangedLine,
+              lastChangedLine: restoredRange?.lastChangedLine,
               addedLines: linesRemovedByReplace,
               removedLines: linesAddedByReplace,
             }),

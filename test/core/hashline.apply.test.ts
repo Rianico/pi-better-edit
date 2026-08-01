@@ -273,7 +273,7 @@ describe("applyEdits — lastChangedLine tracking", () => {
 		const result = applyEdits(content, edits);
 
 		expect(result.firstChangedLine).toBe(2);
-		expect(result.lastChangedLine).toBe(4);
+		expect(result.lastChangedLine).toBe(2);
 	});
 });
 

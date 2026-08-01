@@ -79,6 +79,41 @@ describe("undo_last_replace", () => {
     });
   });
 
+  it("reports the restored changed range in details metrics", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [
+            {
+              hash_range_inclusive: [hashes[1]!, hashes[1]!],
+              content_lines: ["BBB"],
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const undoResult = await undo.execute(
+        "u1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(undoResult.details.metrics.changed_lines).toEqual({ first: 2, last: 2 });
+    });
+  });
+
   it("reports correct line counts for an addition", async () => {
     await withTempFile("sample.ts", "aaa\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);

@@ -23,10 +23,16 @@ describe("changedRange", () => {
     expect(result).toEqual({ firstChangedLine: 2, lastChangedLine: 2 });
   });
 
+  it("tracks a single-line replace accurately when the line length changes (regression)", () => {
+    const before = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
+    const after = "a\nb\nc\nd\nLONGER LINE\ne\nf\ng\nh\ni\nj\n";
+    expect(changedRange(before, after)).toEqual({ firstChangedLine: 5, lastChangedLine: 5 });
+    expect(changedRange(after, before)).toEqual({ firstChangedLine: 5, lastChangedLine: 5 });
+  });
   it("tracks deleting head of file", () => {
     const result = changedRange("a\nb\nc\nd", "c\nd");
     expect(result!.firstChangedLine).toBeLessThanOrEqual(result!.lastChangedLine);
-    expect(result).toEqual({ firstChangedLine: 1, lastChangedLine: 2 });
+    expect(result).toEqual({ firstChangedLine: 1, lastChangedLine: 1 });
   });
 
   it("tracks deleting tail of file", () => {

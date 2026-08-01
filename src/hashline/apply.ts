@@ -389,52 +389,33 @@ export function changedRange(
 		};
 	}
 
-	if (result.startsWith(original) && original.endsWith("\n")) {
-		return {
-			firstChangedLine: splitLines(original).length + 1,
-			lastChangedLine: splitLines(result).length,
-		};
+	const originalLines = splitLines(original);
+	const resultLines = splitLines(result);
+
+	if (
+		originalLines.length === resultLines.length &&
+		originalLines.every((line, index) => line === resultLines[index])
+	) {
+		return null;
 	}
 
-	let firstDiff = 0;
-	const minLen = Math.min(original.length, result.length);
-	while (firstDiff < minLen && original[firstDiff] === result[firstDiff]) {
-		firstDiff++;
+	const minLen = Math.min(originalLines.length, resultLines.length);
+	let first = 0;
+	while (first < minLen && originalLines[first] === resultLines[first]) {
+		first++;
 	}
-	if (firstDiff === minLen && original.length === result.length) return null;
-
-	let lastOrig = original.length - 1;
-	let lastRes = result.length - 1;
+	let lastOrig = originalLines.length - 1;
+	let lastRes = resultLines.length - 1;
 	while (
-		lastOrig >= firstDiff &&
-		lastRes >= firstDiff &&
-		original[lastOrig] === result[lastRes]
+		lastOrig >= first &&
+		lastRes >= first &&
+		originalLines[lastOrig] === resultLines[lastRes]
 	) {
 		lastOrig--;
 		lastRes--;
 	}
-
-	function idxToLine(charIdx: number, text: string): number {
-		let line = 1;
-		for (let i = 0; i < charIdx && i < text.length; i++) {
-			if (text[i] === "\n") line++;
-		}
-		return line;
-	}
-
-	const firstChangedLine = idxToLine(firstDiff + 1, result);
-	let lastChangedLine: number;
-	if (lastRes < firstDiff) {
-		lastChangedLine = result.length === 0 ? 1 : splitLines(result).length;
-	} else if (
-		firstDiff === 0 &&
-		original.length > 0 &&
-		result.endsWith(original)
-	) {
-		lastChangedLine = firstChangedLine;
-	} else {
-		lastChangedLine = idxToLine(lastRes + 1, result);
-	}
-
-	return { firstChangedLine, lastChangedLine };
+	return {
+		firstChangedLine: first + 1,
+		lastChangedLine: Math.max(first, lastRes) + 1,
+	};
 }

@@ -291,4 +291,34 @@ describe("auto-read handler", () => {
       expect(text).toContain("│row 4");
     });
   });
+
+  it("windows undo_last_replace auto-read to the changed span plus 2 lines of context", async () => {
+    await withTempDir("auto-read-window-undo-", async (dir) => {
+      const filePath = join(dir, "undo-window.txt");
+      await writeFile(filePath, Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join("\n") + "\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+
+      const handler = handlers.get("tool_result");
+      const result = await handler!(
+        {
+          toolName: "undo_last_replace",
+          isError: false,
+          input: { path: "undo-window.txt" },
+          details: { metrics: { changed_lines: { first: 5, last: 5 } } },
+          content: [{ type: "text", text: "Undone." }],
+        },
+        { cwd: dir },
+      );
+
+      expect(result).toBeDefined();
+      const text = (result as { content: Array<{ type: string; text: string }> }).content[1].text;
+      expect(text).toContain("│line 3");
+      expect(text).toContain("│line 5");
+      expect(text).toContain("│line 7");
+      expect(text).not.toContain("│line 1");
+      expect(text).not.toContain("│line 10");
+    });
+  });
 });
