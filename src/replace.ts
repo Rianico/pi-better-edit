@@ -59,25 +59,25 @@ const hashRangeInclSchema = Type.Array(
 
 const changeItemSchema = Type.Object(
   {
-    content_lines: contentLinesSchema,
     hash_range_inclusive: hashRangeInclSchema,
+    content_lines: contentLinesSchema,
   },
   { additionalProperties: false },
 );
 
 export const editToolSchema = Type.Object(
   {
-    changes: Type.Array(changeItemSchema, { description: "Array of edits applied atomically against the same pre-edit snapshot." }),
     path: Type.String({ description: "Path to edit" }),
+    changes: Type.Array(changeItemSchema, { description: "Array of edits applied atomically against the same pre-edit snapshot." }),
   },
   { additionalProperties: false },
 );
 
 export const flatEditToolSchema = Type.Object(
   {
-    content_lines: contentLinesSchema,
-    hash_range_inclusive: hashRangeInclSchema,
     path: Type.String({ description: "Path to edit" }),
+    hash_range_inclusive: hashRangeInclSchema,
+    content_lines: contentLinesSchema,
   },
   { additionalProperties: false },
 );
@@ -123,7 +123,7 @@ export function assertNoLegacyKeys(request: unknown): void {
   for (const legacyKey of LEGACY_KS) {
     if (has(request, legacyKey)) {
       throw new Error(
-        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {content_lines: [...], hash_range_inclusive: ["<START>", "<END>"]}.`
+        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}.`
       );
     }
   }
@@ -148,10 +148,10 @@ export function assertReq(
   if (!Array.isArray(request.changes)) {
     if (flat) {
       throw new Error(
-        '[E_BAD_SHAPE] Edit request requires both "content_lines" and "hash_range_inclusive" at the top level.',
+        '[E_BAD_SHAPE] Edit request requires both "hash_range_inclusive" and "content_lines" at the top level.',
       );
     }
-    throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { content_lines: [...], hash_range_inclusive: ["<START>", "<END>"] }.');
+    throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { hash_range_inclusive: ["<START>", "<END>"], content_lines: [...] }.');
   }
 }
 
@@ -283,7 +283,7 @@ export async function compPreview(
     const normalized = normReq(request);
     if (flat && isRec(request) && Array.isArray(request.changes)) {
       return {
-        error: `[E_BAD_SHAPE] Flat mode does not accept a "changes" array. Send content_lines and hash_range_inclusive at the top level (one edit per call), or use bulk mode for multiple edits per call.`
+        error: `[E_BAD_SHAPE] Flat mode does not accept a "changes" array. Send hash_range_inclusive and content_lines at the top level (one edit per call), or use bulk mode for multiple edits per call.`
       };
     }
     assertReq(normalized, flat);

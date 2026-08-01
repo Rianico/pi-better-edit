@@ -78,7 +78,7 @@ export function normReq(input: unknown): unknown {
     const hri = record.hash_range_inclusive;
     const cl = record.content_lines;
     if (Array.isArray(hri) && Array.isArray(cl)) {
-      record.changes = [{ content_lines: cl, hash_range_inclusive: hri }];
+      record.changes = [{ hash_range_inclusive: hri, content_lines: cl }];
       delete record.hash_range_inclusive;
       delete record.content_lines;
     }
