@@ -101,7 +101,25 @@ export default function (pi: ExtensionAPI): void {
       );
       if (visLines(normalized).length === 0) return;
 
-      const preview = await fmtReadPreview(normalized, { limit: AUTO_READ_MAX }, fileHashes, absolutePath);
+      const changedLines =
+        event.toolName === "replace"
+          ? (event.details as
+              | { metrics?: { changed_lines?: { first: number; last: number } } }
+              | undefined)?.metrics?.changed_lines
+          : undefined;
+      let offset: number | undefined;
+      let limit = AUTO_READ_MAX;
+      if (changedLines) {
+        offset = Math.max(1, changedLines.first - 2);
+        limit = Math.min(changedLines.last + 2 - offset + 1, AUTO_READ_MAX);
+      }
+
+      const preview = await fmtReadPreview(
+        normalized,
+        { offset, limit },
+        fileHashes,
+        absolutePath,
+      );
 
       return {
         content: [

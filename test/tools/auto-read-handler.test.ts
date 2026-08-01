@@ -233,4 +233,62 @@ describe("auto-read handler", () => {
       expect(content[1].text).toContain("│hello");
     });
   });
+
+  it("windows replace auto-read to the changed span plus 2 lines of context", async () => {
+    await withTempDir("auto-read-window-", async (dir) => {
+      const filePath = join(dir, "window.txt");
+      await writeFile(filePath, Array.from({ length: 10 }, (_, i) => `line ${i + 1}`).join("\n") + "\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+
+      const handler = handlers.get("tool_result");
+      const result = await handler!(
+        {
+          toolName: "replace",
+          isError: false,
+          input: { path: "window.txt" },
+          details: { metrics: { changed_lines: { first: 5, last: 5 } } },
+          content: [{ type: "text", text: "Replaced." }],
+        },
+        { cwd: dir },
+      );
+
+      expect(result).toBeDefined();
+      const text = (result as { content: Array<{ type: string; text: string }> }).content[1].text;
+      expect(text).toContain("│line 3");
+      expect(text).toContain("│line 5");
+      expect(text).toContain("│line 7");
+      expect(text).not.toContain("│line 1");
+      expect(text).not.toContain("│line 10");
+      expect(text).toContain("[Showing lines 3-7 of 10.");
+    });
+  });
+
+  it("clamps the replace auto-read window to the file start and end", async () => {
+    await withTempDir("auto-read-window-clamp-", async (dir) => {
+      const filePath = join(dir, "clamp.txt");
+      await writeFile(filePath, Array.from({ length: 4 }, (_, i) => `row ${i + 1}`).join("\n") + "\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+
+      const handler = handlers.get("tool_result");
+      const result = await handler!(
+        {
+          toolName: "replace",
+          isError: false,
+          input: { path: "clamp.txt" },
+          details: { metrics: { changed_lines: { first: 1, last: 4 } } },
+          content: [{ type: "text", text: "Replaced." }],
+        },
+        { cwd: dir },
+      );
+
+      expect(result).toBeDefined();
+      const text = (result as { content: Array<{ type: string; text: string }> }).content[1].text;
+      expect(text).toContain("│row 1");
+      expect(text).toContain("│row 4");
+    });
+  });
 });

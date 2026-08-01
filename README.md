@@ -112,6 +112,8 @@ Auto-read is **disabled by default**. When enabled, after a successful `write`, 
 
 Toggle at runtime with the `/toggle-auto-read` command. The setting persists across sessions in the config file (`~/.config/pi-hashline-edit-pro/config.json`). Set `PI_HASHLINE_AUTO_READ=1` to enable by default on first run.
 
+After a `replace`, the block is limited to the changed span plus 2 lines of context above and below it. Because the persistent hash store keeps anchors for unchanged lines stable across edits, the model's previously read anchors for the rest of the file remain valid — only the edited region needs fresh anchors. `write` and `undo_last_replace` dump from the top of the file, since the model has no prior anchors for that state.
+
 For large files (>2000 lines), the auto-read output is truncated with a pagination hint. Use `read` with `offset` to see more.
 
 ### Undo
