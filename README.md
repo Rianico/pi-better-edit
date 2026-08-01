@@ -96,6 +96,11 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 
 Hashes are now computed with a persistent store (`~/.config/pi-hashline-edit-pro/hash-store.sqlite`) that preserves hashes for unchanged lines across edits. When you replace lines in a file, the runtime maps the old content against the new content and copies hashes for unchanged lines to their new positions. This means editing one part of a file does not change the hashes of unrelated lines elsewhere — the model can keep using previously seen anchors for untouched regions. A replace that produces identical content (a no-op, reported as "No changes made") never rotates hashes: no file change means no anchor change, so previously read anchors remain valid after a no-op.
 
+Two guarantees make the mapping safe for duplicated content:
+
+- **An edited range never borrows a hash from a line outside it.** Lines outside the replaced range keep their hashes unconditionally, even when their content is byte-identical to lines inside the range. Previously, identical text in a replacement could "steal" the nearest sibling line's hash, silently relocating an anchor the model was still holding.
+- **Re-inserted identical text keeps its hash.** When replacement content matches a line that was just removed, the removed line's hash is reused for it (same canonical content, same meaning). Previously this was a coin flip: the hash was retired and a fresh one assigned, so "replace X with X" rotated the anchor even though nothing changed.
+
 The store is a SQLite database (WAL journal mode) keyed by canonical file path. Each snapshot stores a 64-bit content checksum (`xxhash64`) plus the per-line hashes, not the full text, so a cache hit is a single keyed lookup and a one-row write. Reads, replaces, undo, and pruning all share one transactional store, so concurrent Pi sessions editing different files never silently clobber each other's snapshots (per-path writers serialize via `BEGIN IMMEDIATE`; same-path concurrent edits still fail safe — stale anchors are rejected by content matching). Stale snapshots (for files that no longer exist) are pruned on session start.
 
 On first run after upgrading, a one-time migration imports the previous `hash-store.json` into the database and renames the old file to `hash-store.json.bak`; the old JSON store is otherwise discarded.

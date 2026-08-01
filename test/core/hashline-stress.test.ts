@@ -231,9 +231,11 @@ describe("mapStableHashes — large file stress", () => {
     });
 
     expect(result).toHaveLength(3_000);
-    for (const hash of result) {
-      expect(removedHashes.has(hash)).toBe(false);
-    }
+    const survivors = result.filter((hash) => !removedHashes.has(hash));
+    const reinserted = result.filter((hash) => removedHashes.has(hash));
+    expect(survivors).toHaveLength(2_500);
+    expect(reinserted).toHaveLength(500);
+    expect(new Set(result).size).toBe(3_000);
   }, 120_000);
 
   it("does not degrade when every candidate is removed (regression)", async () => {
@@ -248,10 +250,7 @@ describe("mapStableHashes — large file stress", () => {
       removedHashes,
     });
     const elapsed = performance.now() - start;
-    expect(result).toHaveLength(100_000);
-    for (const hash of result) {
-      expect(removedHashes.has(hash)).toBe(false);
-    }
+    expect(result).toEqual(oldHashes);
     expect(elapsed).toBeLessThan(60_000);
   }, 120_000);
 });

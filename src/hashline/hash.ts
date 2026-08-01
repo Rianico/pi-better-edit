@@ -180,15 +180,15 @@ function hashToIndex(hash: string): number {
   return idx;
 }
 
-function findNearestCandidate(
-  candidates: { index: number; hash: string }[],
+function nearestNew(
+  candidates: number[],
   target: number,
 ): number {
   let lo = 0;
   let hi = candidates.length;
   while (lo < hi) {
     const mid = (lo + hi) >>> 1;
-    if (candidates[mid]!.index < target) lo = mid + 1;
+    if (candidates[mid]! < target) lo = mid + 1;
     else hi = mid;
   }
   const left = lo - 1;
@@ -196,8 +196,7 @@ function findNearestCandidate(
   if (
     left >= 0 &&
     (right >= candidates.length ||
-      target - candidates[left]!.index <=
-        candidates[right]!.index - target)
+      target - candidates[left]! <= candidates[right]! - target)
   ) {
     return left;
   }
@@ -210,46 +209,78 @@ function mapStableHashes(
   newContent: string,
   removedHashes?: Set<string>,
 ): string[] {
+  const oldLines = splitLines(oldContent);
   const newLines = splitLines(newContent);
   const newHashes = new Array<string>(newLines.length);
   const used = new Uint32Array(BITSET_WORDS);
   const hint = { value: 0 };
+  const removed = removedHashes ?? new Set<string>();
 
-  if (removedHashes) {
-    for (const hash of removedHashes) {
-      const idx = hashToIndex(hash);
-      if (idx >= 0) setBit(used, idx);
-    }
-  }
-
-  const contentMap = new Map<string, { index: number; hash: string }[]>();
-  const oldLines = splitLines(oldContent);
-  for (let i = 0; i < oldLines.length; i++) {
-    const line = oldLines[i]!;
+  const oldHashIndex = new Map<string, number>();
+  for (let i = 0; i < oldHashes.length; i++) {
     const hash = oldHashes[i]!;
-    if (removedHashes?.has(hash)) continue;
-    const entry = { index: i, hash };
-    const list = contentMap.get(line);
-    if (list) {
-      list.push(entry);
-    } else {
-      contentMap.set(line, [entry]);
-    }
+    oldHashIndex.set(hash, i);
+    const idx = hashToIndex(hash);
+    if (idx >= 0) setBit(used, idx);
   }
-  for (let i = 0; i < newLines.length; i++) {
-    const line = newLines[i]!;
-    const candidates = contentMap.get(line);
-    if (!candidates || candidates.length === 0) continue;
 
-    const bestIdx = findNearestCandidate(candidates, i);
-    if (bestIdx < 0) continue;
-    const match = candidates.splice(bestIdx, 1)[0]!;
-    newHashes[i] = match.hash;
-    const matchIdx = hashToIndex(match.hash);
-    if (matchIdx >= 0) {
-      setBit(used, matchIdx);
-      if (matchIdx + 1 > hint.value) hint.value = matchIdx + 1;
+  const removedIndexes = new Set<number>();
+  for (const hash of removed) {
+    const idx = oldHashIndex.get(hash);
+    if (idx !== undefined) removedIndexes.add(idx);
+  }
+
+  const survivors: { index: number; hash: string }[] = [];
+  const removedEntries: { index: number; hash: string }[] = [];
+  for (let i = 0; i < oldLines.length; i++) {
+    const entry = { index: i, hash: oldHashes[i]! };
+    if (removedIndexes.has(i)) removedEntries.push(entry);
+    else survivors.push(entry);
+  }
+
+  const newByContent = new Map<string, number[]>();
+  for (let i = 0; i < newLines.length; i++) {
+    const key = canon(newLines[i]!);
+    const list = newByContent.get(key);
+    if (list) list.push(i);
+    else newByContent.set(key, [i]);
+  }
+
+  const markUsed = (hash: string): void => {
+    const idx = hashToIndex(hash);
+    if (idx >= 0) {
+      setBit(used, idx);
+      if (idx + 1 > hint.value) hint.value = idx + 1;
     }
+  };
+
+  for (const entry of survivors) {
+    const candidates = newByContent.get(canon(oldLines[entry.index]!));
+    if (!candidates || candidates.length === 0) continue;
+    const pos = nearestNew(candidates, entry.index);
+    if (pos < 0) continue;
+    const newIdx = candidates.splice(pos, 1)[0]!;
+    newHashes[newIdx] = entry.hash;
+    markUsed(entry.hash);
+  }
+
+  const removedByContent = new Map<string, { hashes: string[]; pos: number }>();
+  for (const entry of removedEntries) {
+    const key = canon(oldLines[entry.index]!);
+    let queue = removedByContent.get(key);
+    if (!queue) {
+      queue = { hashes: [], pos: 0 };
+      removedByContent.set(key, queue);
+    }
+    queue.hashes.push(entry.hash);
+  }
+
+  for (let i = 0; i < newLines.length; i++) {
+    if (newHashes[i]) continue;
+    const queue = removedByContent.get(canon(newLines[i]!));
+    if (!queue || queue.pos >= queue.hashes.length) continue;
+    newHashes[i] = queue.hashes[queue.pos]!;
+    queue.pos += 1;
   }
 
   for (let i = 0; i < newLines.length; i++) {
@@ -258,6 +289,7 @@ function mapStableHashes(
     const baseIdx = xxh32(c) >>> 14;
     newHashes[i] = assignHash(used, baseIdx, hint);
   }
+
   return newHashes;
 }
 
