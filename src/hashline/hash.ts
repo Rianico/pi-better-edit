@@ -183,7 +183,6 @@ function hashToIndex(hash: string): number {
 function findNearestCandidate(
   candidates: { index: number; hash: string }[],
   target: number,
-  removedHashes?: Set<string>,
 ): number {
   let lo = 0;
   let hi = candidates.length;
@@ -192,33 +191,17 @@ function findNearestCandidate(
     if (candidates[mid]!.index < target) lo = mid + 1;
     else hi = mid;
   }
-  let left = lo - 1;
-  let right = lo;
-  while (left >= 0 || right < candidates.length) {
-    let bestPos = -1;
-    let bestDist = Infinity;
-    if (left >= 0) {
-      const candidate = candidates[left]!;
-      if (!removedHashes?.has(candidate.hash)) {
-        bestPos = left;
-        bestDist = target - candidate.index;
-      }
-    }
-    if (right < candidates.length) {
-      const candidate = candidates[right]!;
-      if (!removedHashes?.has(candidate.hash)) {
-        const dist = candidate.index - target;
-        if (dist < bestDist) {
-          bestPos = right;
-          bestDist = dist;
-        }
-      }
-    }
-    if (bestPos >= 0) return bestPos;
-    left--;
-    right++;
+  const left = lo - 1;
+  const right = lo;
+  if (
+    left >= 0 &&
+    (right >= candidates.length ||
+      target - candidates[left]!.index <=
+        candidates[right]!.index - target)
+  ) {
+    return left;
   }
-  return -1;
+  return right < candidates.length ? right : -1;
 }
 
 function mapStableHashes(
@@ -243,7 +226,9 @@ function mapStableHashes(
   const oldLines = splitLines(oldContent);
   for (let i = 0; i < oldLines.length; i++) {
     const line = oldLines[i]!;
-    const entry = { index: i, hash: oldHashes[i]! };
+    const hash = oldHashes[i]!;
+    if (removedHashes?.has(hash)) continue;
+    const entry = { index: i, hash };
     const list = contentMap.get(line);
     if (list) {
       list.push(entry);
@@ -251,13 +236,12 @@ function mapStableHashes(
       contentMap.set(line, [entry]);
     }
   }
-
   for (let i = 0; i < newLines.length; i++) {
     const line = newLines[i]!;
     const candidates = contentMap.get(line);
     if (!candidates || candidates.length === 0) continue;
 
-    const bestIdx = findNearestCandidate(candidates, i, removedHashes);
+    const bestIdx = findNearestCandidate(candidates, i);
     if (bestIdx < 0) continue;
     const match = candidates.splice(bestIdx, 1)[0]!;
     newHashes[i] = match.hash;

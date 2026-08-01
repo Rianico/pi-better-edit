@@ -133,6 +133,38 @@ describe("hash-store — snapshot get / upsert / delete", () => {
   });
 });
 
+describe("hash-store — corrupt row handling", () => {
+  async function corruptHashes(home: string, path: string, value: string): Promise<void> {
+    const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+    db.prepare("UPDATE snapshots SET hashes = ? WHERE path = ?").run(value, path);
+    db.close();
+  }
+
+  it("treats a row with unparseable hashes as a cache miss", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["AAA"]);
+      await corruptHashes(home, "/p.ts", "not json");
+      shutdownHashStore();
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toBeUndefined();
+      upsertSnapshot(reloaded, "/p.ts", contentChecksum("x\n"), 1, ["BBB"]);
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["BBB"]);
+    });
+  });
+
+  it("treats a row with non-string hashes as a cache miss", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["AAA"]);
+      await corruptHashes(home, "/p.ts", "[1,2]");
+      shutdownHashStore();
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toBeUndefined();
+    });
+  });
+});
+
 describe("hash-store — migration from legacy hash-store.json", () => {
   it("imports valid legacy snapshots and renames the file to .bak", async () => {
     await withTempHome(async (home) => {

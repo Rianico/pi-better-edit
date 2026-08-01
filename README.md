@@ -114,6 +114,16 @@ Toggle at runtime with the `/toggle-auto-read` command. The setting persists acr
 
 For large files (>2000 lines), the auto-read output is truncated with a pagination hint. Use `read` with `offset` to see more.
 
+### Undo
+
+`undo_last_replace` reverts the most recent successful `replace` on a file, restoring the exact previous content (BOM and line endings included) and the previous hash anchors. It is meant for immediate recovery from a bad edit:
+
+- Undo history is per-file and single-level: each successful `replace` replaces the previous undo entry, so only the most recent edit can be reverted.
+- Undo history is in-memory and is lost when the session ends or the extension reloads.
+- A successful `write` clears the undo history for that file — the write becomes the new source of truth, and reverting past it would be ambiguous.
+- After an undo, the hash-store snapshot is restored to match the reverted content, so anchors read from the previous state are valid again.
+- Call `read` after an undo to get fresh anchors for follow-up edits.
+
 ### Diff for the host
 
 The post-edit diff (with `+`/`-` markers) is exposed to the host UI via `details.diff`. It is intentionally not in the LLM-visible text. The model already knows what it changed and can call `read` for fresh anchors when needed.

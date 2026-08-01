@@ -235,4 +235,23 @@ describe("mapStableHashes — large file stress", () => {
       expect(removedHashes.has(hash)).toBe(false);
     }
   }, 120_000);
+
+  it("does not degrade when every candidate is removed (regression)", async () => {
+    const oldContent = Array.from({ length: 100_000 }, () => "dup").join("\n");
+    const oldHashes = _lineHashesPure(oldContent);
+    const removedHashes = new Set(oldHashes);
+    const newContent = Array.from({ length: 100_000 }, () => "dup").join("\n");
+    const start = performance.now();
+    const result = await lineHashes(newContent, home.testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes,
+    });
+    const elapsed = performance.now() - start;
+    expect(result).toHaveLength(100_000);
+    for (const hash of result) {
+      expect(removedHashes.has(hash)).toBe(false);
+    }
+    expect(elapsed).toBeLessThan(60_000);
+  }, 120_000);
 });

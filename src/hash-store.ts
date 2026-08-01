@@ -36,6 +36,7 @@ function isValidSnapshot(value: unknown): value is LegacySnapshot {
 }
 
 let cachedDb: { path: string; db: DatabaseSync; stmts: Prepared } | null = null;
+let opening: { path: string; promise: Promise<HashStore> } | null = null;
 let exitHandlerRegistered = false;
 function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
   const db = new DatabaseSync(storePath, {
@@ -101,12 +102,7 @@ function shutdownDb(db: DatabaseSync): void {
   db.close();
 }
 
-export async function loadHashStore(): Promise<HashStore> {
-  const storePath = hashStorePath();
-  if (cachedDb && cachedDb.path === storePath && cachedDb.db.isOpen) {
-    return { stmts: cachedDb.stmts, engine: "node:sqlite" };
-  }
-
+async function openStore(storePath: string): Promise<HashStore> {
   shutdownHashStore();
 
   await initHasher();
@@ -147,6 +143,21 @@ export async function loadHashStore(): Promise<HashStore> {
   }
 
   return { stmts, engine: "node:sqlite" };
+}
+
+export function loadHashStore(): Promise<HashStore> {
+  const storePath = hashStorePath();
+  if (cachedDb && cachedDb.path === storePath && cachedDb.db.isOpen) {
+    return Promise.resolve({ stmts: cachedDb.stmts, engine: "node:sqlite" });
+  }
+  if (opening && opening.path === storePath) {
+    return opening.promise;
+  }
+  const promise = openStore(storePath).finally(() => {
+    if (opening?.path === storePath) opening = null;
+  });
+  opening = { path: storePath, promise };
+  return promise;
 }
 
 export function shutdownHashStore(): void {
@@ -233,7 +244,15 @@ export function getSnapshot(
   const checksum = contentChecksum(content);
   const lineCount = splitLines(content).length;
   const row = store.stmts.get(path, checksum, lineCount);
-  return row ? (JSON.parse(row.hashes as string) as string[]) : undefined;
+  if (!row) return undefined;
+  try {
+    const parsed = JSON.parse(row.hashes as string);
+    return Array.isArray(parsed) && parsed.every((h) => typeof h === "string")
+      ? (parsed as string[])
+      : undefined;
+  } catch {
+    return undefined;
+  }
 }
 
 export function upsertSnapshot(
@@ -243,16 +262,11 @@ export function upsertSnapshot(
   lineCount: number,
   hashes: string[],
 ): void {
-  const hashesJson = JSON.stringify(hashes);
-  withStore(() => {
-    store.stmts.upsert(path, checksum, lineCount, hashesJson, Date.now());
-  });
+  store.stmts.upsert(path, checksum, lineCount, JSON.stringify(hashes), Date.now());
 }
 
 export function deleteSnapshot(store: HashStore, path: string): void {
-  withStore(() => {
-    store.stmts.deleteOne(path);
-  });
+  store.stmts.deleteOne(path);
 }
 
 export async function pruneMissing(store: HashStore): Promise<void> {
