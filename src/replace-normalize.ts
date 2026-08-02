@@ -11,7 +11,6 @@ export function tryParseContentLines(record: Record<string, unknown>, key: strin
       return;
     }
   } catch {
-    
   }
   throw new Error(CONTENT_LINES_NOT_STRING_MSG);
 }
@@ -21,32 +20,6 @@ export function normalizeFilePath(record: Record<string, unknown>): void {
     record.path = record.file_path;
     delete record.file_path;
   }
-}
-
-function normalizeField(
-  record: Record<string, unknown>,
-  from: string,
-  to: string,
-): void {
-  if (!has(record, from)) return;
-  const raw = record[from];
-  if (Array.isArray(raw)) {
-    record[to] = raw;
-  } else if (isRec(raw)) {
-    record[to] = [raw];
-  } else if (typeof raw === "string") {
-    try {
-      const parsed = JSON.parse(raw);
-      if (Array.isArray(parsed)) {
-        record[to] = parsed;
-      } else if (isRec(parsed)) {
-        record[to] = [parsed];
-      }
-    } catch {
-      
-    }
-  }
-  if (from !== to) delete record[from];
 }
 
 export function normReq(input: unknown): unknown {
@@ -60,27 +33,6 @@ export function normReq(input: unknown): unknown {
 
   if (has(record, "content_lines") && typeof record.content_lines === "string") {
     tryParseContentLines(record, "content_lines");
-  }
-
-  normalizeField(record, "changes", "changes");
-
-  if (Array.isArray(record.changes)) {
-    for (let i = 0; i < record.changes.length; i++) {
-      const item = record.changes[i];
-      if (isRec(item) && has(item, "content_lines") && typeof item.content_lines === "string") {
-        tryParseContentLines(item, "content_lines");
-      }
-    }
-  }
-
-  if (!Array.isArray(record.changes) && has(record, "hash_range_inclusive") && has(record, "content_lines")) {
-    const hri = record.hash_range_inclusive;
-    const cl = record.content_lines;
-    if (Array.isArray(hri) && Array.isArray(cl)) {
-      record.changes = [{ hash_range_inclusive: hri, content_lines: cl }];
-      delete record.hash_range_inclusive;
-      delete record.content_lines;
-    }
   }
 
   return record;

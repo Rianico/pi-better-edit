@@ -27,17 +27,17 @@ export {
 	type NEdit,
 	type BDupWarn,
 	type AutoFix,
-	descEdit,
-	resEdits,
-	valEdits,
+	resEdit,
+	valEdit,
 	stripBarePrefixes,
 	stripDiffPrefixes,
 	swapReversedRanges,
 	fmtMismatch,
 } from "./resolve";
+
 export {
 	buildIdx,
-	applyEdits,
+	applyEdit,
 	fmtRegion,
 	changedRange,
 } from "./apply";

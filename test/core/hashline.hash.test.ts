@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
-	applyEdits,
+	applyEdit,
 	lineHashes,
 	parseText,
 } from "../../src/hashline";
@@ -30,7 +30,7 @@ describe("strict hashline contract", () => {
 		const stale = {
       hash_range_inclusive: [{ hash: "ZZZZ" }, { hash: "ZZZZ" }], content_lines: ["updated"],
     } as any;
-		expect(() => applyEdits(content, [stale])).toThrow(/stale anchor/);
+		expect(() => applyEdit(content, stale)).toThrow(/stale anchor/);
 	});
 });
 
@@ -75,9 +75,7 @@ describe("perfect hashing", () => {
 			"const x = 1;",
 		].join("\n");
 		const hashes = await lineHashes(file, home.testPath);
-		const result = applyEdits(file, [
-      { hash_range_inclusive: [{ hash: hashes[2]! }, { hash: hashes[2]! }], content_lines: ["const x = 999;"] },
-    ]);
+		const result = applyEdit(file, { hash_range_inclusive: [{ hash: hashes[2]! }, { hash: hashes[2]! }], content_lines: ["const x = 999;"] });
     expect(result.content).toBe("const x = 1;\nconst y = 2;\nconst x = 999;");
 	});
 
@@ -86,9 +84,7 @@ describe("perfect hashing", () => {
 		const staleHash = "ZZZZ";
 		let caught: Error | undefined;
 		try {
-			applyEdits(file, [
-        { hash_range_inclusive: [{ hash: staleHash }, { hash: staleHash }], content_lines: ["X"] },
-      ]);
+			applyEdit(file, { hash_range_inclusive: [{ hash: staleHash }, { hash: staleHash }], content_lines: ["X"] });
     } catch (e) {
 			caught = e as Error;
 		}
@@ -107,14 +103,12 @@ describe("perfect hashing", () => {
 
 		let caught: Error | undefined;
 		try {
-			applyEdits(
+			applyEdit(
 				file,
-        [
-          { hash_range_inclusive: [{ hash: sharedHash }, { hash: sharedHash }], content_lines: ["X"] },
-        ],
-        undefined,
-        forgedHashes,
-      );
+				{ hash_range_inclusive: [{ hash: sharedHash }, { hash: sharedHash }], content_lines: ["X"] },
+				undefined,
+				forgedHashes,
+			);
     } catch (error) {
 			caught = error as Error;
 		}

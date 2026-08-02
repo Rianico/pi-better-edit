@@ -1,6 +1,5 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { normReq } from "./replace-normalize";
-import type { HTEdit } from "./hashline";
 import type { ReqParams, ReplaceDetails } from "./replace";
 import { isRec } from "./utils";
 
@@ -32,15 +31,19 @@ export function getPreviewInput(
 		return null;
 	}
 
-	if (!Array.isArray(normalized.changes)) {
+	if (Array.isArray(normalized.changes)) {
+		return { path: normalized.path, hash_range_inclusive: ["", ""] as [string, string], content_lines: [] };
+	}
+
+	if (!Array.isArray(normalized.hash_range_inclusive) || !Array.isArray(normalized.content_lines)) {
 		return null;
 	}
 
 	const request: ReqParams = {
 		path: normalized.path,
-		changes: normalized.changes as HTEdit[],
+		hash_range_inclusive: normalized.hash_range_inclusive as [string, string],
+		content_lines: normalized.content_lines as string[],
 	};
-
 	return request;
 }
 

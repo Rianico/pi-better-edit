@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import {
   _lineHashesPure,
-  applyEdits,
+  applyEdit,
   lineHashes,
-  resEdits,
+  resEdit,
 } from "../../src/hashline";
 import { firstNonEmpty, lastNonEmpty, splitLines } from "../../src/utils";
 import { useTestHome } from "../support/fixtures";
@@ -75,6 +75,10 @@ function randSpan(
     const prev = s >= 2 ? lines[s - 2] : undefined;
     const next = e < n ? lines[e] : undefined;
     if ((first !== undefined && first === prev) || (last !== undefined && last === next)) continue;
+    if (avoid.some((other) =>
+      (first !== undefined && other.e === s - 1 && lastNonEmpty(other.repl) === first) ||
+      (last !== undefined && other.s === e + 1 && firstNonEmpty(other.repl) === last),
+    )) continue;
     if (repl.length === 0 && s === 1 && e === n) continue;
     return span;
   }
@@ -145,13 +149,11 @@ describe("property: single random edit per call", () => {
       if (content.endsWith("\n")) {
         expected += "\n";
       }
-      const edits = resEdits([
-        {
-          hash_range_inclusive: [hashes[span.s - 1]!, hashes[span.e - 1]!],
-          content_lines: span.repl,
-        },
-      ]);
-      const result = applyEdits(content, edits, undefined, hashes, home.testPath);
+      const edit = resEdit({
+        hash_range_inclusive: [hashes[span.s - 1]!, hashes[span.e - 1]!],
+        content_lines: span.repl,
+      });
+      const result = applyEdit(content, edit, undefined, hashes, home.testPath);
       expect(result.content).toBe(expected);
       expect(result.autoFixes).toBeUndefined();
       const removedHashes = new Set(hashes.slice(span.s - 1, span.e));
@@ -171,8 +173,8 @@ describe("property: single random edit per call", () => {
   }, 60_000);
 });
 
-describe("property: batch of non-overlapping random edits", () => {
-  it("applies the batch exactly and keeps mapping invariants for 150 random cases", async () => {
+describe("property: sequential random edits", () => {
+  it("applies sequential single edits exactly and keeps mapping invariants for 150 random cases", async () => {
     for (let iter = 0; iter < 150; iter++) {
       const rnd = mulberry32(iter * 104729 + 7);
       const content = randContent(rnd);
@@ -196,15 +198,17 @@ describe("property: batch of non-overlapping random edits", () => {
       if (content.endsWith("\n")) {
         expected += "\n";
       }
-      const edits = resEdits(
-        spans.map((span) => ({
-          hash_range_inclusive: [hashes[span.s - 1]!, hashes[span.e - 1]!],
+      let current = content;
+      for (const span of [...spans].sort((a, b) => b.s - a.s)) {
+        const currentHashes = await lineHashes(current, home.testPath);
+        const edit = resEdit({
+          hash_range_inclusive: [currentHashes[span.s - 1]!, currentHashes[span.e - 1]!],
           content_lines: span.repl,
-        })),
-      );
-      const result = applyEdits(content, edits, undefined, hashes, home.testPath);
-      expect(result.content).toBe(expected);
-      expect(result.autoFixes).toBeUndefined();
+        });
+        const result = applyEdit(current, edit, undefined, currentHashes, home.testPath);
+        current = result.content;
+      }
+      expect(current).toBe(expected);
       const removedHashes = new Set<string>();
       for (const span of spans) {
         for (const hash of hashes.slice(span.s - 1, span.e)) {

@@ -109,7 +109,7 @@ describe("parseText", () => {
   it("returns empty string as a single empty line for blank content (array input)", () => {
     expect(parseText([""])).toEqual([""]);
   });
-	it("passes through diff-preview rows verbatim (marker stripping happens in applyEdits)", () => {
+	it("passes through diff-preview rows verbatim (marker stripping happens in applyEdit)", () => {
 		expect(parseText(["+aB3│foo", "+xYp│bar"])).toEqual(["+aB3│foo", "+xYp│bar"]);
 		expect(parseText([" aB3│keep", "-10    old", " xYp│after"])).toEqual([" aB3│keep", "-10    old", " xYp│after"]);
 		expect(parseText([" aB3│keep", "-   │old", " xYp│after"])).toEqual([" aB3│keep", "-   │old", " xYp│after"]);

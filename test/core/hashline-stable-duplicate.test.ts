@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lineHashes, applyEdits, type HEdit } from "../../src/hashline";
+import { lineHashes, applyEdit, type HEdit } from "../../src/hashline";
 import { useTestHome, withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
 const home = useTestHome();
@@ -13,14 +13,12 @@ describe("stable hashing with duplicate content lines", () => {
     const secondBraceHash = hashes[6]!;
     expect(firstBraceHash).not.toBe(secondBraceHash);
 
-    const edits: HEdit[] = [
-      {
-        hash_range_inclusive: [{ hash: hashes[0]! }, { hash: firstBraceHash }],
-        content_lines: [],
-      },
-    ];
+    const edit: HEdit = {
+      hash_range_inclusive: [{ hash: hashes[0]! }, { hash: firstBraceHash }],
+      content_lines: [],
+    };
 
-    const result = applyEdits(content, edits, undefined, hashes, home.testPath);
+    const result = applyEdit(content, edit, undefined, hashes, home.testPath);
     const newContent = result.content;
     expect(newContent).toBe("\nfunction b() {\n  return 2;\n}\n");
 
@@ -40,14 +38,12 @@ describe("stable hashing with duplicate content lines", () => {
     const firstBraceHash = hashes[2]!;
     const secondBraceHash = hashes[6]!;
 
-    const edits: HEdit[] = [
-      {
-        hash_range_inclusive: [{ hash: hashes[4]! }, { hash: secondBraceHash }],
-        content_lines: [],
-      },
-    ];
+    const edit: HEdit = {
+      hash_range_inclusive: [{ hash: hashes[4]! }, { hash: secondBraceHash }],
+      content_lines: [],
+    };
 
-    const result = applyEdits(content, edits, undefined, hashes, home.testPath);
+    const result = applyEdit(content, edit, undefined, hashes, home.testPath);
     const newContent = result.content;
     expect(newContent).toBe("function a() {\n  return 1;\n}\n\n");
 
@@ -69,14 +65,12 @@ describe("stable hashing with duplicate content lines", () => {
     const brace3 = hashes[5]!;
     expect(new Set([brace1, brace2, brace3]).size).toBe(3);
 
-    const edits: HEdit[] = [
-      {
-        hash_range_inclusive: [{ hash: hashes[2]! }, { hash: hashes[2]! }],
-        content_lines: [],
-      },
-    ];
+    const edit: HEdit = {
+      hash_range_inclusive: [{ hash: hashes[2]! }, { hash: hashes[2]! }],
+      content_lines: [],
+    };
 
-    const result = applyEdits(content, edits, undefined, hashes, home.testPath);
+    const result = applyEdit(content, edit, undefined, hashes, home.testPath);
     const newContent = result.content;
     expect(newContent).toBe("a\n}\n}\nc\n}\nd\n");
 

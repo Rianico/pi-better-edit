@@ -1,13 +1,12 @@
 import { abortIf, splitLines, lastNonEmptyIndex, firstNonEmptyIndex } from "../utils";
 import { _lineHashesPure, HASH_SEP } from "./hash";
 import {
-	valEdits,
+	valEdit,
 	stripBarePrefixes,
 	stripDiffPrefixes,
 	swapReversedRanges,
 	warnUnicodeEsc,
 	fmtMismatch,
-	descEdit,
 	type RHEdit,
 	type NEdit,
 	type HEdit,
@@ -40,11 +39,15 @@ export function buildIdx(content: string): LIdx {
 
 type RESpan = {
 	kind: "replace";
-	index: number;
-	label: string;
 	start: number;
 	end: number;
 	replacement: string;
+};
+
+type NoopSpan = {
+	kind: "noop";
+	loc: string;
+	currentContent: string;
 };
 
 function assertNotEmpty(originalContent: string, result: string): void {
@@ -55,23 +58,11 @@ function assertNotEmpty(originalContent: string, result: string): void {
 	}
 }
 
-function throwConflict(
-	left: { index: number; label: string },
-	right: { index: number; label: string },
-	reason: string,
-): never {
-	throw new Error(
-		`[E_EDIT_CONFLICT] Edit ${left.index} (${left.label}) and edit ${right.index} (${right.label}) ${reason}.`
-	);
-}
-
 function resToSpan(
   edit: RHEdit,
-  index: number,
   content: string,
   lineIndex: LIdx,
-  noopEdits: NEdit[],
-): RESpan | null {
+): RESpan | NoopSpan {
   const { fileLines, lineStarts } = lineIndex;
 
   const startLine = edit.hash_range_inclusive[0].line;
@@ -83,21 +74,16 @@ function resToSpan(
       (line, lineIndex) => line === edit.content_lines[lineIndex],
     )
   ) {
-    noopEdits.push({
-      editIndex: index,
+    return {
+      kind: "noop",
       loc: edit.hash_range_inclusive[0].hash,
       currentContent: originalLines.join("\n"),
-    });
-    return null;
+    };
   }
-
-  const label = descEdit(edit);
 
   if (edit.content_lines.length > 0) {
     return {
       kind: "replace",
-      index,
-      label,
       start: lineStarts[startLine - 1]!,
       end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
       replacement: edit.content_lines.join("\n"),
@@ -107,8 +93,6 @@ function resToSpan(
   if (startLine === 1 && endLine === fileLines.length) {
     return {
       kind: "replace",
-      index,
-      label,
       start: 0,
       end: content.length,
       replacement: "",
@@ -118,8 +102,6 @@ function resToSpan(
   if (endLine < fileLines.length) {
     return {
       kind: "replace",
-      index,
-      label,
       start: lineStarts[startLine - 1]!,
       end: lineStarts[endLine]!,
       replacement: "",
@@ -129,8 +111,6 @@ function resToSpan(
   if (content.endsWith("\n")) {
     return {
       kind: "replace",
-      index,
-      label,
       start: lineStarts[startLine - 1]!,
       end: content.length,
       replacement: "",
@@ -139,91 +119,24 @@ function resToSpan(
 
   return {
     kind: "replace",
-    index,
-    label,
     start: Math.max(0, lineStarts[startLine - 1]! - 1),
     end: content.length,
     replacement: "",
   };
 }
-function assertNoConflict(spans: RESpan[]): void {
-	for (let leftIndex = 0; leftIndex < spans.length; leftIndex++) {
-		const left = spans[leftIndex]!;
-		for (
-			let rightIndex = leftIndex + 1;
-			rightIndex < spans.length;
-			rightIndex++
-		) {
-			const right = spans[rightIndex]!;
-
-			if (left.start < right.end && right.start < left.end) {
-				throwConflict(
-					left,
-					right,
-					"overlap on the same original line range",
-				);
-			}
-		}
-	}
-}
-
-function resSpans(
-	edits: RHEdit[],
-	content: string,
-	lineIndex: LIdx,
-	noopEdits: NEdit[],
-	signal: AbortSignal | undefined,
-): RESpan[] {
-	const seenSpanKeys = new Set<string>();
-	const resolvedSpans: RESpan[] = [];
-	for (const [index, edit] of edits.entries()) {
-	abortIf(signal);
-		const span = resToSpan(
-			edit,
-			index,
-			content,
-			lineIndex,
-			noopEdits,
-		);
-		if (!span) {
-			continue;
-		}
-
-		const spanKey =
-				`replace:${span.start}:${span.end}:${span.replacement}`;
-		if (seenSpanKeys.has(spanKey)) {
-			continue;
-		}
-		seenSpanKeys.add(spanKey);
-		resolvedSpans.push(span);
-	}
-
-	assertNoConflict(resolvedSpans);
-	return [...resolvedSpans].sort((left, right) => {
-		if (right.end !== left.end) {
-			return right.end - left.end;
-		}
-		return left.index - right.index;
-	});
-}
 
 function assemble(
 	content: string,
-	spans: RESpan[],
+	span: RESpan,
 	signal: AbortSignal | undefined,
 ): string {
-	let result = content;
-	for (const span of spans) {
-		abortIf(signal);
-		result =
-			result.slice(0, span.start) + span.replacement + result.slice(span.end);
-	}
-	return result;
+	abortIf(signal);
+	return content.slice(0, span.start) + span.replacement + content.slice(span.end);
 }
 
-export function applyEdits(
+export function applyEdit(
 	content: string,
-	edits: HEdit[],
+	edit: HEdit,
 	signal?: AbortSignal,
 	precomputedHashes?: string[],
 	filePath?: string,
@@ -232,36 +145,29 @@ export function applyEdits(
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
 	warnings?: string[];
-	noopEdits?: NEdit[];
+	noopEdit?: NEdit;
 	autoFixes?: AutoFix[];
 } {
 	abortIf(signal);
-	if (!edits.length)
-		return {
-			content,
-			firstChangedLine: undefined,
-			lastChangedLine: undefined,
-		};
 
 	const lineIndex = buildIdx(content);
 	const fileHashes = precomputedHashes ?? _lineHashesPure(content);
-	const noopEdits: NEdit[] = [];
 	const warnings: string[] = [];
 
-	const rangeFixed = swapReversedRanges(edits, fileHashes, warnings);
+	const rangeFixed = swapReversedRanges(edit, fileHashes, warnings);
 	const prefixFixed = stripDiffPrefixes(
 		stripBarePrefixes(rangeFixed, fileHashes, warnings),
 		warnings,
 	);
 
-	const { resolved: initialResolved, mismatches, boundaryWarnings } = valEdits(
+	const { resolved: initialResolved, mismatches, boundaryWarnings } = valEdit(
 		prefixFixed,
 		lineIndex.fileLines,
 		fileHashes,
 		warnings,
 		signal,
 	);
-	if (mismatches.length) {
+	if (mismatches.length || !initialResolved) {
 		throw new Error(
 			fmtMismatch(mismatches, lineIndex.fileLines, fileHashes, filePath),
 		);
@@ -273,35 +179,33 @@ export function applyEdits(
 	let autoFixes: AutoFix[] | undefined;
 	if (boundaryWarnings.length > 0) {
 		autoFixes = [];
-		const correctedEdits: HEdit[] = prefixFixed.map(e => ({
-			...e,
-			content_lines: [...e.content_lines],
-		}));
+		const correctedEdit: HEdit = {
+			...prefixFixed,
+			content_lines: [...prefixFixed.content_lines],
+		};
 		for (const bw of boundaryWarnings) {
-			const edit = correctedEdits[bw.editIndex];
-			if (!edit) continue;
 			if (bw.kind === "trailing") {
-				const idx = lastNonEmptyIndex(edit.content_lines);
+				const idx = lastNonEmptyIndex(correctedEdit.content_lines);
 				if (idx >= 0) {
-					const removed = edit.content_lines.splice(idx, 1)[0];
-					autoFixes.push({ kind: "trailing", editIndex: bw.editIndex, removedLine: removed });
+					const removed = correctedEdit.content_lines.splice(idx, 1)[0];
+					autoFixes.push({ kind: "trailing", removedLine: removed });
 				}
 			} else {
-				const idx = firstNonEmptyIndex(edit.content_lines);
+				const idx = firstNonEmptyIndex(correctedEdit.content_lines);
 				if (idx >= 0) {
-					const removed = edit.content_lines.splice(idx, 1)[0];
-					autoFixes.push({ kind: "leading", editIndex: bw.editIndex, removedLine: removed });
+					const removed = correctedEdit.content_lines.splice(idx, 1)[0];
+					autoFixes.push({ kind: "leading", removedLine: removed });
 				}
 			}
 		}
-		const correctedResult = valEdits(
-			correctedEdits,
+		const correctedResult = valEdit(
+			correctedEdit,
 			lineIndex.fileLines,
 			fileHashes,
 			warnings,
 			signal,
 		);
-		if (correctedResult.mismatches.length) {
+		if (correctedResult.mismatches.length || !correctedResult.resolved) {
 			throw new Error(
 				fmtMismatch(correctedResult.mismatches, lineIndex.fileLines, fileHashes, filePath),
 			);
@@ -309,15 +213,18 @@ export function applyEdits(
 		resolved = correctedResult.resolved;
 	}
 
-	const orderedSpans = resSpans(
-		resolved,
-		content,
-		lineIndex,
-		noopEdits,
-		signal,
-	);
+	const spanResult = resToSpan(resolved, content, lineIndex);
+	if (spanResult.kind === "noop") {
+		return {
+			content,
+			firstChangedLine: undefined,
+			lastChangedLine: undefined,
+			...(warnings.length ? { warnings } : {}),
+			noopEdit: { loc: spanResult.loc, currentContent: spanResult.currentContent },
+		};
+	}
 
-	const result = assemble(content, orderedSpans, signal);
+	const result = assemble(content, spanResult, signal);
 	assertNotEmpty(content, result);
 	const range = changedRange(content, result);
 
@@ -326,7 +233,6 @@ export function applyEdits(
 		firstChangedLine: range?.firstChangedLine,
 		lastChangedLine: range?.lastChangedLine,
 		...(warnings.length ? { warnings } : {}),
-		...(noopEdits.length ? { noopEdits } : {}),
 		...(autoFixes ? { autoFixes } : {}),
 	};
 }

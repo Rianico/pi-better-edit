@@ -9,7 +9,7 @@ describe("buildNoop", () => {
   it("returns noop result with classification", () => {
     const result = buildNoop({
       path: "test.txt",
-      noopEdits: undefined,
+      noopEdit: undefined,
       snapshotId: "snap1",
       editMeta: { editsAttempted: 1, noopEditsCount: 0, addedLines: 0, removedLines: 0 },
       warnings: undefined,
@@ -22,19 +22,19 @@ describe("buildNoop", () => {
   it("includes noop edit details when provided", () => {
     const result = buildNoop({
       path: "test.txt",
-      noopEdits: [{ editIndex: 0, loc: "ABC", currentContent: "old" }],
+      noopEdit: { loc: "ABC", currentContent: "old" },
       snapshotId: "snap1",
       editMeta: { editsAttempted: 1, noopEditsCount: 1, addedLines: 0, removedLines: 0 },
       warnings: undefined,
     });
-    expect(result.content[0].text).toContain("Edit 0");
+    expect(result.content[0].text).toContain("Replacement for ABC");
     expect(result.content[0].text).toContain("ABC");
   });
 
   it("includes warnings when provided", () => {
     const result = buildNoop({
       path: "test.txt",
-      noopEdits: undefined,
+      noopEdit: undefined,
       snapshotId: "snap1",
       editMeta: { editsAttempted: 1, noopEditsCount: 0, addedLines: 0, removedLines: 0 },
       warnings: ["Warning 1"],
@@ -45,12 +45,12 @@ describe("buildNoop", () => {
   it("clips long currentContent in noop details", () => {
     const result = buildNoop({
       path: "test.txt",
-      noopEdits: [{ editIndex: 0, loc: "ABC", currentContent: "old\n".repeat(300) }],
+      noopEdit: { loc: "ABC", currentContent: "old\n".repeat(300) },
       snapshotId: "snap1",
       editMeta: { editsAttempted: 1, noopEditsCount: 1, addedLines: 0, removedLines: 0 },
       warnings: undefined,
     });
-    expect(result.content[0].text).toContain("Edit 0");
+    expect(result.content[0].text).toContain("Replacement for ABC");
     expect(result.content[0].text).not.toContain("old\n".repeat(300));
     expect(result.content[0].text).toContain("...");
   });

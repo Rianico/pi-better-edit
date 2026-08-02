@@ -28,14 +28,13 @@ export type RMeta = {
 };
 
 type NEditEntry = {
-	editIndex: number;
 	loc: string;
 	currentContent: string;
 };
 
 export interface NoopInput {
 	path: string;
-	noopEdits: NEditEntry[] | undefined;
+	noopEdit: NEditEntry | undefined;
 	snapshotId: string;
 	editMeta: RMeta;
 	warnings: string[] | undefined;
@@ -92,20 +91,15 @@ function warnBlock(warnings: string[] | undefined): string {
 export function buildNoop(input: NoopInput): TResult {
 	const {
 		path,
-		noopEdits,
+		noopEdit,
 		snapshotId,
 		editMeta,
 		warnings,
 	} = input;
 
-	const noopDetailsText = noopEdits?.length
-		? noopEdits
-				.map(
-					(edit) =>
-						`Edit ${edit.editIndex}: replacement for ${edit.loc} is identical to current content:\n  ${edit.loc}: ${clipLine(edit.currentContent)}`,
-				)
-				.join("\n")
-		: "The edits produced identical content.";
+	const noopDetailsText = noopEdit
+		? `Replacement for ${noopEdit.loc} is identical to current content:\n  ${noopEdit.loc}: ${clipLine(noopEdit.currentContent)}`
+		: "The edit produced identical content.";
 
 	const text = `No changes made to ${path}\nClassification: noop\n${noopDetailsText}`;
 

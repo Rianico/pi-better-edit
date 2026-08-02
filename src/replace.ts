@@ -14,11 +14,12 @@ import { readNormFile } from "./file-reader";
 import { normReq, normalizeFilePath, tryParseContentLines } from "./replace-normalize";
 import { isRec, has, rejectUnknownFields, abortIf } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
-import { applyEdits,
+import { applyEdit,
   lineHashes,
-  resEdits,
+  resEdit,
   MAX_HASH_LINES,
-  type HTEdit,
+  type HEdit,
+  type NEdit,
 } from "./hashline";
 import { toCwd } from "./paths";
 import { fileSnap } from "./file-reader";
@@ -67,7 +68,8 @@ export const editToolSchema = Type.Object(
 );
 export type ReqParams = {
   path: string;
-  changes: HTEdit[];
+  hash_range_inclusive: [string, string];
+  content_lines: string[];
 };
 
 export type ReplaceDetails = {
@@ -81,14 +83,13 @@ export type ReplaceDetails = {
 
 interface PipelineResult {
   path: string;
-  toolEdits: HTEdit[];
   originalNormalized: string;
   result: string;
   bom: string;
   originalEnding: "\r\n" | "\n";
   hadUtf8DecodeErrors: boolean;
   warnings: string[];
-  noopEdits?: { editIndex: number; loc: string; currentContent: string }[];
+  noopEdit?: NEdit;
   firstChangedLine?: number;
   lastChangedLine?: number;
   originalHashes: string[];
@@ -97,7 +98,7 @@ interface PipelineResult {
   totalRemovedLines: number;
 }
 
-const ROOT_KS = new Set(["path", "changes", "content_lines", "hash_range_inclusive"]);
+const ROOT_KS = new Set(["path", "content_lines", "hash_range_inclusive"]);
 
 const LEGACY_KS = ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"];
 
@@ -127,7 +128,7 @@ export function assertReq(
     throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "path" string.');
   }
 
-  if (!Array.isArray(request.changes)) {
+  if (!Array.isArray(request.hash_range_inclusive) || !Array.isArray(request.content_lines)) {
     throw new Error(
       '[E_BAD_SHAPE] Edit request requires both "hash_range_inclusive" and "content_lines" at the top level.',
     );
@@ -142,47 +143,37 @@ export interface ExecPipelineOptions {
 }
 
 function collectRemovedHashes(
-  resolved: { hash_range_inclusive: [{ hash: string }, { hash: string }] }[],
+  edit: HEdit,
   originalHashes: string[],
-  skipIndices?: Set<number>,
 ): Set<string> {
   const removedHashes = new Set<string>();
-  for (const [index, edit] of resolved.entries()) {
-    if (skipIndices?.has(index)) continue;
-    const startHash = edit.hash_range_inclusive[0].hash;
-    const endHash = edit.hash_range_inclusive[1].hash;
-    const startLine = originalHashes.indexOf(startHash);
-    const endLine = originalHashes.indexOf(endHash);
-    if (startLine >= 0 && endLine >= 0) {
-      const firstLine = Math.min(startLine, endLine);
-      const lastLine = Math.max(startLine, endLine);
-      for (let i = firstLine; i <= lastLine; i++) {
-        removedHashes.add(originalHashes[i]!);
-      }
+  const startHash = edit.hash_range_inclusive[0].hash;
+  const endHash = edit.hash_range_inclusive[1].hash;
+  const startLine = originalHashes.indexOf(startHash);
+  const endLine = originalHashes.indexOf(endHash);
+  if (startLine >= 0 && endLine >= 0) {
+    const firstLine = Math.min(startLine, endLine);
+    const lastLine = Math.max(startLine, endLine);
+    for (let i = firstLine; i <= lastLine; i++) {
+      removedHashes.add(originalHashes[i]!);
     }
   }
   return removedHashes;
 }
 
 function countLineChanges(
-  resolved: { hash_range_inclusive: [{ hash: string }, { hash: string }]; content_lines: string[] }[],
+  edit: HEdit,
   originalHashes: string[],
-  noopEdits: { editIndex: number }[] | undefined,
+  isNoop: boolean,
 ): { totalAddedLines: number; totalRemovedLines: number } {
-  let totalAddedLines = 0;
+  if (isNoop) return { totalAddedLines: 0, totalRemovedLines: 0 };
   let totalRemovedLines = 0;
-  const noopIndices = new Set(noopEdits?.map((n) => n.editIndex) ?? []);
-  for (let i = 0; i < resolved.length; i++) {
-    if (noopIndices.has(i)) continue;
-    const edit = resolved[i]!;
-    const startLine = originalHashes.indexOf(edit.hash_range_inclusive[0].hash);
-    const endLine = originalHashes.indexOf(edit.hash_range_inclusive[1].hash);
-    if (startLine >= 0 && endLine >= 0) {
-      totalRemovedLines += Math.abs(endLine - startLine) + 1;
-    }
-    totalAddedLines += edit.content_lines.length;
+  const startLine = originalHashes.indexOf(edit.hash_range_inclusive[0].hash);
+  const endLine = originalHashes.indexOf(edit.hash_range_inclusive[1].hash);
+  if (startLine >= 0 && endLine >= 0) {
+    totalRemovedLines = Math.abs(endLine - startLine) + 1;
   }
-  return { totalAddedLines, totalRemovedLines };
+  return { totalAddedLines: edit.content_lines.length, totalRemovedLines };
 }
 
 export async function execPipeline(
@@ -192,13 +183,6 @@ export async function execPipeline(
 ): Promise<PipelineResult> {
 
   const path = params.path;
-  const toolEdits = Array.isArray(params.changes)
-    ? (params.changes as HTEdit[])
-    : [];
-
-  if (toolEdits.length === 0) {
-    throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "changes" array.');
-  }
 
   const hashStore = options?.store ?? await loadHashStore();
 
@@ -206,10 +190,13 @@ export async function execPipeline(
     path, cwd, { signal: options?.signal, accessMode: options?.accessMode, maxLines: MAX_HASH_LINES, store: hashStore },
   );
 
-  const resolved = resEdits(toolEdits);
-  const anchorResult = applyEdits(
+  const edit = resEdit({
+    hash_range_inclusive: params.hash_range_inclusive,
+    content_lines: params.content_lines,
+  });
+  const anchorResult = applyEdit(
     originalNormalized,
-    resolved,
+    edit,
     options?.signal,
     originalHashes,
     path,
@@ -219,10 +206,9 @@ export async function execPipeline(
   const isNoop = result === originalNormalized;
 
   const noPersist = options?.noPersist;
-  const noopIndices = new Set(anchorResult.noopEdits?.map((n) => n.editIndex) ?? []);
   const removedHashes = isNoop
     ? undefined
-    : collectRemovedHashes(resolved, originalHashes, noopIndices);
+    : collectRemovedHashes(edit, originalHashes);
   const resultHashes = isNoop
     ? originalHashes
     : await lineHashes(result, absolutePath, {
@@ -233,19 +219,18 @@ export async function execPipeline(
   const warnings = [...(anchorResult.warnings ?? [])];
 
   const { totalAddedLines, totalRemovedLines } = countLineChanges(
-    resolved, originalHashes, anchorResult.noopEdits,
+    edit, originalHashes, isNoop,
   );
 
   return {
     path,
-    toolEdits,
     originalNormalized,
     result,
     bom,
     originalEnding,
     hadUtf8DecodeErrors,
     warnings,
-    noopEdits: anchorResult.noopEdits,
+    noopEdit: anchorResult.noopEdit,
     firstChangedLine: anchorResult.firstChangedLine,
     lastChangedLine: anchorResult.lastChangedLine,
     resultHashes,
@@ -275,7 +260,7 @@ export async function compPreview(
 
     if (originalNormalized === result) {
       return {
-        error: `No changes made to ${path}. The edits produced identical content.`,
+        error: `No changes made to ${path}. The edit produced identical content.`,
       };
     }
 
@@ -421,7 +406,7 @@ export function buildToolDef(): ToolDef {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const canonical = normReq(params);
 
-      const normalizedParams = canonical as { path: string; changes: HTEdit[] };
+      const normalizedParams = canonical as ReqParams;
       const path = normalizedParams.path;
       const absolutePath = toCwd(path, ctx.cwd);
       const mutationTargetPath = await resolveTarget(absolutePath);
@@ -436,7 +421,7 @@ export function buildToolDef(): ToolDef {
           originalEnding,
           hadUtf8DecodeErrors,
           warnings,
-          noopEdits,
+          noopEdit,
           firstChangedLine,
           lastChangedLine,
           resultHashes,
@@ -453,11 +438,11 @@ export function buildToolDef(): ToolDef {
           const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
           return buildNoop({
             path,
-            noopEdits,
+            noopEdit,
             snapshotId: noopSnapshotId,
             editMeta: {
               editsAttempted,
-              noopEditsCount: noopEdits?.length ?? 0,
+              noopEditsCount: noopEdit ? 1 : 0,
               addedLines: 0,
               removedLines: 0,
             },
@@ -487,7 +472,7 @@ export function buildToolDef(): ToolDef {
 
         const editMeta: RMeta = {
           editsAttempted,
-          noopEditsCount: noopEdits?.length ?? 0,
+          noopEditsCount: noopEdit ? 1 : 0,
           firstChangedLine,
           lastChangedLine,
           addedLines: totalAddedLines,

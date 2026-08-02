@@ -46,29 +46,29 @@ describe("assertReq", () => {
 	});
 
 	it("throws for unknown fields", () => {
-		expect(() => assertReq({ path: "test.txt", changes: [], unknown: "field" }))
+		expect(() => assertReq({ path: "test.txt", hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"], unknown: "field" }))
+			.toThrow("[E_BAD_SHAPE]");
+	});
+
+	it("throws for a changes array (unsupported dialect)", () => {
+		expect(() => assertReq({ path: "test.txt", changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }] }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for missing path", () => {
-		expect(() => assertReq({ changes: [] }))
+		expect(() => assertReq({ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for empty path", () => {
-		expect(() => assertReq({ path: "", changes: [] }))
+		expect(() => assertReq({ path: "", hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for non-string path", () => {
-		expect(() => assertReq({ path: 42, changes: [] }))
+		expect(() => assertReq({ path: 42, hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
-
-  it("throws for non-array edits", () => {
-    expect(() => assertReq({ path: "test.txt", changes: "not array" }))
-      .toThrow("[E_BAD_SHAPE]");
-  });
 
   it("throws when content_lines present but no hash_range_inclusive", () => {
     expect(() => assertReq({ path: "test.txt", content_lines: ["a"] }))
@@ -80,15 +80,16 @@ describe("assertReq", () => {
       .toThrow(/hash_range_inclusive/);
   });
 
-  it("throws when neither changes array nor top-level edit fields present", () => {
+  it("throws when neither edit field is present", () => {
     expect(() => assertReq({ path: "test.txt" }))
       .toThrow(/hash_range_inclusive/);
   });
 
-  it("accepts the normalized internal shape (path + changes array)", () => {
+  it("accepts the top-level edit shape", () => {
     expect(() => assertReq({
       path: "test.txt",
-      changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }],
+      hash_range_inclusive: ["AAA", "BBB"],
+      content_lines: ["new"],
     })).not.toThrow();
   });
 
