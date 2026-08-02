@@ -1,13 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { flatEditToolSchema, regReplaceFlat } from "../../src/replace";
+import { editToolSchema, regReplace } from "../../src/replace";
 import { makeFakePiRegistry, withTempFile, useTestHome } from "../support/fixtures";
 const home = useTestHome();
 
-describe("flatEditToolSchema", () => {
+describe("editToolSchema", () => {
   it("has path, hash_range_inclusive, and content_lines at top level", () => {
-    const schema = flatEditToolSchema as any;
+    const schema = editToolSchema as any;
     expect(schema.type).toBe("object");
     const props = schema.properties;
     expect(props.path).toBeDefined();
@@ -18,19 +18,19 @@ describe("flatEditToolSchema", () => {
   });
 });
 
-describe("regReplaceFlat", () => {
+describe("regReplace", () => {
   it("registers a tool named 'replace'", () => {
     const { pi, getTool } = makeFakePiRegistry();
-    regReplaceFlat(pi);
+    regReplace(pi);
     const tool = getTool("replace");
     expect(tool).toBeDefined();
     expect(tool.name).toBe("replace");
-    expect(tool.parameters).toBe(flatEditToolSchema);
+    expect(tool.parameters).toBe(editToolSchema);
   });
 
   it("prepareArguments normalizes file_path to path", () => {
     const { pi, getTool } = makeFakePiRegistry();
-    regReplaceFlat(pi);
+    regReplace(pi);
     const tool = getTool("replace");
     const result = tool.prepareArguments({
       file_path: "test.txt",
@@ -43,10 +43,10 @@ describe("regReplaceFlat", () => {
 
 
 
-  it("replaces a single line via flat mode execute", async () => {
+  it("replaces a single line via execute", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
@@ -67,10 +67,10 @@ describe("regReplaceFlat", () => {
     });
   });
 
-  it("replaces a range of lines via flat mode execute", async () => {
+  it("replaces a range of lines via execute", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", home.testPath);
 
@@ -91,10 +91,10 @@ describe("regReplaceFlat", () => {
     });
   });
 
-  it("deletes a line via flat mode execute (empty content_lines)", async () => {
+  it("deletes a line via execute (empty content_lines)", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
@@ -118,7 +118,7 @@ describe("regReplaceFlat", () => {
   it("reports noop when content is unchanged", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
@@ -142,7 +142,7 @@ describe("regReplaceFlat", () => {
   it("rejects stale anchors with [E_STALE_ANCHOR]", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
 
       await expect(
@@ -164,7 +164,7 @@ describe("regReplaceFlat", () => {
   it("rejects deleting an entire non-empty file", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\n", home.testPath);
 
@@ -187,7 +187,7 @@ describe("regReplaceFlat", () => {
   it("rejects unknown fields at top level via schema validation", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
@@ -211,7 +211,7 @@ describe("regReplaceFlat", () => {
   it("reports metrics with edits_attempted = 1", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
@@ -235,7 +235,7 @@ describe("regReplaceFlat", () => {
   it("preserves CRLF line endings", async () => {
     await withTempFile("crlf.txt", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
       const { pi, getTool } = makeFakePiRegistry();
-      regReplaceFlat(pi);
+      regReplace(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 

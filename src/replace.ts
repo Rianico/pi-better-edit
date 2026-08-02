@@ -57,31 +57,14 @@ const hashRangeInclSchema = Type.Array(
   },
 );
 
-const changeItemSchema = Type.Object(
-  {
-    hash_range_inclusive: hashRangeInclSchema,
-    content_lines: contentLinesSchema,
-  },
-  { additionalProperties: false },
-);
-
 export const editToolSchema = Type.Object(
   {
     path: Type.String({ description: "Path to edit" }),
-    changes: Type.Array(changeItemSchema, { description: "Array of edits applied atomically against the same pre-edit snapshot." }),
-  },
-  { additionalProperties: false },
-);
-
-export const flatEditToolSchema = Type.Object(
-  {
-    path: Type.String({ description: "Path to edit" }),
     hash_range_inclusive: hashRangeInclSchema,
     content_lines: contentLinesSchema,
   },
   { additionalProperties: false },
 );
-
 export type ReqParams = {
   path: string;
   changes: HTEdit[];
@@ -131,7 +114,6 @@ export function assertNoLegacyKeys(request: unknown): void {
 
 export function assertReq(
   request: unknown,
-  flat?: boolean
 ): asserts request is ReqParams {
   if (!isRec(request)) {
     throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
@@ -146,12 +128,9 @@ export function assertReq(
   }
 
   if (!Array.isArray(request.changes)) {
-    if (flat) {
-      throw new Error(
-        '[E_BAD_SHAPE] Edit request requires both "hash_range_inclusive" and "content_lines" at the top level.',
-      );
-    }
-    throw new Error('[E_BAD_SHAPE] Edit request requires a "changes" array. Each change is { hash_range_inclusive: ["<START>", "<END>"], content_lines: [...] }.');
+    throw new Error(
+      '[E_BAD_SHAPE] Edit request requires both "hash_range_inclusive" and "content_lines" at the top level.',
+    );
   }
 }
 
@@ -279,16 +258,15 @@ export async function execPipeline(
 export async function compPreview(
   request: unknown,
   cwd: string,
-  flat?: boolean
 ): Promise<RPreview> {
   try {
     const normalized = normReq(request);
-    if (flat && isRec(request) && Array.isArray(request.changes)) {
+    if (isRec(request) && Array.isArray(request.changes)) {
       return {
-        error: `[E_BAD_SHAPE] Flat mode does not accept a "changes" array. Send hash_range_inclusive and content_lines at the top level (one edit per call), or use bulk mode for multiple edits per call.`
+        error: `[E_BAD_SHAPE] The replace tool does not accept a "changes" array. Send hash_range_inclusive and content_lines at the top level (one edit per call).`
       };
     }
-    assertReq(normalized, flat);
+    assertReq(normalized);
     const { path, originalNormalized, result, resultHashes } = await execPipeline(
       normalized,
       cwd,
@@ -329,26 +307,12 @@ export function reuseMarkdown(context: any, content: string, theme: any): Markdo
   return m;
 }
 
-const MODE_CFG = {
-  flat: {
-    prefix: "performing one edit per call",
-  },
-  bulk: {
-    prefix: "batching all changes to a file in one call",
-  },
-} as const;
-
-export function buildToolDef(opts: { flat: boolean }): ToolDef {
-  const cfg = MODE_CFG[opts.flat ? "flat" : "bulk"];
-
+export function buildToolDef(): ToolDef {
   const E_DESC = loadP("../prompts/replace.md");
-  const E_SNIPPET = loadP("../prompts/replace-snippet.md", {
-    MODE_PREFIX: cfg.prefix,
-  });
+  const E_SNIPPET = loadP("../prompts/replace-snippet.md");
   const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
 
-  const parameters = opts.flat ? flatEditToolSchema : editToolSchema;
-
+  const parameters = editToolSchema;
   return {
     name: "replace",
     label: "Replace",
@@ -356,21 +320,16 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
     parameters,
     promptSnippet: E_SNIPPET,
     promptGuidelines: E_GUIDE,
-    prepareArguments: opts.flat
-      ? (args: unknown) => {
-          assertNoLegacyKeys(args);
-          if (!isRec(args)) return args as any;
-          const record = { ...args };
-          normalizeFilePath(record);
-          if (has(record, "content_lines") && typeof record.content_lines === "string") {
-            tryParseContentLines(record, "content_lines");
-          }
-          return record;
-        }
-      : (args: unknown) => {
-          assertNoLegacyKeys(args);
-          return normReq(args) as ReqParams;
-        },
+    prepareArguments: (args: unknown) => {
+      assertNoLegacyKeys(args);
+      if (!isRec(args)) return args as any;
+      const record = { ...args };
+      normalizeFilePath(record);
+      if (has(record, "content_lines") && typeof record.content_lines === "string") {
+        tryParseContentLines(record, "content_lines");
+      }
+      return record;
+    },
     renderShell: "default",
     renderCall(args, theme, context) {
       const previewInput = getPreviewInput(args);
@@ -391,7 +350,7 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
           context.state.preview = undefined;
           const previewGeneration = (context.state.previewGeneration ?? 0) + 1;
           context.state.previewGeneration = previewGeneration;
-          compPreview(previewInput, context.cwd, opts.flat)
+          compPreview(args, context.cwd)
             .then((preview) => {
               if (
                 context.state.argsKey === argsKey &&
@@ -489,12 +448,7 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
           { accessMode: constants.R_OK | constants.W_OK, signal },
         );
 
-        const editsAttempted = opts.flat
-          ? 1
-          : Array.isArray(normalizedParams.changes)
-            ? normalizedParams.changes.length
-            : 0;
-
+        const editsAttempted = 1;
         if (originalNormalized === result) {
           const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
           return buildNoop({
@@ -557,13 +511,5 @@ export function buildToolDef(opts: { flat: boolean }): ToolDef {
 }
 
 export function regReplace(pi: ExtensionAPI): void {
-  pi.registerTool(buildToolDef({ flat: false }));
-}
-
-export function buildToolDefFlat() {
-  return buildToolDef({ flat: true });
-}
-
-export function regReplaceFlat(pi: ExtensionAPI): void {
-  pi.registerTool(buildToolDef({ flat: true }));
+  pi.registerTool(buildToolDef());
 }

@@ -1,6 +1,6 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { initHasher } from "./src/hashline";
-import { regReplace, regReplaceFlat } from "./src/replace";
+import { regReplace } from "./src/replace";
 import { regReplaceUndo, clearUndo } from "./src/replace-undo";
 import { regRead, fmtReadPreview } from "./src/read";
 import type { RMetrics } from "./src/replace-response";
@@ -8,20 +8,12 @@ import { AUTO_READ_MAX } from "./src/constants";
 import { MAX_HASH_LINES } from "./src/hashline";
 import {
   readConfig,
-  toggleReplaceMode,
   toggleAutoRead,
 } from "./src/config";
 import { loadHashStore, pruneMissing } from "./src/hash-store";
 import { readNormFile } from "./src/file-reader";
 import { toCwd } from "./src/paths";
 import { resolveTarget } from "./src/fs-write";
-function registerReplaceTool(pi: ExtensionAPI, mode: string): void {
-  if (mode === "flat") {
-    regReplaceFlat(pi);
-  } else {
-    regReplace(pi);
-  }
-}
 
 export default function (pi: ExtensionAPI): void {
   regRead(pi);
@@ -44,31 +36,17 @@ export default function (pi: ExtensionAPI): void {
       console.error("Failed to load or prune hash store:", err);
     }
     const config = await readConfig();
-    const mode = config.replaceMode;
     autoRead = config.autoRead;
-    registerReplaceTool(pi, mode);
-
 
     if (debugValue === "1" || debugValue === "true") {
-      ctx.ui.notify(`Hashline Edit mode active (${mode} replace)`, "info");
+      ctx.ui.notify(`Hashline Edit mode active`, "info");
     }
-  });
-
-  pi.registerCommand("toggle-replace-mode", {
-    description: "Toggle replace tool between bulk (changes array) and flat (single edit at top level) mode",
-    handler: async (_args, ctx) => {
-      const mode = await toggleReplaceMode();
-      registerReplaceTool(pi, mode);
-      ctx.ui.notify(`Replace mode switched to: ${mode}`, "info");
-    },
   });
 
   pi.registerCommand("toggle-auto-read", {
     description: "Toggle automatic hashline anchors after write and replace operations",
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
-      const mode = (await readConfig()).replaceMode;
-      registerReplaceTool(pi, mode);
       const state = autoRead ? "enabled" : "disabled";
       ctx.ui.notify(`Auto-read after write/replace: ${state}`, "info");
     },

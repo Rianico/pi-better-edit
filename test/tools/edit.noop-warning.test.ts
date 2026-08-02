@@ -14,7 +14,7 @@ describe("edit tool noop + warnings", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["bbb"] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["bbb"],
         },
         undefined,
         undefined,
@@ -33,7 +33,7 @@ describe("edit tool noop + warnings", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB", "ccc"] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB", "ccc"],
         },
         undefined,
         undefined,

@@ -14,7 +14,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BETA"] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BETA"],
         },
         undefined,
         undefined,
@@ -34,7 +34,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["beta"] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["beta"],
         },
         undefined,
         undefined,
@@ -54,7 +54,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["TWO"] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["TWO"],
         },
         undefined,
         undefined,
@@ -73,7 +73,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["beta"] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["beta"],
         },
         undefined,
         undefined,

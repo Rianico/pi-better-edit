@@ -110,7 +110,8 @@ describe("stable hashing with duplicate content lines", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [line1Hash, firstBraceHash], content_lines: [] }],
+          hash_range_inclusive: [line1Hash, firstBraceHash],
+          content_lines: [],
         },
         undefined,
         undefined,
@@ -147,7 +148,8 @@ describe("stable hashing with duplicate content lines", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [aHash, cHash], content_lines: [] }],
+          hash_range_inclusive: [aHash, cHash],
+          content_lines: [],
         },
         undefined,
         undefined,
@@ -163,7 +165,7 @@ describe("stable hashing with duplicate content lines", () => {
     });
   });
 
-  it("end-to-end via tool: multi-edit bulk with interior duplicates preserves all surviving hashes", async () => {
+  it("end-to-end via tool: sequential edits with interior duplicates preserves all surviving hashes", async () => {
     const file = "a\nb\nc\nb\nd\ne\nb\nf\n";
     await withTempFile("sample.ts", file, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -187,10 +189,20 @@ describe("stable hashing with duplicate content lines", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            { hash_range_inclusive: [aHash, cHash], content_lines: [] },
-            { hash_range_inclusive: [dHash, eHash], content_lines: [] },
-          ],
+          hash_range_inclusive: [aHash, cHash],
+          content_lines: [],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      await editTool.execute(
+        "e2",
+        {
+          path: "sample.ts",
+          hash_range_inclusive: [dHash, eHash],
+          content_lines: [],
         },
         undefined,
         undefined,

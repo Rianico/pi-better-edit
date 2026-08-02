@@ -63,7 +63,6 @@ export function normReq(input: unknown): unknown {
   }
 
   normalizeField(record, "changes", "changes");
-  normalizeField(record, "edits", "changes");
 
   if (Array.isArray(record.changes)) {
     for (let i = 0; i < record.changes.length; i++) {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertReq, regReplaceFlat } from "../../src/replace";
+import { assertReq } from "../../src/replace";
 import { withTempFile, makeFakePiRegistry } from "../support/fixtures";
 import register from "../../index";
 
@@ -70,27 +70,27 @@ describe("assertReq", () => {
       .toThrow("[E_BAD_SHAPE]");
   });
 
-  it("throws with flat-mode hint when content_lines present but no hash_range_inclusive", () => {
-    expect(() => assertReq({ path: "test.txt", content_lines: ["a"] }, true))
+  it("throws when content_lines present but no hash_range_inclusive", () => {
+    expect(() => assertReq({ path: "test.txt", content_lines: ["a"] }))
       .toThrow(/content_lines/);
   });
 
-  it("throws with flat-mode hint when hash_range_inclusive present but no content_lines", () => {
-    expect(() => assertReq({ path: "test.txt", hash_range_inclusive: ["AAA", "BBB"] }, true))
+  it("throws when hash_range_inclusive present but no content_lines", () => {
+    expect(() => assertReq({ path: "test.txt", hash_range_inclusive: ["AAA", "BBB"] }))
       .toThrow(/hash_range_inclusive/);
   });
 
-  it("throws with bulk-mode message when neither changes nor flat fields present", () => {
+  it("throws when neither changes array nor top-level edit fields present", () => {
     expect(() => assertReq({ path: "test.txt" }))
-      .toThrow(/changes/);
+      .toThrow(/hash_range_inclusive/);
   });
 
-	it("does not throw for valid request", () => {
-		expect(() => assertReq({
-			path: "test.txt",
-			changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }],
-		})).not.toThrow();
-	});
+  it("accepts the normalized internal shape (path + changes array)", () => {
+    expect(() => assertReq({
+      path: "test.txt",
+      changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }],
+    })).not.toThrow();
+  });
 
 	it("throws for request without edits", () => {
 		expect(() => assertReq({ path: "test.txt" })).toThrow("[E_BAD_SHAPE]");
@@ -98,18 +98,11 @@ describe("assertReq", () => {
 });
 
 describe("legacy dialect rejection in the execution path", () => {
-	it("prepareArguments rejects legacy oldText/newText with E_LEGACY_SHAPE (bulk mode)", () => {
+	it("prepareArguments rejects legacy keys with E_LEGACY_SHAPE", () => {
 		const { pi, getTool } = makeFakePiRegistry();
 		register(pi);
 		const tool = getTool("replace");
 		expect(() => tool.prepareArguments({ path: "test.txt", oldText: "a", newText: "b" })).toThrow(/^\[E_LEGACY_SHAPE\]/);
-	});
-
-	it("prepareArguments rejects legacy keys with E_LEGACY_SHAPE (flat mode)", () => {
-		const { pi, getTool } = makeFakePiRegistry();
-		register(pi);
-		regReplaceFlat(pi);
-		const tool = getTool("replace");
 		expect(() => tool.prepareArguments({ path: "test.txt", old_text: "a" })).toThrow(/^\[E_LEGACY_SHAPE\]/);
 	});
 

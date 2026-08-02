@@ -4,7 +4,7 @@ import { beforeAll, afterAll, vi } from "vitest";
 import { _lineHashesPure, initHasher } from "../../src/hashline";
 import { Compile } from "typebox/compile";
 import register from "../../index";
-import { regReplace, regReplaceFlat } from "../../src/replace";
+import { regReplace } from "../../src/replace";
 import { shutdownHashStore } from "../../src/hash-store";
 export async function getWritableTempRoot(): Promise<string> {
   const fallback = join(process.cwd(), ".tmp");
@@ -176,14 +176,6 @@ export function makeFakeReplaceRegistry() {
 export function setupIntegrationTest(cwd: string) {
   const { pi, getTool } = makeFakePiRegistry();
   register(pi);
-  const ctx = { cwd, ui: { notify() {} } } as any;
-  return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };
-}
-
-export function setupFlatIntegrationTest(cwd: string) {
-  const { pi, getTool } = makeFakePiRegistry();
-  register(pi);
-  regReplaceFlat(pi);
   const ctx = { cwd, ui: { notify() {} } } as any;
   return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };
 }

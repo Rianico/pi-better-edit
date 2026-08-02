@@ -19,10 +19,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{
-            hash_range_inclusive: [line2Hash, line3Hash],
-            content_lines: ["  const y = 2;", "  return y;", "}"],
-          }],
+          hash_range_inclusive: [line2Hash, line3Hash],
+          content_lines: ["  const y = 2;", "  return y;", "}"],
         },
         undefined,
         undefined,
@@ -48,10 +46,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "server.ts",
-          changes: [{
-            hash_range_inclusive: [line2Hash, line3Hash],
-            content_lines: ["  const result = processData();", "  res.json(result);", "});"],
-          }],
+          hash_range_inclusive: [line2Hash, line3Hash],
+          content_lines: ["  const result = processData();", "  res.json(result);", "});"],
         },
         undefined,
         undefined,
@@ -77,10 +73,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "logic.ts",
-          changes: [{
-            hash_range_inclusive: [line2Hash, line3Hash],
-            content_lines: ["before();", "if (ok) {", "  runSafe();"],
-          }],
+          hash_range_inclusive: [line2Hash, line3Hash],
+          content_lines: ["before();", "if (ok) {", "  runSafe();"],
         },
         undefined,
         undefined,
@@ -111,10 +105,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "multi.ts",
-          changes: [{
-            hash_range_inclusive: [line4Hash, line5Hash],
-            content_lines: ["if (b) {", "  yNew();", "}"],
-          }],
+          hash_range_inclusive: [line4Hash, line5Hash],
+          content_lines: ["if (b) {", "  yNew();", "}"],
         },
         undefined,
         undefined,
@@ -155,7 +147,7 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "fourth.ts",
-          changes: [{ hash_range_inclusive: [fooHash, barHash], content_lines: ["foo();", "bar();", "}"] }],
+          hash_range_inclusive: [fooHash, barHash], content_lines: ["foo();", "bar();", "}"],
         },
         undefined,
         undefined,

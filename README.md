@@ -60,20 +60,7 @@ Images (JPEG, PNG, GIF, WebP) are passed through as attachments and do not parti
 
 ### `replace` -- hash-anchored modifications
 
-Replaces using the `HASH│content` anchors from `read` output to target lines precisely. Two modes are available, toggled via `/toggle-replace-mode` (persists across sessions):
-
-**Bulk mode (default):** `hash_range_inclusive` and `content_lines` go inside a `changes` array, supporting multiple edits in one call.
-
-```json
-{
-  "path": "src/main.ts",
-  "changes": [
-    { "hash_range_inclusive": ["ve7", "ve7"], "content_lines": ["  console.log('hashline');"] }
-  ]
-}
-```
-
-**Flat mode:** `hash_range_inclusive` and `content_lines` sit at the top level. Only one edit per call.
+Replaces using the `HASH│content` anchors from `read` output to target lines precisely. Exactly one edit per call: `hash_range_inclusive` and `content_lines` sit at the top level.
 
 ```json
 {
@@ -88,9 +75,9 @@ Replaces using the `HASH│content` anchors from `read` output to target lines p
 | `hash_range_inclusive` | Inclusive line range `[start_hash, end_hash]` (required). |
 | `content_lines` | Literal replacement content, one string per line (use `[]` to delete the range). |
 
-- **Request structure validation.** The request envelope (`path`, `changes` in bulk mode; `path`, `hash_range_inclusive`, `content_lines` in flat mode) and individual edit items are validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`.
+- **Request structure validation.** The request envelope (`path`, `hash_range_inclusive`, `content_lines`) is validated before any file I/O. Unknown fields, missing required fields, invalid types, and malformed anchors are rejected with `[E_BAD_SHAPE]` or `[E_BAD_REF]`. The `changes` array dialect is not supported — a request carrying `changes` is rejected with `[E_BAD_SHAPE]`.
 - **Legacy dialect rejected.** The native top-level `oldText`/`newText` (and `old_text`/`new_text`) dialect is rejected with `[E_LEGACY_SHAPE]`. The error message tells the model to call `read` first and send `{hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}`.
-- **Batched atomicity (bulk mode).** All edits in a single call validate against the same pre-edit snapshot and apply bottom-up, so the hashes from a single `read` call remain valid across all edits in the batch.
+- **Snapshot-consistent application.** The edit validates against the pre-edit snapshot, so the hashes from a single `read` call remain valid for the whole operation.
 
 ### Stable hashing across edits
 
@@ -139,7 +126,6 @@ The post-edit diff (with `+`/`-` markers) is exposed to the host UI via `details
 
 | Command | Description |
 | --- | --- |
-| `/toggle-replace-mode` | Switch between bulk mode (`changes` array) and flat mode (top-level fields). Persists across sessions. |
 | `/toggle-auto-read` | Toggle automatic hashline anchors after write and replace operations. Persists across sessions. |
 
 ### Config file
@@ -148,12 +134,11 @@ Settings are stored in `~/.config/pi-hashline-edit-pro/config.json`:
 
 ```json
 {
-  "replaceMode": "bulk",
   "autoRead": false
 }
 ```
 
-The file is created automatically when any setting is toggled. Both fields are independent — toggling one never clobbers the other.
+The file is created automatically when the setting is toggled.
 
 ### Error codes
 
@@ -167,7 +152,7 @@ The file is created automatically when any setting is toggled. Both fields are i
 | `[E_BARE_HASH_PREFIX]` | A `content_lines` entry starts with a hash-like `HASH│` prefix — the prefix is stripped automatically with a warning. |
 | `[E_LEGACY_SHAPE]` | The request uses the unsupported `oldText`/`newText` dialect. |
 | `[E_BAD_OP]` | Range start line is after range end line — the pair is swapped automatically with a warning. |
-| `[E_EDIT_CONFLICT]` | Two edits in one batch overlap the same original lines. |
+| `[E_EDIT_CONFLICT]` | Two edits overlap the same original lines. |
 | `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_FILE_TOO_LARGE]` | The file exceeds the 238,328-line hashline limit. |
 
@@ -182,7 +167,7 @@ The file is created automatically when any setting is toggled. Both fields are i
 - **Per-file mutation queue.** Edits queue by the canonical write target, so concurrent edits through different symlink paths still serialize onto the same underlying file.
 - **Boundary duplication auto-fix.** When the last line of a replacement matches the next surviving line (or the first line matches the preceding one), the runtime automatically strips the duplicate from `content_lines` before applying the edit. This catches a common LLM pattern where closing delimiters like `}`, `});`, or `} else {` are accidentally duplicated. The auto-fix is completely silent — the model sees a normal successful edit. The duplicate never reaches the file. Raw line comparison (not trimmed) avoids false positives when indentation differs.
 - **Reversed range auto-swap.** When `hash_range_inclusive` is given in reverse order (start anchor after end anchor), both anchors are still valid file lines, so the intent is unambiguous: the pair is swapped automatically and the edit applies, with a warning.
-- **Flat mode normalization.** When flat mode is active, the tool's `execute` function wraps the top-level `hash_range_inclusive` and `content_lines` into a single-element `changes` array internally, then runs the same pipeline as bulk mode. The `normReq` function in `replace-normalize.ts` also handles flat format directly, so any code path that normalizes input (e.g. `compPreview`) works with both formats.
+- **Single-edit normalization.** The tool's `execute` function wraps the top-level `hash_range_inclusive` and `content_lines` into a single-element `changes` array internally, then runs the same pipeline for every call. The `normReq` function in `replace-normalize.ts` handles this normalization, so any code path that normalizes input (e.g. `compPreview`) sees one canonical shape. The `changes` array dialect is not accepted from the model — `[E_BAD_SHAPE]` rejects it before any file I/O.
 - **Persistent hash store.** `lineHashes` is async and uses a persistent store to preserve hashes for unchanged lines across edits. The store is a SQLite database at `~/.config/pi-hashline-edit-pro/hash-store.sqlite` (per-path snapshots keyed by resolved path storing a 64-bit content checksum + line hashes; auto-created on first use). When called from the replace pipeline, it maps old vs new content and copies hashes for unchanged lines. When called from read, it returns saved hashes if the content's checksum matches, otherwise computes fresh hashes via `_lineHashesPure`. Stale snapshots are pruned on session start. This ensures that editing one part of a file does not cascade to change hashes of unrelated lines. Per-operation work scales with the target file, not cumulative history. If the database is corrupt or unreadable it is quarantined (renamed to `hash-store.sqlite.corrupt-<timestamp>`) and rebuilt from content on the next session start — the store is a cache, never a source of truth.
 ## Hashing
 

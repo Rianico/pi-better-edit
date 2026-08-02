@@ -362,7 +362,7 @@ describe("auto-read after write", () => {
         {
           toolName: "replace",
           toolCallId: "replace-1",
-          input: { path: "replace.txt", changes: [{ hash_range_inclusive: ["abc", "abc"], content_lines: ["BETA"] }] },
+          input: { path: "replace.txt", hash_range_inclusive: ["abc", "abc"], content_lines: ["BETA"] },
           content: [{ type: "text", text: "Successfully replaced in replace.txt. Added 1 line(s), removed 1 line(s)." }],
           details: undefined,
           isError: false,

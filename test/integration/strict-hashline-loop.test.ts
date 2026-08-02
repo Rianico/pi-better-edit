@@ -17,7 +17,7 @@ describe("strict hashline tool loop", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] }],
+          hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"],
         },
         undefined,
         undefined,
@@ -29,7 +29,7 @@ describe("strict hashline tool loop", () => {
           "e2",
           {
             path: "sample.ts",
-            changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA-AGAIN"] }],
+            hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA-AGAIN"],
           },
           undefined,
           undefined,
@@ -48,7 +48,7 @@ describe("strict hashline tool loop", () => {
         "e3",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [freshRef, freshRef], content_lines: ["BETA-AGAIN"] }],
+          hash_range_inclusive: [freshRef, freshRef], content_lines: ["BETA-AGAIN"],
         },
         undefined,
         undefined,
@@ -67,7 +67,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e1",
-        { path: "empty.ts", changes: [{ hash_range_inclusive: [emptyHash, emptyHash], content_lines: ["first", "second"] }] },
+        { path: "empty.ts", hash_range_inclusive: [emptyHash, emptyHash], content_lines: ["first", "second"] },
         undefined,
         undefined,
         ctx,
@@ -92,7 +92,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "crlf.ts", changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] }] },
+        { path: "crlf.ts", hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] },
         undefined,
         undefined,
         ctx,
@@ -118,7 +118,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "lf.ts", changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] }] },
+        { path: "lf.ts", hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] },
         undefined,
         undefined,
         ctx,
@@ -149,7 +149,7 @@ describe("UTF-8 BOM handling", () => {
 
       await editTool.execute(
         "e1",
-        { path: "bom.ts", changes: [{ hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] }] },
+        { path: "bom.ts", hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] },
         undefined,
         undefined,
         ctx,

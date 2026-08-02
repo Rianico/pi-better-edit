@@ -15,7 +15,7 @@ describe("regReplace", () => {
           "e1",
           {
             path: "sample.ts",
-            changes: [{ hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: null }],
+            hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: null,
           },
           undefined,
           undefined,
@@ -34,7 +34,7 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"],
         },
         undefined,
         undefined,
@@ -56,7 +56,7 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: [`${hashes[1]!}│BBB`] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: [`${hashes[1]!}│BBB`],
         },
         undefined,
         undefined,
@@ -79,7 +79,7 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: [`+${hashes[1]!}│BBB`] }],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: [`+${hashes[1]!}│BBB`],
         },
         undefined,
         undefined,
@@ -102,7 +102,7 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [{ hash_range_inclusive: [hashes[2]!, hashes[1]!], content_lines: ["X"] }],
+          hash_range_inclusive: [hashes[2]!, hashes[1]!], content_lines: ["X"],
         },
         undefined,
         undefined,

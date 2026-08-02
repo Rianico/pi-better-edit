@@ -23,7 +23,7 @@ describe("file kind guards in tools", () => {
         "e1",
         {
           path: "bad-utf.ts",
-          changes: [{ hash_range_inclusive: [intRef, intRef], content_lines: ["long"] }],
+          hash_range_inclusive: [intRef, intRef], content_lines: ["long"],
         },
         undefined,
         undefined,
@@ -44,7 +44,7 @@ describe("file kind guards in tools", () => {
           "e1",
           {
             path: "image.png",
-            changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"] }],
+            hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"],
           },
           undefined,
           undefined,
@@ -64,7 +64,7 @@ describe("file kind guards in tools", () => {
           "e1",
           {
             path: "mydir",
-            changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"] }],
+            hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"],
           },
           undefined,
           undefined,
@@ -84,7 +84,7 @@ describe("file kind guards in tools", () => {
           "e1",
           {
             path: "empty.txt",
-            changes: [{ hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [] }],
+            hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [],
           },
           undefined,
           undefined,

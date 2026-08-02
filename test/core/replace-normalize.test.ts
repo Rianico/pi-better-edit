@@ -41,14 +41,6 @@ describe("normReq", () => {
 		expect(result.file_path).toBe("other.ts");
 	});
 
-	it("renames edits field to changes", () => {
-		const changes = [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }];
-		const input = { path: "test.txt", edits: changes };
-		const result = normReq(input) as Record<string, unknown>;
-		expect(result.changes).toEqual(changes);
-		expect(result.edits).toBeUndefined();
-	});
-
 	it("wraps a literal single change object in an array", () => {
 		const input = {
 			path: "test.txt",
@@ -57,20 +49,6 @@ describe("normReq", () => {
 		const result = normReq(input) as Record<string, unknown>;
 		expect(Array.isArray(result.changes)).toBe(true);
 		expect(result.changes).toHaveLength(1);
-		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
-		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
-		expect(change.content_lines).toEqual(["new"]);
-	});
-
-	it("wraps a literal single edit object from edits field", () => {
-		const input = {
-			path: "test.txt",
-			edits: { hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] },
-		};
-		const result = normReq(input) as Record<string, unknown>;
-		expect(Array.isArray(result.changes)).toBe(true);
-		expect(result.changes).toHaveLength(1);
-		expect(result.edits).toBeUndefined();
 		const change = (result.changes as Array<Record<string, unknown>>)[0]!;
 		expect(change.hash_range_inclusive).toEqual(["AAA", "BBB"]);
 		expect(change.content_lines).toEqual(["new"]);

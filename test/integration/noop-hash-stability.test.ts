@@ -25,9 +25,8 @@ describe("noop replace hash stability", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            { hash_range_inclusive: [hashBefore, hashBefore], content_lines: ["bbb"] },
-          ],
+          hash_range_inclusive: [hashBefore, hashBefore],
+          content_lines: ["bbb"],
         },
         undefined,
         undefined,
@@ -56,9 +55,8 @@ describe("noop replace hash stability", () => {
           `e${i}`,
           {
             path: "sample.ts",
-            changes: [
-              { hash_range_inclusive: [hashBefore, hashBefore], content_lines: ["bbb"] },
-            ],
+            hash_range_inclusive: [hashBefore, hashBefore],
+            content_lines: ["bbb"],
           },
           undefined,
           undefined,
@@ -73,7 +71,7 @@ describe("noop replace hash stability", () => {
     });
   });
 
-  it("keeps the noop line hash in a mixed batch with a real edit", async () => {
+  it("keeps the noop line hash stable when a real edit follows", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -83,14 +81,25 @@ describe("noop replace hash stability", () => {
       const bbbHash = hashOf(r1, "bbb");
       const dddHash = hashOf(r1, "ddd");
 
-      const result = await editTool.execute(
+      const noop = await editTool.execute(
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            { hash_range_inclusive: [bbbHash, bbbHash], content_lines: ["bbb"] },
-            { hash_range_inclusive: [dddHash, dddHash], content_lines: ["DDD"] },
-          ],
+          hash_range_inclusive: [bbbHash, bbbHash],
+          content_lines: ["bbb"],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(getText(noop)).toContain("No changes made");
+
+      const result = await editTool.execute(
+        "e2",
+        {
+          path: "sample.ts",
+          hash_range_inclusive: [dddHash, dddHash],
+          content_lines: ["DDD"],
         },
         undefined,
         undefined,
@@ -119,9 +128,8 @@ describe("noop replace hash stability", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            { hash_range_inclusive: [hashBefore, hashBefore], content_lines: ["bbb"] },
-          ],
+          hash_range_inclusive: [hashBefore, hashBefore],
+          content_lines: ["bbb"],
         },
         undefined,
         undefined,
@@ -133,9 +141,8 @@ describe("noop replace hash stability", () => {
         "e2",
         {
           path: "sample.ts",
-          changes: [
-            { hash_range_inclusive: [hashBefore, hashBefore], content_lines: ["BBB"] },
-          ],
+          hash_range_inclusive: [hashBefore, hashBefore],
+          content_lines: ["BBB"],
         },
         undefined,
         undefined,

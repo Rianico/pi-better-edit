@@ -42,12 +42,8 @@ describe("undo_last_replace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            {
-              hash_range_inclusive: [hashes[1]!, hashes[1]!],
-              content_lines: ["BBB"],
-            },
-          ],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
         },
         undefined,
         undefined,
@@ -90,12 +86,8 @@ describe("undo_last_replace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            {
-              hash_range_inclusive: [hashes[1]!, hashes[1]!],
-              content_lines: ["BBB"],
-            },
-          ],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
         },
         undefined,
         undefined,
@@ -125,12 +117,8 @@ describe("undo_last_replace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            {
-              hash_range_inclusive: [hashes[1]!, hashes[1]!],
-              content_lines: ["BBB", "B2"],
-            },
-          ],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB", "B2"],
         },
         undefined,
         undefined,
@@ -162,12 +150,8 @@ describe("undo_last_replace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            {
-              hash_range_inclusive: [hashes[1]!, hashes[1]!],
-              content_lines: [],
-            },
-          ],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: [],
         },
         undefined,
         undefined,
@@ -199,12 +183,8 @@ describe("undo_last_replace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            {
-              hash_range_inclusive: [hashes[1]!, hashes[2]!],
-              content_lines: ["XXX", "YYY", "ZZZ"],
-            },
-          ],
+          hash_range_inclusive: [hashes[1]!, hashes[2]!],
+          content_lines: ["XXX", "YYY", "ZZZ"],
         },
         undefined,
         undefined,
@@ -236,12 +216,8 @@ describe("undo_last_replace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            {
-              hash_range_inclusive: [hashes[1]!, hashes[1]!],
-              content_lines: ["BBB"],
-            },
-          ],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
         },
         undefined,
         undefined,
@@ -275,12 +251,8 @@ describe("undo_last_replace", () => {
         "e1",
         {
           path: "sample.ts",
-          changes: [
-            {
-              hash_range_inclusive: [hashes[1]!, hashes[1]!],
-              content_lines: ["BBB"],
-            },
-          ],
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
         },
         undefined,
         undefined,
@@ -381,7 +353,7 @@ describe("undo cleared after write", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
+        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
         undefined, undefined, { cwd } as any,
       );
 
@@ -407,7 +379,7 @@ describe("undo cleared after write", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
+        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
         undefined, undefined, { cwd } as any,
       );
 

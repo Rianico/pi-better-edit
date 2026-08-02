@@ -1,14 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupFlatIntegrationTest, useTestHome, getText, extractHash } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome, getText, extractHash } from "../support/fixtures";
 
 const home = useTestHome();
 
-describe("flat mode replace — end-to-end", () => {
-  it("reads a file and replaces a single line via flat mode", async () => {
+describe("replace tool — end-to-end", () => {
+  it("reads a file and replaces a single line", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupFlatIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const readResult = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const lines = getText(readResult).split("\n");
@@ -34,9 +34,9 @@ describe("flat mode replace — end-to-end", () => {
     });
   });
 
-  it("replaces a range of lines via flat mode", async () => {
+  it("replaces a range of lines", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupFlatIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const readResult = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const lines = getText(readResult).split("\n");
@@ -63,9 +63,9 @@ describe("flat mode replace — end-to-end", () => {
     });
   });
 
-  it("deletes a range via flat mode", async () => {
+  it("deletes a range", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupFlatIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const readResult = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const lines = getText(readResult).split("\n");
@@ -92,9 +92,9 @@ describe("flat mode replace — end-to-end", () => {
     });
   });
 
-  it("stale anchor rejection after edit in flat mode", async () => {
+  it("stale anchor rejection after edit", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
-      const { ctx, readTool, editTool } = setupFlatIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const firstText = getText(firstRead);
@@ -131,9 +131,9 @@ describe("flat mode replace — end-to-end", () => {
     });
   });
 
-  it("seeds content into an empty file via flat mode", async () => {
+  it("seeds content into an empty file", async () => {
     await withTempFile("empty.ts", "", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupFlatIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const readResult = await readTool.execute("r1", { path: "empty.ts" }, undefined, undefined, ctx);
       const emptyHash = getText(readResult).split("\n")[0]!.split("│")[0]!;
@@ -156,9 +156,9 @@ describe("flat mode replace — end-to-end", () => {
     });
   });
 
-  it("preserves CRLF line endings after flat mode edit", async () => {
+  it("preserves CRLF line endings after edit", async () => {
     await withTempFile("crlf.ts", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupFlatIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const readResult = await readTool.execute("r1", { path: "crlf.ts" }, undefined, undefined, ctx);
       const betaRef = getText(readResult)
@@ -184,9 +184,9 @@ describe("flat mode replace — end-to-end", () => {
     });
   });
 
-  it("works with flat format hash_range_inclusive and content_lines", async () => {
+  it("accepts top-level hash_range_inclusive and content_lines", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { ctx, editTool } = setupFlatIntegrationTest(cwd);
+      const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const editResult = await editTool.execute(
