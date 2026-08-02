@@ -46,13 +46,13 @@ import { loadHashStore, type HashStore } from "./hash-store";
 
 const contentLinesSchema = Type.Array(Type.String(), {
   description:
-    "Literal file content, one string per line."
+    "Replacement content, one string per line. Use [] to delete the range."
 });
 
 const hashRangeInclSchema = Type.Array(
   Type.String({ description: "A 3-char HASH from read output" }),
   {
-    description: "Inclusive [start_hash, end_hash] — pair of 3-char hashes from read output.",
+    description: "Pair of 3-char hashes from read output marking the first and last line of the range to replace (inclusive).",
     minItems: 2,
     maxItems: 2,
   },

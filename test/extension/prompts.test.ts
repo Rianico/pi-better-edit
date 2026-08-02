@@ -11,7 +11,7 @@ const replacePrompt = readFileSync(
 
 describe("prompts/replace.md (model-facing contract)", () => {
   it("declares the tool purpose", () => {
-    expect(replacePrompt).toMatch(/Replace lines in a text file using HASH anchors/);
+    expect(replacePrompt).toMatch(/Replace a range of lines in a text file.*HASH anchors/);
   });
 });
 
