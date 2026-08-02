@@ -3,13 +3,15 @@ import { chmod, mkdir, mkdtemp, rm, stat, writeFile } from "fs/promises";
 import { join } from "path";
 import { writeAtomic } from "../../src/fs-write";
 
+const isWindows = process.platform === "win32";
+
 async function makeTempDir(): Promise<string> {
   const root = join(process.cwd(), ".tmp");
   await mkdir(root, { recursive: true });
   return mkdtemp(join(root, "pi-hashline-perm-"));
 }
 
-describe("writeAtomic — new-file mode", () => {
+describe.skipIf(isWindows)("writeAtomic — new-file mode", () => {
   it("creates a new file with mode 0o600 (owner-only), independent of umask", async () => {
 
     const dir = await makeTempDir();

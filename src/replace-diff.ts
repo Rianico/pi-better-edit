@@ -40,6 +40,10 @@ function fmtDiffLine(
   return `${prefix}${hash}${HASH_SEP}${line}`;
 }
 
+const ELLIPSIS_MARKER: unique symbol = Symbol("ellipsis");
+const isEllipsisMarker = (line: string | symbol): line is symbol =>
+  line === ELLIPSIS_MARKER;
+
 export function genDiff(
   oldContent: string,
   newContent: string,
@@ -78,7 +82,7 @@ export function genDiff(
     const nextPartIsChange =
       i < parts.length - 1 && (parts[i + 1]!.added || parts[i + 1]!.removed);
     if (lastWasChange || nextPartIsChange) {
-      let linesToShow = displayLines;
+      let linesToShow: (string | symbol)[] = displayLines;
       let skipStart = 0;
       let skipMiddle = 0;
 
@@ -87,7 +91,7 @@ export function genDiff(
         linesToShow = displayLines.slice(skipStart);
       } else if (nextPartIsChange && displayLines.length > contextLines * 2) {
         const tail = displayLines.slice(-contextLines);
-        linesToShow = [...displayLines.slice(0, contextLines), "__ELLIPSIS__", ...tail];
+        linesToShow = [...displayLines.slice(0, contextLines), ELLIPSIS_MARKER, ...tail];
         skipMiddle = displayLines.length - contextLines * 2;
       } else if (linesToShow.length > contextLines) {
         linesToShow = linesToShow.slice(0, contextLines);
@@ -98,7 +102,7 @@ export function genDiff(
         newLineNum += skipStart;
       }
       for (const line of linesToShow) {
-        if (line === "__ELLIPSIS__") {
+        if (isEllipsisMarker(line)) {
           output.push(" ...");
           newLineNum += skipMiddle;
           continue;

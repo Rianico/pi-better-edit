@@ -59,7 +59,7 @@ describe("fileSnap", () => {
     });
   });
 
-  it("resolves symlinks and returns the canonical path in snapshotId", async () => {
+  it.skipIf(process.platform === "win32")("resolves symlinks and returns the canonical path in snapshotId", async () => {
     await withTempDir(async (dir) => {
       const realFile = join(dir, "real.ts");
       const linkPath = join(dir, "link.ts");

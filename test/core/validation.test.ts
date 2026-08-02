@@ -46,17 +46,17 @@ describe("isText", () => {
 describe("valKind", () => {
 	it("throws for directory", () => {
 		expect(() => valKind({ kind: "directory" }, "test.txt"))
-			.toThrow("Path is a directory: test.txt. Use ls to inspect directories.");
+			.toThrow("[E_NOT_TEXT] Path is a directory: test.txt. Use ls to inspect directories.");
 	});
 
 	it("throws for binary file", () => {
 		expect(() => valKind({ kind: "binary", description: "application/octet-stream" }, "test.bin"))
-			.toThrow("Path is a binary file: test.bin (application/octet-stream). Hashline edit only supports text files.");
+			.toThrow("[E_NOT_TEXT] Path is a binary file: test.bin (application/octet-stream). Hashline edit only supports text files.");
 	});
 
 	it("throws for image file", () => {
 		expect(() => valKind({ kind: "image", mimeType: "image/png" }, "test.png"))
-			.toThrow("Path is an image file: test.png. Hashline edit only supports text files.");
+			.toThrow("[E_NOT_TEXT] Path is an image file: test.png. Hashline edit only supports text files.");
 	});
 
 	it("does not throw for text file", () => {
@@ -67,10 +67,10 @@ describe("valKind", () => {
 describe("valAccess", () => {
 	it("throws ENOENT error for missing file", async () => {
 		await expect(valAccess("/nonexistent/path.txt", "path.txt"))
-			.rejects.toThrow("File not found: path.txt");
+			.rejects.toThrow("[E_NOT_FOUND] File not found: path.txt");
 	});
 
-	it("throws EACCES error for unreadable file", async () => {
+	it.skipIf(process.platform === "win32")("throws EACCES error for unreadable file", async () => {
 		const { mkdir, writeFile, chmod } = await import("fs/promises");
 		const { join } = await import("path");
 		const tmpDir = join(process.cwd(), "test-tmp-validation");
@@ -81,7 +81,7 @@ describe("valAccess", () => {
 
 		try {
 			await expect(valAccess(testFile, "unreadable.txt"))
-				.rejects.toThrow("File is not readable: unreadable.txt");
+				.rejects.toThrow("[E_ACCESS] File is not readable: unreadable.txt");
 		} finally {
 			await chmod(testFile, 0o644);
 			const { rm } = await import("fs/promises");
@@ -101,7 +101,7 @@ describe("valAccess", () => {
 
 		try {
 			await expect(valAccess(testFile, "readonly.txt", constants.R_OK | constants.W_OK))
-				.rejects.toThrow("File is not writable: readonly.txt");
+				.rejects.toThrow("[E_ACCESS] File is not writable: readonly.txt");
 		} finally {
 			await chmod(testFile, 0o644);
 			const { rm } = await import("fs/promises");

@@ -13,25 +13,25 @@ export async function valAccess(
 	} catch (error: unknown) {
 		const code = errCode(error);
 		if (code === "ENOENT") {
-			throw new Error(`File not found: ${path}`);
+			throw new Error(`[E_NOT_FOUND] File not found: ${path}`);
 		}
 		if (code === "EACCES" || code === "EPERM") {
 			const accessLabel = accessMode & constants.W_OK ? "not writable" : "not readable";
-			throw new Error(`File is ${accessLabel}: ${path}`);
+			throw new Error(`[E_ACCESS] File is ${accessLabel}: ${path}`);
 		}
-		throw new Error(`Cannot access file: ${path}`);
+		throw new Error(`[E_ACCESS] Cannot access file: ${path}`);
 	}
 }
 
 export function valKind(file: LFile, path: string): asserts file is { kind: "text"; text: string; hadUtf8DecodeErrors?: true } {
 	if (file.kind === "directory") {
-		throw new Error(`Path is a directory: ${path}. Use ls to inspect directories.`);
+		throw new Error(`[E_NOT_TEXT] Path is a directory: ${path}. Use ls to inspect directories.`);
 	}
 	if (file.kind === "binary") {
-		throw new Error(`Path is a binary file: ${path} (${file.description}). Hashline edit only supports text files.`);
+		throw new Error(`[E_NOT_TEXT] Path is a binary file: ${path} (${file.description}). Hashline edit only supports text files.`);
 	}
 	if (file.kind === "image") {
-		throw new Error(`Path is an image file: ${path}. Hashline edit only supports text files.`);
+		throw new Error(`[E_NOT_TEXT] Path is an image file: ${path}. Hashline edit only supports text files.`);
 	}
 }
 

@@ -27,7 +27,7 @@ describe("edit tool file mutation queue", () => {
     });
   });
 
-  it("canonicalizes the queue key when a symlink points at the same file", async () => {
+  it.skipIf(process.platform === "win32")("canonicalizes the queue key when a symlink points at the same file", async () => {
     await withTempFile("target.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const { symlink } = await import("fs/promises");
@@ -51,7 +51,7 @@ describe("edit tool file mutation queue", () => {
     });
   });
 
-  it("canonicalizes the queue key when a parent directory is a symlink", async () => {
+  it.skipIf(process.platform === "win32")("canonicalizes the queue key when a parent directory is a symlink", async () => {
     const { mkdtemp, mkdir, symlink, writeFile } = await import("fs/promises");
     const { join } = await import("path");
     const tmpDir = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-test-"));

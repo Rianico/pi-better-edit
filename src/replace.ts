@@ -466,6 +466,7 @@ export function buildToolDef(): ToolDef {
           bom,
           originalEnding,
           hashes: originalHashes,
+          resultContent: result,
         });
         const updatedSnapshotId = (await fileSnap(absolutePath))
           .snapshotId;

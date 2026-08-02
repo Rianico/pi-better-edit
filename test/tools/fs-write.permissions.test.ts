@@ -1,5 +1,7 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
+const isWindows = process.platform === "win32";
+
 const writeFileMock = vi.fn(async () => undefined);
 const handleWriteFileMock = vi.fn(async () => undefined);
 const handleChmodMock = vi.fn(async () => undefined);
@@ -27,7 +29,7 @@ vi.mock("fs/promises", () => ({
 	writeFile: writeFileMock,
 }));
 
-describe("writeAtomic permissions", () => {
+describe.skipIf(isWindows)("writeAtomic permissions", () => {
 	beforeEach(() => {
 		vi.clearAllMocks();
 		openMock.mockResolvedValue({

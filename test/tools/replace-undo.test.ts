@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { readFile } from "fs/promises";
+import { readFile, writeFile, rm } from "fs/promises";
+import { join } from "path";
 import { lineHashes } from "../../src/hashline";
 import { loadHashStore, getSnapshot } from "../../src/hash-store";
 import {
@@ -50,10 +51,7 @@ describe("undo_last_replace", () => {
         ctx,
       );
 
-      const afterReplace = await readFile(
-        new URL(`file://${cwd}/sample.ts`),
-        "utf-8",
-      );
+      const afterReplace = await readFile(join(cwd, "sample.ts"), "utf-8");
       expect(afterReplace).toBe("aaa\nBBB\nccc\n");
 
       const undoResult = await undo.execute(
@@ -67,10 +65,7 @@ describe("undo_last_replace", () => {
       expect(undoResult.isError).toBeFalsy();
       expect(getText(undoResult)).toMatch(/undone last replace/i);
 
-      const afterUndo = await readFile(
-        new URL(`file://${cwd}/sample.ts`),
-        "utf-8",
-      );
+      const afterUndo = await readFile(join(cwd, "sample.ts"), "utf-8");
       expect(afterUndo).toBe("aaa\nbbb\nccc\n");
     });
   });
@@ -233,9 +228,8 @@ describe("undo_last_replace", () => {
       );
 
       const store = await loadHashStore();
-      const absPath = new URL(`file://${cwd}/sample.ts`).pathname;
-      const undoHashes = getSnapshot(store, absPath, "aaa\nbbb\nccc\n")
-        ?? getSnapshot(store, `/${cwd}/sample.ts`, "aaa\nbbb\nccc\n");
+      const absPath = join(cwd, "sample.ts");
+      const undoHashes = getSnapshot(store, absPath, "aaa\nbbb\nccc\n");
       expect(undoHashes).toBeDefined();
     });
   });
@@ -299,10 +293,7 @@ describe("undo_last_replace", () => {
         ctx,
       );
 
-      const afterReplace = await readFile(
-        new URL(`file://${cwd}/sample.ts`),
-        "utf-8",
-      );
+      const afterReplace = await readFile(join(cwd, "sample.ts"), "utf-8");
       expect(afterReplace).toBe("LINE1\nline2\n");
 
       const undoResult = await undo.execute(
@@ -314,11 +305,55 @@ describe("undo_last_replace", () => {
       );
       expect(undoResult.isError).toBeFalsy();
 
-      const afterUndo = await readFile(
-        new URL(`file://${cwd}/sample.ts`),
-        "utf-8",
-      );
+      const afterUndo = await readFile(join(cwd, "sample.ts"), "utf-8");
       expect(afterUndo).toBe("line1\nline2\n");
+    });
+  });
+
+  it("refuses to undo when the file was modified after the replace", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        undefined, undefined, ctx,
+      );
+
+      await writeFile(join(cwd, "sample.ts"), "aaa\nEXTERNAL\nccc\n", "utf-8");
+
+      const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(undoResult.isError).toBe(true);
+      expect(getText(undoResult)).toMatch(/E_UNDO_STALE/);
+      expect(getText(undoResult)).toMatch(/modified after the replace/i);
+
+      const content = await readFile(join(cwd, "sample.ts"), "utf-8");
+      expect(content).toBe("aaa\nEXTERNAL\nccc\n");
+    });
+  });
+
+  it("refuses to undo when the file was deleted after the replace", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        undefined, undefined, ctx,
+      );
+
+      await rm(join(cwd, "sample.ts"));
+
+      const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(undoResult.isError).toBe(true);
+      expect(getText(undoResult)).toMatch(/E_UNDO_STALE/);
+      expect(getText(undoResult)).toMatch(/no longer exists/i);
     });
   });
 });

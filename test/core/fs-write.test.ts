@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { resolveTarget, writeAtomic } from "../../src/fs-write";
 import { mkdtemp, writeFile, rm, readFile, symlink } from "fs/promises";
+import { tmpdir } from "os";
 import { join } from "path";
+
+const isWindows = process.platform === "win32";
 
 describe("resolveTarget", () => {
   it("resolves a simple path", async () => {
-    const dir = await mkdtemp("/tmp/pi-hashline-resolve-");
+    const dir = await mkdtemp(join(tmpdir(), "pi-hashline-resolve-"));
     try {
       const filePath = join(dir, "test.txt");
       await writeFile(filePath, "hello", "utf-8");
@@ -16,8 +19,8 @@ describe("resolveTarget", () => {
     }
   });
 
-  it("resolves a symlink to its target", async () => {
-    const dir = await mkdtemp("/tmp/pi-hashline-resolve-");
+  it.skipIf(isWindows)("resolves a symlink to its target", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-hashline-resolve-"));
     try {
       const target = join(dir, "target.txt");
       const link = join(dir, "link.txt");
@@ -30,8 +33,8 @@ describe("resolveTarget", () => {
     }
   });
 
-  it("resolves a path through multiple symlink levels", async () => {
-    const dir = await mkdtemp("/tmp/pi-hashline-resolve-");
+  it.skipIf(isWindows)("resolves a path through multiple symlink levels", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-hashline-resolve-"));
     try {
       const target = join(dir, "real.txt");
       const mid = join(dir, "mid.txt");
@@ -47,7 +50,7 @@ describe("resolveTarget", () => {
   });
 
   it("resolves a path with non-existent final component", async () => {
-    const dir = await mkdtemp("/tmp/pi-hashline-resolve-");
+    const dir = await mkdtemp(join(tmpdir(), "pi-hashline-resolve-"));
     try {
       const nonExistent = join(dir, "nonexistent", "file.txt");
       const resolved = await resolveTarget(nonExistent);
@@ -60,7 +63,7 @@ describe("resolveTarget", () => {
 
 describe("writeAtomic", () => {
   it("writes content to a new file", async () => {
-    const dir = await mkdtemp("/tmp/pi-hashline-write-");
+    const dir = await mkdtemp(join(tmpdir(), "pi-hashline-write-"));
     try {
       const filePath = join(dir, "new.txt");
       await writeAtomic(filePath, "hello world");
@@ -72,7 +75,7 @@ describe("writeAtomic", () => {
   });
 
   it("overwrites an existing file", async () => {
-    const dir = await mkdtemp("/tmp/pi-hashline-write-");
+    const dir = await mkdtemp(join(tmpdir(), "pi-hashline-write-"));
     try {
       const filePath = join(dir, "existing.txt");
       await writeFile(filePath, "old content", "utf-8");
@@ -84,8 +87,8 @@ describe("writeAtomic", () => {
     }
   });
 
-  it("writes through a symlink to the target", async () => {
-    const dir = await mkdtemp("/tmp/pi-hashline-write-");
+  it.skipIf(isWindows)("writes through a symlink to the target", async () => {
+    const dir = await mkdtemp(join(tmpdir(), "pi-hashline-write-"));
     try {
       const target = join(dir, "target.txt");
       const link = join(dir, "link.txt");
@@ -100,7 +103,7 @@ describe("writeAtomic", () => {
   });
 
   it("preserves file permissions on overwrite", async () => {
-    const dir = await mkdtemp("/tmp/pi-hashline-write-");
+    const dir = await mkdtemp(join(tmpdir(), "pi-hashline-write-"));
     try {
       const filePath = join(dir, "perms.txt");
       await writeFile(filePath, "original", { mode: 0o644 });

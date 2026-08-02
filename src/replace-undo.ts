@@ -7,7 +7,7 @@ import { contentChecksum } from "./hashline/hasher";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { toCwd } from "./paths";
 import { toLF, stripBOM, genDiff, restoreEndings } from "./replace-diff";
-import { cntDiff, splitLines } from "./utils";
+import { cntDiff, splitLines, errCode } from "./utils";
 import { loadP, loadGuide } from "./prompts";
 import { buildMetrics } from "./replace-response";
 import { changedRange } from "./hashline";
@@ -16,6 +16,7 @@ export interface UndoEntry {
   bom: string;
   originalEnding: "\r\n" | "\n";
   hashes: string[];
+  resultContent: string;
 }
 
 const undoMap = new Map<string, UndoEntry>();
@@ -66,13 +67,38 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
       }
 
       return withFileMutationQueue(mutationTargetPath, async () => {
-        let currentNormalized = "";
+        let currentNormalized: string | undefined;
         try {
           const currentRaw = await readFile(mutationTargetPath, "utf-8");
           const { text: currentStripped } = stripBOM(currentRaw);
           currentNormalized = toLF(currentStripped);
-        } catch {
-          currentNormalized = "";
+        } catch (error) {
+          if (errCode(error) !== "ENOENT") throw error;
+        }
+
+        if (currentNormalized === undefined) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `[E_UNDO_STALE] Cannot undo last replace on ${path}: the file no longer exists. Call read() to inspect the current state.`
+              },
+            ],
+            isError: true,
+            details: {},
+          };
+        }
+        if (currentNormalized !== undo.resultContent) {
+          return {
+            content: [
+              {
+                type: "text",
+                text: `[E_UNDO_STALE] Cannot undo last replace on ${path}: the file was modified after the replace, so undoing would overwrite those changes. Call read() to inspect the current state.`
+              },
+            ],
+            isError: true,
+            details: {},
+          };
         }
 
         const diffResult = genDiff(undo.content, currentNormalized, 0);

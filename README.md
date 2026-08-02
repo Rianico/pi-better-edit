@@ -127,6 +127,7 @@ Enabled by default. After a successful `write`, `replace`, or `undo_last_replace
 - History is in-memory and is lost when the session ends or the extension reloads.
 - A successful `write` clears the history for that file.
 - Call `read` after an undo to get fresh anchors for follow-up edits.
+- **Safety guard.** If the file was modified or deleted since the last replace, `undo_last_replace` refuses with `[E_UNDO_STALE]` rather than overwriting those changes.
 
 ## Commands and configuration
 
@@ -155,6 +156,10 @@ Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatic
 | `[E_LEGACY_SHAPE]` | The request uses the unsupported `oldText`/`newText` dialect. |
 | `[E_BAD_OP]` | Range start line is after range end line — the pair is swapped automatically with a warning. |
 | `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
+| `[E_NOT_FOUND]` | The path does not exist. |
+| `[E_ACCESS]` | The file is not readable or writable. |
+| `[E_NOT_TEXT]` | The path is a directory, binary file, or image; hashline editing only supports text files. |
+| `[E_UNDO_STALE]` | `undo_last_replace` refused: the file was modified or deleted after the last replace. |
 | `[E_FILE_TOO_LARGE]` | The file exceeds the 238,328-line hashline limit. |
 
 ## Hashing

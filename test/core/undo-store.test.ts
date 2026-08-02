@@ -8,6 +8,7 @@ describe("undo-store", () => {
       bom: "",
       originalEnding: "\n",
       hashes: ["abc", "def"],
+      resultContent: "hello\nworld!",
     });
     const entry = getUndo("/a.ts");
     expect(entry).toBeDefined();
@@ -15,6 +16,7 @@ describe("undo-store", () => {
     expect(entry!.bom).toBe("");
     expect(entry!.originalEnding).toBe("\n");
     expect(entry!.hashes).toEqual(["abc", "def"]);
+    expect(entry!.resultContent).toBe("hello\nworld!");
   });
 
   it("returns undefined for a path with no undo history", () => {
@@ -27,12 +29,14 @@ describe("undo-store", () => {
       bom: "",
       originalEnding: "\n",
       hashes: ["a"],
+      resultContent: "first!",
     });
     saveUndo("/overwrite.ts", {
       content: "second",
       bom: "\uFEFF",
       originalEnding: "\r\n",
       hashes: ["b"],
+      resultContent: "second!",
     });
     const entry = getUndo("/overwrite.ts");
     expect(entry!.content).toBe("second");
@@ -47,6 +51,7 @@ describe("undo-store", () => {
       bom: "",
       originalEnding: "\n",
       hashes: ["x"],
+      resultContent: "data!",
     });
     expect(getUndo("/clear-me.ts")).toBeDefined();
     clearUndo("/clear-me.ts");
@@ -59,12 +64,14 @@ describe("undo-store", () => {
       bom: "",
       originalEnding: "\n",
       hashes: ["h1"],
+      resultContent: "aaa!",
     });
     saveUndo("/b.ts", {
       content: "bbb",
       bom: "",
       originalEnding: "\n",
       hashes: ["h2"],
+      resultContent: "bbb!",
     });
     expect(getUndo("/a.ts")!.content).toBe("aaa");
     expect(getUndo("/b.ts")!.content).toBe("bbb");

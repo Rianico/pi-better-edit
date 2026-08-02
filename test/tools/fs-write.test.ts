@@ -25,7 +25,7 @@ describe("resolveTarget", () => {
     });
   });
 
-  it("resolves a path through a symlink", async () => {
+  it.skipIf(process.platform === "win32")("resolves a path through a symlink", async () => {
     await withTempDir("fs-write-test-", async (dir) => {
       const targetDir = join(dir, "target");
       const linkDir = join(dir, "link");
@@ -38,7 +38,7 @@ describe("resolveTarget", () => {
     });
   });
 
-  it("resolves a chain of symlinks", async () => {
+  it.skipIf(process.platform === "win32")("resolves a chain of symlinks", async () => {
     await withTempDir("fs-write-test-", async (dir) => {
       const real = join(dir, "real");
       const link1 = join(dir, "link1");
@@ -52,7 +52,7 @@ describe("resolveTarget", () => {
     });
   });
 
-  it("throws ELOOP on circular symlinks", async () => {
+  it.skipIf(process.platform === "win32")("throws ELOOP on circular symlinks", async () => {
     await withTempDir("fs-write-test-", async (dir) => {
       const a = join(dir, "a");
       const b = join(dir, "b");
@@ -128,7 +128,7 @@ describe("writeAtomic", () => {
     });
   });
 
-  it("writes to a file through a symlink", async () => {
+  it.skipIf(process.platform === "win32")("writes to a file through a symlink", async () => {
     await withTempDir("fs-write-test-", async (dir) => {
       const targetDir = join(dir, "real");
       const linkDir = join(dir, "link");
