@@ -25,6 +25,7 @@ export async function setupTestHome(): Promise<{
     home: tmpHome,
     testPath,
     cleanup: async () => {
+      shutdownHashStore();
       vi.unstubAllEnvs();
       await rm(tmpHome, { recursive: true, force: true });
     },

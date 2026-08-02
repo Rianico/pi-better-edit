@@ -5,6 +5,11 @@ import register from "../../index";
 import { shutdownHashStore } from "../../src/hash-store";
 import { makeTempDir } from "../support/fixtures";
 
+async function cleanupCwd(cwd: string): Promise<void> {
+  shutdownHashStore();
+  await rm(cwd, { recursive: true, force: true });
+}
+
 
 type ToolResultHandler = (
   event: {
@@ -81,7 +86,7 @@ describe("auto-read after write", () => {
       expect(writeResult!.content).toHaveLength(2);
       expect(writeResult!.content![1]!.text!).toContain("--- Auto-read (hashline anchors) ---");
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -115,8 +120,7 @@ describe("auto-read after write", () => {
 
       expect(writeResult).toBeUndefined();
     } finally {
-      shutdownHashStore();
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -159,7 +163,7 @@ describe("auto-read after write", () => {
       expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│hello/);
       expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│world/);
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -184,7 +188,7 @@ describe("auto-read after write", () => {
 
       expect(writeResult).toBeUndefined();
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -209,7 +213,7 @@ describe("auto-read after write", () => {
 
       expect(readResult).toBeUndefined();
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -234,7 +238,7 @@ describe("auto-read after write", () => {
 
       expect(writeResult).toBeUndefined();
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -259,7 +263,7 @@ describe("auto-read after write", () => {
 
       expect(writeResult).toBeUndefined();
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -303,7 +307,7 @@ describe("auto-read after write", () => {
       expect(autoReadText).toContain("function hello()");
       expect(autoReadText).toContain("return 'world'");
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -337,7 +341,7 @@ describe("auto-read after write", () => {
 
       expect(autoReadText).toMatch(/offset=\d+/);
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -367,7 +371,7 @@ describe("auto-read after write", () => {
       expect(text).toContain("[File is empty. Use replace to insert content.]");
       expect(text).toMatch(/^[A-Za-z0-9]{3}│/m);
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -398,7 +402,7 @@ describe("auto-read after write", () => {
       expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│alpha/);
       expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│beta/);
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 
@@ -429,7 +433,7 @@ describe("auto-read after write", () => {
       expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│alpha/);
       expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│beta/);
     } finally {
-      await rm(cwd, { recursive: true, force: true });
+      await cleanupCwd(cwd);
     }
   });
 });

@@ -302,7 +302,7 @@ describe("hash-store — concurrency (issue #10)", () => {
       second.exec("BEGIN IMMEDIATE");
       ins.run("/b.ts", contentChecksum("beta\n"), splitLines("beta\n").length, JSON.stringify(["BB"]), Date.now());
       second.exec("COMMIT");
-
+      second.close();
       shutdownHashStore();
       const reloaded = await loadHashStore();
       expect(getSnapshot(reloaded, "/a.ts", "alpha\n")).toEqual(["AA"]);

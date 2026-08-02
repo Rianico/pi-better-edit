@@ -42,6 +42,19 @@ function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
   const db = new DatabaseSync(storePath, {
     timeout: HASH_STORE_BUSY_TIMEOUT,
   });
+  try {
+    return buildStore(db);
+  } catch (error) {
+    try {
+      db.close();
+    } catch {}
+    throw error;
+  }
+}
+
+function buildStore(
+  db: DatabaseSync,
+): { db: DatabaseSync; stmts: Prepared } {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
   db.exec(
