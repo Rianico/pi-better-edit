@@ -1,6 +1,8 @@
 import { readFileSync } from "fs";
 import { describe, expect, it } from "vitest";
 import { loadGuide } from "../../src/prompts";
+import { regRead } from "../../src/read";
+import { makeFakePiRegistry } from "../support/fixtures";
 
 const replacePrompt = readFileSync(
   new URL("../../prompts/replace.md", import.meta.url),
@@ -56,19 +58,37 @@ describe("prompt guidelines", () => {
     expect(guidelines.length).toBeGreaterThan(0);
   });
 
-  it("read-guidelines.md loads without template variables", () => {
+  it("read-guidelines.md keeps the auto-read note as a template variable", () => {
     const content = readFileSync(
       new URL("../../prompts/read-guidelines.md", import.meta.url),
       "utf-8",
     );
-    expect(content).not.toContain("{{");
+    expect(content).toContain("{{AUTO_READ_NOTE}}");
   });
-
   it("undo-last-replace-guidelines.md loads without template variables", () => {
     const content = readFileSync(
       new URL("../../prompts/undo-last-replace-guidelines.md", import.meta.url),
       "utf-8",
     );
     expect(content).not.toContain("{{");
+  });
+});
+
+describe("read tool guidelines follow auto-read", () => {
+  it("drops the re-read note when auto-read is enabled (default)", () => {
+    const { pi, getTool } = makeFakePiRegistry();
+    regRead(pi);
+    const tool = getTool("read");
+    const guidelines = tool.promptGuidelines as string[];
+    expect(guidelines.some((g) => g.includes("call `read` again after any edit"))).toBe(false);
+    expect(guidelines.some((g) => g.includes("call before `replace`"))).toBe(true);
+  });
+
+  it("includes the re-read note when auto-read is disabled", () => {
+    const { pi, getTool } = makeFakePiRegistry();
+    regRead(pi, { autoRead: false });
+    const tool = getTool("read");
+    const guidelines = tool.promptGuidelines as string[];
+    expect(guidelines.some((g) => g.includes("call again after any edit"))).toBe(true);
   });
 });

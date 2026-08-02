@@ -16,7 +16,7 @@ import { toCwd } from "./src/paths";
 import { resolveTarget } from "./src/fs-write";
 
 export default function (pi: ExtensionAPI): void {
-  regRead(pi);
+  regRead(pi, { autoRead: true });
 
   regReplace(pi);
   regReplaceUndo(pi);
@@ -36,6 +36,7 @@ export default function (pi: ExtensionAPI): void {
     }
     const config = await readConfig();
     autoRead = config.autoRead;
+    regRead(pi, { autoRead });
 
     if (debugValue === "1" || debugValue === "true") {
       ctx.ui.notify(`Hashline Edit mode active`, "info");
@@ -46,6 +47,7 @@ export default function (pi: ExtensionAPI): void {
     description: "Toggle automatic hashline anchors after write and replace operations",
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
+      regRead(pi, { autoRead });
       const state = autoRead ? "enabled" : "disabled";
       ctx.ui.notify(`Auto-read after write/replace: ${state}`, "info");
     },
