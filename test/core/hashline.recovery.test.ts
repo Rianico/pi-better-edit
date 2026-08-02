@@ -125,14 +125,14 @@ describe("applyEdits — recovery scenarios", () => {
     expect(() => resEdits(edits)).toThrow(/Invalid anchor/);
   });
 
-  it("rejects bare hash prefix in content_lines", async () => {
+  it("strips bare hash prefix in content_lines", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
-    expect(() =>
-      applyEdits(content, resEdits([
-        { hash_range_inclusive: [hashes[1]!, hashes[2]!] as [string, string], content_lines: [`${hashes[1]!}│b`, "X"] },
-      ]))
-    ).toThrow(/E_BARE_HASH_PREFIX/);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[2]!] as [string, string], content_lines: [`${hashes[1]!}│b`, "X"] },
+    ]));
+    expect(result.content).toBe("a\nb\nX\nd\ne");
+    expect(result.warnings?.[0]).toMatch(/stripped "HASH│" prefix/);
   });
 
   it("rejects diff preview rows in content_lines", () => {

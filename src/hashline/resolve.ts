@@ -213,39 +213,37 @@ function warnUnicodeEsc(
   }
 }
 
-export function assertNoBarePrefix(
-  edits: HEdit[],
-  fileLines: string[],
-  fileHashes: string[],
-): void {
-  const suspects: { line: string; hash: string; editIndex: number; lineIndex: number }[] = [];
-  for (let editIndex = 0; editIndex < edits.length; editIndex++) {
-    const edit = edits[editIndex]!;
-    for (let lineIndex = 0; lineIndex < edit.content_lines.length; lineIndex++) {
-      const line = edit.content_lines[lineIndex]!;
-      const match = line.match(HL_BARE_PREFIX_RE);
-      if (match) suspects.push({ line, hash: match[1]!, editIndex, lineIndex });
-    }
-  }
-  if (suspects.length === 0) return;
-  const locations = suspects
-    .map((s) => `edit ${s.editIndex}, content_lines[${s.lineIndex}]`)
-    .join("; ");
-
-  const fileHashSet = new Set(fileHashes);
-  const matched = suspects.filter((s) => fileHashSet.has(s.hash));
-  const matchedCount = matched.length;
-
-  const exampleLine = `${suspects[0]!.hash}│${clipLine(suspects[0]!.line)}`;
-
-  const linesHint =
-    matchedCount === 0
-      ? `None match file line hashes.`
-      : `${matchedCount} match file line hashes — strong evidence the prefix was copied from read output.`;
-
-  throw new Error(
-    `[E_BARE_HASH_PREFIX] ${suspects.length} edit line(s) start with a hash-like prefix (${locations}). Example: ${JSON.stringify(exampleLine)}. ${linesHint} Remove the "HASH│" prefix from each affected content_lines entry; keep only the literal line content that appears after "│" in read output. Remember: content_lines uses file content only, hash_range_inclusive uses hash anchors.`
-  );
+export function stripBarePrefixes(
+	edits: HEdit[],
+	fileHashes: string[],
+	warnings: string[],
+): HEdit[] {
+	const fileHashSet = new Set(fileHashes);
+	let changed = false;
+	const corrected = edits.map((edit, editIndex) => {
+		const stripped: { lineIndex: number; matched: boolean }[] = [];
+		const contentLines = edit.content_lines.map((line, lineIndex) => {
+			const match = line.match(HL_BARE_PREFIX_RE);
+			if (!match) return line;
+			stripped.push({ lineIndex, matched: fileHashSet.has(match[1]!) });
+			return line.slice(match[0].length);
+		});
+		if (stripped.length === 0) return edit;
+		changed = true;
+		const locations = stripped
+			.map((s) => `content_lines[${s.lineIndex}]`)
+			.join(", ");
+		const matchedCount = stripped.filter((s) => s.matched).length;
+		const evidence =
+			matchedCount === 0
+				? "none of the stripped hashes match current file lines"
+				: `${matchedCount} of ${stripped.length} stripped hash(es) match current file lines`;
+		warnings.push(
+			`Autocorrected edit ${editIndex}: stripped "HASH│" prefix copied from read output in ${locations} (${evidence}).`
+		);
+		return { ...edit, content_lines: contentLines };
+	});
+	return changed ? corrected : edits;
 }
 
 export function descEdit(edit: RHEdit): string {

@@ -1,6 +1,6 @@
 # pi-hashline-edit-pro
 
-A [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) extension that replaces the built-in `read` and `edit` tools with a hash-anchored line-replacing workflow. Strict semantics, no silent relocation, no autocorrection, no fuzzy fallback. Every line gets a unique content hash, so edits stay precise and stale anchors are caught before they reach the file.
+A [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent) extension that replaces the built-in `read` and `edit` tools with a hash-anchored line-replacing workflow. Strict semantics, no silent relocation, no fuzzy fallback. Unambiguous copy-paste mistakes are autocorrected with a visible warning. Every line gets a unique content hash, so edits stay precise and stale anchors are caught before they reach the file.
 
 Fork of [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by RimuruW. The strict-semantics policy is unchanged. This fork extends the upstream design with 3-character hashes and collision resolution for unique per-line anchors.
 
@@ -164,7 +164,7 @@ The file is created automatically when any setting is toggled. Both fields are i
 | `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; call `read` for fresh anchors. |
 | `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
 | `[E_INVALID_PATCH]` | `content_lines` contains diff-preview rows (`+HASH│`, `-HASH│`, `-   │`, `-N   `). |
-| `[E_BARE_HASH_PREFIX]` | A `content_lines` entry starts with a hash-like `HASH│` prefix. |
+| `[E_BARE_HASH_PREFIX]` | A `content_lines` entry starts with a hash-like `HASH│` prefix — the prefix is stripped automatically with a warning. |
 | `[E_LEGACY_SHAPE]` | The request uses the unsupported `oldText`/`newText` dialect. |
 | `[E_BAD_OP]` | Range start line is after range end line. |
 | `[E_EDIT_CONFLICT]` | Two edits in one batch overlap the same original lines. |
@@ -175,7 +175,7 @@ The file is created automatically when any setting is toggled. Both fields are i
 
 - **Stale anchors fail (per-line).** A hash mismatch means that specific line's content changed since the last `read`; the error tells the model to call `read()` to get fresh anchors, then copy the 3-character HASH of the start and end of the range being replaced into `hash_range_inclusive` of the next replace call. When a range has one stale and one still-valid anchor, the error also shows the current lines (with fresh hashes) around the resolved anchor, so the model can re-locate the range without a full re-read. Because staleness is per-line, editing or appending lines does **not** invalidate anchors for lines whose content is unchanged — anchors for untouched regions stay valid across edits to other regions.
 - **No fallback relocation.** Mismatched anchors are never silently relocated to a "close enough" line. This trades convenience for correctness.
-- **Strict patch content.** If `content_lines` contains diff-preview rows — `+HASH│` addition prefixes, `-HASH│` or `-   │` deletion rows (the padded format the diff preview emits), or `-N   ` numbered deletion rows — the edit is rejected with `[E_INVALID_PATCH]`. This narrowly guards against pasting the tool's own diff-preview rows back as content; standard unified-diff lines (`+x`, `-x`, ` x`, `@@ … @@`) are **not** rejected — they are written literally, since literal content must never be silently altered. Bare `HASH│` content (the first 4 chars of a `content_lines` entry looking like 3 alphanumeric chars + `│`) is rejected with `[E_BARE_HASH_PREFIX]`. When the suspect's prefix happens to match a real file-line anchor, the error message flags that as strong evidence the model copied an anchor from the read output.
+- **Strict patch content.** If `content_lines` contains diff-preview rows — `+HASH│` addition prefixes, `-HASH│` or `-   │` deletion rows (the padded format the diff preview emits), or `-N   ` numbered deletion rows — the edit is rejected with `[E_INVALID_PATCH]`. This narrowly guards against pasting the tool's own diff-preview rows back as content; standard unified-diff lines (`+x`, `-x`, ` x`, `@@ … @@`) are **not** rejected — they are written literally, since literal content must never be silently altered. Bare `HASH│` content (the first 4 chars of a `content_lines` entry looking like 3 alphanumeric chars + `│`) is autocorrected: the prefix is stripped and only the literal content after `│` is written, with a warning. When the stripped hash happens to match a real file-line anchor, the warning flags that as strong evidence the model copied an anchor from the read output.
 
 - **BOM preservation.** A UTF-8 BOM is stripped for display and hashing but restored on write, so edits (and undo) never silently strip a BOM from a file that has one.
 - **Atomic writes.** Files are written via temp-file-then-rename to avoid corruption from interrupted writes. Symlink chains are resolved so the target file is updated without replacing the symlink. Hard-linked files are updated in place to preserve the shared inode. File permissions are preserved across atomic renames.
@@ -199,7 +199,7 @@ The 3-character space holds 238,328 unique anchors, so files are capped at 238,3
 
 ### Bare-prefix detector
 
-With the `│` delimiter format, the bare-prefix detector regex `^\s*([A-Za-z0-9_\-]{3})│` is highly specific. It only matches lines starting with a hash-like prefix. This eliminates false positives from common code patterns like `init:`, `data:`, `else:`, etc. The detector rejects edit lines matching this pattern with `[E_BARE_HASH_PREFIX]` to prevent the model from accidentally pasting hash anchors into file content.
+With the `│` delimiter format, the bare-prefix detector regex `^\s*([A-Za-z0-9_\-]{3})│` is highly specific. It only matches lines starting with a hash-like prefix. This eliminates false positives from common code patterns like `init:`, `data:`, `else:`, etc. The detector strips the prefix from edit lines matching this pattern (with a warning) instead of writing the anchor into the file content.
 
 ## Development
 

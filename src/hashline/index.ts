@@ -31,7 +31,7 @@ export {
 	descEdit,
 	resEdits,
 	valEdits,
-	assertNoBarePrefix,
+	stripBarePrefixes,
 	fmtMismatch,
 } from "./resolve";
 export {

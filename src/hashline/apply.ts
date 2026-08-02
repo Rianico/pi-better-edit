@@ -2,7 +2,7 @@ import { abortIf, splitLines, lastNonEmptyIndex, firstNonEmptyIndex } from "../u
 import { _lineHashesPure, HASH_SEP } from "./hash";
 import {
 	valEdits,
-	assertNoBarePrefix,
+	stripBarePrefixes,
 	warnUnicodeEsc,
 	fmtMismatch,
 	descEdit,
@@ -246,8 +246,10 @@ export function applyEdits(
 	const noopEdits: NEdit[] = [];
 	const warnings: string[] = [];
 
+	const prefixFixed = stripBarePrefixes(edits, fileHashes, warnings);
+
 	const { resolved: initialResolved, mismatches, boundaryWarnings } = valEdits(
-		edits,
+		prefixFixed,
 		lineIndex.fileLines,
 		fileHashes,
 		warnings,
@@ -259,14 +261,13 @@ export function applyEdits(
 		);
 	}
 
-	assertNoBarePrefix(edits, lineIndex.fileLines, fileHashes);
-	warnUnicodeEsc(edits, warnings);
+	warnUnicodeEsc(prefixFixed, warnings);
 
 	let resolved = initialResolved;
 	let autoFixes: AutoFix[] | undefined;
 	if (boundaryWarnings.length > 0) {
 		autoFixes = [];
-		const correctedEdits: HEdit[] = edits.map(e => ({
+		const correctedEdits: HEdit[] = prefixFixed.map(e => ({
 			...e,
 			content_lines: [...e.content_lines],
 		}));
