@@ -137,4 +137,43 @@ describe("chained edit anchors", () => {
       expect(alphaEdit.content[0].text).toContain("Successfully replaced in stale.ts");
     });
   });
+
+  it("keeps untouched-line anchors valid after a reversed-range replace", async () => {
+    await withTempFile("stable.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const firstRead = await readTool.execute("r1", { path: "stable.ts" }, undefined, undefined, ctx);
+      const alphaRef = firstRead.content[0].text
+        .split("\n")
+        .find((line: string) => line.includes("│alpha"))!
+        .split("│")[0]!;
+      const betaRef = firstRead.content[0].text
+        .split("\n")
+        .find((line: string) => line.includes("│beta"))!
+        .split("│")[0]!;
+      const gammaRef = firstRead.content[0].text
+        .split("\n")
+        .find((line: string) => line.includes("│gamma"))!
+        .split("│")[0]!;
+
+      const editResult = await editTool.execute(
+        "e1",
+        { path: "stable.ts", changes: [{ hash_range_inclusive: [gammaRef, betaRef], content_lines: ["X"] }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(editResult.content[0].text).toContain("Successfully replaced in stable.ts");
+      expect(editResult.content[0].text).toContain("Warnings:");
+
+      const alphaEdit = await editTool.execute(
+        "e2",
+        { path: "stable.ts", changes: [{ hash_range_inclusive: [alphaRef, alphaRef], content_lines: ["ALPHA"] }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(alphaEdit.content[0].text).toContain("Successfully replaced in stable.ts");
+    });
+  });
 });

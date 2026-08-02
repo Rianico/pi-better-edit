@@ -175,7 +175,9 @@ function collectRemovedHashes(
     const startLine = originalHashes.indexOf(startHash);
     const endLine = originalHashes.indexOf(endHash);
     if (startLine >= 0 && endLine >= 0) {
-      for (let i = startLine; i <= endLine; i++) {
+      const firstLine = Math.min(startLine, endLine);
+      const lastLine = Math.max(startLine, endLine);
+      for (let i = firstLine; i <= lastLine; i++) {
         removedHashes.add(originalHashes[i]!);
       }
     }
@@ -197,7 +199,7 @@ function countLineChanges(
     const startLine = originalHashes.indexOf(edit.hash_range_inclusive[0].hash);
     const endLine = originalHashes.indexOf(edit.hash_range_inclusive[1].hash);
     if (startLine >= 0 && endLine >= 0) {
-      totalRemovedLines += endLine - startLine + 1;
+      totalRemovedLines += Math.abs(endLine - startLine) + 1;
     }
     totalAddedLines += edit.content_lines.length;
   }

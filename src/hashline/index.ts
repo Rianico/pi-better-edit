@@ -32,6 +32,7 @@ export {
 	valEdits,
 	stripBarePrefixes,
 	stripDiffPrefixes,
+	swapReversedRanges,
 	fmtMismatch,
 } from "./resolve";
 export {

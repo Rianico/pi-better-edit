@@ -92,4 +92,27 @@ describe("regReplace", () => {
       expect(result.details?.diff).not.toContain(`+${hashes[1]}│BBB`);
     });
   });
+
+  it("autocorrects reversed hash_range_inclusive with correct line counts", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", home.testPath);
+
+      const result = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          changes: [{ hash_range_inclusive: [hashes[2]!, hashes[1]!], content_lines: ["X"] }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Added 1 line(s), removed 2 line(s).");
+      expect(result.content[0].text).toContain("Warnings:");
+      expect(result.content[0].text).toContain("was reversed");
+      expect(result.details?.diff).toContain("X");
+    });
+  });
 });

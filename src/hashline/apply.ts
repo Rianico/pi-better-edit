@@ -4,6 +4,7 @@ import {
 	valEdits,
 	stripBarePrefixes,
 	stripDiffPrefixes,
+	swapReversedRanges,
 	warnUnicodeEsc,
 	fmtMismatch,
 	descEdit,
@@ -247,8 +248,9 @@ export function applyEdits(
 	const noopEdits: NEdit[] = [];
 	const warnings: string[] = [];
 
+	const rangeFixed = swapReversedRanges(edits, fileHashes, warnings);
 	const prefixFixed = stripDiffPrefixes(
-		stripBarePrefixes(edits, fileHashes, warnings),
+		stripBarePrefixes(rangeFixed, fileHashes, warnings),
 		warnings,
 	);
 

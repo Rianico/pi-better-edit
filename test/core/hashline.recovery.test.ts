@@ -9,14 +9,26 @@ import { useTestHome } from "../support/fixtures";
 const home = useTestHome();
 
 describe("applyEdits — recovery scenarios", () => {
-  it("rejects reversed range (start > end)", async () => {
+  it("autocorrects reversed range (start > end)", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
-    expect(() =>
-      applyEdits(content, resEdits([
-        { hash_range_inclusive: [hashes[3]!, hashes[1]!], content_lines: ["X"] },
-      ]))
-    ).toThrow(/E_BAD_OP/);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[3]!, hashes[1]!], content_lines: ["X"] },
+    ]));
+    expect(result.content).toBe("a\nX\ne");
+    expect(result.warnings?.[0]).toMatch(/Autocorrected edit 0: hash_range_inclusive was reversed/);
+  });
+
+  it("applies mixed reversed and normal ranges in one batch", async () => {
+    const content = "a\nb\nc\nd\ne";
+    const hashes = await lineHashes(content, home.testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[3]!, hashes[1]!], content_lines: ["X"] },
+      { hash_range_inclusive: [hashes[4]!, hashes[4]!], content_lines: ["E"] },
+    ]));
+    expect(result.content).toBe("a\nX\nE");
+    expect(result.warnings?.[0]).toMatch(/Autocorrected edit 0/);
+    expect(result.warnings).toHaveLength(1);
   });
 
   it("rejects overlapping edits", async () => {

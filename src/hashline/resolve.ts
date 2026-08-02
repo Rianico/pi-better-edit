@@ -277,6 +277,36 @@ export function stripDiffPrefixes(
 	return changed ? corrected : edits;
 }
 
+export function swapReversedRanges(
+	edits: HEdit[],
+	fileHashes: string[],
+	warnings: string[],
+): HEdit[] {
+	const lineByHash = new Map<string, number>();
+	for (let i = 0; i < fileHashes.length; i++) {
+		lineByHash.set(fileHashes[i]!, i + 1);
+	}
+	let changed = false;
+	const corrected = edits.map((edit, editIndex) => {
+		const [startRef, endRef] = edit.hash_range_inclusive;
+		const startLine = lineByHash.get(startRef.hash);
+		const endLine = lineByHash.get(endRef.hash);
+		if (
+			startLine === undefined ||
+			endLine === undefined ||
+			startLine <= endLine
+		) {
+			return edit;
+		}
+		changed = true;
+		warnings.push(
+			`Autocorrected edit ${editIndex}: hash_range_inclusive was reversed (start ${startRef.hash} is after end ${endRef.hash}); swapped the pair.`
+		);
+		return { ...edit, hash_range_inclusive: [endRef, startRef] as [Anchor, Anchor] };
+	});
+	return changed ? corrected : edits;
+}
+
 export function descEdit(edit: RHEdit): string {
 	return `replace ${edit.hash_range_inclusive[0].hash}-${edit.hash_range_inclusive[1].hash}`;
 }
