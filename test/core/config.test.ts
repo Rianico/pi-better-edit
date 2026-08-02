@@ -1,4 +1,4 @@
-import { describe, expect, it, vi, afterEach } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import {
@@ -21,27 +21,27 @@ async function withTempHome(run: () => Promise<void>): Promise<void> {
 }
 
 describe("config — toggleAutoRead", () => {
-  it("toggles from default false to true", async () => {
+  it("toggles from default true to false", async () => {
     await withTempHome(async () => {
-      expect(await toggleAutoRead()).toBe(true);
-      expect((await readConfig()).autoRead).toBe(true);
-    });
-  });
-
-  it("toggles from true back to false", async () => {
-    await withTempHome(async () => {
-      await writeConfig({ autoRead: true });
       expect(await toggleAutoRead()).toBe(false);
       expect((await readConfig()).autoRead).toBe(false);
     });
   });
 
-  it("round-trips correctly through multiple toggles", async () => {
+  it("toggles from false back to true", async () => {
     await withTempHome(async () => {
-      expect(await toggleAutoRead()).toBe(true);
-      expect(await toggleAutoRead()).toBe(false);
+      await writeConfig({ autoRead: false });
       expect(await toggleAutoRead()).toBe(true);
       expect((await readConfig()).autoRead).toBe(true);
+    });
+  });
+
+  it("round-trips correctly through multiple toggles", async () => {
+    await withTempHome(async () => {
+      expect(await toggleAutoRead()).toBe(false);
+      expect(await toggleAutoRead()).toBe(true);
+      expect(await toggleAutoRead()).toBe(false);
+      expect((await readConfig()).autoRead).toBe(false);
     });
   });
 });
@@ -82,41 +82,14 @@ describe("config — atomic writes", () => {
   });
 });
 
-describe("config — PI_HASHLINE_AUTO_READ env defaults", () => {
-  const savedEnv = process.env.PI_HASHLINE_AUTO_READ;
-
-  afterEach(() => {
-    if (savedEnv === undefined) {
-      delete process.env.PI_HASHLINE_AUTO_READ;
-    } else {
-      process.env.PI_HASHLINE_AUTO_READ = savedEnv;
-    }
-  });
-
-  it("seeds autoRead from env when no config file exists", async () => {
-    process.env.PI_HASHLINE_AUTO_READ = "1";
-    await withTempHome(async () => {
-      const config = await readConfig();
-      expect(config.autoRead).toBe(true);
-    });
-  });
-
-  it("accepts 'true' as an enabling value", async () => {
-    process.env.PI_HASHLINE_AUTO_READ = "true";
+describe("config — readConfig defaults", () => {
+  it("defaults to true when no config file exists", async () => {
     await withTempHome(async () => {
       expect((await readConfig()).autoRead).toBe(true);
     });
   });
 
-  it("ignores other env values", async () => {
-    process.env.PI_HASHLINE_AUTO_READ = "0";
-    await withTempHome(async () => {
-      expect((await readConfig()).autoRead).toBe(false);
-    });
-  });
-
-  it("config file wins over env var", async () => {
-    process.env.PI_HASHLINE_AUTO_READ = "1";
+  it("reads autoRead from the config file", async () => {
     await withTempHome(async () => {
       await writeConfig({ autoRead: false });
       expect((await readConfig()).autoRead).toBe(false);

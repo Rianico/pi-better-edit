@@ -8,7 +8,7 @@ export interface Config {
 }
 
 const DEFAULT_CONFIG: Config = {
-  autoRead: false
+  autoRead: true
 };
 
 function parseConfig(content: string): Config {
@@ -18,12 +18,6 @@ function parseConfig(content: string): Config {
   };
 }
 
-function envDefaultConfig(): Partial<Config> {
-  const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
-  return autoReadValue === "1" || autoReadValue === "true"
-    ? { autoRead: true }
-    : {};
-}
 
 export async function readConfig(): Promise<Config> {
   try {
@@ -33,7 +27,7 @@ export async function readConfig(): Promise<Config> {
     if (errCode(error) !== "ENOENT") {
       console.error("Config file corrupted, using defaults:", error);
     }
-    return { ...DEFAULT_CONFIG, ...envDefaultConfig() };
+    return { ...DEFAULT_CONFIG };
   }
 }
 export async function writeConfig(config: Config): Promise<void> {

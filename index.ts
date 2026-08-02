@@ -22,8 +22,7 @@ export default function (pi: ExtensionAPI): void {
   regReplaceUndo(pi);
 
   const debugValue = process.env.PI_HASHLINE_DEBUG;
-  const autoReadValue = process.env.PI_HASHLINE_AUTO_READ;
-  let autoRead = autoReadValue === "1" || autoReadValue === "true";
+  let autoRead = true;
 
   pi.on("session_start", async (_event, ctx) => {
     const active = pi.getActiveTools();

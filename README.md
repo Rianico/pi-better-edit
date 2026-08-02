@@ -97,12 +97,12 @@ On first run after upgrading, a one-time migration imports the previous `hash-st
 After a successful replace, the response confirms with `Successfully replaced in {path}. Added X line(s), removed Y line(s).` (warnings are still shown if present). When auto-read is enabled, fresh anchors are appended automatically. Otherwise call `read` to get fresh anchors for follow-up edits.
 ### Auto-read after write, replace, and undo
 
-Auto-read is **disabled by default**. When enabled, after a successful `write`, `replace`, or `undo_last_replace` the extension automatically reads the file and appends a `--- Auto-read (hashline anchors) ---` block to the result. This gives the model immediate `HASH│content` anchors for the file without requiring a separate `read` call. The workflow becomes:
+Auto-read is **enabled by default**. When enabled, after a successful `write`, `replace`, or `undo_last_replace` the extension automatically reads the file and appends a `--- Auto-read (hashline anchors) ---` block to the result. This gives the model immediate `HASH│content` anchors for the file without requiring a separate `read` call. The workflow becomes:
 
 1. `write` a file, result includes hashline anchors
 2. `replace` using those anchors directly
 
-Toggle at runtime with the `/toggle-auto-read` command. The setting persists across sessions in the config file (`~/.config/pi-hashline-edit-pro/config.json`). Set `PI_HASHLINE_AUTO_READ=1` to enable by default on first run.
+Toggle at runtime with the `/toggle-auto-read` command. The setting persists across sessions in the config file (`~/.config/pi-hashline-edit-pro/config.json`).
 
 After a `replace` or `undo_last_replace`, the block is limited to the changed span plus 2 lines of context above and below it. Because the persistent hash store keeps anchors for unchanged lines stable across edits, the model's previously read anchors for the rest of the file remain valid — only the edited region needs fresh anchors. `write` dumps from the top of the file, since the model has no prior anchors for that state.
 
@@ -134,7 +134,7 @@ Settings are stored in `~/.config/pi-hashline-edit-pro/config.json`:
 
 ```json
 {
-  "autoRead": false
+  "autoRead": true
 }
 ```
 
@@ -196,8 +196,6 @@ npm test
 ```
 
 Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
-
-Set `PI_HASHLINE_AUTO_READ=1` to enable auto-read after write and replace by default on first run (can still be toggled at runtime with `/toggle-auto-read`; the setting persists across sessions once toggled).
 
 ## Credits
 

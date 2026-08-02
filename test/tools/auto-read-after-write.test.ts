@@ -1,7 +1,8 @@
-import { describe, expect, it, afterEach } from "vitest";
-import { rm, writeFile } from "fs/promises";
+import { describe, expect, it } from "vitest";
+import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
+import { shutdownHashStore } from "../../src/hash-store";
 import { makeTempDir } from "../support/fixtures";
 
 
@@ -28,53 +29,35 @@ type ToolResultHandler = (
   | void
 >;
 
-function createTestPi(options?: { enableAutoRead?: boolean }) {
+function createTestPi() {
   let toolResultHandler: ToolResultHandler | undefined;
+  let sessionStartHandler: ((event: unknown, ctx: unknown) => Promise<unknown>) | undefined;
   const pi = {
     registerTool() {},
     registerCommand() {},
+    getActiveTools: () => [],
+    setActiveTools() {},
     on(event: string, handler: unknown) {
       if (event === "tool_result") {
         toolResultHandler = handler as ToolResultHandler;
+      } else if (event === "session_start") {
+        sessionStartHandler = handler as (event: unknown, ctx: unknown) => Promise<unknown>;
       }
     },
   } as any;
 
-  const prevValue = process.env.PI_HASHLINE_AUTO_READ;
-  if (options?.enableAutoRead) {
-    process.env.PI_HASHLINE_AUTO_READ = "1";
-  }
-
   register(pi);
-
-  if (options?.enableAutoRead) {
-    if (prevValue === undefined) {
-      delete process.env.PI_HASHLINE_AUTO_READ;
-    } else {
-      process.env.PI_HASHLINE_AUTO_READ = prevValue;
-    }
-  }
 
   return {
     pi,
     getToolResultHandler: () => toolResultHandler,
+    getSessionStartHandler: () => sessionStartHandler,
   };
 }
 
 describe("auto-read after write", () => {
-  const savedEnv = process.env.PI_HASHLINE_AUTO_READ;
-
-  afterEach(() => {
-
-    if (savedEnv === undefined) {
-      delete process.env.PI_HASHLINE_AUTO_READ;
-    } else {
-      process.env.PI_HASHLINE_AUTO_READ = savedEnv;
-    }
-  });
-
-  it("handler returns undefined by default (disabled)", async () => {
-    const cwd = await makeTempDir("auto-read-test-disabled-");
+  it("triggers auto-read after a successful write by default", async () => {
+    const cwd = await makeTempDir("auto-read-test-default-");
     await writeFile(join(cwd, "test.txt"), "hello\nworld\n", "utf-8");
     try {
       const { getToolResultHandler } = createTestPi();
@@ -94,14 +77,51 @@ describe("auto-read after write", () => {
         { cwd },
       );
 
-      expect(writeResult).toBeUndefined();
+      expect(writeResult).toBeDefined();
+      expect(writeResult!.content).toHaveLength(2);
+      expect(writeResult!.content![1]!.text!).toContain("--- Auto-read (hashline anchors) ---");
     } finally {
       await rm(cwd, { recursive: true, force: true });
     }
   });
 
-  it("registers handler when PI_HASHLINE_AUTO_READ=1", async () => {
-    const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+  it("returns nothing when auto-read is disabled via config", async () => {
+    const cwd = await makeTempDir("auto-read-test-disabled-");
+    await writeFile(join(cwd, "test.txt"), "hello\nworld\n", "utf-8");
+    const configDir = join(cwd, ".config", "pi-hashline-edit-pro");
+    try {
+      await mkdir(configDir, { recursive: true });
+      await writeFile(join(configDir, "config.json"), JSON.stringify({ autoRead: false }), "utf-8");
+
+      const { getToolResultHandler, getSessionStartHandler } = createTestPi();
+      const sessionHandler = getSessionStartHandler();
+      expect(sessionHandler).toBeDefined();
+      await sessionHandler!({}, { cwd });
+
+      const handler = getToolResultHandler();
+      expect(handler).toBeDefined();
+
+      const writeResult = await handler!(
+        {
+          toolName: "write",
+          toolCallId: "write-1",
+          input: { path: "test.txt", content: "hello\nworld\n" },
+          content: [{ type: "text", text: "Successfully wrote 12 bytes" }],
+          details: undefined,
+          isError: false,
+        },
+        { cwd },
+      );
+
+      expect(writeResult).toBeUndefined();
+    } finally {
+      shutdownHashStore();
+      await rm(cwd, { recursive: true, force: true });
+    }
+  });
+
+  it("registers the tool_result handler", async () => {
+    const { getToolResultHandler } = createTestPi();
     const handler = getToolResultHandler();
     expect(handler).toBeDefined();
   });
@@ -110,7 +130,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-");
     await writeFile(join(cwd, "test.txt"), "hello\nworld\n", "utf-8");
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
       expect(handler).toBeDefined();
 
@@ -147,7 +167,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-fail-");
 
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const writeResult = await handler!(
@@ -172,7 +192,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-nonwrite-");
 
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const readResult = await handler!(
@@ -197,7 +217,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-nopath-");
 
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const writeResult = await handler!(
@@ -222,7 +242,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-autoreadfail-");
 
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const writeResult = await handler!(
@@ -247,7 +267,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-format-");
 
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const content = "function hello() {\n  return 'world';\n}\n";
@@ -291,7 +311,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-large-");
 
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const largeContent = Array.from({ length: 2500 }, (_, i) => `line ${i + 1}`).join("\n") + "\n";
@@ -325,7 +345,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-empty-");
     await writeFile(join(cwd, "empty.txt"), "", "utf-8");
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
       expect(handler).toBeDefined();
 
@@ -355,7 +375,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-replace-");
     await writeFile(join(cwd, "replace.txt"), "alpha\nbeta\n", "utf-8");
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const replaceResult = await handler!(
@@ -386,7 +406,7 @@ describe("auto-read after write", () => {
     const cwd = await makeTempDir("auto-read-test-undo-");
     await writeFile(join(cwd, "undo.txt"), "alpha\nbeta\n", "utf-8");
     try {
-      const { getToolResultHandler } = createTestPi({ enableAutoRead: true });
+      const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const undoResult = await handler!(

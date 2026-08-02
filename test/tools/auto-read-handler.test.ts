@@ -1,5 +1,5 @@
-import { describe, expect, it, beforeEach, afterEach } from "vitest";
-import { writeFile } from "fs/promises";
+import { describe, expect, it } from "vitest";
+import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { withTempDir } from "../support/fixtures";
@@ -29,20 +29,6 @@ function makeFakePi() {
 }
 
 describe("auto-read handler", () => {
-  const originalAutoRead = process.env.PI_HASHLINE_AUTO_READ;
-
-  beforeEach(() => {
-    process.env.PI_HASHLINE_AUTO_READ = "1";
-  });
-
-  afterEach(() => {
-    if (originalAutoRead === undefined) {
-      delete process.env.PI_HASHLINE_AUTO_READ;
-    } else {
-      process.env.PI_HASHLINE_AUTO_READ = originalAutoRead;
-    }
-  });
-
   it("appends auto-read content after a successful write", async () => {
     await withTempDir("auto-read-", async (dir) => {
       const filePath = join(dir, "test.txt");
@@ -76,26 +62,34 @@ describe("auto-read handler", () => {
     });
   });
 
-  it("returns nothing when auto-read is disabled", async () => {
-    delete process.env.PI_HASHLINE_AUTO_READ;
+  it("returns nothing when auto-read is disabled via config", async () => {
+    await withTempDir("auto-read-disabled-", async (dir) => {
+      const configDir = join(dir, ".config", "pi-hashline-edit-pro");
+      await mkdir(configDir, { recursive: true });
+      await writeFile(join(configDir, "config.json"), JSON.stringify({ autoRead: false }), "utf-8");
 
-    const { pi, handlers } = makeFakePi();
-    register(pi);
+      const { pi, handlers } = makeFakePi();
+      register(pi);
 
-    const handler = handlers.get("tool_result");
-    expect(handler).toBeDefined();
+      const sessionHandler = handlers.get("session_start");
+      expect(sessionHandler).toBeDefined();
+      await sessionHandler!({}, { getActiveTools: () => [], setActiveTools: () => {}, ui: { notify() {} } });
 
-    const result = await handler!(
-      {
-        toolName: "write",
-        isError: false,
-        input: { path: "test.txt" },
-        content: [],
-      },
-      { cwd: "/tmp" },
-    );
+      const handler = handlers.get("tool_result");
+      expect(handler).toBeDefined();
 
-    expect(result).toBeUndefined();
+      const result = await handler!(
+        {
+          toolName: "write",
+          isError: false,
+          input: { path: "test.txt" },
+          content: [],
+        },
+        { cwd: dir },
+      );
+
+      expect(result).toBeUndefined();
+    });
   });
 
   it("returns nothing for non-write tool results", async () => {
