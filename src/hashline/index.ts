@@ -7,7 +7,6 @@ export {
 	MAX_HASH_LINES,
 	HL_PREFIX_PLUS_RE,
 	HL_PREFIX_MINUS_RE,
-	DIFF_MINUS_RE,
 	HL_BARE_PREFIX_RE,
 	lineHashes,
 	_lineHashesPure,
@@ -32,6 +31,7 @@ export {
 	resEdits,
 	valEdits,
 	stripBarePrefixes,
+	stripDiffPrefixes,
 	fmtMismatch,
 } from "./resolve";
 export {

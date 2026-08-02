@@ -34,11 +34,12 @@ describe("edit input validation", () => {
     );
 	});
 
-	it("rejects diff deletion rows in array form", () => {
+	it("passes through numbered deletion rows as literal content", () => {
 		const toolEdits: HTEdit[] = [
       { hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: ["-1    foo"] },
     ];
-    expect(() => resEdits(toolEdits)).toThrow(/^\[E_INVALID_PATCH\]/);
+    const resolved = resEdits(toolEdits);
+		expect(resolved[0]!.content_lines).toEqual(["-1    foo"]);
 	});
 
 	it("accepts plain literal content unchanged", () => {
@@ -148,5 +149,66 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
     ], hashes);
     expect(result.content).toContain("y".repeat(500));
     expect(result.content).not.toContain("│");
+	});
+});
+
+describe("diff preview rows copied into content", () => {
+	const file = "alpha\nbeta\ngamma\ndelta";
+
+	function applyTool(toolEdits: HTEdit[], precomputedHashes?: string[]) {
+		return applyEdits(file, resEdits(toolEdits), undefined, precomputedHashes);
+	}
+
+	it("strips +HASH│ addition rows with warning", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool([
+      { hash_range_inclusive: [anchor, anchor], content_lines: [`+${hashes[1]!}│### heading`, "real content"] },
+    ], hashes);
+		expect(result.content).toBe("### heading\nreal content\nbeta\ngamma\ndelta");
+		expect(result.warnings?.[0]).toMatch(/Autocorrected edit 0: stripped diff-preview marker/);
+		expect(result.warnings?.[0]).toMatch(/content_lines\[0\]/);
+	});
+
+	it("strips -HASH│ and -   │ deletion rows with warning", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool([
+      { hash_range_inclusive: [anchor, anchor], content_lines: [`-${hashes[1]!}│one`, "-   │two"] },
+    ], hashes);
+		expect(result.content).toBe("one\ntwo\nbeta\ngamma\ndelta");
+		expect(result.warnings?.[0]).toMatch(/content_lines\[0\], content_lines\[1\]/);
+	});
+
+	it("leaves numbered deletion rows as literal content without warning", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool([
+      { hash_range_inclusive: [anchor, anchor], content_lines: ["-1    foo"] },
+    ], hashes);
+		expect(result.content).toBe("-1    foo\nbeta\ngamma\ndelta");
+		expect(result.warnings ?? []).toEqual([]);
+	});
+
+	it("leaves plain +x / -x unified-diff lines as literal content without warning", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool([
+      { hash_range_inclusive: [anchor, anchor], content_lines: ["+added", "-removed"] },
+    ], hashes);
+		expect(result.content).toBe("+added\n-removed\nbeta\ngamma\ndelta");
+		expect(result.warnings ?? []).toEqual([]);
+	});
+
+	it("reports the edit index and content_lines index for each stripped line", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool([
+      { hash_range_inclusive: [anchor, anchor], content_lines: [`+${hashes[1]!}│one`] },
+      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["real", `-${hashes[2]!}│two`] },
+    ], hashes);
+		expect(result.content).toBe("one\nreal\ntwo\ngamma\ndelta");
+		expect(result.warnings?.[0]).toMatch(/edit 0.*content_lines\[0\]/);
+		expect(result.warnings?.[1]).toMatch(/edit 1.*content_lines\[1\]/);
 	});
 });

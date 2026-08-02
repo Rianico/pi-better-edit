@@ -48,7 +48,6 @@ export const HL_PREFIX_PLUS_RE = new RegExp(
 export const HL_PREFIX_MINUS_RE = new RegExp(
 	`^-(?:\\s*${HASH_CLASS}│| {${ANCHOR_LEN}}│)`,
 );
-export const DIFF_MINUS_RE = /^-\s*\d+\s{4}/;
 
 export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
 

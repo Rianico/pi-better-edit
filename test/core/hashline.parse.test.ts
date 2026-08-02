@@ -109,55 +109,25 @@ describe("parseText", () => {
   it("returns empty string as a single empty line for blank content (array input)", () => {
     expect(parseText([""])).toEqual([""]);
   });
-	it("rejects array input that contains HASH| prefixes", () => {
-		expect(() => parseText(["+aB3│foo", "+xYp│bar"])).toThrow(
-			/^\[E_INVALID_PATCH\]/,
-		);
+	it("passes through diff-preview rows verbatim (marker stripping happens in applyEdits)", () => {
+		expect(parseText(["+aB3│foo", "+xYp│bar"])).toEqual(["+aB3│foo", "+xYp│bar"]);
+		expect(parseText([" aB3│keep", "-10    old", " xYp│after"])).toEqual([" aB3│keep", "-10    old", " xYp│after"]);
+		expect(parseText([" aB3│keep", "-   │old", " xYp│after"])).toEqual([" aB3│keep", "-   │old", " xYp│after"]);
+		expect(parseText(["-aB3│old", "- aB3│old"])).toEqual(["-aB3│old", "- aB3│old"]);
 	});
 
-	it("rejects diff-preview hunks with + and context hash prefixes", () => {
-		expect(() =>
-				parseText([" aB3│keep", "+xYp│new", " mNo│after"]),
-		).toThrow(/^\[E_INVALID_PATCH\]/);
-	});
-
-	it("rejects diff-preview deletion rows", () => {
-		expect(() =>
-				parseText([" aB3│keep", "-10    old", " xYp│after"]),
-		).toThrow(/^\[E_INVALID_PATCH\]/);
-	});
-
-	it("rejects padded diff-preview deletion rows (the -   │ format genDiff emits)", () => {
-		expect(() => parseText([" aB3│keep", "-   │old", " xYp│after"])).toThrow(/^\[E_INVALID_PATCH\]/);
-	});
-
-	it("rejects minus-prefixed hash rows", () => {
-		expect(() => parseText(["-aB3│old"])).toThrow(/^\[E_INVALID_PATCH\]/);
-		expect(() => parseText(["- aB3│old"])).toThrow(/^\[E_INVALID_PATCH\]/);
+	it("passes through numbered deletion rows as literal content", () => {
+		expect(parseText(["-10    old"])).toEqual(["-10    old"]);
 	});
 
 	it("accepts literal minus-prefixed content that is not a diff row", () => {
 		expect(parseText(["-   something", "-abc", "- old style"])).toEqual(["-   something", "-abc", "- old style"]);
 	});
 
-  it("rejects string-form rendered diff hunks (string input rejected before prefix check)", () => {
+  it("rejects string-form rendered diff hunks (string input rejected)", () => {
     const input = " aB3│keep\n-10    old\n+xYp│new\n mNo│after";
     expect(() => parseText(input)).toThrow(
       /must be a native JSON array of strings, not a JSON string/,
     );
-  });
-
-  it("clips long offending lines in the E_INVALID_PATCH message", () => {
-    const longLine = `+aB3│${'x'.repeat(500)}`;
-    let caught: Error | undefined;
-    try {
-      parseText([longLine]);
-    } catch (e) {
-      caught = e as Error;
-    }
-    expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/^\[E_INVALID_PATCH\]/);
-    expect(caught!.message).not.toContain("x".repeat(500));
-    expect(caught!.message).toContain("...");
   });
 });

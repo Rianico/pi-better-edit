@@ -3,6 +3,7 @@ import { _lineHashesPure, HASH_SEP } from "./hash";
 import {
 	valEdits,
 	stripBarePrefixes,
+	stripDiffPrefixes,
 	warnUnicodeEsc,
 	fmtMismatch,
 	descEdit,
@@ -246,7 +247,10 @@ export function applyEdits(
 	const noopEdits: NEdit[] = [];
 	const warnings: string[] = [];
 
-	const prefixFixed = stripBarePrefixes(edits, fileHashes, warnings);
+	const prefixFixed = stripDiffPrefixes(
+		stripBarePrefixes(edits, fileHashes, warnings),
+		warnings,
+	);
 
 	const { resolved: initialResolved, mismatches, boundaryWarnings } = valEdits(
 		prefixFixed,

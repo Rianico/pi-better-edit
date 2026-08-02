@@ -1,5 +1,5 @@
 import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty, clipLine } from "../utils";
-import { HL_BARE_PREFIX_RE } from "./hash";
+import { HL_BARE_PREFIX_RE, HL_PREFIX_PLUS_RE, HL_PREFIX_MINUS_RE } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 import { CONTENT_LINES_NOT_STRING_MSG } from "../constants";
 
@@ -240,6 +240,37 @@ export function stripBarePrefixes(
 				: `${matchedCount} of ${stripped.length} stripped hash(es) match current file lines`;
 		warnings.push(
 			`Autocorrected edit ${editIndex}: stripped "HASH│" prefix copied from read output in ${locations} (${evidence}).`
+		);
+		return { ...edit, content_lines: contentLines };
+	});
+	return changed ? corrected : edits;
+}
+
+export function stripDiffPrefixes(
+	edits: HEdit[],
+	warnings: string[],
+): HEdit[] {
+	let changed = false;
+	const corrected = edits.map((edit, editIndex) => {
+		const stripped: number[] = [];
+		const contentLines = edit.content_lines.map((line, lineIndex) => {
+			const plus = line.match(HL_PREFIX_PLUS_RE);
+			if (plus) {
+				stripped.push(lineIndex);
+				return line.slice(plus[0].length);
+			}
+			const minus = line.match(HL_PREFIX_MINUS_RE);
+			if (minus) {
+				stripped.push(lineIndex);
+				return line.slice(minus[0].length);
+			}
+			return line;
+		});
+		if (stripped.length === 0) return edit;
+		changed = true;
+		const locations = stripped.map((i) => `content_lines[${i}]`).join(", ");
+		warnings.push(
+			`Autocorrected edit ${editIndex}: stripped diff-preview marker copied from the diff preview in ${locations}.`
 		);
 		return { ...edit, content_lines: contentLines };
 	});

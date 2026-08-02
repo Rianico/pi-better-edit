@@ -135,9 +135,14 @@ describe("applyEdits — recovery scenarios", () => {
     expect(result.warnings?.[0]).toMatch(/stripped "HASH│" prefix/);
   });
 
-  it("rejects diff preview rows in content_lines", () => {
-    const edits = [{ hash_range_inclusive: ["ZZZ", "ZZZ"] as [string, string], content_lines: ["+ZZZ│new"] }];
-    expect(() => resEdits(edits)).toThrow(/E_INVALID_PATCH/);
+  it("strips diff preview rows in content_lines", async () => {
+    const content = "a\nb\nc";
+    const hashes = await lineHashes(content, home.testPath);
+    const result = applyEdits(content, resEdits([
+      { hash_range_inclusive: [hashes[1]!, hashes[1]!] as [string, string], content_lines: [`+${hashes[1]!}│B`] },
+    ]));
+    expect(result.content).toBe("a\nB\nc");
+    expect(result.warnings?.[0]).toMatch(/stripped diff-preview marker/);
   });
 
   it("warns on unicode escape sequences in content", async () => {
