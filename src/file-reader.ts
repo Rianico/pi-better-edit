@@ -4,7 +4,7 @@ import { lineHashes } from "./hashline";
 import { loadFileKindAndText, type LFile } from "./file-kind";
 import { resolveTarget } from "./fs-write";
 import { toCwd } from "./paths";
-import { detectEnding, toLF, stripBOM } from "./replace-diff";
+import { detectEnding, toLF, stripBOM, type LineEnding } from "./replace-diff";
 import { abortIf } from "./utils";
 import { valKind, valAccess } from "./validation";
 import { visLines } from "./utils";
@@ -13,7 +13,7 @@ export interface NormFile {
   absolutePath: string;
   normalized: string;
   bom: string;
-  originalEnding: "\r\n" | "\n";
+  originalEnding: LineEnding;
   fileHashes: string[];
   hadUtf8DecodeErrors: boolean;
 }

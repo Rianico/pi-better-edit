@@ -207,7 +207,7 @@ describe("auto-read handler", () => {
     });
   });
 
-  it("handles file read errors gracefully (no throw)", async () => {
+  it("returns an auto-read failure notice when the file cannot be read", async () => {
     const { pi, handlers } = makeFakePi();
     register(pi);
 
@@ -219,12 +219,17 @@ describe("auto-read handler", () => {
         toolName: "write",
         isError: false,
         input: { path: "nonexistent.txt" },
-        content: [],
+        content: [{ type: "text", text: "File written." }],
       },
       { cwd: "/tmp" },
     );
 
-    expect(result).toBeUndefined();
+    expect(result).toBeDefined();
+    const content = (result as { content: Array<{ type: string; text: string }> }).content;
+    expect(content).toHaveLength(2);
+    expect(content[0]).toEqual({ type: "text", text: "File written." });
+    expect(content[1].text).toContain("--- Auto-read failed:");
+    expect(content[1].text).toContain("[E_NOT_FOUND]");
   });
 
   it("enables auto-read via env var when session starts with no config file", async () => {

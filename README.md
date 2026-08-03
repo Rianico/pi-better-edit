@@ -66,6 +66,7 @@ Edge cases:
 
 - **Images** (JPEG, PNG, GIF, WebP) are passed through as visual attachments and don't participate in the hashline protocol.
 - **Binary and directory paths** are rejected with a descriptive error.
+- **UTF-16/UTF-32 encoded text** (detected via BOM) is rejected with `[E_NOT_TEXT]` — editing such a file would decode it as `U+FFFD` garbage and rewrite it as corrupted UTF-8.
 - **Empty files** are returned as a single empty-line hash (`HASH│`); use `replace` on that hash to insert content.
 - **BOMs** are stripped for display; **non-UTF-8 bytes** are shown as `U+FFFD` (editing such a file rewrites it as UTF-8, with a warning).
 - **Files over 238,328 lines** are rejected with `[E_FILE_TOO_LARGE]` (see [Hashing](#hashing)).
@@ -120,13 +121,14 @@ Enabled by default. After a successful `write`, `replace`, or `undo_last_replace
 - After `replace` / `undo_last_replace`, the block covers the changed span plus 2 lines of context above and below — the rest of the file keeps its anchors from the persistent store.
 - After `write`, the block dumps from the top of the file. For files over 2000 lines, the dump is truncated with a pagination hint — use `read` with `offset` to continue.
 - Toggle at runtime with `/toggle-auto-read`; the setting persists across sessions.
+- If the auto-read itself fails (e.g. the file was deleted between the operation and the read), a short `--- Auto-read failed: ... ---` notice is appended instead of the anchor block, so the model knows the anchors are missing.
 
 ## Undo
 
 `undo_last_replace` reverts the most recent successful `replace` on a file, restoring the exact previous content — BOM and line endings included — and the previous anchors.
 
 - History is per-file and single-level: only the most recent replace can be reverted.
-- History is in-memory and is lost when the session ends or the extension reloads.
+- History is persisted in the hash store (`~/.config/pi-hashline-edit-pro/hash-store.sqlite`) and survives session restarts; a failed `write` does not clear it.
 - A successful `write` clears the history for that file.
 - Call `read` after an undo to get fresh anchors for follow-up edits.
 - **Safety guard.** If the file was modified or deleted since the last replace, `undo_last_replace` refuses with `[E_UNDO_STALE]` rather than overwriting those changes.
@@ -160,7 +162,7 @@ Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatic
 | `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |
 | `[E_ACCESS]` | The file is not readable or writable. |
-| `[E_NOT_TEXT]` | The path is a directory, binary file, or image; hashline editing only supports text files. |
+| `[E_NOT_TEXT]` | The path is a directory, binary file, image, or UTF-16/UTF-32 encoded text; hashline editing only supports text files. |
 | `[E_UNDO_STALE]` | `undo_last_replace` refused: the file was modified or deleted after the last replace. |
 | `[E_FILE_TOO_LARGE]` | The file exceeds the 238,328-line hashline limit. |
 
@@ -176,7 +178,7 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 
 - **Stale anchors fail, per line.** A hash mismatch means that line's content changed since the last `read`. The error says so and, when only one anchor of a pair is stale, shows the current lines around the still-valid anchor so the range can be re-located without a full re-read. Mismatched anchors are never silently relocated to a "close enough" line — correctness over convenience.
 - **Autocorrection only when the intent is unambiguous**, and always visible: hash-prefix and diff-row stripping produce a warning; the boundary-duplication fix is silent because the duplicate never reaches the file. Literal content is never silently altered when the intent is ambiguous (numbered deletion rows and unified-diff lines are written verbatim).
-- **Byte-exact preservation.** UTF-8 BOMs, CRLF vs LF endings, file permissions, and trailing newlines survive edits and undo.
+- **Byte-exact preservation.** UTF-8 BOMs, CRLF, LF, and CR-only line endings, file permissions, and trailing newlines survive edits and undo.
 - **Atomic and ordered writes.** Files are written via temp-file-then-rename; symlink chains are resolved so the target is updated without replacing the symlink; hard-linked files are updated in place; concurrent edits to the same underlying file serialize through a per-target mutation queue.
 - **One edit per call.** The request shape stays `{path, hash_range_inclusive, content_lines}` from schema through validation to application; there is no batching dialect.
 

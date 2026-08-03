@@ -264,7 +264,15 @@ describe("auto-read after write", () => {
         { cwd },
       );
 
-      expect(writeResult).toBeUndefined();
+      expect(writeResult).toBeDefined();
+      const content = (writeResult as { content: Array<{ type: string; text: string }> }).content;
+      expect(content).toHaveLength(2);
+      expect(content[0]).toEqual({
+        type: "text",
+        text: "Successfully wrote 5 bytes to nonexistent/deeply/nested/file.txt",
+      });
+      expect(content[1].text).toContain("--- Auto-read failed:");
+      expect(content[1].text).toContain("[E_NOT_FOUND]");
     } finally {
       await cleanupCwd(cwd);
     }

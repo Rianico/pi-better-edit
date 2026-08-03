@@ -54,6 +54,26 @@ describe("file kind guards in tools", () => {
     });
   });
 
+  it("edit rejects UTF-16 encoded text to prevent corruption", async () => {
+    const bytes = new Uint8Array([0xff, 0xfe, 0x61, 0x00, 0x62, 0x00, 0x0a, 0x00]);
+    await withTempBytes("utf16.txt", bytes, async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            path: "utf16.txt",
+            hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/UTF-16LE/);
+    });
+  });
+
   it("edit rejects directories with descriptive error", async () => {
     const { withTempSubdir } = await import("../support/fixtures");
     await withTempSubdir("mydir", async ({ cwd }) => {

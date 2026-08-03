@@ -26,6 +26,22 @@ describe("detectEnding", () => {
   it("defaults to LF for empty string", () => {
     expect(detectEnding("")).toBe("\n");
   });
+
+  it("detects lone CR when no LF is present", () => {
+    expect(detectEnding("hello\rworld")).toBe("\r");
+  });
+
+  it("detects lone CR for a single trailing CR", () => {
+    expect(detectEnding("a\r")).toBe("\r");
+  });
+
+  it("prefers CRLF over lone CR when both appear", () => {
+    expect(detectEnding("a\r\nb\rc")).toBe("\r\n");
+  });
+
+  it("defaults to LF when LF appears before any CR", () => {
+    expect(detectEnding("a\nb\rc")).toBe("\n");
+  });
 });
 
 describe("toLF", () => {
@@ -96,6 +112,15 @@ describe("restoreEndings", () => {
   it("preserves content without newlines", () => {
     expect(restoreEndings("hello", "\r\n")).toBe("hello");
     expect(restoreEndings("hello", "\n")).toBe("hello");
+    expect(restoreEndings("hello", "\r")).toBe("hello");
+  });
+
+  it("converts LF back to CR when original used lone CR", () => {
+    expect(restoreEndings("hello\nworld", "\r")).toBe("hello\rworld");
+  });
+
+  it("round-trips lone CR through toLF", () => {
+    expect(restoreEndings(toLF("a\rb\r"), "\r")).toBe("a\rb\r");
   });
 });
 

@@ -15,6 +15,26 @@ const TEXT_TYPES = new Set<string>([
   "application/x-ms-regedit",
 ]);
 
+function detectTextBom(sample: Uint8Array): string | undefined {
+  if (
+    sample.length >= 4 &&
+    sample[0] === 0xff &&
+    sample[1] === 0xfe &&
+    sample[2] === 0x00 &&
+    sample[3] === 0x00
+  ) return "UTF-32LE";
+  if (
+    sample.length >= 4 &&
+    sample[0] === 0x00 &&
+    sample[1] === 0x00 &&
+    sample[2] === 0xfe &&
+    sample[3] === 0xff
+  ) return "UTF-32BE";
+  if (sample.length >= 2 && sample[0] === 0xff && sample[1] === 0xfe) return "UTF-16LE";
+  if (sample.length >= 2 && sample[0] === 0xfe && sample[1] === 0xff) return "UTF-16BE";
+  return undefined;
+}
+
 function isTextType(mimeType: string): boolean {
   return mimeType.startsWith("text/") || TEXT_TYPES.has(mimeType);
 }
@@ -66,6 +86,13 @@ export async function loadFileKindAndText(
     }
 
     const sample = buffer.subarray(0, bytesRead);
+    const textBom = detectTextBom(sample);
+    if (textBom) {
+      return {
+        kind: "binary",
+        description: `${textBom} encoded text`
+      };
+    }
     const detectedMimeType = (await fileTypeFromBuffer(sample))?.mime;
     if (
       detectedMimeType !== undefined &&

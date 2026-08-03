@@ -5,10 +5,15 @@ import {
   HASH_SEP,
 } from "./hashline";
 
-export function detectEnding(content: string): "\r\n" | "\n" {
-  const crlfIdx = content.indexOf("\r\n");
+export type LineEnding = "\r\n" | "\n" | "\r";
+
+export function detectEnding(content: string): LineEnding {
   const lfIdx = content.indexOf("\n");
-  if (lfIdx === -1 || crlfIdx === -1) return "\n";
+  if (lfIdx === -1) {
+    return content.indexOf("\r") >= 0 ? "\r" : "\n";
+  }
+  const crlfIdx = content.indexOf("\r\n");
+  if (crlfIdx === -1) return "\n";
   return crlfIdx < lfIdx ? "\r\n" : "\n";
 }
 
@@ -18,9 +23,11 @@ export function toLF(text: string): string {
 
 export function restoreEndings(
   text: string,
-  ending: "\r\n" | "\n",
+  ending: LineEnding,
 ): string {
-  return ending === "\r\n" ? text.replace(/\n/g, "\r\n") : text;
+  if (ending === "\r\n") return text.replace(/\n/g, "\r\n");
+  if (ending === "\r") return text.replace(/\n/g, "\r");
+  return text;
 }
 
 export function stripBOM(content: string): { bom: string; text: string } {

@@ -10,6 +10,9 @@ import {
   getSnapshot,
   upsertSnapshot,
   deleteSnapshot,
+  upsertUndo,
+  getUndoEntry,
+  deleteUndo,
   pruneMissing,
   type HashStore,
 } from "../../src/hash-store";
@@ -21,6 +24,96 @@ import { getWritableTempRoot } from "../support/fixtures";
 let tmpHome: string;
 beforeAll(async () => {
   await initHasher();
+});
+
+describe("hash-store — undo entries", () => {
+  it("round-trips an undo entry", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      upsertUndo(store, "/a.ts", {
+        content: "old",
+        bom: "\uFEFF",
+        ending: "\r\n",
+        hashes: ["abc", "def"],
+        resultContent: "new",
+      });
+      const entry = getUndoEntry(store, "/a.ts");
+      expect(entry).toEqual({
+        content: "old",
+        bom: "\uFEFF",
+        ending: "\r\n",
+        hashes: ["abc", "def"],
+        resultContent: "new",
+      });
+    });
+  });
+
+  it("returns undefined for a path with no undo entry", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      expect(getUndoEntry(store, "/missing.ts")).toBeUndefined();
+    });
+  });
+
+  it("overwrites the previous entry for the same path", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      upsertUndo(store, "/a.ts", {
+        content: "first",
+        bom: "",
+        ending: "\n",
+        hashes: ["a"],
+        resultContent: "first!",
+      });
+      upsertUndo(store, "/a.ts", {
+        content: "second",
+        bom: "",
+        ending: "\r",
+        hashes: ["b"],
+        resultContent: "second!",
+      });
+      const entry = getUndoEntry(store, "/a.ts");
+      expect(entry!.content).toBe("second");
+      expect(entry!.ending).toBe("\r");
+      expect(entry!.hashes).toEqual(["b"]);
+    });
+  });
+
+  it("deletes an undo entry", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      upsertUndo(store, "/a.ts", {
+        content: "old",
+        bom: "",
+        ending: "\n",
+        hashes: ["x"],
+        resultContent: "new",
+      });
+      deleteUndo(store, "/a.ts");
+      expect(getUndoEntry(store, "/a.ts")).toBeUndefined();
+    });
+  });
+
+  it("treats a row with unparseable hashes as a miss", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      upsertUndo(store, "/a.ts", {
+        content: "old",
+        bom: "",
+        ending: "\n",
+        hashes: ["x"],
+        resultContent: "new",
+      });
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      db.prepare("UPDATE undo SET hashes = ? WHERE path = ?").run("{not json", "/a.ts");
+      db.close();
+      expect(getUndoEntry(store, "/a.ts")).toBeUndefined();
+      const check = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const remaining = check.prepare("SELECT COUNT(*) AS n FROM undo WHERE path = ?").get("/a.ts") as { n: number };
+      check.close();
+      expect(remaining.n).toBe(0);
+    });
+  });
 });
 
 async function withTempHome(run: (home: string) => Promise<void>): Promise<void> {
@@ -254,6 +347,39 @@ describe("hash-store — pruneMissing", () => {
     });
   });
 
+  it("removes undo entries for files that no longer exist", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      upsertUndo(store, "/gone.ts", {
+        content: "old",
+        bom: "",
+        ending: "\n",
+        hashes: ["ZZZ"],
+        resultContent: "new",
+      });
+      await pruneMissing(store);
+      expect(getUndoEntry(store, "/gone.ts")).toBeUndefined();
+    });
+  });
+
+  it("keeps undo entries for files that still exist", async () => {
+    await withTempHome(async (home) => {
+      const existing = join(home, "keep.ts");
+      await writeFile(existing, "keep\n", "utf-8");
+
+      const store = await loadHashStore();
+      upsertUndo(store, existing, {
+        content: "old",
+        bom: "",
+        ending: "\n",
+        hashes: ["KEP"],
+        resultContent: "new",
+      });
+      await pruneMissing(store);
+      expect(getUndoEntry(store, existing)).toBeDefined();
+    });
+  });
+
   it("keeps snapshots for files that still exist", async () => {
     await withTempHome(async (home) => {
       const existing = join(home, "keep.ts");
@@ -427,6 +553,13 @@ describe("hash-store — schema versioning", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       await put(store, "/p.ts", "x\n", ["X"]);
+      upsertUndo(store, "/u.ts", {
+        content: "old",
+        bom: "",
+        ending: "\n",
+        hashes: ["U"],
+        resultContent: "new",
+      });
       shutdownHashStore();
 
       const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
@@ -435,6 +568,7 @@ describe("hash-store — schema versioning", () => {
 
       const reloaded = await loadHashStore();
       expect(getSnapshot(reloaded, "/p.ts", "x\n")).toBeUndefined();
+      expect(getUndoEntry(reloaded, "/u.ts")).toBeUndefined();
 
       const check = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
       const row = check.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined;

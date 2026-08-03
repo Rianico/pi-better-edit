@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, setupIntegrationTest, useTestHome, getText, extractHash } from "../support/fixtures";
+import { withTempFile, withTempBytes, setupIntegrationTest, useTestHome, getText, extractHash } from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -181,6 +181,33 @@ describe("replace tool — end-to-end", () => {
       const content = await readFile(path, "utf-8");
       expect(content).toBe("alpha\r\nBETA\r\ngamma\r\n");
       expect(content).toContain("\r\n");
+    });
+  });
+
+  it("preserves lone-CR line endings after edit", async () => {
+    await withTempBytes("cr.ts", Buffer.from("alpha\rbeta\rgamma\r"), async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const readResult = await readTool.execute("r1", { path: "cr.ts" }, undefined, undefined, ctx);
+      const betaRef = getText(readResult)
+        .split("\n")
+        .find((line: string) => line.includes("│beta"))!
+        .split("│")[0]!;
+
+      await editTool.execute(
+        "e1",
+        {
+          path: "cr.ts",
+          hash_range_inclusive: [betaRef, betaRef],
+          content_lines: ["BETA"],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("alpha\rBETA\rgamma\r");
     });
   });
 

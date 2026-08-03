@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFile, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { lineHashes } from "../../src/hashline";
-import { loadHashStore, getSnapshot } from "../../src/hash-store";
+import { loadHashStore, getSnapshot, shutdownHashStore } from "../../src/hash-store";
+import * as hashStoreModule from "../../src/hash-store";
 import {
   withTempFile,
   setupIntegrationTest,
@@ -234,6 +235,75 @@ describe("undo_last_replace", () => {
     });
   });
 
+  it("undo survives a hash-store shutdown (persisted undo)", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      shutdownHashStore();
+
+      const undoResult = await undo.execute(
+        "u1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(undoResult.isError).toBeFalsy();
+      expect(getText(undoResult)).toMatch(/undone last replace/i);
+
+      const content = await readFile(join(cwd, "sample.ts"), "utf-8");
+      expect(content).toBe("aaa\nbbb\nccc\n");
+    });
+  });
+  it("warns when undo persistence fails but the edit still applies", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      const spy = vi
+        .spyOn(hashStoreModule, "upsertUndo")
+        .mockImplementation(() => {
+          throw new Error("store down");
+        });
+      try {
+        const result = await editTool.execute(
+          "e1",
+          {
+            path: "sample.ts",
+            hash_range_inclusive: [hashes[1]!, hashes[1]!],
+            content_lines: ["BBB"],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(result.content[0].text).toContain("Successfully replaced");
+        expect(result.content[0].text).toContain("Warnings:");
+        expect(result.content[0].text).toContain("Undo history could not be persisted");
+      } finally {
+        spy.mockRestore();
+      }
+
+      const content = await readFile(join(cwd, "sample.ts"), "utf-8");
+      expect(content).toBe("aaa\nBBB\nccc\n");
+    });
+  });
   it("second undo call returns error (undo clears after use)", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);

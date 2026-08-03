@@ -9,6 +9,7 @@ import { constants } from "fs";
 import {
   genDiff,
   restoreEndings,
+  type LineEnding,
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
 import { normReq, normalizeFilePath, tryParseContentLines } from "./replace-normalize";
@@ -86,7 +87,7 @@ interface PipelineResult {
   originalNormalized: string;
   result: string;
   bom: string;
-  originalEnding: "\r\n" | "\n";
+  originalEnding: LineEnding;
   hadUtf8DecodeErrors: boolean;
   warnings: string[];
   noopEdit?: NEdit;
@@ -465,13 +466,18 @@ export function buildToolDef(): ToolDef {
           absolutePath,
           bom + restoreEndings(result, originalEnding),
         );
-        saveUndo(mutationTargetPath, {
+        const undoPersisted = await saveUndo(mutationTargetPath, {
           content: originalNormalized,
           bom,
           originalEnding,
           hashes: originalHashes,
           resultContent: result,
         });
+        if (!undoPersisted) {
+          warnings.push(
+            "Undo history could not be persisted; undo_last_replace will not be available for this edit.",
+          );
+        }
         const updatedSnapshotId = (await fileSnap(absolutePath))
           .snapshotId;
 

@@ -59,7 +59,7 @@ export default function (pi: ExtensionAPI): void {
       const writtenPath = (event.input as Record<string, unknown>)?.path;
       if (typeof writtenPath === "string") {
         try {
-          clearUndo(await resolveTarget(toCwd(writtenPath, ctx.cwd)));
+          await clearUndo(await resolveTarget(toCwd(writtenPath, ctx.cwd)));
         } catch (error) {
           console.error("Failed to clear undo after write:", error);
         }
@@ -108,6 +108,13 @@ export default function (pi: ExtensionAPI): void {
       };
     } catch (error) {
       console.error("Auto-read after write/replace failed:", error);
+      const message = error instanceof Error ? error.message : String(error);
+      return {
+        content: [
+          ...(event.content ?? []),
+          { type: "text", text: `\n\n--- Auto-read failed: ${message} ---` },
+        ],
+      };
     }
   });
 }
