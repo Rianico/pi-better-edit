@@ -101,16 +101,14 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
       }
 
       return withFileMutationQueue(mutationTargetPath, async () => {
-        let currentNormalized: string | undefined;
+        let currentRaw: string | undefined;
         try {
-          const currentRaw = await readFile(mutationTargetPath, "utf-8");
-          const { text: currentStripped } = stripBOM(currentRaw);
-          currentNormalized = toLF(currentStripped);
+          currentRaw = await readFile(mutationTargetPath, "utf-8");
         } catch (error) {
           if (errCode(error) !== "ENOENT") throw error;
         }
 
-        if (currentNormalized === undefined) {
+        if (currentRaw === undefined) {
           return {
             content: [
               {
@@ -122,7 +120,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
             details: {},
           };
         }
-        if (currentNormalized !== undo.resultContent) {
+        if (currentRaw !== undo.bom + restoreEndings(undo.resultContent, undo.originalEnding)) {
           return {
             content: [
               {
@@ -135,6 +133,8 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
           };
         }
 
+        const { text: currentStripped } = stripBOM(currentRaw);
+        const currentNormalized = toLF(currentStripped);
         const diffResult = genDiff(undo.content, currentNormalized, 0);
         const linesAddedByReplace = cntDiff(diffResult.diff, "+");
         const linesRemovedByReplace = cntDiff(diffResult.diff, "-");

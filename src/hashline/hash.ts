@@ -143,6 +143,7 @@ export async function lineHashes(
   store?: HashStore,
   persist?: boolean,
 ): Promise<string[]> {
+  await initHasher();
   if (!path) {
     return _lineHashesPure(content);
   }

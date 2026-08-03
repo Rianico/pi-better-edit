@@ -93,7 +93,7 @@ Exactly one edit per call, with `hash_range_inclusive` and `content_lines` at th
 Behavior:
 
 - **Validation before any file I/O.** Unknown fields, missing fields, wrong types, and malformed anchors are rejected with `[E_BAD_SHAPE]` / `[E_BAD_REF]`. The edit applies against the pre-edit snapshot, so all hashes in the request come from one consistent file state.
-- **Rejected dialects.** The `changes` array dialect and the legacy `oldText`/`newText` dialect are rejected with `[E_BAD_SHAPE]` / `[E_LEGACY_SHAPE]`; the error tells you to send `{hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}`.
+- **Rejected dialects.** The `changes` array dialect and the legacy `oldText`/`newText` dialect are rejected with `[E_LEGACY_SHAPE]`; the error tells you to send `{hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}`.
 - **Autocorrections** (all accompanied by a warning unless noted):
   - A `HASH│` prefix accidentally left on a `content_lines` entry is stripped.
   - Diff-preview rows (`+HASH│…`, `-HASH│…`, `-   │…`) pasted into `content_lines` have their markers stripped. Numbered deletion rows (`-1    foo`) and unified-diff lines are written literally — never silently altered.
@@ -157,7 +157,7 @@ Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatic
 | `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
 | `[E_INVALID_PATCH]` | A `content_lines` entry is a diff-preview row (`+HASH│`, `-HASH│`, `-   │`) — the marker is stripped automatically with a warning. |
 | `[E_BARE_HASH_PREFIX]` | A `content_lines` entry starts with a hash-like `HASH│` prefix — the prefix is stripped automatically with a warning. |
-| `[E_LEGACY_SHAPE]` | The request uses the unsupported `oldText`/`newText` dialect. |
+| `[E_LEGACY_SHAPE]` | The request uses an unsupported dialect: `oldText`/`newText` fields or a `changes` array. |
 | `[E_BAD_OP]` | Range start line is after range end line — the pair is swapped automatically with a warning. |
 | `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |

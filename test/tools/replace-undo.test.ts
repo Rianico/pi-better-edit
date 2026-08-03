@@ -405,6 +405,54 @@ describe("undo_last_replace", () => {
     });
   });
 
+  it("refuses to undo when only line endings changed after the replace", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        undefined, undefined, ctx,
+      );
+
+      await writeFile(join(cwd, "sample.ts"), "aaa\r\nBBB\r\nccc\r\n", "utf-8");
+
+      const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(undoResult.isError).toBe(true);
+      expect(getText(undoResult)).toMatch(/E_UNDO_STALE/);
+
+      const content = await readFile(join(cwd, "sample.ts"), "utf-8");
+      expect(content).toBe("aaa\r\nBBB\r\nccc\r\n");
+    });
+  });
+
+  it("refuses to undo when only the BOM changed after the replace", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        undefined, undefined, ctx,
+      );
+
+      await writeFile(join(cwd, "sample.ts"), "\uFEFFaaa\nBBB\nccc\n", "utf-8");
+
+      const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(undoResult.isError).toBe(true);
+      expect(getText(undoResult)).toMatch(/E_UNDO_STALE/);
+
+      const content = await readFile(join(cwd, "sample.ts"), "utf-8");
+      expect(content).toBe("\uFEFFaaa\nBBB\nccc\n");
+    });
+  });
+
   it("refuses to undo when the file was deleted after the replace", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);

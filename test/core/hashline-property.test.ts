@@ -245,3 +245,61 @@ describe("property: pure hashing uniqueness", () => {
     }
   }, 60_000);
 });
+
+describe("property: chained stable mapping at every step", () => {
+  it("keeps mapping invariants across sequential edits with mapStableHashes per step", async () => {
+    for (let iter = 0; iter < 60; iter++) {
+      const rnd = mulberry32(iter * 1000003 + 17);
+      const chainPath = `${home.testPath}-chain-${iter}`;
+      let content = randContent(rnd);
+      let lines = splitLines(content);
+      let hashes = await lineHashes(content, chainPath);
+      let edited = 0;
+      for (let step = 0; step < 8 && edited < 6; step++) {
+        const span = randSpan(rnd, lines, [], !content.endsWith("\n"));
+        if (!span) break;
+        const edit = resEdit({
+          hash_range_inclusive: [hashes[span.s - 1]!, hashes[span.e - 1]!],
+          content_lines: span.repl,
+        });
+        let result;
+        try {
+          result = applyEdit(content, edit, undefined, hashes, chainPath);
+        } catch {
+          continue;
+        }
+        if (result.content === content) continue;
+        expect(result.autoFixes).toBeUndefined();
+        let expected = [
+          ...lines.slice(0, span.s - 1),
+          ...span.repl,
+          ...lines.slice(span.e),
+        ].join("\n");
+        if (content.endsWith("\n")) expected += "\n";
+        expect(result.content).toBe(expected);
+        const removedHashes = new Set(hashes.slice(span.s - 1, span.e));
+        const nextHashes = await lineHashes(expected, chainPath, {
+          content,
+          hashes,
+          removedHashes,
+        });
+        expect(nextHashes).toHaveLength(splitLines(expected).length);
+        assertMappingInvariants(
+          lines,
+          hashes,
+          [span],
+          splitLines(expected),
+          nextHashes,
+        );
+        content = expected;
+        lines = splitLines(expected);
+        hashes = nextHashes;
+        edited++;
+      }
+      if (edited > 0) {
+        const reloaded = await lineHashes(content, chainPath);
+        expect(reloaded).toEqual(hashes);
+      }
+    }
+  }, 120_000);
+});

@@ -101,7 +101,7 @@ interface PipelineResult {
 
 const ROOT_KS = new Set(["path", "content_lines", "hash_range_inclusive"]);
 
-const LEGACY_KS = ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines"];
+const LEGACY_KS = ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines", "changes"];
 
 export function assertNoLegacyKeys(request: unknown): void {
   if (!isRec(request)) return;
@@ -251,11 +251,6 @@ export async function compPreview(
 ): Promise<RPreview> {
   try {
     const normalized = normReq(request);
-    if (isRec(request) && Array.isArray(request.changes)) {
-      return {
-        error: `[E_BAD_SHAPE] The replace tool does not accept a "changes" array. Send hash_range_inclusive and content_lines at the top level (one edit per call).`
-      };
-    }
     assertReq(normalized);
     const { path, originalNormalized, result, resultHashes } = await execPipeline(
       normalized,
@@ -410,8 +405,9 @@ export function buildToolDef(): ToolDef {
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const canonical = normReq(params);
+      assertReq(canonical);
 
-      const normalizedParams = canonical as ReqParams;
+      const normalizedParams = canonical;
       const path = normalizedParams.path;
       const absolutePath = toCwd(path, ctx.cwd);
       const mutationTargetPath = await resolveTarget(absolutePath);

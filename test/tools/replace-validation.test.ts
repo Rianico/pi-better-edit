@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertReq } from "../../src/replace";
+import { assertReq, buildToolDef } from "../../src/replace";
 import { withTempFile, makeFakePiRegistry } from "../support/fixtures";
 import register from "../../index";
 
@@ -50,9 +50,9 @@ describe("assertReq", () => {
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
-	it("throws for a changes array (unsupported dialect)", () => {
+	it("throws E_LEGACY_SHAPE for a changes array (unsupported dialect)", () => {
 		expect(() => assertReq({ path: "test.txt", changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }] }))
-			.toThrow("[E_BAD_SHAPE]");
+			.toThrow("[E_LEGACY_SHAPE]");
 	});
 
 	it("throws for missing path", () => {
@@ -105,8 +105,8 @@ describe("legacy dialect rejection in the execution path", () => {
 		const tool = getTool("replace");
 		expect(() => tool.prepareArguments({ path: "test.txt", oldText: "a", newText: "b" })).toThrow(/^\[E_LEGACY_SHAPE\]/);
 		expect(() => tool.prepareArguments({ path: "test.txt", old_text: "a" })).toThrow(/^\[E_LEGACY_SHAPE\]/);
+		expect(() => tool.prepareArguments({ path: "test.txt", changes: [] })).toThrow(/^\[E_LEGACY_SHAPE\]/);
 	});
-
 	it("execute rejects legacy dialect with E_LEGACY_SHAPE before schema validation", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
 			const { pi, getTool } = makeFakePiRegistry();
@@ -114,6 +114,15 @@ describe("legacy dialect rejection in the execution path", () => {
 			const tool = getTool("replace");
 			await expect(
 				tool.execute("e1", { path: "sample.ts", oldText: "aaa", newText: "bbb" }, undefined, undefined, { cwd } as any),
+			).rejects.toThrow(/^\[E_LEGACY_SHAPE\]/);
+		});
+	});
+
+	it("raw execute rejects a changes array with E_LEGACY_SHAPE before any file I/O", async () => {
+		await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
+			const tool = buildToolDef();
+			await expect(
+				tool.execute("e1", { path: "sample.ts", changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }] }, undefined, undefined, { cwd } as any),
 			).rejects.toThrow(/^\[E_LEGACY_SHAPE\]/);
 		});
 	});

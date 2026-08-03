@@ -78,7 +78,7 @@ describe("compPreview", () => {
         cwd,
       );
       expect(preview).toHaveProperty("error");
-      expect((preview as { error: string }).error).toMatch(/changes/i);
+      expect((preview as { error: string }).error).toMatch(/^\[E_LEGACY_SHAPE\]/);
     });
   });
 
@@ -163,7 +163,7 @@ describe("renderCall preview", () => {
 
       await awaitPreview(harness);
       expect(harness.state.preview).toHaveProperty("error");
-      expect((harness.state.preview as { error: string }).error).toMatch(/changes/);
+      expect((harness.state.preview as { error: string }).error).toMatch(/^\[E_LEGACY_SHAPE\]/);
     });
   });
 });

@@ -9,7 +9,7 @@ let hasher: Hasher | null = null;
 
 export function getH(): Hasher {
 	if (hasher) return hasher;
-	throw new Error("xxhash-wasm not initialized yet. This should not happen.");
+	throw new Error("xxhash-wasm hasher not initialized; await initHasher() before calling hashline APIs.");
 }
 
 const hasherP: Promise<Hasher> = xxhash().then((h) => {
