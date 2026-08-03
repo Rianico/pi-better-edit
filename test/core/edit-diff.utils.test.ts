@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { detectEnding, toLF, restoreEndings, stripBOM, genDiff } from "../../src/replace-diff";
-import { _lineHashesPure } from "../../src/hashline";
+import { _lineHashesPure, initHasher } from "../../src/hashline";
+
+beforeAll(async () => {
+  await initHasher();
+});
 
 describe("detectEnding", () => {
   it("detects CRLF when \\r\\n appears first", () => {
