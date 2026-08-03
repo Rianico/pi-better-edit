@@ -48,10 +48,19 @@ export function useTestHome(): { testPath: string } {
   return state;
 }
 
-async function freshCwd(): Promise<string> {
+export function withHome(home: string | undefined): () => void {
+  const previousHome = process.env.HOME;
+  if (home === undefined) delete process.env.HOME;
+  else process.env.HOME = home;
+  return () => {
+    if (previousHome === undefined) delete process.env.HOME;
+    else process.env.HOME = previousHome;
+  };
+}
+
+async function freshCwd(): Promise<{ cwd: string; restoreHome: () => void }> {
   const cwd = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-test-"));
-  process.env.HOME = cwd;
-  return cwd;
+  return { cwd, restoreHome: withHome(cwd) };
 }
 
 export async function withTempFile(
@@ -59,7 +68,7 @@ export async function withTempFile(
   content: string,
   run: (args: { cwd: string; path: string }) => Promise<void>,
 ): Promise<void> {
-  const cwd = await freshCwd();
+  const { cwd, restoreHome } = await freshCwd();
   const path = join(cwd, name);
   try {
     await writeFile(path, content, "utf-8");
@@ -67,6 +76,7 @@ export async function withTempFile(
   } finally {
     shutdownHashStore();
     await rm(cwd, { recursive: true, force: true });
+    restoreHome();
   }
 }
 
@@ -75,7 +85,7 @@ export async function withTempBytes(
   bytes: Uint8Array,
   run: (args: { cwd: string; path: string }) => Promise<void>,
 ): Promise<void> {
-  const cwd = await freshCwd();
+  const { cwd, restoreHome } = await freshCwd();
   const path = join(cwd, name);
   try {
     await writeFile(path, bytes);
@@ -83,6 +93,7 @@ export async function withTempBytes(
   } finally {
     shutdownHashStore();
     await rm(cwd, { recursive: true, force: true });
+    restoreHome();
   }
 }
 
@@ -90,7 +101,7 @@ export async function withTempSubdir(
   name: string,
   run: (args: { cwd: string; path: string }) => Promise<void>,
 ): Promise<void> {
-  const cwd = await freshCwd();
+  const { cwd, restoreHome } = await freshCwd();
   const path = join(cwd, name);
   try {
     await mkdir(path, { recursive: true });
@@ -98,6 +109,7 @@ export async function withTempSubdir(
   } finally {
     shutdownHashStore();
     await rm(cwd, { recursive: true, force: true });
+    restoreHome();
   }
 }
 
@@ -106,12 +118,13 @@ export async function withTempDir(
   run: (dir: string) => Promise<void>,
 ): Promise<void> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), prefix));
-  process.env.HOME = dir;
+  const restoreHome = withHome(dir);
   try {
     await run(dir);
   } finally {
     shutdownHashStore();
     await rm(dir, { recursive: true, force: true });
+    restoreHome();
   }
 }
 

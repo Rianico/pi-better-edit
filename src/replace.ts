@@ -165,6 +165,7 @@ function countLineChanges(
   edit: HEdit,
   originalHashes: string[],
   isNoop: boolean,
+  removedAutoFixes: number,
 ): { totalAddedLines: number; totalRemovedLines: number } {
   if (isNoop) return { totalAddedLines: 0, totalRemovedLines: 0 };
   let totalRemovedLines = 0;
@@ -173,7 +174,10 @@ function countLineChanges(
   if (startLine >= 0 && endLine >= 0) {
     totalRemovedLines = Math.abs(endLine - startLine) + 1;
   }
-  return { totalAddedLines: edit.content_lines.length, totalRemovedLines };
+  return {
+    totalAddedLines: Math.max(0, edit.content_lines.length - removedAutoFixes),
+    totalRemovedLines,
+  };
 }
 
 export async function execPipeline(
@@ -219,7 +223,7 @@ export async function execPipeline(
   const warnings = [...(anchorResult.warnings ?? [])];
 
   const { totalAddedLines, totalRemovedLines } = countLineChanges(
-    edit, originalHashes, isNoop,
+    edit, originalHashes, isNoop, anchorResult.autoFixes?.length ?? 0,
   );
 
   return {

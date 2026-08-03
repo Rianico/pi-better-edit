@@ -32,6 +32,38 @@ describe("boundary duplication auto-fix", () => {
     });
   });
 
+  it("reports accurate added-line counts when the boundary-dup fix removes a line", async () => {
+    const file = "function foo() {\n  const x = 1;\n  return x;\n}\n";
+    await withTempFile("sample.ts", file, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const lines1 = getText(read1).split("\n");
+      const line2Hash = extractHash(lines1.find(l => l.includes("│  const x = 1;"))!);
+      const line3Hash = extractHash(lines1.find(l => l.includes("│  return x;"))!);
+
+      const editResult = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          hash_range_inclusive: [line2Hash, line3Hash],
+          content_lines: ["  const y = 2;", "  return y;", "}"],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(editResult.content[0].text).toContain("Added 2 line(s), removed 2 line(s).");
+      expect(editResult.content[0].text).not.toContain("Added 3 line(s)");
+      expect(editResult.details?.metrics?.added_lines).toBe(2);
+      expect(editResult.details?.metrics?.removed_lines).toBe(2);
+
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n");
+    });
+  });
+
   it("trailing });: auto-fix strips duplicate, file is correct after one edit", async () => {
     const file = 'app.get("/api", (req, res) => {\n  const data = fetchData();\n  res.json(data);\n});\n';
     await withTempFile("server.ts", file, async ({ cwd, path }) => {

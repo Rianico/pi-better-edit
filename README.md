@@ -72,6 +72,8 @@ Edge cases:
 
 ## The `replace` tool
 
+The built-in `edit` tool is disabled — `replace` is the only edit path; call it with the hash anchors from `read` output.
+
 Exactly one edit per call, with `hash_range_inclusive` and `content_lines` at the top level of the request:
 
 ```json

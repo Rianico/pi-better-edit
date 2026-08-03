@@ -1,15 +1,18 @@
-import { describe, expect, it } from "vitest";
+import { afterAll, describe, expect, it } from "vitest";
 import { mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { shutdownHashStore } from "../../src/hash-store";
-import { makeTempDir } from "../support/fixtures";
+import { makeTempDir, withHome } from "../support/fixtures";
 
 async function cleanupCwd(cwd: string): Promise<void> {
   shutdownHashStore();
   await rm(cwd, { recursive: true, force: true });
 }
 
+const restoreHome = withHome(process.env.HOME);
+
+afterAll(restoreHome);
 
 type ToolResultHandler = (
   event: {
