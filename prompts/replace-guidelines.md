@@ -1,4 +1,3 @@
-- `replace`: sends exactly one edit per call — hash_range_inclusive and content_lines at the top level of the request, not inside a changes array.
 - `replace`: hash_range_inclusive must use only anchors from the most recent read of the same file.
 - `replace`: content_lines is a native JSON array of strings — never a serialized JSON string. When copying a line from read output, remove its HASH│ prefix and keep the leading whitespace exactly as shown.
 - `replace`: minimize the replaced range — anchor only the lines that actually change; for insertions use a single-line range (e.g. the line after the insertion point) instead of a whole block, so fewer unchanged lines must be reproduced byte-exact.
