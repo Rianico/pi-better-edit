@@ -62,6 +62,8 @@ Optional parameters:
 
 Paged output ends with a continuation hint, e.g. `[Showing lines 1-50 of 120. Use offset=51 to continue.]`.
 
+Lines up to 200KB are displayed in full; larger lines are replaced by a marker with a bash inspection hint (`sed -n 'Np' <path> | head -c 204800`) since hash anchors require full lines.
+
 Edge cases:
 
 - **Images** (JPEG, PNG, GIF, WebP) are passed through as visual attachments and don't participate in the hashline protocol.
@@ -120,6 +122,7 @@ Enabled by default. After a successful `write`, `replace`, or `undo_last_replace
 
 - After `replace` / `undo_last_replace`, the block covers the changed span plus 2 lines of context above and below — the rest of the file keeps its anchors from the persistent store.
 - After `write`, the block dumps from the top of the file. For files over 2000 lines, the dump is truncated with a pagination hint — use `read` with `offset` to continue.
+- Auto-read keeps a 50KB display budget: lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
 - Toggle at runtime with `/toggle-auto-read`; the setting persists across sessions.
 - If the auto-read itself fails (e.g. the file was deleted between the operation and the read), a short `--- Auto-read failed: ... ---` notice is appended instead of the anchor block, so the model knows the anchors are missing.
 

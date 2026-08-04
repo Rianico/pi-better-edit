@@ -350,4 +350,32 @@ describe("auto-read handler", () => {
       expect(text).not.toContain("│line 10");
     });
   });
+
+  it("does not auto-display lines over 50KB even though read allows 200KB lines", async () => {
+    await withTempDir("auto-read-big-line-", async (dir) => {
+      const filePath = join(dir, "big.txt");
+      const big = "Q".repeat(60_000);
+      await writeFile(filePath, `${big}\nsmall\n`, "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+
+      const handler = handlers.get("tool_result");
+      const result = await handler!(
+        {
+          toolName: "write",
+          isError: false,
+          input: { path: "big.txt" },
+          content: [{ type: "text", text: "File written." }],
+        },
+        { cwd: dir },
+      );
+
+      const text = (result as { content: Array<{ type: string; text: string }> }).content[1].text;
+      expect(text).toContain("│small");
+      expect(text).not.toContain("│Q");
+      expect(text).toContain("exceeds 50.0KB");
+      expect(text).toContain("sed -n '1p'");
+    });
+  });
 });

@@ -1,4 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { initHasher } from "./src/hashline";
 import { regReplace } from "./src/replace";
 import { regReplaceUndo, clearUndo } from "./src/replace-undo";
@@ -98,6 +99,7 @@ export default function (pi: ExtensionAPI): void {
         { offset, limit },
         fileHashes,
         absolutePath,
+        DEFAULT_MAX_BYTES,
       );
 
       return {
