@@ -117,7 +117,7 @@ describe("undo-store", () => {
         hashes: ["abc"],
         resultContent: "new",
       });
-      expect(ok).toBe(false);
+      expect(ok.persisted).toBe(false);
     } finally {
       spy.mockRestore();
     }

@@ -16,6 +16,7 @@ export type RRState = {
 	argsKey?: string;
 	preview?: RPreview;
 	previewGeneration?: number;
+	previewTimer?: ReturnType<typeof setTimeout>;
 };
 
 export function getPreviewInput(

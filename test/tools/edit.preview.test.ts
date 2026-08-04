@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { lineHashes } from "../../src/hashline";
 import { compPreview } from "../../src/replace";
 import register from "../../index";
@@ -164,6 +164,40 @@ describe("renderCall preview", () => {
       await awaitPreview(harness);
       expect(harness.state.preview).toHaveProperty("error");
       expect((harness.state.preview as { error: string }).error).toMatch(/^\[E_LEGACY_SHAPE\]/);
+    });
+  });
+
+  it("debounces preview computation until args settle", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { pi, getTool } = makeFakePiRegistry();
+      register(pi);
+      const tool = getTool("replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      vi.useFakeTimers();
+      try {
+        const harness = makeHarness(cwd);
+        tool.renderCall(
+          { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+          harness.theme,
+          harness.context,
+        );
+        expect(harness.state.preview).toBeUndefined();
+        tool.renderCall(
+          { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["CCC"] },
+          harness.theme,
+          harness.context,
+        );
+        await vi.advanceTimersByTimeAsync(149);
+        expect(harness.state.preview).toBeUndefined();
+        const previewP = harness.invalidated;
+        await vi.advanceTimersByTimeAsync(1);
+        await previewP;
+        expect(harness.state.preview).toHaveProperty("diff");
+        expect((harness.state.preview as { diff: string }).diff).toContain("CCC");
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });

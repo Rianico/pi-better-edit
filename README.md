@@ -132,6 +132,7 @@ Enabled by default. After a successful `write`, `replace`, or `undo_last_replace
 
 - History is per-file and single-level: only the most recent replace can be reverted.
 - History is persisted in the hash store (`~/.config/pi-hashline-edit-pro/hash-store.sqlite`) and survives session restarts; a failed `write` does not clear it.
+- **Undo is a precondition, not a convenience.** The undo record is persisted *before* the edit is written; if it cannot be persisted, the `replace` is refused with `[E_UNDO_UNAVAILABLE]` and the file is not touched, so every applied edit is undoable. If the file write itself then fails, the previous undo record is restored, so a refused edit never destroys earlier undo history.
 - A successful `write` clears the history for that file.
 - Call `read` after an undo to get fresh anchors for follow-up edits.
 - **Safety guard.** If the file was modified or deleted since the last replace, `undo_last_replace` refuses with `[E_UNDO_STALE]` rather than overwriting those changes.
@@ -167,6 +168,7 @@ Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatic
 | `[E_ACCESS]` | The file is not readable or writable. |
 | `[E_NOT_TEXT]` | The path is a directory, binary file, image, or UTF-16/UTF-32 encoded text; hashline editing only supports text files. |
 | `[E_UNDO_STALE]` | `undo_last_replace` refused: the file was modified or deleted after the last replace. |
+| `[E_UNDO_UNAVAILABLE]` | Undo history could not be persisted to the hash store; the `replace` was refused and the file was left unchanged. |
 | `[E_FILE_TOO_LARGE]` | The file exceeds the 238,328-line hashline limit. |
 
 ## Hashing
@@ -184,6 +186,14 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 - **Byte-exact preservation.** UTF-8 BOMs, CRLF, LF, and CR-only line endings, file permissions, and trailing newlines survive edits and undo.
 - **Atomic and ordered writes.** Files are written via temp-file-then-rename; symlink chains are resolved so the target is updated without replacing the symlink; hard-linked files are updated in place; concurrent edits to the same underlying file serialize through a per-target mutation queue.
 - **One edit per call.** The request shape stays `{path, hash_range_inclusive, content_lines}` from schema through validation to application; there is no batching dialect.
+
+## Troubleshooting
+
+- **Stale anchors.** `[E_STALE_ANCHOR]` / `[E_AMBIGUOUS_ANCHOR]` mean the file changed since the anchors were read, or an earlier `read` never happened. Call `read` for fresh anchors and retry.
+- **Reset the hash store.** Anchors live in `~/.config/pi-hashline-edit-pro/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit pi, delete those three files, and the store is rebuilt on the next session. Anchor history is lost, but no project files are touched.
+- **Corrupt store.** If the store fails its health check it is renamed to `hash-store.sqlite.corrupt-<timestamp>` (plus `-wal`/`-shm` variants) and rebuilt automatically; the quarantined files can be deleted once a healthy store exists.
+- **Legacy migration.** On first run after upgrading from an older version, the previous `hash-store.json` is imported once and renamed to `hash-store.json.bak`, which can be deleted.
+- **`[E_UNDO_UNAVAILABLE]`.** The edit was refused because the undo record could not be written — check disk space and that the config directory is writable, then retry.
 
 ## Development
 

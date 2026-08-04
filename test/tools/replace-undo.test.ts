@@ -4,6 +4,8 @@ import { join } from "path";
 import { lineHashes } from "../../src/hashline";
 import { loadHashStore, getSnapshot, shutdownHashStore } from "../../src/hash-store";
 import * as hashStoreModule from "../../src/hash-store";
+import * as fsWriteModule from "../../src/fs-write";
+import * as replaceUndoModule from "../../src/replace-undo";
 import {
   withTempFile,
   setupIntegrationTest,
@@ -270,7 +272,7 @@ describe("undo_last_replace", () => {
       expect(content).toBe("aaa\nbbb\nccc\n");
     });
   });
-  it("warns when undo persistence fails but the edit still applies", async () => {
+  it("refuses the edit when undo persistence fails, leaving the file unchanged", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const editTool = getTool("replace");
@@ -282,26 +284,175 @@ describe("undo_last_replace", () => {
           throw new Error("store down");
         });
       try {
-        const result = await editTool.execute(
-          "e1",
-          {
-            path: "sample.ts",
-            hash_range_inclusive: [hashes[1]!, hashes[1]!],
-            content_lines: ["BBB"],
-          },
-          undefined,
-          undefined,
-          ctx,
-        );
-        expect(result.content[0].text).toContain("Successfully replaced");
-        expect(result.content[0].text).toContain("Warnings:");
-        expect(result.content[0].text).toContain("Undo history could not be persisted");
+        await expect(
+          editTool.execute(
+            "e1",
+            {
+              path: "sample.ts",
+              hash_range_inclusive: [hashes[1]!, hashes[1]!],
+              content_lines: ["BBB"],
+            },
+            undefined,
+            undefined,
+            ctx,
+          ),
+        ).rejects.toThrow(/E_UNDO_UNAVAILABLE/);
       } finally {
         spy.mockRestore();
       }
 
       const content = await readFile(join(cwd, "sample.ts"), "utf-8");
-      expect(content).toBe("aaa\nBBB\nccc\n");
+      expect(content).toBe("aaa\nbbb\nccc\n");
+
+      const retry = await editTool.execute(
+        "e2",
+        {
+          path: "sample.ts",
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(retry.content[0].text).toContain("Successfully replaced");
+    });
+  });
+  it("restores the previous undo record when the file write fails", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      const first = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(first.content[0].text).toContain("Successfully replaced");
+
+      const spy = vi
+        .spyOn(fsWriteModule, "writeAtomic")
+        .mockRejectedValueOnce(new Error("disk full"));
+      try {
+        await expect(
+          editTool.execute(
+            "e2",
+            {
+              path: "sample.ts",
+              hash_range_inclusive: [hashes[2]!, hashes[2]!],
+              content_lines: ["CCC"],
+            },
+            undefined,
+            undefined,
+            ctx,
+          ),
+        ).rejects.toThrow("disk full");
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe("aaa\nBBB\nccc\n");
+
+      const undone = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(undone.isError).toBeFalsy();
+      expect(getText(undone)).toContain("Undone last replace");
+      expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe("aaa\nbbb\nccc\n");
+    });
+  });
+  it("clears the new undo record when the file write fails and there was no previous undo", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      const spy = vi
+        .spyOn(fsWriteModule, "writeAtomic")
+        .mockRejectedValueOnce(new Error("disk full"));
+      try {
+        await expect(
+          editTool.execute(
+            "e1",
+            {
+              path: "sample.ts",
+              hash_range_inclusive: [hashes[1]!, hashes[1]!],
+              content_lines: ["BBB"],
+            },
+            undefined,
+            undefined,
+            ctx,
+          ),
+        ).rejects.toThrow("disk full");
+      } finally {
+        spy.mockRestore();
+      }
+
+      const second = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(second.isError).toBe(true);
+      expect(getText(second)).toMatch(/no undo history/i);
+    });
+  });
+  it("restores the previous undo record when the edit is aborted after the undo record is persisted", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      const first = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          hash_range_inclusive: [hashes[1]!, hashes[1]!],
+          content_lines: ["BBB"],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(first.content[0].text).toContain("Successfully replaced");
+
+      const controller = new AbortController();
+      const realSaveUndo = replaceUndoModule.saveUndo;
+      const spy = vi
+        .spyOn(replaceUndoModule, "saveUndo")
+        .mockImplementationOnce(async (path, entry) => {
+          const result = await realSaveUndo(path, entry);
+          controller.abort();
+          return result;
+        });
+      try {
+        await expect(
+          editTool.execute(
+            "e2",
+            {
+              path: "sample.ts",
+              hash_range_inclusive: [hashes[2]!, hashes[2]!],
+              content_lines: ["CCC"],
+            },
+            controller.signal,
+            undefined,
+            ctx,
+          ),
+        ).rejects.toThrow("Operation aborted");
+      } finally {
+        spy.mockRestore();
+      }
+
+      expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe("aaa\nBBB\nccc\n");
+
+      const undone = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(undone.isError).toBeFalsy();
+      expect(getText(undone)).toContain("Undone last replace");
+      expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
   });
   it("second undo call returns error (undo clears after use)", async () => {
@@ -402,6 +553,10 @@ describe("undo_last_replace", () => {
 
       const content = await readFile(join(cwd, "sample.ts"), "utf-8");
       expect(content).toBe("aaa\nEXTERNAL\nccc\n");
+
+      const second = await undo.execute("u2", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(second.isError).toBe(true);
+      expect(getText(second)).toMatch(/no undo history/i);
     });
   });
 
@@ -472,6 +627,10 @@ describe("undo_last_replace", () => {
       expect(undoResult.isError).toBe(true);
       expect(getText(undoResult)).toMatch(/E_UNDO_STALE/);
       expect(getText(undoResult)).toMatch(/no longer exists/i);
+
+      const second = await undo.execute("u2", { path: "sample.ts" }, undefined, undefined, ctx);
+      expect(second.isError).toBe(true);
+      expect(getText(second)).toMatch(/no undo history/i);
     });
   });
 });

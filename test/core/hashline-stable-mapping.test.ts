@@ -549,4 +549,20 @@ describe("mapStableHashes — nearest-candidate selection", () => {
     const survivors = result.filter((hash) => !removedHashes.has(hash));
     expect(survivors).toHaveLength(1_250);
   }, 120_000);
+
+  it("keeps an untouched line's hash when the replacement contains identical content nearer to its old position", async () => {
+    const oldContent = ["a", "b", "c", "}", "d", "e"].join("\n");
+    const oldHashes = await lineHashes(oldContent, home.testPath);
+    const untouchedHash = oldHashes[3]!;
+    const newContent = ["}", "x", "y", "z", "w", "v", "}", "d", "e"].join("\n");
+
+    const result = await lineHashes(newContent, home.testPath, {
+      content: oldContent,
+      hashes: oldHashes,
+      removedHashes: new Set([oldHashes[0]!, oldHashes[1]!, oldHashes[2]!]),
+    });
+
+    expect(result[6]).toBe(untouchedHash);
+    expect(result[0]).not.toBe(untouchedHash);
+  });
 });

@@ -99,6 +99,8 @@ interface PipelineResult {
   totalRemovedLines: number;
 }
 
+const PREVIEW_DEBOUNCE_MS = 150;
+
 const ROOT_KS = new Set(["path", "content_lines", "hash_range_inclusive"]);
 
 const LEGACY_KS = ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines", "changes"];
@@ -318,12 +320,20 @@ export function buildToolDef(): ToolDef {
     renderShell: "default",
     renderCall(args, theme, context) {
       const previewInput = getPreviewInput(args);
+      const cancelPendingPreview = () => {
+        if (context.state.previewTimer) {
+          clearTimeout(context.state.previewTimer);
+          context.state.previewTimer = undefined;
+        }
+      };
       if (context.executionStarted) {
+        cancelPendingPreview();
         context.state.argsKey = undefined;
         context.state.preview = undefined;
         context.state.previewGeneration =
           (context.state.previewGeneration ?? 0) + 1;
       } else if (!context.argsComplete || !previewInput) {
+        cancelPendingPreview();
         context.state.argsKey = undefined;
         context.state.preview = undefined;
         context.state.previewGeneration =
@@ -331,31 +341,35 @@ export function buildToolDef(): ToolDef {
       } else {
         const argsKey = JSON.stringify(previewInput);
         if (context.state.argsKey !== argsKey) {
+          cancelPendingPreview();
           context.state.argsKey = argsKey;
           context.state.preview = undefined;
           const previewGeneration = (context.state.previewGeneration ?? 0) + 1;
           context.state.previewGeneration = previewGeneration;
-          compPreview(args, context.cwd)
-            .then((preview) => {
-              if (
-                context.state.argsKey === argsKey &&
-                context.state.previewGeneration === previewGeneration
-              ) {
-                context.state.preview = preview;
-                context.invalidate();
-              }
-            })
-            .catch((err: unknown) => {
-              if (
-                context.state.argsKey === argsKey &&
-                context.state.previewGeneration === previewGeneration
-              ) {
-                context.state.preview = {
-                  error: err instanceof Error ? err.message : String(err),
-                };
-                context.invalidate();
-              }
-            });
+          context.state.previewTimer = setTimeout(() => {
+            context.state.previewTimer = undefined;
+            compPreview(args, context.cwd)
+              .then((preview) => {
+                if (
+                  context.state.argsKey === argsKey &&
+                  context.state.previewGeneration === previewGeneration
+                ) {
+                  context.state.preview = preview;
+                  context.invalidate();
+                }
+              })
+              .catch((err: unknown) => {
+                if (
+                  context.state.argsKey === argsKey &&
+                  context.state.previewGeneration === previewGeneration
+                ) {
+                  context.state.preview = {
+                    error: err instanceof Error ? err.message : String(err),
+                  };
+                  context.invalidate();
+                }
+              });
+          }, PREVIEW_DEBOUNCE_MS);
         }
       }
       const text =
@@ -384,6 +398,10 @@ export function buildToolDef(): ToolDef {
 
       const renderState = context.state as RRState | undefined;
       if (renderState) {
+        if (renderState.previewTimer) {
+          clearTimeout(renderState.previewTimer);
+          renderState.previewTimer = undefined;
+        }
         renderState.preview = undefined;
         renderState.previewGeneration = (renderState.previewGeneration ?? 0) + 1;
       }
@@ -458,21 +476,27 @@ export function buildToolDef(): ToolDef {
         }
 
         abortIf(signal);
-        await writeAtomic(
-          absolutePath,
-          bom + restoreEndings(result, originalEnding),
-        );
-        const undoPersisted = await saveUndo(mutationTargetPath, {
+        const undo = await saveUndo(mutationTargetPath, {
           content: originalNormalized,
           bom,
           originalEnding,
           hashes: originalHashes,
           resultContent: result,
         });
-        if (!undoPersisted) {
-          warnings.push(
-            "Undo history could not be persisted; undo_last_replace will not be available for this edit.",
+        if (!undo.persisted) {
+          throw new Error(
+            `[E_UNDO_UNAVAILABLE] Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. Retry the replace, or use write if the store cannot be recovered.`
           );
+        }
+        try {
+          abortIf(signal);
+          await writeAtomic(
+            absolutePath,
+            bom + restoreEndings(result, originalEnding),
+          );
+        } catch (error) {
+          await undo.restore();
+          throw error;
         }
         const updatedSnapshotId = (await fileSnap(absolutePath))
           .snapshotId;

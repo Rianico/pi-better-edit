@@ -234,6 +234,16 @@ function mapStableHashes(
     if (idx !== undefined) removedIndexes.add(idx);
   }
 
+  let spanStart = oldLines.length;
+  let spanEnd = -1;
+  for (const idx of removedIndexes) {
+    if (idx < spanStart) spanStart = idx;
+    if (idx > spanEnd) spanEnd = idx;
+  }
+  const spanLen = spanEnd >= spanStart ? spanEnd - spanStart + 1 : 0;
+  const replacementLen = newLines.length - oldLines.length + spanLen;
+  const shiftAfterSpan = spanEnd >= spanStart ? replacementLen - spanLen : 0;
+
   const survivors: { index: number; hash: string }[] = [];
   const removedEntries: { index: number; hash: string }[] = [];
   for (let i = 0; i < oldLines.length; i++) {
@@ -261,7 +271,8 @@ function mapStableHashes(
   for (const entry of survivors) {
     const candidates = newByContent.get(canon(oldLines[entry.index]!));
     if (!candidates || candidates.length === 0) continue;
-    const pos = nearestNew(candidates, entry.index);
+    const target = entry.index > spanEnd ? entry.index + shiftAfterSpan : entry.index;
+    const pos = nearestNew(candidates, target);
     if (pos < 0) continue;
     const newIdx = candidates.splice(pos, 1)[0]!;
     newHashes[newIdx] = entry.hash;

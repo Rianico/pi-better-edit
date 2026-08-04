@@ -225,7 +225,7 @@ export function stripBarePrefixes(
 			? "none of the stripped hashes match current file lines"
 			: `${matchedCount} of ${stripped.length} stripped hash(es) match current file lines`;
 	warnings.push(
-		`Autocorrected: stripped "HASH│" prefix copied from read output in ${locations} (${evidence}).`
+		`[E_BARE_HASH_PREFIX] Autocorrected: stripped "HASH│" prefix copied from read output in ${locations} (${evidence}).`
 	);
 	return { ...edit, content_lines: contentLines };
 }
@@ -251,7 +251,7 @@ export function stripDiffPrefixes(
 	if (stripped.length === 0) return edit;
 	const locations = stripped.map((i) => `content_lines[${i}]`).join(", ");
 	warnings.push(
-		`Autocorrected: stripped diff-preview marker copied from the diff preview in ${locations}.`
+		`[E_INVALID_PATCH] Autocorrected: stripped diff-preview marker copied from the diff preview in ${locations}.`
 	);
 	return { ...edit, content_lines: contentLines };
 }
@@ -276,7 +276,7 @@ export function swapReversedRanges(
 		return edit;
 	}
 	warnings.push(
-		`Autocorrected: hash_range_inclusive was reversed (start ${startRef.hash} is after end ${endRef.hash}); swapped the pair.`
+		`[E_BAD_OP] Autocorrected: hash_range_inclusive was reversed (start ${startRef.hash} is after end ${endRef.hash}); swapped the pair.`
 	);
 	return { ...edit, hash_range_inclusive: [endRef, startRef] as [Anchor, Anchor] };
 }
