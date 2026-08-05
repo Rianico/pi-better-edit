@@ -21,11 +21,8 @@ const R_DESC = loadP("../prompts/read.md");
 
 const R_SNIPPET = loadP("../prompts/read-snippet.md");
 
-function readGuide(autoRead: boolean): string[] {
-	const note = "- `read`: call again after any edit to that file — changed lines get new anchors.";
-	return loadGuide("../prompts/read-guidelines.md", {
-		AUTO_READ_NOTE: autoRead ? "" : note,
-	});
+function readGuide(): string[] {
+	return loadGuide("../prompts/read-guidelines.md");
 }
 
 function normPosInt(
@@ -148,13 +145,13 @@ export async function fmtReadPreview(
 	};
 }
 
-export function regRead(pi: ExtensionAPI, opts?: { autoRead?: boolean }): void {
+export function regRead(pi: ExtensionAPI): void {
 	pi.registerTool({
 		name: "read",
 		label: "Read",
 		description: R_DESC,
 		promptSnippet: R_SNIPPET,
-		promptGuidelines: readGuide(opts?.autoRead ?? true),
+		promptGuidelines: readGuide(),
 		parameters: Type.Object({
 			path: Type.String({
 				description: "Path to the file to read (relative or absolute)",

@@ -386,63 +386,59 @@ describe("auto-read after write", () => {
     }
   });
 
-  it("triggers for replace tool results", async () => {
+  it("replaces replace tool results with the diff and no anchors block", async () => {
     const cwd = await makeTempDir("auto-read-test-replace-");
     await writeFile(join(cwd, "replace.txt"), "alpha\nbeta\n", "utf-8");
     try {
       const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
+      const diff = " alpha\n-   │beta\n+BET│BETA";
       const replaceResult = await handler!(
         {
           toolName: "replace",
           toolCallId: "replace-1",
           input: { path: "replace.txt", hash_range_inclusive: ["abc", "abc"], content_lines: ["BETA"] },
           content: [{ type: "text", text: "Successfully replaced in replace.txt. Added 1 line(s), removed 1 line(s)." }],
-          details: undefined,
+          details: { diff, metrics: { classification: "applied" } },
           isError: false,
         },
         { cwd },
       );
 
       expect(replaceResult).toBeDefined();
-      expect(replaceResult!.content).toHaveLength(2);
-
-      const autoReadText = replaceResult!.content![1]!.text!;
-      expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
-      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│alpha/);
-      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│beta/);
+      expect(replaceResult!.content).toHaveLength(1);
+      expect(replaceResult!.content![0]!.text).toBe(diff);
+      expect(replaceResult!.content![0]!.text).not.toContain("--- Auto-read");
     } finally {
       await cleanupCwd(cwd);
     }
   });
 
-  it("triggers for undo_last_replace tool results", async () => {
+  it("replaces undo_last_replace tool results with the diff and no anchors block", async () => {
     const cwd = await makeTempDir("auto-read-test-undo-");
     await writeFile(join(cwd, "undo.txt"), "alpha\nbeta\n", "utf-8");
     try {
       const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
+      const diff = " alpha\n-   │BETA\n+BET│beta";
       const undoResult = await handler!(
         {
           toolName: "undo_last_replace",
           toolCallId: "undo-1",
           input: { path: "undo.txt" },
           content: [{ type: "text", text: "Undone last replace on undo.txt." }],
-          details: undefined,
+          details: { diff, metrics: { classification: "applied" } },
           isError: false,
         },
         { cwd },
       );
 
       expect(undoResult).toBeDefined();
-      expect(undoResult!.content).toHaveLength(2);
-
-      const autoReadText = undoResult!.content![1]!.text!;
-      expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
-      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│alpha/);
-      expect(autoReadText).toMatch(/[A-Za-z0-9]{3}│beta/);
+      expect(undoResult!.content).toHaveLength(1);
+      expect(undoResult!.content![0]!.text).toBe(diff);
+      expect(undoResult!.content![0]!.text).not.toContain("--- Auto-read");
     } finally {
       await cleanupCwd(cwd);
     }

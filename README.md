@@ -11,7 +11,7 @@ Fork of [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by Rimur
 - **Stable anchors.** Editing one part of a file leaves the hashes of untouched lines unchanged, so anchors from earlier reads stay valid.
 - **Autocorrection with warnings.** Unambiguous copy-paste mistakes — hash prefixes, diff-preview rows, reversed ranges — are fixed automatically and reported.
 - **Safe writes.** Atomic temp-file-then-rename writes preserve permissions, BOMs, line endings, symlinks, and hard links.
-- **Auto-read.** Fresh anchors are appended to the result of every `write`, `replace`, and `undo_last_replace` that changes the file.
+- **Auto-read.** Fresh anchors are appended to the result of every `write` that changes the file; after `replace` and `undo_last_replace`, the post-edit diff is shown instead.
 
 ## Installation
 
@@ -47,7 +47,7 @@ kQm│}
 }
 ```
 
-3. Keep editing. Anchors for untouched lines remain valid across edits, so hashes from earlier reads keep working; changed lines get fresh anchors, which auto-read appends to each result.
+3. Keep editing. Anchors for untouched lines remain valid across edits, so hashes from earlier reads keep working; changed lines get fresh anchors, which auto-read appends after each `write`.
 
 ## The `read` tool
 
@@ -102,7 +102,7 @@ Behavior:
   - A reversed range (start hash after end hash) is swapped and applied.
   - A duplicated boundary line — the classic `}`, `});`, or `} else {` pasted twice — is silently removed; the duplicate never reaches the file.
   - `file_path` is accepted as an alias for `path`; a JSON-string `content_lines` is parsed into an array.
-- **Response.** With auto-read enabled (the default), a successful edit returns the post-edit diff — the same `+HASH│` / `-   │` / ` HASH│` rows the user sees — instead of the summary, and the auto-read block appends fresh anchors right after it. With auto-read disabled, the edit reports `Successfully replaced in {path}. Added X line(s), removed Y line(s).` plus any warnings. Warnings are appended in both modes. An edit that produces identical content reports `No changes made` and never rotates anchors. The post-edit diff is exposed to the host UI via `details.diff`; it reaches the model-visible text only while auto-read is on.
+- **Response.** With auto-read enabled (the default), a successful edit returns the post-edit diff — the same `+HASH│` / `-   │` / ` HASH│` rows the user sees — instead of the summary. With auto-read disabled, the edit reports `Successfully replaced in {path}. Added X line(s), removed Y line(s).` plus any warnings, and no diff is shown. Warnings are appended in both modes. An edit that produces identical content reports `No changes made` and never rotates anchors. The post-edit diff is exposed to the host UI via `details.diff`; it reaches the model-visible text only while auto-read is on.
 - **Undo.** Every successful replace is undoable once via `undo_last_replace` — see [Undo](#undo).
 
 ## Anchor stability
@@ -118,15 +118,15 @@ A no-op replace never changes the file, so anchors remain valid. On first run af
 
 ## Auto-read
 
-Enabled by default. After a successful `write`, `replace`, or `undo_last_replace` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so the model gets immediate `HASH│content` anchors without a separate `read` call.
+Enabled by default. After a successful `write` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so the model gets immediate `HASH│content` anchors without a separate `read` call.
 
-- A no-op `replace` produces no auto-read block — the file is unchanged, so existing anchors remain valid.
-- After `replace` / `undo_last_replace`, the success summary is replaced by the post-edit diff (the same `+HASH│` / `-   │` / ` HASH│` rows used for replace) plus any warnings, so the model sees the change like a git diff instead of line counts.
-- After `replace` / `undo_last_replace`, the block covers the changed span plus 2 lines of context above and below — the rest of the file keeps its anchors from the persistent store.
+- A no-op `replace` produces no diff — the file is unchanged, so existing anchors remain valid.
+- After `replace` / `undo_last_replace`, the success summary is replaced by the post-edit diff (the same `+HASH│` / `-   │` / ` HASH│` rows used for replace) plus any warnings, so the model sees the change like a git diff instead of line counts; no anchor block is appended — call `read` for fresh anchors.
+- With auto-read disabled, `replace` / `undo_last_replace` results keep the plain summary — no diff, no anchor block.
 - After `write`, the block dumps from the top of the file. For files over 2000 lines, the dump is truncated with a pagination hint — use `read` with `offset` to continue.
 - Auto-read keeps a 50KB display budget: lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
 - Toggle at runtime with `/toggle-auto-read`; the setting persists across sessions.
-- If the auto-read itself fails (e.g. the file was deleted between the operation and the read), a short `--- Auto-read failed: ... ---` notice is appended instead of the anchor block, so the model knows the anchors are missing.
+- If the auto-read itself fails (e.g. the file was deleted between the write and the read), a short `--- Auto-read failed: ... ---` notice is appended instead of the anchor block, so the model knows the anchors are missing.
 
 ## Undo
 
@@ -136,14 +136,14 @@ Enabled by default. After a successful `write`, `replace`, or `undo_last_replace
 - History is persisted in the hash store (`~/.config/pi-hashline-edit-pro/hash-store.sqlite`) and survives session restarts; a failed `write` does not clear it.
 - **Undo is a precondition, not a convenience.** The undo record is persisted *before* the edit is written; if it cannot be persisted, the `replace` is refused with `[E_UNDO_UNAVAILABLE]` and the file is not touched, so every applied edit is undoable. If the file write itself then fails, the previous undo record is restored, so a refused edit never destroys earlier undo history.
 - A successful `write` clears the history for that file.
-- With auto-read enabled, the undo result shows the post-edit diff followed by fresh anchors, just like a replace; with auto-read disabled, call `read` after an undo to get fresh anchors for follow-up edits.
+- With auto-read enabled, the undo result shows the post-edit diff, just like a replace; with auto-read disabled it shows the plain summary. No anchors are appended after an undo — call `read` to get fresh anchors for follow-up edits.
 - **Safety guard.** If the file was modified or deleted since the last replace, `undo_last_replace` refuses with `[E_UNDO_STALE]` rather than overwriting those changes.
 
 ## Commands and configuration
 
 | Command | Description |
 | --- | --- |
-| `/toggle-auto-read` | Toggle automatic hashline anchors and post-edit diffs after write, replace, and undo_last_replace operations. Persists across sessions. |
+| `/toggle-auto-read` | Toggle automatic hashline anchors after write and post-edit diffs after replace and undo_last_replace operations. Persists across sessions. |
 
 Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatically when a setting is toggled:
 

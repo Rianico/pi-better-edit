@@ -58,12 +58,13 @@ describe("prompt guidelines", () => {
     expect(guidelines.length).toBeGreaterThan(0);
   });
 
-  it("read-guidelines.md keeps the auto-read note as a template variable", () => {
+  it("read-guidelines.md keeps the re-read note inline", () => {
     const content = readFileSync(
       new URL("../../prompts/read-guidelines.md", import.meta.url),
       "utf-8",
     );
-    expect(content).toContain("{{AUTO_READ_NOTE}}");
+    expect(content).toContain("call again after any edit");
+    expect(content).not.toContain("{{AUTO_READ_NOTE}}");
   });
   it("undo-last-replace-guidelines.md loads without template variables", () => {
     const content = readFileSync(
@@ -74,21 +75,13 @@ describe("prompt guidelines", () => {
   });
 });
 
-describe("read tool guidelines follow auto-read", () => {
-  it("drops the re-read note when auto-read is enabled (default)", () => {
+describe("read tool guidelines", () => {
+  it("always includes the re-read note since replace and undo provide no anchors", () => {
     const { pi, getTool } = makeFakePiRegistry();
     regRead(pi);
     const tool = getTool("read");
     const guidelines = tool.promptGuidelines as string[];
-    expect(guidelines.some((g) => g.includes("call `read` again after any edit"))).toBe(false);
-    expect(guidelines.some((g) => g.includes("call before `replace`"))).toBe(true);
-  });
-
-  it("includes the re-read note when auto-read is disabled", () => {
-    const { pi, getTool } = makeFakePiRegistry();
-    regRead(pi, { autoRead: false });
-    const tool = getTool("read");
-    const guidelines = tool.promptGuidelines as string[];
     expect(guidelines.some((g) => g.includes("call again after any edit"))).toBe(true);
+    expect(guidelines.some((g) => g.includes("call before `replace`"))).toBe(true);
   });
 });
