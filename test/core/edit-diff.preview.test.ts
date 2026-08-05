@@ -1,6 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import { genDiff } from "../../src/replace-diff";
+import { initHasher } from "../../src/hashline";
 
+beforeAll(async () => {
+  await initHasher();
+});
 describe("genDiff", () => {
 	it("adds hash hints for context and addition lines and pads deletion lines to align the '│' column", () => {
 		const result = genDiff("alpha\nbeta\ngamma", "alpha\nBETA\ngamma");
