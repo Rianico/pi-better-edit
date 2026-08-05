@@ -293,8 +293,7 @@ export function reuseMarkdown(context: any, content: string, theme: any): Markdo
   return m;
 }
 
-export function buildToolDef(opts?: { autoRead?: boolean }): ToolDef {
-  const autoRead = opts?.autoRead ?? true;
+export function buildToolDef(): ToolDef {
   const E_DESC = loadP("../prompts/replace.md");
   const E_SNIPPET = loadP("../prompts/replace-snippet.md");
   const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
@@ -413,11 +412,6 @@ export function buildToolDef(opts?: { autoRead?: boolean }): ToolDef {
       }
 
       if (isApplied(typedResult.details)) {
-        if (!autoRead) {
-          return renderedText
-            ? reuseText(context, renderedText)
-            : new Text("", 0, 0);
-        }
         const appliedText = buildAppliedText(renderedText, typedResult.details, theme);
         return appliedText ? reuseText(context, appliedText) : new Text("", 0, 0);
       }
@@ -531,6 +525,6 @@ export function buildToolDef(opts?: { autoRead?: boolean }): ToolDef {
   };
 }
 
-export function regReplace(pi: ExtensionAPI, opts?: { autoRead?: boolean }): void {
-  pi.registerTool(buildToolDef(opts));
+export function regReplace(pi: ExtensionAPI): void {
+  pi.registerTool(buildToolDef());
 }

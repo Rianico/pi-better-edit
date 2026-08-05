@@ -37,7 +37,6 @@ export default function (pi: ExtensionAPI): void {
     }
     const config = await readConfig();
     autoRead = config.autoRead;
-    regReplace(pi, { autoRead });
     if (debugValue === "1" || debugValue === "true") {
       ctx.ui.notify(`Hashline Edit mode active`, "info");
     }
@@ -47,7 +46,6 @@ export default function (pi: ExtensionAPI): void {
     description: "Toggle automatic hashline anchors after write and post-edit diffs after replace and undo_last_replace operations",
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
-      regReplace(pi, { autoRead });
       const state = autoRead ? "enabled" : "disabled";
       ctx.ui.notify(`Auto-read anchors (write) and post-edit diffs (replace/undo): ${state}`, "info");
     },
