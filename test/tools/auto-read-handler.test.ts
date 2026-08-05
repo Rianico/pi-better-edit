@@ -495,9 +495,41 @@ describe("replace diff in model-visible text", () => {
     });
   });
 
-  it("leaves undo result text unchanged", async () => {
+  it("shows the post-edit diff for undo_last_replace results too", async () => {
     await withTempDir("auto-read-diff-undo-", async (dir) => {
       await writeFile(join(dir, "undo.txt"), "aaa\nbbb\nccc\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const diff = " aaa\n-   │BBB\n+XYZ│bbb\n ccc";
+
+      const result = await handler!(
+        {
+          toolName: "undo_last_replace",
+          isError: false,
+          input: { path: "undo.txt" },
+          details: {
+            diff,
+            metrics: { classification: "applied", changed_lines: { first: 2, last: 2 } },
+          },
+          content: [{ type: "text", text: "Undone last replace on undo.txt.\nFile reverted to previous state. Call `read` to get fresh anchors for follow-up edits." }],
+        },
+        { cwd: dir },
+      );
+
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content).toHaveLength(2);
+      expect(content[0].text).toBe(diff);
+      expect(content[0].text).not.toContain("Undone last replace");
+      expect(content[1].text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(content[1].text).toContain("│bbb");
+    });
+  });
+
+  it("keeps the undo summary when the result carries no diff", async () => {
+    await withTempDir("auto-read-diff-undo-none-", async (dir) => {
+      await writeFile(join(dir, "undonodiff.txt"), "aaa\nbbb\nccc\n", "utf-8");
 
       const { pi, handlers } = makeFakePi();
       register(pi);
@@ -507,19 +539,16 @@ describe("replace diff in model-visible text", () => {
         {
           toolName: "undo_last_replace",
           isError: false,
-          input: { path: "undo.txt" },
-          details: {
-            diff: " aaa\n-   │bbb\n+XYZ│BBB\n ccc",
-            metrics: { classification: "applied" },
-          },
-          content: [{ type: "text", text: "Undone last replace on undo.txt." }],
+          input: { path: "undonodiff.txt" },
+          details: { metrics: { classification: "applied" } },
+          content: [{ type: "text", text: "Undone last replace on undonodiff.txt." }],
         },
         { cwd: dir },
       );
 
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content).toHaveLength(2);
-      expect(content[0].text).toBe("Undone last replace on undo.txt.");
+      expect(content[0].text).toBe("Undone last replace on undonodiff.txt.");
     });
   });
 });

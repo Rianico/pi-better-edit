@@ -81,7 +81,7 @@ export default function (pi: ExtensionAPI): void {
 
     let baseContent = event.content ?? [];
     if (
-      event.toolName === "replace" &&
+      (event.toolName === "replace" || event.toolName === "undo_last_replace") &&
       metrics?.classification === "applied"
     ) {
       const diff = (event.details as { diff?: string } | undefined)?.diff;

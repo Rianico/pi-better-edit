@@ -120,7 +120,7 @@ A no-op replace never changes the file, so anchors remain valid. On first run af
 
 Enabled by default. After a successful `write`, `replace`, or `undo_last_replace`, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so the model gets immediate `HASH│content` anchors without a separate `read` call.
 
-- After `replace`, the success summary is replaced by the post-edit diff (the same `+HASH│` / `-   │` / ` HASH│` rows the user sees) plus any warnings, so the model sees the change like a git diff instead of line counts.
+- After `replace` / `undo_last_replace`, the success summary is replaced by the post-edit diff (the same `+HASH│` / `-   │` / ` HASH│` rows used for replace) plus any warnings, so the model sees the change like a git diff instead of line counts.
 - After `replace` / `undo_last_replace`, the block covers the changed span plus 2 lines of context above and below — the rest of the file keeps its anchors from the persistent store.
 - After `write`, the block dumps from the top of the file. For files over 2000 lines, the dump is truncated with a pagination hint — use `read` with `offset` to continue.
 - Auto-read keeps a 50KB display budget: lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
@@ -135,7 +135,7 @@ Enabled by default. After a successful `write`, `replace`, or `undo_last_replace
 - History is persisted in the hash store (`~/.config/pi-hashline-edit-pro/hash-store.sqlite`) and survives session restarts; a failed `write` does not clear it.
 - **Undo is a precondition, not a convenience.** The undo record is persisted *before* the edit is written; if it cannot be persisted, the `replace` is refused with `[E_UNDO_UNAVAILABLE]` and the file is not touched, so every applied edit is undoable. If the file write itself then fails, the previous undo record is restored, so a refused edit never destroys earlier undo history.
 - A successful `write` clears the history for that file.
-- Call `read` after an undo to get fresh anchors for follow-up edits.
+- With auto-read enabled, the undo result shows the post-edit diff followed by fresh anchors, just like a replace; with auto-read disabled, call `read` after an undo to get fresh anchors for follow-up edits.
 - **Safety guard.** If the file was modified or deleted since the last replace, `undo_last_replace` refuses with `[E_UNDO_STALE]` rather than overwriting those changes.
 
 ## Commands and configuration
