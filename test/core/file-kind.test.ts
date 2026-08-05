@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
-import { loadFileKindAndText, classifyFileKind } from "../../src/file-kind";
+import { loadFileKindAndText } from "../../src/file-kind";
 import { withTempFile } from "../support/fixtures";
 
 describe("loadFileKindAndText", () => {
@@ -105,29 +105,3 @@ describe("loadFileKindAndText", () => {
 	});
 });
 
-describe("classifyFileKind", () => {
-	it("classifies a text file as text", async () => {
-		await withTempFile("sample.txt", "hello\n", async ({ cwd }) => {
-			const result = await classifyFileKind(join(cwd, "sample.txt"));
-			expect(result).toEqual({ kind: "text" });
-		});
-	});
-
-	it("classifies a directory as directory", async () => {
-		await withTempFile("placeholder.txt", "x", async ({ cwd }) => {
-			const dirPath = join(cwd, "subdir");
-			await mkdir(dirPath);
-			const result = await classifyFileKind(dirPath);
-			expect(result).toEqual({ kind: "directory" });
-		});
-	});
-
-	it("classifies a file with only null bytes as text when no binary MIME is detected", async () => {
-		await withTempFile("placeholder.txt", "x", async ({ cwd }) => {
-			const binPath = join(cwd, "binary.bin");
-			await writeFile(binPath, Buffer.from([0x00, 0x61]));
-			const result = await classifyFileKind(binPath);
-			expect(result.kind).toBe("text");
-		});
-	});
-});

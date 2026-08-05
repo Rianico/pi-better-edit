@@ -3,6 +3,7 @@ import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { withTempDir } from "../support/fixtures";
+import { AUTO_READ_MAX } from "../../src/constants";
 
 function makeFakePi() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -376,6 +377,33 @@ describe("auto-read handler", () => {
       expect(text).not.toContain("│Q");
       expect(text).toContain("exceeds 50.0KB");
       expect(text).toContain("sed -n '1p'");
+    });
+  });
+
+  it("caps the replace auto-read window at AUTO_READ_MAX lines", async () => {
+    await withTempDir("auto-read-window-cap-", async (dir) => {
+      const filePath = join(dir, "cap.txt");
+      await writeFile(filePath, Array.from({ length: 2500 }, (_, i) => `line ${i + 1}`).join("\n") + "\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+
+      const result = await handler!(
+        {
+          toolName: "replace",
+          isError: false,
+          input: { path: "cap.txt" },
+          details: { metrics: { changed_lines: { first: 1, last: 2500 } } },
+          content: [{ type: "text", text: "Replaced." }],
+        },
+        { cwd: dir },
+      );
+
+      const text = (result as { content: Array<{ type: string; text: string }> }).content[1].text;
+      expect(text).toContain(`[Showing lines 1-${AUTO_READ_MAX} of 2500.`);
+      expect(text).toContain(`│line ${AUTO_READ_MAX}`);
+      expect(text).not.toContain("│line 2500");
     });
   });
 });

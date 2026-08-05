@@ -324,10 +324,6 @@ export function upsertSnapshot(
   store.stmts.upsert(path, checksum, lineCount, JSON.stringify(hashes), Date.now());
 }
 
-export function deleteSnapshot(store: HashStore, path: string): void {
-  store.stmts.deleteOne(path);
-}
-
 export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): void {
   store.stmts.undoUpsert(
     path,

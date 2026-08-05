@@ -46,5 +46,11 @@ export function parseText(edit: string[] | string | null): string[] {
   if (typeof edit === "string") {
     throw new Error(CONTENT_LINES_NOT_STRING_MSG);
   }
+  const lineBreakIndex = edit.findIndex((line) => /[\r\n]/.test(line));
+  if (lineBreakIndex >= 0) {
+    throw new Error(
+      `[E_BAD_SHAPE] "content_lines" entry at index ${lineBreakIndex} contains a \\r or \\n line break. Pass each line as its own array entry.`,
+    );
+  }
   return edit;
 }

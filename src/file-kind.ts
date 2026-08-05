@@ -39,12 +39,6 @@ function isTextType(mimeType: string): boolean {
   return mimeType.startsWith("text/") || TEXT_TYPES.has(mimeType);
 }
 
-export type FKind =
-  | { kind: "directory" }
-  | { kind: "image"; mimeType: string }
-  | { kind: "text" }
-  | { kind: "binary"; description: string };
-
 export type LFile =
   | { kind: "directory" }
   | { kind: "image"; mimeType: string }
@@ -147,19 +141,5 @@ export async function loadFileKindAndText(
     };
   } finally {
     await fileHandle.close();
-  }
-}
-
-export async function classifyFileKind(filePath: string): Promise<FKind> {
-  const loaded = await loadFileKindAndText(filePath);
-  switch (loaded.kind) {
-    case "directory":
-      return loaded;
-    case "image":
-      return loaded;
-    case "binary":
-      return loaded;
-    case "text":
-      return { kind: "text" };
   }
 }

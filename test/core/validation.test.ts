@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { valAccess, valKind, isText } from "../../src/validation";
+import { valAccess, valKind } from "../../src/validation";
 import { errCode } from "../../src/utils";
 
 describe("errCode", () => {
@@ -18,28 +18,6 @@ describe("errCode", () => {
 
 	it("returns undefined for Error without code", () => {
 		expect(errCode(new Error("test"))).toBeUndefined();
-	});
-});
-
-describe("isText", () => {
-	it("returns true for text files", () => {
-		expect(isText({ kind: "text", text: "content" })).toBe(true);
-	});
-
-	it("returns true for text files with hadUtf8DecodeErrors", () => {
-		expect(isText({ kind: "text", text: "content", hadUtf8DecodeErrors: true })).toBe(true);
-	});
-
-	it("returns false for directory", () => {
-		expect(isText({ kind: "directory" })).toBe(false);
-	});
-
-	it("returns false for binary", () => {
-		expect(isText({ kind: "binary", description: "test" })).toBe(false);
-	});
-
-	it("returns false for image", () => {
-		expect(isText({ kind: "image", mimeType: "image/png" })).toBe(false);
 	});
 });
 

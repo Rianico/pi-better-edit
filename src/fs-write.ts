@@ -9,8 +9,6 @@ import {
 	rm,
 	stat,
 	writeFile,
-	copyFile,
-	chmod,
 } from "fs/promises";
 import { dirname, join, parse, resolve, sep } from "path";
 import { errCode } from "./utils";
@@ -153,20 +151,6 @@ export async function writeAtomic(
     await rename(tempPath, targetPath);
     await syncDir(dir);
   } catch (error: unknown) {
-    if (errCode(error) === "EXDEV") {
-      try {
-        await copyFile(tempPath, targetPath);
-        if (existingStats) {
-          await chmod(targetPath, existingStats.mode & 0o7777);
-        }
-        await rm(tempPath, { force: true });
-        await syncDir(dir);
-        return;
-      } catch {
-        try { await rm(tempPath, { force: true }); } catch {}
-        throw error;
-      }
-    }
     if (process.platform === "win32" && errCode(error) === "EPERM") {
       try {
         await writeFile(targetPath, content, "utf-8");

@@ -98,6 +98,21 @@ describe("parseText", () => {
 		expect(parseText(input)).toEqual(input);
 	});
 
+	it("rejects entries containing line breaks", () => {
+		expect(() => parseText(["a", "b\nc"])).toThrow(/line break/);
+		expect(() => parseText(["a\rb"])).toThrow(/line break/);
+		expect(() => parseText(["a\n"])).toThrow(/line break/);
+		expect(() => parseText(["\r"])).toThrow(/line break/);
+	});
+
+	it("reports the index of the offending entry", () => {
+		expect(() => parseText(["ok", "bad\nline"])).toThrow(/index 1/);
+	});
+
+	it("renders \\r and \\n literally in the error message", () => {
+		expect(() => parseText(["a\nb"])).toThrow(/contains a \\r or \\n line break/);
+	});
+
 	it("preserves '# keep me' comment lines (no autocorrection)", () => {
 		expect(parseText(["# keep me"])).toEqual(["# keep me"]);
 	});

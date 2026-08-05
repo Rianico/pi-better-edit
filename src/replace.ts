@@ -47,7 +47,7 @@ import { loadHashStore, type HashStore } from "./hash-store";
 
 const contentLinesSchema = Type.Array(Type.String(), {
   description:
-    "Replacement content, one string per line. Use [] to delete the range."
+    "Replacement content, one string per line; entries must not contain line breaks. Use [] to delete the range."
 });
 
 const hashRangeInclSchema = Type.Array(
@@ -78,7 +78,6 @@ export type ReplaceDetails = {
   firstChangedLine?: number;
   snapshotId?: string;
   classification?: "noop";
-  structureOutline?: string[];
   metrics?: RMetrics;
 };
 

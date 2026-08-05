@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
@@ -22,6 +23,30 @@ describe("regReplace", () => {
           ctx,
         ),
       ).rejects.toThrow();
+    });
+  });
+
+  it("rejects content_lines entries containing line breaks without modifying the file", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\n", home.testPath);
+
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            path: "sample.ts",
+            hash_range_inclusive: [hashes[0]!, hashes[0]!],
+            content_lines: ["a\nb"],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/line break/);
+
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nbbb\n");
     });
   });
 

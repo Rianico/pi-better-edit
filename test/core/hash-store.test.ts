@@ -9,7 +9,6 @@ import {
   shutdownHashStore,
   getSnapshot,
   upsertSnapshot,
-  deleteSnapshot,
   upsertUndo,
   getUndoEntry,
   deleteUndo,
@@ -214,15 +213,6 @@ describe("hash-store — snapshot get / upsert / delete", () => {
 
       expect(getSnapshot(store, "/big.ts", aContent)).toEqual(aHashes);
       expect(getSnapshot(store, "/small.ts", "x\n")).toEqual(["X"]);
-    });
-  });
-
-  it("deletes a snapshot", async () => {
-    await withTempHome(async () => {
-      const store = await loadHashStore();
-      await put(store, "/p.ts", "x\n", ["X"]);
-      deleteSnapshot(store, "/p.ts");
-      expect(getSnapshot(store, "/p.ts", "x\n")).toBeUndefined();
     });
   });
 });

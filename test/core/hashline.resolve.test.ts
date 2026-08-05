@@ -73,6 +73,22 @@ describe("resEdit", () => {
 		);
 	});
 
+	it("rejects content_lines entries containing line breaks", () => {
+		const edit = {
+			hash_range_inclusive: ["ZZP", "ZZP"],
+			content_lines: ["a\nb"],
+		} as unknown as HTEdit;
+		expect(() => resEdit(edit)).toThrow(/line break/);
+	});
+
+	it("rejects content_lines entries containing carriage returns", () => {
+		const edit = {
+			hash_range_inclusive: ["ZZP", "ZZP"],
+			content_lines: ["a\rb"],
+		} as unknown as HTEdit;
+		expect(() => resEdit(edit)).toThrow(/line break/);
+	});
+
 	it("rejects unknown fields", () => {
     const edit = { hash_range_inclusive: ["ZZP", "ZZP"], content_lines: ["x"], extra: true } as any;
 		expect(() => resEdit(edit)).toThrow(

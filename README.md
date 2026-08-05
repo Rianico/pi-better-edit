@@ -90,7 +90,7 @@ Exactly one edit per call, with `hash_range_inclusive` and `content_lines` at th
 | Field | Description |
 | --- | --- |
 | `hash_range_inclusive` | Pair of 3-char hashes from `read` output marking the first and last line of the range to replace (inclusive). |
-| `content_lines` | Replacement content, one string per line. Use `[]` to delete the range. |
+| `content_lines` | Replacement content, one string per line; entries must not contain line breaks. Use `[]` to delete the range. |
 
 Behavior:
 
@@ -155,7 +155,7 @@ Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatic
 
 | Code | Meaning |
 | --- | --- |
-| `[E_BAD_SHAPE]` | Request envelope or edit item has unknown, missing, or wrongly-typed fields. |
+| `[E_BAD_SHAPE]` | Request envelope or edit item has unknown, missing, or wrongly-typed fields, or a `content_lines` entry contains a line break. |
 | `[E_BAD_REF]` | An anchor in `hash_range_inclusive` is not a bare 3-char hash. |
 | `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; call `read` for fresh anchors. |
 | `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
@@ -183,7 +183,7 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 
 - **Stale anchors fail, per line.** A hash mismatch means that line's content changed since the last `read`. The error says so and, when only one anchor of a pair is stale, shows the current lines around the still-valid anchor so the range can be re-located without a full re-read. Mismatched anchors are never silently relocated to a "close enough" line — correctness over convenience.
 - **Autocorrection only when the intent is unambiguous**, and always visible: hash-prefix and diff-row stripping produce a warning; the boundary-duplication fix is silent because the duplicate never reaches the file. Literal content is never silently altered when the intent is ambiguous (numbered deletion rows and unified-diff lines are written verbatim).
-- **Byte-exact preservation.** UTF-8 BOMs, CRLF, LF, and CR-only line endings, file permissions, and trailing newlines survive edits and undo.
+- **Byte-exact preservation.** UTF-8 BOMs, CRLF, LF, and CR-only line endings, file permissions, and trailing newlines survive edits and undo; files with mixed line endings are normalized to a single line ending on edit.
 - **Atomic and ordered writes.** Files are written via temp-file-then-rename; symlink chains are resolved so the target is updated without replacing the symlink; hard-linked files are updated in place; concurrent edits to the same underlying file serialize through a per-target mutation queue.
 - **One edit per call.** The request shape stays `{path, hash_range_inclusive, content_lines}` from schema through validation to application; there is no batching dialect.
 
