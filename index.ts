@@ -46,12 +46,12 @@ export default function (pi: ExtensionAPI): void {
   });
 
   pi.registerCommand("toggle-auto-read", {
-    description: "Toggle automatic hashline anchors after write and replace operations",
+    description: "Toggle automatic hashline anchors and post-edit diffs after write, replace, and undo_last_replace operations",
     handler: async (_args, ctx) => {
       autoRead = await toggleAutoRead();
       regRead(pi, { autoRead });
       const state = autoRead ? "enabled" : "disabled";
-      ctx.ui.notify(`Auto-read after write/replace: ${state}`, "info");
+      ctx.ui.notify(`Auto-read after write/replace/undo: ${state}`, "info");
     },
   });
 

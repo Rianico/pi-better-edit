@@ -11,7 +11,7 @@ Fork of [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by Rimur
 - **Stable anchors.** Editing one part of a file leaves the hashes of untouched lines unchanged, so anchors from earlier reads stay valid.
 - **Autocorrection with warnings.** Unambiguous copy-paste mistakes — hash prefixes, diff-preview rows, reversed ranges — are fixed automatically and reported.
 - **Safe writes.** Atomic temp-file-then-rename writes preserve permissions, BOMs, line endings, symlinks, and hard links.
-- **Auto-read.** Fresh anchors are appended to the result of every `write`, `replace`, and `undo_last_replace`.
+- **Auto-read.** Fresh anchors are appended to the result of every `write`, `replace`, and `undo_last_replace` that changes the file.
 
 ## Installation
 
@@ -118,8 +118,9 @@ A no-op replace never changes the file, so anchors remain valid. On first run af
 
 ## Auto-read
 
-Enabled by default. After a successful `write`, `replace`, or `undo_last_replace`, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so the model gets immediate `HASH│content` anchors without a separate `read` call.
+Enabled by default. After a successful `write`, `replace`, or `undo_last_replace` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so the model gets immediate `HASH│content` anchors without a separate `read` call.
 
+- A no-op `replace` produces no auto-read block — the file is unchanged, so existing anchors remain valid.
 - After `replace` / `undo_last_replace`, the success summary is replaced by the post-edit diff (the same `+HASH│` / `-   │` / ` HASH│` rows used for replace) plus any warnings, so the model sees the change like a git diff instead of line counts.
 - After `replace` / `undo_last_replace`, the block covers the changed span plus 2 lines of context above and below — the rest of the file keeps its anchors from the persistent store.
 - After `write`, the block dumps from the top of the file. For files over 2000 lines, the dump is truncated with a pagination hint — use `read` with `offset` to continue.
@@ -142,7 +143,7 @@ Enabled by default. After a successful `write`, `replace`, or `undo_last_replace
 
 | Command | Description |
 | --- | --- |
-| `/toggle-auto-read` | Toggle automatic hashline anchors after write and replace operations. Persists across sessions. |
+| `/toggle-auto-read` | Toggle automatic hashline anchors and post-edit diffs after write, replace, and undo_last_replace operations. Persists across sessions. |
 
 Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatically when a setting is toggled:
 
