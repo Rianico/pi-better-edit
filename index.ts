@@ -5,6 +5,7 @@ import { regReplace } from "./src/replace";
 import { regReplaceUndo, clearUndo } from "./src/replace-undo";
 import { regRead, fmtReadPreview } from "./src/read";
 import type { RMetrics } from "./src/replace-response";
+import { extractWarnings } from "./src/replace-render";
 import { AUTO_READ_MAX } from "./src/constants";
 import { MAX_HASH_LINES } from "./src/hashline";
 import {
@@ -78,6 +79,30 @@ export default function (pi: ExtensionAPI): void {
     const metrics = (event.details as { metrics?: RMetrics } | undefined)?.metrics;
     if (event.toolName !== "write" && metrics?.classification === "noop") return;
 
+    let baseContent = event.content ?? [];
+    if (
+      event.toolName === "replace" &&
+      metrics?.classification === "applied"
+    ) {
+      const diff = (event.details as { diff?: string } | undefined)?.diff;
+      if (diff) {
+        const rendered = baseContent
+          .filter(
+            (entry): entry is { type: "text"; text: string } =>
+              entry.type === "text" && typeof entry.text === "string",
+          )
+          .map((entry) => entry.text)
+          .join("\n");
+        const warnings = extractWarnings(rendered);
+        baseContent = [
+          {
+            type: "text",
+            text: warnings ? `${diff}\n\n${warnings}` : diff,
+          },
+        ];
+      }
+    }
+
     try {
       const { normalized, fileHashes, absolutePath } = await readNormFile(
         filePath, ctx.cwd, { maxLines: MAX_HASH_LINES },
@@ -104,7 +129,7 @@ export default function (pi: ExtensionAPI): void {
 
       return {
         content: [
-          ...(event.content ?? []),
+          ...baseContent,
           { type: "text", text: `\n\n--- Auto-read (hashline anchors) ---\n${preview.text}` },
         ],
       };
@@ -113,7 +138,7 @@ export default function (pi: ExtensionAPI): void {
       const message = error instanceof Error ? error.message : String(error);
       return {
         content: [
-          ...(event.content ?? []),
+          ...baseContent,
           { type: "text", text: `\n\n--- Auto-read failed: ${message} ---` },
         ],
       };

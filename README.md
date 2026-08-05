@@ -102,7 +102,7 @@ Behavior:
   - A reversed range (start hash after end hash) is swapped and applied.
   - A duplicated boundary line — the classic `}`, `});`, or `} else {` pasted twice — is silently removed; the duplicate never reaches the file.
   - `file_path` is accepted as an alias for `path`; a JSON-string `content_lines` is parsed into an array.
-- **Response.** A successful edit reports `Successfully replaced in {path}. Added X line(s), removed Y line(s).` plus any warnings. An edit that produces identical content reports `No changes made` and never rotates anchors. The post-edit diff is exposed to the host UI via `details.diff` only — it is intentionally not part of the model-visible text.
+- **Response.** With auto-read enabled (the default), a successful edit returns the post-edit diff — the same `+HASH│` / `-   │` / ` HASH│` rows the user sees — instead of the summary, and the auto-read block appends fresh anchors right after it. With auto-read disabled, the edit reports `Successfully replaced in {path}. Added X line(s), removed Y line(s).` plus any warnings. Warnings are appended in both modes. An edit that produces identical content reports `No changes made` and never rotates anchors. The post-edit diff is exposed to the host UI via `details.diff`; it reaches the model-visible text only while auto-read is on.
 - **Undo.** Every successful replace is undoable once via `undo_last_replace` — see [Undo](#undo).
 
 ## Anchor stability
@@ -120,6 +120,7 @@ A no-op replace never changes the file, so anchors remain valid. On first run af
 
 Enabled by default. After a successful `write`, `replace`, or `undo_last_replace`, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so the model gets immediate `HASH│content` anchors without a separate `read` call.
 
+- After `replace`, the success summary is replaced by the post-edit diff (the same `+HASH│` / `-   │` / ` HASH│` rows the user sees) plus any warnings, so the model sees the change like a git diff instead of line counts.
 - After `replace` / `undo_last_replace`, the block covers the changed span plus 2 lines of context above and below — the rest of the file keeps its anchors from the persistent store.
 - After `write`, the block dumps from the top of the file. For files over 2000 lines, the dump is truncated with a pagination hint — use `read` with `offset` to continue.
 - Auto-read keeps a 50KB display budget: lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).

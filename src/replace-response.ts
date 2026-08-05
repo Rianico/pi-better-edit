@@ -126,7 +126,7 @@ export function buildChanged(input: SuccessInput): TResult {
   const { path, result, warnings, snapshotId, originalNormalized, editMeta, resultHashes } = input;
 
   const resultLines = visLines(result);
-  const diffResult = genDiff(originalNormalized, result, 2, resultHashes);
+  const diffResult = genDiff(originalNormalized, result, 1, resultHashes);
   const addedLines = editMeta.addedLines;
   const removedLines = editMeta.removedLines;
   const warningsBlock = warnBlock(warnings);

@@ -407,3 +407,119 @@ describe("auto-read handler", () => {
     });
   });
 });
+
+describe("replace diff in model-visible text", () => {
+  it("shows the post-edit diff instead of the summary when auto-read is on", async () => {
+    await withTempDir("auto-read-diff-", async (dir) => {
+      await writeFile(join(dir, "diff.txt"), "aaa\nbbb\nccc\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const diff = " aaa\n-   │bbb\n+XYZ│BBB\n ccc";
+
+      const result = await handler!(
+        {
+          toolName: "replace",
+          isError: false,
+          input: { path: "diff.txt" },
+          details: {
+            diff,
+            metrics: { classification: "applied", changed_lines: { first: 2, last: 2 } },
+          },
+          content: [{ type: "text", text: "Successfully replaced in diff.txt. Added 1 line(s), removed 1 line(s)." }],
+        },
+        { cwd: dir },
+      );
+
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content).toHaveLength(2);
+      expect(content[0].text).toBe(diff);
+      expect(content[0].text).not.toContain("Successfully replaced");
+      expect(content[1].text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(content[1].text).toContain("│bbb");
+    });
+  });
+
+  it("keeps the warnings block alongside the diff", async () => {
+    await withTempDir("auto-read-diff-warn-", async (dir) => {
+      await writeFile(join(dir, "warn.txt"), "aaa\nbbb\nccc\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const diff = " aaa\n-   │bbb\n+XYZ│BBB\n ccc";
+      const summary = "Successfully replaced in warn.txt. Added 1 line(s), removed 1 line(s).\n\nWarnings:\n[E_BARE_HASH_PREFIX] Autocorrected: stripped \"HASH│\" prefix copied from read output in content_lines[0].";
+
+      const result = await handler!(
+        {
+          toolName: "replace",
+          isError: false,
+          input: { path: "warn.txt" },
+          details: { diff, metrics: { classification: "applied" } },
+          content: [{ type: "text", text: summary }],
+        },
+        { cwd: dir },
+      );
+
+      const text = (result as { content: Array<{ type: string; text: string }> }).content[0].text;
+      expect(text).toContain(diff);
+      expect(text).toContain("Warnings:");
+      expect(text).toContain("[E_BARE_HASH_PREFIX]");
+      expect(text).not.toContain("Successfully replaced");
+    });
+  });
+
+  it("keeps the summary when the result carries no diff", async () => {
+    await withTempDir("auto-read-diff-none-", async (dir) => {
+      await writeFile(join(dir, "nodiff.txt"), "aaa\nbbb\nccc\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+
+      const result = await handler!(
+        {
+          toolName: "replace",
+          isError: false,
+          input: { path: "nodiff.txt" },
+          details: { metrics: { classification: "applied" } },
+          content: [{ type: "text", text: "Successfully replaced in nodiff.txt." }],
+        },
+        { cwd: dir },
+      );
+
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content).toHaveLength(2);
+      expect(content[0].text).toBe("Successfully replaced in nodiff.txt.");
+    });
+  });
+
+  it("leaves undo result text unchanged", async () => {
+    await withTempDir("auto-read-diff-undo-", async (dir) => {
+      await writeFile(join(dir, "undo.txt"), "aaa\nbbb\nccc\n", "utf-8");
+
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+
+      const result = await handler!(
+        {
+          toolName: "undo_last_replace",
+          isError: false,
+          input: { path: "undo.txt" },
+          details: {
+            diff: " aaa\n-   │bbb\n+XYZ│BBB\n ccc",
+            metrics: { classification: "applied" },
+          },
+          content: [{ type: "text", text: "Undone last replace on undo.txt." }],
+        },
+        { cwd: dir },
+      );
+
+      const content = (result as { content: Array<{ type: string; text: string }> }).content;
+      expect(content).toHaveLength(2);
+      expect(content[0].text).toBe("Undone last replace on undo.txt.");
+    });
+  });
+});

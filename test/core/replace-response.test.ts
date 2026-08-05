@@ -154,4 +154,27 @@ describe("buildChanged", () => {
     expect(output.details.metrics!.added_lines).toBe(0);
     expect(output.details.metrics!.removed_lines).toBe(0);
   });
+
+  it("shows exactly one context line above and below the change in the diff", async () => {
+    const original = "aaa\nbbb\nccc\nddd\neee\n";
+    const result = "aaa\nbbb\nCCC\nddd\neee\n";
+    const originalHashes = await lineHashes(original, home.testPath);
+    const resultHashes = await lineHashes(result, home.testPath);
+    const output = buildChanged({
+      path: "test.txt",
+      originalNormalized: original,
+      originalHashes,
+      result,
+      resultHashes,
+      warnings: undefined,
+      snapshotId: "snap1",
+      editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 3, lastChangedLine: 3, addedLines: 1, removedLines: 1 },
+    });
+    const diff = output.details.diff!;
+    expect(diff).toContain("│bbb");
+    expect(diff).toContain("│CCC");
+    expect(diff).toContain("│ddd");
+    expect(diff).not.toContain("│aaa");
+    expect(diff).not.toContain("│eee");
+  });
 });
