@@ -187,3 +187,61 @@ describe("diff preview rows copied into content", () => {
 		expect(result.warnings ?? []).toEqual([]);
 	});
 });
+
+describe("diff-prefix false-positive guards (tightened shapes)", () => {
+	const file = "alpha\nbeta\ngamma\ndelta";
+
+	function applyTool(toolEdit: HTEdit, precomputedHashes?: string[]) {
+		return applyEdit(file, resEdit(toolEdit), undefined, precomputedHashes);
+	}
+
+	it("leaves literal '+ HASH│' content with a space after the plus untouched", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool(
+      { hash_range_inclusive: [anchor, anchor], content_lines: [`+ ${hashes[1]!}│one`] },
+    hashes);
+		expect(result.content).toBe(`+ ${hashes[1]!}│one\nbeta\ngamma\ndelta`);
+		expect(result.warnings ?? []).toEqual([]);
+	});
+
+	it("leaves literal '- HASH│' content with a space after the minus untouched", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool(
+      { hash_range_inclusive: [anchor, anchor], content_lines: [`- ${hashes[1]!}│one`] },
+    hashes);
+		expect(result.content).toBe(`- ${hashes[1]!}│one\nbeta\ngamma\ndelta`);
+		expect(result.warnings ?? []).toEqual([]);
+	});
+
+	it("leaves literal '+ abc│' / '- xyz│' lines untouched", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool(
+      { hash_range_inclusive: [anchor, anchor], content_lines: ["+ abc│def", "- xyz│uvw"] },
+    hashes);
+		expect(result.content).toBe("+ abc│def\n- xyz│uvw\nbeta\ngamma\ndelta");
+		expect(result.warnings ?? []).toEqual([]);
+	});
+
+	it("still strips exact +HASH│ rows without a space", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool(
+      { hash_range_inclusive: [anchor, anchor], content_lines: [`+${hashes[1]!}│one`] },
+    hashes);
+		expect(result.content).toBe("one\nbeta\ngamma\ndelta");
+		expect(result.warnings?.[0]).toMatch(/stripped diff-preview marker/);
+	});
+
+	it("still strips exact -HASH│ and -   │ rows", async () => {
+		const hashes = await lineHashes(file, home.testPath);
+		const anchor = hashes[0]!;
+		const result = applyTool(
+      { hash_range_inclusive: [anchor, anchor], content_lines: [`-${hashes[1]!}│one`, "-   │two"] },
+    hashes);
+		expect(result.content).toBe("one\ntwo\nbeta\ngamma\ndelta");
+		expect(result.warnings?.[0]).toMatch(/stripped diff-preview marker/);
+	});
+});

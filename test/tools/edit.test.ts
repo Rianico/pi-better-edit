@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
@@ -138,6 +138,129 @@ describe("regReplace", () => {
       expect(result.content[0].text).toContain("Warnings:");
       expect(result.content[0].text).toContain("was reversed");
       expect(result.details?.diff).toContain("X");
+    });
+  });
+});
+
+describe("regReplace — robustness", () => {
+  it("reports success even when the post-edit snapshot fails", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const fileReader = await import("../../src/file-reader");
+      const spy = vi
+        .spyOn(fileReader, "fileSnap")
+        .mockRejectedValue(new Error("stat failed"));
+      try {
+        const result = await editTool.execute(
+          "e1",
+          {
+            path: "sample.ts",
+            hash_range_inclusive: [hashes[1]!, hashes[1]!],
+            content_lines: ["BBB"],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(result.content[0].text).toContain("Successfully replaced");
+        expect(result.details?.snapshotId).toBeUndefined();
+      } finally {
+        spy.mockRestore();
+      }
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nBBB\nccc\n");
+    });
+  });
+
+  it("reports success even when the noop-path snapshot fails", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const fileReader = await import("../../src/file-reader");
+      const spy = vi
+        .spyOn(fileReader, "fileSnap")
+        .mockRejectedValue(new Error("stat failed"));
+      try {
+        const result = await editTool.execute(
+          "e1",
+          {
+            path: "sample.ts",
+            hash_range_inclusive: [hashes[1]!, hashes[1]!],
+            content_lines: ["bbb"],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(result.content[0].text).toContain("No changes made");
+        expect(result.details?.classification).toBe("noop");
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  it("applies the edit even when snapshot persistence fails", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashStore = await import("../../src/hash-store");
+      const spy = vi
+        .spyOn(hashStore, "upsertSnapshot")
+        .mockImplementation(() => {
+          throw new Error("store down");
+        });
+      try {
+        const result = await editTool.execute(
+          "e1",
+          {
+            path: "sample.ts",
+            hash_range_inclusive: [hashes[1]!, hashes[1]!],
+            content_lines: ["BBB"],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(result.content[0].text).toContain("Successfully replaced");
+      } finally {
+        spy.mockRestore();
+      }
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nBBB\nccc\n");
+    });
+  });
+
+  it("still refuses the edit when undo persistence fails", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashStore = await import("../../src/hash-store");
+      const spy = vi
+        .spyOn(hashStore, "upsertUndo")
+        .mockImplementation(() => {
+          throw new Error("store down");
+        });
+      try {
+        await expect(
+          editTool.execute(
+            "e1",
+            {
+              path: "sample.ts",
+              hash_range_inclusive: [hashes[1]!, hashes[1]!],
+              content_lines: ["BBB"],
+            },
+            undefined,
+            undefined,
+            ctx,
+          ),
+        ).rejects.toThrow(/E_UNDO_UNAVAILABLE/);
+      } finally {
+        spy.mockRestore();
+      }
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nbbb\nccc\n");
     });
   });
 });

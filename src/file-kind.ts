@@ -46,8 +46,14 @@ export type LFile =
   | { kind: "binary"; description: string };
 
 
+export interface LoadFileOptions {
+  maxLines?: number;
+  displayPath?: string;
+}
+
 export async function loadFileKindAndText(
   filePath: string,
+  options?: LoadFileOptions,
 ): Promise<LFile> {
   const pathStat = await fsStat(filePath);
   if (pathStat.isDirectory()) {
@@ -104,12 +110,23 @@ export async function loadFileKindAndText(
 
     const decoder = new TextDecoder("utf-8", { fatal: false, ignoreBOM: true });
     let hadUtf8DecodeErrors = false;
+    let newlineCount = 0;
     const parts: string[] = [];
 
     function decodeChunk(chunk: Uint8Array, stream: boolean): string {
       const decoded = decoder.decode(chunk, { stream });
       if (!hadUtf8DecodeErrors && decoded.includes("\uFFFD")) {
         hadUtf8DecodeErrors = true;
+      }
+      if (options?.maxLines !== undefined) {
+        for (let i = 0; i < decoded.length; i++) {
+          if (decoded.charCodeAt(i) === 10) newlineCount++;
+        }
+        if (newlineCount > options.maxLines) {
+          throw new Error(
+            `[E_FILE_TOO_LARGE] ${options.displayPath ?? filePath} has more than ${options.maxLines} lines, exceeding the ${options.maxLines}-line edit limit. Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.`,
+          );
+        }
       }
       return decoded;
     }

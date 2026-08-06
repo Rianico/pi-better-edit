@@ -19,6 +19,9 @@ export async function valAccess(
 			const accessLabel = accessMode & constants.W_OK ? "not writable" : "not readable";
 			throw new Error(`[E_ACCESS] File is ${accessLabel}: ${path}`);
 		}
+		if (code === "ELOOP") {
+			throw new Error(`[E_ACCESS] Too many symbolic links while resolving: ${path}`);
+		}
 		throw new Error(`[E_ACCESS] Cannot access file: ${path}`);
 	}
 }

@@ -20,10 +20,12 @@ describe("fileSnap", () => {
 
       const snap = await fileSnap(filePath);
 
-      expect(snap.snapshotId).toMatch(/^v1\|.+\|.+\|.+$/);
+      expect(snap.snapshotId).toMatch(/^v2\|.+\|.+\|.+\|.+\|.+$/);
       expect(snap.snapshotId).toContain("test.ts");
       expect(typeof snap.mtimeMs).toBe("number");
       expect(snap.mtimeMs).toBeGreaterThan(0);
+      expect(typeof snap.ino).toBe("number");
+      expect(typeof snap.ctimeMs).toBe("number");
       expect(typeof snap.size).toBe("number");
       expect(snap.size).toBe(12);
     });
@@ -90,7 +92,7 @@ describe("fileSnap", () => {
     });
   });
 
-  it("snapshotId format is v1|path|mtimeMs|size", async () => {
+  it("snapshotId format is v2|path|ino|mtimeMs|ctimeMs|size", async () => {
     await withTempDir(async (dir) => {
       const filePath = join(dir, "format.ts");
       await writeFile(filePath, "data\n", "utf-8");
@@ -98,10 +100,12 @@ describe("fileSnap", () => {
       const snap = await fileSnap(filePath);
       const parts = snap.snapshotId.split("|");
 
-      expect(parts[0]).toBe("v1");
+      expect(parts[0]).toBe("v2");
       expect(parts[1]).toContain("format.ts");
-      expect(parts[2]).toBe(String(snap.mtimeMs));
-      expect(parts[3]).toBe(String(snap.size));
+      expect(parts[2]).toBe(String(snap.ino));
+      expect(parts[3]).toBe(String(snap.mtimeMs));
+      expect(parts[4]).toBe(String(snap.ctimeMs));
+      expect(parts[5]).toBe(String(snap.size));
     });
   });
 });

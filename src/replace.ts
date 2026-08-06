@@ -453,7 +453,12 @@ export function buildToolDef(): ToolDef {
 
         const editsAttempted = 1;
         if (originalNormalized === result) {
-          const noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
+          let noopSnapshotId: string | undefined;
+          try {
+            noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
+          } catch (error) {
+            console.error("Failed to compute snapshot for noop edit:", error);
+          }
           return buildNoop({
             path,
             noopEdit,
@@ -497,8 +502,12 @@ export function buildToolDef(): ToolDef {
           await undo.restore();
           throw error;
         }
-        const updatedSnapshotId = (await fileSnap(absolutePath))
-          .snapshotId;
+        let updatedSnapshotId: string | undefined;
+        try {
+          updatedSnapshotId = (await fileSnap(absolutePath)).snapshotId;
+        } catch (error) {
+          console.error("Failed to compute post-edit snapshot:", error);
+        }
 
         const editMeta: RMeta = {
           editsAttempted,

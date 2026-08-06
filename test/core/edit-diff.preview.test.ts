@@ -69,3 +69,63 @@ describe("genDiff", () => {
 		expect(diff).toContain("AFTER_CHANGED");
 	});
 });
+
+function mulberry32(seed: number): () => number {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0;
+    a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
+
+function randInt(rnd: () => number, min: number, max: number): number {
+  return min + Math.floor(rnd() * (max - min + 1));
+}
+
+describe("genDiff — property: column alignment", () => {
+  const vocab = [
+    "",
+    "}",
+    "  foo",
+    "import x",
+    "a = 1;",
+    "// c",
+    "a│b",
+    "line with │ inside",
+    "  const y = 2;",
+  ];
+
+  it("keeps the │ separator at column 4 for every diff row across random content", () => {
+    for (let iter = 0; iter < 200; iter++) {
+      const rnd = mulberry32(iter * 2654435761 + 17);
+      const oldContent = Array.from(
+        { length: randInt(rnd, 0, 30) },
+        () => vocab[randInt(rnd, 0, vocab.length - 1)]!,
+      ).join("\n");
+      const newContent = Array.from(
+        { length: randInt(rnd, 0, 30) },
+        () => vocab[randInt(rnd, 0, vocab.length - 1)]!,
+      ).join("\n");
+
+      const { diff } = genDiff(oldContent, newContent, randInt(rnd, 0, 4));
+      for (const line of diff.split("\n")) {
+        if (line.includes("│")) {
+          expect(
+            line.indexOf("│"),
+            `column drift for iter ${iter}: ${JSON.stringify(line)}`,
+          ).toBe(4);
+        }
+      }
+    }
+  });
+
+  it("keeps the │ separator aligned with single-line diffs too", () => {
+    const { diff } = genDiff("alpha\nbeta\ngamma", "alpha\nBETA\ngamma");
+    for (const line of diff.split("\n")) {
+      if (line.includes("│")) expect(line.indexOf("│")).toBe(4);
+    }
+  });
+});

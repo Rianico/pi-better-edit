@@ -444,3 +444,34 @@ describe("auto-read after write", () => {
     }
   });
 });
+
+describe("auto-read after write — non-text files", () => {
+  it("silently skips auto-read when the written file is binary", async () => {
+    const cwd = await makeTempDir("auto-read-test-binary-");
+    const pngBytes = Buffer.from(
+      "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
+      "base64",
+    );
+    await writeFile(join(cwd, "image.png"), pngBytes);
+    try {
+      const { getToolResultHandler } = createTestPi();
+      const handler = getToolResultHandler();
+
+      const result = await handler!(
+        {
+          toolName: "write",
+          toolCallId: "write-1",
+          input: { path: "image.png", content: "binary" },
+          content: [{ type: "text", text: "Successfully wrote image.png" }],
+          details: undefined,
+          isError: false,
+        },
+        { cwd },
+      );
+
+      expect(result).toBeUndefined();
+    } finally {
+      await cleanupCwd(cwd);
+    }
+  });
+});

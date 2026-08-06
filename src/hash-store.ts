@@ -46,6 +46,55 @@ function isValidSnapshot(value: unknown): value is LegacySnapshot {
   return true;
 }
 
+export function isCorruptionError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const errcode = (error as { errcode?: unknown }).errcode;
+    if (typeof errcode === "number") {
+      return errcode === 11 || errcode === 24 || errcode === 26;
+    }
+    const code = (error as { code?: unknown }).code;
+    if (typeof code === "string" && /NOTADB|CORRUPT/.test(code)) return true;
+  }
+  return (
+    error instanceof Error &&
+    /corrupt|not a database|malformed|database disk image/i.test(error.message)
+  );
+}
+
+function isBusyError(error: unknown): boolean {
+  if (error && typeof error === "object") {
+    const errcode = (error as { errcode?: unknown }).errcode;
+    if (typeof errcode === "number") return errcode === 5 || errcode === 6;
+  }
+  return error instanceof Error && /busy|locked/i.test(error.message);
+}
+
+function sleepSync(ms: number): void {
+  const sab = new Int32Array(new SharedArrayBuffer(4));
+  Atomics.wait(sab, 0, 0, ms);
+}
+
+const BUSY_RETRIES = 3;
+const BUSY_RETRY_DELAY_MS = 100;
+
+function withBusyRetry<T>(fn: () => T): T {
+  let lastError: unknown;
+  for (let attempt = 0; attempt <= BUSY_RETRIES; attempt++) {
+    try {
+      return fn();
+    } catch (error) {
+      lastError = error;
+      if (!isBusyError(error) || attempt === BUSY_RETRIES) throw error;
+      sleepSync(BUSY_RETRY_DELAY_MS);
+    }
+  }
+  throw lastError;
+}
+
+function openDbWithBusyRetry(storePath: string): { db: DatabaseSync; stmts: Prepared } {
+  return withBusyRetry(() => openDb(storePath));
+}
+
 let cachedDb: { path: string; db: DatabaseSync; stmts: Prepared } | null = null;
 let opening: { path: string; promise: Promise<HashStore> } | null = null;
 let exitHandlerRegistered = false;
@@ -121,13 +170,12 @@ function buildStore(
   const stmts: Prepared = {
     get: (...params) => getStmt.get(...params) as Record<string, unknown> | undefined,
     allPaths: (...params) => allStmt.all(...params) as Record<string, unknown>[],
-    deleteOne: (...params) => { delStmt.run(...params); },
-    upsert: (...params) => { upsertStmt.run(...params); },
-    undoUpsert: (...params) => { undoUpsertStmt.run(...params); },
+    deleteOne: (...params) => { withBusyRetry(() => { delStmt.run(...params); }); },
+    upsert: (...params) => { withBusyRetry(() => { upsertStmt.run(...params); }); },
+    undoUpsert: (...params) => { withBusyRetry(() => { undoUpsertStmt.run(...params); }); },
     undoGet: (...params) => undoGetStmt.get(...params) as Record<string, unknown> | undefined,
-    undoDelete: (...params) => { undoDelStmt.run(...params); },
+    undoDelete: (...params) => { withBusyRetry(() => { undoDelStmt.run(...params); }); },
   };
-
   return { db, stmts };
 }
 
@@ -135,8 +183,9 @@ function isHealthy(db: DatabaseSync): boolean {
   try {
     const row = db.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
     return row?.quick_check === "ok";
-  } catch {
-    return false;
+  } catch (error) {
+    if (isCorruptionError(error)) return false;
+    return true;
   }
 }
 
@@ -170,18 +219,19 @@ async function openStore(storePath: string): Promise<HashStore> {
   let existed = existsSync(storePath);
   let opened: { db: DatabaseSync; stmts: Prepared };
   try {
-    opened = openDb(storePath);
+    opened = openDbWithBusyRetry(storePath);
   } catch (error) {
+    if (!isCorruptionError(error)) throw error;
     console.error("Hash store failed to open, rebuilding:", error);
     await quarantineStore(storePath);
     existed = false;
-    opened = openDb(storePath);
+    opened = openDbWithBusyRetry(storePath);
   }
   if (!isHealthy(opened.db)) {
     shutdownDb(opened.db);
     await quarantineStore(storePath);
     existed = false;
-    opened = openDb(storePath);
+    opened = openDbWithBusyRetry(storePath);
   }
   const { db, stmts } = opened;
 
@@ -228,14 +278,16 @@ export function shutdownHashStore(): void {
 
 function withStore(fn: () => void): void {
   if (cachedDb) {
-    cachedDb.db.exec("BEGIN IMMEDIATE");
-    try {
-      fn();
-      cachedDb.db.exec("COMMIT");
-    } catch (e) {
-      cachedDb.db.exec("ROLLBACK");
-      throw e;
-    }
+    withBusyRetry(() => {
+      cachedDb!.db.exec("BEGIN IMMEDIATE");
+      try {
+        fn();
+        cachedDb!.db.exec("COMMIT");
+      } catch (e) {
+        try { cachedDb!.db.exec("ROLLBACK"); } catch {}
+        throw e;
+      }
+    });
   } else {
     fn();
   }

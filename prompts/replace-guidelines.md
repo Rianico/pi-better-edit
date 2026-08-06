@@ -1,5 +1,6 @@
 - `replace`: hash_range_inclusive must use only anchors from the most recent read of the same file.
 - `replace`: hash_range_inclusive marks the exact lines that are REMOVED, and content_lines is their complete replacement applied in order; nothing outside the range changes. Every line inside the range that is not reproduced byte-exact in content_lines is deleted from the file — including closing braces and other structural lines.
 - `replace`: minimize the replaced range — anchor only the lines that actually change, so few unchanged lines must be reproduced byte-exact.
+- `replace`: to replace a single line, repeat its hash in both positions of hash_range_inclusive: ["<HASH>", "<HASH>"] — never extend the range to neighboring lines for a one-line edit.
 - `replace`: content_lines is a native JSON array of strings — never a serialized JSON string. When copying a line from read output, remove its HASH│ prefix and keep the leading whitespace exactly as shown.
 - `replace`: content_lines entries are single lines — never embed a line break inside an entry; pass each line as its own array entry.

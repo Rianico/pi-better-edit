@@ -35,7 +35,7 @@ type NEditEntry = {
 export interface NoopInput {
 	path: string;
 	noopEdit: NEditEntry | undefined;
-	snapshotId: string;
+	snapshotId?: string;
 	editMeta: RMeta;
 	warnings: string[] | undefined;
 }
@@ -47,7 +47,7 @@ export interface SuccessInput {
   result: string;
   resultHashes: string[];
   warnings: string[] | undefined;
-  snapshotId: string;
+  snapshotId?: string;
   editMeta: RMeta;
 }
 

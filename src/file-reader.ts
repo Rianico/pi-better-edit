@@ -20,12 +20,17 @@ export interface NormFile {
 
 export type SnapInfo = {
   snapshotId: string;
+  ino: number;
   mtimeMs: number;
+  ctimeMs: number;
   size: number;
 };
 
-function fmtSnapId(canonicalPath: string, info: { mtimeMs: number; size: number }): string {
-  return `v1|${canonicalPath}|${info.mtimeMs}|${info.size}`;
+function fmtSnapId(
+  canonicalPath: string,
+  info: { ino: number; mtimeMs: number; ctimeMs: number; size: number },
+): string {
+  return `v2|${canonicalPath}|${info.ino}|${info.mtimeMs}|${info.ctimeMs}|${info.size}`;
 }
 
 export async function fileSnap(absolutePath: string): Promise<SnapInfo> {
@@ -33,7 +38,9 @@ export async function fileSnap(absolutePath: string): Promise<SnapInfo> {
   const stats = await stat(canonicalPath);
   return {
     snapshotId: fmtSnapId(canonicalPath, stats),
+    ino: stats.ino,
     mtimeMs: stats.mtimeMs,
+    ctimeMs: stats.ctimeMs,
     size: stats.size,
   };
 }
@@ -60,9 +67,8 @@ export async function readNormFile(
   await valAccess(resolvedPath, path, accessMode);
 
   abortIf(signal);
-  const file = options?.preloadedFile ?? (await loadFileKindAndText(resolvedPath));
+  const file = options?.preloadedFile ?? (await loadFileKindAndText(resolvedPath, { maxLines: options?.maxLines, displayPath: path }));
   valKind(file, path);
-
   abortIf(signal);
   const { bom, text: rawContent } = stripBOM(file.text);
   const originalEnding = detectEnding(rawContent);

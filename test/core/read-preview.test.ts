@@ -127,3 +127,25 @@ describe("fmtReadPreview", () => {
     expect(result.nextOffset).toBeUndefined();
   });
 });
+
+describe("fmtReadPreview — oversized marker truncation", () => {
+  it("continues past a truncated marker list without skipping hidden rows", async () => {
+    const big1 = "X".repeat(1000);
+    const big2 = "Y".repeat(1000);
+    const content = `a\n${big1}\n${big2}\nb\n`;
+    const budget = 130;
+
+    const first = await fmtReadPreview(content, {}, undefined, home.testPath, budget);
+    expect(first.text).toContain("│a");
+    expect(first.text).toContain("[Line 2 is");
+    expect(first.text).not.toContain("│b");
+    expect(first.text).not.toContain("Line 3");
+    expect(first.text).toContain("Use offset=3 to continue");
+    expect(first.nextOffset).toBe(3);
+
+    const second = await fmtReadPreview(content, { offset: 3 }, undefined, home.testPath, budget);
+    expect(second.text).toContain("[Line 3 is");
+    expect(second.text).toContain("│b");
+    expect(second.nextOffset).toBeUndefined();
+  });
+});

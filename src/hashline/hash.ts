@@ -43,10 +43,10 @@ function hashAt(idx: number): string {
 }
 
 export const HL_PREFIX_PLUS_RE = new RegExp(
-	`^\\+\\s*${HASH_CLASS}│`,
+	`^\\+${HASH_CLASS}│`,
 );
 export const HL_PREFIX_MINUS_RE = new RegExp(
-	`^-(?:\\s*${HASH_CLASS}│| {${ANCHOR_LEN}}│)`,
+	`^-(?:${HASH_CLASS}│| {${ANCHOR_LEN}}│)`,
 );
 
 export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
@@ -157,19 +157,32 @@ export async function lineHashes(
       previous.removedHashes,
     );
     if (persist !== false) {
-      upsertSnapshot(hashStore, path, contentChecksum(content), splitLines(content).length, newHashes);
+      try {
+        upsertSnapshot(hashStore, path, contentChecksum(content), splitLines(content).length, newHashes);
+      } catch (error) {
+        console.error("Failed to persist hash snapshot:", error);
+      }
     }
     return newHashes;
   }
 
-  const cached = getSnapshot(hashStore, path, content);
+  let cached: string[] | undefined;
+  try {
+    cached = getSnapshot(hashStore, path, content);
+  } catch (error) {
+    console.error("Failed to read hash store snapshot:", error);
+  }
   if (cached) {
     return cached;
   }
 
   const newHashes = _lineHashesPure(content);
   if (persist !== false) {
-    upsertSnapshot(hashStore, path, contentChecksum(content), splitLines(content).length, newHashes);
+    try {
+      upsertSnapshot(hashStore, path, contentChecksum(content), splitLines(content).length, newHashes);
+    } catch (error) {
+      console.error("Failed to persist hash snapshot:", error);
+    }
   }
   return newHashes;
 }

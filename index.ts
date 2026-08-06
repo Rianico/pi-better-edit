@@ -13,8 +13,10 @@ import {
 } from "./src/config";
 import { loadHashStore, pruneMissing } from "./src/hash-store";
 import { readNormFile } from "./src/file-reader";
+import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
 import { resolveTarget } from "./src/fs-write";
+import { valAccess } from "./src/validation";
 
 export default function (pi: ExtensionAPI): void {
   regRead(pi);
@@ -22,7 +24,6 @@ export default function (pi: ExtensionAPI): void {
   regReplace(pi);
   regReplaceUndo(pi);
 
-  const debugValue = process.env.PI_HASHLINE_DEBUG;
   let autoRead = true;
 
   pi.on("session_start", async (_event, ctx) => {
@@ -37,6 +38,7 @@ export default function (pi: ExtensionAPI): void {
     }
     const config = await readConfig();
     autoRead = config.autoRead;
+    const debugValue = process.env.PI_HASHLINE_DEBUG;
     if (debugValue === "1" || debugValue === "true") {
       ctx.ui.notify(`Hashline Edit mode active`, "info");
     }
@@ -66,8 +68,12 @@ export default function (pi: ExtensionAPI): void {
       if (!autoRead) return;
       if (typeof writtenPath !== "string") return;
       try {
+        const resolvedPath = await resolveTarget(toCwd(writtenPath, ctx.cwd));
+        await valAccess(resolvedPath, writtenPath);
+        const file = await loadFileKindAndText(resolvedPath, { maxLines: MAX_HASH_LINES, displayPath: writtenPath });
+        if (file.kind !== "text") return;
         const { normalized, fileHashes, absolutePath } = await readNormFile(
-          writtenPath, ctx.cwd, { maxLines: MAX_HASH_LINES },
+          writtenPath, ctx.cwd, { maxLines: MAX_HASH_LINES, preloadedFile: file },
         );
         const preview = await fmtReadPreview(
           normalized,

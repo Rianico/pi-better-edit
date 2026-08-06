@@ -105,3 +105,48 @@ describe("loadFileKindAndText", () => {
 	});
 });
 
+
+describe("loadFileKindAndText — maxLines early bailout", () => {
+  it("rejects files exceeding maxLines during decode", async () => {
+    await withTempFile("many-lines.txt", Array.from({ length: 10 }, (_, i) => `line${i}`).join("\n"), async ({ cwd }) => {
+      const path = join(cwd, "many-lines.txt");
+      await expect(
+        loadFileKindAndText(path, { maxLines: 5 }),
+      ).rejects.toThrow(/\[E_FILE_TOO_LARGE\].*more than 5 lines/);
+    });
+  });
+
+  it("uses displayPath in the error message when provided", async () => {
+    await withTempFile("many-lines.txt", Array.from({ length: 10 }, (_, i) => `line${i}`).join("\n"), async ({ cwd }) => {
+      const path = join(cwd, "many-lines.txt");
+      await expect(
+        loadFileKindAndText(path, { maxLines: 5, displayPath: "many-lines.txt" }),
+      ).rejects.toThrow(/\[E_FILE_TOO_LARGE\] many-lines\.txt/);
+    });
+  });
+
+  it("accepts files at the boundary", async () => {
+    await withTempFile("ok-lines.txt", Array.from({ length: 5 }, (_, i) => `line${i}`).join("\n"), async ({ cwd }) => {
+      const path = join(cwd, "ok-lines.txt");
+      const result = await loadFileKindAndText(path, { maxLines: 5 });
+      expect(result.kind).toBe("text");
+    });
+  });
+
+  it("counts CRLF line endings towards the limit", async () => {
+    await withTempFile("crlf-lines.txt", "a", async ({ path }) => {
+      const { writeFile } = await import("fs/promises");
+      await writeFile(path, Array.from({ length: 8 }, (_, i) => `line${i}`).join("\r\n"), "utf-8");
+      await expect(
+        loadFileKindAndText(path, { maxLines: 5 }),
+      ).rejects.toThrow(/\[E_FILE_TOO_LARGE\]/);
+    });
+  });
+
+  it("is a no-op when maxLines is omitted", async () => {
+    await withTempFile("plain-lines.txt", Array.from({ length: 10 }, (_, i) => `line${i}`).join("\n"), async ({ cwd }) => {
+      const result = await loadFileKindAndText(join(cwd, "plain-lines.txt"));
+      expect(result.kind).toBe("text");
+    });
+  });
+});

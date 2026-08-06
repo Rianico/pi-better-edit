@@ -100,15 +100,15 @@ export async function fmtReadPreview(
 				: fmtRegion([selectedHashes[index]!], [selected[index]!]),
 		);
 		const skippedTruncation = truncateHead(rows.join("\n"), { maxBytes });
-		const shownRows = rowSizes.filter((row) => row.bytes <= maxBytes);
-		const lastShownLine = shownRows.at(-1)?.lineNumber ?? startLine - 1;
+		const shownRowCount = skippedTruncation.content === "" ? 0 : skippedTruncation.content.split("\n").length;
+		const lastShownLine = shownRowCount > 0 ? startLine + shownRowCount - 1 : startLine - 1;
 		const lineLabel = oversized.length === 1 ? `Line ${oversized[0]!.lineNumber}` : `Lines ${oversized.map((row) => row.lineNumber).join(", ")}`;
 		const verb = oversized.length === 1 ? "exceeds" : "exceed";
 		const addresses = oversized.map((row) => `${row.lineNumber}p`).join(";");
 		const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; content not shown because hashline anchors require full lines. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
 		let preview = skippedTruncation.content;
 		let nextOffset: number | undefined;
-		if (shownRows.length > 0 && (skippedTruncation.truncated || lastShownLine < totalLines)) {
+		if (shownRowCount > 0 && (skippedTruncation.truncated || lastShownLine < totalLines)) {
 			nextOffset = lastShownLine + 1;
 			preview += `\n\n${warning}\n${formatPaginationHint(startLine, lastShownLine, totalLines, nextOffset, skippedTruncation.truncated ? skippedTruncation.maxBytes : undefined)}`;
 		} else {
@@ -178,7 +178,7 @@ export function regRead(pi: ExtensionAPI): void {
 			await valAccess(absolutePath, rawPath);
 
 			abortIf(signal);
-			const file = await loadFileKindAndText(absolutePath);
+			const file = await loadFileKindAndText(absolutePath, { maxLines: MAX_HASH_LINES, displayPath: rawPath });
 			if (file.kind === "image") {
 				const builtinRead = createReadTool(ctx.cwd);
 				const executeBuiltinRead = builtinRead.execute as unknown as (
