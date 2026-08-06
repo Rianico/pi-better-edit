@@ -199,7 +199,7 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 
 ## Development
 
-Requires [Node.js](https://nodejs.org) ≥ 22.13 and npm.
+Requires [Node.js](https://nodejs.org) ≥ 22.19 and npm.
 
 ```bash
 npm install
