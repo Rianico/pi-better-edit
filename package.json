@@ -1,6 +1,6 @@
 {
   "name": "pi-hashline-edit-pro",
-  "version": "1.1.2",
+  "version": "1.2.0",
   "type": "module",
   "description": "Strict hashline read/replace tool for pi-coding-agent with hash-anchored edits (3-char, 62-symbol, perfect hashing)",
   "main": "index.ts",
