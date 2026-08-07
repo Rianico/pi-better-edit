@@ -190,16 +190,16 @@ export async function execPipeline(
 
   const path = params.path;
 
-  const hashStore = options?.store ?? await loadHashStore();
-
-  const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors, absolutePath } = await readNormFile(
-    path, cwd, { signal: options?.signal, accessMode: options?.accessMode, maxLines: MAX_HASH_LINES, store: hashStore },
-  );
-
   const edit = resEdit({
     hash_range_inclusive: params.hash_range_inclusive,
     content_lines: params.content_lines,
   });
+
+  const hashStore = options?.store ?? await loadHashStore();
+  const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors, absolutePath } = await readNormFile(
+    path, cwd, { signal: options?.signal, accessMode: options?.accessMode, maxLines: MAX_HASH_LINES, store: hashStore },
+  );
+
   const anchorResult = applyEdit(
     originalNormalized,
     edit,

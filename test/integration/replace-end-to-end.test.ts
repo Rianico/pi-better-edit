@@ -211,6 +211,70 @@ describe("replace tool — end-to-end", () => {
     });
   });
 
+  describe("replace tool — line-ending matrix", () => {
+    const cases = [
+      {
+        name: "LF",
+        fileName: "lf.txt",
+        bytes: Buffer.from("alpha\nbeta\ngamma\n"),
+        afterDelete: "alpha\ngamma\n",
+      },
+      {
+        name: "CRLF",
+        fileName: "crlf.txt",
+        bytes: Buffer.from("alpha\r\nbeta\r\ngamma\r\n"),
+        afterDelete: "alpha\r\ngamma\r\n",
+      },
+      {
+        name: "CR",
+        fileName: "cr.txt",
+        bytes: Buffer.from("alpha\rbeta\rgamma\r"),
+        afterDelete: "alpha\rgamma\r",
+      },
+    ];
+
+    for (const c of cases) {
+      it(`${c.name}: delete middle line preserves the ending`, async () => {
+        await withTempBytes(c.fileName, c.bytes, async ({ cwd, path }) => {
+          const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+          const readResult = await readTool.execute("r1", { path: c.fileName }, undefined, undefined, ctx);
+          const betaRef = getText(readResult)
+            .split("\n")
+            .find((line: string) => line.includes("│beta"))!
+            .split("│")[0]!;
+          await editTool.execute(
+            "e1",
+            { path: c.fileName, hash_range_inclusive: [betaRef, betaRef], content_lines: [] },
+            undefined,
+            undefined,
+            ctx,
+          );
+          const content = await readFile(path, "utf-8");
+          expect(content).toBe(c.afterDelete);
+        });
+      });
+
+      it(`${c.name}: noop edit keeps the file byte-identical`, async () => {
+        await withTempBytes(c.fileName, c.bytes, async ({ cwd, path }) => {
+          const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+          const readResult = await readTool.execute("r1", { path: c.fileName }, undefined, undefined, ctx);
+          const betaRef = getText(readResult)
+            .split("\n")
+            .find((line: string) => line.includes("│beta"))!
+            .split("│")[0]!;
+          await editTool.execute(
+            "e1",
+            { path: c.fileName, hash_range_inclusive: [betaRef, betaRef], content_lines: ["beta"] },
+            undefined,
+            undefined,
+            ctx,
+          );
+          const content = await readFile(path, "utf-8");
+          expect(content).toBe(c.bytes.toString("utf-8"));
+        });
+      });
+    }
+  });
   it("accepts top-level hash_range_inclusive and content_lines", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);

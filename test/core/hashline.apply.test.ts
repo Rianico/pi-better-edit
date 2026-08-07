@@ -277,3 +277,113 @@ describe("applyEdit — trailing newline preservation", () => {
 		expect(result.content).toBe("a\nB\nc\n");
 	});
 });
+
+describe("applyEdit — deletion and range matrix", () => {
+	const cases = [
+		{
+			name: "delete first line with trailing newline",
+			content: "a\nb\nc\n",
+			range: [1, 1] as const,
+			contentLines: [],
+			expected: "b\nc\n",
+		},
+		{
+			name: "delete first line without trailing newline",
+			content: "a\nb\nc",
+			range: [1, 1] as const,
+			contentLines: [],
+			expected: "b\nc",
+		},
+		{
+			name: "delete middle line with trailing newline",
+			content: "a\nb\nc\n",
+			range: [2, 2] as const,
+			contentLines: [],
+			expected: "a\nc\n",
+		},
+		{
+			name: "delete last line with trailing newline",
+			content: "a\nb\nc\n",
+			range: [3, 3] as const,
+			contentLines: [],
+			expected: "a\nb\n",
+		},
+		{
+			name: "delete last line without trailing newline",
+			content: "a\nb\nc",
+			range: [3, 3] as const,
+			contentLines: [],
+			expected: "a\nb",
+		},
+		{
+			name: "delete range at start of file",
+			content: "a\nb\nc\nd\n",
+			range: [1, 2] as const,
+			contentLines: [],
+			expected: "c\nd\n",
+		},
+		{
+			name: "delete range ending at last line",
+			content: "a\nb\nc\nd\n",
+			range: [3, 4] as const,
+			contentLines: [],
+			expected: "a\nb\n",
+		},
+		{
+			name: "delete range ending at last line without trailing newline",
+			content: "a\nb\nc\nd",
+			range: [3, 4] as const,
+			contentLines: [],
+			expected: "a\nb",
+		},
+		{
+			name: "replace whole file keeps trailing newline",
+			content: "a\nb\nc\n",
+			range: [1, 3] as const,
+			contentLines: ["X", "Y"],
+			expected: "X\nY\n",
+		},
+		{
+			name: "replace whole file without trailing newline",
+			content: "a\nb\nc",
+			range: [1, 3] as const,
+			contentLines: ["X", "Y"],
+			expected: "X\nY",
+		},
+		{
+			name: "replace last line expands without trailing newline",
+			content: "a\nb\nc",
+			range: [3, 3] as const,
+			contentLines: ["X", "Y"],
+			expected: "a\nb\nX\nY",
+		},
+		{
+			name: "replace first line keeps the rest intact",
+			content: "a\nb\nc\n",
+			range: [1, 1] as const,
+			contentLines: ["X", "Y"],
+			expected: "X\nY\nb\nc\n",
+		},
+		{
+			name: "single-line noop on the last line keeps the file byte-identical",
+			content: "a\nb\nc\n",
+			range: [3, 3] as const,
+			contentLines: ["c"],
+			expected: "a\nb\nc\n",
+		},
+	];
+
+	for (const c of cases) {
+		it(c.name, async () => {
+			const edit: HEdit = {
+				hash_range_inclusive: [
+					await makeTag(c.content, c.range[0], home.testPath),
+					await makeTag(c.content, c.range[1], home.testPath),
+				],
+				content_lines: c.contentLines,
+			};
+			const result = applyEdit(c.content, edit);
+			expect(result.content).toBe(c.expected);
+		});
+	}
+});

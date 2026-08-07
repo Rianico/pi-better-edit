@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertReq, buildToolDef } from "../../src/replace";
+import { assertReq, assertNoLegacyKeys, buildToolDef } from "../../src/replace";
 import { withTempFile, makeFakePiRegistry } from "../support/fixtures";
 import register from "../../index";
 
@@ -125,5 +125,71 @@ describe("legacy dialect rejection in the execution path", () => {
 				tool.execute("e1", { path: "sample.ts", changes: [{ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] }] }, undefined, undefined, { cwd } as any),
 			).rejects.toThrow(/^\[E_LEGACY_SHAPE\]/);
 		});
+	});
+});
+
+describe("assertNoLegacyKeys", () => {
+	it("accepts non-record input without throwing", () => {
+		expect(() => assertNoLegacyKeys(null)).not.toThrow();
+		expect(() => assertNoLegacyKeys("text")).not.toThrow();
+		expect(() => assertNoLegacyKeys(["changes"])).not.toThrow();
+		expect(() => assertNoLegacyKeys(42)).not.toThrow();
+	});
+});
+
+describe("anchor validation order", () => {
+	it("rejects malformed anchors before any file I/O", async () => {
+		const tool = buildToolDef();
+		await expect(
+			tool.execute(
+				"e1",
+				{
+					path: "does-not-exist.ts",
+					hash_range_inclusive: ["abcd", "abcd"],
+					content_lines: ["x"],
+				},
+				undefined,
+				undefined,
+				{ cwd: "/tmp" } as any,
+			),
+		).rejects.toThrow(/^\[E_BAD_REF\]/);
+	});
+});
+
+describe("prepareArguments normalization", () => {
+	it("passes through non-record input unchanged", () => {
+		const tool = buildToolDef();
+		expect(tool.prepareArguments!(null)).toBe(null);
+		expect(tool.prepareArguments!("raw")).toBe("raw");
+	});
+
+	it("parses a JSON-string content_lines into an array", () => {
+		const tool = buildToolDef();
+		const prepared = tool.prepareArguments!({
+			path: "test.txt",
+			hash_range_inclusive: ["AAA", "BBB"],
+			content_lines: '["line1", "line2"]',
+		}) as Record<string, unknown>;
+		expect(prepared.content_lines).toEqual(["line1", "line2"]);
+	});
+
+	it("rejects a JSON-string content_lines that is not an array", () => {
+		const tool = buildToolDef();
+		expect(() => tool.prepareArguments!({
+			path: "test.txt",
+			hash_range_inclusive: ["AAA", "BBB"],
+			content_lines: '"not-an-array"',
+		})).toThrow(/\[E_BAD_SHAPE\]/);
+	});
+
+	it("normalizes file_path to path", () => {
+		const tool = buildToolDef();
+		const prepared = tool.prepareArguments!({
+			file_path: "test.txt",
+			hash_range_inclusive: ["AAA", "BBB"],
+			content_lines: ["x"],
+		}) as Record<string, unknown>;
+		expect(prepared.path).toBe("test.txt");
+		expect("file_path" in prepared).toBe(false);
 	});
 });
