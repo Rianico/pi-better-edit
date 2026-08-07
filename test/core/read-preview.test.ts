@@ -149,3 +149,27 @@ describe("fmtReadPreview — oversized marker truncation", () => {
     expect(second.nextOffset).toBeUndefined();
   });
 });
+
+describe("fmtReadPreview — maxTruncLines budget", () => {
+  it("caps truncated output lines via maxTruncLines", async () => {
+    const content = ["l1", "l2", "l3", "l4", "l5"].join("\n") + "\n";
+    const result = await fmtReadPreview(content, {}, undefined, home.testPath, undefined, 3);
+    expect(result.text).toContain("│l1");
+    expect(result.text).toContain("│l3");
+    expect(result.text).not.toContain("│l4");
+    expect(result.text).toContain("[Showing lines 1-3 of 5. Use offset=4 to continue.]");
+    expect(result.nextOffset).toBe(4);
+  });
+
+  it("caps oversized-marker rows via maxTruncLines with continuation", async () => {
+    const big = "X".repeat(60_000);
+    const content = `${big}\n${big}\n${big}\nb\n`;
+    const result = await fmtReadPreview(content, {}, undefined, home.testPath, DEFAULT_MAX_BYTES, 2);
+    expect(result.text).toContain("[Line 1 is");
+    expect(result.text).toContain("[Line 2 is");
+    expect(result.text).not.toContain("[Line 3 is");
+    expect(result.text).not.toContain("│b");
+    expect(result.text).toContain("[Showing lines 1-2 of 4 (50.0KB limit). Use offset=3 to continue.]");
+    expect(result.nextOffset).toBe(3);
+  });
+});

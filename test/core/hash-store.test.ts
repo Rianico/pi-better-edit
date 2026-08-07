@@ -288,6 +288,20 @@ describe("hash-store — migration from legacy hash-store.json", () => {
     });
   });
 
+  it("skips legacy snapshots with duplicate hashes so they re-hash on next read", async () => {
+    await withTempHome(async (home) => {
+      await writeLegacyStore(home, {
+        "/dup.ts": { content: "a\nb\n", hashes: ["AAA", "AAA"] },
+        "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
+      });
+
+      const store = await loadHashStore();
+
+      expect(getSnapshot(store, "/dup.ts", "a\nb\n")).toBeUndefined();
+      expect(getSnapshot(store, "/valid.ts", "ok\n")).toEqual(["ABC"]);
+    });
+  });
+
   it("ignores a legacy snapshots field that is an array", async () => {
     await withTempHome(async (home) => {
       await writeLegacyStore(home, ["not-an-object"]);

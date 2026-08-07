@@ -1,2 +1,2 @@
 - `read`: call before `replace` when you need fresh HASH anchors for a file.
-- `read`: call again after any edit to that file — changed lines get new anchors.
+- `read`: call again after any edit to that file — changed lines get new anchors (the post-edit diff rows from replace/undo also carry fresh anchors for the changed range).

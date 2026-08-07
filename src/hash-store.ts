@@ -318,6 +318,10 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
   const rows: [string, string, number, string, number][] = [];
   for (const [key, value] of Object.entries(raw)) {
     if (!isValidSnapshot(value)) continue;
+    if (new Set(value.hashes).size !== value.hashes.length) {
+      console.warn(`Skipped legacy snapshot with duplicate hashes for ${key}; it will be re-hashed on next read.`);
+      continue;
+    }
     rows.push([
       key,
       contentChecksum(value.content),

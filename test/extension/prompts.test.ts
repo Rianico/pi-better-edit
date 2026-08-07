@@ -1,8 +1,20 @@
-import { readFileSync } from "fs";
+import { readFileSync, readdirSync, existsSync } from "fs";
+import { dirname, join, resolve } from "path";
+import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
 import { loadGuide } from "../../src/prompts";
 import { regRead } from "../../src/read";
 import { makeFakePiRegistry } from "../support/fixtures";
+
+function collectTsFiles(dir: string): string[] {
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const full = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...collectTsFiles(full));
+    else if (entry.isFile() && entry.name.endsWith(".ts")) out.push(full);
+  }
+  return out;
+}
 
 const replacePrompt = readFileSync(
   new URL("../../prompts/replace.md", import.meta.url),
@@ -76,12 +88,34 @@ describe("prompt guidelines", () => {
 });
 
 describe("read tool guidelines", () => {
-  it("always includes the re-read note since replace and undo provide no anchors", () => {
+  it("always includes the re-read note for fresh anchors after edits", () => {
     const { pi, getTool } = makeFakePiRegistry();
     regRead(pi);
     const tool = getTool("read");
     const guidelines = tool.promptGuidelines as string[];
     expect(guidelines.some((g) => g.includes("call again after any edit"))).toBe(true);
     expect(guidelines.some((g) => g.includes("call before `replace`"))).toBe(true);
+  });
+});
+
+describe("prompt file packaging", () => {
+  it("every loadP/loadGuide reference resolves to a prompt file shipped in the package", () => {
+    const pkg = JSON.parse(
+      readFileSync(new URL("../../package.json", import.meta.url), "utf-8"),
+    ) as { files: string[] };
+    expect(pkg.files).toContain("prompts");
+    expect(pkg.files).toContain("src");
+
+    const srcDir = fileURLToPath(new URL("../../src", import.meta.url));
+    let refs = 0;
+    for (const file of collectTsFiles(srcDir)) {
+      const content = readFileSync(file, "utf-8");
+      for (const match of content.matchAll(/load(?:P|Guide)\("((?:\.\.\/)+prompts\/[^"]+)"\)/g)) {
+        refs++;
+        const promptPath = match[1]!;
+        expect(existsSync(resolve(dirname(file), promptPath))).toBe(true);
+      }
+    }
+    expect(refs).toBeGreaterThan(0);
   });
 });

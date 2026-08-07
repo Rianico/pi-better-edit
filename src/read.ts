@@ -3,6 +3,7 @@ import {
 	createReadTool,
 	formatSize,
 	truncateHead,
+	DEFAULT_MAX_LINES,
 	type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
@@ -57,6 +58,7 @@ export async function fmtReadPreview(
 	precomputedHashes?: string[],
 	path?: string,
 	maxLineBytes = MAX_READ_LINE_BYTES,
+	maxTruncLines = DEFAULT_MAX_LINES,
 ): Promise<{ text: string; truncation?: TruncationResult; nextOffset?: number }> {
 	const allLines = visLines(text);
 	const totalLines = allLines.length;
@@ -99,7 +101,7 @@ export async function fmtReadPreview(
 				? `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`
 				: fmtRegion([selectedHashes[index]!], [selected[index]!]),
 		);
-		const skippedTruncation = truncateHead(rows.join("\n"), { maxBytes });
+		const skippedTruncation = truncateHead(rows.join("\n"), { maxBytes, maxLines: maxTruncLines });
 		const shownRowCount = skippedTruncation.content === "" ? 0 : skippedTruncation.content.split("\n").length;
 		const lastShownLine = shownRowCount > 0 ? startLine + shownRowCount - 1 : startLine - 1;
 		const lineLabel = oversized.length === 1 ? `Line ${oversized[0]!.lineNumber}` : `Lines ${oversized.map((row) => row.lineNumber).join(", ")}`;
@@ -121,7 +123,7 @@ export async function fmtReadPreview(
 		};
 	}
 
-	const truncation = truncateHead(formatted, { maxBytes });
+	const truncation = truncateHead(formatted, { maxBytes, maxLines: maxTruncLines });
 
 	let preview = truncation.content;
 	let nextOffset: number | undefined;

@@ -65,6 +65,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
     hashes);
     expect(result.content).toBe("### heading\nreal content\nbeta\ngamma\ndelta");
     expect(result.warnings?.[0]).toMatch(/1 of 1 stripped hash\(es\) match current file lines/);
+    expect(result.warnings?.[0]).not.toMatch(/literal content/);
 	});
 
 	it("strips a bare prefix whose hash exists in the file hash set", async () => {
@@ -86,6 +87,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
     hashes);
     expect(result.content).toBe("one\ntwo\nbeta\ngamma\ndelta");
     expect(result.warnings?.[0]).toMatch(/none of the stripped hashes match current file lines/);
+    expect(result.warnings?.[0]).toMatch(/literal content/);
 	});
 
 	it("reports the content_lines index for each stripped line", async () => {

@@ -224,8 +224,12 @@ export function stripBarePrefixes(
 		matchedCount === 0
 			? "none of the stripped hashes match current file lines"
 			: `${matchedCount} of ${stripped.length} stripped hash(es) match current file lines`;
+	const guidance =
+		matchedCount === 0
+			? " Verify that these lines were pasted from read output; literal content starting with 'HASH│' would be altered by this strip."
+			: "";
 	warnings.push(
-		`[E_BARE_HASH_PREFIX] Autocorrected: stripped "HASH│" prefix copied from read output in ${locations} (${evidence}).`
+		`[E_BARE_HASH_PREFIX] Autocorrected: stripped "HASH│" prefix copied from read output in ${locations} (${evidence}).${guidance}`
 	);
 	return { ...edit, content_lines: contentLines };
 }

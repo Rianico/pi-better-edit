@@ -7,6 +7,7 @@ import { regRead, fmtReadPreview } from "./src/read";
 import type { RMetrics } from "./src/replace-response";
 import { extractWarnings } from "./src/replace-render";
 import { MAX_HASH_LINES } from "./src/hashline";
+import { AUTO_READ_MAX } from "./src/constants";
 import {
   readConfig,
   toggleAutoRead,
@@ -81,6 +82,7 @@ export default function (pi: ExtensionAPI): void {
           fileHashes,
           absolutePath,
           DEFAULT_MAX_BYTES,
+          AUTO_READ_MAX,
         );
         return {
           content: [

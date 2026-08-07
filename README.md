@@ -121,7 +121,7 @@ A no-op replace never changes the file, so anchors remain valid. On first run af
 Enabled by default. After a successful `write` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so the model gets immediate `HASH│content` anchors without a separate `read` call.
 
 - A no-op `replace` produces no diff — the file is unchanged, so existing anchors remain valid.
-- After `replace` / `undo_last_replace`, the success summary is replaced by the post-edit diff (the same `+HASH│` / `-   │` / ` HASH│` rows used for replace) plus any warnings, so the model sees the change like a git diff instead of line counts; no anchor block is appended — call `read` for fresh anchors.
+- After `replace` / `undo_last_replace`, the success summary is replaced by the post-edit diff (the same `+HASH│` / `-   │` / ` HASH│` rows used for replace) plus any warnings, so the model sees the change like a git diff instead of line counts; no anchor block is appended — the diff rows themselves are the fresh anchors (`+HASH│` and ` HASH│` rows carry the current hashes, and unchanged lines keep their previous hashes), so follow-up edits can anchor on the diff directly; call `read` when you want the full file's anchors.
 - With auto-read disabled, `replace` / `undo_last_replace` results keep the plain summary in the model-visible text — no diff and no anchor block reach the model (the post-edit diff is still shown to the user).
 - After `write`, the block dumps from the top of the file. For files over 2000 lines, the dump is truncated with a pagination hint — use `read` with `offset` to continue.
 - Auto-read keeps a 50KB display budget: lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
@@ -195,7 +195,7 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 - **Reset the hash store.** Anchors live in `~/.config/pi-hashline-edit-pro/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit pi, delete those three files, and the store is rebuilt on the next session. Anchor history is lost, but no project files are touched.
 - **Upgrading.** A hash-allocation change clears the hash store once on the first run after upgrade — anchors are rebuilt on the next read and undo history is lost, but no project files are touched.
 - **Corrupt store.** If the store fails its health check it is renamed to `hash-store.sqlite.corrupt-<timestamp>` (plus `-wal`/`-shm` variants) and rebuilt automatically; the quarantined files can be deleted once a healthy store exists.
-- **Legacy migration.** On first run after upgrading from an older version, the previous `hash-store.json` is imported once and renamed to `hash-store.json.bak`, which can be deleted.
+- **Legacy migration.** On first run after upgrading from an older version, the previous `hash-store.json` is imported once and renamed to `hash-store.json.bak`, which can be deleted. Legacy snapshots containing duplicate hashes are skipped and rebuilt on the next read.
 - **`[E_UNDO_UNAVAILABLE]`.** The edit was refused because the undo record could not be written — check disk space and that the config directory is writable, then retry.
 
 ## Development
