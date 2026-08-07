@@ -22,6 +22,8 @@ export const HASH_CLASS = `[${ALPH_SAFE}]{${HASH_LEN}}`;
 export const HASH_SPACE = ALPH.length ** HASH_LEN;
 export const MAX_HASH_LINES = HASH_SPACE;
 
+export const HASH_PROBE_STRIDE = ALPH.length ** 2 + ALPH.length + 1;
+
 function idxToHash(idx: number): string {
   let out = "";
   for (let j = 0; j < HASH_LEN; j++) {
@@ -66,44 +68,13 @@ function setBit(bits: Uint32Array, idx: number): void {
 }
 
 function nextZeroBit(bits: Uint32Array, start: number): number {
-  const totalWords = bits.length;
   const totalBits = HASH_SPACE;
-  const lastWordBits = HASH_SPACE - (totalWords - 1) * 32;
-
-  if (start >= totalBits) start = 0;
-
-  const wordIdx = start >>> 5;
-  const bitOffset = start & 31;
-  const wordBits = (w: number): number => (w === totalWords - 1 ? lastWordBits : 32);
-
-  let word = bits[wordIdx];
-  for (let b = bitOffset; b < wordBits(wordIdx); b++) {
-    if ((word >>> b & 1) === 0) return wordIdx * 32 + b;
+  let idx = start % totalBits;
+  for (let i = 0; i < totalBits; i++) {
+    if (!getBit(bits, idx)) return idx;
+    idx += HASH_PROBE_STRIDE;
+    if (idx >= totalBits) idx -= totalBits;
   }
-
-  for (let w = wordIdx + 1; w < totalWords; w++) {
-    word = bits[w];
-    if (~word !== 0) {
-      for (let b = 0; b < wordBits(w); b++) {
-        if ((word >>> b & 1) === 0) return w * 32 + b;
-      }
-    }
-  }
-
-  for (let w = 0; w < wordIdx; w++) {
-    word = bits[w];
-    if (~word !== 0) {
-      for (let b = 0; b < wordBits(w); b++) {
-        if ((word >>> b & 1) === 0) return w * 32 + b;
-      }
-    }
-  }
-
-  word = bits[wordIdx];
-  for (let b = 0; b < bitOffset; b++) {
-    if ((word >>> b & 1) === 0) return wordIdx * 32 + b;
-  }
-
   throw new Error(
     `[E_FILE_TOO_LARGE] Cannot allocate a unique hash anchor: the file exceeds the ${HASH_SPACE}-line limit for ${HASH_LEN}-char hashline anchors. For very large files use write or a non-line-based approach.`,
   );
@@ -112,13 +83,12 @@ function nextZeroBit(bits: Uint32Array, start: number): number {
 function assignHash(used: Uint32Array, baseIdx: number, hint: { value: number }): string {
   if (!getBit(used, baseIdx)) {
     setBit(used, baseIdx);
-    hint.value = baseIdx + 1;
+    hint.value = baseIdx + HASH_PROBE_STRIDE;
     return hashAt(baseIdx);
   }
-  const start = hint.value > baseIdx + 1 ? hint.value : baseIdx + 1;
-  const nextIdx = nextZeroBit(used, start);
+  const nextIdx = nextZeroBit(used, hint.value);
   setBit(used, nextIdx);
-  hint.value = nextIdx + 1;
+  hint.value = nextIdx + HASH_PROBE_STRIDE;
   return hashAt(nextIdx);
 }
 
@@ -277,7 +247,7 @@ function mapStableHashes(
     const idx = hashToIndex(hash);
     if (idx >= 0) {
       setBit(used, idx);
-      if (idx + 1 > hint.value) hint.value = idx + 1;
+      if (idx + HASH_PROBE_STRIDE > hint.value) hint.value = idx + HASH_PROBE_STRIDE;
     }
   };
 

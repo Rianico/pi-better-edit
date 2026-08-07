@@ -179,7 +179,7 @@ Each line is canonicalized (carriage returns stripped, trailing whitespace trimm
 
 The alphabet is sized for an LLM consumer: the model tokenizes rather than squinting at glyphs, so case and digits are all included. The URL-safe specials `-` and `_` are deliberately excluded — a hash starting with `-` is shape-identical to a diff-preview deletion row, and `-`/`_` at a line start are markdown-active, inviting mis-copying and false autocorrections.
 
-**Unique anchors by construction.** If a line's base hash collides with an already-assigned hash, the next free hash is allocated from a bitset (O(1) amortized). Every line in a file therefore gets a unique anchor — two byte-identical lines (repeated `}`, repeated `import` statements) never share one. The same guarantee sets the file size cap: at most 238,328 lines per file, beyond which `read` and `replace` reject with `[E_FILE_TOO_LARGE]` (use `write` for very large files).
+**Unique anchors by construction.** If a line's base hash collides with an already-assigned hash, the next free hash is allocated from a bitset by probing with a stride coprime to the hash space (O(1) amortized). The stride is `62² + 62 + 1`, so consecutive collisions — runs of blank lines, repeated `}` — land on anchors that differ in all three characters instead of sharing a prefix. Every line in a file therefore gets a unique anchor — two byte-identical lines (repeated `}`, repeated `import` statements) never share one. The same guarantee sets the file size cap: at most 238,328 lines per file, beyond which `read` and `replace` reject with `[E_FILE_TOO_LARGE]` (use `write` for very large files).
 
 ## Design decisions
 
@@ -193,6 +193,7 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 
 - **Stale anchors.** `[E_STALE_ANCHOR]` / `[E_AMBIGUOUS_ANCHOR]` mean the file changed since the anchors were read, or an earlier `read` never happened. Call `read` for fresh anchors and retry.
 - **Reset the hash store.** Anchors live in `~/.config/pi-hashline-edit-pro/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit pi, delete those three files, and the store is rebuilt on the next session. Anchor history is lost, but no project files are touched.
+- **Upgrading.** A hash-allocation change clears the hash store once on the first run after upgrade — anchors are rebuilt on the next read and undo history is lost, but no project files are touched.
 - **Corrupt store.** If the store fails its health check it is renamed to `hash-store.sqlite.corrupt-<timestamp>` (plus `-wal`/`-shm` variants) and rebuilt automatically; the quarantined files can be deleted once a healthy store exists.
 - **Legacy migration.** On first run after upgrading from an older version, the previous `hash-store.json` is imported once and renamed to `hash-store.json.bak`, which can be deleted.
 - **`[E_UNDO_UNAVAILABLE]`.** The edit was refused because the undo record could not be written — check disk space and that the config directory is writable, then retry.
