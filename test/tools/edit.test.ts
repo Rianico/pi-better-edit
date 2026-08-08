@@ -16,7 +16,7 @@ describe("regReplace", () => {
           "e1",
           {
             path: "sample.ts",
-            hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: null,
+            hash_bounds: [hashes[0]!, hashes[0]!], new_content: null,
           },
           undefined,
           undefined,
@@ -26,27 +26,26 @@ describe("regReplace", () => {
     });
   });
 
-  it("rejects content_lines entries containing line breaks without modifying the file", async () => {
+  it("accepts multi-line new_content with \\n separators", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", home.testPath);
 
-      await expect(
-        editTool.execute(
-          "e1",
-          {
-            path: "sample.ts",
-            hash_range_inclusive: [hashes[0]!, hashes[0]!],
-            content_lines: ["a\nb"],
-          },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      ).rejects.toThrow(/line break/);
+      const result = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          hash_bounds: [hashes[0]!, hashes[0]!],
+          new_content: "a\nb",
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully replaced");
 
       const content = await readFile(path, "utf-8");
-      expect(content).toBe("aaa\nbbb\n");
+      expect(content).toBe("a\nb\nbbb\n");
     });
   });
 
@@ -59,7 +58,7 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"],
+          hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB",
         },
         undefined,
         undefined,
@@ -81,7 +80,7 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: [`${hashes[1]!}│BBB`],
+          hash_bounds: [hashes[1]!, hashes[1]!], new_content: `${hashes[1]!}│BBB`,
         },
         undefined,
         undefined,
@@ -104,7 +103,7 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: [`+${hashes[1]!}│BBB`],
+          hash_bounds: [hashes[1]!, hashes[1]!], new_content: `+${hashes[1]!}│BBB`,
         },
         undefined,
         undefined,
@@ -118,7 +117,7 @@ describe("regReplace", () => {
     });
   });
 
-  it("autocorrects reversed hash_range_inclusive with correct line counts", async () => {
+  it("autocorrects reversed hash_bounds with correct line counts", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", home.testPath);
@@ -127,7 +126,7 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [hashes[2]!, hashes[1]!], content_lines: ["X"],
+          hash_bounds: [hashes[2]!, hashes[1]!], new_content: "X",
         },
         undefined,
         undefined,
@@ -156,8 +155,8 @@ describe("regReplace — robustness", () => {
           "e1",
           {
             path: "sample.ts",
-            hash_range_inclusive: [hashes[1]!, hashes[1]!],
-            content_lines: ["BBB"],
+            hash_bounds: [hashes[1]!, hashes[1]!],
+            new_content: "BBB",
           },
           undefined,
           undefined,
@@ -186,8 +185,8 @@ describe("regReplace — robustness", () => {
           "e1",
           {
             path: "sample.ts",
-            hash_range_inclusive: [hashes[1]!, hashes[1]!],
-            content_lines: ["bbb"],
+            hash_bounds: [hashes[1]!, hashes[1]!],
+            new_content: "bbb",
           },
           undefined,
           undefined,
@@ -216,8 +215,8 @@ describe("regReplace — robustness", () => {
           "e1",
           {
             path: "sample.ts",
-            hash_range_inclusive: [hashes[1]!, hashes[1]!],
-            content_lines: ["BBB"],
+            hash_bounds: [hashes[1]!, hashes[1]!],
+            new_content: "BBB",
           },
           undefined,
           undefined,
@@ -248,8 +247,8 @@ describe("regReplace — robustness", () => {
             "e1",
             {
               path: "sample.ts",
-              hash_range_inclusive: [hashes[1]!, hashes[1]!],
-              content_lines: ["BBB"],
+              hash_bounds: [hashes[1]!, hashes[1]!],
+              new_content: "BBB",
             },
             undefined,
             undefined,

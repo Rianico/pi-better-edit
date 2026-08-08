@@ -6,13 +6,13 @@ import { makeFakePiRegistry, withTempFile, useTestHome } from "../support/fixtur
 const home = useTestHome();
 
 describe("editToolSchema", () => {
-  it("has path, hash_range_inclusive, and content_lines at top level", () => {
+  it("has path, hash_bounds, and content_lines at top level", () => {
     const schema = editToolSchema as any;
     expect(schema.type).toBe("object");
     const props = schema.properties;
     expect(props.path).toBeDefined();
-    expect(props.hash_range_inclusive).toBeDefined();
-    expect(props.content_lines).toBeDefined();
+    expect(props.hash_bounds).toBeDefined();
+    expect(props.new_content).toBeDefined();
     expect(props.changes).toBeUndefined();
     expect(schema.additionalProperties).toBe(false);
   });
@@ -34,8 +34,8 @@ describe("regReplace", () => {
     const tool = getTool("replace");
     const result = tool.prepareArguments({
       file_path: "test.txt",
-      hash_range_inclusive: ["AAA", "BBB"],
-      content_lines: ["new"],
+      hash_bounds: ["AAA", "BBB"],
+      new_content: "new",
     });
     expect(result.path).toBe("test.txt");
     expect(result.file_path).toBeUndefined();
@@ -54,8 +54,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!],
-          content_lines: ["BBB"],
+          hash_bounds: [hashes[1]!, hashes[1]!],
+          new_content: "BBB",
         },
         undefined,
         undefined,
@@ -78,8 +78,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_range_inclusive: [hashes[1]!, hashes[2]!],
-          content_lines: ["BBB", "CCC"],
+          hash_bounds: [hashes[1]!, hashes[2]!],
+          new_content: "BBB\nCCC",
         },
         undefined,
         undefined,
@@ -102,8 +102,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!],
-          content_lines: [],
+          hash_bounds: [hashes[1]!, hashes[1]!],
+          new_content: "",
         },
         undefined,
         undefined,
@@ -126,8 +126,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!],
-          content_lines: ["bbb"],
+          hash_bounds: [hashes[1]!, hashes[1]!],
+          new_content: "bbb",
         },
         undefined,
         undefined,
@@ -150,8 +150,8 @@ describe("regReplace", () => {
           "e1",
           {
             path: "sample.txt",
-            hash_range_inclusive: ["ZZZ", "ZZZ"],
-            content_lines: ["x"],
+            hash_bounds: ["ZZZ", "ZZZ"],
+            new_content: "x",
           },
           undefined,
           undefined,
@@ -173,8 +173,8 @@ describe("regReplace", () => {
           "e1",
           {
             path: "sample.txt",
-            hash_range_inclusive: [hashes[0]!, hashes[1]!],
-            content_lines: [],
+            hash_bounds: [hashes[0]!, hashes[1]!],
+            new_content: "",
           },
           undefined,
           undefined,
@@ -196,8 +196,8 @@ describe("regReplace", () => {
           "e1",
           {
             path: "sample.txt",
-            hash_range_inclusive: [hashes[1]!, hashes[1]!],
-            content_lines: ["BBB"],
+            hash_bounds: [hashes[1]!, hashes[1]!],
+            new_content: "BBB",
             unknown_field: "bad",
           } as any,
           undefined,
@@ -219,8 +219,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!],
-          content_lines: ["BBB"],
+          hash_bounds: [hashes[1]!, hashes[1]!],
+          new_content: "BBB",
         },
         undefined,
         undefined,
@@ -243,8 +243,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "crlf.txt",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!],
-          content_lines: ["BETA"],
+          hash_bounds: [hashes[1]!, hashes[1]!],
+          new_content: "BETA",
         },
         undefined,
         undefined,

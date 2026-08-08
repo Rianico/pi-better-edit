@@ -12,8 +12,8 @@ import {
   type LineEnding,
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
-import { normReq, normalizeFilePath, tryParseContentLines } from "./replace-normalize";
-import { isRec, has, rejectUnknownFields, abortIf } from "./utils";
+import { normReq, normalizeFilePath } from "./replace-normalize";
+import { isRec, rejectUnknownFields, abortIf } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { applyEdit,
   lineHashes,
@@ -45,12 +45,12 @@ import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./replace-undo";
 import { loadHashStore, type HashStore } from "./hash-store";
 
-const contentLinesSchema = Type.Array(Type.String(), {
+const newContentSchema = Type.String({
   description:
-    "Replacement content, one string per line; entries must not contain line breaks. Use [] to delete the range."
+    "Replacement content as a single string with \\n line separators; a trailing newline is the last line's ending, not an extra empty line. Use \"\" to delete the range."
 });
 
-const hashRangeInclSchema = Type.Array(
+const hashBoundsSchema = Type.Array(
   Type.String({ description: "A 3-char HASH from read output" }),
   {
     description: "Pair of 3-char hashes from read output marking the first and last line of the range to replace (inclusive).",
@@ -62,15 +62,15 @@ const hashRangeInclSchema = Type.Array(
 export const editToolSchema = Type.Object(
   {
     path: Type.String({ description: "Path to edit" }),
-    hash_range_inclusive: hashRangeInclSchema,
-    content_lines: contentLinesSchema,
+    hash_bounds: hashBoundsSchema,
+    new_content: newContentSchema,
   },
   { additionalProperties: false },
 );
 export type ReqParams = {
   path: string;
-  hash_range_inclusive: [string, string];
-  content_lines: string[];
+  hash_bounds: [string, string];
+  new_content: string;
 };
 
 export type ReplaceDetails = {
@@ -100,20 +100,7 @@ interface PipelineResult {
 
 const PREVIEW_DEBOUNCE_MS = 150;
 
-const ROOT_KS = new Set(["path", "content_lines", "hash_range_inclusive"]);
-
-const LEGACY_KS = ["oldText", "newText", "old_text", "new_text", "old_range", "start", "end", "lines", "changes"];
-
-export function assertNoLegacyKeys(request: unknown): void {
-  if (!isRec(request)) return;
-  for (const legacyKey of LEGACY_KS) {
-    if (has(request, legacyKey)) {
-      throw new Error(
-        `[E_LEGACY_SHAPE] "${legacyKey}" is not supported. Use {hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}.`
-      );
-    }
-  }
-}
+const ROOT_KS = new Set(["path", "new_content", "hash_bounds"]);
 
 export function assertReq(
   request: unknown,
@@ -122,17 +109,15 @@ export function assertReq(
     throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
   }
 
-  assertNoLegacyKeys(request);
-
   rejectUnknownFields(request, ROOT_KS, "Edit request");
 
   if (typeof request.path !== "string" || request.path.length === 0) {
     throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "path" string.');
   }
 
-  if (!Array.isArray(request.hash_range_inclusive) || !Array.isArray(request.content_lines)) {
+  if (!Array.isArray(request.hash_bounds) || typeof request.new_content !== "string") {
     throw new Error(
-      '[E_BAD_SHAPE] Edit request requires both "hash_range_inclusive" and "content_lines" at the top level.',
+      '[E_BAD_SHAPE] Edit request requires both "hash_bounds" and "new_content" at the top level.',
     );
   }
 }
@@ -149,8 +134,8 @@ function collectRemovedHashes(
   originalHashes: string[],
 ): Set<string> {
   const removedHashes = new Set<string>();
-  const startHash = edit.hash_range_inclusive[0].hash;
-  const endHash = edit.hash_range_inclusive[1].hash;
+  const startHash = edit.hash_bounds[0].hash;
+  const endHash = edit.hash_bounds[1].hash;
   const startLine = originalHashes.indexOf(startHash);
   const endLine = originalHashes.indexOf(endHash);
   if (startLine >= 0 && endLine >= 0) {
@@ -171,8 +156,8 @@ function countLineChanges(
 ): { totalAddedLines: number; totalRemovedLines: number } {
   if (isNoop) return { totalAddedLines: 0, totalRemovedLines: 0 };
   let totalRemovedLines = 0;
-  const startLine = originalHashes.indexOf(edit.hash_range_inclusive[0].hash);
-  const endLine = originalHashes.indexOf(edit.hash_range_inclusive[1].hash);
+  const startLine = originalHashes.indexOf(edit.hash_bounds[0].hash);
+  const endLine = originalHashes.indexOf(edit.hash_bounds[1].hash);
   if (startLine >= 0 && endLine >= 0) {
     totalRemovedLines = Math.abs(endLine - startLine) + 1;
   }
@@ -191,8 +176,8 @@ export async function execPipeline(
   const path = params.path;
 
   const edit = resEdit({
-    hash_range_inclusive: params.hash_range_inclusive,
-    content_lines: params.content_lines,
+    hash_bounds: params.hash_bounds,
+    new_content: params.new_content,
   });
 
   const hashStore = options?.store ?? await loadHashStore();
@@ -307,13 +292,9 @@ export function buildToolDef(): ToolDef {
     promptSnippet: E_SNIPPET,
     promptGuidelines: E_GUIDE,
     prepareArguments: (args: unknown) => {
-      assertNoLegacyKeys(args);
       if (!isRec(args)) return args as any;
       const record = { ...args };
       normalizeFilePath(record);
-      if (has(record, "content_lines") && typeof record.content_lines === "string") {
-        tryParseContentLines(record, "content_lines");
-      }
       return record;
     },
     renderShell: "default",

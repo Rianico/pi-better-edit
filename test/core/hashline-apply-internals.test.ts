@@ -13,7 +13,7 @@ describe("resAnchor (via applyEdit)", () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "Y"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "X\nY" },
     ));
     expect(result.content).toBe("a\nX\nY\nd\ne");
   });
@@ -22,7 +22,7 @@ describe("resAnchor (via applyEdit)", () => {
     const content = "a\nb\nc\nd\ne";
     expect(() =>
       applyEdit(content, resEdit(
-        { hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: ["X"] },
+        { hash_bounds: ["ZZZ", "ZZZ"], new_content: "X" },
       ))
     ).toThrow(/E_STALE_ANCHOR/);
   });
@@ -33,7 +33,7 @@ describe("resAnchor (via applyEdit)", () => {
     const forgedHashes = [hashes[0]!, hashes[0]!, hashes[0]!, hashes[0]!, hashes[0]!];
     expect(() =>
       applyEdit(content, resEdit(
-        { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["X"] },
+        { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "X" },
       ), undefined, forgedHashes)
     ).toThrow(/E_AMBIGUOUS_ANCHOR/);
   });
@@ -44,7 +44,7 @@ describe("checkBoundaryDup (via applyEdit) — auto-fix", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "d"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "X\nd" },
     ));
     expect(result.content).toBe("a\nX\nd");
     expect(result.autoFixes).toBeDefined();
@@ -56,7 +56,7 @@ describe("checkBoundaryDup (via applyEdit) — auto-fix", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["a", "X"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "a\nX" },
     ));
     expect(result.content).toBe("a\nX\nd");
     expect(result.autoFixes).toHaveLength(1);
@@ -67,7 +67,7 @@ describe("checkBoundaryDup (via applyEdit) — auto-fix", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "Y"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "X\nY" },
     ));
     expect(result.autoFixes ?? []).toHaveLength(0);
   });
@@ -76,7 +76,7 @@ describe("checkBoundaryDup (via applyEdit) — auto-fix", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: [] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "" },
     ));
     expect(result.autoFixes ?? []).toHaveLength(0);
   });
@@ -85,7 +85,7 @@ describe("checkBoundaryDup (via applyEdit) — auto-fix", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "d", ""] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: `X\nd\n\n` },
     ));
     expect(result.content).toBe("a\nX\n\nd");
     expect(result.autoFixes).toHaveLength(1);
@@ -97,7 +97,7 @@ describe("checkBoundaryDup (via applyEdit) — auto-fix", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["", "a", "X"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: `\na\nX` },
     ));
     expect(result.content).toBe("a\n\nX\nd");
     expect(result.autoFixes).toHaveLength(1);
@@ -109,7 +109,7 @@ describe("checkBoundaryDup (via applyEdit) — auto-fix", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["a", "d"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "a\nd" },
     ));
     expect(result.content).toBe("a\nd");
     expect(result.autoFixes).toHaveLength(2);
@@ -121,7 +121,7 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["X", "Y"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "X\nY" },
     ));
     expect(result.content).toBe("a\nX\nY\nd\ne");
   });
@@ -130,7 +130,7 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: [] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "" },
     ));
     expect(result.content).toBe("a\nd\ne");
   });
@@ -140,7 +140,7 @@ describe("resToSpan (via applyEdit)", () => {
     const hashes = await lineHashes(content, home.testPath);
     expect(() =>
       applyEdit(content, resEdit(
-        { hash_range_inclusive: [hashes[0]!, hashes[2]!], content_lines: [] },
+        { hash_bounds: [hashes[0]!, hashes[2]!], new_content: "" },
       ))
     ).toThrow(/E_WOULD_EMPTY/);
   });
@@ -149,7 +149,7 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[2]!, hashes[4]!], content_lines: [] },
+      { hash_bounds: [hashes[2]!, hashes[4]!], new_content: "" },
     ));
     expect(result.content).toBe("a\nb");
   });
@@ -158,7 +158,7 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["b"] },
+      { hash_bounds: [hashes[1]!, hashes[1]!], new_content: "b" },
     ));
     expect(result.noopEdit).toBeDefined();
   });
@@ -167,7 +167,7 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["X"] },
+      { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "X" },
     ));
     expect(result.content).toBe("X\nb\nc");
   });
@@ -176,7 +176,7 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: ["X"] },
+      { hash_bounds: [hashes[2]!, hashes[2]!], new_content: "X" },
     ));
     expect(result.content).toBe("a\nb\nX");
   });
@@ -185,7 +185,7 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [] },
+      { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "" },
     ));
     expect(result.content).toBe("b\nc");
   });
@@ -194,7 +194,7 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: [] },
+      { hash_bounds: [hashes[2]!, hashes[2]!], new_content: "" },
     ));
     expect(result.content).toBe("a\nb");
   });
@@ -205,7 +205,7 @@ describe("assemble (via applyEdit)", () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["A"] },
+      { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "A" },
     ));
     expect(result.content).toBe("A\nb\nc\nd\ne");
   });
@@ -216,7 +216,7 @@ describe("auto-fix via applyEdit", () => {
     const content = "before\nold one\nold two\nafter";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["new one", "new two", "after"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: `new one\nnew two\nafter` },
     ));
     expect(result.autoFixes).toHaveLength(1);
     expect(result.autoFixes![0]!.kind).toBe("trailing");
@@ -228,7 +228,7 @@ describe("auto-fix via applyEdit", () => {
     const content = "before\nold one\nold two\nafter";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["before", "new one", "new two"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: `before\nnew one\nnew two` },
     ));
     expect(result.autoFixes).toHaveLength(1);
     expect(result.autoFixes![0]!.kind).toBe("leading");
@@ -240,7 +240,7 @@ describe("auto-fix via applyEdit", () => {
     const content = "ctx1\nctx2\nold1\nold2\nctx3\nctx4";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[2]!, hashes[3]!], content_lines: ["ctx2", "dup", "dup", "ctx3"] },
+      { hash_bounds: [hashes[2]!, hashes[3]!], new_content: `ctx2\ndup\ndup\nctx3` },
     ));
     expect(result.autoFixes).toBeDefined();
     expect(result.autoFixes).toHaveLength(2);

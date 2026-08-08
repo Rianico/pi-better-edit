@@ -25,8 +25,8 @@ describe("compPreview no-persist guarantee", () => {
       const preview = await compPreview(
         {
           path: "sample.txt",
-          hash_range_inclusive: [bHash, cHash],
-          content_lines: ["B"],
+          hash_bounds: [bHash, cHash],
+          new_content: "B",
         },
         cwd,
       );
@@ -51,8 +51,8 @@ describe("compPreview no-persist guarantee", () => {
       await compPreview(
         {
           path: "sample.txt",
-          hash_range_inclusive: [hashes[1]!, hashes[2]!],
-          content_lines: ["X", "Y"],
+          hash_bounds: [hashes[1]!, hashes[2]!],
+          new_content: "X\nY",
         },
         cwd,
       );
@@ -74,8 +74,8 @@ describe("compPreview no-persist guarantee", () => {
       const preview = await compPreview(
         {
           path: "sample.txt",
-          hash_range_inclusive: [hashes[0]!, hashes[2]!],
-          content_lines: ["x"],
+          hash_bounds: [hashes[0]!, hashes[2]!],
+          new_content: "x",
         },
         cwd,
       );

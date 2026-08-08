@@ -13,9 +13,9 @@ describe("parseHashRef", () => {
 		);
 	});
 
-	it("rejects a full HASH│content line copied into hash_range_inclusive", () => {
+	it("rejects a full HASH│content line copied into hash_bounds", () => {
 		expect(() => parseHashRef("aB3│const x = 1;")).toThrow(
-			/hash_range_inclusive must contain the 3-char hash only/,
+			/hash_bounds must contain the 3-char hash only/,
 		);
 	});
 	it("rejects leading >>> markers (strict mode: no marker stripping)", () => {
@@ -54,8 +54,6 @@ describe("parseHashRef", () => {
 	it("rejects wrong-length anchors", () => {
 		expect(() => parseHashRef("aB")).toThrow(/E_BAD_REF/);
 		expect(() => parseHashRef("aB3x")).toThrow(/E_BAD_REF/);
-		expect(() => parseHashRef("aB3x")).toThrow(/E_BAD_REF/);
-		expect(() => parseHashRef("#aB3x")).toThrow(/E_BAD_REF/);
 		expect(() => parseHashRef("#aB3x")).toThrow(/E_BAD_REF/);
 	});
 
@@ -65,84 +63,60 @@ describe("parseHashRef", () => {
 });
 
 describe("parseText", () => {
-	it("rejects null with a clear error (use [] to delete)", () => {
-		expect(() => parseText(null)).toThrow(/^\[E_BAD_SHAPE\].*string array/);
+	it("rejects null with a clear error", () => {
+		expect(() => parseText(null as unknown as string)).toThrow(/^\[E_BAD_SHAPE\].*must be a string with \\n line separators/);
 	});
 
-  it("rejects string input with clear error (must use array)", () => {
-    expect(() => parseText("a\nb")).toThrow(
-      /must be a native JSON array of strings, not a JSON string/,
-    );
-  });
-
-  it("rejects string input with trailing newline", () => {
-    expect(() => parseText("a\nb\n")).toThrow(
-      /must be a native JSON array of strings, not a JSON string/,
-    );
-  });
-
-  it("rejects string input with trailing whitespace", () => {
-    expect(() => parseText("a\nb\n  ")).toThrow(
-      /must be a native JSON array of strings, not a JSON string/,
-    );
-  });
-
-  it("rejects empty string input", () => {
-    expect(() => parseText("")).toThrow(
-      /must be a native JSON array of strings, not a JSON string/,
-    );
-  });
-
-	it("passes through array input verbatim", () => {
-		const input = ["a", "b"];
-		expect(parseText(input)).toEqual(input);
+	it("rejects array input with clear error (must use string)", () => {
+		expect(() => parseText(["a", "b"] as unknown as string)).toThrow(
+			/must be a string with \\n line separators, not an array/,
+		);
 	});
 
-	it("rejects entries containing line breaks", () => {
-		expect(() => parseText(["a", "b\nc"])).toThrow(/line break/);
-		expect(() => parseText(["a\rb"])).toThrow(/line break/);
-		expect(() => parseText(["a\n"])).toThrow(/line break/);
-		expect(() => parseText(["\r"])).toThrow(/line break/);
+	it("splits a string on \\n separators", () => {
+		expect(parseText("a\nb")).toEqual(["a", "b"]);
 	});
 
-	it("reports the index of the offending entry", () => {
-		expect(() => parseText(["ok", "bad\nline"])).toThrow(/index 1/);
+	it("returns [] for empty string (delete range)", () => {
+		expect(parseText("")).toEqual([]);
 	});
 
-	it("renders \\r and \\n literally in the error message", () => {
-		expect(() => parseText(["a\nb"])).toThrow(/contains a \\r or \\n line break/);
+	it("treats a trailing newline as the last line's ending, not an extra line", () => {
+		expect(parseText("a\nb\n")).toEqual(["a", "b"]);
+	});
+
+	it("represents a single empty line as \\n", () => {
+		expect(parseText("\n")).toEqual([""]);
+	});
+
+	it("represents two empty lines as \\n\\n", () => {
+		expect(parseText("\n\n")).toEqual(["", ""]);
+	});
+
+	it("normalizes CRLF and CR line endings to LF", () => {
+		expect(parseText("a\r\nb\r")).toEqual(["a", "b"]);
 	});
 
 	it("preserves '# keep me' comment lines (no autocorrection)", () => {
-		expect(parseText(["# keep me"])).toEqual(["# keep me"]);
+		expect(parseText("# keep me")).toEqual(["# keep me"]);
 	});
 
 	it("preserves literal '+' prefixed content (no autocorrection)", () => {
-		expect(parseText(["+added"])).toEqual(["+added"]);
+		expect(parseText("+added")).toEqual(["+added"]);
 	});
 
-  it("returns empty string as a single empty line for blank content (array input)", () => {
-    expect(parseText([""])).toEqual([""]);
-  });
 	it("passes through diff-preview rows verbatim (marker stripping happens in applyEdit)", () => {
-		expect(parseText(["+aB3│foo", "+xYp│bar"])).toEqual(["+aB3│foo", "+xYp│bar"]);
-		expect(parseText([" aB3│keep", "-10    old", " xYp│after"])).toEqual([" aB3│keep", "-10    old", " xYp│after"]);
-		expect(parseText([" aB3│keep", "-   │old", " xYp│after"])).toEqual([" aB3│keep", "-   │old", " xYp│after"]);
-		expect(parseText(["-aB3│old", "- aB3│old"])).toEqual(["-aB3│old", "- aB3│old"]);
+		expect(parseText("+aB3│foo\n+xYp│bar")).toEqual(["+aB3│foo", "+xYp│bar"]);
+		expect(parseText(" aB3│keep\n-10    old\n xYp│after")).toEqual([" aB3│keep", "-10    old", " xYp│after"]);
+		expect(parseText(" aB3│keep\n-   │old\n xYp│after")).toEqual([" aB3│keep", "-   │old", " xYp│after"]);
+		expect(parseText("-aB3│old\n- aB3│old")).toEqual(["-aB3│old", "- aB3│old"]);
 	});
 
 	it("passes through numbered deletion rows as literal content", () => {
-		expect(parseText(["-10    old"])).toEqual(["-10    old"]);
+		expect(parseText("-10    old")).toEqual(["-10    old"]);
 	});
 
 	it("accepts literal minus-prefixed content that is not a diff row", () => {
-		expect(parseText(["-   something", "-abc", "- old style"])).toEqual(["-   something", "-abc", "- old style"]);
+		expect(parseText("-   something\n-abc\n- old style")).toEqual(["-   something", "-abc", "- old style"]);
 	});
-
-  it("rejects string-form rendered diff hunks (string input rejected)", () => {
-    const input = " aB3│keep\n-10    old\n+xYp│new\n mNo│after";
-    expect(() => parseText(input)).toThrow(
-      /must be a native JSON array of strings, not a JSON string/,
-    );
-  });
 });

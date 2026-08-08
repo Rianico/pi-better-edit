@@ -21,14 +21,14 @@ describe("strict hashline contract", () => {
 		expect(hashes[0]).toBe(hashes2[0]);
 	});
 
-	it("preserves explicit blank trailing line in array input", () => {
-		expect(parseText(["alpha", ""])).toEqual(["alpha", ""]);
+	it("preserves explicit blank trailing line in string input", () => {
+		expect(parseText("alpha\n\n")).toEqual(["alpha", ""]);
 	});
 
 	it("rejects stale anchors instead of relocating by hash", () => {
 		const content = ["a", "INSERTED", "b", "target", "c"].join("\n");
 		const stale = {
-      hash_range_inclusive: [{ hash: "ZZZZ" }, { hash: "ZZZZ" }], content_lines: ["updated"],
+      hash_bounds: [{ hash: "ZZZZ" }, { hash: "ZZZZ" }], content_lines: ["updated"],
     } as any;
 		expect(() => applyEdit(content, stale)).toThrow(/stale anchor/);
 	});
@@ -75,7 +75,7 @@ describe("perfect hashing", () => {
 			"const x = 1;",
 		].join("\n");
 		const hashes = await lineHashes(file, home.testPath);
-		const result = applyEdit(file, { hash_range_inclusive: [{ hash: hashes[2]! }, { hash: hashes[2]! }], content_lines: ["const x = 999;"] });
+		const result = applyEdit(file, { hash_bounds: [{ hash: hashes[2]! }, { hash: hashes[2]! }], content_lines: ["const x = 999;"] });
     expect(result.content).toBe("const x = 1;\nconst y = 2;\nconst x = 999;");
 	});
 
@@ -84,7 +84,7 @@ describe("perfect hashing", () => {
 		const staleHash = "ZZZZ";
 		let caught: Error | undefined;
 		try {
-			applyEdit(file, { hash_range_inclusive: [{ hash: staleHash }, { hash: staleHash }], content_lines: ["X"] });
+			applyEdit(file, { hash_bounds: [{ hash: staleHash }, { hash: staleHash }], content_lines: ["X"] });
     } catch (e) {
 			caught = e as Error;
 		}
@@ -105,7 +105,7 @@ describe("perfect hashing", () => {
 		try {
 			applyEdit(
 				file,
-				{ hash_range_inclusive: [{ hash: sharedHash }, { hash: sharedHash }], content_lines: ["X"] },
+				{ hash_bounds: [{ hash: sharedHash }, { hash: sharedHash }], content_lines: ["X"] },
 				undefined,
 				forgedHashes,
 			);

@@ -29,7 +29,7 @@ describe("getPreviewInput", () => {
 	});
 
 	it("returns null for record without path", () => {
-		expect(getPreviewInput({ hash_range_inclusive: ["AAA", "BBB"], content_lines: ["new"] })).toBeNull();
+		expect(getPreviewInput({ hash_bounds: ["AAA", "BBB"], new_content: "new" })).toBeNull();
 	});
 
 	it("returns null for record with non-string path", () => {
@@ -41,13 +41,13 @@ describe("getPreviewInput", () => {
 	});
 
 	it("returns request for valid input", () => {
-		const input = { path: "test.txt", hash_range_inclusive: ["AAA", "BBB"] as [string, string], content_lines: ["new"] };
+		const input = { path: "test.txt", hash_bounds: ["AAA", "BBB"] as [string, string], new_content: "new" };
 		const result = getPreviewInput(input);
 		expect(result).toEqual(input);
 	});
 
 	it("normalizes file_path to path", () => {
-		const input = { file_path: "test.txt", hash_range_inclusive: ["AAA", "BBB"] as [string, string], content_lines: ["new"] };
+		const input = { file_path: "test.txt", hash_bounds: ["AAA", "BBB"] as [string, string], new_content: "new" };
 		const result = getPreviewInput(input);
 		expect(result?.path).toBe("test.txt");
 	});
@@ -108,21 +108,21 @@ describe("fmtResult", () => {
 
 describe("fmtCall", () => {
 	it("formats call with path", () => {
-		const args = { path: "test.txt", hash_range_inclusive: ["AAA", "BBB"] as [string, string], content_lines: ["new"] };
+		const args = { path: "test.txt", hash_bounds: ["AAA", "BBB"] as [string, string], new_content: "new" };
 		const state = { preview: undefined };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("test.txt");
 	});
 
 	it("formats call with error preview", () => {
-		const args = { path: "test.txt", hash_range_inclusive: ["AAA", "BBB"] as [string, string], content_lines: ["new"] };
+		const args = { path: "test.txt", hash_bounds: ["AAA", "BBB"] as [string, string], new_content: "new" };
 		const state = { preview: { error: "test error" } };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("test error");
 	});
 
 	it("formats call with diff preview", () => {
-		const args = { path: "test.txt", hash_range_inclusive: ["AAA", "BBB"] as [string, string], content_lines: ["new"] };
+		const args = { path: "test.txt", hash_bounds: ["AAA", "BBB"] as [string, string], new_content: "new" };
 		const state = { preview: { diff: "+added\n-removed" } };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("+added");

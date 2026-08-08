@@ -32,18 +32,14 @@ export function getPreviewInput(
 		return null;
 	}
 
-	if (Array.isArray(normalized.changes)) {
-		return { path: normalized.path, hash_range_inclusive: ["", ""] as [string, string], content_lines: [] };
-	}
-
-	if (!Array.isArray(normalized.hash_range_inclusive) || !Array.isArray(normalized.content_lines)) {
+	if (!Array.isArray(normalized.hash_bounds) || typeof normalized.new_content !== "string") {
 		return null;
 	}
 
 	const request: ReqParams = {
 		path: normalized.path,
-		hash_range_inclusive: normalized.hash_range_inclusive as [string, string],
-		content_lines: normalized.content_lines as string[],
+		hash_bounds: normalized.hash_bounds as [string, string],
+		new_content: normalized.new_content,
 	};
 	return request;
 }

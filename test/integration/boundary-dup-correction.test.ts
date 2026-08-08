@@ -19,8 +19,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [line2Hash, line3Hash],
-          content_lines: ["  const y = 2;", "  return y;", "}"],
+          hash_bounds: [line2Hash, line3Hash],
+          new_content: `  const y = 2;\n  return y;\n}`,
         },
         undefined,
         undefined,
@@ -46,8 +46,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [line2Hash, line3Hash],
-          content_lines: ["  const y = 2;", "  return y;", "}"],
+          hash_bounds: [line2Hash, line3Hash],
+          new_content: `  const y = 2;\n  return y;\n}`,
         },
         undefined,
         undefined,
@@ -78,8 +78,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "server.ts",
-          hash_range_inclusive: [line2Hash, line3Hash],
-          content_lines: ["  const result = processData();", "  res.json(result);", "});"],
+          hash_bounds: [line2Hash, line3Hash],
+          new_content: `  const result = processData();\n  res.json(result);\n});`,
         },
         undefined,
         undefined,
@@ -105,8 +105,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "logic.ts",
-          hash_range_inclusive: [line2Hash, line3Hash],
-          content_lines: ["before();", "if (ok) {", "  runSafe();"],
+          hash_bounds: [line2Hash, line3Hash],
+          new_content: `before();\nif (ok) {\n  runSafe();`,
         },
         undefined,
         undefined,
@@ -137,8 +137,8 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "multi.ts",
-          hash_range_inclusive: [line4Hash, line5Hash],
-          content_lines: ["if (b) {", "  yNew();", "}"],
+          hash_bounds: [line4Hash, line5Hash],
+          new_content: `if (b) {\n  yNew();\n}`,
         },
         undefined,
         undefined,
@@ -179,7 +179,7 @@ describe("boundary duplication auto-fix", () => {
         "e1",
         {
           path: "fourth.ts",
-          hash_range_inclusive: [fooHash, barHash], content_lines: ["foo();", "bar();", "}"],
+          hash_bounds: [fooHash, barHash], new_content: `foo();\nbar();\n}`,
         },
         undefined,
         undefined,

@@ -42,8 +42,8 @@ kQm│}
 ```json
 {
   "path": "src/main.ts",
-  "hash_range_inclusive": ["szJ", "szJ"],
-  "content_lines": ["  console.log('hi');"]
+  "hash_bounds": ["szJ", "szJ"],
+  "new_content": "  console.log('hi');"
 }
 ```
 
@@ -77,31 +77,30 @@ Edge cases:
 
 The built-in `edit` tool is disabled — `replace` is the only edit path; call it with the hash anchors from `read` output.
 
-Exactly one edit per call, with `hash_range_inclusive` and `content_lines` at the top level of the request:
+Exactly one edit per call, with `hash_bounds` and `new_content` at the top level of the request:
 
 ```json
 {
   "path": "src/main.ts",
-  "hash_range_inclusive": ["szJ", "kQm"],
-  "content_lines": ["  console.log('hi');", "}"]
+  "hash_bounds": ["szJ", "kQm"],
+  "new_content": "  console.log('hi');\n}"
 }
 ```
 
 | Field | Description |
 | --- | --- |
-| `hash_range_inclusive` | Pair of 3-char hashes from `read` output marking the first and last line of the range to replace (inclusive). |
-| `content_lines` | Replacement content, one string per line; entries must not contain line breaks. Use `[]` to delete the range. |
+| `hash_bounds` | Pair of 3-char hashes from `read` output marking the first and last line of the range to replace (inclusive). |
+| `new_content` | Replacement content as a single string with `\n` line separators; a trailing newline is the last line's ending, not an extra empty line. Use `""` to delete the range. |
 
 Behavior:
 
 - **Validation before any file I/O.** Unknown fields, missing fields, wrong types, and malformed anchors are rejected with `[E_BAD_SHAPE]` / `[E_BAD_REF]`. The edit applies against the pre-edit snapshot, so all hashes in the request come from one consistent file state.
-- **Rejected dialects.** The `changes` array dialect and the legacy `oldText`/`newText` dialect are rejected with `[E_LEGACY_SHAPE]`; the error tells you to send `{hash_range_inclusive: ["<START>", "<END>"], content_lines: [...]}`.
 - **Autocorrections** (all accompanied by a warning unless noted):
-  - A `HASH│` prefix accidentally left on a `content_lines` entry is stripped.
-  - Diff-preview rows (`+HASH│…`, `-HASH│…`, `-   │…`) pasted into `content_lines` have their markers stripped. Numbered deletion rows (`-1    foo`) and unified-diff lines are written literally — never silently altered.
+  - A `HASH│` prefix accidentally left on a `new_content` line is stripped.
+  - Diff-preview rows (`+HASH│…`, `-HASH│…`, `-   │…`) pasted into `new_content` have their markers stripped. Numbered deletion rows (`-1    foo`) and unified-diff lines are written literally — never silently altered.
   - A reversed range (start hash after end hash) is swapped and applied.
   - A duplicated boundary line — the classic `}`, `});`, or `} else {` pasted twice — is silently removed; the duplicate never reaches the file.
-  - `file_path` is accepted as an alias for `path`; a JSON-string `content_lines` is parsed into an array.
+  - `file_path` is accepted as an alias for `path`.
 - **Response.** With auto-read enabled (the default), a successful edit returns the post-edit diff — the same `+HASH│` / `-   │` / ` HASH│` rows the user sees — instead of the summary. With auto-read disabled, the edit reports `Successfully replaced in {path}. Added X line(s), removed Y line(s).` plus any warnings, and no diff is shown to the model. Warnings are appended in both modes. An edit that produces identical content reports `No changes made` and never rotates anchors. The post-edit diff is exposed to the host UI via `details.diff` — the TUI always shows it — and reaches the model-visible text only while auto-read is on.
 - **Undo.** Every successful replace is undoable once via `undo_last_replace` — see [Undo](#undo).
 
@@ -157,13 +156,12 @@ Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatic
 
 | Code | Meaning |
 | --- | --- |
-| `[E_BAD_SHAPE]` | Request envelope or edit item has unknown, missing, or wrongly-typed fields, or a `content_lines` entry contains a line break. |
-| `[E_BAD_REF]` | An anchor in `hash_range_inclusive` is not a bare 3-char hash. |
+| `[E_BAD_SHAPE]` | Request envelope or edit item has unknown, missing, or wrongly-typed fields (e.g. `new_content` must be a string with `\n` line separators). |
+| `[E_BAD_REF]` | An anchor in `hash_bounds` is not a bare 3-char hash. |
 | `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; call `read` for fresh anchors. |
 | `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
-| `[E_INVALID_PATCH]` | A `content_lines` entry is a diff-preview row (`+HASH│`, `-HASH│`, `-   │`) — the marker is stripped automatically with a warning. |
-| `[E_BARE_HASH_PREFIX]` | A `content_lines` entry starts with a hash-like `HASH│` prefix — the prefix is stripped automatically with a warning. |
-| `[E_LEGACY_SHAPE]` | The request uses an unsupported dialect: `oldText`/`newText` fields or a `changes` array. |
+| `[E_INVALID_PATCH]` | A `new_content` line is a diff-preview row (`+HASH│`, `-HASH│`, `-   │`) — the marker is stripped automatically with a warning. |
+| `[E_BARE_HASH_PREFIX]` | A `new_content` line starts with a hash-like `HASH│` prefix — the prefix is stripped automatically with a warning. |
 | `[E_BAD_OP]` | Range start line is after range end line — the pair is swapped automatically with a warning. |
 | `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |
@@ -187,7 +185,7 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 - **Autocorrection only when the intent is unambiguous**, and always visible: hash-prefix and diff-row stripping produce a warning; the boundary-duplication fix is silent because the duplicate never reaches the file. Literal content is never silently altered when the intent is ambiguous (numbered deletion rows and unified-diff lines are written verbatim).
 - **Byte-exact preservation.** UTF-8 BOMs, CRLF, LF, and CR-only line endings, file permissions, and trailing newlines survive edits and undo; files with mixed line endings are normalized to a single line ending on edit.
 - **Atomic and ordered writes.** Files are written via temp-file-then-rename; symlink chains are resolved so the target is updated without replacing the symlink; hard-linked files are updated in place; concurrent edits to the same underlying file serialize through a per-target mutation queue.
-- **One edit per call.** The request shape stays `{path, hash_range_inclusive, content_lines}` from schema through validation to application; there is no batching dialect.
+- **One edit per call.** The request shape stays `{path, hash_bounds, new_content}` from schema through validation to application; there is no batching dialect.
 
 ## Troubleshooting
 

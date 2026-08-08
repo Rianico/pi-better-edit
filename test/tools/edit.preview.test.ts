@@ -15,7 +15,7 @@ describe("compPreview", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
         cwd,
       );
       expect(preview).toHaveProperty("diff");
@@ -28,7 +28,7 @@ describe("compPreview", () => {
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BETA"] },
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BETA" },
         cwd,
       );
       expect(preview).toHaveProperty("diff");
@@ -41,7 +41,7 @@ describe("compPreview", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
         cwd,
       );
       expect(preview).toHaveProperty("diff");
@@ -53,7 +53,7 @@ describe("compPreview", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
         cwd,
       );
       expect(preview).toHaveProperty("diff");
@@ -65,7 +65,7 @@ describe("compPreview", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
         cwd,
       );
       expect(preview).toHaveProperty("diff");
@@ -76,11 +76,11 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const preview = await compPreview(
-        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
+        { path: "sample.ts", changes: [{ hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" }] },
         cwd,
       );
       expect(preview).toHaveProperty("error");
-      expect((preview as { error: string }).error).toMatch(/^\[E_LEGACY_SHAPE\]/);
+      expect((preview as { error: string }).error).toMatch(/^\[E_BAD_SHAPE\]/);
     });
   });
 
@@ -88,7 +88,7 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const preview = await compPreview(
-        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
         cwd,
       );
       expect(preview).toHaveProperty("diff");
@@ -138,7 +138,7 @@ describe("renderCall preview", () => {
 
       const harness = makeHarness(cwd);
       tool.renderCall(
-        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
         harness.theme,
         harness.context,
       );
@@ -149,7 +149,7 @@ describe("renderCall preview", () => {
     });
   });
 
-  it("shows a rejection error when the model sends a changes array", async () => {
+  it("shows no preview when the model sends a changes array", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
       register(pi);
@@ -158,14 +158,13 @@ describe("renderCall preview", () => {
 
       const harness = makeHarness(cwd);
       tool.renderCall(
-        { path: "sample.ts", changes: [{ hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] }] },
+        { path: "sample.ts", changes: [{ hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" }] },
         harness.theme,
         harness.context,
       );
 
-      await awaitPreview(harness);
-      expect(harness.state.preview).toHaveProperty("error");
-      expect((harness.state.preview as { error: string }).error).toMatch(/^\[E_LEGACY_SHAPE\]/);
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      expect(harness.state.preview).toBeUndefined();
     });
   });
 
@@ -180,13 +179,13 @@ describe("renderCall preview", () => {
       try {
         const harness = makeHarness(cwd);
         tool.renderCall(
-          { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"] },
+          { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
           harness.theme,
           harness.context,
         );
         expect(harness.state.preview).toBeUndefined();
         tool.renderCall(
-          { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["CCC"] },
+          { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "CCC" },
           harness.theme,
           harness.context,
         );
@@ -209,7 +208,7 @@ describe("compPreview — noop", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const preview = await compPreview(
-        { path: "sample.ts", hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["bbb"] },
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "bbb" },
         cwd,
       );
       expect(preview).toEqual({
@@ -246,7 +245,7 @@ describe("renderCall state transitions", () => {
     state.preview = { diff: "stale diff" };
     state.previewGeneration = 7;
     const component = tool.renderCall!(
-      { path: "x.ts", hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"] },
+      { path: "x.ts", hash_bounds: ["AAA", "BBB"], new_content: "x" },
       theme as any,
       context as any,
     ) as Text;
@@ -264,7 +263,7 @@ describe("renderCall state transitions", () => {
     state.preview = { diff: "stale diff" };
     state.previewGeneration = 2;
     tool.renderCall!(
-      { path: "x.ts", hash_range_inclusive: ["AAA", "BBB"], content_lines: ["x"] },
+      { path: "x.ts", hash_bounds: ["AAA", "BBB"], new_content: "x" },
       theme as any,
       context as any,
     );

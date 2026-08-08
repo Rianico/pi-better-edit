@@ -14,7 +14,7 @@ describe("chained edit anchors", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        { path: "sample.ts", hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] },
+        { path: "sample.ts", hash_bounds: [betaRef, betaRef], new_content: "BETA" },
         undefined,
         undefined,
         ctx,
@@ -30,7 +30,7 @@ describe("chained edit anchors", () => {
 
       const editResult2 = await editTool.execute(
         "e2",
-        { path: "sample.ts", hash_range_inclusive: [freshRef, freshRef], content_lines: ["BETA-CHAINED"] },
+        { path: "sample.ts", hash_bounds: [freshRef, freshRef], new_content: "BETA-CHAINED" },
         undefined,
         undefined,
         ctx,
@@ -62,7 +62,7 @@ describe("chained edit anchors", () => {
         "e1",
         {
           path: "big.ts",
-          hash_range_inclusive: [line1Ref, line15Ref], content_lines: newLines,
+          hash_bounds: [line1Ref, line15Ref], new_content: newLines.join("\n"),
         },
         undefined,
         undefined,
@@ -86,7 +86,7 @@ describe("chained edit anchors", () => {
       const newLines = Array.from({ length: 11 }, (_, i) => `EXPANDED ${i + 1}`);
       const editResult = await editTool.execute(
         "e1",
-        { path: "expand.ts", hash_range_inclusive: [targetRef, targetRef], content_lines: newLines },
+        { path: "expand.ts", hash_bounds: [targetRef, targetRef], new_content: newLines.join("\n") },
         undefined,
         undefined,
         ctx,
@@ -112,7 +112,7 @@ describe("chained edit anchors", () => {
 
       await editTool.execute(
         "e1",
-        { path: "stale.ts", hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA"] },
+        { path: "stale.ts", hash_bounds: [betaRef, betaRef], new_content: "BETA" },
         undefined,
         undefined,
         ctx,
@@ -120,7 +120,7 @@ describe("chained edit anchors", () => {
       await expect(
         editTool.execute(
           "e2-stale",
-          { path: "stale.ts", hash_range_inclusive: [betaRef, betaRef], content_lines: ["BETA-AGAIN"] },
+          { path: "stale.ts", hash_bounds: [betaRef, betaRef], new_content: "BETA-AGAIN" },
           undefined,
           undefined,
           ctx,
@@ -129,7 +129,7 @@ describe("chained edit anchors", () => {
 
       const alphaEdit = await editTool.execute(
         "e3",
-        { path: "stale.ts", hash_range_inclusive: [alphaRef, alphaRef], content_lines: ["ALPHA"] },
+        { path: "stale.ts", hash_bounds: [alphaRef, alphaRef], new_content: "ALPHA" },
         undefined,
         undefined,
         ctx,
@@ -158,7 +158,7 @@ describe("chained edit anchors", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        { path: "stable.ts", hash_range_inclusive: [gammaRef, betaRef], content_lines: ["X"] },
+        { path: "stable.ts", hash_bounds: [gammaRef, betaRef], new_content: "X" },
         undefined,
         undefined,
         ctx,
@@ -168,7 +168,7 @@ describe("chained edit anchors", () => {
 
       const alphaEdit = await editTool.execute(
         "e2",
-        { path: "stable.ts", hash_range_inclusive: [alphaRef, alphaRef], content_lines: ["ALPHA"] },
+        { path: "stable.ts", hash_bounds: [alphaRef, alphaRef], new_content: "ALPHA" },
         undefined,
         undefined,
         ctx,

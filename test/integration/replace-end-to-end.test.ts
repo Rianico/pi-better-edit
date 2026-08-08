@@ -18,8 +18,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [betaHash, betaHash],
-          content_lines: ["BBB"],
+          hash_bounds: [betaHash, betaHash],
+          new_content: "BBB",
         },
         undefined,
         undefined,
@@ -47,8 +47,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [bHash, cHash],
-          content_lines: ["B", "C"],
+          hash_bounds: [bHash, cHash],
+          new_content: "B\nC",
         },
         undefined,
         undefined,
@@ -76,8 +76,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [bHash, cHash],
-          content_lines: [],
+          hash_bounds: [bHash, cHash],
+          new_content: "",
         },
         undefined,
         undefined,
@@ -107,8 +107,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [betaRef, betaRef],
-          content_lines: ["BBB"],
+          hash_bounds: [betaRef, betaRef],
+          new_content: "BBB",
         },
         undefined,
         undefined,
@@ -120,8 +120,8 @@ describe("replace tool — end-to-end", () => {
           "e2",
           {
             path: "sample.ts",
-            hash_range_inclusive: [betaRef, betaRef],
-            content_lines: ["BBB-AGAIN"],
+            hash_bounds: [betaRef, betaRef],
+            new_content: "BBB-AGAIN",
           },
           undefined,
           undefined,
@@ -143,8 +143,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "empty.ts",
-          hash_range_inclusive: [emptyHash, emptyHash],
-          content_lines: ["first", "second"],
+          hash_bounds: [emptyHash, emptyHash],
+          new_content: "first\nsecond",
         },
         undefined,
         undefined,
@@ -170,8 +170,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "crlf.ts",
-          hash_range_inclusive: [betaRef, betaRef],
-          content_lines: ["BETA"],
+          hash_bounds: [betaRef, betaRef],
+          new_content: "BETA",
         },
         undefined,
         undefined,
@@ -198,8 +198,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "cr.ts",
-          hash_range_inclusive: [betaRef, betaRef],
-          content_lines: ["BETA"],
+          hash_bounds: [betaRef, betaRef],
+          new_content: "BETA",
         },
         undefined,
         undefined,
@@ -244,7 +244,7 @@ describe("replace tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            { path: c.fileName, hash_range_inclusive: [betaRef, betaRef], content_lines: [] },
+            { path: c.fileName, hash_bounds: [betaRef, betaRef], new_content: "" },
             undefined,
             undefined,
             ctx,
@@ -264,7 +264,7 @@ describe("replace tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            { path: c.fileName, hash_range_inclusive: [betaRef, betaRef], content_lines: ["beta"] },
+            { path: c.fileName, hash_bounds: [betaRef, betaRef], new_content: "beta" },
             undefined,
             undefined,
             ctx,
@@ -275,7 +275,7 @@ describe("replace tool — end-to-end", () => {
       });
     }
   });
-  it("accepts top-level hash_range_inclusive and content_lines", async () => {
+  it("accepts top-level hash_bounds and content_lines", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -284,8 +284,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!],
-          content_lines: ["BBB"],
+          hash_bounds: [hashes[1]!, hashes[1]!],
+          new_content: "BBB",
         },
         undefined,
         undefined,

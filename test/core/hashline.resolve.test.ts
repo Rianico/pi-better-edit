@@ -6,100 +6,83 @@ import {
 } from "../../src/hashline";
 
 describe("resEdit", () => {
-	it("resolves replace with hash_range_inclusive", () => {
-		const edit: HTEdit = { hash_range_inclusive: ["ZZP", "PPW"], content_lines: ["a", "b"] };
+	it("resolves replace with hash_bounds", () => {
+		const edit: HTEdit = { hash_bounds: ["ZZP", "PPW"], new_content: "a\nb" };
 		const resolved = resEdit(edit);
-		expect(resolved).toHaveProperty("hash_range_inclusive");
+		expect(resolved).toHaveProperty("hash_bounds");
 		expect(resolved).toHaveProperty("content_lines");
 	});
 
 	it("resolves a 1-line replace (same anchor)", () => {
-		const edit: HTEdit = { hash_range_inclusive: ["MQX", "MQX"], content_lines: ["new"] };
+		const edit: HTEdit = { hash_bounds: ["MQX", "MQX"], new_content: "new" };
 		const resolved = resEdit(edit);
 		const r = resolved as {
-			hash_range_inclusive: [Anchor, Anchor];
+			hash_bounds: [Anchor, Anchor];
       content_lines: string[];
 		};
-		expect(r.hash_range_inclusive[0].hash).toBe("MQX");
-		expect(r.hash_range_inclusive[1].hash).toBe("MQX");
+		expect(r.hash_bounds[0].hash).toBe("MQX");
+		expect(r.hash_bounds[1].hash).toBe("MQX");
 	});
 
-	it("throws on replace with no hash_range_inclusive (E_BAD_SHAPE)", () => {
-    const edit = { content_lines: ["new"] } as any;
+	it("throws on replace with no hash_bounds (E_BAD_SHAPE)", () => {
+    const edit = { new_content: "new" } as any;
 		expect(() => resEdit(edit)).toThrow(/^\[E_BAD_SHAPE\]/);
 	});
 
-	it("throws on malformed hash_range_inclusive", () => {
-		const edit: HTEdit = { hash_range_inclusive: ["not-valid", "not-valid"], content_lines: ["x"] };
+	it("throws on malformed hash_bounds", () => {
+		const edit: HTEdit = { hash_bounds: ["not-valid", "not-valid"], new_content: "x" };
 		expect(() => resEdit(edit)).toThrow(/Invalid anchor/);
 	});
 
-  it("rejects string content_lines input", () => {
+  it("rejects array new_content input", () => {
     const edit = {
-      hash_range_inclusive: ["ZZP", "ZZP"],
-      content_lines: "hello\nworld\n",
+      hash_bounds: ["ZZP", "ZZP"],
+      new_content: ["hello", "world"],
     } as unknown as HTEdit;
     expect(() => resEdit(edit)).toThrow(
-      /must be a native JSON array of strings, not a JSON string/i,
+      /must be a string with \\n line separators, not an array/i,
     );
   });
 
-  it("auto-recovers JSON-string content_lines", () => {
+  it("splits string new_content on line separators", () => {
     const edit = {
-      hash_range_inclusive: ["ZZP", "ZZP"],
-      content_lines: '["line1", "line2"]'
+      hash_bounds: ["ZZP", "ZZP"],
+      new_content: "line1\nline2\n",
     } as unknown as HTEdit;
     const resolved = resEdit(edit);
     expect(resolved.content_lines).toEqual(["line1", "line2"]);
   });
 
-  it("rejects JSON-string content_lines that parses to non-array", () => {
+  it("normalizes CRLF in new_content", () => {
     const edit = {
-      hash_range_inclusive: ["ZZP", "ZZP"],
-      content_lines: '"just a string"'
+      hash_bounds: ["ZZP", "ZZP"],
+      new_content: "a\r\nb",
     } as unknown as HTEdit;
-    expect(() => resEdit(edit)).toThrow(
-      /must be a native JSON array of strings, not a JSON string/i,
-    );
+    const resolved = resEdit(edit);
+    expect(resolved.content_lines).toEqual(["a", "b"]);
   });
 
-	it("rejects null content_lines input", () => {
+	it("rejects null new_content input", () => {
 		const edit = {
-			hash_range_inclusive: ["ZZP", "ZZP"],
-      content_lines: null,
+			hash_bounds: ["ZZP", "ZZP"],
+      new_content: null,
 		} as unknown as HTEdit;
 		expect(() => resEdit(edit)).toThrow(
-      /content_lines" must be a string array/i,
+      /must be a string with \\n line separators, not an array/i,
 		);
 	});
 
-	it("rejects content_lines entries containing line breaks", () => {
-		const edit = {
-			hash_range_inclusive: ["ZZP", "ZZP"],
-			content_lines: ["a\nb"],
-		} as unknown as HTEdit;
-		expect(() => resEdit(edit)).toThrow(/line break/);
-	});
-
-	it("rejects content_lines entries containing carriage returns", () => {
-		const edit = {
-			hash_range_inclusive: ["ZZP", "ZZP"],
-			content_lines: ["a\rb"],
-		} as unknown as HTEdit;
-		expect(() => resEdit(edit)).toThrow(/line break/);
-	});
-
 	it("rejects unknown fields", () => {
-    const edit = { hash_range_inclusive: ["ZZP", "ZZP"], content_lines: ["x"], extra: true } as any;
+    const edit = { hash_bounds: ["ZZP", "ZZP"], new_content: "x", extra: true } as any;
 		expect(() => resEdit(edit)).toThrow(
 			/unknown or unsupported fields/i,
 		);
 	});
 
-	it("rejects missing content_lines", () => {
-		const edit = { hash_range_inclusive: ["ZZP", "ZZP"] } as any;
+	it("rejects missing new_content", () => {
+		const edit = { hash_bounds: ["ZZP", "ZZP"] } as any;
 		expect(() => resEdit(edit)).toThrow(
-      /requires a "content_lines" field/i,
+      /requires a "new_content" field/i,
 		);
 	});
 });

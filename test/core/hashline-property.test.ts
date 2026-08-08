@@ -10,6 +10,9 @@ import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
 
+function replToContent(repl: string[]): string {
+  return repl.join("\n") + (repl.length > 0 && repl[repl.length - 1] === "" ? "\n" : "");
+}
 const VOCAB = [
   "",
   "}",
@@ -150,8 +153,8 @@ describe("property: single random edit per call", () => {
         expected += "\n";
       }
       const edit = resEdit({
-        hash_range_inclusive: [hashes[span.s - 1]!, hashes[span.e - 1]!],
-        content_lines: span.repl,
+        hash_bounds: [hashes[span.s - 1]!, hashes[span.e - 1]!],
+        new_content: replToContent(span.repl),
       });
       const result = applyEdit(content, edit, undefined, hashes, home.testPath);
       expect(result.content).toBe(expected);
@@ -202,8 +205,8 @@ describe("property: sequential random edits", () => {
       for (const span of [...spans].sort((a, b) => b.s - a.s)) {
         const currentHashes = await lineHashes(current, home.testPath);
         const edit = resEdit({
-          hash_range_inclusive: [currentHashes[span.s - 1]!, currentHashes[span.e - 1]!],
-          content_lines: span.repl,
+          hash_bounds: [currentHashes[span.s - 1]!, currentHashes[span.e - 1]!],
+          new_content: replToContent(span.repl),
         });
         const result = applyEdit(current, edit, undefined, currentHashes, home.testPath);
         current = result.content;
@@ -259,8 +262,8 @@ describe("property: chained stable mapping at every step", () => {
         const span = randSpan(rnd, lines, [], !content.endsWith("\n"));
         if (!span) break;
         const edit = resEdit({
-          hash_range_inclusive: [hashes[span.s - 1]!, hashes[span.e - 1]!],
-          content_lines: span.repl,
+          hash_bounds: [hashes[span.s - 1]!, hashes[span.e - 1]!],
+          new_content: replToContent(span.repl),
         });
         let result;
         try {

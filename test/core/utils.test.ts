@@ -150,7 +150,7 @@ describe("rejectUnknownFields", () => {
     const obj = { path: "test.txt", extra: "value" };
     const allowed = new Set(["path"]);
     expect(() =>
-      rejectUnknownFields(obj, allowed, "Edit 0", "Each edit takes only { hash_range_inclusive, content_lines }."),
+      rejectUnknownFields(obj, allowed, "Edit 0", "Each edit takes only { new_content, hash_bounds }."),
     ).toThrow(/Each edit takes only/);
   });
 

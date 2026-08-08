@@ -1,7 +1,7 @@
 import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty, clipLine } from "../utils";
 import { HL_BARE_PREFIX_RE, HL_PREFIX_PLUS_RE, HL_PREFIX_MINUS_RE } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
-import { CONTENT_LINES_NOT_STRING_MSG } from "../constants";
+import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
 
 export type RAnchor = {
 	line: number;
@@ -9,10 +9,10 @@ export type RAnchor = {
 	hashMatched: boolean;
 };
 
-export type HEdit = { content_lines: string[]; hash_range_inclusive: [Anchor, Anchor] };
+export type HEdit = { content_lines: string[]; hash_bounds: [Anchor, Anchor] };
 export type RHEdit = {
   content_lines: string[];
-  hash_range_inclusive: [RAnchor, RAnchor];
+  hash_bounds: [RAnchor, RAnchor];
 };
 
 interface HMismatch {
@@ -40,8 +40,8 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-  content_lines: string[];
-  hash_range_inclusive: [string, string];
+  new_content: string;
+  hash_bounds: [string, string];
 };
 
 function resAnchorFromMap(
@@ -89,7 +89,7 @@ export function fmtMismatch(
   const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
   if (notFound.length > 0) {
     out.push(
-      `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
+      `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_bounds of your next replace call.`
     );
     for (const m of notFound) {
       const ctx = m.context;
@@ -107,7 +107,7 @@ export function fmtMismatch(
   if (ambiguous.length > 0) {
     if (out.length > 0) out.push("");
     out.push(
-      `[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_range_inclusive of your next replace call.`
+      `[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_bounds of your next replace call.`
     );
     for (const m of ambiguous) {
       const sample = (m.candidates ?? []).slice(0, 5);
@@ -130,13 +130,7 @@ export function fmtMismatch(
   return out.join("\n");
 }
 
-const ITEM_KS = new Set(["content_lines", "hash_range_inclusive"]);
-
-function isStrArr(value: unknown): value is string[] {
-	return (
-		Array.isArray(value) && value.every((item) => typeof item === "string")
-	);
-}
+const ITEM_KS = new Set(["new_content", "hash_bounds"]);
 
 function isStrPair(value: unknown): value is [string, string] {
 	return (
@@ -147,36 +141,22 @@ function isStrPair(value: unknown): value is [string, string] {
 }
 
 function assertItem(edit: Record<string, unknown>): void {
-  rejectUnknownFields(edit, ITEM_KS, "Edit", "The edit takes only { content_lines, hash_range_inclusive }.");
+  rejectUnknownFields(edit, ITEM_KS, "Edit", "The edit takes only { new_content, hash_bounds }.");
 
-  if ("hash_range_inclusive" in edit && !isStrPair(edit.hash_range_inclusive)) {
+  if ("hash_bounds" in edit && !isStrPair(edit.hash_bounds)) {
     throw new Error(
-      `[E_BAD_SHAPE] Field "hash_range_inclusive" must be a pair of anchor strings [start, end].`,
+      `[E_BAD_SHAPE] Field "hash_bounds" must be a pair of anchor strings [start, end].`,
     );
   }
-  if (!("content_lines" in edit)) {
-    throw new Error(`[E_BAD_SHAPE] The edit requires a "content_lines" field. Provide the replacement lines (use [] to delete).`);
+  if (!("new_content" in edit)) {
+    throw new Error(`[E_BAD_SHAPE] The edit requires a "new_content" field. Provide the replacement text (use "" to delete).`);
   }
-  if ("content_lines" in edit && !isStrArr(edit.content_lines)) {
-    const val = edit.content_lines;
-    if (typeof val === "string") {
-      try {
-        const parsed = JSON.parse(val);
-        if (Array.isArray(parsed)) {
-          edit.content_lines = parsed;
-        } else {
-          throw new Error(CONTENT_LINES_NOT_STRING_MSG);
-        }
-      } catch {
-        throw new Error(CONTENT_LINES_NOT_STRING_MSG);
-      }
-    } else {
-      throw new Error(`[E_BAD_SHAPE] Field "content_lines" must be a string array.`);
-    }
+  if (typeof edit.new_content !== "string") {
+    throw new Error(NEW_CONTENT_NOT_STRING_MSG);
   }
-  if (!isStrPair(edit.hash_range_inclusive)) {
+  if (!isStrPair(edit.hash_bounds)) {
     throw new Error(
-      `[E_BAD_SHAPE] The edit requires a "hash_range_inclusive" pair of anchor strings [start, end].`,
+      `[E_BAD_SHAPE] The edit requires a "hash_bounds" pair of anchor strings [start, end].`,
     );
   }
 }
@@ -184,10 +164,10 @@ function assertItem(edit: Record<string, unknown>): void {
 export function resEdit(edit: HTEdit): HEdit {
   assertItem(edit as Record<string, unknown>);
 
-  const replaceLines = parseText(edit.content_lines);
+  const replaceLines = parseText(edit.new_content);
   return {
     content_lines: replaceLines,
-    hash_range_inclusive: [parseHashRef(edit.hash_range_inclusive[0]), parseHashRef(edit.hash_range_inclusive[1])],
+    hash_bounds: [parseHashRef(edit.hash_bounds[0]), parseHashRef(edit.hash_bounds[1])],
   };
 }
 
@@ -217,7 +197,7 @@ export function stripBarePrefixes(
 	});
 	if (stripped.length === 0) return edit;
 	const locations = stripped
-		.map((s) => `content_lines[${s.lineIndex}]`)
+		.map((s) => `new_content line ${s.lineIndex + 1}`)
 		.join(", ");
 	const matchedCount = stripped.filter((s) => s.matched).length;
 	const evidence =
@@ -253,7 +233,7 @@ export function stripDiffPrefixes(
 		return line;
 	});
 	if (stripped.length === 0) return edit;
-	const locations = stripped.map((i) => `content_lines[${i}]`).join(", ");
+	const locations = stripped.map((i) => `new_content line ${i + 1}`).join(", ");
 	warnings.push(
 		`[E_INVALID_PATCH] Autocorrected: stripped diff-preview marker copied from the diff preview in ${locations}.`
 	);
@@ -269,7 +249,7 @@ export function swapReversedRanges(
 	for (let i = 0; i < fileHashes.length; i++) {
 		lineByHash.set(fileHashes[i]!, i + 1);
 	}
-	const [startRef, endRef] = edit.hash_range_inclusive;
+	const [startRef, endRef] = edit.hash_bounds;
 	const startLine = lineByHash.get(startRef.hash);
 	const endLine = lineByHash.get(endRef.hash);
 	if (
@@ -280,9 +260,9 @@ export function swapReversedRanges(
 		return edit;
 	}
 	warnings.push(
-		`[E_BAD_OP] Autocorrected: hash_range_inclusive was reversed (start ${startRef.hash} is after end ${endRef.hash}); swapped the pair.`
+		`[E_BAD_OP] Autocorrected: hash_bounds was reversed (start ${startRef.hash} is after end ${endRef.hash}); swapped the pair.`
 	);
-	return { ...edit, hash_range_inclusive: [endRef, startRef] as [Anchor, Anchor] };
+	return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
 
 function checkBoundaryDup(
@@ -334,21 +314,21 @@ export function valEdit(
 	};
 
 	abortIf(signal);
-	const startResolved = tryResolve(edit.hash_range_inclusive[0]);
-	const endResolved = tryResolve(edit.hash_range_inclusive[1]);
+	const startResolved = tryResolve(edit.hash_bounds[0]);
+	const endResolved = tryResolve(edit.hash_bounds[1]);
 	if (!startResolved || !endResolved) {
 		if (!startResolved && endResolved) {
-			const startMismatch = mismatches.findLast((m) => m.ref === edit.hash_range_inclusive[0]);
+			const startMismatch = mismatches.findLast((m) => m.ref === edit.hash_bounds[0]);
 			if (startMismatch && startMismatch.kind === "not_found") startMismatch.context = endResolved;
 		} else if (startResolved && !endResolved) {
-			const endMismatch = mismatches.findLast((m) => m.ref === edit.hash_range_inclusive[1]);
+			const endMismatch = mismatches.findLast((m) => m.ref === edit.hash_bounds[1]);
 			if (endMismatch && endMismatch.kind === "not_found") endMismatch.context = startResolved;
 		}
 		return { resolved: undefined, mismatches, boundaryWarnings };
 	}
 	if (startResolved.line > endResolved.line) {
 		throw new Error(
-			`[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_range_inclusive[0].hash} and ${edit.hash_range_inclusive[1].hash}).`,
+			`[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}).`,
 		);
 	}
 	const endLine = endResolved.line;
@@ -364,7 +344,7 @@ export function valEdit(
 	return {
 		resolved: {
 			content_lines: edit.content_lines,
-			hash_range_inclusive: [startResolved, endResolved],
+			hash_bounds: [startResolved, endResolved],
 		},
 		mismatches,
 		boundaryWarnings,

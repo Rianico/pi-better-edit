@@ -14,7 +14,7 @@ describe("stable hashing with duplicate content lines", () => {
     expect(firstBraceHash).not.toBe(secondBraceHash);
 
     const edit: HEdit = {
-      hash_range_inclusive: [{ hash: hashes[0]! }, { hash: firstBraceHash }],
+      hash_bounds: [{ hash: hashes[0]! }, { hash: firstBraceHash }],
       content_lines: [],
     };
 
@@ -39,7 +39,7 @@ describe("stable hashing with duplicate content lines", () => {
     const secondBraceHash = hashes[6]!;
 
     const edit: HEdit = {
-      hash_range_inclusive: [{ hash: hashes[4]! }, { hash: secondBraceHash }],
+      hash_bounds: [{ hash: hashes[4]! }, { hash: secondBraceHash }],
       content_lines: [],
     };
 
@@ -66,7 +66,7 @@ describe("stable hashing with duplicate content lines", () => {
     expect(new Set([brace1, brace2, brace3]).size).toBe(3);
 
     const edit: HEdit = {
-      hash_range_inclusive: [{ hash: hashes[2]! }, { hash: hashes[2]! }],
+      hash_bounds: [{ hash: hashes[2]! }, { hash: hashes[2]! }],
       content_lines: [],
     };
 
@@ -104,8 +104,8 @@ describe("stable hashing with duplicate content lines", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [line1Hash, firstBraceHash],
-          content_lines: [],
+          hash_bounds: [line1Hash, firstBraceHash],
+          new_content: "",
         },
         undefined,
         undefined,
@@ -142,8 +142,8 @@ describe("stable hashing with duplicate content lines", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [aHash, cHash],
-          content_lines: [],
+          hash_bounds: [aHash, cHash],
+          new_content: "",
         },
         undefined,
         undefined,
@@ -183,8 +183,8 @@ describe("stable hashing with duplicate content lines", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [aHash, cHash],
-          content_lines: [],
+          hash_bounds: [aHash, cHash],
+          new_content: "",
         },
         undefined,
         undefined,
@@ -195,8 +195,8 @@ describe("stable hashing with duplicate content lines", () => {
         "e2",
         {
           path: "sample.ts",
-          hash_range_inclusive: [dHash, eHash],
-          content_lines: [],
+          hash_bounds: [dHash, eHash],
+          new_content: "",
         },
         undefined,
         undefined,

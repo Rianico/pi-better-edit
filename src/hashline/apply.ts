@@ -65,8 +65,8 @@ function resToSpan(
 ): RESpan | NoopSpan {
   const { fileLines, lineStarts } = lineIndex;
 
-  const startLine = edit.hash_range_inclusive[0].line;
-  const endLine = edit.hash_range_inclusive[1].line;
+  const startLine = edit.hash_bounds[0].line;
+  const endLine = edit.hash_bounds[1].line;
   const originalLines = fileLines.slice(startLine - 1, endLine);
   if (
     originalLines.length === edit.content_lines.length &&
@@ -76,7 +76,7 @@ function resToSpan(
   ) {
     return {
       kind: "noop",
-      loc: edit.hash_range_inclusive[0].hash,
+      loc: edit.hash_bounds[0].hash,
       currentContent: originalLines.join("\n"),
     };
   }

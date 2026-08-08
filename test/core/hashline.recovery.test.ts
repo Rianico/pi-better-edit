@@ -13,10 +13,10 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[3]!, hashes[1]!], content_lines: ["X"] },
+      { hash_bounds: [hashes[3]!, hashes[1]!], new_content: "X" },
     ));
     expect(result.content).toBe("a\nX\ne");
-    expect(result.warnings?.[0]).toMatch(/Autocorrected: hash_range_inclusive was reversed/);
+    expect(result.warnings?.[0]).toMatch(/Autocorrected: hash_bounds was reversed/);
   });
 
   it("rejects stale anchor", async () => {
@@ -24,7 +24,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     expect(() =>
       applyEdit(content, resEdit(
-        { hash_range_inclusive: [hashes[0]!, hashes[1]!], content_lines: ["X", "Y"] },
+        { hash_bounds: [hashes[0]!, hashes[1]!], new_content: "X\nY" },
       ), undefined, ["STALE", "STALE", "STALE", "STALE", "STALE"])
     ).toThrow(/E_STALE_ANCHOR/);
   });
@@ -36,7 +36,7 @@ describe("applyEdit — recovery scenarios", () => {
     let caught: Error | undefined;
     try {
       applyEdit(content, resEdit(
-        { hash_range_inclusive: [staleStart, hashes[2]!], content_lines: ["X"] },
+        { hash_bounds: [staleStart, hashes[2]!], new_content: "X" },
       ));
     } catch (error) {
       caught = error as Error;
@@ -54,7 +54,7 @@ describe("applyEdit — recovery scenarios", () => {
     let caught: Error | undefined;
     try {
       applyEdit(content, resEdit(
-        { hash_range_inclusive: [hashes[0]!, staleEnd], content_lines: ["X"] },
+        { hash_bounds: [hashes[0]!, staleEnd], new_content: "X" },
       ));
     } catch (error) {
       caught = error as Error;
@@ -69,7 +69,7 @@ describe("applyEdit — recovery scenarios", () => {
     let caught: Error | undefined;
     try {
       applyEdit(content, resEdit(
-        { hash_range_inclusive: ["ZZZ", "YYY"], content_lines: ["X"] },
+        { hash_bounds: ["ZZZ", "YYY"], new_content: "X" },
       ));
     } catch (error) {
       caught = error as Error;
@@ -84,33 +84,39 @@ describe("applyEdit — recovery scenarios", () => {
     const forgedHashes = [hashes[0]!, hashes[0]!, hashes[0]!, hashes[0]!, hashes[0]!];
     expect(() =>
       applyEdit(content, resEdit(
-        { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["X"] },
+        { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "X" },
       ), undefined, forgedHashes)
     ).toThrow(/E_AMBIGUOUS_ANCHOR/);
   });
 
   it("rejects unknown fields in edit items", () => {
-    const edit = { hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: ["x"], extra: true } as any;
+    const edit = { hash_bounds: ["ZZZ", "ZZZ"], new_content: "x", extra: true } as any;
     expect(() => resEdit(edit)).toThrow(/unknown or unsupported fields/);
   });
 
-  it("rejects missing content_lines", () => {
-    const edit = { hash_range_inclusive: ["ZZZ", "ZZZ"] } as any;
-    expect(() => resEdit(edit)).toThrow(/requires a "content_lines" field/);
+  it("rejects missing new_content", () => {
+    const edit = { hash_bounds: ["ZZZ", "ZZZ"] } as any;
+    expect(() => resEdit(edit)).toThrow(/requires a "new_content" field/);
   });
 
-  it("rejects null content_lines", () => {
-    const edit = { hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: null } as any;
-    expect(() => resEdit(edit)).toThrow(/content_lines" must be a string array/);
+  it("rejects null new_content", () => {
+    const edit = { hash_bounds: ["ZZZ", "ZZZ"], new_content: null } as any;
+    expect(() => resEdit(edit)).toThrow(/must be a string with \\n line separators, not an array/);
   });
 
-  it("rejects string content_lines", () => {
-    const edit = { hash_range_inclusive: ["ZZZ", "ZZZ"], content_lines: "hello\nworld\n" } as any;
-    expect(() => resEdit(edit)).toThrow(/must be a native JSON array of strings, not a JSON string/);
+  it("rejects array new_content", () => {
+    const edit = { hash_bounds: ["ZZZ", "ZZZ"], new_content: ["hello", "world"] } as any;
+    expect(() => resEdit(edit)).toThrow(/must be a string with \\n line separators, not an array/);
   });
 
-  it("rejects malformed hash_range_inclusive", () => {
-    const edit = { hash_range_inclusive: ["not-valid", "not-valid"] as [string, string], content_lines: ["x"] };
+  it("accepts string new_content with line separators", () => {
+    const edit = { hash_bounds: ["ZZZ", "ZZZ"], new_content: "hello\nworld\n" } as any;
+    const resolved = resEdit(edit);
+    expect(resolved.content_lines).toEqual(["hello", "world"]);
+  });
+
+  it("rejects malformed hash_bounds", () => {
+    const edit = { hash_bounds: ["not-valid", "not-valid"] as [string, string], new_content: "x" };
     expect(() => resEdit(edit)).toThrow(/Invalid anchor/);
   });
 
@@ -118,7 +124,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!] as [string, string], content_lines: [`${hashes[1]!}│b`, "X"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!] as [string, string], new_content: `${hashes[1]!}│b\nX` },
     ));
     expect(result.content).toBe("a\nb\nX\nd\ne");
     expect(result.warnings?.[0]).toMatch(/stripped "HASH│" prefix/);
@@ -128,7 +134,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[1]!] as [string, string], content_lines: [`+${hashes[1]!}│B`] },
+      { hash_bounds: [hashes[1]!, hashes[1]!] as [string, string], new_content: `+${hashes[1]!}│B` },
     ));
     expect(result.content).toBe("a\nB\nc");
     expect(result.warnings?.[0]).toMatch(/stripped diff-preview marker/);
@@ -138,7 +144,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["\\uDDDD"] },
+      { hash_bounds: [hashes[1]!, hashes[1]!], new_content: "\\uDDDD" },
     ));
     expect(result.warnings).toBeDefined();
     expect(result.warnings![0]).toContain("\\uDDDD");
@@ -148,7 +154,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: ["\t\treplaced"] },
+      { hash_bounds: [hashes[2]!, hashes[2]!], new_content: "\t\treplaced" },
     ));
     expect(result.content).toBe("a\nb\n\t\treplaced");
   });
@@ -157,7 +163,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: ["\t\treplaced"] },
+      { hash_bounds: [hashes[2]!, hashes[2]!], new_content: "\t\treplaced" },
     ));
     expect(result.content).toContain("\t\treplaced");
   });
@@ -166,7 +172,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["b"] },
+      { hash_bounds: [hashes[1]!, hashes[1]!], new_content: "b" },
     ));
     expect(result.noopEdit).toBeDefined();
   });
@@ -175,7 +181,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[2]!], content_lines: ["b", "c"] },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "b\nc" },
     ));
     expect(result.noopEdit).toBeDefined();
   });
@@ -184,7 +190,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "hello";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: ["world"] },
+      { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "world" },
     ));
     expect(result.content).toBe("world");
   });
@@ -193,7 +199,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["b", "c"] },
+      { hash_bounds: [hashes[1]!, hashes[1]!], new_content: "b\nc" },
     ));
     expect(result.content).toBe("a\nb\nc");
   });
@@ -202,7 +208,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [] },
+      { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "" },
     ));
     expect(result.content).toBe("b\nc");
   });
@@ -211,7 +217,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[2]!, hashes[2]!], content_lines: [] },
+      { hash_bounds: [hashes[2]!, hashes[2]!], new_content: "" },
     ));
     expect(result.content).toBe("a\nb");
   });
@@ -220,7 +226,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_range_inclusive: [hashes[0]!, hashes[2]!], content_lines: ["x", "y"] },
+      { hash_bounds: [hashes[0]!, hashes[2]!], new_content: "x\ny" },
     ));
     expect(result.content).toBe("x\ny");
   });

@@ -14,7 +14,7 @@ describe("edit tool text shape (token budget)", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"],
+          hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB",
         },
         undefined,
         undefined,
@@ -36,7 +36,7 @@ describe("edit tool text shape (token budget)", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: ["BBB"],
+          hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB",
         },
         undefined,
         undefined,
@@ -57,7 +57,7 @@ describe("edit tool text shape (token budget)", () => {
           "e1",
           {
             path: "sample.ts",
-            hash_range_inclusive: [hashes[0]!, hashes[0]!], content_lines: [],
+            hash_bounds: [hashes[0]!, hashes[0]!], new_content: "",
           },
           undefined,
           undefined,
@@ -77,7 +77,7 @@ describe("edit tool text shape (token budget)", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_range_inclusive: [hashes[1]!, hashes[1]!], content_lines: [`b${longLine.slice(1)}`],
+          hash_bounds: [hashes[1]!, hashes[1]!], new_content: `b${longLine.slice(1)}`,
         },
         undefined,
         undefined,
