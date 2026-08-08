@@ -117,9 +117,13 @@ function resToSpan(
     };
   }
 
+  const prevLine = startLine >= 2 ? fileLines[startLine - 2] : undefined;
   return {
     kind: "replace",
-    start: Math.max(0, lineStarts[startLine - 1]! - 1),
+    start:
+      prevLine !== undefined && prevLine.length === 0
+        ? lineStarts[startLine - 1]!
+        : Math.max(0, lineStarts[startLine - 1]! - 1),
     end: content.length,
     replacement: "",
   };

@@ -387,3 +387,55 @@ describe("applyEdit — deletion and range matrix", () => {
 		});
 	}
 });
+
+describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
+  it("keeps an empty line before a deleted last line without trailing newline", async () => {
+    const content = "a\n\nb";
+    const edit: HEdit = {
+      hash_bounds: [await makeTag(content, 3, home.testPath), await makeTag(content, 3, home.testPath)],
+      content_lines: [],
+    };
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("a\n\n");
+  });
+
+  it("does not empty a file when deleting its last line after an empty line", async () => {
+    const content = "\nb";
+    const edit: HEdit = {
+      hash_bounds: [await makeTag(content, 2, home.testPath), await makeTag(content, 2, home.testPath)],
+      content_lines: [],
+    };
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("\n");
+  });
+
+  it("keeps an empty line before a deleted range ending at EOF without trailing newline", async () => {
+    const content = "a\n\nb\nc";
+    const edit: HEdit = {
+      hash_bounds: [await makeTag(content, 3, home.testPath), await makeTag(content, 4, home.testPath)],
+      content_lines: [],
+    };
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("a\n\n");
+  });
+
+  it("keeps multiple empty lines before a deleted last line without trailing newline", async () => {
+    const content = "a\n\n\nb";
+    const edit: HEdit = {
+      hash_bounds: [await makeTag(content, 4, home.testPath), await makeTag(content, 4, home.testPath)],
+      content_lines: [],
+    };
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("a\n\n\n");
+  });
+
+  it("still removes the newline when the preceding line is non-empty", async () => {
+    const content = "a\nb\nc";
+    const edit: HEdit = {
+      hash_bounds: [await makeTag(content, 3, home.testPath), await makeTag(content, 3, home.testPath)],
+      content_lines: [],
+    };
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("a\nb");
+  });
+});

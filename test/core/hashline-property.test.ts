@@ -6,7 +6,7 @@ import {
   resEdit,
 } from "../../src/hashline";
 import { firstNonEmpty, lastNonEmpty, splitLines } from "../../src/utils";
-import { useTestHome } from "../support/fixtures";
+import { useTestHome, expectedEditContent } from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -144,14 +144,7 @@ describe("property: single random edit per call", () => {
       const hashes = await lineHashes(content, home.testPath);
       const span = randSpan(rnd, lines, [], !content.endsWith("\n"));
       if (!span) continue;
-      let expected = [
-        ...lines.slice(0, span.s - 1),
-        ...span.repl,
-        ...lines.slice(span.e),
-      ].join("\n");
-      if (content.endsWith("\n")) {
-        expected += "\n";
-      }
+      const expected = expectedEditContent(lines, span.s, span.e, span.repl, content.endsWith("\n"));
       const edit = resEdit({
         hash_bounds: [hashes[span.s - 1]!, hashes[span.e - 1]!],
         new_content: replToContent(span.repl),
@@ -198,7 +191,14 @@ describe("property: sequential random edits", () => {
         ];
       }
       let expected = expectedLines.join("\n");
-      if (content.endsWith("\n")) {
+      const eofSpan = spans.find((sp) => sp.e === lines.length);
+      if (
+        content.endsWith("\n") ||
+        (eofSpan !== undefined &&
+          eofSpan.repl.length === 0 &&
+          eofSpan.s >= 2 &&
+          lines[eofSpan.s - 2]!.length === 0)
+      ) {
         expected += "\n";
       }
       let current = content;
@@ -273,12 +273,7 @@ describe("property: chained stable mapping at every step", () => {
         }
         if (result.content === content) continue;
         expect(result.autoFixes).toBeUndefined();
-        let expected = [
-          ...lines.slice(0, span.s - 1),
-          ...span.repl,
-          ...lines.slice(span.e),
-        ].join("\n");
-        if (content.endsWith("\n")) expected += "\n";
+        const expected = expectedEditContent(lines, span.s, span.e, span.repl, content.endsWith("\n"));
         expect(result.content).toBe(expected);
         const removedHashes = new Set(hashes.slice(span.s - 1, span.e));
         const nextHashes = await lineHashes(expected, chainPath, {

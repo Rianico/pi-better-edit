@@ -216,6 +216,21 @@ export function extractHash(line: string): string {
   return line.split("│")[0]!
 }
 
+export function expectedEditContent(
+  lines: string[],
+  s: number,
+  e: number,
+  repl: string[],
+  trailingNewline: boolean,
+): string {
+  const expected = [...lines.slice(0, s - 1), ...repl, ...lines.slice(e)].join("\n");
+  if (trailingNewline) return expected + "\n";
+  if (e === lines.length && repl.length === 0 && s >= 2 && lines[s - 2]!.length === 0) {
+    return expected + "\n";
+  }
+  return expected;
+}
+
 export async function makeTag(content: string, line: number, path: string): Promise<{ hash: string }> {
   const { lineHashes } = await import("../../src/hashline");
   const hashes = await lineHashes(content, path);

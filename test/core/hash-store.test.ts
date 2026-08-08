@@ -417,6 +417,30 @@ describe("hash-store — pruneMissing", () => {
       expect(getSnapshot(store, "/gone.ts", "gone\n")).toBeUndefined();
     });
   });
+
+  it("prunes across multiple stat batches", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      const existing: { path: string; hash: string }[] = [];
+      for (let i = 0; i < 70; i++) {
+        const path = join(home, `keep-${i}.ts`);
+        await writeFile(path, "keep\n", "utf-8");
+        const hash = `K${String(i).padStart(2, "0")}`;
+        await put(store, path, "keep\n", [hash]);
+        existing.push({ path, hash });
+      }
+      for (let i = 0; i < 70; i++) {
+        await put(store, `/gone-${i}.ts`, "gone\n", [`G${String(i).padStart(2, "0")}`]);
+      }
+      await pruneMissing(store);
+      for (const entry of existing) {
+        expect(getSnapshot(store, entry.path, "keep\n")).toEqual([entry.hash]);
+      }
+      for (let i = 0; i < 70; i++) {
+        expect(getSnapshot(store, `/gone-${i}.ts`, "gone\n")).toBeUndefined();
+      }
+    });
+  });
 });
 
 describe("hash-store — concurrency (issue #10)", () => {

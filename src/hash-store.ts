@@ -418,16 +418,32 @@ export function deleteUndo(store: HashStore, path: string): void {
   store.stmts.undoDelete(path);
 }
 
-export async function pruneMissing(store: HashStore): Promise<void> {
-  const rows = store.stmts.allPaths() as { path: string }[];
+const STAT_BATCH = 64;
+
+async function statMissing(rows: { path: string }[]): Promise<string[]> {
   const missing: string[] = [];
-  for (const row of rows) {
-    try {
-      await stat(row.path);
-    } catch {
-      missing.push(row.path);
+  for (let i = 0; i < rows.length; i += STAT_BATCH) {
+    const batch = rows.slice(i, i + STAT_BATCH);
+    const results = await Promise.all(
+      batch.map(async (row) => {
+        try {
+          await stat(row.path);
+          return undefined;
+        } catch {
+          return row.path;
+        }
+      }),
+    );
+    for (const path of results) {
+      if (path !== undefined) missing.push(path);
     }
   }
+  return missing;
+}
+
+export async function pruneMissing(store: HashStore): Promise<void> {
+  const rows = store.stmts.allPaths() as { path: string }[];
+  const missing = await statMissing(rows);
   if (missing.length === 0) return;
   withStore(() => {
     for (const path of missing) {
