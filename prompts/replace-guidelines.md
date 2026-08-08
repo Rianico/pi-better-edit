@@ -1,7 +1,6 @@
-- `replace`: hash_bounds must use only anchors from the most recent read of the same file.
 - `replace`: hash_bounds marks the exact lines that are REMOVED, and new_content is their complete replacement applied in order; nothing outside the range changes. Every line inside the range that is not reproduced byte-exact in new_content is deleted from the file — including closing braces and other structural lines.
 - `replace`: minimize the replaced range — anchor only the lines that actually change, so few unchanged lines must be reproduced byte-exact.
 - `replace`: to replace a single line, repeat its hash in both positions of hash_bounds: ["<HASH>", "<HASH>"] — never extend the range to neighboring lines for a one-line edit.
-- `replace`: new_content is a single string with \n line separators — never a JSON array. When copying a line from read output, remove its HASH│ prefix and keep the leading whitespace exactly as shown.
-- `replace`: a trailing newline in new_content is the last line's ending, not an extra empty line; use an explicit empty line (e.g. ending with \n\n) to add a blank line.
+- `replace`: when copying a line from read output, remove its HASH│ prefix and keep the leading whitespace exactly as shown.
+- `replace`: to add a blank line, end new_content with an explicit empty line (e.g. ending with \n\n).
 - `replace`: when auto-read shows the post-edit diff, its rows are the fresh anchors for the new file — `+HASH│` and ` HASH│` rows carry current hashes and unchanged lines keep their previous hashes, so you can anchor follow-up edits on the diff without re-reading.
