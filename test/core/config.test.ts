@@ -12,6 +12,7 @@ let tmpHome: string;
 async function withTempHome(run: () => Promise<void>): Promise<void> {
   tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-config-test-"));
   vi.stubEnv('HOME', tmpHome);
+  vi.stubEnv('XDG_CONFIG_HOME', "");
   try {
     await run();
   } finally {
