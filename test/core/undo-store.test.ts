@@ -35,21 +35,21 @@ describe("undo-store", () => {
       content: "first",
       bom: "",
       originalEnding: "\n",
-      hashes: ["a"],
+      hashes: ["aB3"],
       resultContent: "first!",
     });
     await saveUndo(home.testPath, {
       content: "second",
       bom: "\uFEFF",
       originalEnding: "\r\n",
-      hashes: ["b"],
+      hashes: ["bC4"],
       resultContent: "second!",
     });
     const entry = await getUndo(home.testPath);
     expect(entry!.content).toBe("second");
     expect(entry!.bom).toBe("\uFEFF");
     expect(entry!.originalEnding).toBe("\r\n");
-    expect(entry!.hashes).toEqual(["b"]);
+    expect(entry!.hashes).toEqual(["bC4"]);
   });
 
   it("clearUndo removes the entry", async () => {
@@ -57,7 +57,7 @@ describe("undo-store", () => {
       content: "data",
       bom: "",
       originalEnding: "\n",
-      hashes: ["x"],
+      hashes: ["xY7"],
       resultContent: "data!",
     });
     expect(await getUndo(home.testPath)).toBeDefined();
@@ -70,14 +70,14 @@ describe("undo-store", () => {
       content: "aaa",
       bom: "",
       originalEnding: "\n",
-      hashes: ["h1"],
+      hashes: ["h1A"],
       resultContent: "aaa!",
     });
     await saveUndo("/b.ts", {
       content: "bbb",
       bom: "",
       originalEnding: "\n",
-      hashes: ["h2"],
+      hashes: ["h2B"],
       resultContent: "bbb!",
     });
     expect((await getUndo(home.testPath))!.content).toBe("aaa");

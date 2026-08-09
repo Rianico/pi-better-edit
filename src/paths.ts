@@ -7,8 +7,16 @@ function homeBase(): string {
   return envHome && envHome.length > 0 ? envHome : homedir();
 }
 
+function configBase(): string {
+  if (process.platform !== "win32") {
+    const xdg = process.env.XDG_CONFIG_HOME;
+    if (xdg && xdg.length > 0) return xdg;
+  }
+  return join(homeBase(), ".config");
+}
+
 export function configDir(): string {
-  return join(homeBase(), ".config", "pi-hashline-edit-pro");
+  return join(configBase(), "pi-hashline-edit-pro");
 }
 
 export function configPath(): string {

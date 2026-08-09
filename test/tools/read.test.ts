@@ -1,7 +1,7 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fmtRegion } from "../../src/hashline";
 import { fmtReadPreview } from "../../src/read";
-import { useTestHome } from "../support/fixtures";
+import { useTestHome, withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -43,6 +43,7 @@ describe("fmtReadPreview", () => {
   it("rejects non-positive limits", async () => {
     await expect(fmtReadPreview("a\nb\n", { limit: 0 } as any, undefined, home.testPath)).rejects.toThrow("positive integer");
   });
+});
 
 describe("fmtRegion", () => {
   it("formats lines as HASH|content rows", () => {
@@ -55,4 +56,28 @@ describe("fmtRegion", () => {
     expect(result).toBe("X│test");
   });
 });
+
+describe("read tool — snapshot failure", () => {
+  it("succeeds and omits snapshotId when fileSnap fails", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const fileReader = await import("../../src/file-reader");
+      const spy = vi
+        .spyOn(fileReader, "fileSnap")
+        .mockRejectedValue(new Error("stat failed"));
+      try {
+        const result = await readTool.execute(
+          "r1",
+          { path: "sample.ts" },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(result.content[0].text).toContain("│aaa");
+        expect(result.details.snapshotId).toBeUndefined();
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
 });

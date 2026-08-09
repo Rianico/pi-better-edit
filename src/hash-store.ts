@@ -4,6 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { hashStorePath, hashStoreDir, legacyHashStorePath } from "./paths";
 import { errCode, splitLines } from "./utils";
 import { initHasher, contentChecksum } from "./hashline/hasher";
+import { HASH_RE } from "./hashline/alphabet";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
 type SqlParams = (string | number)[];
 
@@ -35,15 +36,19 @@ interface LegacySnapshot {
   hashes: string[];
 }
 
+function isValidHashList(value: unknown): value is string[] {
+  if (!Array.isArray(value)) return false;
+  for (const hash of value) {
+    if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
+  }
+  return true;
+}
+
 function isValidSnapshot(value: unknown): value is LegacySnapshot {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   if (typeof v.content !== "string") return false;
-  if (!Array.isArray(v.hashes)) return false;
-  for (const h of v.hashes) {
-    if (typeof h !== "string") return false;
-  }
-  return true;
+  return isValidHashList(v.hashes);
 }
 
 export function isCorruptionError(error: unknown): boolean {
@@ -355,6 +360,7 @@ export function getSnapshot(
   store: HashStore,
   path: string,
   content: string,
+  deleteCorrupt = true,
 ): string[] | undefined {
   const checksum = contentChecksum(content);
   const lineCount = splitLines(content).length;
@@ -362,10 +368,11 @@ export function getSnapshot(
   if (!row) return undefined;
   try {
     const parsed = JSON.parse(row.hashes as string);
-    return Array.isArray(parsed) && parsed.every((h) => typeof h === "string")
-      ? (parsed as string[])
-      : undefined;
+    if (isValidHashList(parsed)) return parsed;
+    if (deleteCorrupt) store.stmts.deleteOne(path);
+    return undefined;
   } catch {
+    if (deleteCorrupt) store.stmts.deleteOne(path);
     return undefined;
   }
 }
@@ -397,7 +404,7 @@ export function getUndoEntry(store: HashStore, path: string): UndoRecord | undef
   if (!row) return undefined;
   try {
     const parsed = JSON.parse(row.hashes as string);
-    if (!Array.isArray(parsed) || !parsed.every((h) => typeof h === "string")) {
+    if (!isValidHashList(parsed)) {
       store.stmts.undoDelete(path);
       return undefined;
     }

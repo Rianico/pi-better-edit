@@ -51,6 +51,7 @@ export interface ReadNormOptions {
   preloadedFile?: LFile;
   maxLines?: number;
   store?: HashStore;
+  noPersist?: boolean;
 }
 
 export async function readNormFile(
@@ -83,7 +84,7 @@ export async function readNormFile(
     }
   }
 
-  const fileHashes = await lineHashes(normalized, resolvedPath, undefined, options?.store);
+  const fileHashes = await lineHashes(normalized, resolvedPath, undefined, options?.store, options?.noPersist !== true);
   return {
     absolutePath: resolvedPath,
     normalized,

@@ -6,18 +6,12 @@ import {
   upsertSnapshot,
 } from "../hash-store";
 import { xxh32, contentChecksum, initHasher } from "./hasher";
-export { initHasher };
+import { HASH_LEN, ALPH, ALPH_RE, HASH_CLASS } from "./alphabet";
+export { initHasher, HASH_LEN, ALPH_RE, HASH_CLASS };
 
-export const HASH_LEN = 3;
 export const ANCHOR_LEN = HASH_LEN;
 
 export const HASH_SEP = "│";
-
-const ALPH =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
-const ALPH_SAFE = ALPH.replace(/-/g, "\\-");
-const ALPH_RE = new RegExp(`^[${ALPH_SAFE}]+$`);
-export const HASH_CLASS = `[${ALPH_SAFE}]{${HASH_LEN}}`;
 
 export const HASH_SPACE = ALPH.length ** HASH_LEN;
 export const MAX_HASH_LINES = HASH_SPACE;
@@ -138,7 +132,7 @@ export async function lineHashes(
 
   let cached: string[] | undefined;
   try {
-    cached = getSnapshot(hashStore, path, content);
+    cached = getSnapshot(hashStore, path, content, persist !== false);
   } catch (error) {
     console.error("Failed to read hash store snapshot:", error);
   }
@@ -290,5 +284,3 @@ function mapStableHashes(
 
   return newHashes;
 }
-
-export { ALPH_RE };

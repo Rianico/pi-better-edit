@@ -182,7 +182,7 @@ export async function execPipeline(
 
   const hashStore = options?.store ?? await loadHashStore();
   const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors, absolutePath } = await readNormFile(
-    path, cwd, { signal: options?.signal, accessMode: options?.accessMode, maxLines: MAX_HASH_LINES, store: hashStore },
+    path, cwd, { signal: options?.signal, accessMode: options?.accessMode, maxLines: MAX_HASH_LINES, store: hashStore, noPersist: options?.noPersist },
   );
 
   const anchorResult = applyEdit(

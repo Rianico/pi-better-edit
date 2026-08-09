@@ -204,8 +204,12 @@ export function regRead(pi: ExtensionAPI): void {
 				fileHashes,
 				absolutePath,
 			);
-			const snapshot = await fileSnap(absolutePath);
-
+			let snapshotId: string | undefined;
+			try {
+				snapshotId = (await fileSnap(absolutePath)).snapshotId;
+			} catch (error) {
+				console.error("Failed to compute snapshot for read:", error);
+			}
 			const previewText =
 				hadUtf8DecodeErrors
 					? `${preview.text}\n\n[Non-UTF-8 bytes shown as U+FFFD; editing rewrites the file as UTF-8.]`
@@ -215,7 +219,7 @@ export function regRead(pi: ExtensionAPI): void {
 				content: [{ type: "text", text: previewText }],
 				details: {
 					truncation: preview.truncation,
-					snapshotId: snapshot.snapshotId,
+					snapshotId,
 					...(preview.nextOffset !== undefined
 						? { nextOffset: preview.nextOffset }
 						: {}),

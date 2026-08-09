@@ -20,6 +20,7 @@ export async function setupTestHome(): Promise<{
   await initHasher();
   const tmpHome = await mkdtemp(join(await getWritableTempRoot(), "testhome-"));
   vi.stubEnv('HOME', tmpHome);
+  vi.stubEnv('XDG_CONFIG_HOME', "");
   const testPath = join(tmpHome, "test.txt");
   return {
     home: tmpHome,
@@ -50,11 +51,15 @@ export function useTestHome(): { testPath: string } {
 
 export function withHome(home: string | undefined): () => void {
   const previousHome = process.env.HOME;
+  const previousXdg = process.env.XDG_CONFIG_HOME;
   if (home === undefined) delete process.env.HOME;
   else process.env.HOME = home;
+  process.env.XDG_CONFIG_HOME = "";
   return () => {
     if (previousHome === undefined) delete process.env.HOME;
     else process.env.HOME = previousHome;
+    if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+    else process.env.XDG_CONFIG_HOME = previousXdg;
   };
 }
 
@@ -131,6 +136,7 @@ export async function withTempDir(
 export async function makeTempDir(prefix: string): Promise<string> {
   const dir = await mkdtemp(join(await getWritableTempRoot(), prefix));
   process.env.HOME = dir;
+  process.env.XDG_CONFIG_HOME = "";
   return dir;
 }
 

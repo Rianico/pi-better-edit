@@ -144,7 +144,7 @@ Enabled by default. After a successful `write` that changes the file, the extens
 | --- | --- |
 | `/toggle-auto-read` | Toggle automatic hashline anchors after write and post-edit diffs after replace and undo_last_replace operations. Persists across sessions. |
 
-Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatically when a setting is toggled:
+Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatically when a setting is toggled. On non-Windows platforms, the config directory honors `XDG_CONFIG_HOME` when set (falling back to `~/.config`); on Windows it always uses `~/.config`:
 
 ```json
 {
@@ -194,6 +194,7 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 - **Upgrading.** A hash-allocation change clears the hash store once on the first run after upgrade — anchors are rebuilt on the next read and undo history is lost, but no project files are touched.
 - **Corrupt store.** If the store fails its health check it is renamed to `hash-store.sqlite.corrupt-<timestamp>` (plus `-wal`/`-shm` variants) and rebuilt automatically; the quarantined files can be deleted once a healthy store exists.
 - **Legacy migration.** On first run after upgrading from an older version, the previous `hash-store.json` is imported once and renamed to `hash-store.json.bak`, which can be deleted. Legacy snapshots containing duplicate hashes are skipped and rebuilt on the next read.
+- **Config directory moved.** On non-Windows platforms, if `XDG_CONFIG_HOME` is set, the config directory (and the hash store inside it) lives at `$XDG_CONFIG_HOME/pi-hashline-edit-pro` instead of `~/.config/pi-hashline-edit-pro`. An existing store is not migrated automatically — to keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) into the new directory before the first run.
 - **`[E_UNDO_UNAVAILABLE]`.** The edit was refused because the undo record could not be written — check disk space and that the config directory is writable, then retry.
 
 ## Development

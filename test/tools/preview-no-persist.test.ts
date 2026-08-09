@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { DatabaseSync } from "node:sqlite";
 import { lineHashes } from "../../src/hashline";
 import { compPreview } from "../../src/replace";
 import { loadHashStore, getSnapshot } from "../../src/hash-store";
+import { hashStorePath } from "../../src/paths";
 import { withTempFile } from "../support/fixtures";
 
 describe("compPreview no-persist guarantee", () => {
@@ -86,4 +88,31 @@ describe("compPreview no-persist guarantee", () => {
     });
   });
 
+  it("does not delete a corrupt snapshot row during preview", async () => {
+    const content = "a\nb\nc\n";
+    await withTempFile("sample.txt", content, async ({ cwd }) => {
+      const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
+        await (await import("../../src/paths")).toCwd("sample.txt", cwd)
+      );
+      const hashes = await lineHashes(content, absolutePath);
+      const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
+      db.prepare("UPDATE snapshots SET hashes = ? WHERE path = ?").run('["ZZ", "ZZZZ"]', absolutePath);
+      db.close();
+
+      const preview = await compPreview(
+        {
+          path: "sample.txt",
+          hash_bounds: [hashes[0]!, hashes[1]!],
+          new_content: "X",
+        },
+        cwd,
+      );
+      expect(preview).toHaveProperty("diff");
+
+      const check = new DatabaseSync(hashStorePath(), { defensive: false } as any);
+      const remaining = check.prepare("SELECT COUNT(*) AS n FROM snapshots WHERE path = ?").get(absolutePath) as { n: number };
+      check.close();
+      expect(remaining.n).toBe(1);
+    });
+  });
 });
