@@ -326,7 +326,7 @@ describe("renderResult", () => {
     const result = {
       content: [{ type: "text", text: "Successfully replaced in sample.ts. Added 1 line(s), removed 1 line(s)." }],
       details: {
-        diff: "+aB3│BBB\n-   │bbb",
+        diff: "+aB3│BBB\n-aB3│bbb",
         metrics: { classification: "applied", added_lines: 1, removed_lines: 1 },
       },
     };
@@ -338,7 +338,7 @@ describe("renderResult", () => {
     ) as Text;
     expect(component).toBeInstanceOf(Text);
     expect((component as any).text).toContain("+aB3│BBB");
-    expect((component as any).text).toContain("-   │bbb");
+    expect((component as any).text).toContain("-aB3│bbb");
   });
 
   it("keeps warnings alongside the applied diff", () => {

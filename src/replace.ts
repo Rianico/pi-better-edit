@@ -241,19 +241,18 @@ export async function compPreview(
   try {
     const normalized = normReq(request);
     assertReq(normalized);
-    const { path, originalNormalized, result, resultHashes } = await execPipeline(
+    const { path, originalNormalized, result, resultHashes, originalHashes } = await execPipeline(
       normalized,
       cwd,
       { accessMode: constants.R_OK, noPersist: true },
     );
-
     if (originalNormalized === result) {
       return {
         error: `No changes made to ${path}. The edit produced identical content.`,
       };
     }
 
-    return { diff: genDiff(originalNormalized, result, 4, resultHashes).diff };
+    return { diff: genDiff(originalNormalized, result, 4, resultHashes, originalHashes).diff };
   } catch (error: unknown) {
     return { error: error instanceof Error ? error.message : String(error) };
   }

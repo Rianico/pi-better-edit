@@ -3,4 +3,4 @@
 - `replace`: to replace a single line, repeat its hash in both positions of hash_bounds: ["<HASH>", "<HASH>"] — never extend the range to neighboring lines for a one-line edit.
 - `replace`: when copying a line from read output, remove its HASH│ prefix and keep the leading whitespace exactly as shown.
 - `replace`: to add a blank line, end new_content with an explicit empty line (e.g. ending with \n\n).
-- `replace`: when auto-read shows the post-edit diff, its rows are the fresh anchors for the new file — `+HASH│` and ` HASH│` rows carry current hashes and unchanged lines keep their previous hashes, so you can anchor follow-up edits on the diff without re-reading.
+- `replace`: when auto-read shows the post-edit diff, its rows are the fresh anchors for the new file — `+HASH│` and ` HASH│` rows carry current hashes and unchanged lines keep their previous hashes, so you can anchor follow-up edits on the diff without re-reading. `-HASH│` rows show removed lines with their old hashes; those hashes are stale after the edit.

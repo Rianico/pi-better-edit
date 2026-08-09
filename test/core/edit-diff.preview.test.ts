@@ -15,6 +15,30 @@ describe("genDiff", () => {
 		expect(diff).toMatch(/^ [A-Za-z0-9]{3}│gamma$/m);
 	});
 
+	it("carries the old hashes on deletion rows when oldContentHashes are provided", () => {
+		const { diff } = genDiff(
+			"alpha\nbeta\ngamma",
+			"alpha\nBETA\ngamma",
+			1,
+			undefined,
+			["AAA", "BBB", "CCC"],
+		);
+		expect(diff).toMatch(/^-BBB│beta$/m);
+		expect(diff).toMatch(/^\+[A-Za-z0-9]{3}│BETA$/m);
+	});
+
+	it("tracks old line numbers across skipped context and multi-line deletions", () => {
+		const { diff } = genDiff(
+			"a\nb\nc\nd",
+			"a\nd",
+			0,
+			undefined,
+			["H1", "H2", "H3", "H4"],
+		);
+		expect(diff).toContain("-H2│b");
+		expect(diff).toContain("-H3│c");
+	});
+
 	it("keeps the '│' column aligned across context, addition, and deletion lines", () => {
 
 		const before = [

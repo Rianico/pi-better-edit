@@ -160,7 +160,8 @@ describe("undo_last_replace", () => {
 
       const diff = undoResult.details?.diff as string | undefined;
       expect(diff).toBeDefined();
-      expect(diff).toContain("-   │BBB");
+      const postHashes = await lineHashes("aaa\nBBB\nccc\n", home.testPath);
+      expect(diff).toContain(`-${postHashes[1]}│BBB`);
       expect(diff).toContain(`+${hashes[1]}│bbb`);
     });
   });

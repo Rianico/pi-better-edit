@@ -110,7 +110,7 @@ Notes:
 Enabled by default. After a successful `write` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so you get fresh `HASH│content` anchors without a separate `read` call.
 
 - After `replace` and `undo_last_replace`, the result shows the post-edit diff. The `+HASH│` and ` HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. Call `read` when you want the full file's anchors.
-- After `write`, the block dumps from the top of the file. For files over 2000 lines, the dump is truncated with a pagination hint; use `read` with `offset` to continue.
+- After `replace` and `undo_last_replace`, the result shows the post-edit diff. The `+HASH│` and ` HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. The `-HASH│` rows show removed lines with their old hashes, so you can see exactly which anchors were deleted (those hashes are stale after the edit). Call `read` when you want the full file's anchors.
 - Auto-read keeps a 50KB display budget. Lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
 - Toggle at runtime with `/toggle-auto-read`; the setting persists across sessions.
 
