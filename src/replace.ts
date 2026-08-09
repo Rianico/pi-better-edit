@@ -18,6 +18,7 @@ import { resolveTarget, writeAtomic } from "./fs-write";
 import { applyEdit,
   lineHashes,
   resEdit,
+  parseHashRef,
   MAX_HASH_LINES,
   type HEdit,
   type NEdit,
@@ -43,7 +44,7 @@ import {
 } from "./replace-render";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./replace-undo";
-import { loadHashStore, type HashStore } from "./hash-store";
+import { loadHashStore, findSnapshotPaths, type HashStore } from "./hash-store";
 
 const newContentSchema = Type.String({
   description:
@@ -61,7 +62,7 @@ const hashBoundsSchema = Type.Array(
 
 export const editToolSchema = Type.Object(
   {
-    path: Type.String({ description: "Path to edit" }),
+    path: Type.Optional(Type.String({ description: "Path to edit. Required — always provide it explicitly; it is only auto-resolved from the anchors as a fallback when omitted by mistake." })),
     hash_bounds: hashBoundsSchema,
     new_content: newContentSchema,
   },
@@ -120,6 +121,42 @@ export function assertReq(
       '[E_BAD_SHAPE] Edit request requires both "hash_bounds" and "new_content" at the top level.',
     );
   }
+}
+
+async function resolveMissingPath(
+  request: Record<string, unknown>,
+): Promise<{ path: string; warning: string } | undefined> {
+  if (typeof request.path === "string") return undefined;
+  const bounds = request.hash_bounds;
+  if (!Array.isArray(bounds) || bounds.length !== 2) return undefined;
+  const hashes: string[] = [];
+  for (const ref of bounds) {
+    if (typeof ref !== "string") return undefined;
+    try {
+      hashes.push(parseHashRef(ref).hash);
+    } catch {
+      return undefined;
+    }
+  }
+  let store: HashStore;
+  try {
+    store = await loadHashStore();
+  } catch {
+    return undefined;
+  }
+  const matches = findSnapshotPaths(store, hashes);
+  if (matches.length === 1) {
+    return {
+      path: matches[0]!,
+      warning: `[E_BAD_SHAPE] Autocorrected: missing "path" resolved to ${matches[0]} — the only file whose stored hashes contain both anchors.`,
+    };
+  }
+  if (matches.length > 1) {
+    throw new Error(
+      `[E_BAD_SHAPE] Edit request requires a non-empty "path" string; the anchors match multiple known files: ${matches.join(", ")}. Include the intended path.`,
+    );
+  }
+  return undefined;
 }
 
 export interface ExecPipelineOptions {
@@ -405,6 +442,10 @@ export function buildToolDef(): ToolDef {
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const canonical = normReq(params);
+      const resolution = isRec(canonical) ? await resolveMissingPath(canonical) : undefined;
+      if (resolution && isRec(canonical)) {
+        canonical.path = resolution.path;
+      }
       assertReq(canonical);
 
       const normalizedParams = canonical;
@@ -433,6 +474,10 @@ export function buildToolDef(): ToolDef {
           ctx.cwd,
           { accessMode: constants.R_OK | constants.W_OK, signal },
         );
+
+        if (resolution) {
+          warnings.unshift(resolution.warning);
+        }
 
         const editsAttempted = 1;
         if (originalNormalized === result) {

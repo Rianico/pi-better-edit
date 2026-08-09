@@ -315,22 +315,41 @@ function leadingDups(
 	return dups;
 }
 
+function sectionIsUnique(
+	canonLines: string[],
+	start: number,
+	length: number,
+): boolean {
+	let count = 0;
+	for (let i = 0; i + length <= canonLines.length; i++) {
+		let k = 0;
+		while (k < length && canonLines[i + k] === canonLines[start + k]) k++;
+		if (k < length) continue;
+		count++;
+		if (count > 1) return false;
+	}
+	return true;
+}
+
 function firstNewAfterDups(
 	contentLines: string[],
 	rangeLines: string[],
-	fileLines: string[],
+	canonLines: string[],
 	endLine: number,
-	fileCounts: Map<string, number>,
 ): BDup[] {
 	const firstNew = findNewEdge(contentLines, rangeLines, false);
 	if (!firstNew) return [];
+	const maxK = Math.min(contentLines.length - firstNew.index, canonLines.length - endLine);
+	let runLen = 0;
+	while (
+		runLen < maxK &&
+		canon(contentLines[firstNew.index + runLen]!) === canonLines[endLine + runLen]!
+	) {
+		runLen++;
+	}
+	if (runLen === 0 || !sectionIsUnique(canonLines, endLine, runLen)) return [];
 	const dups: BDup[] = [];
-	const maxK = Math.min(contentLines.length - firstNew.index, fileLines.length - endLine);
-	for (let k = 0; k < maxK; k++) {
-		const newLine = contentLines[firstNew.index + k]!;
-		const fileLine = fileLines[endLine + k]!;
-		if (canon(newLine) !== canon(fileLine)) break;
-		if ((fileCounts.get(canon(fileLine)) ?? 0) !== 1) break;
+	for (let k = 0; k < runLen; k++) {
 		dups.push({ kind: "first-new-after", replacementLineIndex: firstNew.index + k });
 	}
 	return dups;
@@ -339,19 +358,24 @@ function firstNewAfterDups(
 function lastNewBeforeDups(
 	contentLines: string[],
 	rangeLines: string[],
-	fileLines: string[],
+	canonLines: string[],
 	startLine: number,
-	fileCounts: Map<string, number>,
 ): BDup[] {
 	const lastNew = findNewEdge(contentLines, rangeLines, true);
 	if (!lastNew) return [];
-	const dups: BDup[] = [];
 	const maxK = Math.min(lastNew.index + 1, startLine - 1);
-	for (let k = 0; k < maxK; k++) {
-		const newLine = contentLines[lastNew.index - k]!;
-		const fileLine = fileLines[startLine - 2 - k]!;
-		if (canon(newLine) !== canon(fileLine)) break;
-		if ((fileCounts.get(canon(fileLine)) ?? 0) !== 1) break;
+	let runLen = 0;
+	while (
+		runLen < maxK &&
+		canon(contentLines[lastNew.index - runLen]!) === canonLines[startLine - 2 - runLen]!
+	) {
+		runLen++;
+	}
+	if (runLen === 0) return [];
+	const sectionStart = startLine - 1 - runLen;
+	if (!sectionIsUnique(canonLines, sectionStart, runLen)) return [];
+	const dups: BDup[] = [];
+	for (let k = 0; k < runLen; k++) {
 		dups.push({ kind: "last-new-before", replacementLineIndex: lastNew.index - k });
 	}
 	return dups;
@@ -436,12 +460,12 @@ export function valEdit(
 	}
 	const endLine = endResolved.line;
 	const rangeLines = fileLines.slice(startResolved.line - 1, endLine);
-	const fileCounts = canonCounts(fileLines);
+	const canonLines = fileLines.map((line) => canon(line));
 	boundaryDups.push(
 		...trailingDups(edit.content_lines, fileLines, endLine),
 		...leadingDups(edit.content_lines, fileLines, startResolved.line),
-		...firstNewAfterDups(edit.content_lines, rangeLines, fileLines, endLine, fileCounts),
-		...lastNewBeforeDups(edit.content_lines, rangeLines, fileLines, startResolved.line, fileCounts),
+		...firstNewAfterDups(edit.content_lines, rangeLines, canonLines, endLine),
+		...lastNewBeforeDups(edit.content_lines, rangeLines, canonLines, startResolved.line),
 	);
 
 	return {

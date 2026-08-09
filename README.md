@@ -91,9 +91,10 @@ One edit per call, with `hash_bounds` and `new_content` at the top level:
 Notes:
 
 - The request is checked before any file I/O, so a bad request never touches the file.
-- Common copy-paste slips are fixed automatically and reported: a leftover `HASH│` prefix in `new_content` or `hash_bounds`, diff-preview rows pasted into the replacement, a reversed range, or a boundary line pasted twice. New lines that duplicate unique lines adjacent to the range are stripped automatically — consecutive duplicates are stripped as a run, so re-including a whole unchanged block next to the range never duplicates it. `file_path` works as an alias for `path` in all three tools.
+- Common copy-paste slips are fixed automatically and reported: a leftover `HASH│` prefix in `new_content` or `hash_bounds`, diff-preview rows pasted into the replacement, a reversed range, or a boundary line pasted twice. New lines that re-include a block adjacent to the range are stripped automatically when that block is unique in the file — the whole run is stripped as one unit (including repeated structural lines like `}`), so re-including an unchanged block next to the range never duplicates it. A missing `path` is resolved from the anchors when they uniquely identify a file in the hash store (reported as a warning); when the anchors match multiple known files the request is rejected with the candidate paths named. `file_path` works as an alias for `path` in all three tools.
 - An edit that produces identical content reports `No changes made` and leaves the anchors alone.
 - After a successful edit you get the post-edit diff with fresh anchors, so you can keep editing without re-reading.
+- Do not issue multiple replace calls on the same file in one message; parallel edits split attention across the post-edit diffs and removed lines are easy to miss. Verify each diff before the next edit on that file.
 
 ## Undo
 

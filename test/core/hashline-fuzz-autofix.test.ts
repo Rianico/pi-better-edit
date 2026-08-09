@@ -80,10 +80,13 @@ function randRepl(rnd: () => number, lines: string[], s: number, e: number): str
   return repl;
 }
 
-function countCanon(lines: string[], target: string): number {
+function sectionCount(lines: string[], start: number, length: number): number {
+  const canonLines = lines.map((line) => canon(line));
   let count = 0;
-  for (const line of lines) {
-    if (canon(line) === canon(target)) count++;
+  for (let i = 0; i + length <= canonLines.length; i++) {
+    let k = 0;
+    while (k < length && canonLines[i + k] === canonLines[start + k]) k++;
+    if (k === length) count++;
   }
   return count;
 }
@@ -112,20 +115,37 @@ function applyAutoFix(
   const rangeLines = fileLines.slice(s - 1, e);
   const firstNew = findNewEdge(repl, rangeLines, false);
   if (firstNew) {
-    for (let k = 0; firstNew.index + k < repl.length && e + k < fileLines.length; k++) {
-      const fileLine = fileLines[e + k]!;
-      if (canon(repl[firstNew.index + k]!) !== canon(fileLine)) break;
-      if (countCanon(fileLines, fileLine) !== 1) break;
-      dups.push({ kind: "first-new-after", index: firstNew.index + k });
+    let runLen = 0;
+    while (
+      firstNew.index + runLen < repl.length &&
+      e + runLen < fileLines.length &&
+      canon(repl[firstNew.index + runLen]!) === canon(fileLines[e + runLen]!)
+    ) {
+      runLen++;
+    }
+    if (runLen > 0 && sectionCount(fileLines, e, runLen) === 1) {
+      for (let k = 0; k < runLen; k++) {
+        dups.push({ kind: "first-new-after", index: firstNew.index + k });
+      }
     }
   }
   const lastNew = findNewEdge(repl, rangeLines, true);
   if (lastNew) {
-    for (let k = 0; lastNew.index - k >= 0 && s - 2 - k >= 0; k++) {
-      const fileLine = fileLines[s - 2 - k]!;
-      if (canon(repl[lastNew.index - k]!) !== canon(fileLine)) break;
-      if (countCanon(fileLines, fileLine) !== 1) break;
-      dups.push({ kind: "last-new-before", index: lastNew.index - k });
+    let runLen = 0;
+    while (
+      lastNew.index - runLen >= 0 &&
+      s - 2 - runLen >= 0 &&
+      canon(repl[lastNew.index - runLen]!) === canon(fileLines[s - 2 - runLen]!)
+    ) {
+      runLen++;
+    }
+    if (runLen > 0) {
+      const sectionStart = s - 1 - runLen;
+      if (sectionCount(fileLines, sectionStart, runLen) === 1) {
+        for (let k = 0; k < runLen; k++) {
+          dups.push({ kind: "last-new-before", index: lastNew.index - k });
+        }
+      }
     }
   }
   const seen = new Set<number>();

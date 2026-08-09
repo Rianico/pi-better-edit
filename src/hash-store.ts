@@ -11,6 +11,7 @@ type SqlParams = (string | number)[];
 interface Prepared {
   get: (...params: SqlParams) => Record<string, unknown> | undefined;
   allPaths: (...params: SqlParams) => Record<string, unknown>[];
+  allHashes: (...params: SqlParams) => Record<string, unknown>[];
   deleteOne: (...params: SqlParams) => void;
   upsert: (...params: SqlParams) => void;
   undoUpsert: (...params: SqlParams) => void;
@@ -159,6 +160,7 @@ function buildStore(
   ).run(String(HASH_STORE_VERSION));
   const getStmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
   const allStmt = db.prepare("SELECT path FROM snapshots UNION SELECT path FROM undo");
+  const allHashesStmt = db.prepare("SELECT path, hashes FROM snapshots");
   const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
   const upsertStmt = db.prepare(
     "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
@@ -175,6 +177,7 @@ function buildStore(
   const stmts: Prepared = {
     get: (...params) => getStmt.get(...params) as Record<string, unknown> | undefined,
     allPaths: (...params) => allStmt.all(...params) as Record<string, unknown>[],
+    allHashes: (...params) => allHashesStmt.all(...params) as Record<string, unknown>[],
     deleteOne: (...params) => { withBusyRetry(() => { delStmt.run(...params); }); },
     upsert: (...params) => { withBusyRetry(() => { upsertStmt.run(...params); }); },
     undoUpsert: (...params) => { withBusyRetry(() => { undoUpsertStmt.run(...params); }); },
@@ -458,4 +461,19 @@ export async function pruneMissing(store: HashStore): Promise<void> {
       store.stmts.undoDelete(path);
     }
   });
+}
+
+export function findSnapshotPaths(store: HashStore, hashes: string[]): string[] {
+  const rows = store.stmts.allHashes() as { path: string; hashes: string }[];
+  const matches: string[] = [];
+  for (const row of rows) {
+    try {
+      const parsed = JSON.parse(row.hashes) as unknown;
+      if (!isValidHashList(parsed)) continue;
+      if (hashes.every((h) => parsed.includes(h))) matches.push(row.path);
+    } catch {
+      continue;
+    }
+  }
+  return matches;
 }
