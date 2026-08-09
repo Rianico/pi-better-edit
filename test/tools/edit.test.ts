@@ -139,6 +139,31 @@ describe("regReplace", () => {
       expect(result.details?.diff).toContain("X");
     });
   });
+
+  it("autocorrects HASH│ rows in hash_bounds with a warning", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      const result = await editTool.execute(
+        "e1",
+        {
+          path: "sample.ts",
+          hash_bounds: [`${hashes[1]!}│bbb`, `${hashes[1]!}│bbb`],
+          new_content: "BBB",
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Warnings:");
+      expect(result.content[0].text).toContain(`stripped "HASH│" prefix`);
+      expect(result.details?.diff).toContain("BBB");
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nBBB\nccc\n");
+    });
+  });
 });
 
 describe("regReplace — robustness", () => {

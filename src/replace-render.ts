@@ -163,62 +163,8 @@ function trimEmpty(lines: string[]): string[] {
 	return lines.slice(start, end);
 }
 
-function isSectionBoundary(line: string): boolean {
-	return (
-		line === "--- Anchors ---" ||
-		line === "Warnings:" ||
-		line === "Structure outline:" ||
-		/^--- Range \d+ ---$/.test(line)
-	);
-}
-
 export function fmtResultMd(text: string): string {
-	const lines = text.split("\n");
-	const sections: string[] = [];
-	let plainLines: string[] = [];
-
-	const flush = () => {
-		const trimmed = trimEmpty(plainLines);
-		if (trimmed.length > 0) {
-			sections.push(trimmed.join("\n"));
-		}
-		plainLines = [];
-	};
-
-	let index = 0;
-	while (index < lines.length) {
-		const line = lines[index]!;
-
-		if (line.startsWith("--- Anchors ")) {
-			flush();
-			const title = line.replace(/^---\s*/, "").replace(/\s*---$/, "");
-			index++;
-			const bodyLines: string[] = [];
-			while (
-				index < lines.length &&
-				!isSectionBoundary(lines[index]!)
-			) {
-				bodyLines.push(lines[index]!);
-				index++;
-			}
-			sections.push(
-				[
-					`#### ${title}`,
-					"```text",
-					...trimEmpty(bodyLines),
-					"```",
-				].join("\n"),
-			);
-			continue;
-		}
-
-		plainLines.push(line);
-		index++;
-	}
-
-	flush();
-
-	return sections.join("\n\n");
+	return trimEmpty(text.split("\n")).join("\n");
 }
 
 export function mkMdTheme(theme: MdTheme) {

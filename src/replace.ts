@@ -12,8 +12,8 @@ import {
   type LineEnding,
 } from "./replace-diff";
 import { readNormFile } from "./file-reader";
-import { normReq, normalizeFilePath } from "./replace-normalize";
-import { isRec, rejectUnknownFields, abortIf } from "./utils";
+import { normReq } from "./replace-normalize";
+import { isRec, rejectUnknownFields, abortIf, normalizeFilePath } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { applyEdit,
   lineHashes,
@@ -175,10 +175,14 @@ export async function execPipeline(
 
   const path = params.path;
 
-  const edit = resEdit({
-    hash_bounds: params.hash_bounds,
-    new_content: params.new_content,
-  });
+  const editWarnings: string[] = [];
+  const edit = resEdit(
+    {
+      hash_bounds: params.hash_bounds,
+      new_content: params.new_content,
+    },
+    editWarnings,
+  );
 
   const hashStore = options?.store ?? await loadHashStore();
   const { normalized: originalNormalized, bom, originalEnding, fileHashes: originalHashes, hadUtf8DecodeErrors, absolutePath } = await readNormFile(
@@ -207,8 +211,7 @@ export async function execPipeline(
         hashes: originalHashes,
         removedHashes,
       }, hashStore, noPersist !== true);
-  const warnings = [...(anchorResult.warnings ?? [])];
-
+  const warnings = [...editWarnings, ...(anchorResult.warnings ?? [])];
   const { totalAddedLines, totalRemovedLines } = countLineChanges(
     edit, originalHashes, isNoop, anchorResult.autoFixes?.length ?? 0,
   );

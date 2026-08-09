@@ -1,7 +1,6 @@
 import { describe, expect, it } from "vitest";
 import {
   isRec,
-  has,
   visLines,
   rejectUnknownFields,
   lastNonEmptyIndex,
@@ -39,24 +38,6 @@ describe("isRec", () => {
 
   it("returns true for Date objects (they are objects)", () => {
     expect(isRec(new Date())).toBe(true);
-  });
-});
-
-describe("has", () => {
-  it("returns true when the key exists on the object itself", () => {
-    expect(has({ a: 1 }, "a")).toBe(true);
-    expect(has({ a: undefined }, "a")).toBe(true);
-    expect(has({ "": 0 }, "")).toBe(true);
-  });
-
-  it("returns false when the key does not exist", () => {
-    expect(has({ a: 1 }, "b")).toBe(false);
-    expect(has({}, "toString")).toBe(false);
-  });
-
-  it("does not check the prototype chain", () => {
-    const obj = Object.create({ inherited: true });
-    expect(has(obj, "inherited")).toBe(false);
   });
 });
 

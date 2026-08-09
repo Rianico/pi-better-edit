@@ -12,7 +12,7 @@ import { loadFileKindAndText } from "./file-kind";
 import { readNormFile } from "./file-reader";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline";
 import { toCwd } from "./paths";
-import { abortIf } from "./utils";
+import { abortIf, isRec, normalizeFilePath } from "./utils";
 import { fileSnap } from "./file-reader";
 import { visLines } from "./utils";
 import { loadP, loadGuide } from "./prompts";
@@ -154,6 +154,12 @@ export function regRead(pi: ExtensionAPI): void {
 		description: R_DESC,
 		promptSnippet: R_SNIPPET,
 		promptGuidelines: readGuide(),
+		prepareArguments: (args: unknown) => {
+			if (!isRec(args)) return args as any;
+			const record = { ...args };
+			normalizeFilePath(record);
+			return record;
+		},
 		parameters: Type.Object({
 			path: Type.String({
 				description: "Path to the file to read (relative or absolute)",

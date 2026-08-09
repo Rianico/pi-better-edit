@@ -200,12 +200,6 @@ export function setupIntegrationTest(cwd: string) {
   return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };
 }
 
-export function setupEditTest(cwd: string) {
-  const { pi, getTool } = makeFakePiRegistry();
-  register(pi);
-  return { editTool: getTool("replace"), ctx: { cwd } as any };
-}
-
 export function setupReadTest(cwd: string) {
   const { pi, getTool } = makeFakePiRegistry();
   register(pi);

@@ -2,8 +2,11 @@ export function isRec(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function has(record: Record<string, unknown>, key: string): boolean {
-	return Object.hasOwn(record, key);
+export function normalizeFilePath(record: Record<string, unknown>): void {
+  if (typeof record.path !== "string" && typeof record.file_path === "string") {
+    record.path = record.file_path;
+    delete record.file_path;
+  }
 }
 
 export function splitLines(text: string): string[] {

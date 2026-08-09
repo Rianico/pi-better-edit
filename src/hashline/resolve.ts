@@ -1,5 +1,5 @@
 import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty, clipLine } from "../utils";
-import { HL_BARE_PREFIX_RE, HL_PREFIX_PLUS_RE, HL_PREFIX_MINUS_RE } from "./hash";
+import { HASH_CLASS, HL_BARE_PREFIX_RE, HL_PREFIX_PLUS_RE, HL_PREFIX_MINUS_RE } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
 
@@ -161,13 +161,32 @@ function assertItem(edit: Record<string, unknown>): void {
   }
 }
 
-export function resEdit(edit: HTEdit): HEdit {
+const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
+
+export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
   assertItem(edit as Record<string, unknown>);
 
   const replaceLines = parseText(edit.new_content);
+  const bounds = edit.hash_bounds.map((ref) => {
+    const trimmed = ref.trim();
+    const match = trimmed.match(ANCHOR_ROW_RE);
+    if (match) {
+      let message: string;
+      if (match[1] === "+") {
+        message = `[E_BAD_REF] Autocorrected: stripped diff-preview marker copied from the diff preview in hash_bounds entry "${trimmed}".`;
+      } else if (match[1] === "-") {
+        message = `[E_BAD_REF] Autocorrected: stripped leading "-" marker in hash_bounds entry "${trimmed}".`;
+      } else {
+        message = `[E_BAD_REF] Autocorrected: stripped "HASH│" prefix copied from read output in hash_bounds entry "${trimmed}".`;
+      }
+      warnings?.push(message);
+      return match[2]!;
+    }
+    return ref;
+  }) as [string, string];
   return {
     content_lines: replaceLines,
-    hash_bounds: [parseHashRef(edit.hash_bounds[0]), parseHashRef(edit.hash_bounds[1])],
+    hash_bounds: [parseHashRef(bounds[0]), parseHashRef(bounds[1])],
   };
 }
 

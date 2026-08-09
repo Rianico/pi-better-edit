@@ -81,3 +81,19 @@ describe("read tool — snapshot failure", () => {
     });
   });
 });
+
+describe("read tool — file_path alias", () => {
+  it("reads a file via the file_path alias", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const result = await readTool.execute(
+        "r1",
+        { file_path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("│aaa");
+    });
+  });
+});

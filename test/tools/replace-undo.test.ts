@@ -73,6 +73,33 @@ describe("undo_last_replace", () => {
     });
   });
 
+  it("undo works with the file_path alias", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("replace");
+      const undo = getTool("undo_last_replace");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      await editTool.execute(
+        "e1",
+        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const undoResult = await undo.execute(
+        "u1",
+        { file_path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(undoResult.isError).toBeFalsy();
+      expect(getText(undoResult)).toMatch(/undone last replace/i);
+    });
+  });
+
   it("reports the restored changed range in details metrics", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);

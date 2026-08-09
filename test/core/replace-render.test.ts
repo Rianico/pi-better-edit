@@ -239,24 +239,19 @@ describe("buildAppliedText", () => {
 });
 
 describe("fmtResultMd", () => {
-	it("formats anchors section", () => {
-		const text = "--- Anchors ---\nAAA│line1\nBBB│line2";
-		const result = fmtResultMd(text);
-		expect(result).toContain("#### Anchors");
-		expect(result).toContain("```text");
-	});
-
-	it("handles multiple sections", () => {
-		const text = "--- Anchors ---\nAAA│line1\n\nWarnings:\nWarning 1";
-		const result = fmtResultMd(text);
-		expect(result).toContain("#### Anchors");
-		expect(result).toContain("Warnings:");
-	});
-
-	it("handles plain text without sections", () => {
+	it("keeps plain text unchanged", () => {
 		const text = "Just plain text";
-		const result = fmtResultMd(text);
-		expect(result).toContain("Just plain text");
+		expect(fmtResultMd(text)).toBe("Just plain text");
+	});
+
+	it("trims leading and trailing empty lines", () => {
+		const text = "\n\nNo changes made to x\nClassification: noop\n\n";
+		expect(fmtResultMd(text)).toBe("No changes made to x\nClassification: noop");
+	});
+
+	it("keeps interior blank lines", () => {
+		const text = "Summary\n\nWarnings:\nWarning 1";
+		expect(fmtResultMd(text)).toBe("Summary\n\nWarnings:\nWarning 1");
 	});
 });
 

@@ -85,4 +85,41 @@ describe("resEdit", () => {
       /requires a "new_content" field/i,
 		);
 	});
+
+	it("strips a HASH│content row pasted into hash_bounds with a warning", () => {
+		const edit: HTEdit = { hash_bounds: ["MQX│const x = 1;", "MQX│const x = 1;"], new_content: "new" };
+		const warnings: string[] = [];
+		const resolved = resEdit(edit, warnings);
+		expect(resolved.hash_bounds[0].hash).toBe("MQX");
+		expect(resolved.hash_bounds[1].hash).toBe("MQX");
+		expect(warnings).toHaveLength(2);
+		expect(warnings[0]).toMatch(/^\[E_BAD_REF\]/);
+		expect(warnings[0]).toContain('stripped "HASH│" prefix');
+		expect(warnings[0]).toContain("hash_bounds entry");
+	});
+
+	it("strips diff-preview rows pasted into hash_bounds with a warning", () => {
+		const edit: HTEdit = { hash_bounds: ["+MQX│const x = 1;", "-MQX│const x = 1;"], new_content: "new" };
+		const warnings: string[] = [];
+		const resolved = resEdit(edit, warnings);
+		expect(resolved.hash_bounds[0].hash).toBe("MQX");
+		expect(resolved.hash_bounds[1].hash).toBe("MQX");
+		expect(warnings).toHaveLength(2);
+		expect(warnings[0]).toContain("diff-preview marker");
+		expect(warnings[0]).toContain("copied from the diff preview");
+		expect(warnings[1]).toContain('leading "-" marker');
+	});
+
+	it("leaves bare anchors untouched and emits no warning", () => {
+		const edit: HTEdit = { hash_bounds: ["MQX", "MQX"], new_content: "new" };
+		const warnings: string[] = [];
+		const resolved = resEdit(edit, warnings);
+		expect(resolved.hash_bounds[0].hash).toBe("MQX");
+		expect(warnings).toHaveLength(0);
+	});
+
+	it("still rejects rows without a leading hash", () => {
+		const edit: HTEdit = { hash_bounds: ["│const x = 1;", "MQX"], new_content: "new" };
+		expect(() => resEdit(edit)).toThrow(/^\[E_BAD_REF\]/);
+	});
 });
