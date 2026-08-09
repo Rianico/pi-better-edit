@@ -196,3 +196,151 @@ describe("boundary duplication auto-fix", () => {
     });
   });
 });
+
+describe("new-line boundary duplication (auto-fix)", () => {
+  it("strips a new line duplicating a unique line after the range", async () => {
+    const file = [
+      "export class WorkflowEditorOverlay {",
+      "  private activeTab = 0;",
+      "  private confirmingClose = false;",
+      "",
+      "  constructor() {",
+      "    this.activeTab = 0;",
+      "  }",
+      "}",
+    ].join("\n") + "\n";
+    await withTempFile("overlay.ts", file, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const read1 = await readTool.execute("r1", { path: "overlay.ts" }, undefined, undefined, ctx);
+      const lines1 = getText(read1).split("\n");
+      const classHash = extractHash(lines1.find((l) => l.includes("│export class WorkflowEditorOverlay"))!);
+      const blankHash = extractHash(lines1.find((l) => l.endsWith("│"))!);
+
+      const editResult = await editTool.execute(
+        "e1",
+        {
+          path: "overlay.ts",
+          hash_bounds: [classHash, blankHash],
+          new_content: [
+            "export class WorkflowEditorOverlay {",
+            "  private activeTab = 0;",
+            "  private confirmingClose = false;",
+            "",
+            "  constructor() {",
+            "  }",
+          ].join("\n"),
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const text = getText(editResult);
+      expect(text).toContain("Successfully replaced");
+      expect(text).not.toContain("[E_BOUNDARY_DUP]");
+
+      const content = await readFile(path, "utf-8");
+      const constructorCount = content.split("\n").filter((l) => l.includes("constructor()")).length;
+      expect(constructorCount).toBe(1);
+    });
+  });
+
+  it("strips a new line duplicating a unique line before the range (noop)", async () => {
+    const file = "foo();\nbar();\nbaz();\n";
+    await withTempFile("reorder.ts", file, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const read1 = await readTool.execute("r1", { path: "reorder.ts" }, undefined, undefined, ctx);
+      const lines1 = getText(read1).split("\n");
+      const barHash = extractHash(lines1.find((l) => l.includes("│bar();"))!);
+      const bazHash = extractHash(lines1.find((l) => l.includes("│baz();"))!);
+
+      const editResult = await editTool.execute(
+        "e1",
+        {
+          path: "reorder.ts",
+          hash_bounds: [barHash, bazHash],
+          new_content: "bar();\nbaz();\nfoo();",
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const text = getText(editResult);
+      expect(text).toContain("No changes made");
+
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("foo();\nbar();\nbaz();\n");
+    });
+  });
+
+  it("does not strip new-line duplicates when the adjacent line is not unique", async () => {
+    const file = [
+      "if (a) {",
+      "  x();",
+      "}",
+      "if (b) {",
+      "  y();",
+      "}",
+    ].join("\n") + "\n";
+    await withTempFile("multi.ts", file, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const read1 = await readTool.execute("r1", { path: "multi.ts" }, undefined, undefined, ctx);
+      const lines1 = getText(read1).split("\n");
+      const bHash = extractHash(lines1.find((l) => l.includes("│if (b)"))!);
+      const yHash = extractHash(lines1.find((l) => l.includes("│  y();"))!);
+
+      const editResult = await editTool.execute(
+        "e1",
+        {
+          path: "multi.ts",
+          hash_bounds: [bHash, yHash],
+          new_content: "if (b) {\n  yNew();\n}",
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const text = getText(editResult);
+      expect(text).toContain("Successfully replaced");
+      expect(text).not.toContain("[E_BOUNDARY_DUP]");
+
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("if (a) {\n  x();\n}\nif (b) {\n  yNew();\n}\n");
+    });
+  });
+
+  it("does not strip when the first new line differs from the line after the range", async () => {
+    const file = "a\nb\nc\nd\n";
+    await withTempFile("plain.ts", file, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+      const read1 = await readTool.execute("r1", { path: "plain.ts" }, undefined, undefined, ctx);
+      const lines1 = getText(read1).split("\n");
+      const aHash = extractHash(lines1.find((l) => l.includes("│a"))!);
+      const bHash = extractHash(lines1.find((l) => l.includes("│b"))!);
+
+      const editResult = await editTool.execute(
+        "e1",
+        {
+          path: "plain.ts",
+          hash_bounds: [aHash, bHash],
+          new_content: "a\nb\nX",
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const text = getText(editResult);
+      expect(text).not.toContain("[E_BOUNDARY_DUP]");
+
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("a\nb\nX\nc\nd\n");
+    });
+  });
+});

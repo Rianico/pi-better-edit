@@ -1,9 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyEdit, lineHashes, resEdit } from "../../src/hashline";
+import { applyEdit, lineHashes, resEdit, canon, findNewEdge } from "../../src/hashline";
 import {
-  firstNonEmpty,
   firstNonEmptyIndex,
-  lastNonEmpty,
   lastNonEmptyIndex,
   splitLines,
 } from "../../src/utils";
@@ -69,26 +67,45 @@ function randRepl(rnd: () => number, lines: string[], s: number, e: number): str
   return repl;
 }
 
+function countCanon(lines: string[], target: string): number {
+  let count = 0;
+  for (const line of lines) {
+    if (canon(line) === canon(target)) count++;
+  }
+  return count;
+}
+
 function applyAutoFix(
   repl: string[],
   prev: string | undefined,
   next: string | undefined,
-): { fixed: string[]; fixes: { kind: "trailing" | "leading"; removedLine: string }[] } {
-  const fixed = [...repl];
-  const fixes: { kind: "trailing" | "leading"; removedLine: string }[] = [];
-  if (next !== undefined && lastNonEmpty(repl) === next) {
-    const idx = lastNonEmptyIndex(fixed);
-    if (idx >= 0) {
-      fixes.push({ kind: "trailing", removedLine: fixed[idx]! });
-      fixed.splice(idx, 1);
-    }
+  rangeLines: string[],
+  fileLines: string[],
+): { fixed: string[]; fixes: { kind: string; removedLine: string; removedLineIndex: number }[] } {
+  const dups: { kind: string; index: number }[] = [];
+  const lastIdx = lastNonEmptyIndex(repl);
+  if (next !== undefined && lastIdx >= 0 && repl[lastIdx] === next) {
+    dups.push({ kind: "trailing", index: lastIdx });
   }
-  if (prev !== undefined && firstNonEmpty(repl) === prev) {
-    const idx = firstNonEmptyIndex(fixed);
-    if (idx >= 0) {
-      fixes.push({ kind: "leading", removedLine: fixed[idx]! });
-      fixed.splice(idx, 1);
-    }
+  const firstIdx = firstNonEmptyIndex(repl);
+  if (prev !== undefined && firstIdx >= 0 && repl[firstIdx] === prev) {
+    dups.push({ kind: "leading", index: firstIdx });
+  }
+  const firstNew = findNewEdge(repl, rangeLines, false);
+  if (firstNew && next !== undefined && canon(firstNew.line) === canon(next) && countCanon(fileLines, next) === 1) {
+    dups.push({ kind: "first-new-after", index: firstNew.index });
+  }
+  const lastNew = findNewEdge(repl, rangeLines, true);
+  if (lastNew && prev !== undefined && canon(lastNew.line) === canon(prev) && countCanon(fileLines, prev) === 1) {
+    dups.push({ kind: "last-new-before", index: lastNew.index });
+  }
+  dups.sort((a, b) => b.index - a.index);
+  const fixed = [...repl];
+  const fixes: { kind: string; removedLine: string; removedLineIndex: number }[] = [];
+  for (const dup of dups) {
+    if (dup.index < 0 || dup.index >= fixed.length) continue;
+    fixes.push({ kind: dup.kind, removedLine: fixed[dup.index]!, removedLineIndex: dup.index });
+    fixed.splice(dup.index, 1);
   }
   return { fixed, fixes };
 }
@@ -113,7 +130,7 @@ async function runStep(
   const repl = randRepl(rnd, lines, s, e);
   const prev = s >= 2 ? lines[s - 2] : undefined;
   const next = e < n ? lines[e] : undefined;
-  const { fixed, fixes } = applyAutoFix(repl, prev, next);
+  const { fixed, fixes } = applyAutoFix(repl, prev, next, lines.slice(s - 1, e), lines);
   const expected = expectedEditContent(lines, s, e, fixed, content.endsWith("\n"));
   const edit = resEdit({
     hash_bounds: [hashes[s - 1]!, hashes[e - 1]!],
@@ -137,6 +154,7 @@ async function runStep(
     expect(result.autoFixes).toBeDefined();
     expect(result.autoFixes!.map((f) => f.kind)).toEqual(fixes.map((f) => f.kind));
     expect(result.autoFixes!.map((f) => f.removedLine)).toEqual(fixes.map((f) => f.removedLine));
+    expect(result.autoFixes!.map((f) => f.removedLineIndex)).toEqual(fixes.map((f) => f.removedLineIndex));
   } else {
     expect(result.autoFixes).toBeUndefined();
   }

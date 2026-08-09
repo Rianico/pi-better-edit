@@ -10,6 +10,16 @@ import { useTestHome, expectedEditContent } from "../support/fixtures";
 
 const home = useTestHome();
 
+function replayFixes(
+	repl: string[],
+	autoFixes: { removedLineIndex: number }[] | undefined,
+): string[] {
+	if (!autoFixes) return repl;
+	const corrected = [...repl];
+	for (const fix of autoFixes) corrected.splice(fix.removedLineIndex, 1);
+	return corrected;
+}
+
 function replToContent(repl: string[]): string {
   return repl.join("\n") + (repl.length > 0 && repl[repl.length - 1] === "" ? "\n" : "");
 }
@@ -144,16 +154,17 @@ describe("property: single random edit per call", () => {
       const hashes = await lineHashes(content, home.testPath);
       const span = randSpan(rnd, lines, [], !content.endsWith("\n"));
       if (!span) continue;
-      const expected = expectedEditContent(lines, span.s, span.e, span.repl, content.endsWith("\n"));
       const edit = resEdit({
         hash_bounds: [hashes[span.s - 1]!, hashes[span.e - 1]!],
         new_content: replToContent(span.repl),
       });
       const result = applyEdit(content, edit, undefined, hashes, home.testPath);
-      expect(result.content).toBe(expected);
-      expect(result.autoFixes).toBeUndefined();
+      const correctedExpected = expectedEditContent(
+        lines, span.s, span.e, replayFixes(span.repl, result.autoFixes), content.endsWith("\n"),
+      );
+      expect(result.content).toBe(correctedExpected);
       const removedHashes = new Set(hashes.slice(span.s - 1, span.e));
-      const resultHashes = await lineHashes(expected, home.testPath, {
+      const resultHashes = await lineHashes(correctedExpected, home.testPath, {
         content,
         hashes,
         removedHashes,
@@ -162,7 +173,7 @@ describe("property: single random edit per call", () => {
         lines,
         hashes,
         [span],
-        splitLines(expected),
+        splitLines(correctedExpected),
         resultHashes,
       );
     }
@@ -182,8 +193,20 @@ describe("property: sequential random edits", () => {
         if (span) spans.push(span);
       }
       if (spans.length < 2) continue;
-      let expectedLines = lines;
+      let current = content;
+      const applied: { s: number; e: number; repl: string[] }[] = [];
       for (const span of [...spans].sort((a, b) => b.s - a.s)) {
+        const currentHashes = await lineHashes(current, home.testPath);
+        const edit = resEdit({
+          hash_bounds: [currentHashes[span.s - 1]!, currentHashes[span.e - 1]!],
+          new_content: replToContent(span.repl),
+        });
+        const result = applyEdit(current, edit, undefined, currentHashes, home.testPath);
+        applied.push({ s: span.s, e: span.e, repl: replayFixes(span.repl, result.autoFixes) });
+        current = result.content;
+      }
+      let expectedLines = lines;
+      for (const span of [...applied].sort((a, b) => b.s - a.s)) {
         expectedLines = [
           ...expectedLines.slice(0, span.s - 1),
           ...span.repl,
@@ -191,7 +214,7 @@ describe("property: sequential random edits", () => {
         ];
       }
       let expected = expectedLines.join("\n");
-      const eofSpan = spans.find((sp) => sp.e === lines.length);
+      const eofSpan = applied.find((sp) => sp.e === lines.length);
       if (
         content.endsWith("\n") ||
         (eofSpan !== undefined &&
@@ -200,16 +223,6 @@ describe("property: sequential random edits", () => {
           lines[eofSpan.s - 2]!.length === 0)
       ) {
         expected += "\n";
-      }
-      let current = content;
-      for (const span of [...spans].sort((a, b) => b.s - a.s)) {
-        const currentHashes = await lineHashes(current, home.testPath);
-        const edit = resEdit({
-          hash_bounds: [currentHashes[span.s - 1]!, currentHashes[span.e - 1]!],
-          new_content: replToContent(span.repl),
-        });
-        const result = applyEdit(current, edit, undefined, currentHashes, home.testPath);
-        current = result.content;
       }
       expect(current).toBe(expected);
       const removedHashes = new Set<string>();
@@ -272,8 +285,9 @@ describe("property: chained stable mapping at every step", () => {
           continue;
         }
         if (result.content === content) continue;
-        expect(result.autoFixes).toBeUndefined();
-        const expected = expectedEditContent(lines, span.s, span.e, span.repl, content.endsWith("\n"));
+        const expected = expectedEditContent(
+          lines, span.s, span.e, replayFixes(span.repl, result.autoFixes), content.endsWith("\n"),
+        );
         expect(result.content).toBe(expected);
         const removedHashes = new Set(hashes.slice(span.s - 1, span.e));
         const nextHashes = await lineHashes(expected, chainPath, {

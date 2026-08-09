@@ -1,4 +1,4 @@
-import { abortIf, splitLines, lastNonEmptyIndex, firstNonEmptyIndex } from "../utils";
+import { abortIf, splitLines } from "../utils";
 import { _lineHashesPure, HASH_SEP } from "./hash";
 import {
 	valEdit,
@@ -49,7 +49,6 @@ type NoopSpan = {
 	loc: string;
 	currentContent: string;
 };
-
 function assertNotEmpty(originalContent: string, result: string): void {
 	if (originalContent.length > 0 && result.length === 0) {
 		throw new Error(
@@ -164,7 +163,7 @@ export function applyEdit(
 		warnings,
 	);
 
-	const { resolved: initialResolved, mismatches, boundaryWarnings } = valEdit(
+	const { resolved: initialResolved, mismatches, boundaryDups } = valEdit(
 		prefixFixed,
 		lineIndex.fileLines,
 		fileHashes,
@@ -181,26 +180,20 @@ export function applyEdit(
 
 	let resolved = initialResolved;
 	let autoFixes: AutoFix[] | undefined;
-	if (boundaryWarnings.length > 0) {
+	if (boundaryDups.length > 0) {
 		autoFixes = [];
 		const correctedEdit: HEdit = {
 			...prefixFixed,
 			content_lines: [...prefixFixed.content_lines],
 		};
-		for (const bw of boundaryWarnings) {
-			if (bw.kind === "trailing") {
-				const idx = lastNonEmptyIndex(correctedEdit.content_lines);
-				if (idx >= 0) {
-					const removed = correctedEdit.content_lines.splice(idx, 1)[0];
-					autoFixes.push({ kind: "trailing", removedLine: removed });
-				}
-			} else {
-				const idx = firstNonEmptyIndex(correctedEdit.content_lines);
-				if (idx >= 0) {
-					const removed = correctedEdit.content_lines.splice(idx, 1)[0];
-					autoFixes.push({ kind: "leading", removedLine: removed });
-				}
-			}
+		const dupsByIndex = [...boundaryDups].sort(
+			(a, b) => b.replacementLineIndex - a.replacementLineIndex,
+		);
+		for (const dup of dupsByIndex) {
+			const idx = dup.replacementLineIndex;
+			if (idx < 0 || idx >= correctedEdit.content_lines.length) continue;
+			const removed = correctedEdit.content_lines.splice(idx, 1)[0];
+			autoFixes.push({ kind: dup.kind, removedLine: removed, removedLineIndex: idx });
 		}
 		const correctedResult = valEdit(
 			correctedEdit,

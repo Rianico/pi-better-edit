@@ -12,6 +12,7 @@ export {
 	lineHashes,
 	_lineHashesPure,
 	initHasher,
+	canon,
 } from "./hash";
 
 export {
@@ -26,7 +27,7 @@ export {
 	type RHEdit,
 	type HTEdit,
 	type NEdit,
-	type BDupWarn,
+	type BDup,
 	type AutoFix,
 	resEdit,
 	valEdit,
@@ -34,6 +35,7 @@ export {
 	stripDiffPrefixes,
 	swapReversedRanges,
 	fmtMismatch,
+	findNewEdge,
 } from "./resolve";
 
 export {

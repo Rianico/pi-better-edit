@@ -1,5 +1,5 @@
-import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty, clipLine } from "../utils";
-import { HASH_CLASS, HL_BARE_PREFIX_RE, HL_PREFIX_PLUS_RE, HL_PREFIX_MINUS_RE } from "./hash";
+import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty, firstNonEmptyIndex, lastNonEmptyIndex, clipLine } from "../utils";
+import { HASH_CLASS, HL_BARE_PREFIX_RE, HL_PREFIX_PLUS_RE, HL_PREFIX_MINUS_RE, canon } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
 
@@ -22,16 +22,15 @@ interface HMismatch {
 	context?: RAnchor;
 }
 
-export interface BDupWarn {
-	kind: "trailing" | "leading";
-	survivingLineContent: string;
-	survivingLineIndex: number;
-	replacementLineContent: string;
+export interface BDup {
+	kind: "trailing" | "leading" | "first-new-after" | "last-new-before";
+	replacementLineIndex: number;
 }
 
 export interface AutoFix {
-  kind: "trailing" | "leading";
-  removedLine: string;
+	kind: "trailing" | "leading" | "first-new-after" | "last-new-before";
+	removedLine: string;
+	removedLineIndex: number;
 }
 
 export interface NEdit {
@@ -284,24 +283,79 @@ export function swapReversedRanges(
 	return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
 
+function edgeRef(
+	line: string | undefined,
+	index: number,
+): { index: number; line: string } | undefined {
+	return line === undefined ? undefined : { index, line };
+}
+
 function checkBoundaryDup(
 	adjacentLine: string | undefined,
-	replacementEdge: string | undefined,
-	kind: "trailing" | "leading",
-	survivingLineIndex: number,
-): BDupWarn | null {
+	replacementEdge: { index: number; line: string } | undefined,
+	kind: BDup["kind"],
+	canonical = false,
+	uniqueInFile?: Map<string, number>,
+): BDup | null {
 	if (
 		adjacentLine === undefined ||
 		replacementEdge === undefined ||
-		replacementEdge.length === 0 ||
-		replacementEdge !== adjacentLine
-	) return null;
-  return {
-    kind,
-    survivingLineContent: adjacentLine,
-    survivingLineIndex,
-    replacementLineContent: replacementEdge,
-  };
+		replacementEdge.line.length === 0
+	) {
+		return null;
+	}
+	const matches = canonical
+		? canon(adjacentLine) === canon(replacementEdge.line)
+		: adjacentLine === replacementEdge.line;
+	if (!matches) return null;
+	if (uniqueInFile && (uniqueInFile.get(canon(adjacentLine)) ?? 0) !== 1) {
+		return null;
+	}
+	return {
+		kind,
+		replacementLineIndex: replacementEdge.index,
+	};
+}
+
+function canonCounts(lines: string[]): Map<string, number> {
+	const counts = new Map<string, number>();
+	for (const line of lines) {
+		const key = canon(line);
+		counts.set(key, (counts.get(key) ?? 0) + 1);
+	}
+	return counts;
+}
+
+export function findNewEdge(
+	contentLines: string[],
+	rangeLines: string[],
+	fromEnd: boolean,
+): { index: number; line: string } | undefined {
+	const multiset = canonCounts(rangeLines);
+	const step = fromEnd ? -1 : 1;
+	const start = fromEnd ? contentLines.length - 1 : 0;
+	for (let i = start; i >= 0 && i < contentLines.length; i += step) {
+		const line = contentLines[i]!;
+		if (line.length === 0) continue;
+		const key = canon(line);
+		const count = multiset.get(key) ?? 0;
+		if (count > 0) {
+			multiset.set(key, count - 1);
+		} else {
+			return { index: i, line };
+		}
+	}
+	return undefined;
+}
+
+function newEdgeLines(
+	contentLines: string[],
+	rangeLines: string[],
+): { firstNew: { index: number; line: string } | undefined; lastNew: { index: number; line: string } | undefined } {
+	return {
+		firstNew: findNewEdge(contentLines, rangeLines, false),
+		lastNew: findNewEdge(contentLines, rangeLines, true),
+	};
 }
 
 export function valEdit(
@@ -310,10 +364,10 @@ export function valEdit(
 	fileHashes: string[],
 	warnings: string[],
 	signal: AbortSignal | undefined,
-): { resolved: RHEdit | undefined; mismatches: HMismatch[]; boundaryWarnings: BDupWarn[] } {
+): { resolved: RHEdit | undefined; mismatches: HMismatch[]; boundaryDups: BDup[] } {
 	assertAligned(fileLines, fileHashes, "valEdit");
 	const mismatches: HMismatch[] = [];
-	const boundaryWarnings: BDupWarn[] = [];
+	const boundaryDups: BDup[] = [];
 
 	const hashIndex = new Map<string, number[]>();
 	for (let i = 0; i < fileHashes.length; i++) {
@@ -343,7 +397,7 @@ export function valEdit(
 			const endMismatch = mismatches.findLast((m) => m.ref === edit.hash_bounds[1]);
 			if (endMismatch && endMismatch.kind === "not_found") endMismatch.context = startResolved;
 		}
-		return { resolved: undefined, mismatches, boundaryWarnings };
+		return { resolved: undefined, mismatches, boundaryDups };
 	}
 	if (startResolved.line > endResolved.line) {
 		throw new Error(
@@ -353,12 +407,19 @@ export function valEdit(
 	const endLine = endResolved.line;
 	const nextLine = fileLines[endLine];
 	const replacementLastLine = lastNonEmpty(edit.content_lines);
-	const trailing = checkBoundaryDup(nextLine, replacementLastLine, "trailing", endLine);
-	if (trailing) boundaryWarnings.push(trailing);
+	const trailing = checkBoundaryDup(nextLine, edgeRef(replacementLastLine, lastNonEmptyIndex(edit.content_lines)), "trailing");
+	if (trailing) boundaryDups.push(trailing);
 	const prevLine = fileLines[startResolved.line - 2];
 	const replacementFirstLine = firstNonEmpty(edit.content_lines);
-	const leading = checkBoundaryDup(prevLine, replacementFirstLine, "leading", startResolved.line - 2);
-	if (leading) boundaryWarnings.push(leading);
+	const leading = checkBoundaryDup(prevLine, edgeRef(replacementFirstLine, firstNonEmptyIndex(edit.content_lines)), "leading");
+	if (leading) boundaryDups.push(leading);
+	const rangeLines = fileLines.slice(startResolved.line - 1, endLine);
+	const { firstNew, lastNew } = newEdgeLines(edit.content_lines, rangeLines);
+	const fileCounts = canonCounts(fileLines);
+	const firstNewAfter = checkBoundaryDup(nextLine, firstNew, "first-new-after", true, fileCounts);
+	if (firstNewAfter) boundaryDups.push(firstNewAfter);
+	const lastNewBefore = checkBoundaryDup(prevLine, lastNew, "last-new-before", true, fileCounts);
+	if (lastNewBefore) boundaryDups.push(lastNewBefore);
 
 	return {
 		resolved: {
@@ -366,7 +427,7 @@ export function valEdit(
 			hash_bounds: [startResolved, endResolved],
 		},
 		mismatches,
-		boundaryWarnings,
+		boundaryDups,
 	};
 }
 

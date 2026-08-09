@@ -247,3 +247,55 @@ describe("auto-fix via applyEdit", () => {
     expect(result.content).toBe("ctx1\nctx2\ndup\ndup\nctx3\nctx4");
   });
 });
+
+describe("boundary-dup autocorrection (via applyEdit)", () => {
+  it("strips a trailing duplicate without a warning", async () => {
+    const content = "a\nb\nc\nd";
+    const hashes = await lineHashes(content, home.testPath);
+    const result = applyEdit(content, resEdit(
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "X\nd" },
+    ));
+    expect(result.content).toBe("a\nX\nd");
+    expect(result.warnings).toBeUndefined();
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("trailing");
+    expect(result.autoFixes![0]!.removedLineIndex).toBe(1);
+  });
+
+  it("strips a new line duplicating a unique line after the range", async () => {
+    const content = "class A {\n  x = 1;\n\n  constructor() {}\n}\n";
+    const hashes = await lineHashes(content, home.testPath);
+    const result = applyEdit(content, resEdit(
+      { hash_bounds: [hashes[0]!, hashes[2]!], new_content: "class A {\n  x = 1;\n\n  constructor() {}\n}" },
+    ));
+    expect(result.content).toBe("class A {\n  x = 1;\n\n}\n  constructor() {}\n}\n");
+    expect(result.warnings).toBeUndefined();
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("first-new-after");
+    expect(result.autoFixes![0]!.removedLine).toBe("  constructor() {}");
+    expect(result.autoFixes![0]!.removedLineIndex).toBe(3);
+  });
+
+  it("strips a new line duplicating a unique line before the range (noop)", async () => {
+    const content = "foo();\nbar();\nbaz();\n";
+    const hashes = await lineHashes(content, home.testPath);
+    const result = applyEdit(content, resEdit(
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: "bar();\nbaz();\nfoo();" },
+    ));
+    expect(result.content).toBe(content);
+    expect(result.noopEdit).toBeDefined();
+    expect(result.autoFixes).toBeUndefined();
+  });
+
+  it("does not strip new-line duplicates when the adjacent line is not unique in the file", async () => {
+    const content = "if (a) {\n  x();\n}\nif (b) {\n  y();\n}\n";
+    const hashes = await lineHashes(content, home.testPath);
+    const result = applyEdit(content, resEdit(
+      { hash_bounds: [hashes[3]!, hashes[4]!], new_content: "if (b) {\n  yNew();\n}" },
+    ));
+    expect(result.content).toBe("if (a) {\n  x();\n}\nif (b) {\n  yNew();\n}\n");
+    expect(result.warnings).toBeUndefined();
+    expect(result.autoFixes).toHaveLength(1);
+    expect(result.autoFixes![0]!.kind).toBe("trailing");
+  });
+});
