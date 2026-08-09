@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applyEdit,
+  resEdit,
   type HEdit,
 } from "../../src/hashline";
 import { makeTag, useTestHome } from "../support/fixtures";
@@ -437,5 +438,59 @@ describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
     };
     const result = applyEdit(content, edit);
     expect(result.content).toBe("a\nb");
+  });
+});
+
+describe("applyEdit — trailing blank lines (no trailing-newline special case)", () => {
+  it("preserves a trailing blank line when new_content mirrors it with a trailing newline", async () => {
+    const content = "def a():\n    pass\n\ndef b():\n    pass\n";
+    const edit = resEdit({
+      hash_bounds: [
+        (await makeTag(content, 1, home.testPath)).hash,
+        (await makeTag(content, 3, home.testPath)).hash,
+      ],
+      new_content: "def a():\n    return 1\n",
+    });
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("def a():\n    return 1\n\ndef b():\n    pass\n");
+  });
+
+  it("preserves two trailing blank lines when new_content mirrors them", async () => {
+    const content = "def a():\n    pass\n\n\ndef b():\n";
+    const edit = resEdit({
+      hash_bounds: [
+        (await makeTag(content, 1, home.testPath)).hash,
+        (await makeTag(content, 4, home.testPath)).hash,
+      ],
+      new_content: "def a():\n    return 1\n\n",
+    });
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("def a():\n    return 1\n\n\ndef b():\n");
+  });
+
+  it("drops a trailing blank line when new_content does not mirror it", async () => {
+    const content = "def a():\n    pass\n\ndef b():\n";
+    const edit = resEdit({
+      hash_bounds: [
+        (await makeTag(content, 1, home.testPath)).hash,
+        (await makeTag(content, 3, home.testPath)).hash,
+      ],
+      new_content: "def a():\n    return 1",
+    });
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("def a():\n    return 1\ndef b():\n");
+  });
+
+  it("adds a trailing blank line for a normal range when new_content ends with a newline", async () => {
+    const content = "aaa\nbbb\nccc\n";
+    const edit = resEdit({
+      hash_bounds: [
+        (await makeTag(content, 2, home.testPath)).hash,
+        (await makeTag(content, 2, home.testPath)).hash,
+      ],
+      new_content: "X\n",
+    });
+    const result = applyEdit(content, edit);
+    expect(result.content).toBe("aaa\nX\n\nccc\n");
   });
 });

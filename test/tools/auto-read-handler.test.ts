@@ -2,8 +2,9 @@ import { describe, expect, it } from "vitest";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { withTempDir } from "../support/fixtures";
+import { useTestHome, withTempDir } from "../support/fixtures";
 
+useTestHome();
 function makeFakePi() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const tools = new Map<string, unknown>();

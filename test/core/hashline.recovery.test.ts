@@ -112,7 +112,7 @@ describe("applyEdit — recovery scenarios", () => {
   it("accepts string new_content with line separators", () => {
     const edit = { hash_bounds: ["ZZZ", "ZZZ"], new_content: "hello\nworld\n" } as any;
     const resolved = resEdit(edit);
-    expect(resolved.content_lines).toEqual(["hello", "world"]);
+    expect(resolved.content_lines).toEqual(["hello", "world", ""]);
   });
 
   it("rejects malformed hash_bounds", () => {

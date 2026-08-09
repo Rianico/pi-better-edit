@@ -45,7 +45,6 @@ export function parseText(edit: string): string[] {
   }
   const normalized = edit.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   if (normalized === "") return [];
-  const lines = normalized.split("\n");
-  if (normalized.endsWith("\n")) lines.pop();
-  return lines;
+  if (/^\n+$/.test(normalized)) return new Array(normalized.length).fill("");
+  return normalized.split("\n");
 }

@@ -81,20 +81,20 @@ describe("parseText", () => {
 		expect(parseText("")).toEqual([]);
 	});
 
-	it("treats a trailing newline as the last line's ending, not an extra line", () => {
-		expect(parseText("a\nb\n")).toEqual(["a", "b"]);
+	it("treats a trailing newline as an extra empty line (no special case)", () => {
+		expect(parseText("a\nb\n")).toEqual(["a", "b", ""]);
 	});
 
-	it("represents a single empty line as \\n", () => {
+	it("represents a single newline as one blank line", () => {
 		expect(parseText("\n")).toEqual([""]);
 	});
 
-	it("represents two empty lines as \\n\\n", () => {
+	it("represents two newlines as two blank lines", () => {
 		expect(parseText("\n\n")).toEqual(["", ""]);
 	});
 
 	it("normalizes CRLF and CR line endings to LF", () => {
-		expect(parseText("a\r\nb\r")).toEqual(["a", "b"]);
+		expect(parseText("a\r\nb\rc")).toEqual(["a", "b", "c"]);
 	});
 
 	it("preserves '# keep me' comment lines (no autocorrection)", () => {

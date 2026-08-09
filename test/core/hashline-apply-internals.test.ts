@@ -85,7 +85,7 @@ describe("checkBoundaryDup (via applyEdit) — auto-fix", () => {
     const content = "a\nb\nc\nd";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
-      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: `X\nd\n\n` },
+      { hash_bounds: [hashes[1]!, hashes[2]!], new_content: `X\nd\n` },
     ));
     expect(result.content).toBe("a\nX\n\nd");
     expect(result.autoFixes).toHaveLength(1);

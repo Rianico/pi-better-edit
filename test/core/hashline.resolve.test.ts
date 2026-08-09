@@ -50,7 +50,7 @@ describe("resEdit", () => {
       new_content: "line1\nline2\n",
     } as unknown as HTEdit;
     const resolved = resEdit(edit);
-    expect(resolved.content_lines).toEqual(["line1", "line2"]);
+    expect(resolved.content_lines).toEqual(["line1", "line2", ""]);
   });
 
   it("normalizes CRLF in new_content", () => {

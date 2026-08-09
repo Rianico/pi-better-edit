@@ -53,7 +53,10 @@ function randContent(rnd: () => number): string {
 }
 
 function replToContent(repl: string[]): string {
-  return repl.join("\n") + (repl.length > 0 && repl[repl.length - 1] === "" ? "\n" : "");
+  if (repl.length > 0 && repl.every((line) => line === "")) {
+    return "\n".repeat(repl.length);
+  }
+  return repl.join("\n");
 }
 
 function randRepl(rnd: () => number, lines: string[], s: number, e: number): string[] {

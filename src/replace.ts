@@ -47,7 +47,7 @@ import { loadHashStore, type HashStore } from "./hash-store";
 
 const newContentSchema = Type.String({
   description:
-    "Replacement content as a single string with \\n line separators; a trailing newline is the last line's ending, not an extra empty line. Use \"\" to delete the range."
+    "Replacement content as a single string with \\n line separators; every \\n separates lines, so a trailing \\n adds a final empty line. Mirror the replaced range's lines exactly, blank lines included. A replacement that is only blank lines is written as one \\n per blank line. Use \"\" to delete the range."
 });
 
 const hashBoundsSchema = Type.Array(

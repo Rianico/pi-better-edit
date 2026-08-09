@@ -86,7 +86,7 @@ One edit per call, with `hash_bounds` and `new_content` at the top level:
 | Field | Description |
 | --- | --- |
 | `hash_bounds` | Pair of 3-char hashes from `read` output marking the first and last line of the range to replace (inclusive). |
-| `new_content` | Replacement content as a single string with `\n` line separators; a trailing newline is the last line's ending, not an extra empty line. Use `""` to delete the range. |
+| `new_content` | Replacement content as a single string with `\n` line separators; every `\n` separates lines, so a trailing `\n` adds a final empty line — mirror the replaced range's lines exactly, blank lines included (a replacement that is only blank lines is written as one `\n` per blank line). Use `""` to delete the range. |
 
 Notes:
 
