@@ -1,4 +1,4 @@
-import { abortIf, rejectUnknownFields, lastNonEmpty, firstNonEmpty, firstNonEmptyIndex, lastNonEmptyIndex, clipLine } from "../utils";
+import { abortIf, rejectUnknownFields, firstNonEmptyIndex, lastNonEmptyIndex, clipLine } from "../utils";
 import { HASH_CLASS, HL_BARE_PREFIX_RE, HL_PREFIX_PLUS_RE, HL_PREFIX_MINUS_RE, canon } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
@@ -283,38 +283,78 @@ export function swapReversedRanges(
 	return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
 
-function edgeRef(
-	line: string | undefined,
-	index: number,
-): { index: number; line: string } | undefined {
-	return line === undefined ? undefined : { index, line };
+function trailingDups(
+	contentLines: string[],
+	fileLines: string[],
+	endLine: number,
+): BDup[] {
+	const start = lastNonEmptyIndex(contentLines);
+	if (start < 0) return [];
+	const dups: BDup[] = [];
+	const maxK = Math.min(start + 1, fileLines.length - endLine);
+	for (let k = 0; k < maxK; k++) {
+		if (contentLines[start - k] !== fileLines[endLine + k]) break;
+		dups.push({ kind: "trailing", replacementLineIndex: start - k });
+	}
+	return dups;
 }
 
-function checkBoundaryDup(
-	adjacentLine: string | undefined,
-	replacementEdge: { index: number; line: string } | undefined,
-	kind: BDup["kind"],
-	canonical = false,
-	uniqueInFile?: Map<string, number>,
-): BDup | null {
-	if (
-		adjacentLine === undefined ||
-		replacementEdge === undefined ||
-		replacementEdge.line.length === 0
-	) {
-		return null;
+function leadingDups(
+	contentLines: string[],
+	fileLines: string[],
+	startLine: number,
+): BDup[] {
+	const start = firstNonEmptyIndex(contentLines);
+	if (start < 0) return [];
+	const dups: BDup[] = [];
+	const maxK = Math.min(contentLines.length - start, startLine - 1);
+	for (let k = 0; k < maxK; k++) {
+		if (contentLines[start + k] !== fileLines[startLine - 2 - k]) break;
+		dups.push({ kind: "leading", replacementLineIndex: start + k });
 	}
-	const matches = canonical
-		? canon(adjacentLine) === canon(replacementEdge.line)
-		: adjacentLine === replacementEdge.line;
-	if (!matches) return null;
-	if (uniqueInFile && (uniqueInFile.get(canon(adjacentLine)) ?? 0) !== 1) {
-		return null;
+	return dups;
+}
+
+function firstNewAfterDups(
+	contentLines: string[],
+	rangeLines: string[],
+	fileLines: string[],
+	endLine: number,
+	fileCounts: Map<string, number>,
+): BDup[] {
+	const firstNew = findNewEdge(contentLines, rangeLines, false);
+	if (!firstNew) return [];
+	const dups: BDup[] = [];
+	const maxK = Math.min(contentLines.length - firstNew.index, fileLines.length - endLine);
+	for (let k = 0; k < maxK; k++) {
+		const newLine = contentLines[firstNew.index + k]!;
+		const fileLine = fileLines[endLine + k]!;
+		if (canon(newLine) !== canon(fileLine)) break;
+		if ((fileCounts.get(canon(fileLine)) ?? 0) !== 1) break;
+		dups.push({ kind: "first-new-after", replacementLineIndex: firstNew.index + k });
 	}
-	return {
-		kind,
-		replacementLineIndex: replacementEdge.index,
-	};
+	return dups;
+}
+
+function lastNewBeforeDups(
+	contentLines: string[],
+	rangeLines: string[],
+	fileLines: string[],
+	startLine: number,
+	fileCounts: Map<string, number>,
+): BDup[] {
+	const lastNew = findNewEdge(contentLines, rangeLines, true);
+	if (!lastNew) return [];
+	const dups: BDup[] = [];
+	const maxK = Math.min(lastNew.index + 1, startLine - 1);
+	for (let k = 0; k < maxK; k++) {
+		const newLine = contentLines[lastNew.index - k]!;
+		const fileLine = fileLines[startLine - 2 - k]!;
+		if (canon(newLine) !== canon(fileLine)) break;
+		if ((fileCounts.get(canon(fileLine)) ?? 0) !== 1) break;
+		dups.push({ kind: "last-new-before", replacementLineIndex: lastNew.index - k });
+	}
+	return dups;
 }
 
 function canonCounts(lines: string[]): Map<string, number> {
@@ -346,16 +386,6 @@ export function findNewEdge(
 		}
 	}
 	return undefined;
-}
-
-function newEdgeLines(
-	contentLines: string[],
-	rangeLines: string[],
-): { firstNew: { index: number; line: string } | undefined; lastNew: { index: number; line: string } | undefined } {
-	return {
-		firstNew: findNewEdge(contentLines, rangeLines, false),
-		lastNew: findNewEdge(contentLines, rangeLines, true),
-	};
 }
 
 export function valEdit(
@@ -405,21 +435,14 @@ export function valEdit(
 		);
 	}
 	const endLine = endResolved.line;
-	const nextLine = fileLines[endLine];
-	const replacementLastLine = lastNonEmpty(edit.content_lines);
-	const trailing = checkBoundaryDup(nextLine, edgeRef(replacementLastLine, lastNonEmptyIndex(edit.content_lines)), "trailing");
-	if (trailing) boundaryDups.push(trailing);
-	const prevLine = fileLines[startResolved.line - 2];
-	const replacementFirstLine = firstNonEmpty(edit.content_lines);
-	const leading = checkBoundaryDup(prevLine, edgeRef(replacementFirstLine, firstNonEmptyIndex(edit.content_lines)), "leading");
-	if (leading) boundaryDups.push(leading);
 	const rangeLines = fileLines.slice(startResolved.line - 1, endLine);
-	const { firstNew, lastNew } = newEdgeLines(edit.content_lines, rangeLines);
 	const fileCounts = canonCounts(fileLines);
-	const firstNewAfter = checkBoundaryDup(nextLine, firstNew, "first-new-after", true, fileCounts);
-	if (firstNewAfter) boundaryDups.push(firstNewAfter);
-	const lastNewBefore = checkBoundaryDup(prevLine, lastNew, "last-new-before", true, fileCounts);
-	if (lastNewBefore) boundaryDups.push(lastNewBefore);
+	boundaryDups.push(
+		...trailingDups(edit.content_lines, fileLines, endLine),
+		...leadingDups(edit.content_lines, fileLines, startResolved.line),
+		...firstNewAfterDups(edit.content_lines, rangeLines, fileLines, endLine, fileCounts),
+		...lastNewBeforeDups(edit.content_lines, rangeLines, fileLines, startResolved.line, fileCounts),
+	);
 
 	return {
 		resolved: {

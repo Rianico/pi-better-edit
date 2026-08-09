@@ -262,18 +262,16 @@ describe("boundary-dup autocorrection (via applyEdit)", () => {
     expect(result.autoFixes![0]!.removedLineIndex).toBe(1);
   });
 
-  it("strips a new line duplicating a unique line after the range", async () => {
+  it("strips a new line duplicating a unique line after the range (noop)", async () => {
     const content = "class A {\n  x = 1;\n\n  constructor() {}\n}\n";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(
       { hash_bounds: [hashes[0]!, hashes[2]!], new_content: "class A {\n  x = 1;\n\n  constructor() {}\n}" },
     ));
-    expect(result.content).toBe("class A {\n  x = 1;\n\n}\n  constructor() {}\n}\n");
+    expect(result.content).toBe(content);
+    expect(result.noopEdit).toBeDefined();
     expect(result.warnings).toBeUndefined();
-    expect(result.autoFixes).toHaveLength(1);
-    expect(result.autoFixes![0]!.kind).toBe("first-new-after");
-    expect(result.autoFixes![0]!.removedLine).toBe("  constructor() {}");
-    expect(result.autoFixes![0]!.removedLineIndex).toBe(3);
+    expect(result.autoFixes).toBeUndefined();
   });
 
   it("strips a new line duplicating a unique line before the range (noop)", async () => {

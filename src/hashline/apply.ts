@@ -11,6 +11,7 @@ import {
 	type NEdit,
 	type HEdit,
 	type AutoFix,
+	type BDup,
 } from "./resolve";
 
 type LIdx = {
@@ -186,7 +187,14 @@ export function applyEdit(
 			...prefixFixed,
 			content_lines: [...prefixFixed.content_lines],
 		};
-		const dupsByIndex = [...boundaryDups].sort(
+		const seen = new Set<number>();
+		const uniqueDups: BDup[] = [];
+		for (const dup of boundaryDups) {
+			if (seen.has(dup.replacementLineIndex)) continue;
+			seen.add(dup.replacementLineIndex);
+			uniqueDups.push(dup);
+		}
+		const dupsByIndex = uniqueDups.sort(
 			(a, b) => b.replacementLineIndex - a.replacementLineIndex,
 		);
 		for (const dup of dupsByIndex) {
