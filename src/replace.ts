@@ -52,11 +52,11 @@ const replacementTextSchema = Type.String({
 });
 
 const removeFromSchema = Type.String({
-  description: "3-char HASH from read output marking the FIRST line to remove (inclusive)",
+  description: "Bare 3-char HASH only (e.g. \"aB3\") — copy just the hash from the leftmost column of a read row like `aB3│content`; never the line content. Marks the FIRST line to remove (inclusive)",
 });
 
 const removeToSchema = Type.String({
-  description: "3-char HASH from read output marking the LAST line to remove (inclusive)",
+  description: "Bare 3-char HASH only (e.g. \"aB3\") — copy just the hash from the leftmost column of a read row like `aB3│content`; never the line content. Marks the LAST line to remove (inclusive)",
 });
 
 export const editToolSchema = Type.Object(
