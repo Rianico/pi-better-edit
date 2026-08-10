@@ -60,8 +60,11 @@ describe("prompt guidelines", () => {
       new URL("../../prompts/replace-guidelines.md", import.meta.url),
       "utf-8",
     );
-    expect(content).toContain("hash_bounds");
-    expect(content).toContain("new_content");
+    expect(content).toContain("remove_from");
+    expect(content).toContain("remove_to");
+    expect(content).toContain("replacement_text");
+    expect(content).not.toContain("hash_bounds");
+    expect(content).not.toContain("new_content");
     expect(content).not.toContain("{{");
   });
 

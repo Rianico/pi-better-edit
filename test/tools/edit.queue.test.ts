@@ -12,14 +12,14 @@ describe("edit tool file mutation queue", () => {
 
       const r1 = await editTool.execute(
         "e1",
-        { path: "sample.ts", hash_bounds: [hashes[0]!, hashes[0]!], new_content: "ALPHA" },
+        { path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "ALPHA" },
         undefined, undefined, ctx,
       );
       expect(r1.content[0].text).toContain("Successfully replaced");
       expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const r2 = await editTool.execute(
         "e2",
-        { path: "sample.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BETA" },
+        { path: "sample.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BETA" },
         undefined, undefined, ctx,
       );
       expect(r2.content[0].text).toContain("Successfully replaced");
@@ -36,14 +36,14 @@ describe("edit tool file mutation queue", () => {
 
       const r1 = await editTool.execute(
         "e1",
-        { path: "target.ts", hash_bounds: [hashes[0]!, hashes[0]!], new_content: "ALPHA" },
+        { path: "target.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "ALPHA" },
         undefined, undefined, ctx,
       );
       expect(r1.content[0].text).toContain("Successfully replaced");
       expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const r2 = await editTool.execute(
         "e2",
-        { path: "link.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BETA" },
+        { path: "link.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BETA" },
         undefined, undefined, ctx,
       );
       expect(r2.content[0].text).toContain("Successfully replaced");
@@ -68,14 +68,14 @@ describe("edit tool file mutation queue", () => {
 
     const r1 = await editTool.execute(
       "e1",
-      { path: "sub/target.ts", hash_bounds: [hashes[0]!, hashes[0]!], new_content: "ALPHA" },
+      { path: "sub/target.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "ALPHA" },
       undefined, undefined, ctx,
     );
     expect(r1.content[0].text).toContain("Successfully replaced");
     expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     const r2 = await editTool.execute(
       "e2",
-      { path: "linkdir/sub/target.ts", hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BETA" },
+      { path: "linkdir/sub/target.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BETA" },
       undefined, undefined, ctx,
     );
     expect(r2.content[0].text).toContain("Successfully replaced");

@@ -20,7 +20,7 @@ describe("stale-position compound edits", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [line5Hash, line5Hash], new_content: "E",
+          remove_from: line5Hash, remove_to: line5Hash, replacement_text: "E",
         },
         undefined,
         undefined,
@@ -33,7 +33,7 @@ describe("stale-position compound edits", () => {
           "e2",
           {
             path: "sample.ts",
-            hash_bounds: [freshHash, freshHash], new_content: "E-AGAIN",
+            remove_from: freshHash, remove_to: freshHash, replacement_text: "E-AGAIN",
           },
           undefined,
           undefined,
@@ -57,7 +57,7 @@ describe("stale-position compound edits", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [line2Hash, line4Hash], new_content: "B\nC_D",
+          remove_from: line2Hash, remove_to: line4Hash, replacement_text: "B\nC_D",
         },
         undefined,
         undefined,
@@ -82,7 +82,7 @@ describe("stale-position compound edits", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [line2Hash, line4Hash], new_content: "B\nC_D",
+          remove_from: line2Hash, remove_to: line4Hash, replacement_text: "B\nC_D",
         },
         undefined,
         undefined,

@@ -18,8 +18,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [betaHash, betaHash],
-          new_content: "BBB",
+          remove_from: betaHash, remove_to: betaHash,
+          replacement_text: "BBB",
         },
         undefined,
         undefined,
@@ -47,8 +47,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [bHash, cHash],
-          new_content: "B\nC",
+          remove_from: bHash, remove_to: cHash,
+          replacement_text: "B\nC",
         },
         undefined,
         undefined,
@@ -76,8 +76,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [bHash, cHash],
-          new_content: "",
+          remove_from: bHash, remove_to: cHash,
+          replacement_text: "",
         },
         undefined,
         undefined,
@@ -107,8 +107,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [betaRef, betaRef],
-          new_content: "BBB",
+          remove_from: betaRef, remove_to: betaRef,
+          replacement_text: "BBB",
         },
         undefined,
         undefined,
@@ -120,8 +120,8 @@ describe("replace tool — end-to-end", () => {
           "e2",
           {
             path: "sample.ts",
-            hash_bounds: [betaRef, betaRef],
-            new_content: "BBB-AGAIN",
+            remove_from: betaRef, remove_to: betaRef,
+            replacement_text: "BBB-AGAIN",
           },
           undefined,
           undefined,
@@ -143,8 +143,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "empty.ts",
-          hash_bounds: [emptyHash, emptyHash],
-          new_content: "first\nsecond",
+          remove_from: emptyHash, remove_to: emptyHash,
+          replacement_text: "first\nsecond",
         },
         undefined,
         undefined,
@@ -170,8 +170,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "crlf.ts",
-          hash_bounds: [betaRef, betaRef],
-          new_content: "BETA",
+          remove_from: betaRef, remove_to: betaRef,
+          replacement_text: "BETA",
         },
         undefined,
         undefined,
@@ -198,8 +198,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "cr.ts",
-          hash_bounds: [betaRef, betaRef],
-          new_content: "BETA",
+          remove_from: betaRef, remove_to: betaRef,
+          replacement_text: "BETA",
         },
         undefined,
         undefined,
@@ -244,7 +244,7 @@ describe("replace tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            { path: c.fileName, hash_bounds: [betaRef, betaRef], new_content: "" },
+            { path: c.fileName, remove_from: betaRef, remove_to: betaRef, replacement_text: "" },
             undefined,
             undefined,
             ctx,
@@ -264,7 +264,7 @@ describe("replace tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            { path: c.fileName, hash_bounds: [betaRef, betaRef], new_content: "beta" },
+            { path: c.fileName, remove_from: betaRef, remove_to: betaRef, replacement_text: "beta" },
             undefined,
             undefined,
             ctx,
@@ -275,7 +275,7 @@ describe("replace tool — end-to-end", () => {
       });
     }
   });
-  it("accepts top-level hash_bounds and content_lines", async () => {
+  it("accepts top-level remove_from/remove_to and replacement_text", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -284,8 +284,8 @@ describe("replace tool — end-to-end", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [hashes[1]!, hashes[1]!],
-          new_content: "BBB",
+          remove_from: hashes[1]!, remove_to: hashes[1]!,
+          replacement_text: "BBB",
         },
         undefined,
         undefined,

@@ -46,32 +46,33 @@ import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./replace-undo";
 import { loadHashStore, findSnapshotPaths, type HashStore } from "./hash-store";
 
-const newContentSchema = Type.String({
+const replacementTextSchema = Type.String({
   description:
-    "Replacement content as a single string with \\n line separators; every \\n separates lines, so a trailing \\n adds a final empty line. Mirror the replaced range's lines exactly, blank lines included. A replacement that is only blank lines is written as one \\n per blank line. Use \"\" to delete the range."
+    "Replacement text as a single string with \\n line separators; every \\n separates lines, so a trailing \\n adds a final empty line. Mirror the removed lines exactly, blank lines included. A replacement that is only blank lines is written as one \\n per blank line. Use \"\" to delete the range."
 });
 
-const hashBoundsSchema = Type.Array(
-  Type.String({ description: "A 3-char HASH from read output" }),
-  {
-    description: "Pair of 3-char hashes from read output marking the first and last line of the range to replace (inclusive).",
-    minItems: 2,
-    maxItems: 2,
-  },
-);
+const removeFromSchema = Type.String({
+  description: "3-char HASH from read output marking the FIRST line to remove (inclusive)",
+});
+
+const removeToSchema = Type.String({
+  description: "3-char HASH from read output marking the LAST line to remove (inclusive)",
+});
 
 export const editToolSchema = Type.Object(
   {
     path: Type.Optional(Type.String({ description: "Path to edit. Required — always provide it explicitly; it is only auto-resolved from the anchors as a fallback when omitted by mistake." })),
-    hash_bounds: hashBoundsSchema,
-    new_content: newContentSchema,
+    remove_from: removeFromSchema,
+    remove_to: removeToSchema,
+    replacement_text: replacementTextSchema,
   },
   { additionalProperties: false },
 );
 export type ReqParams = {
   path: string;
-  hash_bounds: [string, string];
-  new_content: string;
+  remove_from: string;
+  remove_to: string;
+  replacement_text: string;
 };
 
 export type ReplaceDetails = {
@@ -101,7 +102,7 @@ interface PipelineResult {
 
 const PREVIEW_DEBOUNCE_MS = 150;
 
-const ROOT_KS = new Set(["path", "new_content", "hash_bounds"]);
+const ROOT_KS = new Set(["path", "remove_from", "remove_to", "replacement_text"]);
 
 export function assertReq(
   request: unknown,
@@ -116,9 +117,13 @@ export function assertReq(
     throw new Error('[E_BAD_SHAPE] Edit request requires a non-empty "path" string.');
   }
 
-  if (!Array.isArray(request.hash_bounds) || typeof request.new_content !== "string") {
+  if (
+    typeof request.remove_from !== "string" ||
+    typeof request.remove_to !== "string" ||
+    typeof request.replacement_text !== "string"
+  ) {
     throw new Error(
-      '[E_BAD_SHAPE] Edit request requires both "hash_bounds" and "new_content" at the top level.',
+      '[E_BAD_SHAPE] Edit request requires "remove_from", "remove_to", and "replacement_text" at the top level.',
     );
   }
 }
@@ -127,11 +132,11 @@ async function resolveMissingPath(
   request: Record<string, unknown>,
 ): Promise<{ path: string; warning: string } | undefined> {
   if (typeof request.path === "string") return undefined;
-  const bounds = request.hash_bounds;
-  if (!Array.isArray(bounds) || bounds.length !== 2) return undefined;
+  const from = request.remove_from;
+  const to = request.remove_to;
+  if (typeof from !== "string" || typeof to !== "string") return undefined;
   const hashes: string[] = [];
-  for (const ref of bounds) {
-    if (typeof ref !== "string") return undefined;
+  for (const ref of [from, to]) {
     try {
       hashes.push(parseHashRef(ref).hash);
     } catch {
@@ -215,8 +220,9 @@ export async function execPipeline(
   const editWarnings: string[] = [];
   const edit = resEdit(
     {
-      hash_bounds: params.hash_bounds,
-      new_content: params.new_content,
+      remove_from: params.remove_from,
+      remove_to: params.remove_to,
+      replacement_text: params.replacement_text,
     },
     editWarnings,
   );

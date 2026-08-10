@@ -9,45 +9,45 @@ describe("assertReq", () => {
 	});
 
 	it("throws for unknown fields", () => {
-		expect(() => assertReq({ path: "test.txt", hash_bounds: ["AAA", "BBB"], new_content: "new", unknown: "field" }))
+		expect(() => assertReq({ path: "test.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new", unknown: "field" }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for missing path", () => {
-		expect(() => assertReq({ hash_bounds: ["AAA", "BBB"], new_content: "new" }))
+		expect(() => assertReq({ remove_from: "AAA", remove_to: "BBB", replacement_text: "new" }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for empty path", () => {
-		expect(() => assertReq({ path: "", hash_bounds: ["AAA", "BBB"], new_content: "new" }))
+		expect(() => assertReq({ path: "", remove_from: "AAA", remove_to: "BBB", replacement_text: "new" }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
 	it("throws for non-string path", () => {
-		expect(() => assertReq({ path: 42, hash_bounds: ["AAA", "BBB"], new_content: "new" }))
+		expect(() => assertReq({ path: 42, remove_from: "AAA", remove_to: "BBB", replacement_text: "new" }))
 			.toThrow("[E_BAD_SHAPE]");
 	});
 
-  it("throws when new_content present but no hash_bounds", () => {
-    expect(() => assertReq({ path: "test.txt", new_content: "a" }))
-      .toThrow(/hash_bounds/);
+  it("throws when replacement_text present but no remove_from/remove_to", () => {
+    expect(() => assertReq({ path: "test.txt", replacement_text: "a" }))
+      .toThrow(/remove_from/);
   });
 
-  it("throws when hash_bounds present but no new_content", () => {
-    expect(() => assertReq({ path: "test.txt", hash_bounds: ["AAA", "BBB"] }))
-      .toThrow(/new_content/);
+  it("throws when remove_from/remove_to present but no replacement_text", () => {
+    expect(() => assertReq({ path: "test.txt", remove_from: "AAA", remove_to: "BBB" }))
+      .toThrow(/replacement_text/);
   });
 
   it("throws when neither edit field is present", () => {
     expect(() => assertReq({ path: "test.txt" }))
-      .toThrow(/hash_bounds/);
+      .toThrow(/remove_from/);
   });
 
   it("accepts the top-level edit shape", () => {
     expect(() => assertReq({
       path: "test.txt",
-      hash_bounds: ["AAA", "BBB"],
-      new_content: "new",
+      remove_from: "AAA", remove_to: "BBB",
+      replacement_text: "new",
     })).not.toThrow();
   });
 
@@ -64,8 +64,8 @@ describe("anchor validation order", () => {
 				"e1",
 				{
 					path: "does-not-exist.ts",
-					hash_bounds: ["abcd", "abcd"],
-					new_content: "x",
+					remove_from: "abcd", remove_to: "abcd",
+					replacement_text: "x",
 				},
 				undefined,
 				undefined,
@@ -82,22 +82,22 @@ describe("prepareArguments normalization", () => {
 		expect(tool.prepareArguments!("raw")).toBe("raw");
 	});
 
-	it("passes new_content through as a string", () => {
+	it("passes replacement_text through as a string", () => {
 		const tool = buildToolDef();
 		const prepared = tool.prepareArguments!({
 			path: "test.txt",
-			hash_bounds: ["AAA", "BBB"],
-			new_content: "line1\nline2",
+			remove_from: "AAA", remove_to: "BBB",
+			replacement_text: "line1\nline2",
 		}) as Record<string, unknown>;
-		expect(prepared.new_content).toBe("line1\nline2");
+		expect(prepared.replacement_text).toBe("line1\nline2");
 	});
 
 	it("normalizes file_path to path", () => {
 		const tool = buildToolDef();
 		const prepared = tool.prepareArguments!({
 			file_path: "test.txt",
-			hash_bounds: ["AAA", "BBB"],
-			new_content: "x",
+			remove_from: "AAA", remove_to: "BBB",
+			replacement_text: "x",
 		}) as Record<string, unknown>;
 		expect(prepared.path).toBe("test.txt");
 		expect("file_path" in prepared).toBe(false);

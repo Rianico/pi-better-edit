@@ -12,7 +12,7 @@ describe("replace — missing path resolution", () => {
 
       const result = await editTool.execute(
         "e1",
-        { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "AAA" },
+        { remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" },
         undefined,
         undefined,
         ctx,
@@ -38,7 +38,7 @@ describe("replace — missing path resolution", () => {
       await expect(
         editTool.execute(
           "e1",
-          { hash_bounds: [hashes[0]!, hashes[0]!], new_content: "X" },
+          { remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "X" },
           undefined,
           undefined,
           ctx,
@@ -54,7 +54,7 @@ describe("replace — missing path resolution", () => {
       await expect(
         editTool.execute(
           "e1",
-          { hash_bounds: ["AAA", "AAA"], new_content: "X" },
+          { remove_from: "AAA", remove_to: "AAA", replacement_text: "X" },
           undefined,
           undefined,
           ctx,
@@ -70,7 +70,7 @@ describe("replace — missing path resolution", () => {
 
       const result = await editTool.execute(
         "e1",
-        { hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB" },
+        { remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB" },
         undefined,
         undefined,
         ctx,

@@ -6,13 +6,14 @@ import { makeFakePiRegistry, withTempFile, useTestHome } from "../support/fixtur
 const home = useTestHome();
 
 describe("editToolSchema", () => {
-  it("has path, hash_bounds, and content_lines at top level", () => {
+  it("has path, remove_from, remove_to, and replacement_text at top level", () => {
     const schema = editToolSchema as any;
     expect(schema.type).toBe("object");
     const props = schema.properties;
     expect(props.path).toBeDefined();
-    expect(props.hash_bounds).toBeDefined();
-    expect(props.new_content).toBeDefined();
+    expect(props.remove_from).toBeDefined();
+    expect(props.remove_to).toBeDefined();
+    expect(props.replacement_text).toBeDefined();
     expect(props.changes).toBeUndefined();
     expect(schema.additionalProperties).toBe(false);
   });
@@ -34,8 +35,8 @@ describe("regReplace", () => {
     const tool = getTool("replace");
     const result = tool.prepareArguments({
       file_path: "test.txt",
-      hash_bounds: ["AAA", "BBB"],
-      new_content: "new",
+      remove_from: "AAA", remove_to: "BBB",
+      replacement_text: "new",
     });
     expect(result.path).toBe("test.txt");
     expect(result.file_path).toBeUndefined();
@@ -54,8 +55,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_bounds: [hashes[1]!, hashes[1]!],
-          new_content: "BBB",
+          remove_from: hashes[1]!, remove_to: hashes[1]!,
+          replacement_text: "BBB",
         },
         undefined,
         undefined,
@@ -78,8 +79,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_bounds: [hashes[1]!, hashes[2]!],
-          new_content: "BBB\nCCC",
+          remove_from: hashes[1]!, remove_to: hashes[2]!,
+          replacement_text: "BBB\nCCC",
         },
         undefined,
         undefined,
@@ -102,8 +103,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_bounds: [hashes[1]!, hashes[1]!],
-          new_content: "",
+          remove_from: hashes[1]!, remove_to: hashes[1]!,
+          replacement_text: "",
         },
         undefined,
         undefined,
@@ -126,8 +127,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_bounds: [hashes[1]!, hashes[1]!],
-          new_content: "bbb",
+          remove_from: hashes[1]!, remove_to: hashes[1]!,
+          replacement_text: "bbb",
         },
         undefined,
         undefined,
@@ -150,8 +151,8 @@ describe("regReplace", () => {
           "e1",
           {
             path: "sample.txt",
-            hash_bounds: ["ZZZ", "ZZZ"],
-            new_content: "x",
+            remove_from: "ZZZ", remove_to: "ZZZ",
+            replacement_text: "x",
           },
           undefined,
           undefined,
@@ -173,8 +174,8 @@ describe("regReplace", () => {
           "e1",
           {
             path: "sample.txt",
-            hash_bounds: [hashes[0]!, hashes[1]!],
-            new_content: "",
+            remove_from: hashes[0]!, remove_to: hashes[1]!,
+            replacement_text: "",
           },
           undefined,
           undefined,
@@ -196,8 +197,8 @@ describe("regReplace", () => {
           "e1",
           {
             path: "sample.txt",
-            hash_bounds: [hashes[1]!, hashes[1]!],
-            new_content: "BBB",
+            remove_from: hashes[1]!, remove_to: hashes[1]!,
+            replacement_text: "BBB",
             unknown_field: "bad",
           } as any,
           undefined,
@@ -219,8 +220,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "sample.txt",
-          hash_bounds: [hashes[1]!, hashes[1]!],
-          new_content: "BBB",
+          remove_from: hashes[1]!, remove_to: hashes[1]!,
+          replacement_text: "BBB",
         },
         undefined,
         undefined,
@@ -243,8 +244,8 @@ describe("regReplace", () => {
         "e1",
         {
           path: "crlf.txt",
-          hash_bounds: [hashes[1]!, hashes[1]!],
-          new_content: "BETA",
+          remove_from: hashes[1]!, remove_to: hashes[1]!,
+          replacement_text: "BETA",
         },
         undefined,
         undefined,

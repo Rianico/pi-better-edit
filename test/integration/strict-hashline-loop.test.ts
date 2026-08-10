@@ -17,7 +17,7 @@ describe("strict hashline tool loop", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [betaRef, betaRef], new_content: "BETA",
+          remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA",
         },
         undefined,
         undefined,
@@ -29,7 +29,7 @@ describe("strict hashline tool loop", () => {
           "e2",
           {
             path: "sample.ts",
-            hash_bounds: [betaRef, betaRef], new_content: "BETA-AGAIN",
+            remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA-AGAIN",
           },
           undefined,
           undefined,
@@ -48,7 +48,7 @@ describe("strict hashline tool loop", () => {
         "e3",
         {
           path: "sample.ts",
-          hash_bounds: [freshRef, freshRef], new_content: "BETA-AGAIN",
+          remove_from: freshRef, remove_to: freshRef, replacement_text: "BETA-AGAIN",
         },
         undefined,
         undefined,
@@ -67,7 +67,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e1",
-        { path: "empty.ts", hash_bounds: [emptyHash, emptyHash], new_content: "first\nsecond" },
+        { path: "empty.ts", remove_from: emptyHash, remove_to: emptyHash, replacement_text: "first\nsecond" },
         undefined,
         undefined,
         ctx,
@@ -92,7 +92,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "crlf.ts", hash_bounds: [betaRef, betaRef], new_content: "BETA" },
+        { path: "crlf.ts", remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA" },
         undefined,
         undefined,
         ctx,
@@ -118,7 +118,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "lf.ts", hash_bounds: [betaRef, betaRef], new_content: "BETA" },
+        { path: "lf.ts", remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA" },
         undefined,
         undefined,
         ctx,
@@ -149,7 +149,7 @@ describe("UTF-8 BOM handling", () => {
 
       await editTool.execute(
         "e1",
-        { path: "bom.ts", hash_bounds: [betaRef, betaRef], new_content: "BETA" },
+        { path: "bom.ts", remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA" },
         undefined,
         undefined,
         ctx,

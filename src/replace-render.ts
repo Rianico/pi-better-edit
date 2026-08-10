@@ -32,14 +32,19 @@ export function getPreviewInput(
 		return null;
 	}
 
-	if (!Array.isArray(normalized.hash_bounds) || typeof normalized.new_content !== "string") {
+	if (
+		typeof normalized.remove_from !== "string" ||
+		typeof normalized.remove_to !== "string" ||
+		typeof normalized.replacement_text !== "string"
+	) {
 		return null;
 	}
 
 	const request: ReqParams = {
 		path: normalized.path,
-		hash_bounds: normalized.hash_bounds as [string, string],
-		new_content: normalized.new_content,
+		remove_from: normalized.remove_from,
+		remove_to: normalized.remove_to,
+		replacement_text: normalized.replacement_text,
 	};
 	return request;
 }

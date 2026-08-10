@@ -23,7 +23,7 @@ describe("file kind guards in tools", () => {
         "e1",
         {
           path: "bad-utf.ts",
-          hash_bounds: [intRef, intRef], new_content: "long",
+          remove_from: intRef, remove_to: intRef, replacement_text: "long",
         },
         undefined,
         undefined,
@@ -44,7 +44,7 @@ describe("file kind guards in tools", () => {
           "e1",
           {
             path: "image.png",
-            hash_bounds: ["AAA", "BBB"], new_content: "x",
+            remove_from: "AAA", remove_to: "BBB", replacement_text: "x",
           },
           undefined,
           undefined,
@@ -64,7 +64,7 @@ describe("file kind guards in tools", () => {
           "e1",
           {
             path: "utf16.txt",
-            hash_bounds: ["AAA", "BBB"], new_content: "x",
+            remove_from: "AAA", remove_to: "BBB", replacement_text: "x",
           },
           undefined,
           undefined,
@@ -84,7 +84,7 @@ describe("file kind guards in tools", () => {
           "e1",
           {
             path: "mydir",
-            hash_bounds: ["AAA", "BBB"], new_content: "x",
+            remove_from: "AAA", remove_to: "BBB", replacement_text: "x",
           },
           undefined,
           undefined,
@@ -104,7 +104,7 @@ describe("file kind guards in tools", () => {
           "e1",
           {
             path: "empty.txt",
-            hash_bounds: [hashes[0]!, hashes[0]!], new_content: "",
+            remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "",
           },
           undefined,
           undefined,

@@ -39,8 +39,9 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-  new_content: string;
-  hash_bounds: [string, string];
+  replacement_text: string;
+  remove_from: string;
+  remove_to: string;
 };
 
 function resAnchorFromMap(
@@ -88,7 +89,7 @@ export function fmtMismatch(
   const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
   if (notFound.length > 0) {
     out.push(
-      `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_bounds of your next replace call.`
+      `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into remove_from and remove_to of your next replace call.`
     );
     for (const m of notFound) {
       const ctx = m.context;
@@ -106,7 +107,7 @@ export function fmtMismatch(
   if (ambiguous.length > 0) {
     if (out.length > 0) out.push("");
     out.push(
-      `[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into hash_bounds of your next replace call.`
+      `[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into remove_from and remove_to of your next replace call.`
     );
     for (const m of ambiguous) {
       const sample = (m.candidates ?? []).slice(0, 5);
@@ -129,33 +130,30 @@ export function fmtMismatch(
   return out.join("\n");
 }
 
-const ITEM_KS = new Set(["new_content", "hash_bounds"]);
-
-function isStrPair(value: unknown): value is [string, string] {
-	return (
-		Array.isArray(value) &&
-		value.length === 2 &&
-		value.every((item) => typeof item === "string")
-	);
-}
+const ITEM_KS = new Set(["replacement_text", "remove_from", "remove_to"]);
 
 function assertItem(edit: Record<string, unknown>): void {
-  rejectUnknownFields(edit, ITEM_KS, "Edit", "The edit takes only { new_content, hash_bounds }.");
+  rejectUnknownFields(edit, ITEM_KS, "Edit", "The edit takes only { replacement_text, remove_from, remove_to }.");
 
-  if ("hash_bounds" in edit && !isStrPair(edit.hash_bounds)) {
+  if ("remove_from" in edit && typeof edit.remove_from !== "string") {
     throw new Error(
-      `[E_BAD_SHAPE] Field "hash_bounds" must be a pair of anchor strings [start, end].`,
+      `[E_BAD_SHAPE] Field "remove_from" must be an anchor string (3-char hash).`,
     );
   }
-  if (!("new_content" in edit)) {
-    throw new Error(`[E_BAD_SHAPE] The edit requires a "new_content" field. Provide the replacement text (use "" to delete).`);
+  if ("remove_to" in edit && typeof edit.remove_to !== "string") {
+    throw new Error(
+      `[E_BAD_SHAPE] Field "remove_to" must be an anchor string (3-char hash).`,
+    );
   }
-  if (typeof edit.new_content !== "string") {
+  if (!("replacement_text" in edit)) {
+    throw new Error(`[E_BAD_SHAPE] The edit requires a "replacement_text" field. Provide the replacement text (use "" to delete).`);
+  }
+  if (typeof edit.replacement_text !== "string") {
     throw new Error(NEW_CONTENT_NOT_STRING_MSG);
   }
-  if (!isStrPair(edit.hash_bounds)) {
+  if (typeof edit.remove_from !== "string" || typeof edit.remove_to !== "string") {
     throw new Error(
-      `[E_BAD_SHAPE] The edit requires a "hash_bounds" pair of anchor strings [start, end].`,
+      `[E_BAD_SHAPE] The edit requires "remove_from" and "remove_to" anchor strings (3-char hashes from read output).`,
     );
   }
 }
@@ -165,18 +163,18 @@ const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
 export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
   assertItem(edit as Record<string, unknown>);
 
-  const replaceLines = parseText(edit.new_content);
-  const bounds = edit.hash_bounds.map((ref) => {
+  const replaceLines = parseText(edit.replacement_text);
+  const bounds = [edit.remove_from, edit.remove_to].map((ref) => {
     const trimmed = ref.trim();
     const match = trimmed.match(ANCHOR_ROW_RE);
     if (match) {
       let message: string;
       if (match[1] === "+") {
-        message = `[E_BAD_REF] Autocorrected: stripped diff-preview marker copied from the diff preview in hash_bounds entry "${trimmed}".`;
+        message = `[E_BAD_REF] Autocorrected: stripped diff-preview marker copied from the diff preview in remove_from/remove_to entry "${trimmed}".`;
       } else if (match[1] === "-") {
-        message = `[E_BAD_REF] Autocorrected: stripped leading "-" marker in hash_bounds entry "${trimmed}".`;
+        message = `[E_BAD_REF] Autocorrected: stripped leading "-" marker in remove_from/remove_to entry "${trimmed}".`;
       } else {
-        message = `[E_BAD_REF] Autocorrected: stripped "HASH│" prefix copied from read output in hash_bounds entry "${trimmed}".`;
+        message = `[E_BAD_REF] Autocorrected: stripped "HASH│" prefix copied from read output in remove_from/remove_to entry "${trimmed}".`;
       }
       warnings?.push(message);
       return match[2]!;
@@ -215,7 +213,7 @@ export function stripBarePrefixes(
 	});
 	if (stripped.length === 0) return edit;
 	const locations = stripped
-		.map((s) => `new_content line ${s.lineIndex + 1}`)
+		.map((s) => `replacement_text line ${s.lineIndex + 1}`)
 		.join(", ");
 	const matchedCount = stripped.filter((s) => s.matched).length;
 	const evidence =
@@ -251,7 +249,7 @@ export function stripDiffPrefixes(
 		return line;
 	});
 	if (stripped.length === 0) return edit;
-	const locations = stripped.map((i) => `new_content line ${i + 1}`).join(", ");
+	const locations = stripped.map((i) => `replacement_text line ${i + 1}`).join(", ");
 	warnings.push(
 		`[E_INVALID_PATCH] Autocorrected: stripped diff-preview marker copied from the diff preview in ${locations}.`
 	);
@@ -278,7 +276,7 @@ export function swapReversedRanges(
 		return edit;
 	}
 	warnings.push(
-		`[E_BAD_OP] Autocorrected: hash_bounds was reversed (start ${startRef.hash} is after end ${endRef.hash}); swapped the pair.`
+		`[E_BAD_OP] Autocorrected: remove_from and remove_to were reversed (remove_from ${startRef.hash} is after remove_to ${endRef.hash}); swapped the pair.`
 	);
 	return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }

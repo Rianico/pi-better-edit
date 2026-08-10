@@ -12,22 +12,22 @@ describe("normReq", () => {
 	it("returns object input unchanged when no normalization needed", () => {
 		const input = {
 			path: "src/main.ts",
-			hash_bounds: ["aB3", "aB3"],
-			new_content: "new",
+			remove_from: "aB3", remove_to: "aB3",
+			replacement_text: "new",
 		};
 		const result = normReq(input);
 		expect(result).toEqual(input);
 	});
 
 	it("normalizes file_path to path", () => {
-		const input = { file_path: "test.txt", hash_bounds: ["AAA", "BBB"], new_content: "new" };
+		const input = { file_path: "test.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new" };
 		const result = normReq(input) as Record<string, unknown>;
 		expect(result.path).toBe("test.txt");
 		expect(result.file_path).toBeUndefined();
 	});
 
 	it("does not overwrite existing path with file_path", () => {
-		const input = { path: "original.txt", file_path: "alias.txt", hash_bounds: ["AAA", "BBB"], new_content: "new" };
+		const input = { path: "original.txt", file_path: "alias.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new" };
 		const result = normReq(input) as Record<string, unknown>;
 		expect(result.path).toBe("original.txt");
 	});
@@ -43,7 +43,7 @@ describe("normReq", () => {
 	});
 
 	it("preserves other fields", () => {
-		const input = { path: "test.txt", hash_bounds: ["AAA", "BBB"], new_content: "new", custom: "value" };
+		const input = { path: "test.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new", custom: "value" };
 		const result = normReq(input) as Record<string, unknown>;
 		expect(result.custom).toBe("value");
 	});
@@ -51,50 +51,54 @@ describe("normReq", () => {
 	it("does not mutate the original input", () => {
 		const input = {
 			file_path: "src/main.ts",
-			hash_bounds: ["AAA", "BBB"],
-			new_content: "x",
+			remove_from: "AAA", remove_to: "BBB",
+			replacement_text: "x",
 		};
 		const originalFilePath = input.file_path;
-		const originalNewContent = input.new_content;
+		const originalNewContent = input.replacement_text;
 		normReq(input);
 		expect(input.file_path).toBe(originalFilePath);
-		expect(input.new_content).toBe(originalNewContent);
+		expect(input.replacement_text).toBe(originalNewContent);
 	});
 });
 
 describe("normReq — top-level shape", () => {
-	it("keeps hash_bounds and new_content at top level", () => {
+	it("keeps remove_from/remove_to and replacement_text at top level", () => {
 		const input = {
 			path: "test.txt",
-			hash_bounds: ["AAA", "BBB"],
-			new_content: "new line",
+			remove_from: "AAA", remove_to: "BBB",
+			replacement_text: "new line",
 		};
 		const result = normReq(input) as Record<string, unknown>;
-		expect(result.hash_bounds).toEqual(["AAA", "BBB"]);
-		expect(result.new_content).toEqual("new line");
+		expect(result.remove_from).toEqual("AAA");
+		expect(result.remove_to).toEqual("BBB");
+		expect(result.replacement_text).toEqual("new line");
 	});
 
 	it("handles flat format with file_path alias", () => {
 		const input = {
 			file_path: "src/main.ts",
-			hash_bounds: ["AAA", "BBB"],
-			new_content: "new",
+			remove_from: "AAA", remove_to: "BBB",
+			replacement_text: "new",
 		};
 		const result = normReq(input) as Record<string, unknown>;
 		expect(result.path).toBe("src/main.ts");
-		expect(result.hash_bounds).toEqual(["AAA", "BBB"]);
+		expect(result.remove_from).toEqual("AAA");
+		expect(result.remove_to).toEqual("BBB");
 	});
 
 	it("does not mutate the original flat-format input", () => {
 		const input = {
 			path: "test.txt",
-			hash_bounds: ["AAA", "BBB"],
-			new_content: "new",
+			remove_from: "AAA", remove_to: "BBB",
+			replacement_text: "new",
 		};
-		const origHb = input.hash_bounds;
-		const origNc = input.new_content;
+		const origFrom = input.remove_from;
+		const origTo = input.remove_to;
+		const origNc = input.replacement_text;
 		normReq(input);
-		expect(input.hash_bounds).toBe(origHb);
-		expect(input.new_content).toBe(origNc);
+		expect(input.remove_from).toBe(origFrom);
+		expect(input.remove_to).toBe(origTo);
+		expect(input.replacement_text).toBe(origNc);
 	});
 });

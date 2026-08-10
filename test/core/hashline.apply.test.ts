@@ -442,53 +442,45 @@ describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
 });
 
 describe("applyEdit — trailing blank lines (no trailing-newline special case)", () => {
-  it("preserves a trailing blank line when new_content mirrors it with a trailing newline", async () => {
+  it("preserves a trailing blank line when replacement_text mirrors it with a trailing newline", async () => {
     const content = "def a():\n    pass\n\ndef b():\n    pass\n";
     const edit = resEdit({
-      hash_bounds: [
-        (await makeTag(content, 1, home.testPath)).hash,
-        (await makeTag(content, 3, home.testPath)).hash,
-      ],
-      new_content: "def a():\n    return 1\n",
+      remove_from: (await makeTag(content, 1, home.testPath)).hash,
+      remove_to: (await makeTag(content, 3, home.testPath)).hash,
+      replacement_text: "def a():\n    return 1\n",
     });
     const result = applyEdit(content, edit);
     expect(result.content).toBe("def a():\n    return 1\n\ndef b():\n    pass\n");
   });
 
-  it("preserves two trailing blank lines when new_content mirrors them", async () => {
+  it("preserves two trailing blank lines when replacement_text mirrors them", async () => {
     const content = "def a():\n    pass\n\n\ndef b():\n";
     const edit = resEdit({
-      hash_bounds: [
-        (await makeTag(content, 1, home.testPath)).hash,
-        (await makeTag(content, 4, home.testPath)).hash,
-      ],
-      new_content: "def a():\n    return 1\n\n",
+      remove_from: (await makeTag(content, 1, home.testPath)).hash,
+      remove_to: (await makeTag(content, 4, home.testPath)).hash,
+      replacement_text: "def a():\n    return 1\n\n",
     });
     const result = applyEdit(content, edit);
     expect(result.content).toBe("def a():\n    return 1\n\n\ndef b():\n");
   });
 
-  it("drops a trailing blank line when new_content does not mirror it", async () => {
+  it("drops a trailing blank line when replacement_text does not mirror it", async () => {
     const content = "def a():\n    pass\n\ndef b():\n";
     const edit = resEdit({
-      hash_bounds: [
-        (await makeTag(content, 1, home.testPath)).hash,
-        (await makeTag(content, 3, home.testPath)).hash,
-      ],
-      new_content: "def a():\n    return 1",
+      remove_from: (await makeTag(content, 1, home.testPath)).hash,
+      remove_to: (await makeTag(content, 3, home.testPath)).hash,
+      replacement_text: "def a():\n    return 1",
     });
     const result = applyEdit(content, edit);
     expect(result.content).toBe("def a():\n    return 1\ndef b():\n");
   });
 
-  it("adds a trailing blank line for a normal range when new_content ends with a newline", async () => {
+  it("adds a trailing blank line for a normal range when replacement_text ends with a newline", async () => {
     const content = "aaa\nbbb\nccc\n";
     const edit = resEdit({
-      hash_bounds: [
-        (await makeTag(content, 2, home.testPath)).hash,
-        (await makeTag(content, 2, home.testPath)).hash,
-      ],
-      new_content: "X\n",
+      remove_from: (await makeTag(content, 2, home.testPath)).hash,
+      remove_to: (await makeTag(content, 2, home.testPath)).hash,
+      replacement_text: "X\n",
     });
     const result = applyEdit(content, edit);
     expect(result.content).toBe("aaa\nX\n\nccc\n");

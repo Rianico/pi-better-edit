@@ -14,7 +14,7 @@ describe("edit tool noop + warnings", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [hashes[1]!, hashes[1]!], new_content: "bbb",
+          remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "bbb",
         },
         undefined,
         undefined,
@@ -33,7 +33,7 @@ describe("edit tool noop + warnings", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [hashes[1]!, hashes[1]!], new_content: "BBB\nccc",
+          remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB\nccc",
         },
         undefined,
         undefined,

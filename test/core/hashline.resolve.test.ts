@@ -6,15 +6,15 @@ import {
 } from "../../src/hashline";
 
 describe("resEdit", () => {
-	it("resolves replace with hash_bounds", () => {
-		const edit: HTEdit = { hash_bounds: ["ZZP", "PPW"], new_content: "a\nb" };
+	it("resolves replace with remove_from/remove_to", () => {
+		const edit: HTEdit = { remove_from: "ZZP", remove_to: "PPW", replacement_text: "a\nb" };
 		const resolved = resEdit(edit);
 		expect(resolved).toHaveProperty("hash_bounds");
 		expect(resolved).toHaveProperty("content_lines");
 	});
 
 	it("resolves a 1-line replace (same anchor)", () => {
-		const edit: HTEdit = { hash_bounds: ["MQX", "MQX"], new_content: "new" };
+		const edit: HTEdit = { remove_from: "MQX", remove_to: "MQX", replacement_text: "new" };
 		const resolved = resEdit(edit);
 		const r = resolved as {
 			hash_bounds: [Anchor, Anchor];
@@ -24,48 +24,48 @@ describe("resEdit", () => {
 		expect(r.hash_bounds[1].hash).toBe("MQX");
 	});
 
-	it("throws on replace with no hash_bounds (E_BAD_SHAPE)", () => {
-    const edit = { new_content: "new" } as any;
+	it("throws on replace with no remove_from/remove_to (E_BAD_SHAPE)", () => {
+    const edit = { replacement_text: "new" } as any;
 		expect(() => resEdit(edit)).toThrow(/^\[E_BAD_SHAPE\]/);
 	});
 
-	it("throws on malformed hash_bounds", () => {
-		const edit: HTEdit = { hash_bounds: ["not-valid", "not-valid"], new_content: "x" };
+	it("throws on malformed remove_from/remove_to", () => {
+		const edit: HTEdit = { remove_from: "not-valid", remove_to: "not-valid", replacement_text: "x" };
 		expect(() => resEdit(edit)).toThrow(/Invalid anchor/);
 	});
 
-  it("rejects array new_content input", () => {
+  it("rejects array replacement_text input", () => {
     const edit = {
-      hash_bounds: ["ZZP", "ZZP"],
-      new_content: ["hello", "world"],
+      remove_from: "ZZP", remove_to: "ZZP",
+      replacement_text: ["hello", "world"],
     } as unknown as HTEdit;
     expect(() => resEdit(edit)).toThrow(
       /must be a string with \\n line separators, not an array/i,
     );
   });
 
-  it("splits string new_content on line separators", () => {
+  it("splits string replacement_text on line separators", () => {
     const edit = {
-      hash_bounds: ["ZZP", "ZZP"],
-      new_content: "line1\nline2\n",
+      remove_from: "ZZP", remove_to: "ZZP",
+      replacement_text: "line1\nline2\n",
     } as unknown as HTEdit;
     const resolved = resEdit(edit);
     expect(resolved.content_lines).toEqual(["line1", "line2", ""]);
   });
 
-  it("normalizes CRLF in new_content", () => {
+  it("normalizes CRLF in replacement_text", () => {
     const edit = {
-      hash_bounds: ["ZZP", "ZZP"],
-      new_content: "a\r\nb",
+      remove_from: "ZZP", remove_to: "ZZP",
+      replacement_text: "a\r\nb",
     } as unknown as HTEdit;
     const resolved = resEdit(edit);
     expect(resolved.content_lines).toEqual(["a", "b"]);
   });
 
-	it("rejects null new_content input", () => {
+	it("rejects null replacement_text input", () => {
 		const edit = {
-			hash_bounds: ["ZZP", "ZZP"],
-      new_content: null,
+			remove_from: "ZZP", remove_to: "ZZP",
+      replacement_text: null,
 		} as unknown as HTEdit;
 		expect(() => resEdit(edit)).toThrow(
       /must be a string with \\n line separators, not an array/i,
@@ -73,21 +73,21 @@ describe("resEdit", () => {
 	});
 
 	it("rejects unknown fields", () => {
-    const edit = { hash_bounds: ["ZZP", "ZZP"], new_content: "x", extra: true } as any;
+    const edit = { remove_from: "ZZP", remove_to: "ZZP", replacement_text: "x", extra: true } as any;
 		expect(() => resEdit(edit)).toThrow(
 			/unknown or unsupported fields/i,
 		);
 	});
 
-	it("rejects missing new_content", () => {
-		const edit = { hash_bounds: ["ZZP", "ZZP"] } as any;
+	it("rejects missing replacement_text", () => {
+		const edit = { remove_from: "ZZP", remove_to: "ZZP" } as any;
 		expect(() => resEdit(edit)).toThrow(
-      /requires a "new_content" field/i,
+      /requires a "replacement_text" field/i,
 		);
 	});
 
-	it("strips a HASH│content row pasted into hash_bounds with a warning", () => {
-		const edit: HTEdit = { hash_bounds: ["MQX│const x = 1;", "MQX│const x = 1;"], new_content: "new" };
+	it("strips a HASH│content row pasted into remove_from/remove_to with a warning", () => {
+		const edit: HTEdit = { remove_from: "MQX│const x = 1;", remove_to: "MQX│const x = 1;", replacement_text: "new" };
 		const warnings: string[] = [];
 		const resolved = resEdit(edit, warnings);
 		expect(resolved.hash_bounds[0].hash).toBe("MQX");
@@ -95,11 +95,11 @@ describe("resEdit", () => {
 		expect(warnings).toHaveLength(2);
 		expect(warnings[0]).toMatch(/^\[E_BAD_REF\]/);
 		expect(warnings[0]).toContain('stripped "HASH│" prefix');
-		expect(warnings[0]).toContain("hash_bounds entry");
+		expect(warnings[0]).toContain("remove_from/remove_to entry");
 	});
 
-	it("strips diff-preview rows pasted into hash_bounds with a warning", () => {
-		const edit: HTEdit = { hash_bounds: ["+MQX│const x = 1;", "-MQX│const x = 1;"], new_content: "new" };
+	it("strips diff-preview rows pasted into remove_from/remove_to with a warning", () => {
+		const edit: HTEdit = { remove_from: "+MQX│const x = 1;", remove_to: "-MQX│const x = 1;", replacement_text: "new" };
 		const warnings: string[] = [];
 		const resolved = resEdit(edit, warnings);
 		expect(resolved.hash_bounds[0].hash).toBe("MQX");
@@ -111,7 +111,7 @@ describe("resEdit", () => {
 	});
 
 	it("leaves bare anchors untouched and emits no warning", () => {
-		const edit: HTEdit = { hash_bounds: ["MQX", "MQX"], new_content: "new" };
+		const edit: HTEdit = { remove_from: "MQX", remove_to: "MQX", replacement_text: "new" };
 		const warnings: string[] = [];
 		const resolved = resEdit(edit, warnings);
 		expect(resolved.hash_bounds[0].hash).toBe("MQX");
@@ -119,7 +119,7 @@ describe("resEdit", () => {
 	});
 
 	it("still rejects rows without a leading hash", () => {
-		const edit: HTEdit = { hash_bounds: ["│const x = 1;", "MQX"], new_content: "new" };
+		const edit: HTEdit = { remove_from: "│const x = 1;", remove_to: "MQX", replacement_text: "new" };
 		expect(() => resEdit(edit)).toThrow(/^\[E_BAD_REF\]/);
 	});
 });

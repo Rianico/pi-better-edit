@@ -28,8 +28,9 @@ kQm│}
 ```json
 {
   "path": "src/main.ts",
-  "hash_bounds": ["szJ", "szJ"],
-  "new_content": "  console.log('hi');"
+  "remove_from": "szJ",
+  "remove_to": "szJ",
+  "replacement_text": "  console.log('hi');"
 }
 ```
 
@@ -73,25 +74,27 @@ Edge cases:
 
 The built-in `edit` tool is disabled. `replace` is the only edit path, and it takes the hash anchors from `read` output.
 
-One edit per call, with `hash_bounds` and `new_content` at the top level:
+One edit per call, with `remove_from`, `remove_to`, and `replacement_text` at the top level:
 
 ```json
 {
   "path": "src/main.ts",
-  "hash_bounds": ["szJ", "kQm"],
-  "new_content": "  console.log('hi');\n}"
+  "remove_from": "szJ",
+  "remove_to": "kQm",
+  "replacement_text": "  console.log('hi');\n}"
 }
 ```
 
 | Field | Description |
 | --- | --- |
-| `hash_bounds` | Pair of 3-char hashes from `read` output marking the first and last line of the range to replace (inclusive). |
-| `new_content` | Replacement content as a single string with `\n` line separators; every `\n` separates lines, so a trailing `\n` adds a final empty line — mirror the replaced range's lines exactly, blank lines included (a replacement that is only blank lines is written as one `\n` per blank line). Use `""` to delete the range. |
+| `remove_from` | 3-char hash from `read` output marking the FIRST line to remove (inclusive). |
+| `remove_to` | 3-char hash from `read` output marking the LAST line to remove (inclusive). |
+| `replacement_text` | Replacement text as a single string with `\n` line separators; every `\n` separates lines, so a trailing `\n` adds a final empty line — mirror the removed lines exactly, blank lines included (a replacement that is only blank lines is written as one `\n` per blank line). Use `""` to delete the range. |
 
 Notes:
 
 - The request is checked before any file I/O, so a bad request never touches the file.
-- Common copy-paste slips are fixed automatically and reported: a leftover `HASH│` prefix in `new_content` or `hash_bounds`, diff-preview rows pasted into the replacement, a reversed range, or a boundary line pasted twice. New lines that re-include a block adjacent to the range are stripped automatically when that block is unique in the file — the whole run is stripped as one unit (including repeated structural lines like `}`), so re-including an unchanged block next to the range never duplicates it. A missing `path` is resolved from the anchors when they uniquely identify a file in the hash store (reported as a warning); when the anchors match multiple known files the request is rejected with the candidate paths named. `file_path` works as an alias for `path` in all three tools.
+- Common copy-paste slips are fixed automatically and reported: a leftover `HASH│` prefix in `replacement_text` or `remove_from`/`remove_to`, diff-preview rows pasted into the replacement, a reversed range, or a boundary line pasted twice. New lines that re-include a block adjacent to the range are stripped automatically when that block is unique in the file — the whole run is stripped as one unit (including repeated structural lines like `}`), so re-including an unchanged block next to the range never duplicates it. A missing `path` is resolved from the anchors when they uniquely identify a file in the hash store (reported as a warning); when the anchors match multiple known files the request is rejected with the candidate paths named. `file_path` works as an alias for `path` in all three tools.
 - An edit that produces identical content reports `No changes made` and leaves the anchors alone.
 - After a successful edit you get the post-edit diff with fresh anchors, so you can keep editing without re-reading.
 - Do not issue multiple replace calls on the same file in one message; parallel edits split attention across the post-edit diffs and removed lines are easy to miss. Verify each diff before the next edit on that file.
@@ -150,12 +153,12 @@ A no-op replace never changes the file, so anchors remain valid. On first run af
 
 | Code | Meaning |
 | --- | --- |
-| `[E_BAD_SHAPE]` | Request envelope or edit item has unknown, missing, or wrongly-typed fields (for example `new_content` must be a string with `\n` line separators). |
-| `[E_BAD_REF]` | An anchor in `hash_bounds` is not a bare 3-char hash. |
+| `[E_BAD_SHAPE]` | Request envelope or edit item has unknown, missing, or wrongly-typed fields (for example `replacement_text` must be a string with `\n` line separators). |
+| `[E_BAD_REF]` | An anchor in `remove_from`/`remove_to` is not a bare 3-char hash. |
 | `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; call `read` for fresh anchors. |
 | `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
-| `[E_INVALID_PATCH]` | A `new_content` line is a diff-preview row (`+HASH│`, `-HASH│`, `-   │`). The marker is stripped automatically with a warning. |
-| `[E_BARE_HASH_PREFIX]` | A `new_content` line starts with a hash-like `HASH│` prefix. The prefix is stripped automatically with a warning. |
+| `[E_INVALID_PATCH]` | A `replacement_text` line is a diff-preview row (`+HASH│`, `-HASH│`, `-   │`). The marker is stripped automatically with a warning. |
+| `[E_BARE_HASH_PREFIX]` | A `replacement_text` line starts with a hash-like `HASH│` prefix. The prefix is stripped automatically with a warning. |
 | `[E_BAD_OP]` | Range start line is after range end line. The pair is swapped automatically with a warning. |
 | `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |

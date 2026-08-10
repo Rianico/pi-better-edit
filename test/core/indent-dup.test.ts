@@ -9,7 +9,7 @@ describe("indentation difference in boundary auto-fix", () => {
     const file = "  foo\nbar\n  baz";
     const hashes = await lineHashes(file, home.testPath);
     const result = applyEdit(file, resEdit(
-      { hash_bounds: [hashes[1]!, hashes[1]!], new_content: "  foo\n  bar" },
+      { remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "  foo\n  bar" },
     ));
     expect(result.content).toBe("  foo\n  bar\n  baz");
     expect(result.autoFixes).toHaveLength(1);
@@ -20,7 +20,7 @@ describe("indentation difference in boundary auto-fix", () => {
     const file = "  foo\n  bar\n  baz";
     const hashes = await lineHashes(file, home.testPath);
     const result = applyEdit(file, resEdit(
-      { hash_bounds: [hashes[1]!, hashes[1]!], new_content: "  foo\n  new" },
+      { remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "  foo\n  new" },
     ));
     expect(result.content).toBe("  foo\n  new\n  baz");
     expect(result.autoFixes).toHaveLength(1);

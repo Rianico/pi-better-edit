@@ -17,7 +17,7 @@ describe("snapshotId surface (details-only after W2)", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [betaRef, betaRef], new_content: "BETA",
+          remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA",
         },
         undefined,
         undefined,
@@ -41,7 +41,7 @@ describe("snapshotId surface (details-only after W2)", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [betaRef, betaRef], new_content: "BETA",
+          remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA",
         },
         undefined,
         undefined,
@@ -66,7 +66,7 @@ describe("snapshotId surface (details-only after W2)", () => {
         "e1",
         {
           path: "sample.ts",
-          hash_bounds: [betaRef, betaRef], new_content: "BETA",
+          remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA",
         },
         undefined,
         undefined,
@@ -78,7 +78,7 @@ describe("snapshotId surface (details-only after W2)", () => {
           "e2",
           {
             path: "sample.ts",
-            hash_bounds: [betaRef, betaRef], new_content: "BETA-AGAIN",
+            remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA-AGAIN",
           },
           undefined,
           undefined,
