@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFile, writeFile } from "fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { lineHashes } from "../../src/hashline";
 import { compPreview } from "../../src/replace";
@@ -121,6 +122,67 @@ describe("compPreview no-persist guarantee", () => {
       const remaining = check.prepare("SELECT COUNT(*) AS n FROM snapshots WHERE path = ?").get(absolutePath) as { n: number };
       check.close();
       expect(remaining.n).toBe(1);
+    });
+  });
+
+  it("previewing a drifted range does not record serves — the same edit still rejects", async () => {
+    const content = "alpha\nbeta\ngamma\n";
+    await withTempFile("sample.txt", content, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const firstRead = await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      const firstText = firstRead.content[0].text as string;
+      const lines = firstText.split("\n");
+      const alphaRef = lines.find((l: string) => l.includes("│alpha"))!.split("│")[0]!;
+      const gammaRef = lines.find((l: string) => l.includes("│gamma"))!.split("│")[0]!;
+
+      await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
+
+      const preview = await compPreview(
+        { path: "sample.txt", remove_from: alphaRef, remove_to: gammaRef, replacement_text: "X" },
+        cwd,
+      );
+      expect(preview).toHaveProperty("error");
+
+      await expect(
+        editTool.execute(
+          "e1",
+          { path: "sample.txt", remove_from: alphaRef, remove_to: gammaRef, replacement_text: "X" },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/\[E_RANGE_STALE\]/);
+      expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
+    });
+  });
+
+  it("previewing over never-served lines does not make them served — the same edit still rejects", async () => {
+    const content = "alpha\nbeta\ngamma\ndelta\n";
+    await withTempFile("sample.txt", content, async ({ cwd }) => {
+      const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
+        await (await import("../../src/paths")).toCwd("sample.txt", cwd)
+      );
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt", offset: 1, limit: 1 }, undefined, undefined, ctx);
+      await readTool.execute("r2", { path: "sample.txt", offset: 4, limit: 1 }, undefined, undefined, ctx);
+      const hashes = await lineHashes(content, absolutePath);
+
+      const preview = await compPreview(
+        { path: "sample.txt", remove_from: hashes[0]!, remove_to: hashes[3]!, replacement_text: "X" },
+        cwd,
+      );
+      expect(preview).toHaveProperty("error");
+      expect((preview as { error: string }).error).toMatch(/\[E_RANGE_UNSERVED\]/);
+
+      await expect(
+        editTool.execute(
+          "e1",
+          { path: "sample.txt", remove_from: hashes[0]!, remove_to: hashes[3]!, replacement_text: "X" },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/\[E_RANGE_UNSERVED\]/);
     });
   });
 });

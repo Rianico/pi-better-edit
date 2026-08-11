@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import { writeFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { compPreview, buildToolDef, reuseText, reuseMarkdown } from "../../src/replace";
 import register from "../../index";
@@ -111,6 +112,79 @@ describe("compPreview", () => {
   });
 });
 
+describe("compPreview — served-state staleness surfacing", () => {
+  it("returns [E_RANGE_STALE] with the current range for a drifted interior", async () => {
+    await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstText = firstRead.content[0].text as string;
+      const lines = firstText.split("\n");
+      const alphaRef = lines.find((l: string) => l.includes("│alpha"))!.split("│")[0]!;
+      const gammaRef = lines.find((l: string) => l.includes("│gamma"))!.split("│")[0]!;
+
+      await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
+
+      const preview = await compPreview(
+        { path: "sample.ts", remove_from: alphaRef, remove_to: gammaRef, replacement_text: "X" },
+        cwd,
+      );
+      expect(preview).toHaveProperty("error");
+      const errorText = (preview as { error: string }).error;
+      expect(errorText).toMatch(/\[E_RANGE_STALE\] Line 2 in sample.ts/);
+      expect(errorText).toContain("Current range:");
+      expect(errorText).toContain("│BETA");
+      expect(errorText).toContain("Retry the replace");
+    });
+  });
+
+  it("returns [E_RANGE_UNSERVED] for a never-served interior after a paged read", async () => {
+    await withTempFile("sample.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts", offset: 1, limit: 1 }, undefined, undefined, ctx);
+      await readTool.execute("r2", { path: "sample.ts", offset: 4, limit: 1 }, undefined, undefined, ctx);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\ndelta\n", home.testPath);
+
+      const preview = await compPreview(
+        { path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[3]!, replacement_text: "X" },
+        cwd,
+      );
+      expect(preview).toHaveProperty("error");
+      const errorText = (preview as { error: string }).error;
+      expect(errorText).toMatch(/\[E_RANGE_UNSERVED\] Line 2 in sample.ts/);
+      expect(errorText).toContain("Current range:");
+    });
+  });
+
+  it("returns [E_RANGE_UNVERIFIED] for never-served boundary anchors", async () => {
+    await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const preview = await compPreview(
+        { path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[2]!, replacement_text: "X" },
+        cwd,
+      );
+      expect(preview).toHaveProperty("error");
+      const errorText = (preview as { error: string }).error;
+      expect(errorText).toMatch(/\[E_RANGE_UNVERIFIED\]/);
+      expect(errorText).toContain("no served position");
+    });
+  });
+
+  it("returns a diff (not an error) for a served, unchanged range", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      const preview = await compPreview(
+        { path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[2]!, replacement_text: "BBB" },
+        cwd,
+      );
+      expect(preview).toHaveProperty("diff");
+      expect("error" in preview).toBe(false);
+    });
+  });
+});
+
 describe("renderCall preview", () => {
   function makeHarness(cwd: string) {
     const theme = {
@@ -162,6 +236,29 @@ describe("renderCall preview", () => {
       await awaitPreview(harness);
       expect(harness.state.preview).toHaveProperty("diff");
       expect((harness.state.preview as { diff: string }).diff).toContain("BBB");
+    });
+  });
+
+  it("surfaces a served-state rejection in the preview output", async () => {
+    await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
+      const { pi, getTool } = makeFakePiRegistry();
+      register(pi);
+      const tool = getTool("replace");
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
+
+      const harness = makeHarness(cwd);
+      tool.renderCall(
+        { path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[2]!, replacement_text: "X" },
+        harness.theme,
+        harness.context,
+      );
+
+      await awaitPreview(harness);
+      expect(harness.state.preview).toHaveProperty("error");
+      expect((harness.state.preview as { error: string }).error).toMatch(/\[E_RANGE_STALE\]/);
     });
   });
 
