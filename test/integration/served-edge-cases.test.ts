@@ -14,8 +14,7 @@ const home = useTestHome();
 describe("served-state edge cases for replace", () => {
 	it("rejects [E_RANGE_UNSERVED] for a range spanning paged-read gaps, then applies on retry", async () => {
 		const content =
-			["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") +
-			"\n";
+			["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
 		await withTempFile("sample.ts", content, async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -100,12 +99,8 @@ describe("served-state edge cases for replace", () => {
 				ctx,
 			);
 			const text = getText(first);
-			const aRef = extractHash(
-				text.split("\n").find((l) => l.includes("│a"))!,
-			);
-			const dRef = extractHash(
-				text.split("\n").find((l) => l.includes("│d"))!,
-			);
+			const aRef = extractHash(text.split("\n").find((l) => l.includes("│a"))!);
+			const dRef = extractHash(text.split("\n").find((l) => l.includes("│d"))!);
 
 			await writeFile(path, "a\nb\nb\nd\n", "utf-8");
 
@@ -140,7 +135,9 @@ describe("served-state edge cases for replace", () => {
 				ctx,
 			);
 			const aRef = extractHash(
-				getText(first).split("\n").find((l) => l.includes("│a"))!,
+				getText(first)
+					.split("\n")
+					.find((l) => l.includes("│a"))!,
 			);
 
 			await writeFile(path, "x\ny\na\n", "utf-8");
