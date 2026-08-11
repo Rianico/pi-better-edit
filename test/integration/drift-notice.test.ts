@@ -482,9 +482,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 					ctx,
 				);
 				expect(getText(followUp)).toContain("Successfully edited");
-				expect(await readFile(path, "utf-8")).toBe(
-					"A\nB\nGAMMA\ndelta\n",
-				);
+				expect(await readFile(path, "utf-8")).toBe("A\nB\nGAMMA\ndelta\n");
 			},
 		);
 	});
