@@ -57,7 +57,9 @@
     "test:coverage": "vitest run --coverage --coverage.thresholds.lines=90 --coverage.thresholds.statements=90 --coverage.thresholds.functions=85 --coverage.thresholds.branches=80",
     "lint": "eslint \"src/**/*.ts\" \"index.ts\" \"test/**/*.ts\"",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "npm run typecheck && npm run lint && npm test"
+    "prepublishOnly": "npm run typecheck && npm run lint && npm test",
+    "eval": "RUN_EVAL=1 EVAL_TARGET=local vitest run test/eval/comparison-battery.test.ts",
+    "eval:compare": "node scripts/eval-compare.mjs"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.0",

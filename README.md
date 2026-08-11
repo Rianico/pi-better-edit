@@ -196,6 +196,19 @@ Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
 - [RimuruW](https://github.com/RimuruW), original `pi-hashline-edit` and the strict-semantics policy
 - [can1357](https://github.com/can1357), original [oh-my-pi](https://github.com/can1357/oh-my-pi) implementation and the hashline concept
 
+## Evaluation
+
+A cross-version behavior battery lives in `test/eval/` (external-behavior only, `RUN_EVAL`-gated). Run it against this fork:
+
+    npm run eval
+
+Or compare this fork against the published upstream npm package (`pi-hashline-edit-pro`), by default `2.4.1` (the fork base) and `2.5.0` (latest); pass target specs as arguments to override:
+
+    npm run eval:compare
+    npm run eval:compare -- local pi-hashline-edit-pro@2.5.0
+
+The compare script installs the requested package versions into `node_modules` temporarily (`--no-save --no-package-lock`), runs the battery against each target, prints a per-scenario correctness table plus aggregate call/token counts, then restores `node_modules` to the lockfile state.
+
 ## License
 
 [MIT](LICENSE)
