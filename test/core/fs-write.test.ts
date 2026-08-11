@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { resolveTarget, writeAtomic } from "../../src/fs-write";
-import { mkdtemp, writeFile, rm, readFile, symlink } from "fs/promises";
+import { mkdtemp, writeFile, rm, readFile, symlink, realpath } from "fs/promises";
 import { tmpdir } from "os";
 import { join } from "path";
 
@@ -13,7 +13,7 @@ describe("resolveTarget", () => {
       const filePath = join(dir, "test.txt");
       await writeFile(filePath, "hello", "utf-8");
       const resolved = await resolveTarget(filePath);
-      expect(resolved).toBe(filePath);
+      expect(resolved).toBe(await realpath(filePath));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -27,7 +27,7 @@ describe("resolveTarget", () => {
       await writeFile(target, "hello", "utf-8");
       await symlink("target.txt", link);
       const resolved = await resolveTarget(link);
-      expect(resolved).toBe(target);
+      expect(resolved).toBe(await realpath(target));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -43,7 +43,7 @@ describe("resolveTarget", () => {
       await symlink("real.txt", mid);
       await symlink("mid.txt", link);
       const resolved = await resolveTarget(link);
-      expect(resolved).toBe(target);
+      expect(resolved).toBe(await realpath(target));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
@@ -54,7 +54,7 @@ describe("resolveTarget", () => {
     try {
       const nonExistent = join(dir, "nonexistent", "file.txt");
       const resolved = await resolveTarget(nonExistent);
-      expect(resolved).toBe(nonExistent);
+      expect(resolved).toBe(join(await realpath(dir), "nonexistent", "file.txt"));
     } finally {
       await rm(dir, { recursive: true, force: true });
     }
