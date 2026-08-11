@@ -51,17 +51,27 @@ const ELLIPSIS_MARKER: unique symbol = Symbol("ellipsis");
 const isEllipsisMarker = (line: string | symbol): line is symbol =>
   line === ELLIPSIS_MARKER;
 
+export type ServedDiffRow = {
+  position: number;
+  hash: string;
+};
+
 export function genDiff(
   oldContent: string,
   newContent: string,
   contextLines = 2,
   newContentHashes?: string[],
   oldContentHashes?: string[],
-): { diff: string; firstChangedLine: number | undefined } {
+): {
+  diff: string;
+  firstChangedLine: number | undefined;
+  servedRows: ServedDiffRow[];
+} {
   const effectiveNewHashes = newContentHashes ?? _lineHashesPure(newContent);
 
   const parts = Diff.diffLines(oldContent, newContent);
   const output: string[] = [];
+  const servedRows: ServedDiffRow[] = [];
   let newLineNum = 1;
   let oldLineNum = 1;
   let lastWasChange = false;
@@ -79,6 +89,9 @@ export function genDiff(
         if (part.added) {
           const hash = effectiveNewHashes[newLineNum - 1];
           output.push(fmtDiffLine("+", displayLines[k]!, hash));
+          if (hash !== undefined) {
+            servedRows.push({ position: newLineNum - 1, hash });
+          }
           newLineNum++;
         } else {
           const hash = oldContentHashes?.[oldLineNum - 1];
@@ -122,6 +135,9 @@ export function genDiff(
         }
         const hash = effectiveNewHashes[newLineNum - 1];
         output.push(fmtDiffLine(" ", line, hash));
+        if (hash !== undefined) {
+          servedRows.push({ position: newLineNum - 1, hash });
+        }
         newLineNum++;
         oldLineNum++;
       }
@@ -132,5 +148,5 @@ export function genDiff(
     lastWasChange = false;
   }
 
-  return { diff: output.join("\n"), firstChangedLine };
+  return { diff: output.join("\n"), firstChangedLine, servedRows };
 }

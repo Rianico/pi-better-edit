@@ -12,7 +12,7 @@ import {
   readConfig,
   toggleAutoRead,
 } from "./src/config";
-import { loadHashStore, pruneMissing, wipeServed } from "./src/hash-store";
+import { loadHashStore, pruneMissing, wipeServed, upsertServed } from "./src/hash-store";
 import { readNormFile } from "./src/file-reader";
 import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
@@ -85,6 +85,12 @@ export default function (pi: ExtensionAPI): void {
           DEFAULT_MAX_BYTES,
           AUTO_READ_MAX,
         );
+        try {
+          const store = await loadHashStore();
+          upsertServed(store, absolutePath, preview.served);
+        } catch (error) {
+          console.error("Failed to record served state for auto-read after write:", error);
+        }
         return {
           content: [
             ...(event.content ?? []),
@@ -114,6 +120,22 @@ export default function (pi: ExtensionAPI): void {
 
     const diff = (event.details as { diff?: string } | undefined)?.diff;
     if (!diff) return;
+
+    const servedRows = (event.details as
+      | { servedRows?: Array<{ position: number; hash: string }> }
+      | undefined)?.servedRows;
+    if (servedRows && servedRows.length > 0) {
+      try {
+        const rawPath = (event.input as Record<string, unknown> | undefined)?.path;
+        if (typeof rawPath === "string") {
+          const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
+          const store = await loadHashStore();
+          upsertServed(store, resolvedPath, servedRows);
+        }
+      } catch (error) {
+        console.error("Failed to record served rows from post-edit diff:", error);
+      }
+    }
 
     const rendered = (event.content ?? [])
       .filter(

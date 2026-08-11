@@ -164,7 +164,8 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
         const linesAddedByReplace = cntDiff(diffResult.diff, "+");
         const linesRemovedByReplace = cntDiff(diffResult.diff, "-");
         const restoredRange = changedRange(currentNormalized, undo.content);
-        const undoDiff = genDiff(currentNormalized, undo.content, 1, undo.hashes, currentHashes).diff;
+        const undoDiffResult = genDiff(currentNormalized, undo.content, 1, undo.hashes, currentHashes);
+        const undoDiff = undoDiffResult.diff;
 
         await writeAtomic(
           mutationTargetPath,
@@ -201,6 +202,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
           ],
           details: {
             diff: undoDiff,
+            servedRows: undoDiffResult.servedRows,
             metrics: buildMetrics({
               classification: "applied",
               editsAttempted: 1,

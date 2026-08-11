@@ -158,6 +158,7 @@ export function buildChanged(input: SuccessInput): TResult {
         editMeta.firstChangedLine ?? diffResult.firstChangedLine,
       snapshotId,
       metrics,
+      servedRows: diffResult.servedRows,
     },
   };
 }

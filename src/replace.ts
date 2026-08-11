@@ -97,6 +97,7 @@ export type ReplaceDetails = {
 	snapshotId?: string;
 	classification?: "noop";
 	metrics?: RMetrics;
+	servedRows?: Array<{ position: number; hash: string }>;
 };
 
 interface PipelineResult {
