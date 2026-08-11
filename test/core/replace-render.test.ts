@@ -207,7 +207,7 @@ describe("extractWarnings", () => {
 
 	it("strips the trailing drift notice from the warnings block when its text is provided", () => {
 		const notice =
-			"Drift notice: 1 line(s) outside the replaced range drifted. Current content:\nabc│x";
+			"Drift notice: 1 line(s) outside the replaced range drifted. Current content around the drift:\nabc│x";
 		const text = `Successfully replaced.\n\nWarnings:\nWarning 1\n\n${notice}`;
 		const result = extractWarnings(text, notice);
 		expect(result).toContain("Warnings:");

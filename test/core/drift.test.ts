@@ -32,7 +32,8 @@ describe("computeDrift", () => {
 		expect(result).toBeDefined();
 		expect(result!.allAlreadyReported).toBe(false);
 		expect(result!.rows).toEqual([
-			{ position: 3, hash: "X03", content: "changed" },
+			{ position: 2, hash: "h02", content: "c", drifted: false },
+			{ position: 3, hash: "X03", content: "changed", drifted: true },
 		]);
 		expect(result!.text).toContain("Drift notice:");
 		expect(result!.text).toContain("X03│changed");
@@ -67,7 +68,8 @@ describe("computeDrift", () => {
 		});
 		expect(result).toBeDefined();
 		expect(result!.rows).toEqual([
-			{ position: 3, hash: "X04", content: "shifted" },
+			{ position: 2, hash: "h03", content: "d", drifted: false },
+			{ position: 3, hash: "X04", content: "shifted", drifted: true },
 		]);
 	});
 
@@ -83,9 +85,10 @@ describe("computeDrift", () => {
 			delta: -5,
 			reported: new Set(),
 		});
-		expect(result).toBeDefined();
 		expect(result!.rows).toEqual([
-			{ position: 1, hash: "X01", content: "changed" },
+			{ position: 0, hash: "h00", content: "a", drifted: false },
+			{ position: 1, hash: "X01", content: "changed", drifted: true },
+			{ position: 2, hash: "h02", content: "c", drifted: false },
 		]);
 	});
 
@@ -103,7 +106,9 @@ describe("computeDrift", () => {
 		});
 		expect(result).toBeDefined();
 		expect(result!.total).toBe(2);
-		expect(result!.rows).toEqual([{ position: 0, hash: "X02", content: "c" }]);
+		expect(result!.rows).toEqual([
+			{ position: 0, hash: "X02", content: "c", drifted: true },
+		]);
 	});
 
 	it("emits a one-line pointer when every drifted line is already reported", () => {
@@ -140,18 +145,20 @@ describe("computeDrift", () => {
 		expect(result).toBeDefined();
 		expect(result!.allAlreadyReported).toBe(false);
 		expect(result!.rows).toEqual([
-			{ position: 0, hash: "X00", content: "changedA" },
-			{ position: 3, hash: "X03", content: "changedD" },
+			{ position: 0, hash: "X00", content: "changedA", drifted: true },
+			{ position: 1, hash: "h01", content: "b", drifted: false },
+			{ position: 2, hash: "h02", content: "c", drifted: false },
+			{ position: 3, hash: "X03", content: "changedD", drifted: true },
 		]);
 	});
 
-	it("caps the echoed rows and appends a hint for the remainder", () => {
+	it("caps the total shown rows (drifted + context) and appends a hint for the remainder", () => {
 		const served: (string | null)[] = [];
 		const resultHashes: string[] = [];
 		const resultLines: string[] = [];
 		for (let i = 0; i < 200; i++) {
 			served.push(`h${i}`);
-			resultHashes.push(i === 0 ? `h${i}` : `R${i}`);
+			resultHashes.push(i % 2 === 0 ? `h${i}` : `R${i}`);
 			resultLines.push(`line ${i}`);
 		}
 		const result = computeDrift({
@@ -168,8 +175,8 @@ describe("computeDrift", () => {
 		});
 		expect(result).toBeDefined();
 		expect(result!.rows).toHaveLength(150);
-		expect(result!.total).toBe(199);
-		expect(result!.text).toContain("[... 49 more drifted line(s)");
+		expect(result!.total).toBe(100);
+		expect(result!.text).toContain("[... 50 more line(s)");
 	});
 
 	it("ignores never-served markers", () => {
@@ -224,16 +231,92 @@ describe("computeDrift", () => {
 		});
 		expect(result).toBeDefined();
 		expect(result!.total).toBe(2);
-		expect(result!.rows).toHaveLength(2);
-		for (const row of result!.rows) {
-			expect(row.position).toBeGreaterThanOrEqual(0);
-			expect(row.position).toBeLessThan(resultHashes.length);
-			expect(["e", "f", "g", "h", "i"]).not.toContain(row.content);
-		}
-		expect(result!.text).not.toContain("│e");
-		expect(result!.text).not.toContain("│f");
-		expect(result!.text).not.toContain("│g");
-		expect(result!.text).not.toContain("│h");
-		expect(result!.text).not.toContain("│i");
+		expect(result!.rows).toEqual([
+			{ position: 1, hash: "h01", content: "b", drifted: false },
+			{ position: 2, hash: "X04", content: "R", drifted: true },
+			{ position: 3, hash: "h05", content: "e", drifted: false },
+		]);
+	});
+
+	it("shows a before/drift/after window for a single drifted line", () => {
+		const result = computeDrift({
+			served: ["h00", "h01", "h02", "h03"],
+			resultHashes: ["h00", "h01", "X02", "h03"],
+			resultLines: ["a", "b", "changed", "d"],
+			rangeStartLine: 1,
+			rangeEndLine: 1,
+			startHash: "h00",
+			endHash: "h00",
+			delta: 0,
+			reported: new Set(),
+		});
+		expect(result).toBeDefined();
+		expect(result!.total).toBe(1);
+		expect(result!.rows).toEqual([
+			{ position: 1, hash: "h01", content: "b", drifted: false },
+			{ position: 2, hash: "X02", content: "changed", drifted: true },
+			{ position: 3, hash: "h03", content: "d", drifted: false },
+		]);
+	});
+
+	it("merges adjacent drifted lines into a single window with shared context boundaries", () => {
+		const result = computeDrift({
+			served: ["h00", "h01", "h02", "h03"],
+			resultHashes: ["X00", "X01", "X02", "X03"],
+			resultLines: ["a", "b", "C", "D"],
+			rangeStartLine: 1,
+			rangeEndLine: 2,
+			startHash: "h00",
+			endHash: "h01",
+			delta: 0,
+			reported: new Set(),
+		});
+		expect(result).toBeDefined();
+		expect(result!.total).toBe(2);
+		expect(result!.rows).toEqual([
+			{ position: 1, hash: "X01", content: "b", drifted: false },
+			{ position: 2, hash: "X02", content: "C", drifted: true },
+			{ position: 3, hash: "X03", content: "D", drifted: true },
+		]);
+	});
+
+	it("bounds the window at the file start — only in-bounds context rows, no fabricated before-row", () => {
+		const result = computeDrift({
+			served: ["h00", "h01", "h02"],
+			resultHashes: ["X00", "h01", "h02"],
+			resultLines: ["changed", "b", "c"],
+			rangeStartLine: 3,
+			rangeEndLine: 3,
+			startHash: "h02",
+			endHash: "h02",
+			delta: 0,
+			reported: new Set(),
+		});
+		expect(result).toBeDefined();
+		expect(result!.total).toBe(1);
+		expect(result!.rows).toEqual([
+			{ position: 0, hash: "X00", content: "changed", drifted: true },
+			{ position: 1, hash: "h01", content: "b", drifted: false },
+		]);
+	});
+
+	it("bounds the window at the file end — only in-bounds context rows, no fabricated after-row", () => {
+		const result = computeDrift({
+			served: ["h00", "h01", "h02", "h03"],
+			resultHashes: ["h00", "h01", "h02", "X03"],
+			resultLines: ["a", "b", "c", "changed"],
+			rangeStartLine: 1,
+			rangeEndLine: 1,
+			startHash: "h00",
+			endHash: "h00",
+			delta: 0,
+			reported: new Set(),
+		});
+		expect(result).toBeDefined();
+		expect(result!.total).toBe(1);
+		expect(result!.rows).toEqual([
+			{ position: 2, hash: "h02", content: "c", drifted: false },
+			{ position: 3, hash: "X03", content: "changed", drifted: true },
+		]);
 	});
 });

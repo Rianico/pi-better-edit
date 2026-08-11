@@ -346,8 +346,10 @@ describe("drift notices for changed served territory outside the replace range",
 				expect(resultText).toContain("Successfully replaced");
 				const notice = resultText.split("Drift notice:")[1] ?? "";
 				expect(notice).toContain("2 line(s)");
-				expect(notice.match(/^[A-Za-z0-9]{3}│R$/gm)).toHaveLength(2);
-				expect(notice).not.toMatch(/│l[0-9]/);
+				expect(notice.match(/^[A-Za-z0-9]{3}│R$/gm)).toHaveLength(1);
+				expect(notice).toMatch(/^[A-Za-z0-9]{3}│l1$/m);
+				expect(notice).toMatch(/^[A-Za-z0-9]{3}│l5$/m);
+				expect(notice).not.toMatch(/│l[23]/);
 				expect(await readFile(path, "utf-8")).toBe(
 					"l0\nl1\nR\nl5\nl6\nl7\nl8\nl9\n",
 				);
@@ -403,6 +405,85 @@ describe("drift notices for changed served territory outside the replace range",
 				expect(getText(undone)).not.toContain("Drift notice");
 				expect(await readFile(path, "utf-8")).toBe(
 					"alpha\nbeta\ngamma\nDELTA\n",
+				);
+			},
+		);
+	});
+	it("shows the before/after lines around the drifted content and serves the context rows for follow-up edits", async () => {
+		await withTempFile(
+			"sample.ts",
+			"alpha\nbeta\ngamma\ndelta\n",
+			async ({ cwd, path }) => {
+				const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+				const firstRead = await readTool.execute(
+					"r1",
+					{ path: "sample.ts" },
+					undefined,
+					undefined,
+					ctx,
+				);
+				const alphaRef = extractHash(
+					getText(firstRead)
+						.split("\n")
+						.find((l) => l.includes("│alpha"))!,
+				);
+
+				await writeFile(path, "alpha\nbeta\nGAMMA\ndelta\n", "utf-8");
+
+				const result = await editTool.execute(
+					"e1",
+					{
+						path: "sample.ts",
+						remove_from: alphaRef,
+						remove_to: alphaRef,
+						replacement_text: "A",
+					},
+					undefined,
+					undefined,
+					ctx,
+				);
+
+				const resultText = getText(result);
+				expect(resultText).toContain("Successfully replaced");
+				expect(resultText).toContain("Drift notice:");
+
+				const betaRow = resultText
+					.split("\n")
+					.find((l) => /^[A-Za-z0-9]{3}│beta$/.test(l));
+				const gammaRow = resultText
+					.split("\n")
+					.find((l) => /^[A-Za-z0-9]{3}│GAMMA$/.test(l));
+				const deltaRow = resultText
+					.split("\n")
+					.find((l) => /^[A-Za-z0-9]{3}│delta$/.test(l));
+				expect(betaRow).toBeDefined();
+				expect(gammaRow).toBeDefined();
+				expect(deltaRow).toBeDefined();
+				const notice = resultText.split("Drift notice:")[1] ?? "";
+				expect(notice.indexOf(betaRow!)).toBeLessThan(
+					notice.indexOf(gammaRow!),
+				);
+				expect(notice.indexOf(gammaRow!)).toBeLessThan(
+					notice.indexOf(deltaRow!),
+				);
+
+				const betaRef = extractHash(betaRow!);
+				const followUp = await editTool.execute(
+					"e2",
+					{
+						path: "sample.ts",
+						remove_from: betaRef,
+						remove_to: betaRef,
+						replacement_text: "B",
+					},
+					undefined,
+					undefined,
+					ctx,
+				);
+				expect(getText(followUp)).toContain("Successfully replaced");
+				expect(await readFile(path, "utf-8")).toBe(
+					"A\nB\nGAMMA\ndelta\n",
 				);
 			},
 		);

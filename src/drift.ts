@@ -11,6 +11,7 @@ export const DRIFT_NOTICE_HEADING = "Drift notice:";
 
 export interface DriftRow extends ServedRow {
 	content: string;
+	drifted: boolean;
 }
 
 export interface ComputeDriftInput {
@@ -76,10 +77,10 @@ export function computeDrift(
 	const rangeFrom = Math.min(servedStartIdx, servedEndIdx);
 	const rangeTo = Math.max(servedStartIdx, servedEndIdx);
 
-	const rows: DriftRow[] = [];
 	let total = 0;
 	let unshown = 0;
 	let anyNotReported = false;
+	const driftedPositions: number[] = [];
 
 	const nearestSurvivingBelow = (p: number): number | undefined => {
 		for (let q = p - 1; q >= 0; q--) {
@@ -120,15 +121,7 @@ export function computeDrift(
 			currentPos < resultHashes.length &&
 			currentPos < resultLines.length
 		) {
-			if (rows.length < cap) {
-				rows.push({
-					position: currentPos,
-					hash: resultHashes[currentPos]!,
-					content: resultLines[currentPos]!,
-				});
-			} else {
-				unshown++;
-			}
+			driftedPositions.push(currentPos);
 		} else {
 			unshown++;
 		}
@@ -146,13 +139,31 @@ export function computeDrift(
 		};
 	}
 
+	const driftedSet = new Set(driftedPositions);
+	const windowSet = new Set<number>();
+	for (const pos of driftedPositions) {
+		for (const w of [pos - 1, pos, pos + 1]) {
+			if (w >= 0 && w < resultLines.length) windowSet.add(w);
+		}
+	}
+	const windowPositions = [...windowSet].sort((a, b) => a - b);
+	const shownPositions = windowPositions.slice(0, cap);
+	unshown += windowPositions.length - shownPositions.length;
+
+	const rows: DriftRow[] = shownPositions.map((position) => ({
+		position,
+		hash: resultHashes[position]!,
+		content: resultLines[position]!,
+		drifted: driftedSet.has(position),
+	}));
+
 	const rowsText = fmtServedRows(rows, resultLines);
 	const moreText =
 		unshown > 0
-			? `\n[... ${unshown} more drifted line(s) — call read to see them]`
+			? `\n[... ${unshown} more line(s) — call read to see them]`
 			: "";
 	return {
-		text: `${DRIFT_NOTICE_HEADING} ${countLabel} outside the replaced range drifted. Current content:\n${rowsText}${moreText}`,
+		text: `${DRIFT_NOTICE_HEADING} ${countLabel} outside the replaced range drifted. Current content around the drift:\n${rowsText}${moreText}`,
 		rows,
 		total,
 		allAlreadyReported: false,
@@ -189,7 +200,7 @@ export function scanDrift(input: {
 		addReported(
 			input.store,
 			input.path,
-			result.rows.map((row) => row.hash),
+			result.rows.filter((row) => row.drifted).map((row) => row.hash),
 		);
 	} catch (error) {
 		console.error("Failed to record drift-notice serves:", error);
