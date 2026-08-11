@@ -17,6 +17,10 @@ interface Prepared {
   undoUpsert: (...params: SqlParams) => void;
   undoGet: (...params: SqlParams) => Record<string, unknown> | undefined;
   undoDelete: (...params: SqlParams) => void;
+  servedGet: (...params: SqlParams) => Record<string, unknown> | undefined;
+  servedUpsert: (...params: SqlParams) => void;
+  servedDelete: (...params: SqlParams) => void;
+  servedWipe: (...params: SqlParams) => void;
 }
 
 export interface HashStore {
@@ -149,17 +153,25 @@ function buildStore(
       "updated_at INTEGER NOT NULL" +
     ")"
   );
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS served (" +
+      "path TEXT PRIMARY KEY, " +
+      "hashes TEXT NOT NULL, " +
+      "updated_at INTEGER NOT NULL" +
+    ")"
+  );
   const versionRow = db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined;
   if (versionRow && versionRow.value !== String(HASH_STORE_VERSION)) {
     db.exec("DELETE FROM snapshots");
     db.exec("DELETE FROM undo");
+    db.exec("DELETE FROM served");
   }
   db.prepare(
     "INSERT INTO meta (key, value) VALUES ('version', ?) " +
     "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
   ).run(String(HASH_STORE_VERSION));
   const getStmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
-  const allStmt = db.prepare("SELECT path FROM snapshots UNION SELECT path FROM undo");
+  const allStmt = db.prepare("SELECT path FROM snapshots UNION SELECT path FROM undo UNION SELECT path FROM served");
   const allHashesStmt = db.prepare("SELECT path, hashes FROM snapshots");
   const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
   const upsertStmt = db.prepare(
@@ -174,6 +186,13 @@ function buildStore(
     "SELECT content, bom, ending, hashes, result_content FROM undo WHERE path = ?"
   );
   const undoDelStmt = db.prepare("DELETE FROM undo WHERE path = ?");
+  const servedGetStmt = db.prepare("SELECT hashes FROM served WHERE path = ?");
+  const servedUpsertStmt = db.prepare(
+    "INSERT INTO served (path, hashes, updated_at) VALUES (?, ?, ?) " +
+    "ON CONFLICT(path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at"
+  );
+  const servedDeleteStmt = db.prepare("DELETE FROM served WHERE path = ?");
+  const servedWipeStmt = db.prepare("DELETE FROM served");
   const stmts: Prepared = {
     get: (...params) => getStmt.get(...params) as Record<string, unknown> | undefined,
     allPaths: (...params) => allStmt.all(...params) as Record<string, unknown>[],
@@ -183,6 +202,10 @@ function buildStore(
     undoUpsert: (...params) => { withBusyRetry(() => { undoUpsertStmt.run(...params); }); },
     undoGet: (...params) => undoGetStmt.get(...params) as Record<string, unknown> | undefined,
     undoDelete: (...params) => { withBusyRetry(() => { undoDelStmt.run(...params); }); },
+    servedGet: (...params) => servedGetStmt.get(...params) as Record<string, unknown> | undefined,
+    servedUpsert: (...params) => { withBusyRetry(() => { servedUpsertStmt.run(...params); }); },
+    servedDelete: (...params) => { withBusyRetry(() => { servedDeleteStmt.run(...params); }); },
+    servedWipe: () => { withBusyRetry(() => { servedWipeStmt.run(); }); },
   };
   return { db, stmts };
 }
@@ -428,6 +451,63 @@ export function deleteUndo(store: HashStore, path: string): void {
   store.stmts.undoDelete(path);
 }
 
+function isValidServedList(value: unknown): value is (string | null)[] {
+  if (!Array.isArray(value)) return false;
+  for (const entry of value) {
+    if (entry === null) continue;
+    if (typeof entry !== "string" || !HASH_RE.test(entry)) return false;
+  }
+  return true;
+}
+
+export function getServed(store: HashStore, path: string): (string | null)[] {
+  const row = store.stmts.servedGet(path);
+  if (!row) return [];
+  try {
+    const parsed = JSON.parse(row.hashes as string);
+    if (isValidServedList(parsed)) return parsed;
+    store.stmts.servedDelete(path);
+    return [];
+  } catch {
+    store.stmts.servedDelete(path);
+    return [];
+  }
+}
+
+export function upsertServed(
+  store: HashStore,
+  path: string,
+  entries: Array<{ position: number; hash: string | null }>,
+): void {
+  if (entries.length === 0) return;
+  withStore(() => {
+    const updated = getServed(store, path).slice();
+    for (const entry of entries) {
+      if (!Number.isInteger(entry.position) || entry.position < 0) {
+        throw new TypeError(`Invalid served position: ${entry.position}`);
+      }
+      if (
+        entry.hash !== null &&
+        (typeof entry.hash !== "string" || !HASH_RE.test(entry.hash))
+      ) {
+        throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
+      }
+      while (updated.length <= entry.position) updated.push(null);
+      updated[entry.position] = entry.hash;
+    }
+    while (updated.length > 0 && updated[updated.length - 1] === null) updated.pop();
+    store.stmts.servedUpsert(path, JSON.stringify(updated), Date.now());
+  });
+}
+
+export function deleteServed(store: HashStore, path: string): void {
+  store.stmts.servedDelete(path);
+}
+
+export function wipeServed(store: HashStore): void {
+  store.stmts.servedWipe();
+}
+
 const STAT_BATCH = 64;
 
 async function statMissing(rows: { path: string }[]): Promise<string[]> {
@@ -459,6 +539,7 @@ export async function pruneMissing(store: HashStore): Promise<void> {
     for (const path of missing) {
       store.stmts.deleteOne(path);
       store.stmts.undoDelete(path);
+      store.stmts.servedDelete(path);
     }
   });
 }

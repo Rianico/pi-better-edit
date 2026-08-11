@@ -1,5 +1,13 @@
 import { describe, expect, it, vi } from "vitest";
 import { readConfig } from "../../src/config";
+import {
+  loadHashStore,
+  upsertServed,
+  getServed,
+  upsertSnapshot,
+  getSnapshot,
+} from "../../src/hash-store";
+import { contentChecksum } from "../../src/hashline/hasher";
 import { withTempDir } from "../support/fixtures";
 
 function makeLifecyclePi() {
@@ -92,6 +100,27 @@ describe("session_start lifecycle", () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+
+  it("wipes served state at session start", async () => {
+    await withTempDir("lifecycle-served-", async (dir) => {
+      const { writeFile } = await import("fs/promises");
+      const { join } = await import("path");
+      const keep = join(dir, "keep.ts");
+      await writeFile(keep, "keep\n", "utf-8");
+
+      const store = await loadHashStore();
+      upsertServed(store, keep, [{ position: 0, hash: "abc" }]);
+      upsertSnapshot(store, keep, contentChecksum("keep\n"), 1, ["abc"]);
+
+      const { pi, handlers } = makeLifecyclePi();
+      await registerExtension(pi);
+      const sessionStart = handlers.get("session_start")!;
+      await sessionStart({}, { cwd: dir, ui: { notify: vi.fn() } });
+
+      expect(getServed(store, keep)).toEqual([]);
+      expect(getSnapshot(store, keep, "keep\n")).toEqual(["abc"]);
+    });
   });
 });
 

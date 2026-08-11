@@ -12,7 +12,7 @@ import {
   readConfig,
   toggleAutoRead,
 } from "./src/config";
-import { loadHashStore, pruneMissing } from "./src/hash-store";
+import { loadHashStore, pruneMissing, wipeServed } from "./src/hash-store";
 import { readNormFile } from "./src/file-reader";
 import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
@@ -33,6 +33,7 @@ export default function (pi: ExtensionAPI): void {
     await initHasher();
     try {
       const store = await loadHashStore();
+      await wipeServed(store);
       await pruneMissing(store);
     } catch (err) {
       console.error("Failed to load or prune hash store:", err);
