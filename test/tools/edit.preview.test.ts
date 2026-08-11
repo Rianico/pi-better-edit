@@ -5,7 +5,7 @@ import register from "../../index";
 import type { RRState } from "../../src/replace-render";
 import { mkMdTheme } from "../../src/replace-render";
 import { Text, Markdown } from "@earendil-works/pi-tui";
-import { makeFakePiRegistry, withTempFile, useTestHome } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -13,6 +13,8 @@ describe("compPreview", () => {
   it("returns a diff for strict hashline edits before execution", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
 
       const preview = await compPreview(
         { path: "sample.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB" },
@@ -26,6 +28,8 @@ describe("compPreview", () => {
   it("returns a diff for a hash-anchored replace before execution", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
 
       const preview = await compPreview(
         { path: "sample.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BETA" },
@@ -39,6 +43,8 @@ describe("compPreview", () => {
   it("still computes a preview diff for read-only files", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
 
       const preview = await compPreview(
         { path: "sample.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB" },
@@ -51,6 +57,8 @@ describe("compPreview", () => {
   it("uses the shared text loader for preview instead of classifying then re-reading text", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
 
       const preview = await compPreview(
         { path: "sample.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB" },
@@ -63,6 +71,8 @@ describe("compPreview", () => {
   it("does not let a delayed preview resurrect after a settled result", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
 
       const preview = await compPreview(
         { path: "sample.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB" },
@@ -75,6 +85,8 @@ describe("compPreview", () => {
   it("preview rejects a bulk changes array", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
       const preview = await compPreview(
         { path: "sample.ts", changes: [{ remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB" }] },
         cwd,
@@ -87,6 +99,8 @@ describe("compPreview", () => {
   it("preview still accepts flat-format requests", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
       const preview = await compPreview(
         { path: "sample.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB" },
         cwd,
@@ -135,6 +149,8 @@ describe("renderCall preview", () => {
       register(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
 
       const harness = makeHarness(cwd);
       tool.renderCall(
@@ -155,6 +171,8 @@ describe("renderCall preview", () => {
       register(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
 
       const harness = makeHarness(cwd);
       tool.renderCall(
@@ -174,6 +192,8 @@ describe("renderCall preview", () => {
       register(pi);
       const tool = getTool("replace");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
 
       vi.useFakeTimers();
       try {
@@ -207,6 +227,8 @@ describe("compPreview — noop", () => {
   it("returns a noop error when the edit produces identical content", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
       const preview = await compPreview(
         { path: "sample.ts", remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "bbb" },
         cwd,

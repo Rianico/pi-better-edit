@@ -7,8 +7,9 @@ import { withTempFile, withTempDir, setupIntegrationTest } from "../support/fixt
 describe("replace — missing path resolution", () => {
   it("resolves a missing path when the anchors uniquely identify a file", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
-      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", path);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -65,8 +66,9 @@ describe("replace — missing path resolution", () => {
 
   it("keeps the resolved path in the post-edit diff", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",

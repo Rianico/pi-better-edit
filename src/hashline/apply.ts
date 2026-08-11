@@ -1,12 +1,13 @@
 import { abortIf, splitLines } from "../utils";
 import { _lineHashesPure, HASH_SEP } from "./hash";
+import { verifyServedRange, AnchorMismatchError } from "./served";
 import {
 	valEdit,
 	stripBarePrefixes,
 	stripDiffPrefixes,
 	swapReversedRanges,
 	warnUnicodeEsc,
-	fmtMismatch,
+	fmtMismatchWithServes,
 	type RHEdit,
 	type NEdit,
 	type HEdit,
@@ -144,6 +145,7 @@ export function applyEdit(
 	signal?: AbortSignal,
 	precomputedHashes?: string[],
 	filePath?: string,
+	served?: (string | null)[],
 	): {
 	content: string;
 	firstChangedLine: number | undefined;
@@ -172,9 +174,10 @@ export function applyEdit(
 		signal,
 	);
 	if (mismatches.length || !initialResolved) {
-		throw new Error(
-			fmtMismatch(mismatches, lineIndex.fileLines, fileHashes, filePath),
+		const { message, servedRows } = fmtMismatchWithServes(
+			mismatches, lineIndex.fileLines, fileHashes, filePath,
 		);
+		throw new AnchorMismatchError(message, servedRows);
 	}
 
 	warnUnicodeEsc(prefixFixed, warnings);
@@ -211,14 +214,31 @@ export function applyEdit(
 			signal,
 		);
 		if (correctedResult.mismatches.length || !correctedResult.resolved) {
-			throw new Error(
-				fmtMismatch(correctedResult.mismatches, lineIndex.fileLines, fileHashes, filePath),
+			const { message, servedRows } = fmtMismatchWithServes(
+				correctedResult.mismatches, lineIndex.fileLines, fileHashes, filePath,
 			);
+			throw new AnchorMismatchError(message, servedRows);
 		}
 		resolved = correctedResult.resolved;
 	}
 
-	const spanResult = resToSpan(resolved, content, lineIndex);
+	const spanResult = (() => {
+		if (served) {
+			const startAnchor = resolved.hash_bounds[0];
+			const endAnchor = resolved.hash_bounds[1];
+			verifyServedRange({
+				served,
+				startHash: startAnchor.hash,
+				endHash: endAnchor.hash,
+				startLine: startAnchor.line,
+				endLine: endAnchor.line,
+				fileHashes,
+				fileLines: lineIndex.fileLines,
+				filePath,
+			});
+		}
+		return resToSpan(resolved, content, lineIndex);
+	})();
 	if (spanResult.kind === "noop") {
 		return {
 			content,

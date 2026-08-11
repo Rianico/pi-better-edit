@@ -80,9 +80,27 @@ export function fmtMismatch(
   fileHashes: string[],
   filePath?: string,
 ): string {
+  return fmtMismatchWithServes(mismatches, fileLines, fileHashes, filePath).message;
+}
+
+export function fmtMismatchWithServes(
+  mismatches: HMismatch[],
+  fileLines: string[],
+  fileHashes: string[],
+  filePath?: string,
+): { message: string; servedRows: Array<{ position: number; hash: string }> } {
   assertAligned(fileLines, fileHashes, "fmtMismatch");
 
   const out: string[] = [];
+  const servedRows: Array<{ position: number; hash: string }> = [];
+  const seen = new Set<number>();
+  const pushRow = (ln: number) => {
+    if (ln < 1 || ln > fileLines.length) return;
+    const position = ln - 1;
+    if (seen.has(position)) return;
+    seen.add(position);
+    servedRows.push({ position, hash: fileHashes[ln - 1]! });
+  };
   const notFound = mismatches.filter((m) => m.kind === "not_found");
   const ambiguous = mismatches.filter((m) => m.kind === "ambiguous");
 
@@ -99,6 +117,7 @@ export function fmtMismatch(
       const rows: string[] = [];
       for (let ln = from; ln <= to; ln++) {
         rows.push(`    ${ln}: ${fileHashes[ln - 1]}│${clipLine(fileLines[ln - 1] ?? "")}`);
+        pushRow(ln);
       }
       out.push("");
       out.push(`  Current context around resolved anchor "${ctx.hash}" (line ${ctx.line}):\n${rows.join("\n")}`);
@@ -118,6 +137,7 @@ export function fmtMismatch(
       const lines = sample
         .map((line) => {
           const content = clipLine(fileLines[line - 1] ?? "");
+          pushRow(line);
           return `    ${line}: ${fileHashes[line - 1]}│${content}`;
         })
         .join("\n");
@@ -127,7 +147,7 @@ export function fmtMismatch(
     }
   }
 
-  return out.join("\n");
+  return { message: out.join("\n"), servedRows };
 }
 
 const ITEM_KS = new Set(["replacement_text", "remove_from", "remove_to"]);

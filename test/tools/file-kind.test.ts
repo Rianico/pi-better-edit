@@ -96,8 +96,9 @@ describe("file kind guards in tools", () => {
 
   it("edit rejects empty file deletion", async () => {
     await withTempFile("empty.txt", "a\n", async ({ cwd }) => {
-      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("a\n", home.testPath);
+      await readTool.execute("r1", { path: "empty.txt" }, undefined, undefined, ctx);
 
       await expect(
         editTool.execute(

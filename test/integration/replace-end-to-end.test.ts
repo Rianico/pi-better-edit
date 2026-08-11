@@ -277,8 +277,9 @@ describe("replace tool — end-to-end", () => {
   });
   it("accepts top-level remove_from/remove_to and replacement_text", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const editResult = await editTool.execute(
         "e1",

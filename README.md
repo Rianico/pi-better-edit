@@ -23,7 +23,7 @@ szJ│  console.log("world");
 kQm│}
 ```
 
-2. Replace a line by its hash:
+1. Replace a line by its hash:
 
 ```json
 {
@@ -34,7 +34,7 @@ kQm│}
 }
 ```
 
-3. Keep editing. Anchors for lines you didn't touch stay valid, and auto-read hands you fresh anchors after each change.
+1. Keep editing. Anchors for lines you didn't touch stay valid, and auto-read hands you fresh anchors after each change.
 
 ## Installation
 
@@ -113,8 +113,8 @@ Notes:
 
 Enabled by default. After a successful `write` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so you get fresh `HASH│content` anchors without a separate `read` call.
 
-- After `replace` and `undo_last_replace`, the result shows the post-edit diff. The `+HASH│` and ` HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. Call `read` when you want the full file's anchors.
-- After `replace` and `undo_last_replace`, the result shows the post-edit diff. The `+HASH│` and ` HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. The `-HASH│` rows show removed lines with their old hashes, so you can see exactly which anchors were deleted (those hashes are stale after the edit). Call `read` when you want the full file's anchors.
+- After `replace` and `undo_last_replace`, the result shows the post-edit diff. The `+HASH│` and `HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. Call `read` when you want the full file's anchors.
+- After `replace` and `undo_last_replace`, the result shows the post-edit diff. The `+HASH│` and `HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. The `-HASH│` rows show removed lines with their old hashes, so you can see exactly which anchors were deleted (those hashes are stale after the edit). Call `read` when you want the full file's anchors.
 - Auto-read keeps a 50KB display budget. Lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
 - Toggle at runtime with `/toggle-auto-read`; the setting persists across sessions.
 
@@ -167,6 +167,9 @@ A no-op replace never changes the file, so anchors remain valid. On first run af
 | `[E_UNDO_STALE]` | `undo_last_replace` refused: the file was modified or deleted after the last replace. |
 | `[E_UNDO_UNAVAILABLE]` | Undo history could not be persisted to the hash store; the `replace` was refused and the file was left unchanged. |
 | `[E_FILE_TOO_LARGE]` | The file exceeds the 238,328-line hashline limit. |
+| `[E_RANGE_STALE]` | A line inside the resolved replace range changed on disk since it was served (read output, diff, or rejection feedback). The replace is refused and the current range is echoed as fresh `HASH│content` rows; retry with those rows (no `read` needed). |
+| `[E_RANGE_UNSERVED]` | A line inside the resolved replace range was never served to the model (paged reads, truncated output). The replace is refused and the current range is echoed as fresh `HASH│content` rows. |
+| `[E_RANGE_UNVERIFIED]` | A boundary anchor (`remove_from`/`remove_to`) has no served position or was served at multiple positions, so the range cannot be verified against served state. The replace is refused and the current range is echoed as fresh `HASH│content` rows. |
 
 ## Troubleshooting
 

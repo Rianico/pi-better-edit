@@ -7,8 +7,9 @@ const home = useTestHome();
 describe("edit tool file mutation queue", () => {
   it("uses the same queue key for repeated edits to the same path", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
-      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const r1 = await editTool.execute(
         "e1",
@@ -29,10 +30,11 @@ describe("edit tool file mutation queue", () => {
 
   it.skipIf(process.platform === "win32")("canonicalizes the queue key when a symlink points at the same file", async () => {
     await withTempFile("target.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
-      const { ctx, editTool } = setupIntegrationTest(cwd);
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const { symlink } = await import("fs/promises");
       await symlink(cwd + "/target.ts", cwd + "/link.ts");
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      await readTool.execute("r1", { path: "target.ts" }, undefined, undefined, ctx);
 
       const r1 = await editTool.execute(
         "e1",
@@ -63,8 +65,9 @@ describe("edit tool file mutation queue", () => {
     await mkdir(linkDir, { recursive: true });
     await symlink(subDir, join(linkDir, "sub"));
 
-    const { ctx, editTool } = setupIntegrationTest(tmpDir);
+    const { ctx, readTool, editTool } = setupIntegrationTest(tmpDir);
     const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+    await readTool.execute("r1", { path: "sub/target.ts" }, undefined, undefined, ctx);
 
     const r1 = await editTool.execute(
       "e1",

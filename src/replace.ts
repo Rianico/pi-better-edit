@@ -44,7 +44,8 @@ import {
 } from "./replace-render";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./replace-undo";
-import { loadHashStore, findSnapshotPaths, type HashStore } from "./hash-store";
+import { loadHashStore, findSnapshotPaths, getServed, upsertServed, type HashStore } from "./hash-store";
+import { ServedRejectionError, AnchorMismatchError } from "./hashline/served";
 
 const replacementTextSchema = Type.String({
   description:
@@ -232,13 +233,31 @@ export async function execPipeline(
     path, cwd, { signal: options?.signal, accessMode: options?.accessMode, maxLines: MAX_HASH_LINES, store: hashStore, noPersist: options?.noPersist },
   );
 
-  const anchorResult = applyEdit(
-    originalNormalized,
-    edit,
-    options?.signal,
-    originalHashes,
-    path,
-  );
+  const served = getServed(hashStore, absolutePath);
+
+  let anchorResult: ReturnType<typeof applyEdit>;
+  try {
+    anchorResult = applyEdit(
+      originalNormalized,
+      edit,
+      options?.signal,
+      originalHashes,
+      path,
+      served,
+    );
+  } catch (error) {
+    if (error instanceof ServedRejectionError || error instanceof AnchorMismatchError) {
+      if (options?.noPersist !== true) {
+        const rows = error instanceof ServedRejectionError ? error.echoRows : error.servedRows;
+        try {
+          upsertServed(hashStore, absolutePath, rows);
+        } catch (recordError) {
+          console.error("Failed to record served rows from rejection feedback:", recordError);
+        }
+      }
+    }
+    throw error;
+  }
 
   const result = anchorResult.content;
   const isNoop = result === originalNormalized;

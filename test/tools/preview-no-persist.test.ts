@@ -4,7 +4,7 @@ import { lineHashes } from "../../src/hashline";
 import { compPreview } from "../../src/replace";
 import { loadHashStore, getSnapshot } from "../../src/hash-store";
 import { hashStorePath } from "../../src/paths";
-import { withTempFile } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 describe("compPreview no-persist guarantee", () => {
 
@@ -14,6 +14,8 @@ describe("compPreview no-persist guarantee", () => {
       const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
         await (await import("../../src/paths")).toCwd("sample.txt", cwd)
       );
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
 
       const hashes = await lineHashes(content, absolutePath);
 
@@ -47,6 +49,8 @@ describe("compPreview no-persist guarantee", () => {
       const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
         await (await import("../../src/paths")).toCwd("sample.txt", cwd)
       );
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
 
       const hashes = await lineHashes(content, absolutePath);
 
@@ -70,6 +74,8 @@ describe("compPreview no-persist guarantee", () => {
       const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
         await (await import("../../src/paths")).toCwd("sample.txt", cwd)
       );
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
 
       const hashes = await lineHashes(content, absolutePath);
 
@@ -94,6 +100,8 @@ describe("compPreview no-persist guarantee", () => {
       const absolutePath = await (await import("../../src/fs-write")).resolveTarget(
         await (await import("../../src/paths")).toCwd("sample.txt", cwd)
       );
+      const { readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
       const hashes = await lineHashes(content, absolutePath);
       const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
       db.prepare("UPDATE snapshots SET hashes = ? WHERE path = ?").run('["ZZ", "ZZZZ"]', absolutePath);
