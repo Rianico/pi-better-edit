@@ -19,6 +19,8 @@ interface Prepared {
   undoDelete: (...params: SqlParams) => void;
   servedGet: (...params: SqlParams) => Record<string, unknown> | undefined;
   servedUpsert: (...params: SqlParams) => void;
+  servedReportedUpsert: (...params: SqlParams) => void;
+  servedReportedClear: (...params: SqlParams) => void;
   servedDelete: (...params: SqlParams) => void;
   servedWipe: (...params: SqlParams) => void;
 }
@@ -157,9 +159,14 @@ function buildStore(
     "CREATE TABLE IF NOT EXISTS served (" +
       "path TEXT PRIMARY KEY, " +
       "hashes TEXT NOT NULL, " +
+      "reported TEXT, " +
       "updated_at INTEGER NOT NULL" +
     ")"
   );
+  const servedColumns = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+  if (!servedColumns.some((column) => column.name === "reported")) {
+    db.exec("ALTER TABLE served ADD COLUMN reported TEXT");
+  }
   const versionRow = db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined;
   if (versionRow && versionRow.value !== String(HASH_STORE_VERSION)) {
     db.exec("DELETE FROM snapshots");
@@ -186,10 +193,17 @@ function buildStore(
     "SELECT content, bom, ending, hashes, result_content FROM undo WHERE path = ?"
   );
   const undoDelStmt = db.prepare("DELETE FROM undo WHERE path = ?");
-  const servedGetStmt = db.prepare("SELECT hashes FROM served WHERE path = ?");
+  const servedGetStmt = db.prepare("SELECT hashes, reported FROM served WHERE path = ?");
   const servedUpsertStmt = db.prepare(
     "INSERT INTO served (path, hashes, updated_at) VALUES (?, ?, ?) " +
     "ON CONFLICT(path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at"
+  );
+  const servedReportedUpsertStmt = db.prepare(
+    "INSERT INTO served (path, hashes, reported, updated_at) VALUES (?, '[]', ?, ?) " +
+    "ON CONFLICT(path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at"
+  );
+  const servedReportedClearStmt = db.prepare(
+    "UPDATE served SET reported = NULL, updated_at = ? WHERE path = ?"
   );
   const servedDeleteStmt = db.prepare("DELETE FROM served WHERE path = ?");
   const servedWipeStmt = db.prepare("DELETE FROM served");
@@ -204,6 +218,8 @@ function buildStore(
     undoDelete: (...params) => { withBusyRetry(() => { undoDelStmt.run(...params); }); },
     servedGet: (...params) => servedGetStmt.get(...params) as Record<string, unknown> | undefined,
     servedUpsert: (...params) => { withBusyRetry(() => { servedUpsertStmt.run(...params); }); },
+    servedReportedUpsert: (...params) => { withBusyRetry(() => { servedReportedUpsertStmt.run(...params); }); },
+    servedReportedClear: (...params) => { withBusyRetry(() => { servedReportedClearStmt.run(...params); }); },
     servedDelete: (...params) => { withBusyRetry(() => { servedDeleteStmt.run(...params); }); },
     servedWipe: () => { withBusyRetry(() => { servedWipeStmt.run(); }); },
   };
@@ -497,6 +513,38 @@ export function upsertServed(
     }
     while (updated.length > 0 && updated[updated.length - 1] === null) updated.pop();
     store.stmts.servedUpsert(path, JSON.stringify(updated), Date.now());
+  });
+}
+
+export function getReported(store: HashStore, path: string): Set<string> {
+  const row = store.stmts.servedGet(path);
+  if (!row) return new Set();
+  const raw = row.reported;
+  if (typeof raw !== "string" || raw.length === 0) return new Set();
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (!Array.isArray(parsed)) return new Set();
+    return new Set(
+      parsed.filter((h): h is string => typeof h === "string" && HASH_RE.test(h)),
+    );
+  } catch {
+    return new Set();
+  }
+}
+
+export function addReported(store: HashStore, path: string, hashes: string[]): void {
+  const valid = hashes.filter((hash) => HASH_RE.test(hash));
+  if (valid.length === 0) return;
+  withStore(() => {
+    const current = getReported(store, path);
+    for (const hash of valid) current.add(hash);
+    store.stmts.servedReportedUpsert(path, JSON.stringify([...current]), Date.now());
+  });
+}
+
+export function clearReported(store: HashStore, path: string): void {
+  withStore(() => {
+    store.stmts.servedReportedClear(Date.now(), path);
   });
 }
 

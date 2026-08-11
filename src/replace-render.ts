@@ -1,6 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { normReq } from "./replace-normalize";
 import type { ReqParams, ReplaceDetails } from "./replace";
+import { DRIFT_NOTICE_HEADING } from "./drift";
 import { isRec } from "./utils";
 
 export type FgT = Pick<Theme, "fg">;
@@ -123,7 +124,10 @@ export function getResultText(result: {
 export function extractWarnings(
 	text: string | undefined,
 ): string | undefined {
-	return text?.match(/(?:^|\n)Warnings:\n[\s\S]*$/)?.[0]?.trimStart();
+	const match = text?.match(/(?:^|\n)Warnings:\n[\s\S]*$/)?.[0]?.trimStart();
+	if (!match) return undefined;
+	const noticeIdx = match.indexOf(`\n\n${DRIFT_NOTICE_HEADING}`);
+	return noticeIdx >= 0 ? match.slice(0, noticeIdx) : match;
 }
 
 export function isApplied(

@@ -152,6 +152,8 @@ export function applyEdit(
 	content: string;
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
+	rangeStartLine?: number;
+	rangeEndLine?: number;
 	warnings?: string[];
 	noopEdit?: NEdit;
 	autoFixes?: AutoFix[];
@@ -254,6 +256,8 @@ export function applyEdit(
 			content,
 			firstChangedLine: undefined,
 			lastChangedLine: undefined,
+			rangeStartLine: resolved.hash_bounds[0].line,
+			rangeEndLine: resolved.hash_bounds[1].line,
 			...(warnings.length ? { warnings } : {}),
 			noopEdit: {
 				loc: spanResult.loc,
@@ -270,6 +274,8 @@ export function applyEdit(
 		content: result,
 		firstChangedLine: range?.firstChangedLine,
 		lastChangedLine: range?.lastChangedLine,
+		rangeStartLine: resolved.hash_bounds[0].line,
+		rangeEndLine: resolved.hash_bounds[1].line,
 		...(warnings.length ? { warnings } : {}),
 		...(autoFixes ? { autoFixes } : {}),
 	};

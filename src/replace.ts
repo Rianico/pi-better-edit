@@ -8,12 +8,14 @@ import { Type } from "typebox";
 import { constants } from "fs";
 import { genDiff, restoreEndings, type LineEnding } from "./replace-diff";
 import { readNormFile } from "./file-reader";
+import { scanDrift } from "./drift";
 import { normReq } from "./replace-normalize";
 import {
 	isRec,
 	rejectUnknownFields,
 	abortIf,
 	normalizeFilePath,
+	splitLines,
 } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import {
@@ -98,6 +100,7 @@ export type ReplaceDetails = {
 	classification?: "noop";
 	metrics?: RMetrics;
 	servedRows?: Array<{ position: number; hash: string }>;
+	driftNotice?: string;
 };
 
 interface PipelineResult {
@@ -115,6 +118,7 @@ interface PipelineResult {
 	resultHashes: string[];
 	totalAddedLines: number;
 	totalRemovedLines: number;
+	driftNotice?: string;
 }
 
 const PREVIEW_DEBOUNCE_MS = 150;
@@ -327,6 +331,28 @@ export async function execPipeline(
 		anchorResult.autoFixes?.length ?? 0,
 	);
 
+	let driftNotice: string | undefined;
+	if (
+		options?.noPersist !== true &&
+		anchorResult.rangeStartLine !== undefined &&
+		anchorResult.rangeEndLine !== undefined
+	) {
+		try {
+			driftNotice = scanDrift({
+				served,
+				resultHashes,
+				resultLines: splitLines(result),
+				rangeStartLine: anchorResult.rangeStartLine,
+				rangeEndLine: anchorResult.rangeEndLine,
+				delta: totalAddedLines - totalRemovedLines,
+				store: hashStore,
+				path: absolutePath,
+			});
+		} catch (error) {
+			console.error("Failed to compute drift notice:", error);
+		}
+	}
+
 	return {
 		path,
 		originalNormalized,
@@ -342,6 +368,7 @@ export async function execPipeline(
 		originalHashes,
 		totalAddedLines,
 		totalRemovedLines,
+		driftNotice,
 	};
 }
 
@@ -559,6 +586,7 @@ export function buildToolDef(): ToolDef {
 					resultHashes,
 					totalAddedLines,
 					totalRemovedLines,
+					driftNotice,
 				} = await execPipeline(normalizedParams, ctx.cwd, {
 					accessMode: constants.R_OK | constants.W_OK,
 					signal,
@@ -587,6 +615,7 @@ export function buildToolDef(): ToolDef {
 							removedLines: 0,
 						},
 						warnings,
+						driftNotice,
 					});
 				}
 
@@ -644,6 +673,7 @@ export function buildToolDef(): ToolDef {
 					warnings,
 					snapshotId: updatedSnapshotId,
 					editMeta,
+					driftNotice,
 				};
 				return buildChanged(successInput);
 			});

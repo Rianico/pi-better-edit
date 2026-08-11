@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
-import { mkdtemp, rm, writeFile } from "fs/promises";
+import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
@@ -8,6 +8,9 @@ import {
 	shutdownHashStore,
 	getServed,
 	upsertServed,
+	getReported,
+	addReported,
+	clearReported,
 	deleteServed,
 	wipeServed,
 	pruneMissing,
@@ -364,6 +367,94 @@ describe("hash-store — served pruneMissing", () => {
 			expect(getSnapshot(store, "/gone.ts", "gone\n")).toBeUndefined();
 			expect(getUndoEntry(store, existing)).toBeDefined();
 			expect(getUndoEntry(store, "/gone.ts")).toBeUndefined();
+		});
+	});
+});
+
+describe("hash-store — reported drift set (issue #6)", () => {
+	it("merges reported hashes per file", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			addReported(store, "/a.ts", ["abc", "def"]);
+			addReported(store, "/a.ts", ["def", "ghi"]);
+			expect(getReported(store, "/a.ts")).toEqual(
+				new Set(["abc", "def", "ghi"]),
+			);
+		});
+	});
+
+	it("returns an empty set for a path with no reported data", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			expect(getReported(store, "/missing.ts")).toEqual(new Set());
+		});
+	});
+
+	it("ignores malformed reported data", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			addReported(store, "/p.ts", ["abc"]);
+			const db = new DatabaseSync(sqlitePath(home), {
+				defensive: false,
+			} as any);
+			db.prepare("UPDATE served SET reported = 'not json' WHERE path = ?").run(
+				"/p.ts",
+			);
+			db.close();
+			expect(getReported(store, "/p.ts")).toEqual(new Set());
+		});
+	});
+
+	it("clears the reported set for a path", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			addReported(store, "/p.ts", ["abc"]);
+			clearReported(store, "/p.ts");
+			expect(getReported(store, "/p.ts")).toEqual(new Set());
+		});
+	});
+
+	it("survives a hash-store shutdown and reopen", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			addReported(store, "/p.ts", ["abc"]);
+			shutdownHashStore();
+			const reloaded = await loadHashStore();
+			expect(getReported(reloaded, "/p.ts")).toEqual(new Set(["abc"]));
+		});
+	});
+
+	it("is wiped alongside the served table", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			addReported(store, "/a.ts", ["abc"]);
+			wipeServed(store);
+			expect(getReported(store, "/a.ts")).toEqual(new Set());
+		});
+	});
+
+	it("is pruned when the file no longer exists", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			addReported(store, "/gone.ts", ["abc"]);
+			await pruneMissing(store);
+			expect(getReported(store, "/gone.ts")).toEqual(new Set());
+		});
+	});
+
+	it("migrates a pre-existing served table to add the reported column", async () => {
+		await withTempHome(async (home) => {
+			await mkdir(configHome(home), { recursive: true });
+			const db = new DatabaseSync(sqlitePath(home), {
+				defensive: false,
+			} as any);
+			db.exec(
+				"CREATE TABLE served (path TEXT PRIMARY KEY, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL)",
+			);
+			db.close();
+			const store = await loadHashStore();
+			addReported(store, "/p.ts", ["abc"]);
+			expect(getReported(store, "/p.ts")).toEqual(new Set(["abc"]));
 		});
 	});
 });

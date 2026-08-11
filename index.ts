@@ -144,12 +144,16 @@ export default function (pi: ExtensionAPI): void {
       )
       .map((entry) => entry.text)
       .join("\n");
+    const driftNotice = (event.details as
+      | { driftNotice?: string }
+      | undefined)?.driftNotice;
     const warnings = extractWarnings(rendered);
+    const base = warnings ? `${diff}\n\n${warnings}` : diff;
     return {
       content: [
         {
           type: "text",
-          text: warnings ? `${diff}\n\n${warnings}` : diff,
+          text: driftNotice ? `${base}\n\n${driftNotice}` : base,
         },
       ],
     };

@@ -38,6 +38,7 @@ export interface NoopInput {
 	snapshotId?: string;
 	editMeta: RMeta;
 	warnings: string[] | undefined;
+	driftNotice?: string;
 }
 
 export interface SuccessInput {
@@ -49,6 +50,7 @@ export interface SuccessInput {
   warnings: string[] | undefined;
   snapshotId?: string;
   editMeta: RMeta;
+  driftNotice?: string;
 }
 
 
@@ -95,13 +97,15 @@ export function buildNoop(input: NoopInput): TResult {
 		snapshotId,
 		editMeta,
 		warnings,
+		driftNotice,
 	} = input;
 
 	const noopDetailsText = noopEdit
 		? `Replacement for ${noopEdit.loc} is identical to current content:\n  ${noopEdit.loc}: ${clipLine(noopEdit.currentContent)}`
 		: "The edit produced identical content.";
 
-	const text = `No changes made to ${path}\nClassification: noop\n${noopDetailsText}`;
+	const noticeBlock = driftNotice ? `\n\n${driftNotice}` : "";
+	const text = `No changes made to ${path}\nClassification: noop\n${noopDetailsText}${noticeBlock}`;
 
 	const metrics = buildMetrics({
 		classification: "noop",
@@ -118,12 +122,13 @@ export function buildNoop(input: NoopInput): TResult {
 			snapshotId,
 			classification: "noop" as const,
 			metrics,
+			...(driftNotice !== undefined ? { driftNotice } : {}),
 		},
 	};
 }
 
 export function buildChanged(input: SuccessInput): TResult {
-  const { path, result, warnings, snapshotId, originalNormalized, originalHashes, editMeta, resultHashes } = input;
+  const { path, result, warnings, snapshotId, originalNormalized, originalHashes, editMeta, resultHashes, driftNotice } = input;
   const resultLines = visLines(result);
   const diffResult = genDiff(originalNormalized, result, 1, resultHashes, originalHashes);
   const addedLines = editMeta.addedLines;
@@ -133,11 +138,12 @@ export function buildChanged(input: SuccessInput): TResult {
   const lineSummary = addedLines > 0 || removedLines > 0
     ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
     : "";
+  const noticeBlock = driftNotice ? `\n\n${driftNotice}` : "";
   const text = resultLines.length === 0
-    ? "File is empty. Use replace to insert content."
+    ? "File is empty. Use replace to insert content." + noticeBlock
     : warningsBlock
-      ? `${successPrefix}${lineSummary}${warningsBlock}`
-      : `${successPrefix}${lineSummary}`;
+      ? `${successPrefix}${lineSummary}${warningsBlock}${noticeBlock}`
+      : `${successPrefix}${lineSummary}${noticeBlock}`;
 
   const metrics = buildMetrics({
     classification: "applied",
@@ -159,6 +165,7 @@ export function buildChanged(input: SuccessInput): TResult {
       snapshotId,
       metrics,
       servedRows: diffResult.servedRows,
+      ...(driftNotice !== undefined ? { driftNotice } : {}),
     },
   };
 }
