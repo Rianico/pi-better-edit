@@ -21,23 +21,23 @@ type LIdx = {
 };
 
 export function buildIdx(content: string): LIdx {
-  const fileLines = splitLines(content);
-  const lineStarts: number[] = [];
-  let offset = 0;
+	const fileLines = splitLines(content);
+	const lineStarts: number[] = [];
+	let offset = 0;
 
-  for (let index = 0; index < fileLines.length; index++) {
-    lineStarts.push(offset);
-    offset += fileLines[index]!.length;
-    if (index < fileLines.length - 1) {
-      offset += 1;
-    }
-  }
+	for (let index = 0; index < fileLines.length; index++) {
+		lineStarts.push(offset);
+		offset += fileLines[index]!.length;
+		if (index < fileLines.length - 1) {
+			offset += 1;
+		}
+	}
 
-  return {
-    fileLines,
-    lineStarts,
-  };
-};
+	return {
+		fileLines,
+		lineStarts,
+	};
+}
 
 type RESpan = {
 	kind: "replace";
@@ -54,80 +54,80 @@ type NoopSpan = {
 function assertNotEmpty(originalContent: string, result: string): void {
 	if (originalContent.length > 0 && result.length === 0) {
 		throw new Error(
-			"[E_WOULD_EMPTY] Cannot empty a non-empty file via edit. Use `write` if you need to clear the file."
+			"[E_WOULD_EMPTY] Cannot empty a non-empty file via edit. Use `write` if you need to clear the file.",
 		);
 	}
 }
 
 function resToSpan(
-  edit: RHEdit,
-  content: string,
-  lineIndex: LIdx,
+	edit: RHEdit,
+	content: string,
+	lineIndex: LIdx,
 ): RESpan | NoopSpan {
-  const { fileLines, lineStarts } = lineIndex;
+	const { fileLines, lineStarts } = lineIndex;
 
-  const startLine = edit.hash_bounds[0].line;
-  const endLine = edit.hash_bounds[1].line;
-  const originalLines = fileLines.slice(startLine - 1, endLine);
-  if (
-    originalLines.length === edit.content_lines.length &&
-    originalLines.every(
-      (line, lineIndex) => line === edit.content_lines[lineIndex],
-    )
-  ) {
-    return {
-      kind: "noop",
-      loc: edit.hash_bounds[0].hash,
-      currentContent: originalLines.join("\n"),
-    };
-  }
+	const startLine = edit.hash_bounds[0].line;
+	const endLine = edit.hash_bounds[1].line;
+	const originalLines = fileLines.slice(startLine - 1, endLine);
+	if (
+		originalLines.length === edit.content_lines.length &&
+		originalLines.every(
+			(line, lineIndex) => line === edit.content_lines[lineIndex],
+		)
+	) {
+		return {
+			kind: "noop",
+			loc: edit.hash_bounds[0].hash,
+			currentContent: originalLines.join("\n"),
+		};
+	}
 
-  if (edit.content_lines.length > 0) {
-    return {
-      kind: "replace",
-      start: lineStarts[startLine - 1]!,
-      end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
-      replacement: edit.content_lines.join("\n"),
-    };
-  }
+	if (edit.content_lines.length > 0) {
+		return {
+			kind: "replace",
+			start: lineStarts[startLine - 1]!,
+			end: lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length,
+			replacement: edit.content_lines.join("\n"),
+		};
+	}
 
-  if (startLine === 1 && endLine === fileLines.length) {
-    return {
-      kind: "replace",
-      start: 0,
-      end: content.length,
-      replacement: "",
-    };
-  }
+	if (startLine === 1 && endLine === fileLines.length) {
+		return {
+			kind: "replace",
+			start: 0,
+			end: content.length,
+			replacement: "",
+		};
+	}
 
-  if (endLine < fileLines.length) {
-    return {
-      kind: "replace",
-      start: lineStarts[startLine - 1]!,
-      end: lineStarts[endLine]!,
-      replacement: "",
-    };
-  }
+	if (endLine < fileLines.length) {
+		return {
+			kind: "replace",
+			start: lineStarts[startLine - 1]!,
+			end: lineStarts[endLine]!,
+			replacement: "",
+		};
+	}
 
-  if (content.endsWith("\n")) {
-    return {
-      kind: "replace",
-      start: lineStarts[startLine - 1]!,
-      end: content.length,
-      replacement: "",
-    };
-  }
+	if (content.endsWith("\n")) {
+		return {
+			kind: "replace",
+			start: lineStarts[startLine - 1]!,
+			end: content.length,
+			replacement: "",
+		};
+	}
 
-  const prevLine = startLine >= 2 ? fileLines[startLine - 2] : undefined;
-  return {
-    kind: "replace",
-    start:
-      prevLine !== undefined && prevLine.length === 0
-        ? lineStarts[startLine - 1]!
-        : Math.max(0, lineStarts[startLine - 1]! - 1),
-    end: content.length,
-    replacement: "",
-  };
+	const prevLine = startLine >= 2 ? fileLines[startLine - 2] : undefined;
+	return {
+		kind: "replace",
+		start:
+			prevLine !== undefined && prevLine.length === 0
+				? lineStarts[startLine - 1]!
+				: Math.max(0, lineStarts[startLine - 1]! - 1),
+		end: content.length,
+		replacement: "",
+	};
 }
 
 function assemble(
@@ -136,7 +136,9 @@ function assemble(
 	signal: AbortSignal | undefined,
 ): string {
 	abortIf(signal);
-	return content.slice(0, span.start) + span.replacement + content.slice(span.end);
+	return (
+		content.slice(0, span.start) + span.replacement + content.slice(span.end)
+	);
 }
 
 export function applyEdit(
@@ -146,7 +148,7 @@ export function applyEdit(
 	precomputedHashes?: string[],
 	filePath?: string,
 	served?: (string | null)[],
-	): {
+): {
 	content: string;
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
@@ -166,16 +168,17 @@ export function applyEdit(
 		warnings,
 	);
 
-	const { resolved: initialResolved, mismatches, boundaryDups } = valEdit(
-		prefixFixed,
-		lineIndex.fileLines,
-		fileHashes,
-		warnings,
-		signal,
-	);
+	const {
+		resolved: initialResolved,
+		mismatches,
+		boundaryDups,
+	} = valEdit(prefixFixed, lineIndex.fileLines, fileHashes, warnings, signal);
 	if (mismatches.length || !initialResolved) {
 		const { message, servedRows } = fmtMismatchWithServes(
-			mismatches, lineIndex.fileLines, fileHashes, filePath,
+			mismatches,
+			lineIndex.fileLines,
+			fileHashes,
+			filePath,
 		);
 		throw new AnchorMismatchError(message, servedRows);
 	}
@@ -204,7 +207,11 @@ export function applyEdit(
 			const idx = dup.replacementLineIndex;
 			if (idx < 0 || idx >= correctedEdit.content_lines.length) continue;
 			const removed = correctedEdit.content_lines.splice(idx, 1)[0];
-			autoFixes.push({ kind: dup.kind, removedLine: removed, removedLineIndex: idx });
+			autoFixes.push({
+				kind: dup.kind,
+				removedLine: removed,
+				removedLineIndex: idx,
+			});
 		}
 		const correctedResult = valEdit(
 			correctedEdit,
@@ -215,7 +222,10 @@ export function applyEdit(
 		);
 		if (correctedResult.mismatches.length || !correctedResult.resolved) {
 			const { message, servedRows } = fmtMismatchWithServes(
-				correctedResult.mismatches, lineIndex.fileLines, fileHashes, filePath,
+				correctedResult.mismatches,
+				lineIndex.fileLines,
+				fileHashes,
+				filePath,
 			);
 			throw new AnchorMismatchError(message, servedRows);
 		}
@@ -245,7 +255,10 @@ export function applyEdit(
 			firstChangedLine: undefined,
 			lastChangedLine: undefined,
 			...(warnings.length ? { warnings } : {}),
-			noopEdit: { loc: spanResult.loc, currentContent: spanResult.currentContent },
+			noopEdit: {
+				loc: spanResult.loc,
+				currentContent: spanResult.currentContent,
+			},
 		};
 	}
 
@@ -262,10 +275,7 @@ export function applyEdit(
 	};
 }
 
-export function fmtRegion(
-	hashes: string[],
-	lines: string[],
-): string {
+export function fmtRegion(hashes: string[], lines: string[]): string {
 	if (hashes.length !== lines.length) {
 		throw new Error(
 			`fmtRegion: hashes.length (${hashes.length}) must match lines.length (${lines.length}).`,

@@ -1,5 +1,17 @@
-import { abortIf, rejectUnknownFields, firstNonEmptyIndex, lastNonEmptyIndex, clipLine } from "../utils";
-import { HASH_CLASS, HL_BARE_PREFIX_RE, HL_PREFIX_PLUS_RE, HL_PREFIX_MINUS_RE, canon } from "./hash";
+import {
+	abortIf,
+	rejectUnknownFields,
+	firstNonEmptyIndex,
+	lastNonEmptyIndex,
+	clipLine,
+} from "../utils";
+import {
+	HASH_CLASS,
+	HL_BARE_PREFIX_RE,
+	HL_PREFIX_PLUS_RE,
+	HL_PREFIX_MINUS_RE,
+	canon,
+} from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
 
@@ -11,8 +23,8 @@ export type RAnchor = {
 
 export type HEdit = { content_lines: string[]; hash_bounds: [Anchor, Anchor] };
 export type RHEdit = {
-  content_lines: string[];
-  hash_bounds: [RAnchor, RAnchor];
+	content_lines: string[];
+	hash_bounds: [RAnchor, RAnchor];
 };
 
 interface HMismatch {
@@ -39,9 +51,9 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-  replacement_text: string;
-  remove_from: string;
-  remove_to: string;
+	replacement_text: string;
+	remove_from: string;
+	remove_to: string;
 };
 
 function resAnchorFromMap(
@@ -75,147 +87,159 @@ function assertAligned(
 }
 
 export function fmtMismatch(
-  mismatches: HMismatch[],
-  fileLines: string[],
-  fileHashes: string[],
-  filePath?: string,
+	mismatches: HMismatch[],
+	fileLines: string[],
+	fileHashes: string[],
+	filePath?: string,
 ): string {
-  return fmtMismatchWithServes(mismatches, fileLines, fileHashes, filePath).message;
+	return fmtMismatchWithServes(mismatches, fileLines, fileHashes, filePath)
+		.message;
 }
 
 export function fmtMismatchWithServes(
-  mismatches: HMismatch[],
-  fileLines: string[],
-  fileHashes: string[],
-  filePath?: string,
+	mismatches: HMismatch[],
+	fileLines: string[],
+	fileHashes: string[],
+	filePath?: string,
 ): { message: string; servedRows: Array<{ position: number; hash: string }> } {
-  assertAligned(fileLines, fileHashes, "fmtMismatch");
+	assertAligned(fileLines, fileHashes, "fmtMismatch");
 
-  const out: string[] = [];
-  const servedRows: Array<{ position: number; hash: string }> = [];
-  const seen = new Set<number>();
-  const pushRow = (ln: number) => {
-    if (ln < 1 || ln > fileLines.length) return;
-    const position = ln - 1;
-    if (seen.has(position)) return;
-    seen.add(position);
-    servedRows.push({ position, hash: fileHashes[ln - 1]! });
-  };
-  const notFound = mismatches.filter((m) => m.kind === "not_found");
-  const ambiguous = mismatches.filter((m) => m.kind === "ambiguous");
+	const out: string[] = [];
+	const servedRows: Array<{ position: number; hash: string }> = [];
+	const seen = new Set<number>();
+	const pushRow = (ln: number) => {
+		if (ln < 1 || ln > fileLines.length) return;
+		const position = ln - 1;
+		if (seen.has(position)) return;
+		seen.add(position);
+		servedRows.push({ position, hash: fileHashes[ln - 1]! });
+	};
+	const notFound = mismatches.filter((m) => m.kind === "not_found");
+	const ambiguous = mismatches.filter((m) => m.kind === "ambiguous");
 
-  const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
-  if (notFound.length > 0) {
-    out.push(
-      `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into remove_from and remove_to of your next replace call.`
-    );
-    for (const m of notFound) {
-      const ctx = m.context;
-      if (!ctx) continue;
-      const from = Math.max(1, ctx.line - 1);
-      const to = Math.min(fileLines.length, ctx.line + 1);
-      const rows: string[] = [];
-      for (let ln = from; ln <= to; ln++) {
-        rows.push(`    ${ln}: ${fileHashes[ln - 1]}│${clipLine(fileLines[ln - 1] ?? "")}`);
-        pushRow(ln);
-      }
-      out.push("");
-      out.push(`  Current context around resolved anchor "${ctx.hash}" (line ${ctx.line}):\n${rows.join("\n")}`);
-    }
-  }
-  if (ambiguous.length > 0) {
-    if (out.length > 0) out.push("");
-    out.push(
-      `[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into remove_from and remove_to of your next replace call.`
-    );
-    for (const m of ambiguous) {
-      const sample = (m.candidates ?? []).slice(0, 5);
-      const more =
-        (m.candidates?.length ?? 0) > sample.length
-          ? `, ... (+${(m.candidates?.length ?? 0) - sample.length} more)`
-          : "";
-      const lines = sample
-        .map((line) => {
-          const content = clipLine(fileLines[line - 1] ?? "");
-          pushRow(line);
-          return `    ${line}: ${fileHashes[line - 1]}│${content}`;
-        })
-        .join("\n");
-        out.push(
-          `  Hash "${m.ref.hash}" matches lines ${sample.join(", ")}${more}.\n${lines}`,
-        );
-    }
-  }
+	const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
+	if (notFound.length > 0) {
+		out.push(
+			`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into remove_from and remove_to of your next replace call.`,
+		);
+		for (const m of notFound) {
+			const ctx = m.context;
+			if (!ctx) continue;
+			const from = Math.max(1, ctx.line - 1);
+			const to = Math.min(fileLines.length, ctx.line + 1);
+			const rows: string[] = [];
+			for (let ln = from; ln <= to; ln++) {
+				rows.push(
+					`    ${ln}: ${fileHashes[ln - 1]}│${clipLine(fileLines[ln - 1] ?? "")}`,
+				);
+				pushRow(ln);
+			}
+			out.push("");
+			out.push(
+				`  Current context around resolved anchor "${ctx.hash}" (line ${ctx.line}):\n${rows.join("\n")}`,
+			);
+		}
+	}
+	if (ambiguous.length > 0) {
+		if (out.length > 0) out.push("");
+		out.push(
+			`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into remove_from and remove_to of your next replace call.`,
+		);
+		for (const m of ambiguous) {
+			const sample = (m.candidates ?? []).slice(0, 5);
+			const more =
+				(m.candidates?.length ?? 0) > sample.length
+					? `, ... (+${(m.candidates?.length ?? 0) - sample.length} more)`
+					: "";
+			const lines = sample
+				.map((line) => {
+					const content = clipLine(fileLines[line - 1] ?? "");
+					pushRow(line);
+					return `    ${line}: ${fileHashes[line - 1]}│${content}`;
+				})
+				.join("\n");
+			out.push(
+				`  Hash "${m.ref.hash}" matches lines ${sample.join(", ")}${more}.\n${lines}`,
+			);
+		}
+	}
 
-  return { message: out.join("\n"), servedRows };
+	return { message: out.join("\n"), servedRows };
 }
 
 const ITEM_KS = new Set(["replacement_text", "remove_from", "remove_to"]);
 
 function assertItem(edit: Record<string, unknown>): void {
-  rejectUnknownFields(edit, ITEM_KS, "Edit", "The edit takes only { replacement_text, remove_from, remove_to }.");
+	rejectUnknownFields(
+		edit,
+		ITEM_KS,
+		"Edit",
+		"The edit takes only { replacement_text, remove_from, remove_to }.",
+	);
 
-  if ("remove_from" in edit && typeof edit.remove_from !== "string") {
-    throw new Error(
-      `[E_BAD_SHAPE] Field "remove_from" must be an anchor string (3-char hash).`,
-    );
-  }
-  if ("remove_to" in edit && typeof edit.remove_to !== "string") {
-    throw new Error(
-      `[E_BAD_SHAPE] Field "remove_to" must be an anchor string (3-char hash).`,
-    );
-  }
-  if (!("replacement_text" in edit)) {
-    throw new Error(`[E_BAD_SHAPE] The edit requires a "replacement_text" field. Provide the replacement text (use "" to delete).`);
-  }
-  if (typeof edit.replacement_text !== "string") {
-    throw new Error(NEW_CONTENT_NOT_STRING_MSG);
-  }
-  if (typeof edit.remove_from !== "string" || typeof edit.remove_to !== "string") {
-    throw new Error(
-      `[E_BAD_SHAPE] The edit requires "remove_from" and "remove_to" anchor strings (3-char hashes from read output).`,
-    );
-  }
+	if ("remove_from" in edit && typeof edit.remove_from !== "string") {
+		throw new Error(
+			`[E_BAD_SHAPE] Field "remove_from" must be an anchor string (3-char hash).`,
+		);
+	}
+	if ("remove_to" in edit && typeof edit.remove_to !== "string") {
+		throw new Error(
+			`[E_BAD_SHAPE] Field "remove_to" must be an anchor string (3-char hash).`,
+		);
+	}
+	if (!("replacement_text" in edit)) {
+		throw new Error(
+			`[E_BAD_SHAPE] The edit requires a "replacement_text" field. Provide the replacement text (use "" to delete).`,
+		);
+	}
+	if (typeof edit.replacement_text !== "string") {
+		throw new Error(NEW_CONTENT_NOT_STRING_MSG);
+	}
+	if (
+		typeof edit.remove_from !== "string" ||
+		typeof edit.remove_to !== "string"
+	) {
+		throw new Error(
+			`[E_BAD_SHAPE] The edit requires "remove_from" and "remove_to" anchor strings (3-char hashes from read output).`,
+		);
+	}
 }
 
 const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
 
 export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
-  assertItem(edit as Record<string, unknown>);
+	assertItem(edit as Record<string, unknown>);
 
-  const replaceLines = parseText(edit.replacement_text);
-  const bounds = [edit.remove_from, edit.remove_to].map((ref) => {
-    const trimmed = ref.trim();
-    const match = trimmed.match(ANCHOR_ROW_RE);
-    if (match) {
-      let message: string;
-      if (match[1] === "+") {
-        message = `[E_BAD_REF] Autocorrected: stripped diff-preview marker copied from the diff preview in remove_from/remove_to entry "${trimmed}".`;
-      } else if (match[1] === "-") {
-        message = `[E_BAD_REF] Autocorrected: stripped leading "-" marker in remove_from/remove_to entry "${trimmed}".`;
-      } else {
-        message = `[E_BAD_REF] Autocorrected: stripped "HASH│" prefix copied from read output in remove_from/remove_to entry "${trimmed}".`;
-      }
-      warnings?.push(message);
-      return match[2]!;
-    }
-    return ref;
-  }) as [string, string];
-  return {
-    content_lines: replaceLines,
-    hash_bounds: [parseHashRef(bounds[0]), parseHashRef(bounds[1])],
-  };
+	const replaceLines = parseText(edit.replacement_text);
+	const bounds = [edit.remove_from, edit.remove_to].map((ref) => {
+		const trimmed = ref.trim();
+		const match = trimmed.match(ANCHOR_ROW_RE);
+		if (match) {
+			let message: string;
+			if (match[1] === "+") {
+				message = `[E_BAD_REF] Autocorrected: stripped diff-preview marker copied from the diff preview in remove_from/remove_to entry "${trimmed}".`;
+			} else if (match[1] === "-") {
+				message = `[E_BAD_REF] Autocorrected: stripped leading "-" marker in remove_from/remove_to entry "${trimmed}".`;
+			} else {
+				message = `[E_BAD_REF] Autocorrected: stripped "HASH│" prefix copied from read output in remove_from/remove_to entry "${trimmed}".`;
+			}
+			warnings?.push(message);
+			return match[2]!;
+		}
+		return ref;
+	}) as [string, string];
+	return {
+		content_lines: replaceLines,
+		hash_bounds: [parseHashRef(bounds[0]), parseHashRef(bounds[1])],
+	};
 }
 
-function warnUnicodeEsc(
-  edit: HEdit,
-  warnings: string[],
-): void {
-  if (edit.content_lines.some((line) => /\\uDDDD/i.test(line))) {
-    warnings.push(
-      "Detected literal \\uDDDD in edit content; no autocorrection applied. Verify whether this should be a real Unicode escape or plain text.",
-    );
-  }
+function warnUnicodeEsc(edit: HEdit, warnings: string[]): void {
+	if (edit.content_lines.some((line) => /\\uDDDD/i.test(line))) {
+		warnings.push(
+			"Detected literal \\uDDDD in edit content; no autocorrection applied. Verify whether this should be a real Unicode escape or plain text.",
+		);
+	}
 }
 
 export function stripBarePrefixes(
@@ -245,15 +269,12 @@ export function stripBarePrefixes(
 			? " Verify that these lines were pasted from read output; literal content starting with 'HASH│' would be altered by this strip."
 			: "";
 	warnings.push(
-		`[E_BARE_HASH_PREFIX] Autocorrected: stripped "HASH│" prefix copied from read output in ${locations} (${evidence}).${guidance}`
+		`[E_BARE_HASH_PREFIX] Autocorrected: stripped "HASH│" prefix copied from read output in ${locations} (${evidence}).${guidance}`,
 	);
 	return { ...edit, content_lines: contentLines };
 }
 
-export function stripDiffPrefixes(
-	edit: HEdit,
-	warnings: string[],
-): HEdit {
+export function stripDiffPrefixes(edit: HEdit, warnings: string[]): HEdit {
 	const stripped: number[] = [];
 	const contentLines = edit.content_lines.map((line, lineIndex) => {
 		const plus = line.match(HL_PREFIX_PLUS_RE);
@@ -269,9 +290,11 @@ export function stripDiffPrefixes(
 		return line;
 	});
 	if (stripped.length === 0) return edit;
-	const locations = stripped.map((i) => `replacement_text line ${i + 1}`).join(", ");
+	const locations = stripped
+		.map((i) => `replacement_text line ${i + 1}`)
+		.join(", ");
 	warnings.push(
-		`[E_INVALID_PATCH] Autocorrected: stripped diff-preview marker copied from the diff preview in ${locations}.`
+		`[E_INVALID_PATCH] Autocorrected: stripped diff-preview marker copied from the diff preview in ${locations}.`,
 	);
 	return { ...edit, content_lines: contentLines };
 }
@@ -296,7 +319,7 @@ export function swapReversedRanges(
 		return edit;
 	}
 	warnings.push(
-		`[E_BAD_OP] Autocorrected: remove_from and remove_to were reversed (remove_from ${startRef.hash} is after remove_to ${endRef.hash}); swapped the pair.`
+		`[E_BAD_OP] Autocorrected: remove_from and remove_to were reversed (remove_from ${startRef.hash} is after remove_to ${endRef.hash}); swapped the pair.`,
 	);
 	return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
@@ -357,18 +380,25 @@ function firstNewAfterDups(
 ): BDup[] {
 	const firstNew = findNewEdge(contentLines, rangeLines, false);
 	if (!firstNew) return [];
-	const maxK = Math.min(contentLines.length - firstNew.index, canonLines.length - endLine);
+	const maxK = Math.min(
+		contentLines.length - firstNew.index,
+		canonLines.length - endLine,
+	);
 	let runLen = 0;
 	while (
 		runLen < maxK &&
-		canon(contentLines[firstNew.index + runLen]!) === canonLines[endLine + runLen]!
+		canon(contentLines[firstNew.index + runLen]!) ===
+			canonLines[endLine + runLen]!
 	) {
 		runLen++;
 	}
 	if (runLen === 0 || !sectionIsUnique(canonLines, endLine, runLen)) return [];
 	const dups: BDup[] = [];
 	for (let k = 0; k < runLen; k++) {
-		dups.push({ kind: "first-new-after", replacementLineIndex: firstNew.index + k });
+		dups.push({
+			kind: "first-new-after",
+			replacementLineIndex: firstNew.index + k,
+		});
 	}
 	return dups;
 }
@@ -385,7 +415,8 @@ function lastNewBeforeDups(
 	let runLen = 0;
 	while (
 		runLen < maxK &&
-		canon(contentLines[lastNew.index - runLen]!) === canonLines[startLine - 2 - runLen]!
+		canon(contentLines[lastNew.index - runLen]!) ===
+			canonLines[startLine - 2 - runLen]!
 	) {
 		runLen++;
 	}
@@ -394,7 +425,10 @@ function lastNewBeforeDups(
 	if (!sectionIsUnique(canonLines, sectionStart, runLen)) return [];
 	const dups: BDup[] = [];
 	for (let k = 0; k < runLen; k++) {
-		dups.push({ kind: "last-new-before", replacementLineIndex: lastNew.index - k });
+		dups.push({
+			kind: "last-new-before",
+			replacementLineIndex: lastNew.index - k,
+		});
 	}
 	return dups;
 }
@@ -436,7 +470,11 @@ export function valEdit(
 	fileHashes: string[],
 	warnings: string[],
 	signal: AbortSignal | undefined,
-): { resolved: RHEdit | undefined; mismatches: HMismatch[]; boundaryDups: BDup[] } {
+): {
+	resolved: RHEdit | undefined;
+	mismatches: HMismatch[];
+	boundaryDups: BDup[];
+} {
 	assertAligned(fileLines, fileHashes, "valEdit");
 	const mismatches: HMismatch[] = [];
 	const boundaryDups: BDup[] = [];
@@ -463,11 +501,17 @@ export function valEdit(
 	const endResolved = tryResolve(edit.hash_bounds[1]);
 	if (!startResolved || !endResolved) {
 		if (!startResolved && endResolved) {
-			const startMismatch = mismatches.findLast((m) => m.ref === edit.hash_bounds[0]);
-			if (startMismatch && startMismatch.kind === "not_found") startMismatch.context = endResolved;
+			const startMismatch = mismatches.findLast(
+				(m) => m.ref === edit.hash_bounds[0],
+			);
+			if (startMismatch && startMismatch.kind === "not_found")
+				startMismatch.context = endResolved;
 		} else if (startResolved && !endResolved) {
-			const endMismatch = mismatches.findLast((m) => m.ref === edit.hash_bounds[1]);
-			if (endMismatch && endMismatch.kind === "not_found") endMismatch.context = startResolved;
+			const endMismatch = mismatches.findLast(
+				(m) => m.ref === edit.hash_bounds[1],
+			);
+			if (endMismatch && endMismatch.kind === "not_found")
+				endMismatch.context = startResolved;
 		}
 		return { resolved: undefined, mismatches, boundaryDups };
 	}
@@ -483,7 +527,12 @@ export function valEdit(
 		...trailingDups(edit.content_lines, fileLines, endLine),
 		...leadingDups(edit.content_lines, fileLines, startResolved.line),
 		...firstNewAfterDups(edit.content_lines, rangeLines, canonLines, endLine),
-		...lastNewBeforeDups(edit.content_lines, rangeLines, canonLines, startResolved.line),
+		...lastNewBeforeDups(
+			edit.content_lines,
+			rangeLines,
+			canonLines,
+			startResolved.line,
+		),
 	);
 
 	return {
