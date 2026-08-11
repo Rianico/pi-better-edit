@@ -171,9 +171,7 @@ describe("drift notices for changed served territory outside the replace range",
 				expect(secondText).toContain("already reported");
 				expect(secondText).not.toContain("│DELTA2");
 				expect(
-					secondText
-						.split("\n")
-						.filter((l) => /^[A-Za-z0-9]{3}│/.test(l)),
+					secondText.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l)),
 				).toHaveLength(0);
 				expect(await readFile(path, "utf-8")).toBe(
 					"alpha\nbeta\ngamma\nDELTA2\n",
@@ -261,48 +259,104 @@ describe("drift notices for changed served territory outside the replace range",
 	});
 
 	it("keeps drift inside the range on the reject path with no drift notice", async () => {
-		await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
-			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+		await withTempFile(
+			"sample.ts",
+			"alpha\nbeta\ngamma\n",
+			async ({ cwd, path }) => {
+				const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-			const firstRead = await readTool.execute(
-				"r1",
-				{ path: "sample.ts" },
-				undefined,
-				undefined,
-				ctx,
-			);
-			const text = getText(firstRead);
-			const alphaRef = extractHash(
-				text.split("\n").find((l) => l.includes("│alpha"))!,
-			);
-			const gammaRef = extractHash(
-				text.split("\n").find((l) => l.includes("│gamma"))!,
-			);
+				const firstRead = await readTool.execute(
+					"r1",
+					{ path: "sample.ts" },
+					undefined,
+					undefined,
+					ctx,
+				);
+				const text = getText(firstRead);
+				const alphaRef = extractHash(
+					text.split("\n").find((l) => l.includes("│alpha"))!,
+				);
+				const gammaRef = extractHash(
+					text.split("\n").find((l) => l.includes("│gamma"))!,
+				);
 
-			await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
+				await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
-			let rejected: Error | undefined;
-			try {
-				await editTool.execute(
+				let rejected: Error | undefined;
+				try {
+					await editTool.execute(
+						"e1",
+						{
+							path: "sample.ts",
+							remove_from: alphaRef,
+							remove_to: gammaRef,
+							replacement_text: "X",
+						},
+						undefined,
+						undefined,
+						ctx,
+					);
+				} catch (error) {
+					rejected = error as Error;
+				}
+				expect(rejected).toBeDefined();
+				expect(rejected!.message).toMatch(/E_RANGE_STALE/);
+				expect(rejected!.message).not.toContain("Drift notice");
+				expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
+			},
+		);
+	});
+
+	it("tolerates an external positional shift above the range — unchanged shifted lines do not appear as drifted", async () => {
+		await withTempFile(
+			"sample.ts",
+			"l0\nl1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9\n",
+			async ({ cwd, path }) => {
+				const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+
+				const firstRead = await readTool.execute(
+					"r1",
+					{ path: "sample.ts" },
+					undefined,
+					undefined,
+					ctx,
+				);
+				const l4Ref = extractHash(
+					getText(firstRead)
+						.split("\n")
+						.find((l) => l.includes("│l4"))!,
+				);
+
+				await writeFile(
+					path,
+					"l0\nl1\nl4\nl5\nl6\nl7\nl8\nl9\n",
+					"utf-8",
+				);
+
+				const result = await editTool.execute(
 					"e1",
 					{
 						path: "sample.ts",
-						remove_from: alphaRef,
-						remove_to: gammaRef,
-						replacement_text: "X",
+						remove_from: l4Ref,
+						remove_to: l4Ref,
+						replacement_text: "R",
 					},
 					undefined,
 					undefined,
 					ctx,
 				);
-			} catch (error) {
-				rejected = error as Error;
-			}
-			expect(rejected).toBeDefined();
-			expect(rejected!.message).toMatch(/E_RANGE_STALE/);
-			expect(rejected!.message).not.toContain("Drift notice");
-			expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
-		});
+
+				const resultText = getText(result);
+				expect(resultText).toContain("Successfully replaced");
+				const notice = resultText.split("Drift notice:")[1] ?? "";
+				expect(notice).toContain("2 line(s)");
+				expect(notice.match(/^[A-Za-z0-9]{3}│R$/gm)).toHaveLength(2);
+				expect(notice).not.toMatch(/│l[0-9]/);
+				expect(await readFile(path, "utf-8")).toBe(
+					"l0\nl1\nR\nl5\nl6\nl7\nl8\nl9\n",
+				);
+			},
+		);
 	});
 
 	it("undo_last_replace results never carry a drift notice", async () => {

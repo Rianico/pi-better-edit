@@ -14,19 +14,19 @@ export interface ServedRow {
 export class ServedRejectionError extends Error {
 	readonly code: ServedCode;
 	readonly firstOffendingLine: number | undefined;
-	readonly echoRows: ServedRow[];
+	readonly servedRows: ServedRow[];
 
 	constructor(opts: {
 		code: ServedCode;
 		message: string;
 		firstOffendingLine?: number;
-		echoRows: ServedRow[];
+		servedRows: ServedRow[];
 	}) {
 		super(opts.message);
 		this.name = "ServedRejectionError";
 		this.code = opts.code;
 		this.firstOffendingLine = opts.firstOffendingLine;
-		this.echoRows = opts.echoRows;
+		this.servedRows = opts.servedRows;
 	}
 }
 
@@ -64,7 +64,7 @@ export function buildRangeEcho(
 	return rows;
 }
 
-export function fmtEchoRows(rows: ServedRow[], fileLines: string[]): string {
+export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
 	return rows
 		.map((row) => `${row.hash}${HASH_SEP}${fileLines[row.position] ?? ""}`)
 		.join("\n");
@@ -105,7 +105,7 @@ export function verifyServedRange(args: {
 		echoRows.length < totalLen
 			? `\n${paginationHint(startLine + echoRows.length, totalLen - echoRows.length)}`
 			: "";
-	const echo = fmtEchoRows(echoRows, fileLines) + tail;
+	const echo = fmtServedRows(echoRows, fileLines) + tail;
 
 	const positionsOf = (hash: string): number[] => {
 		const out: number[] = [];
@@ -138,7 +138,7 @@ export function verifyServedRange(args: {
 			message:
 				`[E_RANGE_UNVERIFIED] Cannot verify the range against served state${where}: ${problems.join("; ")}. ` +
 				`The tool only verifies what it delivered to the model's context; a boundary anchor that cannot be verified is never guessed at. Current range:\n${echo}\n${retryHint()}`,
-			echoRows,
+			servedRows: echoRows,
 		});
 	}
 
@@ -151,7 +151,7 @@ export function verifyServedRange(args: {
 				code: "E_RANGE_UNSERVED",
 				message: `[E_RANGE_UNSERVED] Line ${i + 1}${where} was never served to the model — the range includes lines the model has not seen. Current range:\n${echo}\n${retryHint()}`,
 				firstOffendingLine: i + 1,
-				echoRows,
+				servedRows: echoRows,
 			});
 		}
 	}
@@ -163,7 +163,7 @@ export function verifyServedRange(args: {
 			code: "E_RANGE_STALE",
 			message: `[E_RANGE_STALE] The served span (${servedLen} lines) no longer matches the current range (${currentLen} lines)${where}. Current range:\n${echo}\n${retryHint()}`,
 			firstOffendingLine: startLine,
-			echoRows,
+			servedRows: echoRows,
 		});
 	}
 	for (let k = 0; k < servedLen; k++) {
@@ -173,7 +173,7 @@ export function verifyServedRange(args: {
 				code: "E_RANGE_STALE",
 				message: `[E_RANGE_STALE] Line ${offendingLine}${where} differs from what you were served — the file changed on disk since it was read. Current range:\n${echo}\n${retryHint()}`,
 				firstOffendingLine: offendingLine,
-				echoRows,
+				servedRows: echoRows,
 			});
 		}
 	}

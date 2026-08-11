@@ -13,6 +13,7 @@ import {
 	canon,
 } from "./hash";
 import { parseHashRef, parseText, type Anchor } from "./parse";
+import type { ServedRow } from "./served";
 import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
 
 export type RAnchor = {
@@ -101,11 +102,11 @@ export function fmtMismatchWithServes(
 	fileLines: string[],
 	fileHashes: string[],
 	filePath?: string,
-): { message: string; servedRows: Array<{ position: number; hash: string }> } {
+): { message: string; servedRows: ServedRow[] } {
 	assertAligned(fileLines, fileHashes, "fmtMismatch");
 
 	const out: string[] = [];
-	const servedRows: Array<{ position: number; hash: string }> = [];
+	const servedRows: ServedRow[] = [];
 	const seen = new Set<number>();
 	const pushRow = (ln: number) => {
 		if (ln < 1 || ln > fileLines.length) return;

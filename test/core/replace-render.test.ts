@@ -173,6 +173,24 @@ describe("extractWarnings", () => {
 	it("returns undefined for undefined input", () => {
 		expect(extractWarnings(undefined)).toBeUndefined();
 	});
+
+	it("strips the trailing drift notice from the warnings block when its text is provided", () => {
+		const notice =
+			"Drift notice: 1 line(s) outside the replaced range drifted. Current content:\nabc│x";
+		const text = `Successfully replaced.\n\nWarnings:\nWarning 1\n\n${notice}`;
+		const result = extractWarnings(text, notice);
+		expect(result).toContain("Warnings:");
+		expect(result).toContain("Warning 1");
+		expect(result).not.toContain("Drift notice");
+	});
+
+	it("keeps the trailing notice when no notice text is provided", () => {
+		const text =
+			"Warnings:\nWarning 1\n\nDrift notice: 1 line(s) drifted.";
+		const result = extractWarnings(text);
+		expect(result).toContain("Warning 1");
+		expect(result).toContain("Drift notice: 1 line(s) drifted.");
+	});
 });
 
 describe("isApplied", () => {

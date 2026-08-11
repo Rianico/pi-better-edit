@@ -9,600 +9,700 @@ import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
 type SqlParams = (string | number)[];
 
 interface Prepared {
-  get: (...params: SqlParams) => Record<string, unknown> | undefined;
-  allPaths: (...params: SqlParams) => Record<string, unknown>[];
-  allHashes: (...params: SqlParams) => Record<string, unknown>[];
-  deleteOne: (...params: SqlParams) => void;
-  upsert: (...params: SqlParams) => void;
-  undoUpsert: (...params: SqlParams) => void;
-  undoGet: (...params: SqlParams) => Record<string, unknown> | undefined;
-  undoDelete: (...params: SqlParams) => void;
-  servedGet: (...params: SqlParams) => Record<string, unknown> | undefined;
-  servedUpsert: (...params: SqlParams) => void;
-  servedReportedUpsert: (...params: SqlParams) => void;
-  servedReportedClear: (...params: SqlParams) => void;
-  servedDelete: (...params: SqlParams) => void;
-  servedWipe: (...params: SqlParams) => void;
+	get: (...params: SqlParams) => Record<string, unknown> | undefined;
+	allPaths: (...params: SqlParams) => Record<string, unknown>[];
+	allHashes: (...params: SqlParams) => Record<string, unknown>[];
+	deleteOne: (...params: SqlParams) => void;
+	upsert: (...params: SqlParams) => void;
+	undoUpsert: (...params: SqlParams) => void;
+	undoGet: (...params: SqlParams) => Record<string, unknown> | undefined;
+	undoDelete: (...params: SqlParams) => void;
+	servedGet: (...params: SqlParams) => Record<string, unknown> | undefined;
+	servedUpsert: (...params: SqlParams) => void;
+	servedReportedUpsert: (...params: SqlParams) => void;
+	servedReportedClear: (...params: SqlParams) => void;
+	servedDelete: (...params: SqlParams) => void;
+	servedWipe: (...params: SqlParams) => void;
 }
 
 export interface HashStore {
-  readonly stmts: Prepared;
-  readonly engine: "node:sqlite";
+	readonly stmts: Prepared;
+	readonly engine: "node:sqlite";
 }
 
 export interface UndoRecord {
-  content: string;
-  bom: string;
-  ending: string;
-  hashes: string[];
-  resultContent: string;
+	content: string;
+	bom: string;
+	ending: string;
+	hashes: string[];
+	resultContent: string;
 }
 
 interface LegacySnapshot {
-  content: string;
-  hashes: string[];
+	content: string;
+	hashes: string[];
 }
 
 function isValidHashList(value: unknown): value is string[] {
-  if (!Array.isArray(value)) return false;
-  for (const hash of value) {
-    if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
-  }
-  return true;
+	if (!Array.isArray(value)) return false;
+	for (const hash of value) {
+		if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
+	}
+	return true;
 }
 
 function isValidSnapshot(value: unknown): value is LegacySnapshot {
-  if (typeof value !== "object" || value === null) return false;
-  const v = value as Record<string, unknown>;
-  if (typeof v.content !== "string") return false;
-  return isValidHashList(v.hashes);
+	if (typeof value !== "object" || value === null) return false;
+	const v = value as Record<string, unknown>;
+	if (typeof v.content !== "string") return false;
+	return isValidHashList(v.hashes);
 }
 
 export function isCorruptionError(error: unknown): boolean {
-  if (error && typeof error === "object") {
-    const errcode = (error as { errcode?: unknown }).errcode;
-    if (typeof errcode === "number") {
-      return errcode === 11 || errcode === 24 || errcode === 26;
-    }
-    const code = (error as { code?: unknown }).code;
-    if (typeof code === "string" && /NOTADB|CORRUPT/.test(code)) return true;
-  }
-  return (
-    error instanceof Error &&
-    /corrupt|not a database|malformed|database disk image/i.test(error.message)
-  );
+	if (error && typeof error === "object") {
+		const errcode = (error as { errcode?: unknown }).errcode;
+		if (typeof errcode === "number") {
+			return errcode === 11 || errcode === 24 || errcode === 26;
+		}
+		const code = (error as { code?: unknown }).code;
+		if (typeof code === "string" && /NOTADB|CORRUPT/.test(code)) return true;
+	}
+	return (
+		error instanceof Error &&
+		/corrupt|not a database|malformed|database disk image/i.test(error.message)
+	);
 }
 
 function isBusyError(error: unknown): boolean {
-  if (error && typeof error === "object") {
-    const errcode = (error as { errcode?: unknown }).errcode;
-    if (typeof errcode === "number") return errcode === 5 || errcode === 6;
-  }
-  return error instanceof Error && /busy|locked/i.test(error.message);
+	if (error && typeof error === "object") {
+		const errcode = (error as { errcode?: unknown }).errcode;
+		if (typeof errcode === "number") return errcode === 5 || errcode === 6;
+	}
+	return error instanceof Error && /busy|locked/i.test(error.message);
 }
 
 function sleepSync(ms: number): void {
-  const sab = new Int32Array(new SharedArrayBuffer(4));
-  Atomics.wait(sab, 0, 0, ms);
+	const sab = new Int32Array(new SharedArrayBuffer(4));
+	Atomics.wait(sab, 0, 0, ms);
 }
 
 const BUSY_RETRIES = 3;
 const BUSY_RETRY_DELAY_MS = 100;
 
 function withBusyRetry<T>(fn: () => T): T {
-  let lastError: unknown;
-  for (let attempt = 0; attempt <= BUSY_RETRIES; attempt++) {
-    try {
-      return fn();
-    } catch (error) {
-      lastError = error;
-      if (!isBusyError(error) || attempt === BUSY_RETRIES) throw error;
-      sleepSync(BUSY_RETRY_DELAY_MS);
-    }
-  }
-  throw lastError;
+	let lastError: unknown;
+	for (let attempt = 0; attempt <= BUSY_RETRIES; attempt++) {
+		try {
+			return fn();
+		} catch (error) {
+			lastError = error;
+			if (!isBusyError(error) || attempt === BUSY_RETRIES) throw error;
+			sleepSync(BUSY_RETRY_DELAY_MS);
+		}
+	}
+	throw lastError;
 }
 
-function openDbWithBusyRetry(storePath: string): { db: DatabaseSync; stmts: Prepared } {
-  return withBusyRetry(() => openDb(storePath));
+function openDbWithBusyRetry(storePath: string): {
+	db: DatabaseSync;
+	stmts: Prepared;
+} {
+	return withBusyRetry(() => openDb(storePath));
 }
 
 let cachedDb: { path: string; db: DatabaseSync; stmts: Prepared } | null = null;
 let opening: { path: string; promise: Promise<HashStore> } | null = null;
 let exitHandlerRegistered = false;
 function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
-  const db = new DatabaseSync(storePath, {
-    timeout: HASH_STORE_BUSY_TIMEOUT,
-  });
-  try {
-    return buildStore(db);
-  } catch (error) {
-    try {
-      db.close();
-    } catch {}
-    throw error;
-  }
+	const db = new DatabaseSync(storePath, {
+		timeout: HASH_STORE_BUSY_TIMEOUT,
+	});
+	try {
+		return buildStore(db);
+	} catch (error) {
+		try {
+			db.close();
+		} catch {}
+		throw error;
+	}
 }
 
-function buildStore(
-  db: DatabaseSync,
-): { db: DatabaseSync; stmts: Prepared } {
-  db.exec("PRAGMA journal_mode = WAL");
-  db.exec("PRAGMA synchronous = NORMAL");
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS snapshots (" +
-      "path TEXT PRIMARY KEY, " +
-      "checksum TEXT NOT NULL, " +
-      "line_count INTEGER NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
-    ")"
-  );
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS meta (" +
-      "key TEXT PRIMARY KEY, " +
-      "value TEXT NOT NULL" +
-    ")"
-  );
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS undo (" +
-      "path TEXT PRIMARY KEY, " +
-      "content TEXT NOT NULL, " +
-      "bom TEXT NOT NULL, " +
-      "ending TEXT NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
-      "result_content TEXT NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
-    ")"
-  );
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS served (" +
-      "path TEXT PRIMARY KEY, " +
-      "hashes TEXT NOT NULL, " +
-      "reported TEXT, " +
-      "updated_at INTEGER NOT NULL" +
-    ")"
-  );
-  const servedColumns = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
-  if (!servedColumns.some((column) => column.name === "reported")) {
-    db.exec("ALTER TABLE served ADD COLUMN reported TEXT");
-  }
-  const versionRow = db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as { value?: string } | undefined;
-  if (versionRow && versionRow.value !== String(HASH_STORE_VERSION)) {
-    db.exec("DELETE FROM snapshots");
-    db.exec("DELETE FROM undo");
-    db.exec("DELETE FROM served");
-  }
-  db.prepare(
-    "INSERT INTO meta (key, value) VALUES ('version', ?) " +
-    "ON CONFLICT(key) DO UPDATE SET value = excluded.value"
-  ).run(String(HASH_STORE_VERSION));
-  const getStmt = db.prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?");
-  const allStmt = db.prepare("SELECT path FROM snapshots UNION SELECT path FROM undo UNION SELECT path FROM served");
-  const allHashesStmt = db.prepare("SELECT path, hashes FROM snapshots");
-  const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
-  const upsertStmt = db.prepare(
-    "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
-    "ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at"
-  );
-  const undoUpsertStmt = db.prepare(
-    "INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) " +
-    "ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, updated_at = excluded.updated_at"
-  );
-  const undoGetStmt = db.prepare(
-    "SELECT content, bom, ending, hashes, result_content FROM undo WHERE path = ?"
-  );
-  const undoDelStmt = db.prepare("DELETE FROM undo WHERE path = ?");
-  const servedGetStmt = db.prepare("SELECT hashes, reported FROM served WHERE path = ?");
-  const servedUpsertStmt = db.prepare(
-    "INSERT INTO served (path, hashes, updated_at) VALUES (?, ?, ?) " +
-    "ON CONFLICT(path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at"
-  );
-  const servedReportedUpsertStmt = db.prepare(
-    "INSERT INTO served (path, hashes, reported, updated_at) VALUES (?, '[]', ?, ?) " +
-    "ON CONFLICT(path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at"
-  );
-  const servedReportedClearStmt = db.prepare(
-    "UPDATE served SET reported = NULL, updated_at = ? WHERE path = ?"
-  );
-  const servedDeleteStmt = db.prepare("DELETE FROM served WHERE path = ?");
-  const servedWipeStmt = db.prepare("DELETE FROM served");
-  const stmts: Prepared = {
-    get: (...params) => getStmt.get(...params) as Record<string, unknown> | undefined,
-    allPaths: (...params) => allStmt.all(...params) as Record<string, unknown>[],
-    allHashes: (...params) => allHashesStmt.all(...params) as Record<string, unknown>[],
-    deleteOne: (...params) => { withBusyRetry(() => { delStmt.run(...params); }); },
-    upsert: (...params) => { withBusyRetry(() => { upsertStmt.run(...params); }); },
-    undoUpsert: (...params) => { withBusyRetry(() => { undoUpsertStmt.run(...params); }); },
-    undoGet: (...params) => undoGetStmt.get(...params) as Record<string, unknown> | undefined,
-    undoDelete: (...params) => { withBusyRetry(() => { undoDelStmt.run(...params); }); },
-    servedGet: (...params) => servedGetStmt.get(...params) as Record<string, unknown> | undefined,
-    servedUpsert: (...params) => { withBusyRetry(() => { servedUpsertStmt.run(...params); }); },
-    servedReportedUpsert: (...params) => { withBusyRetry(() => { servedReportedUpsertStmt.run(...params); }); },
-    servedReportedClear: (...params) => { withBusyRetry(() => { servedReportedClearStmt.run(...params); }); },
-    servedDelete: (...params) => { withBusyRetry(() => { servedDeleteStmt.run(...params); }); },
-    servedWipe: () => { withBusyRetry(() => { servedWipeStmt.run(); }); },
-  };
-  return { db, stmts };
+function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
+	db.exec("PRAGMA journal_mode = WAL");
+	db.exec("PRAGMA synchronous = NORMAL");
+	db.exec(
+		"CREATE TABLE IF NOT EXISTS snapshots (" +
+			"path TEXT PRIMARY KEY, " +
+			"checksum TEXT NOT NULL, " +
+			"line_count INTEGER NOT NULL, " +
+			"hashes TEXT NOT NULL, " +
+			"updated_at INTEGER NOT NULL" +
+			")",
+	);
+	db.exec(
+		"CREATE TABLE IF NOT EXISTS meta (" +
+			"key TEXT PRIMARY KEY, " +
+			"value TEXT NOT NULL" +
+			")",
+	);
+	db.exec(
+		"CREATE TABLE IF NOT EXISTS undo (" +
+			"path TEXT PRIMARY KEY, " +
+			"content TEXT NOT NULL, " +
+			"bom TEXT NOT NULL, " +
+			"ending TEXT NOT NULL, " +
+			"hashes TEXT NOT NULL, " +
+			"result_content TEXT NOT NULL, " +
+			"updated_at INTEGER NOT NULL" +
+			")",
+	);
+	db.exec(
+		"CREATE TABLE IF NOT EXISTS served (" +
+			"path TEXT PRIMARY KEY, " +
+			"hashes TEXT NOT NULL, " +
+			"reported TEXT, " +
+			"updated_at INTEGER NOT NULL" +
+			")",
+	);
+	const servedColumns = db.prepare("PRAGMA table_info(served)").all() as {
+		name: string;
+	}[];
+	if (!servedColumns.some((column) => column.name === "reported")) {
+		db.exec("ALTER TABLE served ADD COLUMN reported TEXT");
+	}
+	const versionRow = db
+		.prepare("SELECT value FROM meta WHERE key = 'version'")
+		.get() as { value?: string } | undefined;
+	if (versionRow && versionRow.value !== String(HASH_STORE_VERSION)) {
+		db.exec("DELETE FROM snapshots");
+		db.exec("DELETE FROM undo");
+		db.exec("DELETE FROM served");
+	}
+	db.prepare(
+		"INSERT INTO meta (key, value) VALUES ('version', ?) " +
+			"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
+	).run(String(HASH_STORE_VERSION));
+	const getStmt = db.prepare(
+		"SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?",
+	);
+	const allStmt = db.prepare(
+		"SELECT path FROM snapshots UNION SELECT path FROM undo UNION SELECT path FROM served",
+	);
+	const allHashesStmt = db.prepare("SELECT path, hashes FROM snapshots");
+	const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
+	const upsertStmt = db.prepare(
+		"INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
+			"ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at",
+	);
+	const undoUpsertStmt = db.prepare(
+		"INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+			"ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, updated_at = excluded.updated_at",
+	);
+	const undoGetStmt = db.prepare(
+		"SELECT content, bom, ending, hashes, result_content FROM undo WHERE path = ?",
+	);
+	const undoDelStmt = db.prepare("DELETE FROM undo WHERE path = ?");
+	const servedGetStmt = db.prepare(
+		"SELECT hashes, reported FROM served WHERE path = ?",
+	);
+	const servedUpsertStmt = db.prepare(
+		"INSERT INTO served (path, hashes, updated_at) VALUES (?, ?, ?) " +
+			"ON CONFLICT(path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
+	);
+	const servedReportedUpsertStmt = db.prepare(
+		"INSERT INTO served (path, hashes, reported, updated_at) VALUES (?, '[]', ?, ?) " +
+			"ON CONFLICT(path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at",
+	);
+	const servedReportedClearStmt = db.prepare(
+		"UPDATE served SET reported = NULL, updated_at = ? WHERE path = ?",
+	);
+	const servedDeleteStmt = db.prepare("DELETE FROM served WHERE path = ?");
+	const servedWipeStmt = db.prepare("DELETE FROM served");
+	const stmts: Prepared = {
+		get: (...params) =>
+			getStmt.get(...params) as Record<string, unknown> | undefined,
+		allPaths: (...params) =>
+			allStmt.all(...params) as Record<string, unknown>[],
+		allHashes: (...params) =>
+			allHashesStmt.all(...params) as Record<string, unknown>[],
+		deleteOne: (...params) => {
+			withBusyRetry(() => {
+				delStmt.run(...params);
+			});
+		},
+		upsert: (...params) => {
+			withBusyRetry(() => {
+				upsertStmt.run(...params);
+			});
+		},
+		undoUpsert: (...params) => {
+			withBusyRetry(() => {
+				undoUpsertStmt.run(...params);
+			});
+		},
+		undoGet: (...params) =>
+			undoGetStmt.get(...params) as Record<string, unknown> | undefined,
+		undoDelete: (...params) => {
+			withBusyRetry(() => {
+				undoDelStmt.run(...params);
+			});
+		},
+		servedGet: (...params) =>
+			servedGetStmt.get(...params) as Record<string, unknown> | undefined,
+		servedUpsert: (...params) => {
+			withBusyRetry(() => {
+				servedUpsertStmt.run(...params);
+			});
+		},
+		servedReportedUpsert: (...params) => {
+			withBusyRetry(() => {
+				servedReportedUpsertStmt.run(...params);
+			});
+		},
+		servedReportedClear: (...params) => {
+			withBusyRetry(() => {
+				servedReportedClearStmt.run(...params);
+			});
+		},
+		servedDelete: (...params) => {
+			withBusyRetry(() => {
+				servedDeleteStmt.run(...params);
+			});
+		},
+		servedWipe: () => {
+			withBusyRetry(() => {
+				servedWipeStmt.run();
+			});
+		},
+	};
+	return { db, stmts };
 }
 
 function isHealthy(db: DatabaseSync): boolean {
-  try {
-    const row = db.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
-    return row?.quick_check === "ok";
-  } catch (error) {
-    if (isCorruptionError(error)) return false;
-    return true;
-  }
+	try {
+		const row = db.prepare("PRAGMA quick_check").get() as
+			| { quick_check?: string }
+			| undefined;
+		return row?.quick_check === "ok";
+	} catch (error) {
+		if (isCorruptionError(error)) return false;
+		return true;
+	}
 }
 
 async function quarantineStore(storePath: string): Promise<void> {
-  const suffix = `.corrupt-${Date.now()}`;
-  for (const candidate of [storePath, `${storePath}-wal`, `${storePath}-shm`]) {
-    try {
-      await rename(candidate, `${candidate}${suffix}`);
-    } catch (error) {
-      if (errCode(error) !== "ENOENT") {
-        console.error("Failed to quarantine corrupt hash store file:", error);
-      }
-    }
-  }
+	const suffix = `.corrupt-${Date.now()}`;
+	for (const candidate of [storePath, `${storePath}-wal`, `${storePath}-shm`]) {
+		try {
+			await rename(candidate, `${candidate}${suffix}`);
+		} catch (error) {
+			if (errCode(error) !== "ENOENT") {
+				console.error("Failed to quarantine corrupt hash store file:", error);
+			}
+		}
+	}
 }
 
 function shutdownDb(db: DatabaseSync): void {
-  try {
-    db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-  } catch {
-  }
-  db.close();
+	try {
+		db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
+	} catch {}
+	db.close();
 }
 
 async function openStore(storePath: string): Promise<HashStore> {
-  shutdownHashStore();
+	shutdownHashStore();
 
-  await initHasher();
-  await mkdir(hashStoreDir(), { recursive: true });
+	await initHasher();
+	await mkdir(hashStoreDir(), { recursive: true });
 
-  let existed = existsSync(storePath);
-  let opened: { db: DatabaseSync; stmts: Prepared };
-  try {
-    opened = openDbWithBusyRetry(storePath);
-  } catch (error) {
-    if (!isCorruptionError(error)) throw error;
-    console.error("Hash store failed to open, rebuilding:", error);
-    await quarantineStore(storePath);
-    existed = false;
-    opened = openDbWithBusyRetry(storePath);
-  }
-  if (!isHealthy(opened.db)) {
-    shutdownDb(opened.db);
-    await quarantineStore(storePath);
-    existed = false;
-    opened = openDbWithBusyRetry(storePath);
-  }
-  const { db, stmts } = opened;
+	let existed = existsSync(storePath);
+	let opened: { db: DatabaseSync; stmts: Prepared };
+	try {
+		opened = openDbWithBusyRetry(storePath);
+	} catch (error) {
+		if (!isCorruptionError(error)) throw error;
+		console.error("Hash store failed to open, rebuilding:", error);
+		await quarantineStore(storePath);
+		existed = false;
+		opened = openDbWithBusyRetry(storePath);
+	}
+	if (!isHealthy(opened.db)) {
+		shutdownDb(opened.db);
+		await quarantineStore(storePath);
+		existed = false;
+		opened = openDbWithBusyRetry(storePath);
+	}
+	const { db, stmts } = opened;
 
-  if (!existed) {
-    await migrateLegacy(db);
-  }
-  cachedDb = { path: storePath, db, stmts };
+	if (!existed) {
+		await migrateLegacy(db);
+	}
+	cachedDb = { path: storePath, db, stmts };
 
-  if (!exitHandlerRegistered) {
-    exitHandlerRegistered = true;
-    process.once("exit", () => shutdownHashStore());
-    for (const sig of ["SIGINT", "SIGTERM"] as const) {
-      process.once(sig, () => {
-        shutdownHashStore();
-        process.kill(process.pid, sig);
-      });
-    }
-  }
+	if (!exitHandlerRegistered) {
+		exitHandlerRegistered = true;
+		process.once("exit", () => shutdownHashStore());
+		for (const sig of ["SIGINT", "SIGTERM"] as const) {
+			process.once(sig, () => {
+				shutdownHashStore();
+				process.kill(process.pid, sig);
+			});
+		}
+	}
 
-  return { stmts, engine: "node:sqlite" };
+	return { stmts, engine: "node:sqlite" };
 }
 
 export function loadHashStore(): Promise<HashStore> {
-  const storePath = hashStorePath();
-  if (cachedDb && cachedDb.path === storePath && cachedDb.db.isOpen) {
-    return Promise.resolve({ stmts: cachedDb.stmts, engine: "node:sqlite" });
-  }
-  if (opening && opening.path === storePath) {
-    return opening.promise;
-  }
-  const promise = openStore(storePath).finally(() => {
-    if (opening?.path === storePath) opening = null;
-  });
-  opening = { path: storePath, promise };
-  return promise;
+	const storePath = hashStorePath();
+	if (cachedDb && cachedDb.path === storePath && cachedDb.db.isOpen) {
+		return Promise.resolve({ stmts: cachedDb.stmts, engine: "node:sqlite" });
+	}
+	if (opening && opening.path === storePath) {
+		return opening.promise;
+	}
+	const promise = openStore(storePath).finally(() => {
+		if (opening?.path === storePath) opening = null;
+	});
+	opening = { path: storePath, promise };
+	return promise;
 }
 
 export function shutdownHashStore(): void {
-  if (cachedDb) {
-    shutdownDb(cachedDb.db);
-    cachedDb = null;
-  }
+	if (cachedDb) {
+		shutdownDb(cachedDb.db);
+		cachedDb = null;
+	}
 }
 
 function withStore(fn: () => void): void {
-  if (cachedDb) {
-    withBusyRetry(() => {
-      cachedDb!.db.exec("BEGIN IMMEDIATE");
-      try {
-        fn();
-        cachedDb!.db.exec("COMMIT");
-      } catch (e) {
-        try { cachedDb!.db.exec("ROLLBACK"); } catch {}
-        throw e;
-      }
-    });
-  } else {
-    fn();
-  }
+	if (cachedDb) {
+		withBusyRetry(() => {
+			cachedDb!.db.exec("BEGIN IMMEDIATE");
+			try {
+				fn();
+				cachedDb!.db.exec("COMMIT");
+			} catch (e) {
+				try {
+					cachedDb!.db.exec("ROLLBACK");
+				} catch {}
+				throw e;
+			}
+		});
+	} else {
+		fn();
+	}
 }
 
 async function migrateLegacy(db: DatabaseSync): Promise<void> {
-  const legacyPath = legacyHashStorePath();
-  let content: string;
-  try {
-    content = await readFile(legacyPath, "utf-8");
-  } catch (error: unknown) {
-    if (errCode(error) === "ENOENT") return;
-    console.error("Failed to read legacy hash store for migration:", error);
-    return;
-  }
+	const legacyPath = legacyHashStorePath();
+	let content: string;
+	try {
+		content = await readFile(legacyPath, "utf-8");
+	} catch (error: unknown) {
+		if (errCode(error) === "ENOENT") return;
+		console.error("Failed to read legacy hash store for migration:", error);
+		return;
+	}
 
-  let parsed: { snapshots?: Record<string, unknown> };
-  try {
-    parsed = JSON.parse(content) as typeof parsed;
-  } catch (error) {
-    console.error("Failed to parse legacy hash store, skipping migration:", error);
-    return;
-  }
+	let parsed: { snapshots?: Record<string, unknown> };
+	try {
+		parsed = JSON.parse(content) as typeof parsed;
+	} catch (error) {
+		console.error(
+			"Failed to parse legacy hash store, skipping migration:",
+			error,
+		);
+		return;
+	}
 
-  const raw = parsed.snapshots;
-  if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
+	const raw = parsed.snapshots;
+	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
 
-  const rows: [string, string, number, string, number][] = [];
-  for (const [key, value] of Object.entries(raw)) {
-    if (!isValidSnapshot(value)) continue;
-    if (new Set(value.hashes).size !== value.hashes.length) {
-      console.warn(`Skipped legacy snapshot with duplicate hashes for ${key}; it will be re-hashed on next read.`);
-      continue;
-    }
-    rows.push([
-      key,
-      contentChecksum(value.content),
-      splitLines(value.content).length,
-      JSON.stringify(value.hashes),
-      Date.now(),
-    ]);
-  }
-  if (rows.length > 0) {
-    db.exec("BEGIN IMMEDIATE");
-    try {
-      const stmt = db.prepare(
-        "INSERT OR REPLACE INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)"
-      );
-      for (const row of rows) stmt.run(...row);
-      db.exec("COMMIT");
-    } catch (e) {
-      db.exec("ROLLBACK");
-      throw e;
-    }
-  }
+	const rows: [string, string, number, string, number][] = [];
+	for (const [key, value] of Object.entries(raw)) {
+		if (!isValidSnapshot(value)) continue;
+		if (new Set(value.hashes).size !== value.hashes.length) {
+			console.warn(
+				`Skipped legacy snapshot with duplicate hashes for ${key}; it will be re-hashed on next read.`,
+			);
+			continue;
+		}
+		rows.push([
+			key,
+			contentChecksum(value.content),
+			splitLines(value.content).length,
+			JSON.stringify(value.hashes),
+			Date.now(),
+		]);
+	}
+	if (rows.length > 0) {
+		db.exec("BEGIN IMMEDIATE");
+		try {
+			const stmt = db.prepare(
+				"INSERT OR REPLACE INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)",
+			);
+			for (const row of rows) stmt.run(...row);
+			db.exec("COMMIT");
+		} catch (e) {
+			db.exec("ROLLBACK");
+			throw e;
+		}
+	}
 
-  try {
-    await rename(legacyPath, `${legacyPath}.bak`);
-  } catch (error) {
-    console.error("Failed to rename legacy hash store after migration:", error);
-  }
+	try {
+		await rename(legacyPath, `${legacyPath}.bak`);
+	} catch (error) {
+		console.error("Failed to rename legacy hash store after migration:", error);
+	}
 }
 
 export function getSnapshot(
-  store: HashStore,
-  path: string,
-  content: string,
-  deleteCorrupt = true,
+	store: HashStore,
+	path: string,
+	content: string,
+	deleteCorrupt = true,
 ): string[] | undefined {
-  const checksum = contentChecksum(content);
-  const lineCount = splitLines(content).length;
-  const row = store.stmts.get(path, checksum, lineCount);
-  if (!row) return undefined;
-  try {
-    const parsed = JSON.parse(row.hashes as string);
-    if (isValidHashList(parsed)) return parsed;
-    if (deleteCorrupt) store.stmts.deleteOne(path);
-    return undefined;
-  } catch {
-    if (deleteCorrupt) store.stmts.deleteOne(path);
-    return undefined;
-  }
+	const checksum = contentChecksum(content);
+	const lineCount = splitLines(content).length;
+	const row = store.stmts.get(path, checksum, lineCount);
+	if (!row) return undefined;
+	try {
+		const parsed = JSON.parse(row.hashes as string);
+		if (isValidHashList(parsed)) return parsed;
+		if (deleteCorrupt) store.stmts.deleteOne(path);
+		return undefined;
+	} catch {
+		if (deleteCorrupt) store.stmts.deleteOne(path);
+		return undefined;
+	}
 }
 
 export function upsertSnapshot(
-  store: HashStore,
-  path: string,
-  checksum: string,
-  lineCount: number,
-  hashes: string[],
+	store: HashStore,
+	path: string,
+	checksum: string,
+	lineCount: number,
+	hashes: string[],
 ): void {
-  store.stmts.upsert(path, checksum, lineCount, JSON.stringify(hashes), Date.now());
+	store.stmts.upsert(
+		path,
+		checksum,
+		lineCount,
+		JSON.stringify(hashes),
+		Date.now(),
+	);
 }
 
-export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): void {
-  store.stmts.undoUpsert(
-    path,
-    entry.content,
-    entry.bom,
-    entry.ending,
-    JSON.stringify(entry.hashes),
-    entry.resultContent,
-    Date.now(),
-  );
+export function upsertUndo(
+	store: HashStore,
+	path: string,
+	entry: UndoRecord,
+): void {
+	store.stmts.undoUpsert(
+		path,
+		entry.content,
+		entry.bom,
+		entry.ending,
+		JSON.stringify(entry.hashes),
+		entry.resultContent,
+		Date.now(),
+	);
 }
 
-export function getUndoEntry(store: HashStore, path: string): UndoRecord | undefined {
-  const row = store.stmts.undoGet(path);
-  if (!row) return undefined;
-  try {
-    const parsed = JSON.parse(row.hashes as string);
-    if (!isValidHashList(parsed)) {
-      store.stmts.undoDelete(path);
-      return undefined;
-    }
-    return {
-      content: row.content as string,
-      bom: row.bom as string,
-      ending: row.ending as string,
-      hashes: parsed as string[],
-      resultContent: row.result_content as string,
-    };
-  } catch {
-    store.stmts.undoDelete(path);
-    return undefined;
-  }
+export function getUndoEntry(
+	store: HashStore,
+	path: string,
+): UndoRecord | undefined {
+	const row = store.stmts.undoGet(path);
+	if (!row) return undefined;
+	try {
+		const parsed = JSON.parse(row.hashes as string);
+		if (!isValidHashList(parsed)) {
+			store.stmts.undoDelete(path);
+			return undefined;
+		}
+		return {
+			content: row.content as string,
+			bom: row.bom as string,
+			ending: row.ending as string,
+			hashes: parsed as string[],
+			resultContent: row.result_content as string,
+		};
+	} catch {
+		store.stmts.undoDelete(path);
+		return undefined;
+	}
 }
 
 export function deleteUndo(store: HashStore, path: string): void {
-  store.stmts.undoDelete(path);
+	store.stmts.undoDelete(path);
 }
 
 function isValidServedList(value: unknown): value is (string | null)[] {
-  if (!Array.isArray(value)) return false;
-  for (const entry of value) {
-    if (entry === null) continue;
-    if (typeof entry !== "string" || !HASH_RE.test(entry)) return false;
-  }
-  return true;
+	if (!Array.isArray(value)) return false;
+	for (const entry of value) {
+		if (entry === null) continue;
+		if (typeof entry !== "string" || !HASH_RE.test(entry)) return false;
+	}
+	return true;
 }
 
 export function getServed(store: HashStore, path: string): (string | null)[] {
-  const row = store.stmts.servedGet(path);
-  if (!row) return [];
-  try {
-    const parsed = JSON.parse(row.hashes as string);
-    if (isValidServedList(parsed)) return parsed;
-    store.stmts.servedDelete(path);
-    return [];
-  } catch {
-    store.stmts.servedDelete(path);
-    return [];
-  }
+	const row = store.stmts.servedGet(path);
+	if (!row) return [];
+	try {
+		const parsed = JSON.parse(row.hashes as string);
+		if (isValidServedList(parsed)) return parsed;
+		store.stmts.servedDelete(path);
+		return [];
+	} catch {
+		store.stmts.servedDelete(path);
+		return [];
+	}
 }
 
 export function upsertServed(
-  store: HashStore,
-  path: string,
-  entries: Array<{ position: number; hash: string | null }>,
+	store: HashStore,
+	path: string,
+	entries: Array<{ position: number; hash: string | null }>,
 ): void {
-  if (entries.length === 0) return;
-  withStore(() => {
-    const updated = getServed(store, path).slice();
-    for (const entry of entries) {
-      if (!Number.isInteger(entry.position) || entry.position < 0) {
-        throw new TypeError(`Invalid served position: ${entry.position}`);
-      }
-      if (
-        entry.hash !== null &&
-        (typeof entry.hash !== "string" || !HASH_RE.test(entry.hash))
-      ) {
-        throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
-      }
-      while (updated.length <= entry.position) updated.push(null);
-      updated[entry.position] = entry.hash;
-    }
-    while (updated.length > 0 && updated[updated.length - 1] === null) updated.pop();
-    store.stmts.servedUpsert(path, JSON.stringify(updated), Date.now());
-  });
+	if (entries.length === 0) return;
+	withStore(() => {
+		const updated = getServed(store, path).slice();
+		for (const entry of entries) {
+			if (!Number.isInteger(entry.position) || entry.position < 0) {
+				throw new TypeError(`Invalid served position: ${entry.position}`);
+			}
+			if (
+				entry.hash !== null &&
+				(typeof entry.hash !== "string" || !HASH_RE.test(entry.hash))
+			) {
+				throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
+			}
+			while (updated.length <= entry.position) updated.push(null);
+			updated[entry.position] = entry.hash;
+		}
+		while (updated.length > 0 && updated[updated.length - 1] === null)
+			updated.pop();
+		store.stmts.servedUpsert(path, JSON.stringify(updated), Date.now());
+	});
+}
+
+export function recordServes(
+	store: HashStore,
+	path: string,
+	rows: Array<{ position: number; hash: string | null }>,
+): void {
+	if (rows.length === 0) return;
+	try {
+		upsertServed(store, path, rows);
+	} catch (error) {
+		console.error("Failed to record served rows:", error);
+	}
 }
 
 export function getReported(store: HashStore, path: string): Set<string> {
-  const row = store.stmts.servedGet(path);
-  if (!row) return new Set();
-  const raw = row.reported;
-  if (typeof raw !== "string" || raw.length === 0) return new Set();
-  try {
-    const parsed = JSON.parse(raw) as unknown;
-    if (!Array.isArray(parsed)) return new Set();
-    return new Set(
-      parsed.filter((h): h is string => typeof h === "string" && HASH_RE.test(h)),
-    );
-  } catch {
-    return new Set();
-  }
+	const row = store.stmts.servedGet(path);
+	if (!row) return new Set();
+	const raw = row.reported;
+	if (typeof raw !== "string" || raw.length === 0) return new Set();
+	try {
+		const parsed = JSON.parse(raw) as unknown;
+		if (!Array.isArray(parsed)) return new Set();
+		return new Set(
+			parsed.filter(
+				(h): h is string => typeof h === "string" && HASH_RE.test(h),
+			),
+		);
+	} catch {
+		return new Set();
+	}
 }
 
-export function addReported(store: HashStore, path: string, hashes: string[]): void {
-  const valid = hashes.filter((hash) => HASH_RE.test(hash));
-  if (valid.length === 0) return;
-  withStore(() => {
-    const current = getReported(store, path);
-    for (const hash of valid) current.add(hash);
-    store.stmts.servedReportedUpsert(path, JSON.stringify([...current]), Date.now());
-  });
+export function addReported(
+	store: HashStore,
+	path: string,
+	hashes: string[],
+): void {
+	const valid = hashes.filter((hash) => HASH_RE.test(hash));
+	if (valid.length === 0) return;
+	withStore(() => {
+		const current = getReported(store, path);
+		for (const hash of valid) current.add(hash);
+		store.stmts.servedReportedUpsert(
+			path,
+			JSON.stringify([...current]),
+			Date.now(),
+		);
+	});
 }
 
 export function clearReported(store: HashStore, path: string): void {
-  withStore(() => {
-    store.stmts.servedReportedClear(Date.now(), path);
-  });
+	withStore(() => {
+		store.stmts.servedReportedClear(Date.now(), path);
+	});
 }
 
 export function deleteServed(store: HashStore, path: string): void {
-  store.stmts.servedDelete(path);
+	store.stmts.servedDelete(path);
 }
 
 export function wipeServed(store: HashStore): void {
-  store.stmts.servedWipe();
+	store.stmts.servedWipe();
 }
 
 const STAT_BATCH = 64;
 
 async function statMissing(rows: { path: string }[]): Promise<string[]> {
-  const missing: string[] = [];
-  for (let i = 0; i < rows.length; i += STAT_BATCH) {
-    const batch = rows.slice(i, i + STAT_BATCH);
-    const results = await Promise.all(
-      batch.map(async (row) => {
-        try {
-          await stat(row.path);
-          return undefined;
-        } catch {
-          return row.path;
-        }
-      }),
-    );
-    for (const path of results) {
-      if (path !== undefined) missing.push(path);
-    }
-  }
-  return missing;
+	const missing: string[] = [];
+	for (let i = 0; i < rows.length; i += STAT_BATCH) {
+		const batch = rows.slice(i, i + STAT_BATCH);
+		const results = await Promise.all(
+			batch.map(async (row) => {
+				try {
+					await stat(row.path);
+					return undefined;
+				} catch {
+					return row.path;
+				}
+			}),
+		);
+		for (const path of results) {
+			if (path !== undefined) missing.push(path);
+		}
+	}
+	return missing;
 }
 
 export async function pruneMissing(store: HashStore): Promise<void> {
-  const rows = store.stmts.allPaths() as { path: string }[];
-  const missing = await statMissing(rows);
-  if (missing.length === 0) return;
-  withStore(() => {
-    for (const path of missing) {
-      store.stmts.deleteOne(path);
-      store.stmts.undoDelete(path);
-      store.stmts.servedDelete(path);
-    }
-  });
+	const rows = store.stmts.allPaths() as { path: string }[];
+	const missing = await statMissing(rows);
+	if (missing.length === 0) return;
+	withStore(() => {
+		for (const path of missing) {
+			store.stmts.deleteOne(path);
+			store.stmts.undoDelete(path);
+			store.stmts.servedDelete(path);
+		}
+	});
 }
 
-export function findSnapshotPaths(store: HashStore, hashes: string[]): string[] {
-  const rows = store.stmts.allHashes() as { path: string; hashes: string }[];
-  const matches: string[] = [];
-  for (const row of rows) {
-    try {
-      const parsed = JSON.parse(row.hashes) as unknown;
-      if (!isValidHashList(parsed)) continue;
-      if (hashes.every((h) => parsed.includes(h))) matches.push(row.path);
-    } catch {
-      continue;
-    }
-  }
-  return matches;
+export function findSnapshotPaths(
+	store: HashStore,
+	hashes: string[],
+): string[] {
+	const rows = store.stmts.allHashes() as { path: string; hashes: string }[];
+	const matches: string[] = [];
+	for (const row of rows) {
+		try {
+			const parsed = JSON.parse(row.hashes) as unknown;
+			if (!isValidHashList(parsed)) continue;
+			if (hashes.every((h) => parsed.includes(h))) matches.push(row.path);
+		} catch {
+			continue;
+		}
+	}
+	return matches;
 }

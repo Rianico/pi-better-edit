@@ -11,8 +11,9 @@ import { MAX_READ_LINE_BYTES } from "./constants";
 import { loadFileKindAndText } from "./file-kind";
 import { readNormFile } from "./file-reader";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline";
+import type { ServedRow } from "./hashline/served";
 import { toCwd } from "./paths";
-import { loadHashStore, upsertServed, clearReported } from "./hash-store";
+import { loadHashStore, recordServes, clearReported } from "./hash-store";
 import { abortIf, isRec, normalizeFilePath } from "./utils";
 import { fileSnap } from "./file-reader";
 import { visLines } from "./utils";
@@ -67,7 +68,7 @@ export async function fmtReadPreview(
 	text: string;
 	truncation?: TruncationResult;
 	nextOffset?: number;
-	served: Array<{ position: number; hash: string }>;
+	served: ServedRow[];
 }> {
 	const allLines = visLines(text);
 	const totalLines = allLines.length;
@@ -77,7 +78,7 @@ export async function fmtReadPreview(
 			const allHashes =
 				precomputedHashes ??
 				(await (path ? lineHashes(text, path) : lineHashes(text)));
-			const emptyLineHash = allHashes[0] ?? "";
+			const emptyLineHash = allHashes[0]!;
 			return {
 				text: `${emptyLineHash}${HASH_SEP}\n[File is empty. Use replace to insert content.]`,
 				served: [{ position: 0, hash: emptyLineHash }],
@@ -276,7 +277,7 @@ export function regRead(pi: ExtensionAPI): void {
 			);
 			try {
 				const store = await loadHashStore();
-				upsertServed(store, resolvedPath, preview.served);
+				recordServes(store, resolvedPath, preview.served);
 				clearReported(store, resolvedPath);
 			} catch (error) {
 				console.error("Failed to record served state for read:", error);

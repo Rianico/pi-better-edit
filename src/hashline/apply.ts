@@ -234,23 +234,21 @@ export function applyEdit(
 		resolved = correctedResult.resolved;
 	}
 
-	const spanResult = (() => {
-		if (served) {
-			const startAnchor = resolved.hash_bounds[0];
-			const endAnchor = resolved.hash_bounds[1];
-			verifyServedRange({
-				served,
-				startHash: startAnchor.hash,
-				endHash: endAnchor.hash,
-				startLine: startAnchor.line,
-				endLine: endAnchor.line,
-				fileHashes,
-				fileLines: lineIndex.fileLines,
-				filePath,
-			});
-		}
-		return resToSpan(resolved, content, lineIndex);
-	})();
+	if (served) {
+		const startAnchor = resolved.hash_bounds[0];
+		const endAnchor = resolved.hash_bounds[1];
+		verifyServedRange({
+			served,
+			startHash: startAnchor.hash,
+			endHash: endAnchor.hash,
+			startLine: startAnchor.line,
+			endLine: endAnchor.line,
+			fileHashes,
+			fileLines: lineIndex.fileLines,
+			filePath,
+		});
+	}
+	const spanResult = resToSpan(resolved, content, lineIndex);
 	if (spanResult.kind === "noop") {
 		return {
 			content,

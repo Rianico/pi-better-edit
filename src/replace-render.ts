@@ -1,7 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { normReq } from "./replace-normalize";
 import type { ReqParams, ReplaceDetails } from "./replace";
-import { DRIFT_NOTICE_HEADING } from "./drift";
 import { isRec } from "./utils";
 
 export type FgT = Pick<Theme, "fg">;
@@ -20,9 +19,7 @@ export type RRState = {
 	previewTimer?: ReturnType<typeof setTimeout>;
 };
 
-export function getPreviewInput(
-	args: unknown,
-): ReqParams | null {
+export function getPreviewInput(args: unknown): ReqParams | null {
 	let normalized: unknown;
 	try {
 		normalized = normReq(args);
@@ -123,16 +120,17 @@ export function getResultText(result: {
 
 export function extractWarnings(
 	text: string | undefined,
+	driftNotice?: string,
 ): string | undefined {
 	const match = text?.match(/(?:^|\n)Warnings:\n[\s\S]*$/)?.[0]?.trimStart();
 	if (!match) return undefined;
-	const noticeIdx = match.indexOf(`\n\n${DRIFT_NOTICE_HEADING}`);
-	return noticeIdx >= 0 ? match.slice(0, noticeIdx) : match;
+	if (!driftNotice) return match;
+	const block = `\n\n${driftNotice}`;
+	if (match.endsWith(block)) return match.slice(0, -block.length);
+	return match;
 }
 
-export function isApplied(
-	details: ReplaceDetails | undefined,
-): boolean {
+export function isApplied(details: ReplaceDetails | undefined): boolean {
 	const metrics = details?.metrics;
 	return (
 		metrics?.classification === "applied" &&
@@ -152,7 +150,7 @@ export function buildAppliedText(
 		sections.push(fmtResult(details.diff, theme));
 	}
 
-	const warnings = extractWarnings(text);
+	const warnings = extractWarnings(text, details?.driftNotice);
 	if (warnings) sections.push(warnings);
 
 	return sections.length > 0 ? sections.join("\n\n") : undefined;

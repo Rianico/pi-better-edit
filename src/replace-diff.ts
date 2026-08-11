@@ -4,6 +4,7 @@ import {
   ANCHOR_LEN,
   HASH_SEP,
 } from "./hashline";
+import type { ServedRow } from "./hashline/served";
 
 export type LineEnding = "\r\n" | "\n" | "\r";
 
@@ -51,11 +52,6 @@ const ELLIPSIS_MARKER: unique symbol = Symbol("ellipsis");
 const isEllipsisMarker = (line: string | symbol): line is symbol =>
   line === ELLIPSIS_MARKER;
 
-export type ServedDiffRow = {
-  position: number;
-  hash: string;
-};
-
 export function genDiff(
   oldContent: string,
   newContent: string,
@@ -65,13 +61,13 @@ export function genDiff(
 ): {
   diff: string;
   firstChangedLine: number | undefined;
-  servedRows: ServedDiffRow[];
+  servedRows: ServedRow[];
 } {
   const effectiveNewHashes = newContentHashes ?? _lineHashesPure(newContent);
 
   const parts = Diff.diffLines(oldContent, newContent);
   const output: string[] = [];
-  const servedRows: ServedDiffRow[] = [];
+  const servedRows: ServedRow[] = [];
   let newLineNum = 1;
   let oldLineNum = 1;
   let lastWasChange = false;

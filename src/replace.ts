@@ -52,10 +52,14 @@ import {
 	loadHashStore,
 	findSnapshotPaths,
 	getServed,
-	upsertServed,
+	recordServes,
 	type HashStore,
 } from "./hash-store";
-import { ServedRejectionError, AnchorMismatchError } from "./hashline/served";
+import {
+	ServedRejectionError,
+	AnchorMismatchError,
+	type ServedRow,
+} from "./hashline/served";
 
 const replacementTextSchema = Type.String({
 	description:
@@ -99,7 +103,7 @@ export type ReplaceDetails = {
 	snapshotId?: string;
 	classification?: "noop";
 	metrics?: RMetrics;
-	servedRows?: Array<{ position: number; hash: string }>;
+	servedRows?: ServedRow[];
 	driftNotice?: string;
 };
 
@@ -286,18 +290,7 @@ export async function execPipeline(
 			error instanceof AnchorMismatchError
 		) {
 			if (options?.noPersist !== true) {
-				const rows =
-					error instanceof ServedRejectionError
-						? error.echoRows
-						: error.servedRows;
-				try {
-					upsertServed(hashStore, absolutePath, rows);
-				} catch (recordError) {
-					console.error(
-						"Failed to record served rows from rejection feedback:",
-						recordError,
-					);
-				}
+				recordServes(hashStore, absolutePath, error.servedRows);
 			}
 		}
 		throw error;
@@ -344,6 +337,8 @@ export async function execPipeline(
 				resultLines: splitLines(result),
 				rangeStartLine: anchorResult.rangeStartLine,
 				rangeEndLine: anchorResult.rangeEndLine,
+				startHash: edit.hash_bounds[0].hash,
+				endHash: edit.hash_bounds[1].hash,
 				delta: totalAddedLines - totalRemovedLines,
 				store: hashStore,
 				path: absolutePath,

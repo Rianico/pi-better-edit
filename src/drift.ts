@@ -1,4 +1,3 @@
-import { HASH_SEP } from "./hashline";
 import { SERVED_ECHO_CAP } from "./constants";
 import {
 	getReported,
@@ -6,12 +5,11 @@ import {
 	upsertServed,
 	type HashStore,
 } from "./hash-store";
+import { type ServedRow, fmtServedRows } from "./hashline/served";
 
 export const DRIFT_NOTICE_HEADING = "Drift notice:";
 
-export interface DriftRow {
-	position: number;
-	hash: string;
+export interface DriftRow extends ServedRow {
 	content: string;
 }
 
@@ -21,6 +19,8 @@ export interface ComputeDriftInput {
 	resultLines: string[];
 	rangeStartLine: number;
 	rangeEndLine: number;
+	startHash: string;
+	endHash: string;
 	delta: number;
 	reported: Set<string>;
 	cap?: number;
@@ -30,49 +30,101 @@ export interface DriftNoticeResult {
 	text: string;
 	rows: DriftRow[];
 	total: number;
-	pointer: boolean;
+	allAlreadyReported: boolean;
 }
 
-export function computeDrift(input: ComputeDriftInput): DriftNoticeResult | undefined {
+export function computeDrift(
+	input: ComputeDriftInput,
+): DriftNoticeResult | undefined {
 	const {
 		served,
 		resultHashes,
 		resultLines,
 		rangeStartLine,
 		rangeEndLine,
+		startHash,
+		endHash,
 		delta,
 		reported,
 		cap = SERVED_ECHO_CAP,
 	} = input;
-	const startIdx = rangeStartLine - 1;
-	const endIdx = rangeEndLine - 1;
+
+	const resultHashSet = new Set(resultHashes);
+	const currentPosOfHash = new Map<string, number>();
+	for (let i = 0; i < resultHashes.length; i++) {
+		currentPosOfHash.set(resultHashes[i]!, i);
+	}
+
+	const servedPositionsOf = (hash: string): number[] => {
+		const out: number[] = [];
+		for (let i = 0; i < served.length; i++) {
+			if (served[i] === hash) out.push(i);
+		}
+		return out;
+	};
+	const startPositions = servedPositionsOf(startHash);
+	const endPositions = servedPositionsOf(endHash);
+	let servedStartIdx: number;
+	let servedEndIdx: number;
+	if (startPositions.length === 1 && endPositions.length === 1) {
+		servedStartIdx = startPositions[0]!;
+		servedEndIdx = endPositions[0]!;
+	} else {
+		servedStartIdx = rangeStartLine - 1;
+		servedEndIdx = rangeEndLine - 1;
+	}
+	const rangeFrom = Math.min(servedStartIdx, servedEndIdx);
+	const rangeTo = Math.max(servedStartIdx, servedEndIdx);
+
 	const rows: DriftRow[] = [];
 	let total = 0;
 	let unshown = 0;
 	let anyNotReported = false;
 
+	const nearestSurvivingBelow = (p: number): number | undefined => {
+		for (let q = p - 1; q >= 0; q--) {
+			const hash = served[q];
+			if (hash !== null && resultHashSet.has(hash)) return q;
+		}
+		return undefined;
+	};
+	const nearestSurvivingAbove = (p: number): number | undefined => {
+		for (let q = p + 1; q < served.length; q++) {
+			const hash = served[q];
+			if (hash !== null && resultHashSet.has(hash)) return q;
+		}
+		return undefined;
+	};
+
 	for (let p = 0; p < served.length; p++) {
 		const servedHash = served[p];
 		if (servedHash === null) continue;
-		if (p >= startIdx && p <= endIdx) continue;
-		const postPos = p < startIdx ? p : p + delta;
-		const currentHash =
-			postPos >= 0 && postPos < resultHashes.length
-				? resultHashes[postPos]
-				: undefined;
-		if (currentHash !== undefined && currentHash === servedHash) continue;
+		if (p >= rangeFrom && p <= rangeTo) continue;
+		if (resultHashSet.has(servedHash)) continue;
 		total++;
 		if (!reported.has(servedHash)) anyNotReported = true;
+		const below = nearestSurvivingBelow(p);
+		let currentPos: number;
+		if (below !== undefined) {
+			currentPos = currentPosOfHash.get(served[below]!)! + 1;
+		} else {
+			const above = nearestSurvivingAbove(p);
+			if (above !== undefined) {
+				currentPos = currentPosOfHash.get(served[above]!)! - 1;
+			} else {
+				currentPos = p + delta;
+			}
+		}
 		if (
-			currentHash !== undefined &&
-			postPos >= 0 &&
-			postPos < resultLines.length
+			currentPos >= 0 &&
+			currentPos < resultHashes.length &&
+			currentPos < resultLines.length
 		) {
 			if (rows.length < cap) {
 				rows.push({
-					position: postPos,
-					hash: currentHash,
-					content: resultLines[postPos]!,
+					position: currentPos,
+					hash: resultHashes[currentPos]!,
+					content: resultLines[currentPos]!,
 				});
 			} else {
 				unshown++;
@@ -90,13 +142,11 @@ export function computeDrift(input: ComputeDriftInput): DriftNoticeResult | unde
 			text: `${DRIFT_NOTICE_HEADING} ${countLabel} outside the replaced range drifted and were already reported — call read to refresh.`,
 			rows: [],
 			total,
-			pointer: true,
+			allAlreadyReported: true,
 		};
 	}
 
-	const rowsText = rows
-		.map((row) => `${row.hash}${HASH_SEP}${row.content}`)
-		.join("\n");
+	const rowsText = fmtServedRows(rows, resultLines);
 	const moreText =
 		unshown > 0
 			? `\n[... ${unshown} more drifted line(s) — call read to see them]`
@@ -105,7 +155,7 @@ export function computeDrift(input: ComputeDriftInput): DriftNoticeResult | unde
 		text: `${DRIFT_NOTICE_HEADING} ${countLabel} outside the replaced range drifted. Current content:\n${rowsText}${moreText}`,
 		rows,
 		total,
-		pointer: false,
+		allAlreadyReported: false,
 	};
 }
 
@@ -115,6 +165,8 @@ export function scanDrift(input: {
 	resultLines: string[];
 	rangeStartLine: number;
 	rangeEndLine: number;
+	startHash: string;
+	endHash: string;
 	delta: number;
 	store: HashStore;
 	path: string;
@@ -127,7 +179,7 @@ export function scanDrift(input: {
 		reported = new Set();
 	}
 	const result = computeDrift({ ...input, reported });
-	if (!result || result.pointer) return result?.text;
+	if (!result || result.allAlreadyReported) return result?.text;
 	try {
 		upsertServed(
 			input.store,
