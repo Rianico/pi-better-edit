@@ -1,2 +1,2 @@
-- `read`: call before `replace` when you need fresh HASH anchors for a file.
-- `read`: call again after any edit to that file — changed lines get new anchors (the post-edit diff rows from replace/undo also carry fresh anchors for the changed range).
+- `read`: call only when you need information the tool never served you — a page you never saw, content past the auto-read diff. You do not need to re-read before every edit: `replace` verifies every line of your range against what the tool served, and a rejection echoes the current range as fresh `HASH│content` rows to retry on.
+- `read`: the post-edit diff rows from replace/undo and the drift-notice rows also carry fresh anchors for the lines they show, so follow-up edits anchor on them without re-reading.
