@@ -80,7 +80,8 @@ describe("prompt guidelines", () => {
       "utf-8",
     );
     expect(content).toContain("never served");
-    expect(content).toContain("without re-reading");
+    expect(content).toContain("fresh anchors");
+    expect(content).not.toContain("re-read");
     expect(content).not.toContain("call again after any edit");
     expect(content).not.toContain("call before `replace`");
     expect(content).not.toContain("{{AUTO_READ_NOTE}}");
@@ -101,7 +102,7 @@ describe("read tool guidelines", () => {
     const tool = getTool("read");
     const guidelines = tool.promptGuidelines as string[];
     expect(guidelines.some((g) => g.includes("never served"))).toBe(true);
-    expect(guidelines.some((g) => g.includes("without re-reading"))).toBe(true);
+    expect(guidelines.some((g) => g.includes("re-read"))).toBe(false);
     expect(guidelines.some((g) => g.includes("call before `replace`"))).toBe(false);
   });
 });

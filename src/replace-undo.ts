@@ -190,7 +190,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
           );
         }
         parts.push(
-          "File reverted to previous state. Call `read` to get fresh anchors for follow-up edits.",
+          "File reverted to previous state. The post-edit diff rows carry the restored file's fresh anchors for follow-up edits.",
         );
 
         return {

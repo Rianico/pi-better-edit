@@ -436,7 +436,7 @@ describe("replace diff in model-visible text", () => {
             diff,
             metrics: { classification: "applied", changed_lines: { first: 2, last: 2 } },
           },
-          content: [{ type: "text", text: "Undone last replace on undo.txt.\nFile reverted to previous state. Call `read` to get fresh anchors for follow-up edits." }],
+          content: [{ type: "text", text: "Undone last replace on undo.txt.\nFile reverted to previous state. The post-edit diff rows carry the restored file's fresh anchors for follow-up edits." }],
         },
         { cwd: dir },
       );
