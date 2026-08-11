@@ -6,10 +6,10 @@ import { loadHashStore, upsertSnapshot, upsertUndo, getUndoEntry, deleteUndo, ty
 import { contentChecksum } from "./hashline/hasher";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { toCwd } from "./paths";
-import { toLF, stripBOM, genDiff, restoreEndings, type LineEnding } from "./replace-diff";
+import { toLF, stripBOM, genDiff, restoreEndings, type LineEnding } from "./edit-diff";
 import { cntDiff, splitLines, errCode, isRec, normalizeFilePath } from "./utils";
 import { loadP, loadGuide } from "./prompts";
-import { buildMetrics } from "./replace-response";
+import { buildMetrics } from "./edit-response";
 import { changedRange, lineHashes } from "./hashline";
 export interface UndoEntry {
   content: string;
@@ -84,13 +84,13 @@ export async function clearUndo(path: string): Promise<void> {
   }
 }
 
-export function regReplaceUndo(pi: ExtensionAPI): void {
+export function regEditUndo(pi: ExtensionAPI): void {
   pi.registerTool({
-    name: "undo_last_replace",
-    label: "Undo Last Replace",
-    description: loadP("../prompts/undo-last-replace.md"),
-    promptSnippet: loadP("../prompts/undo-last-replace-snippet.md"),
-    promptGuidelines: loadGuide("../prompts/undo-last-replace-guidelines.md"),
+    name: "undo_last_edit",
+    label: "Undo Last Edit",
+    description: loadP("../prompts/undo-last-edit.md"),
+    promptSnippet: loadP("../prompts/undo-last-edit-snippet.md"),
+    promptGuidelines: loadGuide("../prompts/undo-last-edit-guidelines.md"),
     prepareArguments: (args: unknown) => {
       if (!isRec(args)) return args as any;
       const record = { ...args };
@@ -114,7 +114,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
           content: [
             {
               type: "text",
-              text: `No undo history for ${path}. There is no previous replace to revert.`,
+              text: `No undo history for ${path}. There is no previous edit to revert.`,
             },
           ],
           isError: true,
@@ -136,7 +136,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
             content: [
               {
                 type: "text",
-                text: `[E_UNDO_STALE] Cannot undo last replace on ${path}: the file no longer exists. Call read() to inspect the current state.`
+                text: `[E_UNDO_STALE] Cannot undo last edit on ${path}: the file no longer exists. Call read() to inspect the current state.`
               },
             ],
             isError: true,
@@ -149,7 +149,7 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
             content: [
               {
                 type: "text",
-                text: `[E_UNDO_STALE] Cannot undo last replace on ${path}: the file was modified after the replace, so undoing would overwrite those changes. Call read() to inspect the current state.`
+                text: `[E_UNDO_STALE] Cannot undo last edit on ${path}: the file was modified after the edit, so undoing would overwrite those changes. Call read() to inspect the current state.`
               },
             ],
             isError: true,
@@ -161,8 +161,8 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
         const currentNormalized = toLF(currentStripped);
         const currentHashes = await lineHashes(currentNormalized, mutationTargetPath);
         const diffResult = genDiff(undo.content, currentNormalized, 0, undefined, undo.hashes);
-        const linesAddedByReplace = cntDiff(diffResult.diff, "+");
-        const linesRemovedByReplace = cntDiff(diffResult.diff, "-");
+        const linesAddedByEdit = cntDiff(diffResult.diff, "+");
+        const linesRemovedByEdit = cntDiff(diffResult.diff, "-");
         const restoredRange = changedRange(currentNormalized, undo.content);
         const undoDiffResult = genDiff(currentNormalized, undo.content, 1, undo.hashes, currentHashes);
         const undoDiff = undoDiffResult.diff;
@@ -182,11 +182,11 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
         await clearUndo(mutationTargetPath);
 
         const parts: string[] = [
-          `Undone last replace on ${path}.`,
+          `Undone last edit on ${path}.`,
         ];
-        if (linesAddedByReplace > 0 || linesRemovedByReplace > 0) {
+        if (linesAddedByEdit > 0 || linesRemovedByEdit > 0) {
           parts.push(
-            `Removed ${linesAddedByReplace} line(s) that were added and restored ${linesRemovedByReplace} line(s) that were removed.`,
+            `Removed ${linesAddedByEdit} line(s) that were added and restored ${linesRemovedByEdit} line(s) that were removed.`,
           );
         }
         parts.push(
@@ -210,8 +210,8 @@ export function regReplaceUndo(pi: ExtensionAPI): void {
               warningsCount: 0,
               firstChangedLine: restoredRange?.firstChangedLine,
               lastChangedLine: restoredRange?.lastChangedLine,
-              addedLines: linesRemovedByReplace,
-              removedLines: linesAddedByReplace,
+              addedLines: linesRemovedByEdit,
+              removedLines: linesAddedByEdit,
             }),
           },
         };

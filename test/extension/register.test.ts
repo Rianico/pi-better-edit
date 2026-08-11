@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import register from "../../index";
 
 describe("extension registration", () => {
-  it("registers the read and replace tools", () => {
+  it("registers the read and edit tools", () => {
     const toolNames: string[] = [];
     const eventNames: string[] = [];
     const commandNames: string[] = [];
@@ -21,20 +21,20 @@ describe("extension registration", () => {
 
     register(pi);
 
-    expect(toolNames.sort()).toEqual(["read", "replace", "undo_last_replace"]);
+    expect(toolNames.sort()).toEqual(["edit", "read", "undo_last_edit"]);
 
     expect(eventNames).toEqual(["session_start", "tool_result"]);
   });
 });
 
 describe("tool prompt file references", () => {
-  it("replace.ts loads the consolidated replace.md prompt", () => {
+  it("edit.ts loads the consolidated edit.md prompt", () => {
     const source = readFileSync(
-      new URL("../../src/replace.ts", import.meta.url),
+      new URL("../../src/edit.ts", import.meta.url),
       "utf-8",
     );
-    expect(source).toContain("../prompts/replace.md");
-    expect(source).toContain("../prompts/replace-snippet.md");
-    expect(source).toContain("../prompts/replace-guidelines.md");
+    expect(source).toContain("../prompts/edit.md");
+    expect(source).toContain("../prompts/edit-snippet.md");
+    expect(source).toContain("../prompts/edit-guidelines.md");
   });
 });

@@ -11,8 +11,8 @@ function hashOf(text: string, content: string): string {
   return extractHash(text.split("\n").find((l) => l.includes(`│${content}`))!);
 }
 
-describe("noop replace hash stability", () => {
-  it("keeps the edited line hash unchanged after a pure noop replace", async () => {
+describe("noop edit hash stability", () => {
+  it("keeps the edited line hash unchanged after a pure noop edit", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -41,7 +41,7 @@ describe("noop replace hash stability", () => {
     });
   });
 
-  it("keeps hashes stable across repeated noop replaces", async () => {
+  it("keeps hashes stable across repeated noop edits", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -105,7 +105,7 @@ describe("noop replace hash stability", () => {
         undefined,
         ctx,
       );
-      expect(getText(result)).toContain("Successfully replaced");
+      expect(getText(result)).toContain("Successfully edited");
 
       const r2 = getText(
         await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx),
@@ -115,7 +115,7 @@ describe("noop replace hash stability", () => {
     });
   });
 
-  it("keeps original anchors usable after a noop replace", async () => {
+  it("keeps original anchors usable after a noop edit", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -148,7 +148,7 @@ describe("noop replace hash stability", () => {
         undefined,
         ctx,
       );
-      expect(getText(followUp)).toContain("Successfully replaced");
+      expect(getText(followUp)).toContain("Successfully edited");
       expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\n");
     });
   });

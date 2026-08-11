@@ -1,2 +1,0 @@
-- `undo_last_replace`: reverts only the most recent replace on the file — any write to the file clears the undo history, so call it immediately after a bad replace. A replace is bad when its post-edit diff shows `-HASH│` rows for lines you meant to keep (a closing brace, import, or declaration).
-- `undo_last_replace`: when auto-read shows the post-edit diff, its `+HASH│` and ` HASH│` rows are the fresh anchors for the restored file, so follow-up edits can anchor on the diff.

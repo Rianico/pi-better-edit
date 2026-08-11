@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { detectEnding, toLF, restoreEndings, stripBOM, genDiff } from "../../src/replace-diff";
+import { detectEnding, toLF, restoreEndings, stripBOM, genDiff } from "../../src/edit-diff";
 import { _lineHashesPure, initHasher } from "../../src/hashline";
 
 beforeAll(async () => {

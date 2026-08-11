@@ -11,7 +11,7 @@ import {
 
 const home = useTestHome();
 
-describe("drift notices for changed served territory outside the replace range", () => {
+describe("drift notices for changed served territory outside the edit range", () => {
 	it("appends a drift notice with the current drifted content; the notice rows verify cleanly in a follow-up edit", async () => {
 		await withTempFile(
 			"sample.ts",
@@ -47,7 +47,7 @@ describe("drift notices for changed served territory outside the replace range",
 				);
 
 				const resultText = getText(result);
-				expect(resultText).toContain("Successfully replaced");
+				expect(resultText).toContain("Successfully edited");
 				expect(resultText).toContain("Drift notice:");
 				const driftRow = resultText
 					.split("\n")
@@ -67,13 +67,13 @@ describe("drift notices for changed served territory outside the replace range",
 					undefined,
 					ctx,
 				);
-				expect(getText(followUp)).toContain("Successfully replaced");
+				expect(getText(followUp)).toContain("Successfully edited");
 				expect(await readFile(path, "utf-8")).toBe("A\nbeta\ngamma\nD\n");
 			},
 		);
 	});
 
-	it("reports drift on a noop replace", async () => {
+	it("reports drift on a noop edit", async () => {
 		await withTempFile(
 			"sample.ts",
 			"alpha\nbeta\ngamma\ndelta\n",
@@ -343,7 +343,7 @@ describe("drift notices for changed served territory outside the replace range",
 				);
 
 				const resultText = getText(result);
-				expect(resultText).toContain("Successfully replaced");
+				expect(resultText).toContain("Successfully edited");
 				const notice = resultText.split("Drift notice:")[1] ?? "";
 				expect(notice).toContain("2 line(s)");
 				expect(notice.match(/^[A-Za-z0-9]{3}│R$/gm)).toHaveLength(1);
@@ -357,15 +357,15 @@ describe("drift notices for changed served territory outside the replace range",
 		);
 	});
 
-	it("undo_last_replace results never carry a drift notice", async () => {
+	it("undo_last_edit results never carry a drift notice", async () => {
 		await withTempFile(
 			"sample.ts",
 			"alpha\nbeta\ngamma\ndelta\n",
 			async ({ cwd, path }) => {
 				const { getTool, ctx } = setupIntegrationTest(cwd);
 				const readTool = getTool("read");
-				const editTool = getTool("replace");
-				const undoTool = getTool("undo_last_replace");
+				const editTool = getTool("edit");
+				const undoTool = getTool("undo_last_edit");
 
 				const firstRead = await readTool.execute(
 					"r1",
@@ -380,7 +380,7 @@ describe("drift notices for changed served territory outside the replace range",
 				);
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
-				const replaced = await editTool.execute(
+				const edited = await editTool.execute(
 					"e1",
 					{
 						path: "sample.ts",
@@ -392,7 +392,7 @@ describe("drift notices for changed served territory outside the replace range",
 					undefined,
 					ctx,
 				);
-				expect(getText(replaced)).toContain("Drift notice:");
+				expect(getText(edited)).toContain("Drift notice:");
 
 				const undone = await undoTool.execute(
 					"u1",
@@ -401,7 +401,7 @@ describe("drift notices for changed served territory outside the replace range",
 					undefined,
 					ctx,
 				);
-				expect(getText(undone)).toContain("Undone last replace on sample.ts.");
+				expect(getText(undone)).toContain("Undone last edit on sample.ts.");
 				expect(getText(undone)).not.toContain("Drift notice");
 				expect(await readFile(path, "utf-8")).toBe(
 					"alpha\nbeta\ngamma\nDELTA\n",
@@ -445,7 +445,7 @@ describe("drift notices for changed served territory outside the replace range",
 				);
 
 				const resultText = getText(result);
-				expect(resultText).toContain("Successfully replaced");
+				expect(resultText).toContain("Successfully edited");
 				expect(resultText).toContain("Drift notice:");
 
 				const betaRow = resultText
@@ -481,7 +481,7 @@ describe("drift notices for changed served territory outside the replace range",
 					undefined,
 					ctx,
 				);
-				expect(getText(followUp)).toContain("Successfully replaced");
+				expect(getText(followUp)).toContain("Successfully edited");
 				expect(await readFile(path, "utf-8")).toBe(
 					"A\nB\nGAMMA\ndelta\n",
 				);

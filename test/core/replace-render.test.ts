@@ -11,7 +11,7 @@ import {
 	buildAppliedText,
 	fmtResultMd,
 	mkMdTheme,
-} from "../../src/replace-render";
+} from "../../src/edit-render";
 
 const mockTheme = {
 	fg: vi.fn((color: string, text: string) => `[${color}]${text}`),
@@ -207,8 +207,8 @@ describe("extractWarnings", () => {
 
 	it("strips the trailing drift notice from the warnings block when its text is provided", () => {
 		const notice =
-			"Drift notice: 1 line(s) outside the replaced range drifted. Current content around the drift:\nabc│x";
-		const text = `Successfully replaced.\n\nWarnings:\nWarning 1\n\n${notice}`;
+			"Drift notice: 1 line(s) outside the edited range drifted. Current content around the drift:\nabc│x";
+		const text = `Successfully edited.\n\nWarnings:\nWarning 1\n\n${notice}`;
 		const result = extractWarnings(text, notice);
 		expect(result).toContain("Warnings:");
 		expect(result).toContain("Warning 1");

@@ -5,7 +5,7 @@ import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixt
 
 const home = useTestHome();
 
-describe("regReplace", () => {
+describe("regEdit", () => {
   it("rejects malformed null lines during direct execute without modifying the file", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -44,7 +44,7 @@ describe("regReplace", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
 
       const content = await readFile(path, "utf-8");
       expect(content).toBe("a\nb\nbbb\n");
@@ -67,7 +67,7 @@ describe("regReplace", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       expect(result.details?.diff).toBeDefined();
       expect(result.details?.diff).toContain("BBB");
@@ -90,7 +90,7 @@ describe("regReplace", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Warnings:");
       expect(result.content[0].text).toContain(`stripped "HASH│" prefix`);
       expect(result.details?.diff).toContain("BBB");
@@ -114,7 +114,7 @@ describe("regReplace", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Warnings:");
       expect(result.content[0].text).toContain(`stripped diff-preview marker`);
       expect(result.details?.diff).toContain("BBB");
@@ -138,7 +138,7 @@ describe("regReplace", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Added 1 line(s), removed 2 line(s).");
       expect(result.content[0].text).toContain("Warnings:");
       expect(result.content[0].text).toContain("were reversed");
@@ -163,7 +163,7 @@ describe("regReplace", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Warnings:");
       expect(result.content[0].text).toContain(`stripped "HASH│" prefix`);
       expect(result.details?.diff).toContain("BBB");
@@ -173,7 +173,7 @@ describe("regReplace", () => {
   });
 });
 
-describe("regReplace — robustness", () => {
+describe("regEdit — robustness", () => {
   it("reports success even when the post-edit snapshot fails", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -195,7 +195,7 @@ describe("regReplace — robustness", () => {
           undefined,
           ctx,
         );
-        expect(result.content[0].text).toContain("Successfully replaced");
+        expect(result.content[0].text).toContain("Successfully edited");
         expect(result.details?.snapshotId).toBeUndefined();
       } finally {
         spy.mockRestore();
@@ -257,7 +257,7 @@ describe("regReplace — robustness", () => {
           undefined,
           ctx,
         );
-        expect(result.content[0].text).toContain("Successfully replaced");
+        expect(result.content[0].text).toContain("Successfully edited");
       } finally {
         spy.mockRestore();
       }

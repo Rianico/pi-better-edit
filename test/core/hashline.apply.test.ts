@@ -9,7 +9,7 @@ import { makeTag, useTestHome } from "../support/fixtures";
 const home = useTestHome();
 
 describe("applyEdit — basic operations", () => {
-	it("replaces a single line", async () => {
+	it("edits a single line", async () => {
 		const content = "aaa\nbbb\nccc";
 		const edit: HEdit = { hash_bounds: [await makeTag(content, 2, home.testPath), await makeTag(content, 2, home.testPath)], content_lines: ["BBB"] };
 		const result = applyEdit(content, edit);
@@ -17,7 +17,7 @@ describe("applyEdit — basic operations", () => {
 		expect(result.firstChangedLine).toBe(2);
 	});
 
-	it("replaces a single line with multiple lines", async () => {
+	it("edits a single line with multiple lines", async () => {
 		const content = "aaa\nbbb\nccc";
 		const edit: HEdit = { hash_bounds: [await makeTag(content, 2, home.testPath), await makeTag(content, 2, home.testPath)], content_lines: ["BBB", "B2"] };
 		const result = applyEdit(content, edit);
@@ -38,7 +38,7 @@ describe("applyEdit — basic operations", () => {
     expect(result.content).toBe("aaa\n\nccc\n");
   });
 
-  it("treats lines:[\"\"] as a blank line for range replaces too", async () => {
+  it("treats lines:[\"\"] as a blank line for range edits too", async () => {
     const content = "aaa\nbbb\nccc\nddd\n";
     const edit: HEdit = {
       hash_bounds: [await makeTag(content, 2, home.testPath), await makeTag(content, 3, home.testPath)],
@@ -56,7 +56,7 @@ describe("applyEdit — basic operations", () => {
 		expect(result.content.split("\n").filter((line) => line === "").length).toBeGreaterThanOrEqual(2);
 	});
 
-	it("replaces a range of lines", async () => {
+	it("edits a range of lines", async () => {
 		const content = "aaa\nbbb\nccc\nddd";
 		const edit: HEdit = {
 			hash_bounds: [await makeTag(content, 2, home.testPath), await makeTag(content, 3, home.testPath)],
@@ -163,7 +163,7 @@ describe("applyEdit — auto-fix heuristics", () => {
 });
 
 describe("applyEdit — lastChangedLine tracking", () => {
-	it("tracks lastChangedLine when single-line replace expands to multiple lines", async () => {
+	it("tracks lastChangedLine when single-line edit expands to multiple lines", async () => {
 		const content = "aaa\nbbb\nccc";
 		const edit: HEdit = {
 			hash_bounds: [await makeTag(content, 2, home.testPath), await makeTag(content, 2, home.testPath)], content_lines: ["B1", "B2", "B3", "B4", "B5"],
@@ -227,7 +227,7 @@ describe("applyEdit — edge cases (empty, single-line, no trailing newline)", (
 		expect(() => applyEdit(content, edit)).toThrow(/^\[E_WOULD_EMPTY\]/);
 	});
 
-	it("replaces a line in a file with no trailing newline", async () => {
+	it("edits a line in a file with no trailing newline", async () => {
 		const content = "aaa\nbbb\nccc";
 		const edit: HEdit = { hash_bounds: [await makeTag(content, 2, home.testPath), await makeTag(content, 2, home.testPath)], content_lines: ["BBB"] };
 		const result = applyEdit(content, edit);
@@ -338,28 +338,28 @@ describe("applyEdit — deletion and range matrix", () => {
 			expected: "a\nb",
 		},
 		{
-			name: "replace whole file keeps trailing newline",
+			name: "edit whole file keeps trailing newline",
 			content: "a\nb\nc\n",
 			range: [1, 3] as const,
 			contentLines: ["X", "Y"],
 			expected: "X\nY\n",
 		},
 		{
-			name: "replace whole file without trailing newline",
+			name: "edit whole file without trailing newline",
 			content: "a\nb\nc",
 			range: [1, 3] as const,
 			contentLines: ["X", "Y"],
 			expected: "X\nY",
 		},
 		{
-			name: "replace last line expands without trailing newline",
+			name: "edit last line expands without trailing newline",
 			content: "a\nb\nc",
 			range: [3, 3] as const,
 			contentLines: ["X", "Y"],
 			expected: "a\nb\nX\nY",
 		},
 		{
-			name: "replace first line keeps the rest intact",
+			name: "edit first line keeps the rest intact",
 			content: "a\nb\nc\n",
 			range: [1, 1] as const,
 			contentLines: ["X", "Y"],

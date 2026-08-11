@@ -177,12 +177,12 @@ describe("auto-read handler", () => {
       expect(result).toBeDefined();
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content[1].text).toContain("--- Auto-read (hashline anchors) ---");
-      expect(content[1].text).toContain("[File is empty. Use replace to insert content.]");
+      expect(content[1].text).toContain("[File is empty. Use edit to insert content.]");
       expect(content[1].text).toMatch(/^[A-Za-z0-9]{3}│/m);
     });
   });
 
-  it("returns nothing for a noop replace (anchors are unchanged)", async () => {
+  it("returns nothing for a noop edit (anchors are unchanged)", async () => {
     await withTempDir("auto-read-noop-", async (dir) => {
       const filePath = join(dir, "noop.txt");
       await writeFile(filePath, "hello\nworld\n", "utf-8");
@@ -195,7 +195,7 @@ describe("auto-read handler", () => {
 
       const result = await handler!(
         {
-          toolName: "replace",
+          toolName: "edit",
           isError: false,
           input: { path: "noop.txt" },
           details: { metrics: { classification: "noop" } },
@@ -264,18 +264,18 @@ describe("auto-read handler", () => {
     });
   });
 
-  it("returns only the diff for a replace with auto-read on (no anchors block)", async () => {
+  it("returns only the diff for an edit with auto-read on (no anchors block)", async () => {
     const { pi, handlers } = makeFakePi();
     register(pi);
     const handler = handlers.get("tool_result");
     const diff = " aaa\n-   │bbb\n+XYZ│BBB\n ccc";
     const result = await handler!(
       {
-        toolName: "replace",
+        toolName: "edit",
         isError: false,
         input: { path: "only.txt" },
         details: { diff, metrics: { classification: "applied", changed_lines: { first: 5, last: 5 } } },
-        content: [{ type: "text", text: "Replaced." }],
+        content: [{ type: "text", text: "Edited." }],
       },
       { cwd: "/tmp" },
     );
@@ -286,14 +286,14 @@ describe("auto-read handler", () => {
     expect(content[0].text).not.toContain("--- Auto-read");
   });
 
-  it("returns only the diff for an undo_last_replace with auto-read on (no anchors block)", async () => {
+  it("returns only the diff for an undo_last_edit with auto-read on (no anchors block)", async () => {
     const { pi, handlers } = makeFakePi();
     register(pi);
     const handler = handlers.get("tool_result");
     const diff = " aaa\n-   │BBB\n+XYZ│bbb\n ccc";
     const result = await handler!(
       {
-        toolName: "undo_last_replace",
+        toolName: "undo_last_edit",
         isError: false,
         input: { path: "only-undo.txt" },
         details: { diff, metrics: { classification: "applied", changed_lines: { first: 5, last: 5 } } },
@@ -337,7 +337,7 @@ describe("auto-read handler", () => {
   });
 });
 
-describe("replace diff in model-visible text", () => {
+describe("edit diff in model-visible text", () => {
   it("shows the post-edit diff instead of the summary when auto-read is on", async () => {
     await withTempDir("auto-read-diff-", async (dir) => {
       await writeFile(join(dir, "diff.txt"), "aaa\nbbb\nccc\n", "utf-8");
@@ -349,14 +349,14 @@ describe("replace diff in model-visible text", () => {
 
       const result = await handler!(
         {
-          toolName: "replace",
+          toolName: "edit",
           isError: false,
           input: { path: "diff.txt" },
           details: {
             diff,
             metrics: { classification: "applied", changed_lines: { first: 2, last: 2 } },
           },
-          content: [{ type: "text", text: "Successfully replaced in diff.txt. Added 1 line(s), removed 1 line(s)." }],
+          content: [{ type: "text", text: "Successfully edited in diff.txt. Added 1 line(s), removed 1 line(s)." }],
         },
         { cwd: dir },
       );
@@ -364,7 +364,7 @@ describe("replace diff in model-visible text", () => {
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content).toHaveLength(1);
       expect(content[0].text).toBe(diff);
-      expect(content[0].text).not.toContain("Successfully replaced");
+      expect(content[0].text).not.toContain("Successfully edited");
       expect(content[0].text).not.toContain("--- Auto-read");
     });
   });
@@ -377,11 +377,11 @@ describe("replace diff in model-visible text", () => {
       register(pi);
       const handler = handlers.get("tool_result");
       const diff = " aaa\n-   │bbb\n+XYZ│BBB\n ccc";
-      const summary = "Successfully replaced in warn.txt. Added 1 line(s), removed 1 line(s).\n\nWarnings:\n[E_BARE_HASH_PREFIX] Autocorrected: stripped \"HASH│\" prefix copied from read output in replacement_text line 1.";
+      const summary = "Successfully edited in warn.txt. Added 1 line(s), removed 1 line(s).\n\nWarnings:\n[E_BARE_HASH_PREFIX] Autocorrected: stripped \"HASH│\" prefix copied from read output in replacement_text line 1.";
 
       const result = await handler!(
         {
-          toolName: "replace",
+          toolName: "edit",
           isError: false,
           input: { path: "warn.txt" },
           details: { diff, metrics: { classification: "applied" } },
@@ -394,7 +394,7 @@ describe("replace diff in model-visible text", () => {
       expect(text).toContain(diff);
       expect(text).toContain("Warnings:");
       expect(text).toContain("[E_BARE_HASH_PREFIX]");
-      expect(text).not.toContain("Successfully replaced");
+      expect(text).not.toContain("Successfully edited");
       expect(text).not.toContain("--- Auto-read");
     });
   });
@@ -406,11 +406,11 @@ describe("replace diff in model-visible text", () => {
 
     const result = await handler!(
       {
-        toolName: "replace",
+        toolName: "edit",
         isError: false,
         input: { path: "nodiff.txt" },
         details: { metrics: { classification: "applied" } },
-        content: [{ type: "text", text: "Successfully replaced in nodiff.txt." }],
+        content: [{ type: "text", text: "Successfully edited in nodiff.txt." }],
       },
       { cwd: "/tmp" },
     );
@@ -418,7 +418,7 @@ describe("replace diff in model-visible text", () => {
     expect(result).toBeUndefined();
   });
 
-  it("shows the post-edit diff for undo_last_replace results too", async () => {
+  it("shows the post-edit diff for undo_last_edit results too", async () => {
     await withTempDir("auto-read-diff-undo-", async (dir) => {
       await writeFile(join(dir, "undo.txt"), "aaa\nbbb\nccc\n", "utf-8");
 
@@ -429,14 +429,14 @@ describe("replace diff in model-visible text", () => {
 
       const result = await handler!(
         {
-          toolName: "undo_last_replace",
+          toolName: "undo_last_edit",
           isError: false,
           input: { path: "undo.txt" },
           details: {
             diff,
             metrics: { classification: "applied", changed_lines: { first: 2, last: 2 } },
           },
-          content: [{ type: "text", text: "Undone last replace on undo.txt.\nFile reverted to previous state. The post-edit diff rows carry the restored file's fresh anchors for follow-up edits." }],
+          content: [{ type: "text", text: "Undone last edit on undo.txt.\nFile reverted to previous state. The post-edit diff rows carry the restored file's fresh anchors for follow-up edits." }],
         },
         { cwd: dir },
       );
@@ -444,7 +444,7 @@ describe("replace diff in model-visible text", () => {
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content).toHaveLength(1);
       expect(content[0].text).toBe(diff);
-      expect(content[0].text).not.toContain("Undone last replace");
+      expect(content[0].text).not.toContain("Undone last edit");
       expect(content[0].text).not.toContain("--- Auto-read");
     });
   });
@@ -456,11 +456,11 @@ describe("replace diff in model-visible text", () => {
 
     const result = await handler!(
       {
-        toolName: "undo_last_replace",
+        toolName: "undo_last_edit",
         isError: false,
         input: { path: "undonodiff.txt" },
         details: { metrics: { classification: "applied" } },
-        content: [{ type: "text", text: "Undone last replace on undonodiff.txt." }],
+        content: [{ type: "text", text: "Undone last edit on undonodiff.txt." }],
       },
       { cwd: "/tmp" },
     );
@@ -468,7 +468,7 @@ describe("replace diff in model-visible text", () => {
     expect(result).toBeUndefined();
   });
 
-  it("leaves the summary untouched for replace when auto-read is disabled", async () => {
+  it("leaves the summary untouched for edit when auto-read is disabled", async () => {
     await withTempDir("auto-read-diff-off-", async (dir) => {
       const configDir = join(dir, ".config", "pi-hashline-edit-pro");
       await mkdir(configDir, { recursive: true });
@@ -480,11 +480,11 @@ describe("replace diff in model-visible text", () => {
       const handler = handlers.get("tool_result");
       const result = await handler!(
         {
-          toolName: "replace",
+          toolName: "edit",
           isError: false,
           input: { path: "off.txt" },
           details: { diff: " aaa\n-   │bbb\n+XYZ│BBB\n ccc", metrics: { classification: "applied" } },
-          content: [{ type: "text", text: "Successfully replaced in off.txt. Added 1 line(s), removed 1 line(s)." }],
+          content: [{ type: "text", text: "Successfully edited in off.txt. Added 1 line(s), removed 1 line(s)." }],
         },
         { cwd: dir },
       );

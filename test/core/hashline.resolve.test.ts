@@ -13,7 +13,7 @@ describe("resEdit", () => {
 		expect(resolved).toHaveProperty("content_lines");
 	});
 
-	it("resolves a 1-line replace (same anchor)", () => {
+	it("resolves a 1-line edit (same anchor)", () => {
 		const edit: HTEdit = { remove_from: "MQX", remove_to: "MQX", replacement_text: "new" };
 		const resolved = resEdit(edit);
 		const r = resolved as {

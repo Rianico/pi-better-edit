@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { editToolSchema, regReplace } from "../../src/replace";
+import { editToolSchema, regEdit } from "../../src/edit";
 import {
 	makeFakePiRegistry,
 	setupIntegrationTest,
@@ -24,20 +24,20 @@ describe("editToolSchema", () => {
 	});
 });
 
-describe("regReplace", () => {
-	it("registers a tool named 'replace'", () => {
+describe("regEdit", () => {
+	it("registers a tool named 'edit'", () => {
 		const { pi, getTool } = makeFakePiRegistry();
-		regReplace(pi);
-		const tool = getTool("replace");
+		regEdit(pi);
+		const tool = getTool("edit");
 		expect(tool).toBeDefined();
-		expect(tool.name).toBe("replace");
+		expect(tool.name).toBe("edit");
 		expect(tool.parameters).toBe(editToolSchema);
 	});
 
 	it("prepareArguments normalizes file_path to path", () => {
 		const { pi, getTool } = makeFakePiRegistry();
-		regReplace(pi);
-		const tool = getTool("replace");
+		regEdit(pi);
+		const tool = getTool("edit");
 		const result = tool.prepareArguments({
 			file_path: "test.txt",
 			remove_from: "AAA",
@@ -48,7 +48,7 @@ describe("regReplace", () => {
 		expect(result.file_path).toBeUndefined();
 	});
 
-	it("replaces a single line via execute", async () => {
+	it("edits a single line via execute", async () => {
 		await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -74,7 +74,7 @@ describe("regReplace", () => {
 			);
 
 			expect(result.content[0].text).toContain(
-				"Successfully replaced in sample.txt",
+				"Successfully edited in sample.txt",
 			);
 			expect(result.content[0].text).toContain(
 				"Added 1 line(s), removed 1 line(s).",
@@ -82,7 +82,7 @@ describe("regReplace", () => {
 		});
 	});
 
-	it("replaces a range of lines via execute", async () => {
+	it("edits a range of lines via execute", async () => {
 		await withTempFile(
 			"sample.txt",
 			"aaa\nbbb\nccc\nddd\n",
@@ -111,7 +111,7 @@ describe("regReplace", () => {
 				);
 
 				expect(result.content[0].text).toContain(
-					"Successfully replaced in sample.txt",
+					"Successfully edited in sample.txt",
 				);
 				expect(result.content[0].text).toContain(
 					"Added 2 line(s), removed 2 line(s).",
@@ -146,7 +146,7 @@ describe("regReplace", () => {
 			);
 
 			expect(result.content[0].text).toContain(
-				"Successfully replaced in sample.txt",
+				"Successfully edited in sample.txt",
 			);
 			expect(result.content[0].text).toContain(
 				"Added 0 line(s), removed 1 line(s).",

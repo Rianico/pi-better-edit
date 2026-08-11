@@ -80,12 +80,12 @@ export async function fmtReadPreview(
 				(await (path ? lineHashes(text, path) : lineHashes(text)));
 			const emptyLineHash = allHashes[0]!;
 			return {
-				text: `${emptyLineHash}${HASH_SEP}\n[File is empty. Use replace to insert content.]`,
+				text: `${emptyLineHash}${HASH_SEP}\n[File is empty. Use edit to insert content.]`,
 				served: [{ position: 0, hash: emptyLineHash }],
 			};
 		}
 		return {
-			text: `Offset ${startLine} is beyond end of file (0 lines total). The file is empty. Use replace to insert content.`,
+			text: `Offset ${startLine} is beyond end of file (0 lines total). The file is empty. Use edit to insert content.`,
 			served: [],
 		};
 	}

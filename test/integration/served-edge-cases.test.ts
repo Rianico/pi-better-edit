@@ -11,7 +11,7 @@ import {
 
 const home = useTestHome();
 
-describe("served-state edge cases for replace", () => {
+describe("served-state edge cases for edit", () => {
 	it("rejects [E_RANGE_UNSERVED] for a range spanning paged-read gaps, then applies on retry", async () => {
 		const content =
 			["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
@@ -82,7 +82,7 @@ describe("served-state edge cases for replace", () => {
 				undefined,
 				ctx,
 			);
-			expect(getText(retry)).toContain("Successfully replaced");
+			expect(getText(retry)).toContain("Successfully edited");
 			expect(await readFile(path, "utf-8")).toBe("l1\nl2\nX\nY\nl8\nl9\n");
 		});
 	});

@@ -16,14 +16,14 @@ function collectTsFiles(dir: string): string[] {
   return out;
 }
 
-const replacePrompt = readFileSync(
-  new URL("../../prompts/replace.md", import.meta.url),
+const editPrompt = readFileSync(
+  new URL("../../prompts/edit.md", import.meta.url),
   "utf-8",
 );
 
-describe("prompts/replace.md (model-facing contract)", () => {
+describe("prompts/edit.md (model-facing contract)", () => {
   it("declares the tool purpose", () => {
-    expect(replacePrompt).toMatch(/Replace a range of lines in a text file.*HASH anchors/);
+    expect(editPrompt).toMatch(/Edit a range of lines in a text file.*HASH anchors/);
   });
 });
 
@@ -55,9 +55,9 @@ describe("prompts/read.md (model-facing contract)", () => {
 });
 
 describe("prompt guidelines", () => {
-  it("replace-guidelines.md loads without template variables", () => {
+  it("edit-guidelines.md loads without template variables", () => {
     const content = readFileSync(
-      new URL("../../prompts/replace-guidelines.md", import.meta.url),
+      new URL("../../prompts/edit-guidelines.md", import.meta.url),
       "utf-8",
     );
     expect(content).toContain("remove_from");
@@ -69,7 +69,7 @@ describe("prompt guidelines", () => {
   });
 
   it("loadGuide returns an array of guidelines", () => {
-    const guidelines = loadGuide("../prompts/replace-guidelines.md");
+    const guidelines = loadGuide("../prompts/edit-guidelines.md");
     expect(Array.isArray(guidelines)).toBe(true);
     expect(guidelines.length).toBeGreaterThan(0);
   });
@@ -83,12 +83,12 @@ describe("prompt guidelines", () => {
     expect(content).toContain("fresh anchors");
     expect(content).not.toContain("re-read");
     expect(content).not.toContain("call again after any edit");
-    expect(content).not.toContain("call before `replace`");
+    expect(content).not.toContain("call before `edit`");
     expect(content).not.toContain("{{AUTO_READ_NOTE}}");
   });
-  it("undo-last-replace-guidelines.md loads without template variables", () => {
+  it("undo-last-edit-guidelines.md loads without template variables", () => {
     const content = readFileSync(
-      new URL("../../prompts/undo-last-replace-guidelines.md", import.meta.url),
+      new URL("../../prompts/undo-last-edit-guidelines.md", import.meta.url),
       "utf-8",
     );
     expect(content).not.toContain("{{");
@@ -103,7 +103,7 @@ describe("read tool guidelines", () => {
     const guidelines = tool.promptGuidelines as string[];
     expect(guidelines.some((g) => g.includes("never served"))).toBe(true);
     expect(guidelines.some((g) => g.includes("re-read"))).toBe(false);
-    expect(guidelines.some((g) => g.includes("call before `replace`"))).toBe(false);
+    expect(guidelines.some((g) => g.includes("call before `edit`"))).toBe(false);
   });
 });
 

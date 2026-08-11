@@ -5,7 +5,7 @@ import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixt
 const home = useTestHome();
 
 describe("stale-position compound edits", () => {
-  it("rejects stale anchors after a replace", async () => {
+  it("rejects stale anchors after an edit", async () => {
     await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -43,7 +43,7 @@ describe("stale-position compound edits", () => {
     });
   });
 
-  it("tracks correct final coordinates for a range replace", async () => {
+  it("tracks correct final coordinates for a range edit", async () => {
     await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -63,12 +63,12 @@ describe("stale-position compound edits", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Added 2 line(s), removed 3 line(s).");
     });
   });
 
-  it("tracks correct coordinates when replace shrinks lines", async () => {
+  it("tracks correct coordinates when the edit shrinks lines", async () => {
     await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -88,7 +88,7 @@ describe("stale-position compound edits", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Added 2 line(s), removed 3 line(s).");
     });
   });

@@ -39,11 +39,11 @@ function makeSeamPi() {
 }
 
 describe("diff rows serve chained edits", () => {
-	it("serves replace diff rows so follow-up edits anchor on them without a read", async () => {
+	it("serves edit diff rows so follow-up edits anchor on them without a read", async () => {
 		await withTempFile("sample.ts", "l1\nl2\nl3\nl4\nl5\n", async ({ cwd }) => {
 			const { handlers, getTool } = makeSeamPi();
 			const readTool = getTool("read");
-			const editTool = getTool("replace");
+			const editTool = getTool("edit");
 			const toolResultHandler = handlers.get("tool_result") as (
 				event: ToolResultEvent,
 				ctx: ToolResultCtx,
@@ -75,13 +75,13 @@ describe("diff rows serve chained edits", () => {
 				undefined,
 				ctx,
 			);
-			expect(getText(editResult)).toContain("Successfully replaced");
+			expect(getText(editResult)).toContain("Successfully edited");
 			const diff = editResult.details.diff as string;
 			expect(diff).toContain("│X");
 
 			const delivered = await toolResultHandler(
 				{
-					toolName: "replace",
+					toolName: "edit",
 					isError: false,
 					input: { path: "sample.ts" },
 					details: editResult.details,
@@ -111,7 +111,7 @@ describe("diff rows serve chained edits", () => {
 				undefined,
 				ctx,
 			);
-			expect(getText(chained)).toContain("Successfully replaced");
+			expect(getText(chained)).toContain("Successfully edited");
 			expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe(
 				"A\nB\nl3\nl4\nl5\n",
 			);
@@ -122,7 +122,7 @@ describe("diff rows serve chained edits", () => {
 		await withTempFile("sample.ts", "l1\nl2\nl3\nl4\nl5\n", async ({ cwd }) => {
 			const { getTool } = makeSeamPi();
 			const readTool = getTool("read");
-			const editTool = getTool("replace");
+			const editTool = getTool("edit");
 			const ctx = { cwd };
 
 			const firstRead = await readTool.execute(
@@ -149,7 +149,7 @@ describe("diff rows serve chained edits", () => {
 				undefined,
 				ctx,
 			);
-			expect(getText(editResult)).toContain("Successfully replaced");
+			expect(getText(editResult)).toContain("Successfully edited");
 			const diff = editResult.details.diff as string;
 
 			const diffLines = diff.split("\n");
@@ -205,7 +205,7 @@ describe("diff rows serve chained edits", () => {
 			);
 
 			const readTool = getTool("read");
-			const editTool = getTool("replace");
+			const editTool = getTool("edit");
 			const toolResultHandler = handlers.get("tool_result") as (
 				event: ToolResultEvent,
 				ctx: ToolResultCtx,
@@ -242,11 +242,11 @@ describe("diff rows serve chained edits", () => {
 				undefined,
 				ctx,
 			);
-			expect(getText(firstEdit)).toContain("Successfully replaced");
+			expect(getText(firstEdit)).toContain("Successfully edited");
 
 			const delivered = await toolResultHandler(
 				{
-					toolName: "replace",
+					toolName: "edit",
 					isError: false,
 					input: { path: "sample.ts" },
 					details: firstEdit.details,
@@ -298,7 +298,7 @@ describe("diff rows serve chained edits", () => {
 				undefined,
 				ctx,
 			);
-			expect(getText(retry)).toContain("Successfully replaced");
+			expect(getText(retry)).toContain("Successfully edited");
 			expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe(
 				"A\nB\nC\nl4\nl5\n",
 			);

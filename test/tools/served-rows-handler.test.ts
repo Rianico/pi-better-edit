@@ -47,15 +47,15 @@ function overlay(
 }
 
 describe("served-rows tool_result handler", () => {
-	it("records replace diff rows as serves when auto-read is on", async () => {
-		await withTempDir("served-replace-", async (dir) => {
+	it("records edit diff rows as serves when auto-read is on", async () => {
+		await withTempDir("served-edit-", async (dir) => {
 			const filePath = join(dir, "sample.txt");
 			await writeFile(filePath, "alpha\nbeta\ngamma\n", "utf-8");
 
 			const { pi, handlers, getTool } = makeFakePi();
 			register(pi);
 			const readTool = getTool("read");
-			const editTool = getTool("replace");
+			const editTool = getTool("edit");
 			const handler = handlers.get("tool_result");
 			expect(handler).toBeDefined();
 			const ctx = { cwd: dir };
@@ -95,7 +95,7 @@ describe("served-rows tool_result handler", () => {
 
 			const result = await handler!(
 				{
-					toolName: "replace",
+					toolName: "edit",
 					isError: false,
 					input: { path: "sample.txt" },
 					details: editResult.details,
@@ -120,7 +120,7 @@ describe("served-rows tool_result handler", () => {
 		});
 	});
 
-	it("records undo_last_replace diff rows as serves (restored hashes)", async () => {
+	it("records undo_last_edit diff rows as serves (restored hashes)", async () => {
 		await withTempDir("served-undo-", async (dir) => {
 			const filePath = join(dir, "sample.txt");
 			await writeFile(filePath, "alpha\nbeta\ngamma\n", "utf-8");
@@ -128,8 +128,8 @@ describe("served-rows tool_result handler", () => {
 			const { pi, handlers, getTool } = makeFakePi();
 			register(pi);
 			const readTool = getTool("read");
-			const editTool = getTool("replace");
-			const undoTool = getTool("undo_last_replace");
+			const editTool = getTool("edit");
+			const undoTool = getTool("undo_last_edit");
 			const handler = handlers.get("tool_result");
 			expect(handler).toBeDefined();
 			const ctx = { cwd: dir };
@@ -169,7 +169,7 @@ describe("served-rows tool_result handler", () => {
 
 			const result = await handler!(
 				{
-					toolName: "undo_last_replace",
+					toolName: "undo_last_edit",
 					isError: false,
 					input: { path: "sample.txt" },
 					details: undoResult.details,
@@ -212,7 +212,7 @@ describe("served-rows tool_result handler", () => {
 			);
 
 			const readTool = getTool("read");
-			const editTool = getTool("replace");
+			const editTool = getTool("edit");
 			const handler = handlers.get("tool_result");
 			expect(handler).toBeDefined();
 			const ctx = { cwd: dir };
@@ -245,7 +245,7 @@ describe("served-rows tool_result handler", () => {
 
 			const result = await handler!(
 				{
-					toolName: "replace",
+					toolName: "edit",
 					isError: false,
 					input: { path: "sample.txt" },
 					details: editResult.details,

@@ -6,12 +6,12 @@ describe("changedRange", () => {
     expect(changedRange("a\nb\nc", "a\nb\nc")).toBeNull();
   });
 
-  it("tracks a single-line replace", () => {
+  it("tracks a single-line edit", () => {
     const result = changedRange("a\nb\nc", "a\nB\nc");
     expect(result).toEqual({ firstChangedLine: 2, lastChangedLine: 2 });
   });
 
-  it("tracks a multi-line replace that expands", () => {
+  it("tracks a multi-line edit that expands", () => {
     const result = changedRange("a\nb\nc", "a\nB1\nB2\nc");
     expect(result).toEqual({ firstChangedLine: 2, lastChangedLine: 3 });
   });
@@ -23,7 +23,7 @@ describe("changedRange", () => {
     expect(result).toEqual({ firstChangedLine: 2, lastChangedLine: 2 });
   });
 
-  it("tracks a single-line replace accurately when the line length changes (regression)", () => {
+  it("tracks a single-line edit accurately when the line length changes (regression)", () => {
     const before = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
     const after = "a\nb\nc\nd\nLONGER LINE\ne\nf\ng\nh\ni\nj\n";
     expect(changedRange(before, after)).toEqual({ firstChangedLine: 5, lastChangedLine: 5 });

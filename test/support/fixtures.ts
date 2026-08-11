@@ -4,7 +4,7 @@ import { beforeAll, afterAll, vi } from "vitest";
 import { _lineHashesPure, initHasher } from "../../src/hashline";
 import { Compile } from "typebox/compile";
 import register from "../../index";
-import { regReplace } from "../../src/replace";
+import { regEdit } from "../../src/edit";
 import { shutdownHashStore } from "../../src/hash-store";
 export async function getWritableTempRoot(): Promise<string> {
   const fallback = join(process.cwd(), ".tmp");
@@ -179,7 +179,7 @@ export function makeFakePiRegistry() {
   };
 }
 
-export function makeFakeReplaceRegistry() {
+export function makeFakeEditRegistry() {
   const tools = new Map<string, any>();
   const pi = {
     registerTool(tool: any) {
@@ -187,9 +187,9 @@ export function makeFakeReplaceRegistry() {
     },
     on() {},
   } as any;
-  regReplace(pi);
-  const tool = tools.get("replace");
-  if (!tool) throw new Error("Tool not registered: replace");
+  regEdit(pi);
+  const tool = tools.get("edit");
+  if (!tool) throw new Error("Tool not registered: edit");
   return { tool };
 }
 
@@ -197,7 +197,7 @@ export function setupIntegrationTest(cwd: string) {
   const { pi, getTool } = makeFakePiRegistry();
   register(pi);
   const ctx = { cwd, ui: { notify() {} } } as any;
-  return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("replace") };
+  return { pi, getTool, ctx, readTool: getTool("read"), editTool: getTool("edit") };
 }
 
 export function setupReadTest(cwd: string) {

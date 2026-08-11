@@ -379,43 +379,43 @@ describe("auto-read after write", () => {
       expect(writeResult).toBeDefined();
       const text = (writeResult as { content: Array<{ type: string; text: string }> }).content[1].text;
       expect(text).toContain("--- Auto-read (hashline anchors) ---");
-      expect(text).toContain("[File is empty. Use replace to insert content.]");
+      expect(text).toContain("[File is empty. Use edit to insert content.]");
       expect(text).toMatch(/^[A-Za-z0-9]{3}│/m);
     } finally {
       await cleanupCwd(cwd);
     }
   });
 
-  it("replaces replace tool results with the diff and no anchors block", async () => {
-    const cwd = await makeTempDir("auto-read-test-replace-");
-    await writeFile(join(cwd, "replace.txt"), "alpha\nbeta\n", "utf-8");
+  it("replaces edit tool results with the diff and no anchors block", async () => {
+    const cwd = await makeTempDir("auto-read-test-edit-");
+    await writeFile(join(cwd, "edit.txt"), "alpha\nbeta\n", "utf-8");
     try {
       const { getToolResultHandler } = createTestPi();
       const handler = getToolResultHandler();
 
       const diff = " alpha\n-   │beta\n+BET│BETA";
-      const replaceResult = await handler!(
+      const editResult = await handler!(
         {
-          toolName: "replace",
-          toolCallId: "replace-1",
-          input: { path: "replace.txt", remove_from: "abc", remove_to: "abc", replacement_text: "BETA" },
-          content: [{ type: "text", text: "Successfully replaced in replace.txt. Added 1 line(s), removed 1 line(s)." }],
+          toolName: "edit",
+          toolCallId: "edit-1",
+          input: { path: "edit.txt", remove_from: "abc", remove_to: "abc", replacement_text: "BETA" },
+          content: [{ type: "text", text: "Successfully edited in edit.txt. Added 1 line(s), removed 1 line(s)." }],
           details: { diff, metrics: { classification: "applied" } },
           isError: false,
         },
         { cwd },
       );
 
-      expect(replaceResult).toBeDefined();
-      expect(replaceResult!.content).toHaveLength(1);
-      expect(replaceResult!.content![0]!.text).toBe(diff);
-      expect(replaceResult!.content![0]!.text).not.toContain("--- Auto-read");
+      expect(editResult).toBeDefined();
+      expect(editResult!.content).toHaveLength(1);
+      expect(editResult!.content![0]!.text).toBe(diff);
+      expect(editResult!.content![0]!.text).not.toContain("--- Auto-read");
     } finally {
       await cleanupCwd(cwd);
     }
   });
 
-  it("replaces undo_last_replace tool results with the diff and no anchors block", async () => {
+  it("replaces undo_last_edit tool results with the diff and no anchors block", async () => {
     const cwd = await makeTempDir("auto-read-test-undo-");
     await writeFile(join(cwd, "undo.txt"), "alpha\nbeta\n", "utf-8");
     try {
@@ -425,10 +425,10 @@ describe("auto-read after write", () => {
       const diff = " alpha\n-   │BETA\n+BET│beta";
       const undoResult = await handler!(
         {
-          toolName: "undo_last_replace",
+          toolName: "undo_last_edit",
           toolCallId: "undo-1",
           input: { path: "undo.txt" },
-          content: [{ type: "text", text: "Undone last replace on undo.txt." }],
+          content: [{ type: "text", text: "Undone last edit on undo.txt." }],
           details: { diff, metrics: { classification: "applied" } },
           isError: false,
         },

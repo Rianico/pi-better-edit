@@ -6,10 +6,10 @@ import type {
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { constants } from "fs";
-import { genDiff, restoreEndings, type LineEnding } from "./replace-diff";
+import { genDiff, restoreEndings, type LineEnding } from "./edit-diff";
 import { readNormFile } from "./file-reader";
 import { scanDrift } from "./drift";
-import { normReq } from "./replace-normalize";
+import { normReq } from "./edit-normalize";
 import {
 	isRec,
 	rejectUnknownFields,
@@ -34,7 +34,7 @@ import {
 	buildNoop,
 	type RMeta,
 	type RMetrics,
-} from "./replace-response";
+} from "./edit-response";
 import {
 	buildAppliedText,
 	mkMdTheme,
@@ -45,9 +45,9 @@ import {
 	isApplied,
 	type RPreview,
 	type RRState,
-} from "./replace-render";
+} from "./edit-render";
 import { loadP, loadGuide } from "./prompts";
-import { saveUndo } from "./replace-undo";
+import { saveUndo } from "./edit-undo";
 import {
 	loadHashStore,
 	findSnapshotPaths,
@@ -90,14 +90,14 @@ export const editToolSchema = Type.Object(
 	},
 	{ additionalProperties: false },
 );
-export type ReqParams = {
+export type EditParams = {
 	path: string;
 	remove_from: string;
 	remove_to: string;
 	replacement_text: string;
 };
 
-export type ReplaceDetails = {
+export type EditDetails = {
 	diff: string;
 	firstChangedLine?: number;
 	snapshotId?: string;
@@ -134,7 +134,7 @@ const ROOT_KS = new Set([
 	"replacement_text",
 ]);
 
-export function assertReq(request: unknown): asserts request is ReqParams {
+export function assertReq(request: unknown): asserts request is EditParams {
 	if (!isRec(request)) {
 		throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
 	}
@@ -240,7 +240,7 @@ function countLineChanges(
 }
 
 export async function execPipeline(
-	params: ReqParams,
+	params: EditParams,
 	cwd: string,
 	options?: ExecPipelineOptions,
 ): Promise<PipelineResult> {
@@ -394,7 +394,7 @@ export async function compPreview(
 	}
 }
 
-type ToolDef = ToolDefinition<any, ReplaceDetails, RRState> & {
+type ToolDef = ToolDefinition<any, EditDetails, RRState> & {
 	renderShell?: "default" | "self";
 };
 
@@ -421,14 +421,14 @@ export function reuseMarkdown(
 }
 
 export function buildToolDef(): ToolDef {
-	const E_DESC = loadP("../prompts/replace.md");
-	const E_SNIPPET = loadP("../prompts/replace-snippet.md");
-	const E_GUIDE = loadGuide("../prompts/replace-guidelines.md");
+	const E_DESC = loadP("../prompts/edit.md");
+	const E_SNIPPET = loadP("../prompts/edit-snippet.md");
+	const E_GUIDE = loadGuide("../prompts/edit-guidelines.md");
 
 	const parameters = editToolSchema;
 	return {
-		name: "replace",
-		label: "Replace",
+		name: "edit",
+		label: "Edit",
 		description: E_DESC,
 		parameters,
 		promptSnippet: E_SNIPPET,
@@ -514,7 +514,7 @@ export function buildToolDef(): ToolDef {
 
 			const typedResult = result as {
 				content?: Array<{ type: string; text?: string }>;
-				details?: ReplaceDetails;
+				details?: EditDetails;
 			};
 			const renderedText = getResultText(typedResult);
 
@@ -630,7 +630,7 @@ export function buildToolDef(): ToolDef {
 				});
 				if (!undo.persisted) {
 					throw new Error(
-						`[E_UNDO_UNAVAILABLE] Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. Retry the replace, or use write if the store cannot be recovered.`,
+						`[E_UNDO_UNAVAILABLE] Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. Retry the edit, or use write if the store cannot be recovered.`,
 					);
 				}
 				try {
@@ -676,6 +676,6 @@ export function buildToolDef(): ToolDef {
 	};
 }
 
-export function regReplace(pi: ExtensionAPI): void {
+export function regEdit(pi: ExtensionAPI): void {
 	pi.registerTool(buildToolDef());
 }

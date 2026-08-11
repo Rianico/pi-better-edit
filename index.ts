@@ -1,11 +1,11 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { initHasher } from "./src/hashline";
-import { regReplace } from "./src/replace";
-import { regReplaceUndo, clearUndo } from "./src/replace-undo";
+import { regEdit } from "./src/edit";
+import { regEditUndo, clearUndo } from "./src/edit-undo";
 import { regRead, fmtReadPreview } from "./src/read";
-import type { RMetrics } from "./src/replace-response";
-import { extractWarnings } from "./src/replace-render";
+import type { RMetrics } from "./src/edit-response";
+import { extractWarnings } from "./src/edit-render";
 import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
 import { readConfig, toggleAutoRead } from "./src/config";
@@ -25,14 +25,12 @@ import { valAccess } from "./src/validation";
 export default function (pi: ExtensionAPI): void {
 	regRead(pi);
 
-	regReplace(pi);
-	regReplaceUndo(pi);
+	regEdit(pi);
+	regEditUndo(pi);
 
 	let autoRead = true;
 
 	pi.on("session_start", async (_event, ctx) => {
-		const active = pi.getActiveTools();
-		pi.setActiveTools(active.filter((t) => t !== "edit"));
 		await initHasher();
 		try {
 			const store = await loadHashStore();
@@ -51,12 +49,12 @@ export default function (pi: ExtensionAPI): void {
 
 	pi.registerCommand("toggle-auto-read", {
 		description:
-			"Toggle automatic hashline anchors after write and post-edit diffs after replace and undo_last_replace operations",
+			"Toggle automatic hashline anchors after write and post-edit diffs after edit and undo_last_edit operations",
 		handler: async (_args, ctx) => {
 			autoRead = await toggleAutoRead();
 			const state = autoRead ? "enabled" : "disabled";
 			ctx.ui.notify(
-				`Auto-read anchors (write) and post-edit diffs (replace/undo): ${state}`,
+				`Auto-read anchors (write) and post-edit diffs (edit/undo): ${state}`,
 				"info",
 			);
 		},
@@ -127,7 +125,7 @@ export default function (pi: ExtensionAPI): void {
 			}
 		}
 
-		if (event.toolName !== "replace" && event.toolName !== "undo_last_replace")
+		if (event.toolName !== "edit" && event.toolName !== "undo_last_edit")
 			return;
 		if (!autoRead) return;
 

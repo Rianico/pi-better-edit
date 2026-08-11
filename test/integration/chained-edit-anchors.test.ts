@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 describe("chained edit anchors", () => {
-  it("returns updated anchors in edit result for a single-line replace", async () => {
+  it("returns updated anchors in edit result for a single-line edit", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -20,7 +20,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully replaced in sample.ts");
+      expect(editResult.content[0].text).toContain("Successfully edited in sample.ts");
       expect(editResult.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const secondRead = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
       const freshRef = secondRead.content[0].text
@@ -36,7 +36,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
 
-      expect(editResult2.content[0].text).toContain("Successfully replaced in sample.ts");
+      expect(editResult2.content[0].text).toContain("Successfully edited in sample.ts");
       expect(editResult2.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     });
   });
@@ -69,10 +69,10 @@ describe("chained edit anchors", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully replaced in big.ts");
+      expect(editResult.content[0].text).toContain("Successfully edited in big.ts");
     });
   });
-  it("omits anchors when single-line replace expands beyond budget", async () => {
+  it("omits anchors when single-line edit expands beyond budget", async () => {
 
     await withTempFile("expand.ts", "before\ntarget\nafter\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -92,7 +92,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully replaced in expand.ts");
+      expect(editResult.content[0].text).toContain("Successfully edited in expand.ts");
     });
   });
 
@@ -134,11 +134,11 @@ describe("chained edit anchors", () => {
         undefined,
         ctx,
       );
-      expect(alphaEdit.content[0].text).toContain("Successfully replaced in stale.ts");
+      expect(alphaEdit.content[0].text).toContain("Successfully edited in stale.ts");
     });
   });
 
-  it("keeps untouched-line anchors valid after a reversed-range replace", async () => {
+  it("keeps untouched-line anchors valid after a reversed-range edit", async () => {
     await withTempFile("stable.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -163,7 +163,7 @@ describe("chained edit anchors", () => {
         undefined,
         ctx,
       );
-      expect(editResult.content[0].text).toContain("Successfully replaced in stable.ts");
+      expect(editResult.content[0].text).toContain("Successfully edited in stable.ts");
       expect(editResult.content[0].text).toContain("Warnings:");
 
       const alphaEdit = await editTool.execute(
@@ -173,7 +173,7 @@ describe("chained edit anchors", () => {
         undefined,
         ctx,
       );
-      expect(alphaEdit.content[0].text).toContain("Successfully replaced in stable.ts");
+      expect(alphaEdit.content[0].text).toContain("Successfully edited in stable.ts");
     });
   });
 });

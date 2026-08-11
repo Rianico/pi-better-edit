@@ -33,7 +33,7 @@ describe("edit tool text shape (token budget)", () => {
 				undefined,
 				ctx,
 			);
-			expect(result.content[0].text).toContain("Successfully replaced");
+			expect(result.content[0].text).toContain("Successfully edited");
 			expect(result.content[0].text).toContain(
 				"Added 1 line(s), removed 1 line(s).",
 			);
@@ -66,7 +66,7 @@ describe("edit tool text shape (token budget)", () => {
 				undefined,
 				ctx,
 			);
-			expect(result.content[0].text).toContain("Successfully replaced");
+			expect(result.content[0].text).toContain("Successfully edited");
 			expect(result.content[0].text).toContain(
 				"Added 1 line(s), removed 1 line(s).",
 			);
@@ -133,7 +133,7 @@ describe("edit tool text shape (token budget)", () => {
 					undefined,
 					ctx,
 				);
-				expect(result.content[0].text).toContain("Successfully replaced");
+				expect(result.content[0].text).toContain("Successfully edited");
 				expect(result.content[0].text).toContain(
 					"Added 1 line(s), removed 1 line(s).",
 				);

@@ -71,7 +71,7 @@ export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
 }
 
 function retryHint(): string {
-	return "Retry the replace with remove_from/remove_to copied from these fresh rows (no read needed).";
+	return "Retry the edit with remove_from/remove_to copied from these fresh rows (no read needed).";
 }
 
 function paginationHint(nextOffset: number, more: number): string {

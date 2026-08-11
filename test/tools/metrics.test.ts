@@ -47,7 +47,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
     });
   });
 
-  it("hash-anchored replace records a single edit in metrics", async () => {
+  it("hash-anchored edit records a single edit in metrics", async () => {
     await withTempFile("sample.ts", "one\ntwo\nthree\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);

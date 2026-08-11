@@ -244,7 +244,7 @@ describe("applyEdit — recovery scenarios", () => {
     expect(result.content).toBe("a\nb");
   });
 
-  it("handles replace of entire file", async () => {
+  it("handles edit of entire file", async () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(content, resEdit(

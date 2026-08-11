@@ -6,10 +6,10 @@ import {
 	buildToolDef,
 	reuseText,
 	reuseMarkdown,
-} from "../../src/replace";
+} from "../../src/edit";
 import register from "../../index";
-import type { RRState } from "../../src/replace-render";
-import { mkMdTheme } from "../../src/replace-render";
+import type { RRState } from "../../src/edit-render";
+import { mkMdTheme } from "../../src/edit-render";
 import { Text, Markdown } from "@earendil-works/pi-tui";
 import {
 	makeFakePiRegistry,
@@ -47,7 +47,7 @@ describe("compPreview", () => {
 		});
 	});
 
-	it("returns a diff for a hash-anchored replace before execution", async () => {
+	it("returns a diff for a hash-anchored edit before execution", async () => {
 		await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
 			const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 			const { readTool } = setupIntegrationTest(cwd);
@@ -242,7 +242,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 				expect(errorText).toMatch(/\[E_RANGE_STALE\] Line 2 in sample.ts/);
 				expect(errorText).toContain("Current range:");
 				expect(errorText).toContain("│BETA");
-				expect(errorText).toContain("Retry the replace");
+				expect(errorText).toContain("Retry the edit");
 			},
 		);
 	});
@@ -372,11 +372,11 @@ describe("renderCall preview", () => {
 		]);
 	}
 
-	it("computes a diff preview for a flat replace request", async () => {
+	it("computes a diff preview for a flat edit request", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { pi, getTool } = makeFakePiRegistry();
 			register(pi);
-			const tool = getTool("replace");
+			const tool = getTool("edit");
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 			const { readTool } = setupIntegrationTest(cwd);
 			await readTool.execute(
@@ -412,7 +412,7 @@ describe("renderCall preview", () => {
 			async ({ cwd, path }) => {
 				const { pi, getTool } = makeFakePiRegistry();
 				register(pi);
-				const tool = getTool("replace");
+				const tool = getTool("edit");
 				const { readTool } = setupIntegrationTest(cwd);
 				await readTool.execute(
 					"r1",
@@ -449,7 +449,7 @@ describe("renderCall preview", () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { pi, getTool } = makeFakePiRegistry();
 			register(pi);
-			const tool = getTool("replace");
+			const tool = getTool("edit");
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 			const { readTool } = setupIntegrationTest(cwd);
 			await readTool.execute(
@@ -485,7 +485,7 @@ describe("renderCall preview", () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { pi, getTool } = makeFakePiRegistry();
 			register(pi);
-			const tool = getTool("replace");
+			const tool = getTool("edit");
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 			const { readTool } = setupIntegrationTest(cwd);
 			await readTool.execute(
@@ -691,7 +691,7 @@ describe("renderResult", () => {
 			content: [
 				{
 					type: "text",
-					text: "Successfully replaced in sample.ts. Added 1 line(s), removed 1 line(s).",
+					text: "Successfully edited in sample.ts. Added 1 line(s), removed 1 line(s).",
 				},
 			],
 			details: {
@@ -720,7 +720,7 @@ describe("renderResult", () => {
 			content: [
 				{
 					type: "text",
-					text: "Successfully replaced in sample.ts.\n\nWarnings:\n[E_BAD_OP] Autocorrected: swapped the pair.",
+					text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_BAD_OP] Autocorrected: swapped the pair.",
 				},
 			],
 			details: {

@@ -132,7 +132,7 @@ export function computeDrift(
 	const countLabel = `${total} line(s)`;
 	if (!anyNotReported) {
 		return {
-			text: `${DRIFT_NOTICE_HEADING} ${countLabel} outside the replaced range drifted and were already reported — call read to refresh.`,
+			text: `${DRIFT_NOTICE_HEADING} ${countLabel} outside the edited range drifted and were already reported — call read to refresh.`,
 			rows: [],
 			total,
 			allAlreadyReported: true,
@@ -163,7 +163,7 @@ export function computeDrift(
 			? `\n[... ${unshown} more line(s) — call read to see them]`
 			: "";
 	return {
-		text: `${DRIFT_NOTICE_HEADING} ${countLabel} outside the replaced range drifted. Current content around the drift:\n${rowsText}${moreText}`,
+		text: `${DRIFT_NOTICE_HEADING} ${countLabel} outside the edited range drifted. Current content around the drift:\n${rowsText}${moreText}`,
 		rows,
 		total,
 		allAlreadyReported: false,

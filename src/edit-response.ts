@@ -1,11 +1,11 @@
-import type { ReplaceDetails } from "./replace";
-import { genDiff } from "./replace-diff";
+import type { EditDetails } from "./edit";
+import { genDiff } from "./edit-diff";
 import { visLines, clipLine } from "./utils";
 
 type TResult = {
 	content: Array<{ type: "text"; text: string }>;
 	isError?: boolean;
-	details: ReplaceDetails;
+	details: EditDetails;
 };
 
 export type RMetrics = {
@@ -93,7 +93,7 @@ export function buildNoop(input: NoopInput): TResult {
 	const { path, noopEdit, snapshotId, editMeta, warnings, driftNotice } = input;
 
 	const noopDetailsText = noopEdit
-		? `Replacement for ${noopEdit.loc} is identical to current content:\n  ${noopEdit.loc}: ${clipLine(noopEdit.currentContent)}`
+		? `Edit for ${noopEdit.loc} is identical to current content:\n  ${noopEdit.loc}: ${clipLine(noopEdit.currentContent)}`
 		: "The edit produced identical content.";
 
 	const noticeBlock = driftNotice ? `\n\n${driftNotice}` : "";
@@ -142,7 +142,7 @@ export function buildChanged(input: SuccessInput): TResult {
 	const addedLines = editMeta.addedLines;
 	const removedLines = editMeta.removedLines;
 	const warningsBlock = warnBlock(warnings);
-	const successPrefix = `Successfully replaced in ${path}.`;
+	const successPrefix = `Successfully edited in ${path}.`;
 	const lineSummary =
 		addedLines > 0 || removedLines > 0
 			? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
@@ -150,7 +150,7 @@ export function buildChanged(input: SuccessInput): TResult {
 	const noticeBlock = driftNotice ? `\n\n${driftNotice}` : "";
 	const text =
 		resultLines.length === 0
-			? "File is empty. Use replace to insert content." + noticeBlock
+			? "File is empty. Use edit to insert content." + noticeBlock
 			: warningsBlock
 				? `${successPrefix}${lineSummary}${warningsBlock}${noticeBlock}`
 				: `${successPrefix}${lineSummary}${noticeBlock}`;

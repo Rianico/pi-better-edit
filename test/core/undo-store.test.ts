@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { DatabaseSync } from "node:sqlite";
-import { saveUndo, getUndo, clearUndo } from "../../src/replace-undo";
+import { saveUndo, getUndo, clearUndo } from "../../src/edit-undo";
 import { shutdownHashStore } from "../../src/hash-store";
 import * as hashStoreModule from "../../src/hash-store";
 import { hashStorePath } from "../../src/paths";

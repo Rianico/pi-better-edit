@@ -11,7 +11,7 @@ import {
 
 const home = useTestHome();
 
-describe("served-state range verification for replace", () => {
+describe("served-state range verification for edit", () => {
 	it("rejects with [E_RANGE_STALE] naming the first offending line and leaves the file unchanged", async () => {
 		await withTempFile(
 			"sample.ts",
@@ -127,7 +127,7 @@ describe("served-state range verification for replace", () => {
 					undefined,
 					ctx,
 				);
-				expect(getText(retry)).toContain("Successfully replaced");
+				expect(getText(retry)).toContain("Successfully edited");
 				expect(await readFile(path, "utf-8")).toBe("X\nY\n");
 
 				await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
@@ -143,7 +143,7 @@ describe("served-state range verification for replace", () => {
 					undefined,
 					ctx,
 				);
-				expect(getText(secondStale)).toContain("Successfully replaced");
+				expect(getText(secondStale)).toContain("Successfully edited");
 				expect(await readFile(path, "utf-8")).toBe("Z\n");
 			},
 		);
@@ -185,7 +185,7 @@ describe("served-state range verification for replace", () => {
 					undefined,
 					ctx,
 				);
-				expect(getText(result)).toContain("Successfully replaced");
+				expect(getText(result)).toContain("Successfully edited");
 				expect(await readFile(path, "utf-8")).toBe("A\nB\ngamma\nDELTA\n");
 			},
 		);
@@ -227,7 +227,7 @@ describe("served-state range verification for replace", () => {
 					undefined,
 					ctx,
 				);
-				expect(getText(result)).toContain("Successfully replaced");
+				expect(getText(result)).toContain("Successfully edited");
 				expect(await readFile(path, "utf-8")).toBe("a2\nB\nG\n");
 			},
 		);
@@ -270,7 +270,7 @@ describe("served-state range verification for replace", () => {
 					undefined,
 					ctx,
 				);
-				expect(getText(result)).toContain("Successfully replaced");
+				expect(getText(result)).toContain("Successfully edited");
 				expect(await readFile(path, "utf-8")).toBe("X\nY\n");
 			},
 		);
@@ -307,7 +307,7 @@ describe("served-state range verification for replace", () => {
 					undefined,
 					ctx,
 				);
-				expect(getText(result)).toContain("Successfully replaced");
+				expect(getText(result)).toContain("Successfully edited");
 				expect(getText(result)).toContain(
 					"Added 1 line(s), removed 1 line(s).",
 				);
@@ -379,7 +379,7 @@ describe("served-state range verification for replace", () => {
 				undefined,
 				ctx,
 			);
-			expect(getText(retry)).toContain("Successfully replaced");
+			expect(getText(retry)).toContain("Successfully edited");
 			expect(await readFile(path, "utf-8")).toBe("alpha\nBETA2\n");
 		});
 	});

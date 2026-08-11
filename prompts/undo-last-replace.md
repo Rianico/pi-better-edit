@@ -1,1 +1,0 @@
-Undo the last replace on a file, reverting it to its previous state. Use when a replace produced incorrect results (e.g., wrong content, duplicated lines, broken syntax).

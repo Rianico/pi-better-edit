@@ -4,7 +4,7 @@ import { join } from "path";
 import { lineHashes } from "../../src/hashline";
 import { withTempFile, withTempDir, setupIntegrationTest } from "../support/fixtures";
 
-describe("replace — missing path resolution", () => {
+describe("edit — missing path resolution", () => {
   it("resolves a missing path when the anchors uniquely identify a file", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -19,7 +19,7 @@ describe("replace — missing path resolution", () => {
         ctx,
       );
 
-      expect(result.content[0].text).toContain("Successfully replaced");
+      expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Warnings:");
       expect(result.content[0].text).toContain('missing "path" resolved to');
       expect(await readFile(path, "utf-8")).toBe("AAA\nbbb\n");

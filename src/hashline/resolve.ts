@@ -121,7 +121,7 @@ export function fmtMismatchWithServes(
 	const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
 	if (notFound.length > 0) {
 		out.push(
-			`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into remove_from and remove_to of your next replace call.`,
+			`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. The file content has changed since those anchors were read. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are editing into remove_from and remove_to of your next edit call.`,
 		);
 		for (const m of notFound) {
 			const ctx = m.context;
@@ -144,7 +144,7 @@ export function fmtMismatchWithServes(
 	if (ambiguous.length > 0) {
 		if (out.length > 0) out.push("");
 		out.push(
-			`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are replacing into remove_from and remove_to of your next replace call.`,
+			`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Call read() to get fresh anchors, then copy the 3-char HASH of the start and end of the range you are editing into remove_from and remove_to of your next edit call.`,
 		);
 		for (const m of ambiguous) {
 			const sample = (m.candidates ?? []).slice(0, 5);
@@ -211,7 +211,7 @@ const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
 export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
 	assertItem(edit as Record<string, unknown>);
 
-	const replaceLines = parseText(edit.replacement_text);
+	const editLines = parseText(edit.replacement_text);
 	const bounds = [edit.remove_from, edit.remove_to].map((ref) => {
 		const trimmed = ref.trim();
 		const match = trimmed.match(ANCHOR_ROW_RE);
@@ -230,7 +230,7 @@ export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
 		return ref;
 	}) as [string, string];
 	return {
-		content_lines: replaceLines,
+		content_lines: editLines,
 		hash_bounds: [parseHashRef(bounds[0]), parseHashRef(bounds[1])],
 	};
 }

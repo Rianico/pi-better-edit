@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNoop, buildChanged } from "../../src/replace-response";
+import { buildNoop, buildChanged } from "../../src/edit-response";
 import { lineHashes } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
 
@@ -27,7 +27,7 @@ describe("buildNoop", () => {
       editMeta: { editsAttempted: 1, noopEditsCount: 1, addedLines: 0, removedLines: 0 },
       warnings: undefined,
     });
-    expect(result.content[0].text).toContain("Replacement for ABC");
+    expect(result.content[0].text).toContain("Edit for ABC");
     expect(result.content[0].text).toContain("ABC");
   });
 
@@ -50,7 +50,7 @@ describe("buildNoop", () => {
       editMeta: { editsAttempted: 1, noopEditsCount: 1, addedLines: 0, removedLines: 0 },
       warnings: undefined,
     });
-    expect(result.content[0].text).toContain("Replacement for ABC");
+    expect(result.content[0].text).toContain("Edit for ABC");
     expect(result.content[0].text).not.toContain("old\n".repeat(300));
     expect(result.content[0].text).toContain("...");
   });
@@ -72,7 +72,7 @@ describe("buildChanged", () => {
       snapshotId: "snap1",
       editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 2, lastChangedLine: 2, addedLines: 1, removedLines: 1 },
     });
-    expect(output.content[0].text).toContain("Successfully replaced in test.txt");
+    expect(output.content[0].text).toContain("Successfully edited in test.txt");
     expect(output.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     expect(output.details.metrics!.classification).toBe("applied");
     expect(output.details.metrics!.edits_attempted).toBe(1);
@@ -113,7 +113,7 @@ describe("buildChanged", () => {
       snapshotId: "snap1",
       editMeta: { editsAttempted: 1, noopEditsCount: 0, firstChangedLine: 1, lastChangedLine: 2, addedLines: 0, removedLines: 2 },
     });
-    expect(output.content[0].text).toBe("File is empty. Use replace to insert content.");
+    expect(output.content[0].text).toBe("File is empty. Use edit to insert content.");
   });
 
   it("computes added_lines and removed_lines from editMeta", async () => {

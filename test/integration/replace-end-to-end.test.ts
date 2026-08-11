@@ -5,8 +5,8 @@ import { withTempFile, withTempBytes, setupIntegrationTest, useTestHome, getText
 
 const home = useTestHome();
 
-describe("replace tool — end-to-end", () => {
-  it("reads a file and replaces a single line", async () => {
+describe("edit tool — end-to-end", () => {
+  it("reads a file and edits a single line", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -26,7 +26,7 @@ describe("replace tool — end-to-end", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully replaced");
+      expect(editResult.content[0].text).toContain("Successfully edited");
       expect(editResult.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
 
       const content = await readFile(path, "utf-8");
@@ -34,7 +34,7 @@ describe("replace tool — end-to-end", () => {
     });
   });
 
-  it("replaces a range of lines", async () => {
+  it("edits a range of lines", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -55,7 +55,7 @@ describe("replace tool — end-to-end", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully replaced");
+      expect(editResult.content[0].text).toContain("Successfully edited");
       expect(editResult.content[0].text).toContain("Added 2 line(s), removed 2 line(s).");
 
       const content = await readFile(path, "utf-8");
@@ -84,7 +84,7 @@ describe("replace tool — end-to-end", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully replaced");
+      expect(editResult.content[0].text).toContain("Successfully edited");
       expect(editResult.content[0].text).toContain("Added 0 line(s), removed 2 line(s).");
 
       const content = await readFile(path, "utf-8");
@@ -211,7 +211,7 @@ describe("replace tool — end-to-end", () => {
     });
   });
 
-  describe("replace tool — line-ending matrix", () => {
+  describe("edit tool — line-ending matrix", () => {
     const cases = [
       {
         name: "LF",
@@ -293,7 +293,7 @@ describe("replace tool — end-to-end", () => {
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully replaced");
+      expect(editResult.content[0].text).toContain("Successfully edited");
       const { readFile } = await import("fs/promises");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("aaa\nBBB\nccc\n");

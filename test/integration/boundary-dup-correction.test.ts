@@ -237,7 +237,7 @@ describe("new-line boundary duplication (auto-fix)", () => {
       );
 
       const text = getText(editResult);
-      expect(text).toContain("Successfully replaced");
+      expect(text).toContain("Successfully edited");
       expect(text).not.toContain("[E_BOUNDARY_DUP]");
 
       const content = await readFile(path, "utf-8");
@@ -306,7 +306,7 @@ describe("new-line boundary duplication (auto-fix)", () => {
       );
 
       const text = getText(editResult);
-      expect(text).toContain("Successfully replaced");
+      expect(text).toContain("Successfully edited");
       expect(text).not.toContain("[E_BOUNDARY_DUP]");
 
       const content = await readFile(path, "utf-8");
@@ -380,7 +380,7 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
       );
 
       const text = getText(editResult);
-      expect(text).toContain("Successfully replaced");
+      expect(text).toContain("Successfully edited");
       expect(text).toContain("Added 1 line(s), removed 1 line(s).");
       expect(editResult.details?.metrics?.added_lines).toBe(1);
 
@@ -472,7 +472,7 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
         ctx,
       );
 
-      expect(getText(editResult)).toContain("Successfully replaced");
+      expect(getText(editResult)).toContain("Successfully edited");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("a\nb\nc\nX\nafter\n");
     });
@@ -526,7 +526,7 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
         ctx,
       );
 
-      expect(getText(editResult)).toContain("Successfully replaced");
+      expect(getText(editResult)).toContain("Successfully edited");
       expect(getText(editResult)).toContain("Added 0 line(s), removed 1 line(s).");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("X\nX\n");
@@ -556,7 +556,7 @@ describe("section-unique boundary duplication (auto-fix)", () => {
         ctx,
       );
 
-      expect(getText(editResult)).toContain("Successfully replaced");
+      expect(getText(editResult)).toContain("Successfully edited");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("import a\n\nexport function main2() {}\nexport interface Foo {\n  x: number;\n}\nexport function main() {}\n");
       expect(content.split("\n").filter((l) => l.includes("export interface Foo")).length).toBe(1);
@@ -585,7 +585,7 @@ describe("section-unique boundary duplication (auto-fix)", () => {
         ctx,
       );
 
-      expect(getText(editResult)).toContain("Successfully replaced");
+      expect(getText(editResult)).toContain("Successfully edited");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("if (a) {\n  x();\n}\nif (b) {\n  y();\n}\nNEW\n");
     });
@@ -612,7 +612,7 @@ describe("section-unique boundary duplication (auto-fix)", () => {
         ctx,
       );
 
-      expect(getText(editResult)).toContain("Successfully replaced");
+      expect(getText(editResult)).toContain("Successfully edited");
       const content = await readFile(path, "utf-8");
       expect(content).toBe("Y\nZ\nX\nY\nZ\nY\nZ\n");
     });

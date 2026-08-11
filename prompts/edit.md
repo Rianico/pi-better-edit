@@ -1,0 +1,1 @@
+Edit a range of lines in a text file, targeted by the 3-char HASH anchors from read output. remove_from and remove_to must each be a BARE 3-character hash: copy only the hash from the leftmost column of a read row (row `ve7│function hello() {` means `"remove_from": "ve7"`). Never pass the line content, a code line, or a paragraph into these fields.

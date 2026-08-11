@@ -1,5 +1,5 @@
 import { beforeAll, describe, expect, it } from "vitest";
-import { genDiff } from "../../src/replace-diff";
+import { genDiff } from "../../src/edit-diff";
 import { initHasher } from "../../src/hashline";
 
 beforeAll(async () => {

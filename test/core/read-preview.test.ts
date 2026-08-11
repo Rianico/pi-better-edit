@@ -8,7 +8,7 @@ const home = useTestHome();
 describe("fmtReadPreview", () => {
   it("returns empty file marker for empty content", async () => {
     const result = await fmtReadPreview("", {}, undefined, home.testPath);
-    expect(result.text).toContain("[File is empty. Use replace to insert content.]");
+    expect(result.text).toContain("[File is empty. Use edit to insert content.]");
   });
 
   it("returns empty file marker for content with only newline", async () => {

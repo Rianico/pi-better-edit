@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { assertReq, buildToolDef } from "../../src/replace";
+import { assertReq, buildToolDef } from "../../src/edit";
 
 describe("assertReq", () => {
 	it("throws for non-record input", () => {

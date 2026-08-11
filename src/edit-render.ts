@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { normReq } from "./replace-normalize";
-import type { ReqParams, ReplaceDetails } from "./replace";
+import { normReq } from "./edit-normalize";
+import type { EditParams, EditDetails } from "./edit";
 import { isRec } from "./utils";
 
 export type FgT = Pick<Theme, "fg">;
@@ -19,7 +19,7 @@ export type RRState = {
 	previewTimer?: ReturnType<typeof setTimeout>;
 };
 
-export function getPreviewInput(args: unknown): ReqParams | null {
+export function getPreviewInput(args: unknown): EditParams | null {
 	let normalized: unknown;
 	try {
 		normalized = normReq(args);
@@ -38,7 +38,7 @@ export function getPreviewInput(args: unknown): ReqParams | null {
 		return null;
 	}
 
-	const request: ReqParams = {
+	const request: EditParams = {
 		path: normalized.path,
 		remove_from: normalized.remove_from,
 		remove_to: normalized.remove_to,
@@ -81,7 +81,7 @@ export function fmtResult(diff: string, theme: FgT): string {
 }
 
 export function fmtCall(
-	args: ReqParams | undefined,
+	args: EditParams | undefined,
 	state: RRState,
 	expanded: boolean,
 	theme: CallT,
@@ -91,7 +91,7 @@ export function fmtCall(
 		typeof path === "string" && path.length > 0
 			? theme.fg("accent", path)
 			: theme.fg("toolOutput", "...");
-	let text = `${theme.fg("toolTitle", theme.bold("replace"))} ${pathDisplay}`;
+	let text = `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
 
 	if (!state.preview) {
 		return text;
@@ -130,7 +130,7 @@ export function extractWarnings(
 	return match;
 }
 
-export function isApplied(details: ReplaceDetails | undefined): boolean {
+export function isApplied(details: EditDetails | undefined): boolean {
 	const metrics = details?.metrics;
 	return (
 		metrics?.classification === "applied" &&
@@ -141,7 +141,7 @@ export function isApplied(details: ReplaceDetails | undefined): boolean {
 
 export function buildAppliedText(
 	text: string | undefined,
-	details: ReplaceDetails | undefined,
+	details: EditDetails | undefined,
 	theme: FgT,
 ): string | undefined {
 	const sections: string[] = [];
