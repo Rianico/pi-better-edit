@@ -29,7 +29,13 @@ describe("getPreviewInput", () => {
 	});
 
 	it("returns null for record without path", () => {
-		expect(getPreviewInput({ remove_from: "AAA", remove_to: "BBB", replacement_text: "new" })).toBeNull();
+		expect(
+			getPreviewInput({
+				remove_from: "AAA",
+				remove_to: "BBB",
+				replacement_text: "new",
+			}),
+		).toBeNull();
 	});
 
 	it("returns null for record with non-string path", () => {
@@ -41,13 +47,23 @@ describe("getPreviewInput", () => {
 	});
 
 	it("returns request for valid input", () => {
-		const input = { path: "test.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new" };
+		const input = {
+			path: "test.txt",
+			remove_from: "AAA",
+			remove_to: "BBB",
+			replacement_text: "new",
+		};
 		const result = getPreviewInput(input);
 		expect(result).toEqual(input);
 	});
 
 	it("normalizes file_path to path", () => {
-		const input = { file_path: "test.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new" };
+		const input = {
+			file_path: "test.txt",
+			remove_from: "AAA",
+			remove_to: "BBB",
+			replacement_text: "new",
+		};
 		const result = getPreviewInput(input);
 		expect(result?.path).toBe("test.txt");
 	});
@@ -108,21 +124,36 @@ describe("fmtResult", () => {
 
 describe("fmtCall", () => {
 	it("formats call with path", () => {
-		const args = { path: "test.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new" };
+		const args = {
+			path: "test.txt",
+			remove_from: "AAA",
+			remove_to: "BBB",
+			replacement_text: "new",
+		};
 		const state = { preview: undefined };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("test.txt");
 	});
 
 	it("formats call with error preview", () => {
-		const args = { path: "test.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new" };
+		const args = {
+			path: "test.txt",
+			remove_from: "AAA",
+			remove_to: "BBB",
+			replacement_text: "new",
+		};
 		const state = { preview: { error: "test error" } };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("test error");
 	});
 
 	it("formats call with diff preview", () => {
-		const args = { path: "test.txt", remove_from: "AAA", remove_to: "BBB", replacement_text: "new" };
+		const args = {
+			path: "test.txt",
+			remove_from: "AAA",
+			remove_to: "BBB",
+			replacement_text: "new",
+		};
 		const state = { preview: { diff: "+added\n-removed" } };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("+added");
@@ -185,8 +216,7 @@ describe("extractWarnings", () => {
 	});
 
 	it("keeps the trailing notice when no notice text is provided", () => {
-		const text =
-			"Warnings:\nWarning 1\n\nDrift notice: 1 line(s) drifted.";
+		const text = "Warnings:\nWarning 1\n\nDrift notice: 1 line(s) drifted.";
 		const result = extractWarnings(text);
 		expect(result).toContain("Warning 1");
 		expect(result).toContain("Drift notice: 1 line(s) drifted.");
@@ -195,30 +225,30 @@ describe("extractWarnings", () => {
 
 describe("isApplied", () => {
 	it("returns true for applied changes", () => {
-	const details = {
-		diff: "",
-		metrics: {
-			classification: "applied" as const,
-			edits_attempted: 1,
-			edits_noop: 0,
-			warnings: 0,
-			added_lines: 1,
-			removed_lines: 1,
-		},
-	};
+		const details = {
+			diff: "",
+			metrics: {
+				classification: "applied" as const,
+				edits_attempted: 1,
+				edits_noop: 0,
+				warnings: 0,
+				added_lines: 1,
+				removed_lines: 1,
+			},
+		};
 		expect(isApplied(details)).toBe(true);
 	});
 
 	it("returns false for noop", () => {
-	const details = {
-		diff: "",
-		metrics: {
-			classification: "noop" as const,
-			edits_attempted: 1,
-			edits_noop: 1,
-			warnings: 0,
-		},
-	};
+		const details = {
+			diff: "",
+			metrics: {
+				classification: "noop" as const,
+				edits_attempted: 1,
+				edits_noop: 1,
+				warnings: 0,
+			},
+		};
 		expect(isApplied(details)).toBe(false);
 	});
 
@@ -264,7 +294,9 @@ describe("fmtResultMd", () => {
 
 	it("trims leading and trailing empty lines", () => {
 		const text = "\n\nNo changes made to x\nClassification: noop\n\n";
-		expect(fmtResultMd(text)).toBe("No changes made to x\nClassification: noop");
+		expect(fmtResultMd(text)).toBe(
+			"No changes made to x\nClassification: noop",
+		);
 	});
 
 	it("keeps interior blank lines", () => {

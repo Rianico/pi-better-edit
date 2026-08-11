@@ -200,7 +200,16 @@ describe("computeDrift", () => {
 			"h08",
 			"h09",
 		];
-		const resultHashes = ["h00", "h01", "X04", "h05", "h06", "h07", "h08", "h09"];
+		const resultHashes = [
+			"h00",
+			"h01",
+			"X04",
+			"h05",
+			"h06",
+			"h07",
+			"h08",
+			"h09",
+		];
 		const resultLines = ["a", "b", "R", "e", "f", "g", "h", "i"];
 		const result = computeDrift({
 			served,

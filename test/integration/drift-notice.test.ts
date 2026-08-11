@@ -327,11 +327,7 @@ describe("drift notices for changed served territory outside the replace range",
 						.find((l) => l.includes("│l4"))!,
 				);
 
-				await writeFile(
-					path,
-					"l0\nl1\nl4\nl5\nl6\nl7\nl8\nl9\n",
-					"utf-8",
-				);
+				await writeFile(path, "l0\nl1\nl4\nl5\nl6\nl7\nl8\nl9\n", "utf-8");
 
 				const result = await editTool.execute(
 					"e1",
