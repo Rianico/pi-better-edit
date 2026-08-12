@@ -1,5 +1,5 @@
 import { HASH_SEP } from "./hash";
-import { servedPositionsOf } from "../served-state";
+import { recordServed, servedPositionsOf } from "../served-state";
 import { SERVED_ECHO_CAP } from "../constants";
 
 export type ServedCode =
@@ -170,4 +170,23 @@ export function verifyServedRange(args: {
 			});
 		}
 	}
+}
+
+export interface ResolvedRange {
+	startLine: number;
+	endLine: number;
+	startHash: string;
+	endHash: string;
+	delta: number;
+}
+
+export type ServeRecordPolicy = "live" | "preview";
+
+export async function recordEchoServes(
+	path: string,
+	rows: ServedRow[],
+	policy: ServeRecordPolicy,
+): Promise<void> {
+	if (policy !== "live") return;
+	await recordServed(path, rows);
 }

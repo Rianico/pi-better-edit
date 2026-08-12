@@ -1,6 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
 import { normReq } from "./edit-normalize";
-import type { EditParams, EditDetails } from "./edit";
+import type { EditParams } from "./edit";
+import type { EditDetails } from "./edit-response";
 import { isRec } from "./utils";
 
 export type FgT = Pick<Theme, "fg">;

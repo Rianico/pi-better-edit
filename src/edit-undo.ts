@@ -28,7 +28,7 @@ import {
 	normalizeFilePath,
 } from "./utils";
 import { loadP, loadGuide } from "./prompts";
-import { buildMetrics } from "./edit-response";
+import { buildMetrics, type EditDetails } from "./edit-response";
 import { changedRange, lineHashes } from "./hashline";
 export interface UndoEntry {
 	content: string;
@@ -241,6 +241,20 @@ export function regEditUndo(pi: ExtensionAPI): void {
 					"File reverted to previous state. The post-edit diff rows carry the restored file's fresh anchors for follow-up edits.",
 				);
 
+				const details: EditDetails = {
+					diff: undoDiff,
+					servedRows: undoDiffResult.servedRows,
+					metrics: buildMetrics({
+						classification: "applied",
+						editsAttempted: 1,
+						noopEditsCount: 0,
+						warningsCount: 0,
+						firstChangedLine: restoredRange?.firstChangedLine,
+						lastChangedLine: restoredRange?.lastChangedLine,
+						addedLines: linesRemovedByEdit,
+						removedLines: linesAddedByEdit,
+					}),
+				};
 				return {
 					content: [
 						{
@@ -248,20 +262,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
 							text: parts.join("\n"),
 						},
 					],
-					details: {
-						diff: undoDiff,
-						servedRows: undoDiffResult.servedRows,
-						metrics: buildMetrics({
-							classification: "applied",
-							editsAttempted: 1,
-							noopEditsCount: 0,
-							warningsCount: 0,
-							firstChangedLine: restoredRange?.firstChangedLine,
-							lastChangedLine: restoredRange?.lastChangedLine,
-							addedLines: linesRemovedByEdit,
-							removedLines: linesAddedByEdit,
-						}),
-					},
+					details,
 				};
 			});
 		},

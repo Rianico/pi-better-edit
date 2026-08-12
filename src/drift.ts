@@ -1,5 +1,9 @@
 import { SERVED_ECHO_CAP } from "./constants";
-import { type ServedRow, fmtServedRows } from "./hashline/served";
+import {
+	type ServedRow,
+	fmtServedRows,
+	type ResolvedRange,
+} from "./hashline/served";
 import {
 	currentPositionOfDrifted,
 	driftReported,
@@ -19,11 +23,7 @@ export interface ComputeDriftInput {
 	served: (string | null)[];
 	resultHashes: string[];
 	resultLines: string[];
-	rangeStartLine: number;
-	rangeEndLine: number;
-	startHash: string;
-	endHash: string;
-	delta: number;
+	range: ResolvedRange;
 	reported: Set<string>;
 	cap?: number;
 }
@@ -42,11 +42,7 @@ export function computeDrift(
 		served,
 		resultHashes,
 		resultLines,
-		rangeStartLine,
-		rangeEndLine,
-		startHash,
-		endHash,
-		delta,
+		range,
 		reported,
 		cap = SERVED_ECHO_CAP,
 	} = input;
@@ -57,16 +53,16 @@ export function computeDrift(
 		currentPosOfHash.set(resultHashes[i]!, i);
 	}
 
-	const startPositions = servedPositionsOf(served, startHash);
-	const endPositions = servedPositionsOf(served, endHash);
+	const startPositions = servedPositionsOf(served, range.startHash);
+	const endPositions = servedPositionsOf(served, range.endHash);
 	let servedStartIdx: number;
 	let servedEndIdx: number;
 	if (startPositions.length === 1 && endPositions.length === 1) {
 		servedStartIdx = startPositions[0]!;
 		servedEndIdx = endPositions[0]!;
 	} else {
-		servedStartIdx = rangeStartLine - 1;
-		servedEndIdx = rangeEndLine - 1;
+		servedStartIdx = range.startLine - 1;
+		servedEndIdx = range.endLine - 1;
 	}
 	const rangeFrom = Math.min(servedStartIdx, servedEndIdx);
 	const rangeTo = Math.max(servedStartIdx, servedEndIdx);
@@ -88,7 +84,7 @@ export function computeDrift(
 			currentPosOfHash,
 			resultHashSet,
 			p,
-			delta,
+			range.delta,
 		);
 		if (
 			currentPos >= 0 &&
@@ -148,11 +144,7 @@ export async function scanDrift(input: {
 	served: (string | null)[];
 	resultHashes: string[];
 	resultLines: string[];
-	rangeStartLine: number;
-	rangeEndLine: number;
-	startHash: string;
-	endHash: string;
-	delta: number;
+	range: ResolvedRange;
 	path: string;
 }): Promise<string | undefined> {
 	const reported = await driftReported(input.path);

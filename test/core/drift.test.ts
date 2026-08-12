@@ -7,11 +7,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02"],
 			resultHashes: ["h00", "h01", "h02"],
 			resultLines: ["a", "b", "c"],
-			rangeStartLine: 2,
-			rangeEndLine: 2,
-			startHash: "h01",
-			endHash: "h01",
-			delta: 0,
+			range: {
+				startLine: 2,
+				endLine: 2,
+				startHash: "h01",
+				endHash: "h01",
+				delta: 0,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeUndefined();
@@ -22,11 +24,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02", "h03"],
 			resultHashes: ["h00", "h01", "h02", "X03"],
 			resultLines: ["a", "b", "c", "changed"],
-			rangeStartLine: 2,
-			rangeEndLine: 2,
-			startHash: "h01",
-			endHash: "h01",
-			delta: 0,
+			range: {
+				startLine: 2,
+				endLine: 2,
+				startHash: "h01",
+				endHash: "h01",
+				delta: 0,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeDefined();
@@ -44,11 +48,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02", "h03", "h04"],
 			resultHashes: ["h00", "h01", "X03", "h04"],
 			resultLines: ["a", "b", "x", "d"],
-			rangeStartLine: 3,
-			rangeEndLine: 4,
-			startHash: "h02",
-			endHash: "h03",
-			delta: -1,
+			range: {
+				startLine: 3,
+				endLine: 4,
+				startHash: "h02",
+				endHash: "h03",
+				delta: -1,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeUndefined();
@@ -59,11 +65,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02", "h03", "h04"],
 			resultHashes: ["h00", "h01", "h03", "X04"],
 			resultLines: ["a", "b", "d", "shifted"],
-			rangeStartLine: 3,
-			rangeEndLine: 3,
-			startHash: "h02",
-			endHash: "h02",
-			delta: -1,
+			range: {
+				startLine: 3,
+				endLine: 3,
+				startHash: "h02",
+				endHash: "h02",
+				delta: -1,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeDefined();
@@ -78,11 +86,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02"],
 			resultHashes: ["h00", "X01", "h02"],
 			resultLines: ["a", "changed", "c"],
-			rangeStartLine: 3,
-			rangeEndLine: 3,
-			startHash: "h02",
-			endHash: "h02",
-			delta: -5,
+			range: {
+				startLine: 3,
+				endLine: 3,
+				startHash: "h02",
+				endHash: "h02",
+				delta: -5,
+			},
 			reported: new Set(),
 		});
 		expect(result!.rows).toEqual([
@@ -97,11 +107,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02"],
 			resultHashes: ["X02"],
 			resultLines: ["c"],
-			rangeStartLine: 1,
-			rangeEndLine: 1,
-			startHash: "h00",
-			endHash: "h00",
-			delta: -2,
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h00",
+				endHash: "h00",
+				delta: -2,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeDefined();
@@ -116,11 +128,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02", "h03"],
 			resultHashes: ["h00", "h01", "h02", "X03"],
 			resultLines: ["a", "b", "c", "changed"],
-			rangeStartLine: 1,
-			rangeEndLine: 1,
-			startHash: "h00",
-			endHash: "h00",
-			delta: 0,
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h00",
+				endHash: "h00",
+				delta: 0,
+			},
 			reported: new Set(["h03"]),
 		});
 		expect(result).toBeDefined();
@@ -135,11 +149,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02", "h03"],
 			resultHashes: ["X00", "h01", "h02", "X03"],
 			resultLines: ["changedA", "b", "c", "changedD"],
-			rangeStartLine: 2,
-			rangeEndLine: 2,
-			startHash: "h01",
-			endHash: "h01",
-			delta: 0,
+			range: {
+				startLine: 2,
+				endLine: 2,
+				startHash: "h01",
+				endHash: "h01",
+				delta: 0,
+			},
 			reported: new Set(["h03"]),
 		});
 		expect(result).toBeDefined();
@@ -165,11 +181,13 @@ describe("computeDrift", () => {
 			served,
 			resultHashes,
 			resultLines,
-			rangeStartLine: 1,
-			rangeEndLine: 1,
-			startHash: "h0",
-			endHash: "h0",
-			delta: 0,
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h0",
+				endHash: "h0",
+				delta: 0,
+			},
 			reported: new Set(),
 			cap: 150,
 		});
@@ -184,11 +202,13 @@ describe("computeDrift", () => {
 			served: ["h00", null, "h02"],
 			resultHashes: ["h00", "X01", "h02"],
 			resultLines: ["a", "changed", "c"],
-			rangeStartLine: 1,
-			rangeEndLine: 1,
-			startHash: "h00",
-			endHash: "h00",
-			delta: 0,
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h00",
+				endHash: "h00",
+				delta: 0,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeUndefined();
@@ -222,11 +242,13 @@ describe("computeDrift", () => {
 			served,
 			resultHashes,
 			resultLines,
-			rangeStartLine: 3,
-			rangeEndLine: 3,
-			startHash: "h04",
-			endHash: "h04",
-			delta: 0,
+			range: {
+				startLine: 3,
+				endLine: 3,
+				startHash: "h04",
+				endHash: "h04",
+				delta: 0,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeDefined();
@@ -243,11 +265,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02", "h03"],
 			resultHashes: ["h00", "h01", "X02", "h03"],
 			resultLines: ["a", "b", "changed", "d"],
-			rangeStartLine: 1,
-			rangeEndLine: 1,
-			startHash: "h00",
-			endHash: "h00",
-			delta: 0,
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h00",
+				endHash: "h00",
+				delta: 0,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeDefined();
@@ -264,11 +288,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02", "h03"],
 			resultHashes: ["X00", "X01", "X02", "X03"],
 			resultLines: ["a", "b", "C", "D"],
-			rangeStartLine: 1,
-			rangeEndLine: 2,
-			startHash: "h00",
-			endHash: "h01",
-			delta: 0,
+			range: {
+				startLine: 1,
+				endLine: 2,
+				startHash: "h00",
+				endHash: "h01",
+				delta: 0,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeDefined();
@@ -285,11 +311,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02"],
 			resultHashes: ["X00", "h01", "h02"],
 			resultLines: ["changed", "b", "c"],
-			rangeStartLine: 3,
-			rangeEndLine: 3,
-			startHash: "h02",
-			endHash: "h02",
-			delta: 0,
+			range: {
+				startLine: 3,
+				endLine: 3,
+				startHash: "h02",
+				endHash: "h02",
+				delta: 0,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeDefined();
@@ -305,11 +333,13 @@ describe("computeDrift", () => {
 			served: ["h00", "h01", "h02", "h03"],
 			resultHashes: ["h00", "h01", "h02", "X03"],
 			resultLines: ["a", "b", "c", "changed"],
-			rangeStartLine: 1,
-			rangeEndLine: 1,
-			startHash: "h00",
-			endHash: "h00",
-			delta: 0,
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h00",
+				endHash: "h00",
+				delta: 0,
+			},
 			reported: new Set(),
 		});
 		expect(result).toBeDefined();

@@ -4,12 +4,11 @@ import { initHasher } from "./src/hashline";
 import { regEdit } from "./src/edit";
 import { regEditUndo, clearUndo } from "./src/edit-undo";
 import { regRead, fmtReadPreview } from "./src/read";
-import { finalizeResult, type RMetrics } from "./src/edit-response";
+import { finalizeToolResult, type EditDetails } from "./src/edit-response";
 import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
 import { loadHashStore, pruneMissing } from "./src/hash-store";
 import { recordServed, wipeServedState } from "./src/served-state";
-import type { ServedRow } from "./src/hashline/served";
 import { readNormFile } from "./src/file-reader";
 import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
@@ -96,22 +95,19 @@ export default function (pi: ExtensionAPI): void {
 		if (event.toolName !== "edit" && event.toolName !== "undo_last_edit")
 			return;
 
-		const metrics = (event.details as { metrics?: RMetrics } | undefined)
-			?.metrics;
-		if (metrics?.classification === "noop") return;
+		const details = event.details as EditDetails | undefined;
+		if (details?.metrics?.classification === "noop") return;
+		if (!details?.diff) return;
 
-		const diff = (event.details as { diff?: string } | undefined)?.diff;
-		if (!diff) return;
-
-		const servedRows = (
-			event.details as { servedRows?: ServedRow[] } | undefined
-		)?.servedRows;
+		const { content, servedRows } = finalizeToolResult(details);
 		if (servedRows && servedRows.length > 0) {
 			try {
 				const rawPath = (event.input as Record<string, unknown> | undefined)
 					?.path;
 				if (typeof rawPath === "string") {
-					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
+					const resolvedPath = await resolveTarget(
+						toCwd(rawPath, ctx.cwd),
+					);
 					await recordServed(resolvedPath, servedRows);
 				}
 			} catch (error) {
@@ -121,14 +117,6 @@ export default function (pi: ExtensionAPI): void {
 				);
 			}
 		}
-
-		const driftNotice = (event.details as { driftNotice?: string } | undefined)
-			?.driftNotice;
-		const warnings = (event.details as { warnings?: string[] } | undefined)
-			?.warnings;
-		const text = finalizeResult({ diff, warnings, driftNotice });
-		return {
-			content: [{ type: "text", text }],
-		};
+		return { content };
 	});
 }

@@ -1,6 +1,10 @@
 import { abortIf, splitLines } from "../utils";
 import { _lineHashesPure, HASH_SEP } from "./hash";
-import { verifyServedRange, AnchorMismatchError } from "./served";
+import {
+	AnchorMismatchError,
+	verifyServedRange,
+	type ResolvedRange,
+} from "./served";
 import {
 	valEdit,
 	stripBarePrefixes,
@@ -152,8 +156,7 @@ export function applyEdit(
 	content: string;
 	firstChangedLine: number | undefined;
 	lastChangedLine: number | undefined;
-	rangeStartLine?: number;
-	rangeEndLine?: number;
+	range: ResolvedRange;
 	warnings?: string[];
 	noopEdit?: NEdit;
 	autoFixes?: AutoFix[];
@@ -248,14 +251,14 @@ export function applyEdit(
 			filePath,
 		});
 	}
+
 	const spanResult = resToSpan(resolved, content, lineIndex);
 	if (spanResult.kind === "noop") {
 		return {
 			content,
 			firstChangedLine: undefined,
 			lastChangedLine: undefined,
-			rangeStartLine: resolved.hash_bounds[0].line,
-			rangeEndLine: resolved.hash_bounds[1].line,
+			range: resolvedRange(resolved),
 			...(warnings.length ? { warnings } : {}),
 			noopEdit: {
 				loc: spanResult.loc,
@@ -266,16 +269,26 @@ export function applyEdit(
 
 	const result = assemble(content, spanResult, signal);
 	assertNotEmpty(content, result);
-	const range = changedRange(content, result);
+	const changed = changedRange(content, result);
 
 	return {
 		content: result,
-		firstChangedLine: range?.firstChangedLine,
-		lastChangedLine: range?.lastChangedLine,
-		rangeStartLine: resolved.hash_bounds[0].line,
-		rangeEndLine: resolved.hash_bounds[1].line,
+		firstChangedLine: changed?.firstChangedLine,
+		lastChangedLine: changed?.lastChangedLine,
+		range: resolvedRange(resolved),
 		...(warnings.length ? { warnings } : {}),
 		...(autoFixes ? { autoFixes } : {}),
+	};
+}
+
+function resolvedRange(resolved: RHEdit): ResolvedRange {
+	const [start, end] = resolved.hash_bounds;
+	return {
+		startLine: start.line,
+		endLine: end.line,
+		startHash: start.hash,
+		endHash: end.hash,
+		delta: resolved.content_lines.length - (Math.abs(end.line - start.line) + 1),
 	};
 }
 

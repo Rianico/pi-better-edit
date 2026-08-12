@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, readFile, writeFile } from "fs/promises";
+import { readFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { withTempFile, getText, extractHash } from "../support/fixtures";

@@ -32,8 +32,8 @@ import { fileSnap } from "./file-reader";
 import {
 	buildChanged,
 	buildNoop,
+	type EditDetails,
 	type RMeta,
-	type RMetrics,
 } from "./edit-response";
 import {
 	buildAppliedText,
@@ -53,11 +53,12 @@ import {
 	findSnapshotPaths,
 	type HashStore,
 } from "./hash-store";
-import { loadServed, recordServed } from "./served-state";
+import { loadServed } from "./served-state";
 import {
-	ServedRejectionError,
 	AnchorMismatchError,
-	type ServedRow,
+	ServedRejectionError,
+	recordEchoServes,
+	type ServeRecordPolicy,
 } from "./hashline/served";
 
 const replacementTextSchema = Type.String({
@@ -96,16 +97,6 @@ export type EditParams = {
 	replacement_text: string;
 };
 
-export type EditDetails = {
-	diff: string;
-	firstChangedLine?: number;
-	snapshotId?: string;
-	classification?: "noop";
-	metrics?: RMetrics;
-	servedRows?: ServedRow[];
-	warnings?: string[];
-	driftNotice?: string;
-};
 
 interface PipelineResult {
 	path: string;
@@ -273,6 +264,8 @@ export async function execPipeline(
 	});
 
 	const served = await loadServed(absolutePath);
+	const policy: ServeRecordPolicy =
+		options?.noPersist === true ? "preview" : "live";
 
 	let anchorResult: ReturnType<typeof applyEdit>;
 	try {
@@ -286,16 +279,13 @@ export async function execPipeline(
 		);
 	} catch (error) {
 		if (
-			error instanceof ServedRejectionError ||
-			error instanceof AnchorMismatchError
+			error instanceof AnchorMismatchError ||
+			error instanceof ServedRejectionError
 		) {
-			if (options?.noPersist !== true) {
-				await recordServed(absolutePath, error.servedRows);
-			}
+			await recordEchoServes(absolutePath, error.servedRows, policy);
 		}
 		throw error;
 	}
-
 	const result = anchorResult.content;
 	const isNoop = result === originalNormalized;
 
@@ -325,21 +315,13 @@ export async function execPipeline(
 	);
 
 	let driftNotice: string | undefined;
-	if (
-		options?.noPersist !== true &&
-		anchorResult.rangeStartLine !== undefined &&
-		anchorResult.rangeEndLine !== undefined
-	) {
+	if (options?.noPersist !== true) {
 		try {
 			driftNotice = await scanDrift({
 				served,
 				resultHashes,
 				resultLines: splitLines(result),
-				rangeStartLine: anchorResult.rangeStartLine,
-				rangeEndLine: anchorResult.rangeEndLine,
-				startHash: edit.hash_bounds[0].hash,
-				endHash: edit.hash_bounds[1].hash,
-				delta: totalAddedLines - totalRemovedLines,
+				range: anchorResult.range,
 				path: absolutePath,
 			});
 		} catch (error) {

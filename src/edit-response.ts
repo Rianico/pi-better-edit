@@ -1,7 +1,17 @@
-import type { EditDetails } from "./edit";
+import type { ServedRow } from "./hashline/served";
 import { genDiff } from "./edit-diff";
 import { visLines, clipLine } from "./utils";
 
+export type EditDetails = {
+	diff: string;
+	firstChangedLine?: number;
+	snapshotId?: string;
+	classification?: "noop";
+	metrics?: RMetrics;
+	servedRows?: ServedRow[];
+	warnings?: string[];
+	driftNotice?: string;
+};
 type TResult = {
 	content: Array<{ type: "text"; text: string }>;
 	isError?: boolean;
@@ -94,6 +104,18 @@ export interface FinalizeInput {
 export function finalizeResult(input: FinalizeInput): string {
 	const base = input.diff + warnBlock(input.warnings);
 	return base + driftBlock(input.driftNotice);
+}
+
+export function finalizeToolResult(details: EditDetails): {
+	content: Array<{ type: "text"; text: string }>;
+	servedRows: ServedRow[] | undefined;
+} {
+	const text = finalizeResult({
+		diff: details.diff,
+		warnings: details.warnings,
+		driftNotice: details.driftNotice,
+	});
+	return { content: [{ type: "text", text }], servedRows: details.servedRows };
 }
 
 function warnBlock(warnings: string[] | undefined): string {
