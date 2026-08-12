@@ -51,10 +51,9 @@ import { saveUndo } from "./edit-undo";
 import {
 	loadHashStore,
 	findSnapshotPaths,
-	getServed,
-	recordServes,
 	type HashStore,
 } from "./hash-store";
+import { loadServed, recordServed } from "./served-state";
 import {
 	ServedRejectionError,
 	AnchorMismatchError,
@@ -272,7 +271,7 @@ export async function execPipeline(
 		noPersist: options?.noPersist,
 	});
 
-	const served = getServed(hashStore, absolutePath);
+	const served = await loadServed(absolutePath);
 
 	let anchorResult: ReturnType<typeof applyEdit>;
 	try {
@@ -290,7 +289,7 @@ export async function execPipeline(
 			error instanceof AnchorMismatchError
 		) {
 			if (options?.noPersist !== true) {
-				recordServes(hashStore, absolutePath, error.servedRows);
+				await recordServed(absolutePath, error.servedRows);
 			}
 		}
 		throw error;
@@ -331,7 +330,7 @@ export async function execPipeline(
 		anchorResult.rangeEndLine !== undefined
 	) {
 		try {
-			driftNotice = scanDrift({
+			driftNotice = await scanDrift({
 				served,
 				resultHashes,
 				resultLines: splitLines(result),
@@ -340,7 +339,6 @@ export async function execPipeline(
 				startHash: edit.hash_bounds[0].hash,
 				endHash: edit.hash_bounds[1].hash,
 				delta: totalAddedLines - totalRemovedLines,
-				store: hashStore,
 				path: absolutePath,
 			});
 		} catch (error) {

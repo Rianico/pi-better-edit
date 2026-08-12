@@ -1,11 +1,12 @@
 import { SERVED_ECHO_CAP } from "./constants";
-import {
-	getReported,
-	addReported,
-	upsertServed,
-	type HashStore,
-} from "./hash-store";
 import { type ServedRow, fmtServedRows } from "./hashline/served";
+import {
+	currentPositionOfDrifted,
+	driftReported,
+	markDriftReported,
+	recordServed,
+	servedPositionsOf,
+} from "./served-state";
 
 export const DRIFT_NOTICE_HEADING = "Drift notice:";
 
@@ -56,15 +57,8 @@ export function computeDrift(
 		currentPosOfHash.set(resultHashes[i]!, i);
 	}
 
-	const servedPositionsOf = (hash: string): number[] => {
-		const out: number[] = [];
-		for (let i = 0; i < served.length; i++) {
-			if (served[i] === hash) out.push(i);
-		}
-		return out;
-	};
-	const startPositions = servedPositionsOf(startHash);
-	const endPositions = servedPositionsOf(endHash);
+	const startPositions = servedPositionsOf(served, startHash);
+	const endPositions = servedPositionsOf(served, endHash);
 	let servedStartIdx: number;
 	let servedEndIdx: number;
 	if (startPositions.length === 1 && endPositions.length === 1) {
@@ -82,21 +76,6 @@ export function computeDrift(
 	let anyNotReported = false;
 	const driftedPositions: number[] = [];
 
-	const nearestSurvivingBelow = (p: number): number | undefined => {
-		for (let q = p - 1; q >= 0; q--) {
-			const hash = served[q];
-			if (hash !== null && resultHashSet.has(hash)) return q;
-		}
-		return undefined;
-	};
-	const nearestSurvivingAbove = (p: number): number | undefined => {
-		for (let q = p + 1; q < served.length; q++) {
-			const hash = served[q];
-			if (hash !== null && resultHashSet.has(hash)) return q;
-		}
-		return undefined;
-	};
-
 	for (let p = 0; p < served.length; p++) {
 		const servedHash = served[p];
 		if (servedHash === null) continue;
@@ -104,18 +83,13 @@ export function computeDrift(
 		if (resultHashSet.has(servedHash)) continue;
 		total++;
 		if (!reported.has(servedHash)) anyNotReported = true;
-		const below = nearestSurvivingBelow(p);
-		let currentPos: number;
-		if (below !== undefined) {
-			currentPos = currentPosOfHash.get(served[below]!)! + 1;
-		} else {
-			const above = nearestSurvivingAbove(p);
-			if (above !== undefined) {
-				currentPos = currentPosOfHash.get(served[above]!)! - 1;
-			} else {
-				currentPos = p + delta;
-			}
-		}
+		const currentPos = currentPositionOfDrifted(
+			served,
+			currentPosOfHash,
+			resultHashSet,
+			p,
+			delta,
+		);
 		if (
 			currentPos >= 0 &&
 			currentPos < resultHashes.length &&
@@ -170,7 +144,7 @@ export function computeDrift(
 	};
 }
 
-export function scanDrift(input: {
+export async function scanDrift(input: {
 	served: (string | null)[];
 	resultHashes: string[];
 	resultLines: string[];
@@ -179,31 +153,18 @@ export function scanDrift(input: {
 	startHash: string;
 	endHash: string;
 	delta: number;
-	store: HashStore;
 	path: string;
-}): string | undefined {
-	let reported: Set<string>;
-	try {
-		reported = getReported(input.store, input.path);
-	} catch (error) {
-		console.error("Failed to load reported drift set:", error);
-		reported = new Set();
-	}
+}): Promise<string | undefined> {
+	const reported = await driftReported(input.path);
 	const result = computeDrift({ ...input, reported });
 	if (!result || result.allAlreadyReported) return result?.text;
-	try {
-		upsertServed(
-			input.store,
-			input.path,
-			result.rows.map((row) => ({ position: row.position, hash: row.hash })),
-		);
-		addReported(
-			input.store,
-			input.path,
-			result.rows.filter((row) => row.drifted).map((row) => row.hash),
-		);
-	} catch (error) {
-		console.error("Failed to record drift-notice serves:", error);
-	}
+	await recordServed(
+		input.path,
+		result.rows.map((row) => ({ position: row.position, hash: row.hash })),
+	);
+	await markDriftReported(
+		input.path,
+		result.rows.filter((row) => row.drifted).map((row) => row.hash),
+	);
 	return result.text;
 }

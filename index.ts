@@ -12,9 +12,8 @@ import { readConfig, toggleAutoRead } from "./src/config";
 import {
 	loadHashStore,
 	pruneMissing,
-	wipeServed,
-	recordServes,
 } from "./src/hash-store";
+import { recordServed, wipeServedState } from "./src/served-state";
 import type { ServedRow } from "./src/hashline/served";
 import { readNormFile } from "./src/file-reader";
 import { loadFileKindAndText } from "./src/file-kind";
@@ -34,7 +33,7 @@ export default function (pi: ExtensionAPI): void {
 		await initHasher();
 		try {
 			const store = await loadHashStore();
-			await wipeServed(store);
+			await wipeServedState();
 			await pruneMissing(store);
 		} catch (err) {
 			console.error("Failed to load or prune hash store:", err);
@@ -95,15 +94,7 @@ export default function (pi: ExtensionAPI): void {
 					DEFAULT_MAX_BYTES,
 					AUTO_READ_MAX,
 				);
-				try {
-					const store = await loadHashStore();
-					recordServes(store, absolutePath, preview.served);
-				} catch (error) {
-					console.error(
-						"Failed to record served state for auto-read after write:",
-						error,
-					);
-				}
+				await recordServed(absolutePath, preview.served);
 				return {
 					content: [
 						...(event.content ?? []),
@@ -145,8 +136,7 @@ export default function (pi: ExtensionAPI): void {
 					?.path;
 				if (typeof rawPath === "string") {
 					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
-					const store = await loadHashStore();
-					recordServes(store, resolvedPath, servedRows);
+					await recordServed(resolvedPath, servedRows);
 				}
 			} catch (error) {
 				console.error(

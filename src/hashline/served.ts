@@ -1,4 +1,5 @@
 import { HASH_SEP } from "./hash";
+import { servedPositionsOf } from "../served-state";
 import { SERVED_ECHO_CAP } from "../constants";
 
 export type ServedCode =
@@ -107,16 +108,8 @@ export function verifyServedRange(args: {
 			: "";
 	const echo = fmtServedRows(echoRows, fileLines) + tail;
 
-	const positionsOf = (hash: string): number[] => {
-		const out: number[] = [];
-		for (let i = 0; i < served.length; i++) {
-			if (served[i] === hash) out.push(i);
-		}
-		return out;
-	};
-
-	const startPositions = positionsOf(startHash);
-	const endPositions = positionsOf(endHash);
+	const startPositions = servedPositionsOf(served, startHash);
+	const endPositions = servedPositionsOf(served, endHash);
 	if (startPositions.length !== 1 || endPositions.length !== 1) {
 		const problems: string[] = [];
 		if (startPositions.length === 0) {

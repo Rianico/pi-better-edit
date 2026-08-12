@@ -13,7 +13,7 @@ import { readNormFile } from "./file-reader";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline";
 import type { ServedRow } from "./hashline/served";
 import { toCwd } from "./paths";
-import { loadHashStore, recordServes, clearReported } from "./hash-store";
+import { recordServed, clearDriftReported } from "./served-state";
 import { abortIf, isRec, normalizeFilePath } from "./utils";
 import { fileSnap } from "./file-reader";
 import { visLines } from "./utils";
@@ -275,13 +275,8 @@ export function regRead(pi: ExtensionAPI): void {
 				fileHashes,
 				absolutePath,
 			);
-			try {
-				const store = await loadHashStore();
-				recordServes(store, resolvedPath, preview.served);
-				clearReported(store, resolvedPath);
-			} catch (error) {
-				console.error("Failed to record served state for read:", error);
-			}
+			await recordServed(resolvedPath, preview.served);
+			await clearDriftReported(resolvedPath);
 			let snapshotId: string | undefined;
 			try {
 				snapshotId = (await fileSnap(absolutePath)).snapshotId;
