@@ -6,6 +6,7 @@ export {
 	markDriftReported,
 	clearDriftReported,
 	wipeServedState,
+	sessionKeyFor,
 } from "./served-store";
 
 export function servedPositionsOf(

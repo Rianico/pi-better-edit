@@ -50,7 +50,7 @@ import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
 import { type HashStore } from "./hash-store";
 import { findSnapshotPathsByHashes } from "./snapshot-store";
-import { loadServed } from "./served-state";
+import { loadServed, sessionKeyFor } from "./served-state";
 import {
 	AnchorMismatchError,
 	ServedRejectionError,
@@ -185,6 +185,7 @@ export interface ExecPipelineOptions {
 	signal?: AbortSignal;
 	store?: HashStore;
 	noPersist?: boolean;
+	sessionKey?: string;
 }
 
 function collectRemovedHashes(
@@ -258,7 +259,8 @@ export async function execPipeline(
 		noPersist: options?.noPersist,
 	});
 
-	const served = await loadServed(absolutePath);
+	const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
+	const served = await loadServed(sessionKey, absolutePath);
 	const policy: ServeRecordPolicy =
 		options?.noPersist === true ? "preview" : "live";
 
@@ -277,7 +279,7 @@ export async function execPipeline(
 			error instanceof AnchorMismatchError ||
 			error instanceof ServedRejectionError
 		) {
-			await recordEchoServes(absolutePath, error.servedRows, policy);
+			await recordEchoServes(sessionKey, absolutePath, error.servedRows, policy);
 		}
 		throw error;
 	}
@@ -313,6 +315,7 @@ export async function execPipeline(
 	if (options?.noPersist !== true) {
 		try {
 			driftNotice = await scanDrift({
+				sessionKey,
 				served,
 				resultHashes,
 				resultLines: splitLines(result),
@@ -557,6 +560,7 @@ export function buildToolDef(): ToolDef {
 				} = await execPipeline(normalizedParams, ctx.cwd, {
 					accessMode: constants.R_OK | constants.W_OK,
 					signal,
+					sessionKey: sessionKeyFor(ctx),
 				});
 
 				if (resolution) {

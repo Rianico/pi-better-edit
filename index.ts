@@ -8,7 +8,7 @@ import { finalizeToolResult, type EditDetails } from "./src/edit-response";
 import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
 import { pruneMissingAll } from "./src/snapshot-store";
-import { recordServed, wipeServedState } from "./src/served-state";
+import { recordServed, sessionKeyFor } from "./src/served-state";
 import { readNormFile } from "./src/file-reader";
 import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
@@ -24,7 +24,6 @@ export default function (pi: ExtensionAPI): void {
 	pi.on("session_start", async (_event, ctx) => {
 		await initHasher();
 		try {
-			await wipeServedState();
 			await pruneMissingAll();
 		} catch (err) {
 			console.error("Failed to load or prune hash store:", err);
@@ -69,7 +68,7 @@ export default function (pi: ExtensionAPI): void {
 					DEFAULT_MAX_BYTES,
 					AUTO_READ_MAX,
 				);
-				await recordServed(absolutePath, preview.served);
+				await recordServed(sessionKeyFor(ctx), absolutePath, preview.served);
 				return {
 					content: [
 						...(event.content ?? []),
@@ -105,7 +104,7 @@ export default function (pi: ExtensionAPI): void {
 					?.path;
 				if (typeof rawPath === "string") {
 					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
-					await recordServed(resolvedPath, servedRows);
+					await recordServed(sessionKeyFor(ctx), resolvedPath, servedRows);
 				}
 			} catch (error) {
 				console.error(

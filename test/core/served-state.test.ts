@@ -24,60 +24,89 @@ beforeAll(async () => {
 describe("served-state — record semantics", () => {
 	it("records served rows that load back by path and position", async () => {
 		await withTempHome(async () => {
-			await recordServed("/a.ts", [
+			await recordServed("sessionA", "/a.ts", [
 				{ position: 0, hash: "abc" },
 				{ position: 1, hash: "def" },
 				{ position: 2, hash: "ghi" },
 			]);
-			expect(await loadServed("/a.ts")).toEqual(["abc", "def", "ghi"]);
+			expect(await loadServed("sessionA", "/a.ts")).toEqual(["abc", "def", "ghi"]);
 		});
 	});
 
 	it("returns an empty record for a path with no served entries", async () => {
 		await withTempHome(async () => {
-			expect(await loadServed("/missing.ts")).toEqual([]);
+			expect(await loadServed("sessionA", "/missing.ts")).toEqual([]);
 		});
 	});
 
 	it("exposes interior gaps as never-served markers", async () => {
 		await withTempHome(async () => {
-			await recordServed("/p.ts", [
+			await recordServed("sessionA", "/p.ts", [
 				{ position: 0, hash: "abc" },
 				{ position: 2, hash: "def" },
 			]);
-			expect(await loadServed("/p.ts")).toEqual(["abc", null, "def"]);
+			expect(await loadServed("sessionA", "/p.ts")).toEqual(["abc", null, "def"]);
 		});
 	});
 
 	it("overwrites a previously served position", async () => {
 		await withTempHome(async () => {
-			await recordServed("/p.ts", [{ position: 0, hash: "abc" }]);
-			await recordServed("/p.ts", [{ position: 0, hash: "def" }]);
-			expect(await loadServed("/p.ts")).toEqual(["def"]);
+			await recordServed("sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
+			await recordServed("sessionA", "/p.ts", [{ position: 0, hash: "def" }]);
+			expect(await loadServed("sessionA", "/p.ts")).toEqual(["def"]);
 		});
 	});
 
 	it("marks a served position as never-served with a null hash", async () => {
 		await withTempHome(async () => {
-			await recordServed("/p.ts", [
+			await recordServed("sessionA", "/p.ts", [
 				{ position: 0, hash: "abc" },
 				{ position: 1, hash: "def" },
 				{ position: 2, hash: "ghi" },
 			]);
-			await recordServed("/p.ts", [{ position: 1, hash: null }]);
-			expect(await loadServed("/p.ts")).toEqual(["abc", null, "ghi"]);
+			await recordServed("sessionA", "/p.ts", [{ position: 1, hash: null }]);
+			expect(await loadServed("sessionA", "/p.ts")).toEqual(["abc", null, "ghi"]);
 		});
 	});
 
 	it("keeps unrelated served records intact when recording another path", async () => {
 		await withTempHome(async () => {
-			await recordServed("/a.ts", [{ position: 0, hash: "abc" }]);
-			await recordServed("/b.ts", [
+			await recordServed("sessionA", "/a.ts", [{ position: 0, hash: "abc" }]);
+			await recordServed("sessionA", "/b.ts", [
 				{ position: 0, hash: "def" },
 				{ position: 1, hash: "ghi" },
 			]);
-			expect(await loadServed("/a.ts")).toEqual(["abc"]);
-			expect(await loadServed("/b.ts")).toEqual(["def", "ghi"]);
+			expect(await loadServed("sessionA", "/a.ts")).toEqual(["abc"]);
+			expect(await loadServed("sessionA", "/b.ts")).toEqual(["def", "ghi"]);
+		});
+	});
+});
+
+describe("served-state — session isolation", () => {
+	it("keeps one session's rows invisible to another session", async () => {
+		await withTempHome(async () => {
+			await recordServed("sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
+			expect(await loadServed("sessionA", "/p.ts")).toEqual(["abc"]);
+			expect(await loadServed("sessionB", "/p.ts")).toEqual([]);
+		});
+	});
+
+	it("wipes only the targeted session's served state", async () => {
+		await withTempHome(async () => {
+			await recordServed("sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
+			await recordServed("sessionB", "/p.ts", [{ position: 0, hash: "def" }]);
+			await wipeServedState("sessionA");
+			expect(await loadServed("sessionA", "/p.ts")).toEqual([]);
+			expect(await loadServed("sessionB", "/p.ts")).toEqual(["def"]);
+		});
+	});
+
+	it("keeps reported drift sets per session", async () => {
+		await withTempHome(async () => {
+			await markDriftReported("sessionA", "/p.ts", ["abc"]);
+			await markDriftReported("sessionB", "/p.ts", ["def"]);
+			expect(await driftReported("sessionA", "/p.ts")).toEqual(new Set(["abc"]));
+			expect(await driftReported("sessionB", "/p.ts")).toEqual(new Set(["def"]));
 		});
 	});
 });
@@ -85,42 +114,44 @@ describe("served-state — record semantics", () => {
 describe("served-state — reported drift set policy", () => {
 	it("marks hashes as reported and clears them on demand", async () => {
 		await withTempHome(async () => {
-			await markDriftReported("/p.ts", ["abc", "def"]);
-			expect(await driftReported("/p.ts")).toEqual(new Set(["abc", "def"]));
-			await clearDriftReported("/p.ts");
-			expect(await driftReported("/p.ts")).toEqual(new Set());
+			await markDriftReported("sessionA", "/p.ts", ["abc", "def"]);
+			expect(await driftReported("sessionA", "/p.ts")).toEqual(
+				new Set(["abc", "def"]),
+			);
+			await clearDriftReported("sessionA", "/p.ts");
+			expect(await driftReported("sessionA", "/p.ts")).toEqual(new Set());
 		});
 	});
 
 	it("keeps reported sets per path", async () => {
 		await withTempHome(async () => {
-			await markDriftReported("/a.ts", ["abc"]);
-			await markDriftReported("/b.ts", ["def"]);
-			expect(await driftReported("/a.ts")).toEqual(new Set(["abc"]));
-			expect(await driftReported("/b.ts")).toEqual(new Set(["def"]));
-			await clearDriftReported("/a.ts");
-			expect(await driftReported("/a.ts")).toEqual(new Set());
-			expect(await driftReported("/b.ts")).toEqual(new Set(["def"]));
+			await markDriftReported("sessionA", "/a.ts", ["abc"]);
+			await markDriftReported("sessionA", "/b.ts", ["def"]);
+			expect(await driftReported("sessionA", "/a.ts")).toEqual(new Set(["abc"]));
+			expect(await driftReported("sessionA", "/b.ts")).toEqual(new Set(["def"]));
+			await clearDriftReported("sessionA", "/a.ts");
+			expect(await driftReported("sessionA", "/a.ts")).toEqual(new Set());
+			expect(await driftReported("sessionA", "/b.ts")).toEqual(new Set(["def"]));
 		});
 	});
 
 	it("returns an empty reported set for a path with no marks", async () => {
 		await withTempHome(async () => {
-			expect(await driftReported("/missing.ts")).toEqual(new Set());
+			expect(await driftReported("sessionA", "/missing.ts")).toEqual(new Set());
 		});
 	});
 });
 
 describe("served-state — session wipe", () => {
-	it("removes all served records and reported sets", async () => {
+	it("removes the session's served records and reported sets", async () => {
 		await withTempHome(async () => {
-			await recordServed("/a.ts", [{ position: 0, hash: "abc" }]);
-			await recordServed("/b.ts", [{ position: 1, hash: "def" }]);
-			await markDriftReported("/a.ts", ["abc"]);
-			await wipeServedState();
-			expect(await loadServed("/a.ts")).toEqual([]);
-			expect(await loadServed("/b.ts")).toEqual([]);
-			expect(await driftReported("/a.ts")).toEqual(new Set());
+			await recordServed("sessionA", "/a.ts", [{ position: 0, hash: "abc" }]);
+			await recordServed("sessionA", "/b.ts", [{ position: 1, hash: "def" }]);
+			await markDriftReported("sessionA", "/a.ts", ["abc"]);
+			await wipeServedState("sessionA");
+			expect(await loadServed("sessionA", "/a.ts")).toEqual([]);
+			expect(await loadServed("sessionA", "/b.ts")).toEqual([]);
+			expect(await driftReported("sessionA", "/a.ts")).toEqual(new Set());
 		});
 	});
 });

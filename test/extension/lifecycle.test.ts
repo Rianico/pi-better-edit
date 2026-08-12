@@ -87,7 +87,7 @@ describe("session_start lifecycle", () => {
 		}
 	});
 
-	it("wipes served state at session start", async () => {
+	it("keeps served state at session start", async () => {
 		await withTempDir("lifecycle-served-", async (dir) => {
 			const { writeFile } = await import("fs/promises");
 			const { join } = await import("path");
@@ -95,7 +95,7 @@ describe("session_start lifecycle", () => {
 			await writeFile(keep, "keep\n", "utf-8");
 
 			const store = await loadHashStore();
-			upsertServed(store, keep, [{ position: 0, hash: "abc" }]);
+			upsertServed(store, "sessionA", keep, [{ position: 0, hash: "abc" }]);
 			upsertSnapshot(store, keep, contentChecksum("keep\n"), 1, ["abc"]);
 
 			const { pi, handlers } = makeLifecyclePi();
@@ -103,7 +103,7 @@ describe("session_start lifecycle", () => {
 			const sessionStart = handlers.get("session_start")!;
 			await sessionStart({}, { cwd: dir, ui: { notify: vi.fn() } });
 
-			expect(getServed(store, keep)).toEqual([]);
+			expect(getServed(store, "sessionA", keep)).toEqual(["abc"]);
 			expect(getSnapshot(store, keep, "keep\n")).toEqual(["abc"]);
 		});
 	});

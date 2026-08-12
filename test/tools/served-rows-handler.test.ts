@@ -58,7 +58,7 @@ describe("served-rows tool_result handler", () => {
 			const editTool = getTool("edit");
 			const handler = handlers.get("tool_result");
 			expect(handler).toBeDefined();
-			const ctx = { cwd: dir };
+			const ctx = { cwd: dir, sessionManager: { getSessionId: () => "test-session" } };
 
 			const readResult = await readTool.execute(
 				"r1",
@@ -91,7 +91,7 @@ describe("served-rows tool_result handler", () => {
 			expect(editResult.details.servedRows.length).toBeGreaterThan(0);
 
 			const store = await loadHashStore();
-			const servedBefore = getServed(store, filePath);
+			const servedBefore = getServed(store, "test-session", filePath);
 
 			const result = await handler!(
 				{
@@ -110,7 +110,7 @@ describe("served-rows tool_result handler", () => {
 			expect(content).toHaveLength(1);
 			expect(content[0]!.text).toBe(editResult.details.diff);
 
-			const servedAfter = getServed(store, filePath);
+			const servedAfter = getServed(store, "test-session", filePath);
 			expect(servedAfter).toEqual(
 				overlay(editResult.details.servedRows, servedBefore),
 			);
@@ -132,7 +132,7 @@ describe("served-rows tool_result handler", () => {
 			const undoTool = getTool("undo_last_edit");
 			const handler = handlers.get("tool_result");
 			expect(handler).toBeDefined();
-			const ctx = { cwd: dir };
+			const ctx = { cwd: dir, sessionManager: { getSessionId: () => "test-session" } };
 
 			await readTool.execute(
 				"r1",
@@ -180,7 +180,7 @@ describe("served-rows tool_result handler", () => {
 			expect(result).toBeDefined();
 
 			const store = await loadHashStore();
-			const served = getServed(store, filePath);
+			const served = getServed(store, "test-session", filePath);
 			expect(served).toEqual(overlay(undoResult.details.servedRows));
 			expect(served).toEqual(originalHashes);
 		});
@@ -203,13 +203,13 @@ describe("served-rows tool_result handler", () => {
 					input: { path: "test.txt" },
 					content: [{ type: "text", text: "File written." }],
 				},
-				{ cwd: dir },
+				{ cwd: dir, sessionManager: { getSessionId: () => "test-session" } },
 			);
 			expect(result).toBeDefined();
 
 			const store = await loadHashStore();
 			const expected = await lineHashes("hello\nworld\n", filePath);
-			expect(getServed(store, filePath)).toEqual(expected);
+			expect(getServed(store, "test-session", filePath)).toEqual(expected);
 		});
 	});
 });

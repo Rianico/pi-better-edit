@@ -1,7 +1,19 @@
+import { randomUUID } from "crypto";
 import { HASH_RE } from "./hashline/alphabet";
 import { loadHashStore, withStore, type HashStore } from "./hash-store";
 
 export type ServedEntry = { position: number; hash: string | null };
+
+let fallbackSessionKey: string | undefined;
+
+export function sessionKeyFor(ctx?: {
+	sessionManager?: { getSessionId(): string };
+}): string {
+	const fromSession = ctx?.sessionManager?.getSessionId();
+	if (fromSession) return fromSession;
+	fallbackSessionKey ??= randomUUID();
+	return fallbackSessionKey;
+}
 
 function isValidServedList(value: unknown): value is (string | null)[] {
 	if (!Array.isArray(value)) return false;
@@ -12,28 +24,33 @@ function isValidServedList(value: unknown): value is (string | null)[] {
 	return true;
 }
 
-export function getServed(store: HashStore, path: string): (string | null)[] {
-	const row = store.stmts.servedGet(path);
+export function getServed(
+	store: HashStore,
+	sessionKey: string,
+	path: string,
+): (string | null)[] {
+	const row = store.stmts.servedGet(sessionKey, path);
 	if (!row) return [];
 	try {
 		const parsed = JSON.parse(row.hashes as string);
 		if (isValidServedList(parsed)) return parsed;
-		store.stmts.servedDelete(path);
+		store.stmts.servedDelete(sessionKey, path);
 		return [];
 	} catch {
-		store.stmts.servedDelete(path);
+		store.stmts.servedDelete(sessionKey, path);
 		return [];
 	}
 }
 
 export function upsertServed(
 	store: HashStore,
+	sessionKey: string,
 	path: string,
 	entries: Array<{ position: number; hash: string | null }>,
 ): void {
 	if (entries.length === 0) return;
 	withStore(() => {
-		const updated = getServed(store, path).slice();
+		const updated = getServed(store, sessionKey, path).slice();
 		for (const entry of entries) {
 			if (!Number.isInteger(entry.position) || entry.position < 0) {
 				throw new TypeError(`Invalid served position: ${entry.position}`);
@@ -49,25 +66,26 @@ export function upsertServed(
 		}
 		while (updated.length > 0 && updated[updated.length - 1] === null)
 			updated.pop();
-		store.stmts.servedUpsert(path, JSON.stringify(updated), Date.now());
+		store.stmts.servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
 	});
 }
 
 export function recordServes(
 	store: HashStore,
+	sessionKey: string,
 	path: string,
 	rows: Array<{ position: number; hash: string | null }>,
 ): void {
 	if (rows.length === 0) return;
 	try {
-		upsertServed(store, path, rows);
+		upsertServed(store, sessionKey, path, rows);
 	} catch (error) {
 		console.error("Failed to record served rows:", error);
 	}
 }
 
-export function getReported(store: HashStore, path: string): Set<string> {
-	const row = store.stmts.servedGet(path);
+export function getReported(store: HashStore, sessionKey: string, path: string): Set<string> {
+	const row = store.stmts.servedGet(sessionKey, path);
 	if (!row) return new Set();
 	const raw = row.reported;
 	if (typeof raw !== "string" || raw.length === 0) return new Set();
@@ -86,15 +104,17 @@ export function getReported(store: HashStore, path: string): Set<string> {
 
 export function addReported(
 	store: HashStore,
+	sessionKey: string,
 	path: string,
 	hashes: string[],
 ): void {
 	const valid = hashes.filter((hash) => HASH_RE.test(hash));
 	if (valid.length === 0) return;
 	withStore(() => {
-		const current = getReported(store, path);
+		const current = getReported(store, sessionKey, path);
 		for (const hash of valid) current.add(hash);
 		store.stmts.servedReportedUpsert(
+			sessionKey,
 			path,
 			JSON.stringify([...current]),
 			Date.now(),
@@ -102,42 +122,46 @@ export function addReported(
 	});
 }
 
-export function clearReported(store: HashStore, path: string): void {
+export function clearReported(store: HashStore, sessionKey: string, path: string): void {
 	withStore(() => {
-		store.stmts.servedReportedClear(Date.now(), path);
+		store.stmts.servedReportedClear(sessionKey, Date.now(), path);
 	});
 }
 
-export function deleteServed(store: HashStore, path: string): void {
-	store.stmts.servedDelete(path);
+export function deleteServed(store: HashStore, sessionKey: string, path: string): void {
+	store.stmts.servedDelete(sessionKey, path);
 }
 
-export function wipeServed(store: HashStore): void {
-	store.stmts.servedWipe();
+export function wipeServed(store: HashStore, sessionKey: string): void {
+	store.stmts.servedWipe(sessionKey);
 }
 
-export async function loadServed(path: string): Promise<(string | null)[]> {
+export async function loadServed(
+	sessionKey: string,
+	path: string,
+): Promise<(string | null)[]> {
 	const store = await loadHashStore();
-	return getServed(store, path);
+	return getServed(store, sessionKey, path);
 }
 
 export async function recordServed(
+	sessionKey: string,
 	path: string,
 	rows: ServedEntry[],
 ): Promise<void> {
 	if (rows.length === 0) return;
 	try {
 		const store = await loadHashStore();
-		recordServes(store, path, rows);
+		recordServes(store, sessionKey, path, rows);
 	} catch (error) {
 		console.error("Failed to record served rows:", error);
 	}
 }
 
-export async function driftReported(path: string): Promise<Set<string>> {
+export async function driftReported(sessionKey: string, path: string): Promise<Set<string>> {
 	try {
 		const store = await loadHashStore();
-		return getReported(store, path);
+		return getReported(store, sessionKey, path);
 	} catch (error) {
 		console.error("Failed to load reported drift set:", error);
 		return new Set();
@@ -145,30 +169,31 @@ export async function driftReported(path: string): Promise<Set<string>> {
 }
 
 export async function markDriftReported(
+	sessionKey: string,
 	path: string,
 	hashes: string[],
 ): Promise<void> {
 	try {
 		const store = await loadHashStore();
-		addReported(store, path, hashes);
+		addReported(store, sessionKey, path, hashes);
 	} catch (error) {
 		console.error("Failed to record reported drift set:", error);
 	}
 }
 
-export async function clearDriftReported(path: string): Promise<void> {
+export async function clearDriftReported(sessionKey: string, path: string): Promise<void> {
 	try {
 		const store = await loadHashStore();
-		clearReported(store, path);
+		clearReported(store, sessionKey, path);
 	} catch (error) {
 		console.error("Failed to clear reported drift set:", error);
 	}
 }
 
-export async function wipeServedState(): Promise<void> {
+export async function wipeServedState(sessionKey: string): Promise<void> {
 	try {
 		const store = await loadHashStore();
-		wipeServed(store);
+		wipeServed(store, sessionKey);
 	} catch (error) {
 		console.error("Failed to wipe served state:", error);
 	}

@@ -141,20 +141,23 @@ export function computeDrift(
 }
 
 export async function scanDrift(input: {
+	sessionKey: string;
 	served: (string | null)[];
 	resultHashes: string[];
 	resultLines: string[];
 	range: ResolvedRange;
 	path: string;
 }): Promise<string | undefined> {
-	const reported = await driftReported(input.path);
+	const reported = await driftReported(input.sessionKey, input.path);
 	const result = computeDrift({ ...input, reported });
 	if (!result || result.allAlreadyReported) return result?.text;
 	await recordServed(
+		input.sessionKey,
 		input.path,
 		result.rows.map((row) => ({ position: row.position, hash: row.hash })),
 	);
 	await markDriftReported(
+		input.sessionKey,
 		input.path,
 		result.rows.filter((row) => row.drifted).map((row) => row.hash),
 	);

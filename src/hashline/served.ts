@@ -183,10 +183,11 @@ export interface ResolvedRange {
 export type ServeRecordPolicy = "live" | "preview";
 
 export async function recordEchoServes(
+	sessionKey: string,
 	path: string,
 	rows: ServedRow[],
 	policy: ServeRecordPolicy,
 ): Promise<void> {
 	if (policy !== "live") return;
-	await recordServed(path, rows);
+	await recordServed(sessionKey, path, rows);
 }

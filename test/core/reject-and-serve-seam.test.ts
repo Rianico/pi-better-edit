@@ -21,6 +21,7 @@ describe("recordEchoServes — serve-record policy", () => {
 		await withTempHome(async () => {
 			const path = "/a.ts";
 			await recordEchoServes(
+				"sessionA",
 				path,
 				[
 					{ position: 0, hash: "h00" },
@@ -28,15 +29,15 @@ describe("recordEchoServes — serve-record policy", () => {
 				],
 				"live",
 			);
-			expect(await loadServed(path)).toEqual(["h00", "X01"]);
+			expect(await loadServed("sessionA", path)).toEqual(["h00", "X01"]);
 		});
 	});
 
 	it("records nothing when the policy is preview", async () => {
 		await withTempHome(async () => {
 			const path = "/a.ts";
-			await recordEchoServes(path, [{ position: 0, hash: "h00" }], "preview");
-			expect(await loadServed(path)).toEqual([]);
+			await recordEchoServes("sessionA", path, [{ position: 0, hash: "h00" }], "preview");
+			expect(await loadServed("sessionA", path)).toEqual([]);
 		});
 	});
 });

@@ -132,7 +132,7 @@ export async function pruneMissing(store: HashStore): Promise<void> {
 		for (const path of missing) {
 			store.stmts.deleteOne(path);
 			store.stmts.undoDelete(path);
-			store.stmts.servedDelete(path);
+			store.stmts.servedDeletePath(path);
 		}
 	});
 }

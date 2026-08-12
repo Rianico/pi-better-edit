@@ -23,6 +23,7 @@ interface Prepared {
 	servedReportedUpsert: (...params: SqlParams) => void;
 	servedReportedClear: (...params: SqlParams) => void;
 	servedDelete: (...params: SqlParams) => void;
+	servedDeletePath: (...params: SqlParams) => void;
 	servedWipe: (...params: SqlParams) => void;
 }
 
@@ -129,28 +130,35 @@ function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
 			"updated_at INTEGER NOT NULL" +
 			")",
 	);
-	db.exec(
-		"CREATE TABLE IF NOT EXISTS served (" +
-			"path TEXT PRIMARY KEY, " +
-			"hashes TEXT NOT NULL, " +
-			"reported TEXT, " +
-			"updated_at INTEGER NOT NULL" +
-			")",
-	);
-	const servedColumns = db.prepare("PRAGMA table_info(served)").all() as {
-		name: string;
-	}[];
-	if (!servedColumns.some((column) => column.name === "reported")) {
-		db.exec("ALTER TABLE served ADD COLUMN reported TEXT");
-	}
 	const versionRow = db
 		.prepare("SELECT value FROM meta WHERE key = 'version'")
 		.get() as { value?: string } | undefined;
-	if (versionRow && versionRow.value !== String(HASH_STORE_VERSION)) {
+	const versionChanged =
+		versionRow !== undefined &&
+		versionRow.value !== String(HASH_STORE_VERSION);
+	if (versionChanged) {
 		db.exec("DELETE FROM snapshots");
 		db.exec("DELETE FROM undo");
-		db.exec("DELETE FROM served");
 	}
+	const servedColumns = db.prepare("PRAGMA table_info(served)").all() as {
+		name: string;
+	}[];
+	if (
+		versionChanged ||
+		!servedColumns.some((column) => column.name === "session_id")
+	) {
+		db.exec("DROP TABLE IF EXISTS served");
+	}
+	db.exec(
+		"CREATE TABLE IF NOT EXISTS served (" +
+			"session_id TEXT NOT NULL, " +
+			"path TEXT NOT NULL, " +
+			"hashes TEXT NOT NULL, " +
+			"reported TEXT, " +
+			"updated_at INTEGER NOT NULL, " +
+			"PRIMARY KEY (session_id, path)" +
+			")",
+	);
 	db.prepare(
 		"INSERT INTO meta (key, value) VALUES ('version', ?) " +
 			"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
@@ -176,21 +184,24 @@ function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
 	);
 	const undoDelStmt = db.prepare("DELETE FROM undo WHERE path = ?");
 	const servedGetStmt = db.prepare(
-		"SELECT hashes, reported FROM served WHERE path = ?",
+		"SELECT hashes, reported FROM served WHERE session_id = ? AND path = ?",
 	);
 	const servedUpsertStmt = db.prepare(
-		"INSERT INTO served (path, hashes, updated_at) VALUES (?, ?, ?) " +
-			"ON CONFLICT(path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
+		"INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
+			"ON CONFLICT(session_id, path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
 	);
 	const servedReportedUpsertStmt = db.prepare(
-		"INSERT INTO served (path, hashes, reported, updated_at) VALUES (?, '[]', ?, ?) " +
-			"ON CONFLICT(path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at",
+		"INSERT INTO served (session_id, path, hashes, reported, updated_at) VALUES (?, ?, '[]', ?, ?) " +
+			"ON CONFLICT(session_id, path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at",
 	);
 	const servedReportedClearStmt = db.prepare(
-		"UPDATE served SET reported = NULL, updated_at = ? WHERE path = ?",
+		"UPDATE served SET reported = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
 	);
-	const servedDeleteStmt = db.prepare("DELETE FROM served WHERE path = ?");
-	const servedWipeStmt = db.prepare("DELETE FROM served");
+	const servedDeleteStmt = db.prepare(
+		"DELETE FROM served WHERE session_id = ? AND path = ?",
+	);
+	const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
+	const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
 	const stmts: Prepared = {
 		get: (...params) =>
 			getStmt.get(...params) as Record<string, unknown> | undefined,
@@ -234,7 +245,7 @@ function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
 		},
 		servedReportedClear: (...params) => {
 			withBusyRetry(() => {
-				servedReportedClearStmt.run(...params);
+				servedReportedClearStmt.run(params[1], params[0], params[2]);
 			});
 		},
 		servedDelete: (...params) => {
@@ -242,9 +253,14 @@ function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
 				servedDeleteStmt.run(...params);
 			});
 		},
-		servedWipe: () => {
+		servedDeletePath: (...params) => {
 			withBusyRetry(() => {
-				servedWipeStmt.run();
+				servedDeletePathStmt.run(...params);
+			});
+		},
+		servedWipe: (...params) => {
+			withBusyRetry(() => {
+				servedWipeStmt.run(...params);
 			});
 		},
 	};
