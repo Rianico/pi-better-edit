@@ -19,7 +19,7 @@ import {
 	getSnapshot,
 } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
-import { HASH_STORE_VERSION } from "../../src/constants";
+import { HASH_STORE_VERSION, SERVED_TTL_MS } from "../../src/constants";
 import { initHasher, contentChecksum } from "../../src/hashline/hasher";
 import { getWritableTempRoot } from "../support/fixtures";
 
@@ -509,6 +509,75 @@ describe("hash-store — reported drift set (issue #6)", () => {
 			addReported(store, "sessionA", "/gone.ts", ["abc"]);
 			await pruneMissing(store);
 			expect(getReported(store, "sessionA", "/gone.ts")).toEqual(new Set());
+		});
+	});
+});
+
+describe("hash-store — served TTL sweep (issue #17)", () => {
+	async function ageServedRow(
+		home: string,
+		sessionKey: string,
+		path: string,
+		updatedAt: number,
+	): Promise<void> {
+		const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+		db.prepare(
+			"UPDATE served SET updated_at = ? WHERE session_id = ? AND path = ?",
+		).run(updatedAt, sessionKey, path);
+		db.close();
+	}
+
+	it("prunes served rows older than the TTL on store open", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			upsertServed(store, "sessionA", "/p.ts", [
+				{ position: 0, hash: "abc" },
+				{ position: 2, hash: "def" },
+			]);
+			shutdownHashStore();
+			await ageServedRow(home, "sessionA", "/p.ts", Date.now() - SERVED_TTL_MS - 1000);
+			const reloaded = await loadHashStore();
+			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
+			const check = new DatabaseSync(sqlitePath(home), {
+				defensive: false,
+			} as any);
+			const remaining = check
+				.prepare(
+					"SELECT COUNT(*) AS n FROM served WHERE session_id = ? AND path = ?",
+				)
+				.get("sessionA", "/p.ts") as { n: number };
+			check.close();
+			expect(remaining.n).toBe(0);
+		});
+	});
+
+	it("keeps a fresh served row across a close/reopen cycle so a pi -c continuation can verify against it", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			upsertServed(store, "sessionA", "/p.ts", [
+				{ position: 0, hash: "abc" },
+				{ position: 2, hash: "def" },
+			]);
+			shutdownHashStore();
+			const reloaded = await loadHashStore();
+			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual(["abc", null, "def"]);
+		});
+	});
+
+	it("prunes an old row of one session while keeping another session's fresh row", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			upsertServed(store, "sessionA", "/p.ts", [
+				{ position: 0, hash: "abc" },
+			]);
+			upsertServed(store, "sessionB", "/p.ts", [
+				{ position: 0, hash: "def" },
+			]);
+			shutdownHashStore();
+			await ageServedRow(home, "sessionA", "/p.ts", Date.now() - SERVED_TTL_MS - 1000);
+			const reloaded = await loadHashStore();
+			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
+			expect(getServed(reloaded, "sessionB", "/p.ts")).toEqual(["def"]);
 		});
 	});
 });

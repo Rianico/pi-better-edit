@@ -4,7 +4,7 @@ import { DatabaseSync } from "node:sqlite";
 import { hashStorePath, hashStoreDir, legacyHashStorePath } from "./paths";
 import { errCode, splitLines } from "./utils";
 import { initHasher, contentChecksum } from "./hashline/hasher";
-import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
+import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT, SERVED_TTL_MS } from "./constants";
 import { isValidSnapshot } from "./snapshot-store";
 
 type SqlParams = (string | number)[];
@@ -25,6 +25,7 @@ interface Prepared {
 	servedDelete: (...params: SqlParams) => void;
 	servedDeletePath: (...params: SqlParams) => void;
 	servedWipe: (...params: SqlParams) => void;
+	servedPruneOlderThan: (...params: SqlParams) => void;
 }
 
 export interface HashStore {
@@ -202,6 +203,9 @@ function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
 	);
 	const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
 	const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
+	const servedPruneOlderThanStmt = db.prepare(
+		"DELETE FROM served WHERE updated_at < ?",
+	);
 	const stmts: Prepared = {
 		get: (...params) =>
 			getStmt.get(...params) as Record<string, unknown> | undefined,
@@ -261,6 +265,11 @@ function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
 		servedWipe: (...params) => {
 			withBusyRetry(() => {
 				servedWipeStmt.run(...params);
+			});
+		},
+		servedPruneOlderThan: (...params) => {
+			withBusyRetry(() => {
+				servedPruneOlderThanStmt.run(...params);
 			});
 		},
 	};
@@ -327,6 +336,9 @@ async function openStore(storePath: string): Promise<HashStore> {
 	if (!existed) {
 		await migrateLegacy(db);
 	}
+	withBusyRetry(() => {
+		stmts.servedPruneOlderThan(Date.now() - SERVED_TTL_MS);
+	});
 	cachedDb = { path: storePath, db, stmts };
 
 	if (!exitHandlerRegistered) {
