@@ -9,6 +9,7 @@ accepted
 ## Considered Options
 
 - **expected_hashes (the model submits the hash of every removed line)** — rejected on the model–tool boundary: it makes the model supply verification data and multiplies the hash-copy error surface the autocorrection layer already exists to paper over.
+- **edit `force` / model-asserted serve override** (apply unverified ranges anyway, or record the model's claim that it saw content through bash or another channel) — rejected on the model–tool boundary: the tool would certify content it never delivered, corrupting the served mirror and unsoundly waiving verification. A soft "asserted-not-served" variant was considered and rejected for the same confabulation risk (a context-lost, looping model reaches for whatever waives verification). Only the tool's own serves — read output, post-edit diffs, rejection echoes — count.
 - **Position-indexed served state** — rejected: false-rejects when an out-of-range edit shifts positions (a deleted line above the range moves every line down, so served[pos] no longer matches the same content).
 - **Hash-set served state** — rejected: false-accepts when externally-changed content duplicates another served line (same content ⇒ same hash).
 - **Whole-file content diff with drift-overlap abort** — rejected as the abort mechanism: sound only when serves are full; paged reads, truncated auto-read previews and disjoint diff hunks break content diffing and would force served-content storage plus coverage bookkeeping. Absorbed as the drift-notice complement instead.
