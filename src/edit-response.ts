@@ -92,15 +92,16 @@ export interface FinalizeInput {
 }
 
 export function finalizeResult(input: FinalizeInput): string {
-	const warningsBlock = input.warnings?.length
-		? `\n\nWarnings:\n${input.warnings.join("\n")}`
-		: "";
-	const base = warningsBlock ? `${input.diff}${warningsBlock}` : input.diff;
-	return input.driftNotice ? `${base}\n\n${input.driftNotice}` : base;
+	const base = input.diff + warnBlock(input.warnings);
+	return base + driftBlock(input.driftNotice);
 }
 
 function warnBlock(warnings: string[] | undefined): string {
 	return warnings?.length ? `\n\nWarnings:\n${warnings.join("\n")}` : "";
+}
+
+function driftBlock(driftNotice: string | undefined): string {
+	return driftNotice ? `\n\n${driftNotice}` : "";
 }
 
 export function buildNoop(input: NoopInput): TResult {
@@ -110,7 +111,7 @@ export function buildNoop(input: NoopInput): TResult {
 		? `Edit for ${noopEdit.loc} is identical to current content:\n  ${noopEdit.loc}: ${clipLine(noopEdit.currentContent)}`
 		: "The edit produced identical content.";
 
-	const noticeBlock = driftNotice ? `\n\n${driftNotice}` : "";
+	const noticeBlock = driftBlock(driftNotice);
 	const text = `No changes made to ${path}\nClassification: noop\n${noopDetailsText}${noticeBlock}`;
 
 	const metrics = buildMetrics({
@@ -162,7 +163,7 @@ export function buildChanged(input: SuccessInput): TResult {
 		addedLines > 0 || removedLines > 0
 			? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
 			: "";
-	const noticeBlock = driftNotice ? `\n\n${driftNotice}` : "";
+	const noticeBlock = driftBlock(driftNotice);
 	const text =
 		resultLines.length === 0
 			? "File is empty. Use edit to insert content." + noticeBlock
