@@ -94,11 +94,11 @@ describe("session_start lifecycle", () => {
 			await withTempDir("lifecycle-config-", async (dir) => {
 				const { mkdir, writeFile } = await import("fs/promises");
 				const { join } = await import("path");
-				await mkdir(join(dir, ".config", "pi-hashline-edit-pro"), {
+				await mkdir(join(dir, ".config", "pi-hashline-edit-lsz"), {
 					recursive: true,
 				});
 				await writeFile(
-					join(dir, ".config", "pi-hashline-edit-pro", "config.json"),
+					join(dir, ".config", "pi-hashline-edit-lsz", "config.json"),
 					JSON.stringify({ autoRead: false }),
 					"utf-8",
 				);

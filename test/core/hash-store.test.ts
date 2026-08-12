@@ -150,7 +150,7 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
 }
 
 function configHome(home: string): string {
-  return join(home, ".config", "pi-hashline-edit-pro");
+  return join(home, ".config", "pi-hashline-edit-lsz");
 }
 
 function sqlitePath(home: string): string {

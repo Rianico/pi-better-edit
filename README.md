@@ -1,4 +1,4 @@
-# pi-hashline-edit-pro
+# pi-hashline-edit-lsz
 
 Hash-anchored `read` and `edit` tools for [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent). Every line of a file gets a unique 3-character hash, and you edit by hash. No line numbers, no fuzzy matching, no edits landing on the wrong line.
 
@@ -39,13 +39,13 @@ kQm│}
 ## Installation
 
 ```bash
-pi install npm:pi-hashline-edit-pro
+pi install npm:pi-hashline-edit-lsz
 ```
 
 From a local checkout:
 
 ```bash
-pi install /path/to/pi-hashline-edit-pro
+pi install /path/to/pi-hashline-edit-lsz
 ```
 
 ## The read tool
@@ -124,7 +124,7 @@ Enabled by default. After a successful `write` that changes the file, the extens
 | --- | --- |
 | `/toggle-auto-read` | Toggle automatic hashline anchors after write and post-edit diffs after edit and undo_last_edit operations. Persists across sessions. |
 
-Settings live in `~/.config/pi-hashline-edit-pro/config.json`, created automatically when a setting is toggled. On non-Windows platforms, the config directory honors `XDG_CONFIG_HOME` when set (falling back to `~/.config`); on Windows it always uses `~/.config`:
+Settings live in `~/.config/pi-hashline-edit-lsz/config.json`, created automatically when a setting is toggled. On non-Windows platforms, the config directory honors `XDG_CONFIG_HOME` when set (falling back to `~/.config`); on Windows it always uses `~/.config`:
 
 ```json
 {
@@ -140,7 +140,7 @@ The alphabet is sized for an LLM consumer: the model tokenizes rather than squin
 
 Unique anchors by construction. If a line's base hash collides with an already-assigned hash, the next free hash is allocated from a bitset by probing with a stride coprime to the hash space (O(1) amortized). The stride is `62² + 62 + 1`, so consecutive collisions, runs of blank lines, repeated `}`, land on anchors that differ in all three characters instead of sharing a prefix. Every line in a file therefore gets a unique anchor; two byte-identical lines (repeated `}`, repeated `import` statements) never share one. The same guarantee sets the file size cap: at most 238,328 lines per file, beyond which `read` and `edit` reject with `[E_FILE_TOO_LARGE]` (use `write` for very large files).
 
-Hashes live in a persistent per-file store (`~/.config/pi-hashline-edit-pro/hash-store.sqlite`) that keeps the hashes of unchanged lines across edits. When a range is edited, the runtime maps the old content onto the new content and copies hashes for lines that survived; only genuinely new lines get fresh hashes.
+Hashes live in a persistent per-file store (`~/.config/pi-hashline-edit-lsz/hash-store.sqlite`) that keeps the hashes of unchanged lines across edits. When a range is edited, the runtime maps the old content onto the new content and copies hashes for lines that survived; only genuinely new lines get fresh hashes.
 
 Two guarantees make this safe even with duplicated content:
 
@@ -174,9 +174,10 @@ A no-op edit never changes the file, so anchors remain valid. On first run after
 ## Troubleshooting
 
 - Stale anchors. `[E_STALE_ANCHOR]` or `[E_AMBIGUOUS_ANCHOR]` mean the file changed since the anchors were read. Call `read` for fresh anchors and retry.
-- Reset the hash store. Anchors live in `~/.config/pi-hashline-edit-pro/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit pi, delete those three files, and the store is rebuilt on the next session. Anchor history is lost, but no project files are touched.
+- Reset the hash store. Anchors live in `~/.config/pi-hashline-edit-lsz/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit pi, delete those three files, and the store is rebuilt on the next session. Anchor history is lost, but no project files are touched.
 - Corrupt store. If the store fails its health check it is renamed to `hash-store.sqlite.corrupt-<timestamp>` and rebuilt automatically.
-- Config directory moved. On non-Windows platforms, if `XDG_CONFIG_HOME` is set, the config directory (and the hash store inside it) lives at `$XDG_CONFIG_HOME/pi-hashline-edit-pro` instead of `~/.config/pi-hashline-edit-pro`. An existing store is not migrated automatically. To keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) into the new directory before the first run.
+- Config directory moved. On non-Windows platforms, if `XDG_CONFIG_HOME` is set, the config directory (and the hash store inside it) lives at `$XDG_CONFIG_HOME/pi-hashline-edit-lsz` instead of `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically. To keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) into the new directory before the first run.
+- Package renamed. This fork was renamed from `pi-hashline-edit-pro` to `pi-hashline-edit-lsz`; the config directory moved from `~/.config/pi-hashline-edit-pro` to `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically. To keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) and `config.json` into the new directory before the first run.
 
 ## Development
 

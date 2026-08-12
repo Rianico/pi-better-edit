@@ -1,5 +1,5 @@
 {
-  "name": "pi-hashline-edit-pro",
+  "name": "pi-hashline-edit-lsz",
   "version": "2.4.1",
   "type": "module",
   "description": "Hash-anchored read/edit/undo tools for pi-coding-agent. Every line gets a unique 3-char hash (A-Za-z0-9) that stays stable across edits; stale or ambiguous anchors are rejected, never fuzzy-matched. Undo persists across restarts.",
@@ -12,7 +12,7 @@
   "bugs": {
     "url": "https://github.com/Rianico/pi-hashline-edit-lsz/issues"
   },
-  "author": "pi-hashline-edit-pro contributors",
+  "author": "pi-hashline-edit-lsz contributors",
   "keywords": [
     "pi-package",
     "pi",

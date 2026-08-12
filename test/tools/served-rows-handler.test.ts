@@ -188,7 +188,7 @@ describe("served-rows tool_result handler", () => {
 
 	it("records nothing when auto-read is disabled (non-serve)", async () => {
 		await withTempDir("served-off-", async (dir) => {
-			const configDir = join(dir, ".config", "pi-hashline-edit-pro");
+			const configDir = join(dir, ".config", "pi-hashline-edit-lsz");
 			await mkdir(configDir, { recursive: true });
 			await writeFile(
 				join(configDir, "config.json"),

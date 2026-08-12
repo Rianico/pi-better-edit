@@ -60,7 +60,7 @@ describe("config — readConfig / writeConfig", () => {
     await withTempHome(async () => {
       const { writeFile, mkdir } = await import("fs/promises");
       const { join: pathJoin } = await import("path");
-      const configDir = pathJoin(tmpHome, ".config", "pi-hashline-edit-pro");
+      const configDir = pathJoin(tmpHome, ".config", "pi-hashline-edit-lsz");
       await mkdir(configDir, { recursive: true });
       await writeFile(
         pathJoin(configDir, "config.json"),
@@ -77,7 +77,7 @@ describe("config — atomic writes", () => {
     await withTempHome(async () => {
       await writeConfig({ autoRead: true });
       const { readdir } = await import("fs/promises");
-      const entries = await readdir(join(tmpHome, ".config", "pi-hashline-edit-pro"));
+      const entries = await readdir(join(tmpHome, ".config", "pi-hashline-edit-lsz"));
       expect(entries).toEqual(["config.json"]);
     });
   });

@@ -65,7 +65,7 @@ describe("auto-read handler", () => {
 
   it("returns nothing when auto-read is disabled via config", async () => {
     await withTempDir("auto-read-disabled-", async (dir) => {
-      const configDir = join(dir, ".config", "pi-hashline-edit-pro");
+      const configDir = join(dir, ".config", "pi-hashline-edit-lsz");
       await mkdir(configDir, { recursive: true });
       await writeFile(join(configDir, "config.json"), JSON.stringify({ autoRead: false }), "utf-8");
 
@@ -476,7 +476,7 @@ describe("edit diff in model-visible text", () => {
 
   it("leaves the summary untouched for edit when auto-read is disabled", async () => {
     await withTempDir("auto-read-diff-off-", async (dir) => {
-      const configDir = join(dir, ".config", "pi-hashline-edit-pro");
+      const configDir = join(dir, ".config", "pi-hashline-edit-lsz");
       await mkdir(configDir, { recursive: true });
       await writeFile(join(configDir, "config.json"), JSON.stringify({ autoRead: false }), "utf-8");
       const { pi, handlers } = makeFakePi();

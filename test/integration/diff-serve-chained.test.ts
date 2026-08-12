@@ -182,7 +182,7 @@ describe("diff rows serve chained edits", () => {
 
 	it("recovers in one reject-and-serve roundtrip when auto-read is disabled", async () => {
 		await withTempFile("sample.ts", "l1\nl2\nl3\nl4\nl5\n", async ({ cwd }) => {
-			const configDir = join(cwd, ".config", "pi-hashline-edit-pro");
+			const configDir = join(cwd, ".config", "pi-hashline-edit-lsz");
 			await mkdir(configDir, { recursive: true });
 			await writeFile(
 				join(configDir, "config.json"),
