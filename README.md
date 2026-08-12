@@ -10,7 +10,7 @@ Inspired by [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by R
 - **Served-state range verification** — `edit` verifies *every line* of the resolved range against what the model was actually shown, not just the two boundary anchors. A line inside the range that changed on disk since it was served is hard-rejected with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]`, and the current range is echoed back as fresh anchors so the retry needs no `read` (reject-and-serve).
 - **Drift notices** — when served territory outside the edit range changed on disk, the result carries an informational notice with the current content around the drift, once per episode.
 - **Chained edits without re-reading** — post-edit diff rows and rejection echoes count as serves, so follow-up edits verify cleanly; prompts present `read` as on-demand recovery, not a per-edit ritual.
-- **Verified against upstream** — the comparison battery scores this fork 19/19; upstream `pi-hashline-edit-pro` 2.4.1 scores 14/19 (five silent data-loss cases on stale interiors) and 2.5.0 scores 18/19 (a blind-edit hole).
+- **Verified against upstream** — the comparison battery scores this fork 23/23; upstream `pi-hashline-edit-pro` 2.4.1 scores 17/23 (five silent data-loss cases on stale interiors plus a cross-session serve leak) and 2.5.0 scores 21/23 (a blind-edit hole and a cross-session serve leak).
 - **Architecture** — a dedicated served-state module owns serve recording and the served-span reconstruction; post-edit result assembly is a single pure function over structured warnings.
 - **Own identity** — published as the `pi-hashline-edit-lsz` npm package, with its own config and hash-store directory (`~/.config/pi-hashline-edit-lsz`).
 
@@ -125,6 +125,7 @@ Always on. After a successful `write` that changes the file, the extension reads
 
 - After `edit` and `undo_last_edit`, the result shows the post-edit diff. The `+HASH│` and `HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. The `-HASH│` rows show removed lines with their old hashes, so you can see exactly which anchors were deleted (those hashes are stale after the edit). Call `read` when you want the full file's anchors.
 - Auto-read keeps a 50KB display budget. Lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
+
 ## How anchors work
 
 Each line is canonicalized (carriage returns stripped, trailing whitespace trimmed) and hashed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (xxHash32), then mapped to a 3-character string over `A-Za-z0-9`, which gives 62³ = 238,328 possible anchors. The canonicalization keeps anchors stable across editor-save cycles that add or remove trailing whitespace.

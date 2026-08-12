@@ -104,6 +104,18 @@ async function deliverDiff(
 	return text;
 }
 
+async function fireSessionStart(
+	handlers: Map<string, (...args: unknown[]) => unknown>,
+	ctx: Ctx,
+): Promise<void> {
+	const h = handlers.get("session_start");
+	if (h) await h({ reason: "startup" }, ctx);
+}
+
+function sessionCtx(cwd: string, id: string): Ctx {
+	return { cwd, sessionManager: { getSessionId: () => id } } as Ctx;
+}
+
 const describeGate = RUN ? describe : describe.skip;
 
 describeGate("EVAL comparison battery", () => {
@@ -830,6 +842,182 @@ describeGate("EVAL comparison battery", () => {
 					replacement_text: "a\nX",
 				},
 				ctx,
+			);
+			rec.outcome = e1.ok ? "success" : "rejected";
+			rec.code = e1.code;
+			rec.finalContent = await readFile(path, "utf-8");
+			results.push(rec);
+		});
+
+		await withTempFile("b19.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+			const rec: ScenarioResult = {
+				scenario: "B19 sub-agent-session-does-not-wipe-main",
+				outcome: "success",
+				calls: [],
+				finalContent: "",
+			};
+			const { getTool, handlers } = setupTarget(cwd, target);
+			const mainCtx = sessionCtx(cwd, "eval-main");
+			const subCtx = sessionCtx(cwd, "eval-sub");
+			const r1 = await call(
+				rec,
+				getTool(target.toolNames.read),
+				target.toolNames.read,
+				{ path: "b19.ts" },
+				mainCtx,
+			);
+			const a = readAnchor(r1.text, "│bbb");
+			await fireSessionStart(handlers, subCtx);
+			const e1 = await call(
+				rec,
+				getTool(target.toolNames.edit),
+				target.toolNames.edit,
+				{
+					path: "b19.ts",
+					remove_from: a,
+					remove_to: a,
+					replacement_text: "BBB",
+				},
+				mainCtx,
+			);
+			rec.outcome = e1.ok ? "success" : "rejected";
+			rec.code = e1.code;
+			rec.finalContent = await readFile(path, "utf-8");
+			results.push(rec);
+		});
+
+		await withTempFile("b20.ts", "a\nb\nc\n", async ({ cwd, path }) => {
+			const rec: ScenarioResult = {
+				scenario: "B20 main-and-sub-agent-both-edit",
+				outcome: "success",
+				calls: [],
+				finalContent: "",
+			};
+			const { getTool, handlers } = setupTarget(cwd, target);
+			const mainCtx = sessionCtx(cwd, "eval-main");
+			const subCtx = sessionCtx(cwd, "eval-sub");
+			const r1 = await call(
+				rec,
+				getTool(target.toolNames.read),
+				target.toolNames.read,
+				{ path: "b20.ts" },
+				mainCtx,
+			);
+			const aC = readAnchor(r1.text, "│c");
+			await fireSessionStart(handlers, subCtx);
+			const s1 = await call(
+				rec,
+				getTool(target.toolNames.read),
+				target.toolNames.read,
+				{ path: "b20.ts", limit: 2 },
+				subCtx,
+			);
+			const sB = readAnchor(s1.text, "│b");
+			const se = await call(
+				rec,
+				getTool(target.toolNames.edit),
+				target.toolNames.edit,
+				{
+					path: "b20.ts",
+					remove_from: sB,
+					remove_to: sB,
+					replacement_text: "B",
+				},
+				subCtx,
+			);
+			if (se.ok) {
+				await deliverDiff(handlers, subCtx, {
+					toolName: target.toolNames.edit,
+					isError: false,
+					input: { path: "b20.ts" },
+					details: se.r?.details,
+					content: se.r?.content,
+				});
+			}
+			const e1 = await call(
+				rec,
+				getTool(target.toolNames.edit),
+				target.toolNames.edit,
+				{
+					path: "b20.ts",
+					remove_from: aC,
+					remove_to: aC,
+					replacement_text: "C",
+				},
+				mainCtx,
+			);
+			rec.outcome = se.ok ? (e1.ok ? "success" : "rejected") : "error";
+			rec.code = se.ok ? e1.code : se.code;
+			rec.finalContent = await readFile(path, "utf-8");
+			results.push(rec);
+		});
+
+		await withTempFile("b21.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+			const rec: ScenarioResult = {
+				scenario: "B21 same-session-restart-keeps-served-state",
+				outcome: "success",
+				calls: [],
+				finalContent: "",
+			};
+			const { getTool, handlers } = setupTarget(cwd, target);
+			const mainCtx = sessionCtx(cwd, "eval-main");
+			await fireSessionStart(handlers, mainCtx);
+			const r1 = await call(
+				rec,
+				getTool(target.toolNames.read),
+				target.toolNames.read,
+				{ path: "b21.ts" },
+				mainCtx,
+			);
+			const a = readAnchor(r1.text, "│bbb");
+			await fireSessionStart(handlers, mainCtx);
+			const e1 = await call(
+				rec,
+				getTool(target.toolNames.edit),
+				target.toolNames.edit,
+				{
+					path: "b21.ts",
+					remove_from: a,
+					remove_to: a,
+					replacement_text: "BBB",
+				},
+				mainCtx,
+			);
+			rec.outcome = e1.ok ? "success" : "rejected";
+			rec.code = e1.code;
+			rec.finalContent = await readFile(path, "utf-8");
+			results.push(rec);
+		});
+
+		await withTempFile("b22.ts", "a\nb\nc\n", async ({ cwd, path }) => {
+			const rec: ScenarioResult = {
+				scenario: "B22 sub-agent-serves-not-visible-to-main",
+				outcome: "success",
+				calls: [],
+				finalContent: "",
+			};
+			const { getTool } = setupTarget(cwd, target);
+			const mainCtx = sessionCtx(cwd, "eval-main");
+			const subCtx = sessionCtx(cwd, "eval-sub");
+			await call(
+				rec,
+				getTool(target.toolNames.read),
+				target.toolNames.read,
+				{ path: "b22.ts" },
+				subCtx,
+			);
+			const hashes = await target.lineHashes("a\nb\nc\n", join(cwd, "b22.ts"));
+			const e1 = await call(
+				rec,
+				getTool(target.toolNames.edit),
+				target.toolNames.edit,
+				{
+					path: "b22.ts",
+					remove_from: hashes[1]!,
+					remove_to: hashes[1]!,
+					replacement_text: "B",
+				},
+				mainCtx,
 			);
 			rec.outcome = e1.ok ? "success" : "rejected";
 			rec.code = e1.code;

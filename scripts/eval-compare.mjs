@@ -56,6 +56,10 @@ const EXPECTED = {
 	"B16b undo after external change": { outcome: "rejected" },
 	"B17 reversed-range autocorrect": { outcome: "success" },
 	"B18 boundary-dup autocorrect": { outcome: "success" },
+	"B19 sub-agent-session-does-not-wipe-main": { outcome: "success" },
+	"B20 main-and-sub-agent-both-edit": { outcome: "success" },
+	"B21 same-session-restart-keeps-served-state": { outcome: "success" },
+	"B22 sub-agent-serves-not-visible-to-main": { outcome: "rejected" },
 };
 
 function run(cmd, cwd = root) {
