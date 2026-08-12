@@ -103,6 +103,7 @@ export type EditDetails = {
 	classification?: "noop";
 	metrics?: RMetrics;
 	servedRows?: ServedRow[];
+	warnings?: string[];
 	driftNotice?: string;
 };
 
@@ -534,11 +535,7 @@ export function buildToolDef(): ToolDef {
 			}
 
 			if (isApplied(typedResult.details)) {
-				const appliedText = buildAppliedText(
-					renderedText,
-					typedResult.details,
-					theme,
-				);
+				const appliedText = buildAppliedText(typedResult.details, theme);
 				return appliedText
 					? reuseText(context, appliedText)
 					: new Text("", 0, 0);

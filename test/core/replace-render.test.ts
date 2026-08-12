@@ -6,7 +6,6 @@ import {
 	fmtResult,
 	fmtCall,
 	getResultText,
-	extractWarnings,
 	isApplied,
 	buildAppliedText,
 	fmtResultMd,
@@ -189,40 +188,6 @@ describe("getResultText", () => {
 	});
 });
 
-describe("extractWarnings", () => {
-	it("extracts warnings block", () => {
-		const text = "Some text\nWarnings:\nWarning 1\nWarning 2";
-		const result = extractWarnings(text);
-		expect(result).toContain("Warnings:");
-		expect(result).toContain("Warning 1");
-	});
-
-	it("returns undefined for no warnings", () => {
-		expect(extractWarnings("No warnings here")).toBeUndefined();
-	});
-
-	it("returns undefined for undefined input", () => {
-		expect(extractWarnings(undefined)).toBeUndefined();
-	});
-
-	it("strips the trailing drift notice from the warnings block when its text is provided", () => {
-		const notice =
-			"Drift notice: 1 line(s) outside the edited range drifted. Current content around the drift:\nabc│x";
-		const text = `Successfully edited.\n\nWarnings:\nWarning 1\n\n${notice}`;
-		const result = extractWarnings(text, notice);
-		expect(result).toContain("Warnings:");
-		expect(result).toContain("Warning 1");
-		expect(result).not.toContain("Drift notice");
-	});
-
-	it("keeps the trailing notice when no notice text is provided", () => {
-		const text = "Warnings:\nWarning 1\n\nDrift notice: 1 line(s) drifted.";
-		const result = extractWarnings(text);
-		expect(result).toContain("Warning 1");
-		expect(result).toContain("Drift notice: 1 line(s) drifted.");
-	});
-});
-
 describe("isApplied", () => {
 	it("returns true for applied changes", () => {
 		const details = {
@@ -263,9 +228,9 @@ describe("isApplied", () => {
 
 describe("buildAppliedText", () => {
 	it("builds text with diff and warnings", () => {
-		const text = "Some text\nWarnings:\nWarning 1";
 		const details = {
 			diff: "+added\n-removed",
+			warnings: ["Warning 1"],
 			metrics: {
 				classification: "applied" as const,
 				edits_attempted: 1,
@@ -275,13 +240,13 @@ describe("buildAppliedText", () => {
 				removed_lines: 1,
 			},
 		};
-		const result = buildAppliedText(text, details, mockTheme);
+		const result = buildAppliedText(details, mockTheme);
 		expect(result).toContain("[success]");
 		expect(result).toContain("Warnings:");
 	});
 
 	it("returns undefined for no content", () => {
-		const result = buildAppliedText(undefined, undefined, mockTheme);
+		const result = buildAppliedText(undefined, mockTheme);
 		expect(result).toBeUndefined();
 	});
 });

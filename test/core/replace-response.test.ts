@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { buildNoop, buildChanged } from "../../src/edit-response";
+import { buildNoop, buildChanged, finalizeResult } from "../../src/edit-response";
 import { lineHashes } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
 
@@ -40,6 +40,7 @@ describe("buildNoop", () => {
       warnings: ["Warning 1"],
     });
     expect(result.details.metrics!.warnings).toBe(1);
+    expect(result.details.warnings).toEqual(["Warning 1"]);
   });
 
   it("clips long currentContent in noop details", () => {
@@ -96,6 +97,7 @@ describe("buildChanged", () => {
     });
     expect(output.content[0].text).toContain("Warnings:");
     expect(output.content[0].text).toContain("Boundary duplication (leading)");
+    expect(output.details.warnings).toEqual(["Boundary duplication (leading)"]);
   });
 
   it("shows empty file message when result is empty", async () => {
@@ -176,5 +178,36 @@ describe("buildChanged", () => {
     expect(diff).toContain("│ddd");
     expect(diff).not.toContain("│aaa");
     expect(diff).not.toContain("│eee");
+  });
+});
+
+describe("finalizeResult", () => {
+  it("returns the diff alone when nothing else is present", () => {
+    const text = finalizeResult({ diff: "+a\n-b" });
+    expect(text).toBe("+a\n-b");
+  });
+
+  it("appends a warnings block after the diff", () => {
+    const text = finalizeResult({ diff: "+a\n-b", warnings: ["W1", "W2"] });
+    expect(text).toBe("+a\n-b\n\nWarnings:\nW1\nW2");
+  });
+
+  it("appends the drift notice after the diff", () => {
+    const text = finalizeResult({ diff: "+a", driftNotice: "Drift notice: ..." });
+    expect(text).toBe("+a\n\nDrift notice: ...");
+  });
+
+  it("orders diff, warnings, then drift notice", () => {
+    const text = finalizeResult({
+      diff: "+a",
+      warnings: ["W1"],
+      driftNotice: "Drift notice: ...",
+    });
+    expect(text).toBe("+a\n\nWarnings:\nW1\n\nDrift notice: ...");
+  });
+
+  it("ignores an empty warnings array", () => {
+    const text = finalizeResult({ diff: "+a", warnings: [] });
+    expect(text).toBe("+a");
   });
 });

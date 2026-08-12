@@ -725,6 +725,7 @@ describe("renderResult", () => {
 			],
 			details: {
 				diff: "+aB3│BBB",
+				warnings: ["[E_BAD_OP] Autocorrected: swapped the pair."],
 				metrics: {
 					classification: "applied",
 					added_lines: 1,

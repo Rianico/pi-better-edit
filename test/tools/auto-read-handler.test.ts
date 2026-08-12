@@ -384,7 +384,13 @@ describe("edit diff in model-visible text", () => {
           toolName: "edit",
           isError: false,
           input: { path: "warn.txt" },
-          details: { diff, metrics: { classification: "applied" } },
+          details: {
+            diff,
+            metrics: { classification: "applied" },
+            warnings: [
+              "[E_BARE_HASH_PREFIX] Autocorrected: stripped \"HASH│\" prefix copied from read output in replacement_text line 1."
+            ],
+          },
           content: [{ type: "text", text: summary }],
         },
         { cwd: dir },

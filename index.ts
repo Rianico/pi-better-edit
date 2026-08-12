@@ -4,8 +4,7 @@ import { initHasher } from "./src/hashline";
 import { regEdit } from "./src/edit";
 import { regEditUndo, clearUndo } from "./src/edit-undo";
 import { regRead, fmtReadPreview } from "./src/read";
-import type { RMetrics } from "./src/edit-response";
-import { extractWarnings } from "./src/edit-render";
+import { finalizeResult, type RMetrics } from "./src/edit-response";
 import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
 import { readConfig, toggleAutoRead } from "./src/config";
@@ -146,24 +145,13 @@ export default function (pi: ExtensionAPI): void {
 			}
 		}
 
-		const rendered = (event.content ?? [])
-			.filter(
-				(entry): entry is { type: "text"; text: string } =>
-					entry.type === "text" && typeof entry.text === "string",
-			)
-			.map((entry) => entry.text)
-			.join("\n");
 		const driftNotice = (event.details as { driftNotice?: string } | undefined)
 			?.driftNotice;
-		const warnings = extractWarnings(rendered, driftNotice);
-		const base = warnings ? `${diff}\n\n${warnings}` : diff;
+		const warnings = (event.details as { warnings?: string[] } | undefined)
+			?.warnings;
+		const text = finalizeResult({ diff, warnings, driftNotice });
 		return {
-			content: [
-				{
-					type: "text",
-					text: driftNotice ? `${base}\n\n${driftNotice}` : base,
-				},
-			],
+			content: [{ type: "text", text }],
 		};
 	});
 }

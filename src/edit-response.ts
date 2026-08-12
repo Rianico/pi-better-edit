@@ -85,6 +85,20 @@ export function buildMetrics(args: {
 	return metrics;
 }
 
+export interface FinalizeInput {
+	diff: string;
+	warnings?: string[];
+	driftNotice?: string;
+}
+
+export function finalizeResult(input: FinalizeInput): string {
+	const warningsBlock = input.warnings?.length
+		? `\n\nWarnings:\n${input.warnings.join("\n")}`
+		: "";
+	const base = warningsBlock ? `${input.diff}${warningsBlock}` : input.diff;
+	return input.driftNotice ? `${base}\n\n${input.driftNotice}` : base;
+}
+
 function warnBlock(warnings: string[] | undefined): string {
 	return warnings?.length ? `\n\nWarnings:\n${warnings.join("\n")}` : "";
 }
@@ -114,6 +128,7 @@ export function buildNoop(input: NoopInput): TResult {
 			snapshotId,
 			classification: "noop" as const,
 			metrics,
+			...(warnings !== undefined && warnings.length > 0 ? { warnings } : {}),
 			...(driftNotice !== undefined ? { driftNotice } : {}),
 		},
 	};
@@ -174,6 +189,7 @@ export function buildChanged(input: SuccessInput): TResult {
 				editMeta.firstChangedLine ?? diffResult.firstChangedLine,
 			snapshotId,
 			metrics,
+			...(warnings !== undefined && warnings.length > 0 ? { warnings } : {}),
 			servedRows: diffResult.servedRows,
 			...(driftNotice !== undefined ? { driftNotice } : {}),
 		},

@@ -118,18 +118,6 @@ export function getResultText(result: {
 	return textContent?.text;
 }
 
-export function extractWarnings(
-	text: string | undefined,
-	driftNotice?: string,
-): string | undefined {
-	const match = text?.match(/(?:^|\n)Warnings:\n[\s\S]*$/)?.[0]?.trimStart();
-	if (!match) return undefined;
-	if (!driftNotice) return match;
-	const block = `\n\n${driftNotice}`;
-	if (match.endsWith(block)) return match.slice(0, -block.length);
-	return match;
-}
-
 export function isApplied(details: EditDetails | undefined): boolean {
 	const metrics = details?.metrics;
 	return (
@@ -140,7 +128,6 @@ export function isApplied(details: EditDetails | undefined): boolean {
 }
 
 export function buildAppliedText(
-	text: string | undefined,
 	details: EditDetails | undefined,
 	theme: FgT,
 ): string | undefined {
@@ -150,12 +137,13 @@ export function buildAppliedText(
 		sections.push(fmtResult(details.diff, theme));
 	}
 
-	const warnings = extractWarnings(text, details?.driftNotice);
-	if (warnings) sections.push(warnings);
+	const warnings = details?.warnings;
+	if (warnings?.length) {
+		sections.push(`Warnings:\n${warnings.join("\n")}`);
+	}
 
 	return sections.length > 0 ? sections.join("\n\n") : undefined;
 }
-
 function trimEmpty(lines: string[]): string[] {
 	let start = 0;
 	let end = lines.length;
