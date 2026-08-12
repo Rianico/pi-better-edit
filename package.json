@@ -1,6 +1,6 @@
 {
   "name": "pi-hashline-edit-lsz",
-  "version": "2.4.1",
+  "version": "1.0.0",
   "type": "module",
   "description": "Hash-anchored read/edit/undo tools for pi-coding-agent. Every line gets a unique 3-char hash (A-Za-z0-9) that stays stable across edits; stale or ambiguous anchors are rejected, never fuzzy-matched. Undo persists across restarts.",
   "main": "index.ts",
@@ -63,7 +63,8 @@
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "npm run typecheck && npm run lint && npm test",
     "eval": "RUN_EVAL=1 EVAL_TARGET=local vitest run test/eval/comparison-battery.test.ts",
-    "eval:compare": "node scripts/eval-compare.mjs"
+    "eval:compare": "node scripts/eval-compare.mjs",
+    "test:runtime": "node scripts/runtime-edge-test.mjs"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.0",

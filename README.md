@@ -2,7 +2,17 @@
 
 Hash-anchored `read` and `edit` tools for [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent). Every line of a file gets a unique 3-character hash, and you edit by hash. No line numbers, no fuzzy matching, no edits landing on the wrong line.
 
-Fork of [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by RimuruW, extended with 3-character hashes and collision resolution.
+Inspired by [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by RimuruW and [pi-hashline-edit-pro](https://github.com/YuGiMob/pi-hashline-edit-pro) — thanks to the original authors for their excellent work. This project is a **self-maintained version**: it is not affiliated with either upstream, exists to carry its own fixes and refinements forward, and deliberately diverges where noted below.
+
+## Refinements over upstream
+
+- **`edit` / `undo_last_edit`** — the tools are renamed from `replace` / `undo_last_replace`, and this extension's `edit` replaces pi's built-in edit tool.
+- **Served-state range verification** — `edit` verifies *every line* of the resolved range against what the model was actually shown, not just the two boundary anchors. A line inside the range that changed on disk since it was served is hard-rejected with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]`, and the current range is echoed back as fresh anchors so the retry needs no `read` (reject-and-serve).
+- **Drift notices** — when served territory outside the edit range changed on disk, the result carries an informational notice with the current content around the drift, once per episode.
+- **Chained edits without re-reading** — post-edit diff rows and rejection echoes count as serves, so follow-up edits verify cleanly; prompts present `read` as on-demand recovery, not a per-edit ritual.
+- **Verified against upstream** — the comparison battery scores this fork 19/19; upstream `pi-hashline-edit-pro` 2.4.1 scores 14/19 (five silent data-loss cases on stale interiors) and 2.5.0 scores 18/19 (a blind-edit hole).
+- **Architecture** — a dedicated served-state module owns serve recording and the served-span reconstruction; post-edit result assembly is a single pure function over structured warnings.
+- **Own identity** — published as the `pi-hashline-edit-lsz` npm package, with its own config and hash-store directory (`~/.config/pi-hashline-edit-lsz`).
 
 ## What you get
 
@@ -191,6 +201,10 @@ npm run typecheck
 ```
 
 Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
+
+### Runtime edge-suite
+
+`npm run test:runtime` runs the served-state edge scenarios (stale-interior reject-and-serve, chained edits without re-read, undo, never-served interior, drift notice) as one `fabric_exec` program against real pi, using the **temporary-extension** form (`pi -e npm:pi-fabric`) so nothing is installed into your pi. It needs network access to install the temp extension and takes a few minutes; exit code 0 means the suite passed.
 
 ## Credits
 
