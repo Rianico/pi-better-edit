@@ -6,13 +6,9 @@ describe("extension registration", () => {
 	it("registers the read and edit tools", () => {
 		const toolNames: string[] = [];
 		const eventNames: string[] = [];
-		const commandNames: string[] = [];
 		const pi = {
 			registerTool(tool: { name: string }) {
 				toolNames.push(tool.name);
-			},
-			registerCommand(name: string) {
-				commandNames.push(name);
 			},
 			on(name: string) {
 				eventNames.push(name);

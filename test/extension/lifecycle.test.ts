@@ -1,5 +1,4 @@
 import { describe, expect, it, vi } from "vitest";
-import { readConfig } from "../../src/config";
 import {
 	loadHashStore,
 	upsertServed,
@@ -88,31 +87,6 @@ describe("session_start lifecycle", () => {
 		}
 	});
 
-	it("loads auto-read preference from config", async () => {
-		vi.stubEnv("PI_HASHLINE_DEBUG", "0");
-		try {
-			await withTempDir("lifecycle-config-", async (dir) => {
-				const { mkdir, writeFile } = await import("fs/promises");
-				const { join } = await import("path");
-				await mkdir(join(dir, ".config", "pi-hashline-edit-lsz"), {
-					recursive: true,
-				});
-				await writeFile(
-					join(dir, ".config", "pi-hashline-edit-lsz", "config.json"),
-					JSON.stringify({ autoRead: false }),
-					"utf-8",
-				);
-				const { pi, handlers } = makeLifecyclePi();
-				await registerExtension(pi);
-				const sessionStart = handlers.get("session_start")!;
-				await sessionStart({}, { cwd: dir, ui: { notify: vi.fn() } });
-				expect((await readConfig()).autoRead).toBe(false);
-			});
-		} finally {
-			vi.unstubAllEnvs();
-		}
-	});
-
 	it("wipes served state at session start", async () => {
 		await withTempDir("lifecycle-served-", async (dir) => {
 			const { writeFile } = await import("fs/promises");
@@ -131,33 +105,6 @@ describe("session_start lifecycle", () => {
 
 			expect(getServed(store, keep)).toEqual([]);
 			expect(getSnapshot(store, keep, "keep\n")).toEqual(["abc"]);
-		});
-	});
-});
-
-describe("toggle-auto-read command", () => {
-	it("toggles the persisted config and notifies", async () => {
-		await withTempDir("lifecycle-toggle-", async (dir) => {
-			const { pi, handlers, commands, notify } = makeLifecyclePi();
-			await registerExtension(pi);
-			const sessionStart = handlers.get("session_start")!;
-			await sessionStart({}, { cwd: dir, ui: { notify } });
-
-			const command = commands.get("toggle-auto-read");
-			expect(command).toBeDefined();
-			await command!.handler([], { cwd: dir, ui: { notify } });
-			expect((await readConfig()).autoRead).toBe(false);
-			expect(notify).toHaveBeenCalledWith(
-				expect.stringContaining("disabled"),
-				"info",
-			);
-
-			await command!.handler([], { cwd: dir, ui: { notify } });
-			expect((await readConfig()).autoRead).toBe(true);
-			expect(notify).toHaveBeenCalledWith(
-				expect.stringContaining("enabled"),
-				"info",
-			);
 		});
 	});
 });

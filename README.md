@@ -121,27 +121,10 @@ Notes:
 
 ## Auto-read
 
-Enabled by default. After a successful `write` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so you get fresh `HASH│content` anchors without a separate `read` call.
+Always on. After a successful `write` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so you get fresh `HASH│content` anchors without a separate `read` call.
 
-- After `edit` and `undo_last_edit`, the result shows the post-edit diff. The `+HASH│` and `HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. Call `read` when you want the full file's anchors.
 - After `edit` and `undo_last_edit`, the result shows the post-edit diff. The `+HASH│` and `HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. The `-HASH│` rows show removed lines with their old hashes, so you can see exactly which anchors were deleted (those hashes are stale after the edit). Call `read` when you want the full file's anchors.
 - Auto-read keeps a 50KB display budget. Lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
-- Toggle at runtime with `/toggle-auto-read`; the setting persists across sessions.
-
-## Settings
-
-| Command | Description |
-| --- | --- |
-| `/toggle-auto-read` | Toggle automatic hashline anchors after write and post-edit diffs after edit and undo_last_edit operations. Persists across sessions. |
-
-Settings live in `~/.config/pi-hashline-edit-lsz/config.json`, created automatically when a setting is toggled. On non-Windows platforms, the config directory honors `XDG_CONFIG_HOME` when set (falling back to `~/.config`); on Windows it always uses `~/.config`:
-
-```json
-{
-  "autoRead": true
-}
-```
-
 ## How anchors work
 
 Each line is canonicalized (carriage returns stripped, trailing whitespace trimmed) and hashed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (xxHash32), then mapped to a 3-character string over `A-Za-z0-9`, which gives 62³ = 238,328 possible anchors. The canonicalization keeps anchors stable across editor-save cycles that add or remove trailing whitespace.
@@ -187,7 +170,7 @@ A no-op edit never changes the file, so anchors remain valid. On first run after
 - Reset the hash store. Anchors live in `~/.config/pi-hashline-edit-lsz/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit pi, delete those three files, and the store is rebuilt on the next session. Anchor history is lost, but no project files are touched.
 - Corrupt store. If the store fails its health check it is renamed to `hash-store.sqlite.corrupt-<timestamp>` and rebuilt automatically.
 - Config directory moved. On non-Windows platforms, if `XDG_CONFIG_HOME` is set, the config directory (and the hash store inside it) lives at `$XDG_CONFIG_HOME/pi-hashline-edit-lsz` instead of `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically. To keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) into the new directory before the first run.
-- Package renamed. This fork was renamed from `pi-hashline-edit-pro` to `pi-hashline-edit-lsz`; the config directory moved from `~/.config/pi-hashline-edit-pro` to `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically. To keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) and `config.json` into the new directory before the first run.
+- Package renamed. This fork was renamed from `pi-hashline-edit-pro` to `pi-hashline-edit-lsz`; the config directory moved from `~/.config/pi-hashline-edit-pro` to `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically. To keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) into the new directory before the first run.
 
 ## Development
 

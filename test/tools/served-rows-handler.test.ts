@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { mkdir, writeFile } from "fs/promises";
+import { writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { loadHashStore, getServed } from "../../src/hash-store";
@@ -183,78 +183,6 @@ describe("served-rows tool_result handler", () => {
 			const served = getServed(store, filePath);
 			expect(served).toEqual(overlay(undoResult.details.servedRows));
 			expect(served).toEqual(originalHashes);
-		});
-	});
-
-	it("records nothing when auto-read is disabled (non-serve)", async () => {
-		await withTempDir("served-off-", async (dir) => {
-			const configDir = join(dir, ".config", "pi-hashline-edit-lsz");
-			await mkdir(configDir, { recursive: true });
-			await writeFile(
-				join(configDir, "config.json"),
-				JSON.stringify({ autoRead: false }),
-				"utf-8",
-			);
-			const filePath = join(dir, "sample.txt");
-			await writeFile(filePath, "alpha\nbeta\ngamma\n", "utf-8");
-
-			const { pi, handlers, getTool } = makeFakePi();
-			register(pi);
-			const sessionHandler = handlers.get("session_start");
-			expect(sessionHandler).toBeDefined();
-			await sessionHandler!(
-				{},
-				{
-					getActiveTools: () => [],
-					setActiveTools: () => {},
-					ui: { notify() {} },
-				},
-			);
-
-			const readTool = getTool("read");
-			const editTool = getTool("edit");
-			const handler = handlers.get("tool_result");
-			expect(handler).toBeDefined();
-			const ctx = { cwd: dir };
-
-			await readTool.execute(
-				"r1",
-				{ path: "sample.txt" },
-				undefined,
-				undefined,
-				ctx,
-			);
-
-			const store = await loadHashStore();
-			const servedBefore = getServed(store, filePath);
-			expect(servedBefore.length).toBeGreaterThan(0);
-
-			const editResult = await editTool.execute(
-				"e1",
-				{
-					path: "sample.txt",
-					remove_from: servedBefore[1]!,
-					remove_to: servedBefore[1]!,
-					replacement_text: "BETA",
-				},
-				undefined,
-				undefined,
-				ctx,
-			);
-			expect(editResult.details.servedRows.length).toBeGreaterThan(0);
-
-			const result = await handler!(
-				{
-					toolName: "edit",
-					isError: false,
-					input: { path: "sample.txt" },
-					details: editResult.details,
-					content: editResult.content,
-				},
-				ctx,
-			);
-			expect(result).toBeUndefined();
-			expect(getServed(store, filePath)).toEqual(servedBefore);
 		});
 	});
 

@@ -7,11 +7,7 @@ import { regRead, fmtReadPreview } from "./src/read";
 import { finalizeResult, type RMetrics } from "./src/edit-response";
 import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
-import { readConfig, toggleAutoRead } from "./src/config";
-import {
-	loadHashStore,
-	pruneMissing,
-} from "./src/hash-store";
+import { loadHashStore, pruneMissing } from "./src/hash-store";
 import { recordServed, wipeServedState } from "./src/served-state";
 import type { ServedRow } from "./src/hashline/served";
 import { readNormFile } from "./src/file-reader";
@@ -26,8 +22,6 @@ export default function (pi: ExtensionAPI): void {
 	regEdit(pi);
 	regEditUndo(pi);
 
-	let autoRead = true;
-
 	pi.on("session_start", async (_event, ctx) => {
 		await initHasher();
 		try {
@@ -37,25 +31,10 @@ export default function (pi: ExtensionAPI): void {
 		} catch (err) {
 			console.error("Failed to load or prune hash store:", err);
 		}
-		const config = await readConfig();
-		autoRead = config.autoRead;
 		const debugValue = process.env.PI_HASHLINE_DEBUG;
 		if (debugValue === "1" || debugValue === "true") {
 			ctx.ui.notify(`Hashline Edit mode active`, "info");
 		}
-	});
-
-	pi.registerCommand("toggle-auto-read", {
-		description:
-			"Toggle automatic hashline anchors after write and post-edit diffs after edit and undo_last_edit operations",
-		handler: async (_args, ctx) => {
-			autoRead = await toggleAutoRead();
-			const state = autoRead ? "enabled" : "disabled";
-			ctx.ui.notify(
-				`Auto-read anchors (write) and post-edit diffs (edit/undo): ${state}`,
-				"info",
-			);
-		},
 	});
 
 	pi.on("tool_result", async (event, ctx) => {
@@ -70,7 +49,6 @@ export default function (pi: ExtensionAPI): void {
 					console.error("Failed to clear undo after write:", error);
 				}
 			}
-			if (!autoRead) return;
 			if (typeof writtenPath !== "string") return;
 			try {
 				const resolvedPath = await resolveTarget(toCwd(writtenPath, ctx.cwd));
@@ -117,7 +95,6 @@ export default function (pi: ExtensionAPI): void {
 
 		if (event.toolName !== "edit" && event.toolName !== "undo_last_edit")
 			return;
-		if (!autoRead) return;
 
 		const metrics = (event.details as { metrics?: RMetrics } | undefined)
 			?.metrics;
