@@ -1,7 +1,10 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
-import { recordEchoServes, ServedRejectionError } from "../../src/hashline/served";
+import {
+	recordEchoServes,
+	ServedRejectionError,
+} from "../../src/hashline/served";
 import { finalizeToolResult } from "../../src/edit-response";
 import { applyEdit, _lineHashesPure, type HEdit } from "../../src/hashline";
 import { loadServed } from "../../src/served-state";

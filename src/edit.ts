@@ -48,11 +48,8 @@ import {
 } from "./edit-render";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
-import {
-	loadHashStore,
-	findSnapshotPaths,
-	type HashStore,
-} from "./hash-store";
+import { type HashStore } from "./hash-store";
+import { findSnapshotPathsByHashes } from "./snapshot-store";
 import { loadServed } from "./served-state";
 import {
 	AnchorMismatchError,
@@ -96,7 +93,6 @@ export type EditParams = {
 	remove_to: string;
 	replacement_text: string;
 };
-
 
 interface PipelineResult {
 	path: string;
@@ -164,13 +160,12 @@ async function resolveMissingPath(
 			return undefined;
 		}
 	}
-	let store: HashStore;
+	let matches: string[];
 	try {
-		store = await loadHashStore();
+		matches = await findSnapshotPathsByHashes(hashes);
 	} catch {
 		return undefined;
 	}
-	const matches = findSnapshotPaths(store, hashes);
 	if (matches.length === 1) {
 		return {
 			path: matches[0]!,
@@ -247,7 +242,7 @@ export async function execPipeline(
 		editWarnings,
 	);
 
-	const hashStore = options?.store ?? (await loadHashStore());
+	const hashStore = options?.store;
 	const {
 		normalized: originalNormalized,
 		bom,

@@ -1,11 +1,12 @@
 import { existsSync } from "fs";
-import { readFile, rename, mkdir, stat } from "fs/promises";
+import { readFile, rename, mkdir } from "fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { hashStorePath, hashStoreDir, legacyHashStorePath } from "./paths";
 import { errCode, splitLines } from "./utils";
 import { initHasher, contentChecksum } from "./hashline/hasher";
-import { HASH_RE } from "./hashline/alphabet";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
+import { isValidSnapshot } from "./snapshot-store";
+
 type SqlParams = (string | number)[];
 
 interface Prepared {
@@ -28,34 +29,6 @@ interface Prepared {
 export interface HashStore {
 	readonly stmts: Prepared;
 	readonly engine: "node:sqlite";
-}
-
-export interface UndoRecord {
-	content: string;
-	bom: string;
-	ending: string;
-	hashes: string[];
-	resultContent: string;
-}
-
-interface LegacySnapshot {
-	content: string;
-	hashes: string[];
-}
-
-function isValidHashList(value: unknown): value is string[] {
-	if (!Array.isArray(value)) return false;
-	for (const hash of value) {
-		if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
-	}
-	return true;
-}
-
-function isValidSnapshot(value: unknown): value is LegacySnapshot {
-	if (typeof value !== "object" || value === null) return false;
-	const v = value as Record<string, unknown>;
-	if (typeof v.content !== "string") return false;
-	return isValidHashList(v.hashes);
 }
 
 export function isCorruptionError(error: unknown): boolean {
@@ -376,7 +349,7 @@ export function shutdownHashStore(): void {
 	}
 }
 
-function withStore(fn: () => void): void {
+export function withStore(fn: () => void): void {
 	if (cachedDb) {
 		withBusyRetry(() => {
 			cachedDb!.db.exec("BEGIN IMMEDIATE");
@@ -458,251 +431,29 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
 	}
 }
 
-export function getSnapshot(
-	store: HashStore,
-	path: string,
-	content: string,
-	deleteCorrupt = true,
-): string[] | undefined {
-	const checksum = contentChecksum(content);
-	const lineCount = splitLines(content).length;
-	const row = store.stmts.get(path, checksum, lineCount);
-	if (!row) return undefined;
-	try {
-		const parsed = JSON.parse(row.hashes as string);
-		if (isValidHashList(parsed)) return parsed;
-		if (deleteCorrupt) store.stmts.deleteOne(path);
-		return undefined;
-	} catch {
-		if (deleteCorrupt) store.stmts.deleteOne(path);
-		return undefined;
-	}
-}
-
-export function upsertSnapshot(
-	store: HashStore,
-	path: string,
-	checksum: string,
-	lineCount: number,
-	hashes: string[],
-): void {
-	store.stmts.upsert(
-		path,
-		checksum,
-		lineCount,
-		JSON.stringify(hashes),
-		Date.now(),
-	);
-}
-
-export function upsertUndo(
-	store: HashStore,
-	path: string,
-	entry: UndoRecord,
-): void {
-	store.stmts.undoUpsert(
-		path,
-		entry.content,
-		entry.bom,
-		entry.ending,
-		JSON.stringify(entry.hashes),
-		entry.resultContent,
-		Date.now(),
-	);
-}
-
-export function getUndoEntry(
-	store: HashStore,
-	path: string,
-): UndoRecord | undefined {
-	const row = store.stmts.undoGet(path);
-	if (!row) return undefined;
-	try {
-		const parsed = JSON.parse(row.hashes as string);
-		if (!isValidHashList(parsed)) {
-			store.stmts.undoDelete(path);
-			return undefined;
-		}
-		return {
-			content: row.content as string,
-			bom: row.bom as string,
-			ending: row.ending as string,
-			hashes: parsed as string[],
-			resultContent: row.result_content as string,
-		};
-	} catch {
-		store.stmts.undoDelete(path);
-		return undefined;
-	}
-}
-
-export function deleteUndo(store: HashStore, path: string): void {
-	store.stmts.undoDelete(path);
-}
-
-function isValidServedList(value: unknown): value is (string | null)[] {
-	if (!Array.isArray(value)) return false;
-	for (const entry of value) {
-		if (entry === null) continue;
-		if (typeof entry !== "string" || !HASH_RE.test(entry)) return false;
-	}
-	return true;
-}
-
-export function getServed(store: HashStore, path: string): (string | null)[] {
-	const row = store.stmts.servedGet(path);
-	if (!row) return [];
-	try {
-		const parsed = JSON.parse(row.hashes as string);
-		if (isValidServedList(parsed)) return parsed;
-		store.stmts.servedDelete(path);
-		return [];
-	} catch {
-		store.stmts.servedDelete(path);
-		return [];
-	}
-}
-
-export function upsertServed(
-	store: HashStore,
-	path: string,
-	entries: Array<{ position: number; hash: string | null }>,
-): void {
-	if (entries.length === 0) return;
-	withStore(() => {
-		const updated = getServed(store, path).slice();
-		for (const entry of entries) {
-			if (!Number.isInteger(entry.position) || entry.position < 0) {
-				throw new TypeError(`Invalid served position: ${entry.position}`);
-			}
-			if (
-				entry.hash !== null &&
-				(typeof entry.hash !== "string" || !HASH_RE.test(entry.hash))
-			) {
-				throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
-			}
-			while (updated.length <= entry.position) updated.push(null);
-			updated[entry.position] = entry.hash;
-		}
-		while (updated.length > 0 && updated[updated.length - 1] === null)
-			updated.pop();
-		store.stmts.servedUpsert(path, JSON.stringify(updated), Date.now());
-	});
-}
-
-export function recordServes(
-	store: HashStore,
-	path: string,
-	rows: Array<{ position: number; hash: string | null }>,
-): void {
-	if (rows.length === 0) return;
-	try {
-		upsertServed(store, path, rows);
-	} catch (error) {
-		console.error("Failed to record served rows:", error);
-	}
-}
-
-export function getReported(store: HashStore, path: string): Set<string> {
-	const row = store.stmts.servedGet(path);
-	if (!row) return new Set();
-	const raw = row.reported;
-	if (typeof raw !== "string" || raw.length === 0) return new Set();
-	try {
-		const parsed = JSON.parse(raw) as unknown;
-		if (!Array.isArray(parsed)) return new Set();
-		return new Set(
-			parsed.filter(
-				(h): h is string => typeof h === "string" && HASH_RE.test(h),
-			),
-		);
-	} catch {
-		return new Set();
-	}
-}
-
-export function addReported(
-	store: HashStore,
-	path: string,
-	hashes: string[],
-): void {
-	const valid = hashes.filter((hash) => HASH_RE.test(hash));
-	if (valid.length === 0) return;
-	withStore(() => {
-		const current = getReported(store, path);
-		for (const hash of valid) current.add(hash);
-		store.stmts.servedReportedUpsert(
-			path,
-			JSON.stringify([...current]),
-			Date.now(),
-		);
-	});
-}
-
-export function clearReported(store: HashStore, path: string): void {
-	withStore(() => {
-		store.stmts.servedReportedClear(Date.now(), path);
-	});
-}
-
-export function deleteServed(store: HashStore, path: string): void {
-	store.stmts.servedDelete(path);
-}
-
-export function wipeServed(store: HashStore): void {
-	store.stmts.servedWipe();
-}
-
-const STAT_BATCH = 64;
-
-async function statMissing(rows: { path: string }[]): Promise<string[]> {
-	const missing: string[] = [];
-	for (let i = 0; i < rows.length; i += STAT_BATCH) {
-		const batch = rows.slice(i, i + STAT_BATCH);
-		const results = await Promise.all(
-			batch.map(async (row) => {
-				try {
-					await stat(row.path);
-					return undefined;
-				} catch {
-					return row.path;
-				}
-			}),
-		);
-		for (const path of results) {
-			if (path !== undefined) missing.push(path);
-		}
-	}
-	return missing;
-}
-
-export async function pruneMissing(store: HashStore): Promise<void> {
-	const rows = store.stmts.allPaths() as { path: string }[];
-	const missing = await statMissing(rows);
-	if (missing.length === 0) return;
-	withStore(() => {
-		for (const path of missing) {
-			store.stmts.deleteOne(path);
-			store.stmts.undoDelete(path);
-			store.stmts.servedDelete(path);
-		}
-	});
-}
-
-export function findSnapshotPaths(
-	store: HashStore,
-	hashes: string[],
-): string[] {
-	const rows = store.stmts.allHashes() as { path: string; hashes: string }[];
-	const matches: string[] = [];
-	for (const row of rows) {
-		try {
-			const parsed = JSON.parse(row.hashes) as unknown;
-			if (!isValidHashList(parsed)) continue;
-			if (hashes.every((h) => parsed.includes(h))) matches.push(row.path);
-		} catch {
-			continue;
-		}
-	}
-	return matches;
-}
+export {
+	getSnapshot,
+	upsertSnapshot,
+	findSnapshotPaths,
+	pruneMissing,
+	isValidHashList,
+	isValidSnapshot,
+} from "./snapshot-store";
+export type { LegacySnapshot } from "./snapshot-store";
+export {
+	getServed,
+	upsertServed,
+	recordServes,
+	getReported,
+	addReported,
+	clearReported,
+	deleteServed,
+	wipeServed,
+} from "./served-store";
+export type { ServedEntry } from "./served-store";
+export {
+	upsertUndo,
+	getUndoEntry,
+	deleteUndo,
+} from "./undo-store";
+export type { UndoRecord } from "./undo-store";

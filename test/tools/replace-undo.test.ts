@@ -7,7 +7,7 @@ import {
 	getSnapshot,
 	shutdownHashStore,
 } from "../../src/hash-store";
-import * as hashStoreModule from "../../src/hash-store";
+import * as undoStoreModule from "../../src/undo-store";
 import * as fsWriteModule from "../../src/fs-write";
 import * as editUndoModule from "../../src/edit-undo";
 import {
@@ -449,7 +449,7 @@ describe("undo_last_edit", () => {
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
 			const spy = vi
-				.spyOn(hashStoreModule, "upsertUndo")
+				.spyOn(undoStoreModule, "writeUndo")
 				.mockImplementation(() => {
 					throw new Error("store down");
 				});

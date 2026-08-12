@@ -3,9 +3,8 @@ import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
+import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import {
-	loadHashStore,
-	shutdownHashStore,
 	getServed,
 	upsertServed,
 	getReported,
@@ -13,12 +12,13 @@ import {
 	clearReported,
 	deleteServed,
 	wipeServed,
+} from "../../src/served-store";
+import {
 	pruneMissing,
 	upsertSnapshot,
 	getSnapshot,
-	upsertUndo,
-	getUndoEntry,
-} from "../../src/hash-store";
+} from "../../src/snapshot-store";
+import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION } from "../../src/constants";
 import { initHasher, contentChecksum } from "../../src/hashline/hasher";
 import { getWritableTempRoot } from "../support/fixtures";

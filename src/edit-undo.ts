@@ -2,14 +2,8 @@ import { readFile } from "fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import {
-	loadHashStore,
-	upsertSnapshot,
-	upsertUndo,
-	getUndoEntry,
-	deleteUndo,
-	type UndoRecord,
-} from "./hash-store";
+import { readUndo, writeUndo, removeUndo, type UndoRecord } from "./undo-store";
+import { upsertSnapshotFor } from "./snapshot-store";
 import { contentChecksum } from "./hashline/hasher";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { toCwd } from "./paths";
@@ -44,9 +38,8 @@ export async function saveUndo(
 ): Promise<{ persisted: boolean; restore: () => Promise<void> }> {
 	let previous: UndoRecord | undefined;
 	try {
-		const store = await loadHashStore();
-		previous = getUndoEntry(store, path);
-		upsertUndo(store, path, {
+		previous = await readUndo(path);
+		await writeUndo(path, {
 			content: entry.content,
 			bom: entry.bom,
 			ending: entry.originalEnding,
@@ -61,9 +54,8 @@ export async function saveUndo(
 		persisted: true,
 		restore: async () => {
 			try {
-				const store = await loadHashStore();
-				if (previous) upsertUndo(store, path, previous);
-				else deleteUndo(store, path);
+				if (previous) await writeUndo(path, previous);
+				else await removeUndo(path);
 			} catch (error) {
 				console.error("Failed to restore previous undo entry:", error);
 			}
@@ -73,8 +65,7 @@ export async function saveUndo(
 
 export async function getUndo(path: string): Promise<UndoEntry | undefined> {
 	try {
-		const store = await loadHashStore();
-		const record = getUndoEntry(store, path);
+		const record = await readUndo(path);
 		if (!record) return undefined;
 		const originalEnding = record.ending;
 		if (
@@ -82,7 +73,7 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
 			originalEnding !== "\n" &&
 			originalEnding !== "\r"
 		) {
-			await deleteUndo(store, path);
+			await removeUndo(path);
 			return undefined;
 		}
 		return {
@@ -100,8 +91,7 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
 
 export async function clearUndo(path: string): Promise<void> {
 	try {
-		const store = await loadHashStore();
-		deleteUndo(store, path);
+		await removeUndo(path);
 	} catch (error) {
 		console.error("Failed to clear undo entry:", error);
 	}
@@ -214,9 +204,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
 				);
 
 				try {
-					const store = await loadHashStore();
-					upsertSnapshot(
-						store,
+					await upsertSnapshotFor(
 						mutationTargetPath,
 						contentChecksum(undo.content),
 						splitLines(undo.content).length,

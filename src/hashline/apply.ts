@@ -288,7 +288,8 @@ function resolvedRange(resolved: RHEdit): ResolvedRange {
 		endLine: end.line,
 		startHash: start.hash,
 		endHash: end.hash,
-		delta: resolved.content_lines.length - (Math.abs(end.line - start.line) + 1),
+		delta:
+			resolved.content_lines.length - (Math.abs(end.line - start.line) + 1),
 	};
 }
 
