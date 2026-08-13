@@ -49,26 +49,35 @@ import {
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
 import { type HashStore } from "./hash-store";
+import {
+	NOOP_LOOP_THRESHOLD,
+	clearNoopLoop,
+	noopPayloadKey,
+	trackNoopPayload,
+} from "./noop-guard";
 import { findSnapshotPathsByHashes } from "./snapshot-store";
 import { loadServed, sessionKeyFor } from "./served-state";
 import {
 	AnchorMismatchError,
 	ServedRejectionError,
+	buildRangeEcho,
+	fmtServedRows,
 	recordEchoServes,
 	type ServeRecordPolicy,
+	type ResolvedRange,
 } from "./hashline/served";
 
-const replacementTextSchema = Type.String({
+export const replacementTextSchema = Type.String({
 	description:
 		'Replacement text as a single string with \\n line separators; every \\n separates lines, so a trailing \\n adds a final empty line. Mirror the removed lines exactly, blank lines included. A replacement that is only blank lines is written as one \\n per blank line. Use "" to delete the range.',
 });
 
-const removeFromSchema = Type.String({
+export const removeFromSchema = Type.String({
 	description:
 		'Bare 3-char HASH only (e.g. "aB3") — copy just the hash from the leftmost column of a read row like `aB3│content`; never the line content. Marks the FIRST line to remove (inclusive)',
 });
 
-const removeToSchema = Type.String({
+export const removeToSchema = Type.String({
 	description:
 		'Bare 3-char HASH only (e.g. "aB3") — copy just the hash from the leftmost column of a read row like `aB3│content`; never the line content. Marks the LAST line to remove (inclusive)',
 });
@@ -110,6 +119,7 @@ interface PipelineResult {
 	totalAddedLines: number;
 	totalRemovedLines: number;
 	driftNotice?: string;
+	range: ResolvedRange;
 }
 
 const PREVIEW_DEBOUNCE_MS = 150;
@@ -145,7 +155,7 @@ export function assertReq(request: unknown): asserts request is EditParams {
 	}
 }
 
-async function resolveMissingPath(
+export async function resolveMissingPath(
 	request: Record<string, unknown>,
 ): Promise<{ path: string; warning: string } | undefined> {
 	if (typeof request.path === "string") return undefined;
@@ -188,7 +198,7 @@ export interface ExecPipelineOptions {
 	sessionKey?: string;
 }
 
-function collectRemovedHashes(
+export function collectRemovedHashes(
 	edit: HEdit,
 	originalHashes: string[],
 ): Set<string> {
@@ -207,7 +217,7 @@ function collectRemovedHashes(
 	return removedHashes;
 }
 
-function countLineChanges(
+export function countLineChanges(
 	edit: HEdit,
 	originalHashes: string[],
 	isNoop: boolean,
@@ -279,7 +289,12 @@ export async function execPipeline(
 			error instanceof AnchorMismatchError ||
 			error instanceof ServedRejectionError
 		) {
-			await recordEchoServes(sessionKey, absolutePath, error.servedRows, policy);
+			await recordEchoServes(
+				sessionKey,
+				absolutePath,
+				error.servedRows,
+				policy,
+			);
 		}
 		throw error;
 	}
@@ -343,6 +358,7 @@ export async function execPipeline(
 		totalAddedLines,
 		totalRemovedLines,
 		driftNotice,
+		range: anchorResult.range,
 	};
 }
 
@@ -539,6 +555,7 @@ export function buildToolDef(): ToolDef {
 			const path = normalizedParams.path;
 			const absolutePath = toCwd(path, ctx.cwd);
 			const mutationTargetPath = await resolveTarget(absolutePath);
+			const sessionKey = sessionKeyFor(ctx);
 			return withFileMutationQueue(mutationTargetPath, async () => {
 				abortIf(signal);
 
@@ -557,10 +574,11 @@ export function buildToolDef(): ToolDef {
 					totalAddedLines,
 					totalRemovedLines,
 					driftNotice,
+					range,
 				} = await execPipeline(normalizedParams, ctx.cwd, {
 					accessMode: constants.R_OK | constants.W_OK,
 					signal,
-					sessionKey: sessionKeyFor(ctx),
+					sessionKey,
 				});
 
 				if (resolution) {
@@ -569,6 +587,36 @@ export function buildToolDef(): ToolDef {
 
 				const editsAttempted = 1;
 				if (originalNormalized === result) {
+					const payload = noopPayloadKey(
+						absolutePath,
+						canonical.remove_from,
+						canonical.remove_to,
+						canonical.replacement_text,
+					);
+					const count = trackNoopPayload(absolutePath, payload);
+
+					if (count >= NOOP_LOOP_THRESHOLD) {
+						const echoRows = buildRangeEcho(
+							range.startLine,
+							range.endLine,
+							originalHashes,
+						);
+						const echo = fmtServedRows(
+							echoRows,
+							splitLines(originalNormalized),
+						);
+						await recordEchoServes(sessionKey, absolutePath, echoRows, "live");
+						throw new Error(
+							`[E_NOOP_LOOP] This exact edit (anchors ${canonical.remove_from} to ${canonical.remove_to} in ${path}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend this edit; it will never change the file. Current range:\n${echo}`,
+						);
+					}
+
+					if (count === 2) {
+						warnings.push(
+							`[E_NOOP_LOOP] Notice: this exact edit (anchors ${canonical.remove_from} to ${canonical.remove_to} in ${path}) has produced no changes twice in a row. The range already contains the replacement text; resending it again will be rejected.`,
+						);
+					}
+
 					let noopSnapshotId: string | undefined;
 					try {
 						noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
@@ -589,6 +637,8 @@ export function buildToolDef(): ToolDef {
 						driftNotice,
 					});
 				}
+
+				clearNoopLoop(absolutePath);
 
 				if (hadUtf8DecodeErrors) {
 					warnings.push(

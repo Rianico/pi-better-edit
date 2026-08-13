@@ -3,6 +3,7 @@ import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { initHasher } from "./src/hashline";
 import { regEdit } from "./src/edit";
 import { regEditUndo, clearUndo } from "./src/edit-undo";
+import { regBatchEdit } from "./src/batch-edit";
 import { regRead, fmtReadPreview } from "./src/read";
 import { finalizeToolResult, type EditDetails } from "./src/edit-response";
 import { MAX_HASH_LINES } from "./src/hashline";
@@ -19,6 +20,7 @@ export default function (pi: ExtensionAPI): void {
 	regRead(pi);
 
 	regEdit(pi);
+	regBatchEdit(pi);
 	regEditUndo(pi);
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -88,6 +90,28 @@ export default function (pi: ExtensionAPI): void {
 					],
 				};
 			}
+		}
+
+		if (event.toolName === "batch_edit") {
+			const batchDetails = event.details as EditDetails | undefined;
+			if (batchDetails?.metrics?.classification === "noop") return;
+			if (!batchDetails?.diff) return;
+			const { content } = finalizeToolResult(batchDetails);
+			if (batchDetails.servedByPath && batchDetails.servedByPath.length > 0) {
+				for (const entry of batchDetails.servedByPath) {
+					if (entry.servedRows.length === 0) continue;
+					try {
+						const resolvedPath = await resolveTarget(toCwd(entry.path, ctx.cwd));
+						await recordServed(sessionKeyFor(ctx), resolvedPath, entry.servedRows);
+					} catch (error) {
+						console.error(
+							"Failed to record served rows from batch_edit diff:",
+							error,
+						);
+					}
+				}
+			}
+			return { content };
 		}
 
 		if (event.toolName !== "edit" && event.toolName !== "undo_last_edit")

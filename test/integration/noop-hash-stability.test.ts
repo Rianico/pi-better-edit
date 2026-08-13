@@ -69,7 +69,7 @@ describe("noop edit hash stability", () => {
 			);
 			const hashBefore = hashOf(r1, "bbb");
 
-			for (let i = 0; i < 3; i++) {
+			for (let i = 0; i < 2; i++) {
 				await editTool.execute(
 					`e${i}`,
 					{

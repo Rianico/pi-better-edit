@@ -107,7 +107,20 @@ Notes:
 - Common copy-paste slips are fixed automatically and reported: a leftover `HASH│` prefix in `replacement_text` or `remove_from`/`remove_to`, diff-preview rows pasted into the replacement, a reversed range, or a boundary line pasted twice. New lines that re-include a block adjacent to the range are stripped automatically when that block is unique in the file — the whole run is stripped as one unit (including repeated structural lines like `}`), so re-including an unchanged block next to the range never duplicates it. A missing `path` is resolved from the anchors when they uniquely identify a file in the hash store (reported as a warning); when the anchors match multiple known files the request is rejected with the candidate paths named. `file_path` works as an alias for `path` in all three tools.
 - An edit that produces identical content reports `No changes made` and leaves the anchors alone.
 - After a successful edit you get the post-edit diff with fresh anchors, so you can keep editing without re-reading.
-- Do not issue multiple edit calls on the same file in one message; parallel edits split attention across the post-edit diffs and removed lines are easy to miss. Verify each diff before the next edit on that file.
+- Do not issue multiple edit calls on the same file in one message; use `batch_edit` instead — it validates every edit before writing anything and returns one combined diff per file.
+
+## The batch_edit tool
+
+`batch_edit` applies several edits in one atomic call. Each item has the same shape as `edit` (`path`, `remove_from`, `remove_to`, `replacement_text`; `path` is optional per item and resolved from the anchors when they uniquely identify a file). Items are applied in order; edits to the same file are applied as one in-memory chain, so disjoint ranges compose while overlapping ranges fail closed.
+
+The batch is **all-or-nothing**:
+
+- **Preflight / application**: every item is resolved and its served-state span is verified before anything is written. If any item fails — stale or ambiguous anchor, `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]`, or a range that changed because of an earlier item in the batch — the whole batch is rejected with `[E_BATCH_ABORT]` and **no file changes**. The failing item's current range is echoed as fresh `HASH│content` rows (recorded as serves), so the retry needs no `read`.
+- **Writes**: each touched file is written exactly once (original BOM and line endings preserved), after an undo record for every touched file is persisted. If a write fails, already-written files are restored from their undo records. `undo_last_edit` on any touched file reverts the batch's effect on that file.
+- **Noops**: an item whose range already contains the replacement is reported without failing the batch; an all-noop batch reports "No changes made". The noop-loop guard applies per payload per file.
+- **Result**: one combined diff per file with fresh anchors, aggregated warnings, and per-file drift notices. All diff rows count as serves, so follow-up `edit` calls anchor on the diff without re-reading.
+
+`batch_edit` accepts 1–32 items (`[E_BAD_SHAPE]` otherwise). Malformed envelopes are rejected before any file I/O.
 
 ## Undo
 
@@ -164,6 +177,8 @@ A no-op edit never changes the file, so anchors remain valid. On first run after
 | `[E_RANGE_STALE]` | A line inside the resolved edit range changed on disk since it was served (read output, diff, or rejection feedback). The edit is refused and the current range is echoed as fresh `HASH│content` rows; retry with those rows (no `read` needed). |
 | `[E_RANGE_UNSERVED]` | A line inside the resolved edit range was never served to the model (paged reads, truncated output). The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_RANGE_UNVERIFIED]` | A boundary anchor (`remove_from`/`remove_to`) has no served position or was served at multiple positions, so the range cannot be verified against served state. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
+| `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
+| `[E_BATCH_ABORT]` | `batch_edit` rejected the whole batch: the named item failed validation or served-state verification. Nothing was written anywhere; the failing item's current range is echoed as fresh `HASH│content` rows. |
 
 ## Troubleshooting
 

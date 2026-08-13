@@ -199,6 +199,11 @@ describe("drift notices for changed served territory outside the edit range", ()
 						.split("\n")
 						.find((l) => l.includes("│alpha"))!,
 				);
+				const gammaRef = extractHash(
+					getText(firstRead)
+						.split("\n")
+						.find((l) => l.includes("│gamma"))!,
+				);
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
 				await editTool.execute(
@@ -242,9 +247,9 @@ describe("drift notices for changed served territory outside the edit range", ()
 					"e3",
 					{
 						path: "sample.ts",
-						remove_from: alphaRef,
-						remove_to: alphaRef,
-						replacement_text: "alpha",
+						remove_from: gammaRef,
+						remove_to: gammaRef,
+						replacement_text: "gamma",
 					},
 					undefined,
 					undefined,
