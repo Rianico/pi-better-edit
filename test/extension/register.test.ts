@@ -17,7 +17,7 @@ describe("extension registration", () => {
 
 		register(pi);
 
-		expect(toolNames.sort()).toEqual(["batch_edit", "edit", "read", "undo_last_edit"]);
+		expect(toolNames.sort()).toEqual(["batch_edit", "edit", "read", "read_skill", "undo_last_edit"]);
 
 		expect(eventNames).toEqual(["session_start", "tool_result"]);
 	});
@@ -32,5 +32,14 @@ describe("tool prompt file references", () => {
 		expect(source).toContain("../prompts/edit.md");
 		expect(source).toContain("../prompts/edit-snippet.md");
 		expect(source).toContain("../prompts/edit-guidelines.md");
+	});
+
+	it("read-skill.ts loads the read-skill prompts", () => {
+		const source = readFileSync(
+			new URL("../../src/read-skill.ts", import.meta.url),
+			"utf-8",
+		);
+		expect(source).toContain("../prompts/read-skill.md");
+		expect(source).toContain("../prompts/read-skill-snippet.md");
 	});
 });

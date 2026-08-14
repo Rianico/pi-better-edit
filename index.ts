@@ -5,6 +5,7 @@ import { regEdit } from "./src/edit";
 import { regEditUndo, clearUndo } from "./src/edit-undo";
 import { regBatchEdit } from "./src/batch-edit";
 import { regRead, fmtReadPreview } from "./src/read";
+import { regReadSkill } from "./src/read-skill";
 import { finalizeToolResult, type EditDetails } from "./src/edit-response";
 import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
@@ -18,6 +19,7 @@ import { valAccess } from "./src/validation";
 
 export default function (pi: ExtensionAPI): void {
 	regRead(pi);
+	regReadSkill(pi);
 
 	regEdit(pi);
 	regBatchEdit(pi);

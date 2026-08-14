@@ -22,6 +22,7 @@ Inspired by [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by R
 - **Fresh anchors, automatically.** After every `write` you get the new anchors. After every `edit` you get the diff with the new hashes.
 - **Undo when you need it.** The last edit on a file can be reverted, even after a restart.
 - **Safe writes.** Permissions, line endings, BOMs, symlinks, and hard links survive every edit.
+- **Plain skill reads.** `read_skill` returns skill content as plain text — no hash noise when the model loads a skill to invoke it.
 
 ## Quick start
 
@@ -60,7 +61,7 @@ pi install /path/to/pi-hashline-edit-lsz
 
 ## The read tool
 
-`read` returns a text file with every line prefixed by `HASH│content`. The hash is 3 characters from `A-Za-z0-9` (for example `aB3`).
+`read` returns a text file with every line prefixed by `HASH│content`. The hash is 3 characters from `A-Za-z0-9` (for example `aB3`). To load skill content as plain text, use `read_skill` instead.
 
 | Parameter | Description |
 | --- | --- |
@@ -79,6 +80,15 @@ Edge cases:
 - Empty files come back as a single empty-line hash (`HASH│`); use `edit` on that hash to insert content.
 - BOMs are stripped for display. Non-UTF-8 bytes are shown as `U+FFFD`; editing such a file rewrites it as UTF-8, with a warning.
 - Files over 238,328 lines are rejected with `[E_FILE_TOO_LARGE]`.
+
+## The read_skill tool
+
+`read_skill` returns a file's content as plain text — no `HASH│` prefixes, no served state. Use it to load skill content (SKILL.md or any file in its directory) for invocation and reference; the content is for consumption, not editing.
+
+- It accepts any path — it is not restricted to registered skills.
+- Images come back as visual attachments; binary files and directories are rejected, same as `read`.
+- It records no served rows; editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit — use `read` for files you may edit.
+- The tool's name encodes the intent: `read` → hashed anchors (editable), `read_skill` → plain text (consumable).
 
 ## The edit tool
 

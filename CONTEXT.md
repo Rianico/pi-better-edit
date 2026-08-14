@@ -54,3 +54,15 @@ _Avoid_: modification, external change (the tool cannot know the source)
 **drift notice**:
 The informational section appended to a replace result (applied or noop, not undo) when drift lies in served territory outside the replacement range: the current content of the drifted lines, capped, with rows counting as serves. Fires once per drift episode — already-reported drift shrinks to a one-line pointer until a read re-serves the lines.
 _Avoid_: warning (the operation succeeded; it is information, not a warning)
+
+**read_skill**:
+To read a file's content as plain text — no hash prefixes, no served rows. The model's tool for loading skill content (SKILL.md or any file in its directory) to invoke and consume; `read` remains the hashed read for edit targets.
+_Avoid_: plain read, skill tool
+
+**reference read**:
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read_skill` is the only reference read.
+_Avoid_: unmanaged read
+
+**tool-name-as-intent**:
+The principle that a tool's name encodes the model's intent — `read` (hashed, editable) vs `read_skill` (plain, consumable) — so the model always knows what it's getting.
+_Avoid_: —
