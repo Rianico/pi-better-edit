@@ -113,4 +113,20 @@ describe("read_skill tool", () => {
 			).rejects.toThrow("E_NOT_FOUND");
 		});
 	});
+
+	it("borrows the builtin read's TUI renderers so output is collapsible", () => {
+		const { pi, getTool } = makeFakePiRegistry();
+		register(pi);
+		const tool = getTool("read_skill");
+		const theme = {
+			fg: (_name: string, text: string) => text,
+			bold: (text: string) => text,
+		};
+		const result = { content: [{ type: "text", text: "alpha\nbeta" }], isError: false };
+		const baseContext = { args: { path: "notes.txt" }, cwd: "/tmp", showImages: true, isError: false };
+		const collapsed = tool.renderResult(result, { expanded: false }, theme, baseContext);
+		const expanded = tool.renderResult(result, { expanded: true }, theme, baseContext);
+		expect(collapsed.render(80)).toEqual([]);
+		expect(expanded.render(80).join("\n")).toContain("alpha");
+	});
 });

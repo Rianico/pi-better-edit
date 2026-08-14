@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createReadTool } from "@earendil-works/pi-coding-agent";
+import { createReadTool, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { toCwd } from "./paths";
 import { abortIf, isRec, normalizeFilePath } from "./utils";
@@ -11,11 +11,16 @@ const RS_DESC = loadP("../prompts/read-skill.md");
 const RS_SNIPPET = loadP("../prompts/read-skill-snippet.md");
 
 export function regReadSkill(pi: ExtensionAPI): void {
+	const builtinReadDef = createReadToolDefinition("");
+	const builtinRenderCall = builtinReadDef.renderCall as any;
+	const builtinRenderResult = builtinReadDef.renderResult as any;
 	pi.registerTool({
 		name: "read_skill",
 		label: "Read skill",
 		description: RS_DESC,
 		promptSnippet: RS_SNIPPET,
+		renderCall: builtinRenderCall,
+		renderResult: builtinRenderResult,
 		prepareArguments: (args: unknown) => {
 			if (!isRec(args)) return args as any;
 			const record = { ...args };
