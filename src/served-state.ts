@@ -2,6 +2,7 @@ export {
 	type ServedEntry,
 	loadServed,
 	recordServed,
+	recordServedTruncated,
 	driftReported,
 	markDriftReported,
 	clearDriftReported,

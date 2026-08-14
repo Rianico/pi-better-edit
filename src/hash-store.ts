@@ -472,6 +472,7 @@ export {
 	getServed,
 	upsertServed,
 	recordServes,
+	recordServesTruncated,
 	getReported,
 	addReported,
 	clearReported,

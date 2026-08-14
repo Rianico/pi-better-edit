@@ -7,6 +7,8 @@ import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import {
 	getServed,
 	upsertServed,
+	recordServesTruncated,
+	recordServedTruncated,
 	getReported,
 	addReported,
 	clearReported,
@@ -578,6 +580,135 @@ describe("hash-store — served TTL sweep (issue #17)", () => {
 			const reloaded = await loadHashStore();
 			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
 			expect(getServed(reloaded, "sessionB", "/p.ts")).toEqual(["def"]);
+		});
+	});
+});
+
+describe("hash-store — recordServesTruncated", () => {
+	it("truncates the served array to the line count, dropping stale tail positions", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			upsertServed(store, "sessionA", "/p.ts", [
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+				{ position: 2, hash: "ccc" },
+				{ position: 3, hash: "bbb" },
+				{ position: 4, hash: "ddd" },
+				{ position: 5, hash: "eee" },
+				{ position: 6, hash: "bbb" },
+				{ position: 7, hash: "fff" },
+			]);
+			recordServesTruncated(
+				store,
+				"sessionA",
+				"/p.ts",
+				[
+					{ position: 0, hash: "bbb" },
+					{ position: 1, hash: "ddd" },
+					{ position: 2, hash: "eee" },
+					{ position: 3, hash: "bbb" },
+					{ position: 4, hash: "fff" },
+				],
+				5,
+				0,
+			);
+			expect(getServed(store, "sessionA", "/p.ts")).toEqual([
+				"bbb",
+				"ddd",
+				"eee",
+				"bbb",
+				"fff",
+			]);
+		});
+	});
+
+	it("clears positions at/after the first changed line but keeps the unchanged prefix", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			upsertServed(store, "sessionA", "/p.ts", [
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+				{ position: 2, hash: "ccc" },
+				{ position: 3, hash: "ddd" },
+				{ position: 4, hash: "eee" },
+			]);
+			recordServesTruncated(
+				store,
+				"sessionA",
+				"/p.ts",
+				[
+					{ position: 0, hash: "aaa" },
+					{ position: 1, hash: "BET" },
+					{ position: 2, hash: "ccc" },
+				],
+				3,
+				1,
+			);
+			expect(getServed(store, "sessionA", "/p.ts")).toEqual([
+				"aaa",
+				"BET",
+				"ccc",
+			]);
+		});
+	});
+
+	it("truncates without clearing when clearFrom is omitted", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			upsertServed(store, "sessionA", "/p.ts", [
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+				{ position: 2, hash: "ccc" },
+				{ position: 3, hash: "ddd" },
+				{ position: 4, hash: "eee" },
+			]);
+			recordServesTruncated(
+				store,
+				"sessionA",
+				"/p.ts",
+				[{ position: 0, hash: "xxx" }],
+				3,
+			);
+			expect(getServed(store, "sessionA", "/p.ts")).toEqual([
+				"xxx",
+				"bbb",
+				"ccc",
+			]);
+		});
+	});
+
+	it("ignores an empty rows batch and leaves the served array untouched", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			upsertServed(store, "sessionA", "/p.ts", [
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+			]);
+			recordServesTruncated(store, "sessionA", "/p.ts", [], 1);
+			expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaa", "bbb"]);
+		});
+	});
+
+	it("records through the async sibling recordServedTruncated", async () => {
+		await withTempHome(async () => {
+			const store = await loadHashStore();
+			upsertServed(store, "sessionA", "/p.ts", [
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+				{ position: 2, hash: "ccc" },
+				{ position: 3, hash: "ddd" },
+			]);
+			await recordServedTruncated(
+				"sessionA",
+				"/p.ts",
+				[
+					{ position: 0, hash: "aaa" },
+					{ position: 1, hash: "bbb" },
+				],
+				2,
+				0,
+			);
+			expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaa", "bbb"]);
 		});
 	});
 });

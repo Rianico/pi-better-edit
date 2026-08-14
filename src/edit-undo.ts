@@ -16,6 +16,7 @@ import {
 } from "./edit-diff";
 import {
 	cntDiff,
+	visLines,
 	splitLines,
 	errCode,
 	isRec,
@@ -231,6 +232,8 @@ export function regEditUndo(pi: ExtensionAPI): void {
 
 				const details: EditDetails = {
 					diff: undoDiff,
+					firstChangedLine: restoredRange?.firstChangedLine,
+					resultLineCount: visLines(undo.content).length,
 					servedRows: undoDiffResult.servedRows,
 					metrics: buildMetrics({
 						classification: "applied",

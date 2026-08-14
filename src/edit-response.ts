@@ -5,11 +5,17 @@ import { visLines, clipLine } from "./utils";
 export type EditDetails = {
 	diff: string;
 	firstChangedLine?: number;
+	resultLineCount?: number;
 	snapshotId?: string;
 	classification?: "noop";
 	metrics?: RMetrics;
 	servedRows?: ServedRow[];
-	servedByPath?: Array<{ path: string; servedRows: ServedRow[] }>;
+	servedByPath?: Array<{
+		path: string;
+		servedRows: ServedRow[];
+		resultLineCount?: number;
+		firstChangedLine?: number;
+	}>;
 	warnings?: string[];
 	driftNotice?: string;
 };
@@ -210,6 +216,7 @@ export function buildChanged(input: SuccessInput): TResult {
 			diff: diffResult.diff,
 			firstChangedLine:
 				editMeta.firstChangedLine ?? diffResult.firstChangedLine,
+			resultLineCount: resultLines.length,
 			snapshotId,
 			metrics,
 			...(warnings !== undefined && warnings.length > 0 ? { warnings } : {}),
@@ -271,7 +278,12 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
 		};
 	}
 
-	const servedByPath: Array<{ path: string; servedRows: ServedRow[] }> = [];
+	const servedByPath: Array<{
+		path: string;
+		servedRows: ServedRow[];
+		resultLineCount?: number;
+		firstChangedLine?: number;
+	}> = [];
 	const diffParts: string[] = [];
 	for (const s of appliedFiles) {
 		const diffResult = genDiff(
@@ -283,7 +295,12 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
 		);
 		diffParts.push(`--- ${s.path} ---\n${diffResult.diff}`);
 		if (diffResult.servedRows.length > 0) {
-			servedByPath.push({ path: s.path, servedRows: diffResult.servedRows });
+			servedByPath.push({
+				path: s.path,
+				servedRows: diffResult.servedRows,
+				resultLineCount: visLines(s.result).length,
+				firstChangedLine: diffResult.firstChangedLine,
+			});
 		}
 	}
 	const diff = diffParts.join("\n\n");

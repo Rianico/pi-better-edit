@@ -10,12 +10,13 @@ import { finalizeToolResult, type EditDetails } from "./src/edit-response";
 import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
 import { pruneMissingAll } from "./src/snapshot-store";
-import { recordServed, sessionKeyFor } from "./src/served-state";
+import { recordServed, recordServedTruncated, sessionKeyFor } from "./src/served-state";
 import { readNormFile } from "./src/file-reader";
 import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
 import { resolveTarget } from "./src/fs-write";
 import { valAccess } from "./src/validation";
+import { visLines } from "./src/utils";
 
 export default function (pi: ExtensionAPI): void {
 	regRead(pi);
@@ -72,7 +73,12 @@ export default function (pi: ExtensionAPI): void {
 					DEFAULT_MAX_BYTES,
 					AUTO_READ_MAX,
 				);
-				await recordServed(sessionKeyFor(ctx), absolutePath, preview.served);
+				await recordServedTruncated(
+					sessionKeyFor(ctx),
+					absolutePath,
+					preview.served,
+					visLines(normalized).length,
+				);
 				return {
 					content: [
 						...(event.content ?? []),
@@ -104,7 +110,21 @@ export default function (pi: ExtensionAPI): void {
 					if (entry.servedRows.length === 0) continue;
 					try {
 						const resolvedPath = await resolveTarget(toCwd(entry.path, ctx.cwd));
-						await recordServed(sessionKeyFor(ctx), resolvedPath, entry.servedRows);
+						if (typeof entry.resultLineCount === "number") {
+							const clearFrom =
+								entry.firstChangedLine !== undefined
+									? entry.firstChangedLine - 1
+									: 0;
+							await recordServedTruncated(
+								sessionKeyFor(ctx),
+								resolvedPath,
+								entry.servedRows,
+								entry.resultLineCount,
+								clearFrom,
+							);
+						} else {
+							await recordServed(sessionKeyFor(ctx), resolvedPath, entry.servedRows);
+						}
 					} catch (error) {
 						console.error(
 							"Failed to record served rows from batch_edit diff:",
@@ -130,7 +150,21 @@ export default function (pi: ExtensionAPI): void {
 					?.path;
 				if (typeof rawPath === "string") {
 					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
-					await recordServed(sessionKeyFor(ctx), resolvedPath, servedRows);
+					if (typeof details.resultLineCount === "number") {
+						const clearFrom =
+							details.firstChangedLine !== undefined
+								? details.firstChangedLine - 1
+								: 0;
+						await recordServedTruncated(
+							sessionKeyFor(ctx),
+							resolvedPath,
+							servedRows,
+							details.resultLineCount,
+							clearFrom,
+						);
+					} else {
+						await recordServed(sessionKeyFor(ctx), resolvedPath, servedRows);
+					}
 				}
 			} catch (error) {
 				console.error(

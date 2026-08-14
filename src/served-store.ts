@@ -84,6 +84,44 @@ export function recordServes(
 	}
 }
 
+export function recordServesTruncated(
+	store: HashStore,
+	sessionKey: string,
+	path: string,
+	rows: Array<{ position: number; hash: string | null }>,
+	lineCount: number,
+	clearFrom?: number,
+): void {
+	if (rows.length === 0) return;
+	try {
+		withStore(() => {
+			const updated = getServed(store, sessionKey, path).slice();
+			if (updated.length > lineCount) updated.length = lineCount;
+			if (clearFrom !== undefined) {
+				for (let i = clearFrom; i < updated.length; i++) updated[i] = null;
+			}
+			for (const entry of rows) {
+				if (!Number.isInteger(entry.position) || entry.position < 0) {
+					throw new TypeError(`Invalid served position: ${entry.position}`);
+				}
+				if (
+					entry.hash !== null &&
+					(typeof entry.hash !== "string" || !HASH_RE.test(entry.hash))
+				) {
+					throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
+				}
+				while (updated.length <= entry.position) updated.push(null);
+				updated[entry.position] = entry.hash;
+			}
+			while (updated.length > 0 && updated[updated.length - 1] === null)
+				updated.pop();
+			store.stmts.servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+		});
+	} catch (error) {
+		console.error("Failed to record truncated served rows:", error);
+	}
+}
+
 export function getReported(store: HashStore, sessionKey: string, path: string): Set<string> {
 	const row = store.stmts.servedGet(sessionKey, path);
 	if (!row) return new Set();
@@ -155,6 +193,22 @@ export async function recordServed(
 		recordServes(store, sessionKey, path, rows);
 	} catch (error) {
 		console.error("Failed to record served rows:", error);
+	}
+}
+
+export async function recordServedTruncated(
+	sessionKey: string,
+	path: string,
+	rows: ServedEntry[],
+	lineCount: number,
+	clearFrom?: number,
+): Promise<void> {
+	if (rows.length === 0) return;
+	try {
+		const store = await loadHashStore();
+		recordServesTruncated(store, sessionKey, path, rows, lineCount, clearFrom);
+	} catch (error) {
+		console.error("Failed to record truncated served rows:", error);
 	}
 }
 

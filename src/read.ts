@@ -13,7 +13,7 @@ import { readNormFile } from "./file-reader";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline";
 import type { ServedRow } from "./hashline/served";
 import { toCwd } from "./paths";
-import { recordServed, clearDriftReported, sessionKeyFor } from "./served-state";
+import { recordServedTruncated, clearDriftReported, sessionKeyFor } from "./served-state";
 import { abortIf, isRec, normalizeFilePath } from "./utils";
 import { fileSnap } from "./file-reader";
 import { visLines } from "./utils";
@@ -275,7 +275,12 @@ export function regRead(pi: ExtensionAPI): void {
 				fileHashes,
 				absolutePath,
 			);
-			await recordServed(sessionKeyFor(ctx), resolvedPath, preview.served);
+			await recordServedTruncated(
+				sessionKeyFor(ctx),
+				resolvedPath,
+				preview.served,
+				visLines(normalized).length,
+			);
 			await clearDriftReported(sessionKeyFor(ctx), resolvedPath);
 			let snapshotId: string | undefined;
 			try {
