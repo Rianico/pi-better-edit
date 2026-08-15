@@ -10,7 +10,7 @@ import { finalizeToolResult, type EditDetails } from "./src/edit-response";
 import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
 import { pruneMissingAll } from "./src/snapshot-store";
-import { recordServed, recordServedTruncated, sessionKeyFor } from "./src/served-state";
+import { recordDiffServes, sessionKeyFor } from "./src/served-state";
 import { readNormFile } from "./src/file-reader";
 import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
@@ -73,12 +73,12 @@ export default function (pi: ExtensionAPI): void {
 					DEFAULT_MAX_BYTES,
 					AUTO_READ_MAX,
 				);
-				await recordServedTruncated(
-					sessionKeyFor(ctx),
-					absolutePath,
-					preview.served,
-					visLines(normalized).length,
-				);
+				await recordDiffServes({
+					sessionKey: sessionKeyFor(ctx),
+					path: absolutePath,
+					servedRows: preview.served,
+					resultLineCount: visLines(normalized).length,
+				});
 				return {
 					content: [
 						...(event.content ?? []),
@@ -110,21 +110,13 @@ export default function (pi: ExtensionAPI): void {
 					if (entry.servedRows.length === 0) continue;
 					try {
 						const resolvedPath = await resolveTarget(toCwd(entry.path, ctx.cwd));
-						if (typeof entry.resultLineCount === "number") {
-							const clearFrom =
-								entry.firstChangedLine !== undefined
-									? entry.firstChangedLine - 1
-									: 0;
-							await recordServedTruncated(
-								sessionKeyFor(ctx),
-								resolvedPath,
-								entry.servedRows,
-								entry.resultLineCount,
-								clearFrom,
-							);
-						} else {
-							await recordServed(sessionKeyFor(ctx), resolvedPath, entry.servedRows);
-						}
+						await recordDiffServes({
+							sessionKey: sessionKeyFor(ctx),
+							path: resolvedPath,
+							servedRows: entry.servedRows,
+							resultLineCount: entry.resultLineCount,
+							firstChangedLine: entry.firstChangedLine,
+						});
 					} catch (error) {
 						console.error(
 							"Failed to record served rows from batch_edit diff:",
@@ -150,21 +142,13 @@ export default function (pi: ExtensionAPI): void {
 					?.path;
 				if (typeof rawPath === "string") {
 					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
-					if (typeof details.resultLineCount === "number") {
-						const clearFrom =
-							details.firstChangedLine !== undefined
-								? details.firstChangedLine - 1
-								: 0;
-						await recordServedTruncated(
-							sessionKeyFor(ctx),
-							resolvedPath,
-							servedRows,
-							details.resultLineCount,
-							clearFrom,
-						);
-					} else {
-						await recordServed(sessionKeyFor(ctx), resolvedPath, servedRows);
-					}
+					await recordDiffServes({
+						sessionKey: sessionKeyFor(ctx),
+						path: resolvedPath,
+						servedRows,
+						resultLineCount: details.resultLineCount,
+						firstChangedLine: details.firstChangedLine,
+					});
 				}
 			} catch (error) {
 				console.error(

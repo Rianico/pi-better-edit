@@ -1,4 +1,4 @@
-import { recordServed } from "./served-store";
+import { recordServed, recordServedTruncated } from "./served-store";
 import type { ServedRow } from "./hashline/served";
 
 export {
@@ -25,6 +25,47 @@ export async function recordEchoServes(
 ): Promise<void> {
 	if (policy !== "live") return;
 	await recordServed(sessionKey, path, rows);
+}
+
+export type ServeRecordingPlan =
+	| { mode: "plain" }
+	| { mode: "truncated"; lineCount: number; clearFrom: number };
+
+export function planServeRecording(input: {
+	resultLineCount?: number;
+	firstChangedLine?: number;
+}): ServeRecordingPlan {
+	if (typeof input.resultLineCount !== "number") {
+		return { mode: "plain" };
+	}
+	return {
+		mode: "truncated",
+		lineCount: input.resultLineCount,
+		clearFrom:
+			input.firstChangedLine !== undefined ? input.firstChangedLine - 1 : 0,
+	};
+}
+
+export async function recordDiffServes(input: {
+	sessionKey: string;
+	path: string;
+	servedRows: ServedRow[];
+	resultLineCount?: number;
+	firstChangedLine?: number;
+}): Promise<void> {
+	if (input.servedRows.length === 0) return;
+	const plan = planServeRecording(input);
+	if (plan.mode === "plain") {
+		await recordServed(input.sessionKey, input.path, input.servedRows);
+		return;
+	}
+	await recordServedTruncated(
+		input.sessionKey,
+		input.path,
+		input.servedRows,
+		plan.lineCount,
+		plan.clearFrom,
+	);
 }
 
 function nearestSurvivingPosition(
