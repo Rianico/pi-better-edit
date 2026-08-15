@@ -46,6 +46,7 @@ import {
 	type RPreview,
 	type RRState,
 } from "./edit-render";
+import { DebouncedPreview } from "./preview-controller";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
 import { type HashStore } from "./hash-store";
@@ -121,8 +122,6 @@ interface PipelineResult {
 	driftNotice?: string;
 	range: ResolvedRange;
 }
-
-const PREVIEW_DEBOUNCE_MS = 150;
 
 const ROOT_KS = new Set([
 	"path",
@@ -421,6 +420,7 @@ export function buildToolDef(): ToolDef {
 	const E_GUIDE = loadGuide("../prompts/edit-guidelines.md");
 
 	const parameters = editToolSchema;
+	const preview = new DebouncedPreview(compPreview);
 	return {
 		name: "edit",
 		label: "Edit",
@@ -436,59 +436,7 @@ export function buildToolDef(): ToolDef {
 		},
 		renderShell: "default",
 		renderCall(args, theme, context) {
-			const previewInput = getPreviewInput(args);
-			const cancelPendingPreview = () => {
-				if (context.state.previewTimer) {
-					clearTimeout(context.state.previewTimer);
-					context.state.previewTimer = undefined;
-				}
-			};
-			if (context.executionStarted) {
-				cancelPendingPreview();
-				context.state.argsKey = undefined;
-				context.state.preview = undefined;
-				context.state.previewGeneration =
-					(context.state.previewGeneration ?? 0) + 1;
-			} else if (!context.argsComplete || !previewInput) {
-				cancelPendingPreview();
-				context.state.argsKey = undefined;
-				context.state.preview = undefined;
-				context.state.previewGeneration =
-					(context.state.previewGeneration ?? 0) + 1;
-			} else {
-				const argsKey = JSON.stringify(previewInput);
-				if (context.state.argsKey !== argsKey) {
-					cancelPendingPreview();
-					context.state.argsKey = argsKey;
-					context.state.preview = undefined;
-					const previewGeneration = (context.state.previewGeneration ?? 0) + 1;
-					context.state.previewGeneration = previewGeneration;
-					context.state.previewTimer = setTimeout(() => {
-						context.state.previewTimer = undefined;
-						compPreview(args, context.cwd)
-							.then((preview) => {
-								if (
-									context.state.argsKey === argsKey &&
-									context.state.previewGeneration === previewGeneration
-								) {
-									context.state.preview = preview;
-									context.invalidate();
-								}
-							})
-							.catch((err: unknown) => {
-								if (
-									context.state.argsKey === argsKey &&
-									context.state.previewGeneration === previewGeneration
-								) {
-									context.state.preview = {
-										error: err instanceof Error ? err.message : String(err),
-									};
-									context.invalidate();
-								}
-							});
-					}, PREVIEW_DEBOUNCE_MS);
-				}
-			}
+			preview.renderCall(context, args);
 			const text =
 				(context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 			text.setText(
@@ -515,13 +463,7 @@ export function buildToolDef(): ToolDef {
 
 			const renderState = context.state as RRState | undefined;
 			if (renderState) {
-				if (renderState.previewTimer) {
-					clearTimeout(renderState.previewTimer);
-					renderState.previewTimer = undefined;
-				}
-				renderState.preview = undefined;
-				renderState.previewGeneration =
-					(renderState.previewGeneration ?? 0) + 1;
+				preview.clearResult(renderState);
 			}
 
 			if (context.isError) {
