@@ -7,7 +7,9 @@ import { getServed, upsertServed } from "../../src/served-state";
 import {
 	planServeRecording,
 	recordDiffServes,
+	recordEchoServes,
 } from "../../src/served-state";
+import { scanDrift } from "../../src/drift";
 import { initHasher } from "../../src/hashline";
 import { getWritableTempRoot } from "../support/fixtures";
 
@@ -160,6 +162,94 @@ describe("recordDiffServes — persistence through served-state", () => {
 				firstChangedLine: 1,
 			});
 			expect(getServed(store, "s1", path)).toEqual([]);
+		});
+	});
+});
+
+describe("recordEchoServes — truncation after an external shrink (issue #27)", () => {
+	it("truncates the served array to the current line count when the count is provided", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			const path = join(home, "f.txt");
+			upsertServed(store, "s1", path, [
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+				{ position: 2, hash: "ccc" },
+				{ position: 3, hash: "ddd" },
+				{ position: 4, hash: "eee" },
+				{ position: 5, hash: "fff" },
+				{ position: 6, hash: "ggg" },
+				{ position: 7, hash: "hhh" },
+			]);
+			await recordEchoServes(
+				"s1",
+				path,
+				[
+					{ position: 0, hash: "fff" },
+					{ position: 1, hash: "ggg" },
+				],
+				"live",
+				2,
+			);
+			expect(getServed(store, "s1", path)).toEqual(["fff", "ggg"]);
+		});
+	});
+
+	it("keeps plain recording when no line count is provided", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			const path = join(home, "f.txt");
+			upsertServed(store, "s1", path, [{ position: 0, hash: "aaa" }]);
+			await recordEchoServes(
+				"s1",
+				path,
+				[{ position: 1, hash: "bbb" }],
+				"live",
+			);
+			expect(getServed(store, "s1", path)).toEqual(["aaa", "bbb"]);
+		});
+	});
+});
+
+describe("scanDrift — truncation after an external shrink (issue #27)", () => {
+	it("records drift rows against the current line count, dropping the stale tail", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			const path = join(home, "f.txt");
+			upsertServed(store, "s1", path, [
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+				{ position: 2, hash: "ccc" },
+				{ position: 3, hash: "ddd" },
+				{ position: 4, hash: "eee" },
+				{ position: 5, hash: "fff" },
+				{ position: 6, hash: "ggg" },
+				{ position: 7, hash: "hhh" },
+			]);
+			const served = getServed(store, "s1", path);
+			await scanDrift({
+				sessionKey: "s1",
+				served,
+				resultHashes: ["xxx", "fff", "ggg"],
+				resultLines: ["X", "f", "g"],
+				range: {
+					startLine: 1,
+					endLine: 1,
+					startHash: "xxx",
+					endHash: "xxx",
+					delta: 0,
+				},
+				path,
+			});
+			const after = getServed(store, "s1", path);
+			const fffPositions = after
+				.map((h, i) => (h === "fff" ? i : -1))
+				.filter((i) => i >= 0);
+			const gggPositions = after
+				.map((h, i) => (h === "ggg" ? i : -1))
+				.filter((i) => i >= 0);
+			expect(fffPositions.length).toBeLessThanOrEqual(1);
+			expect(gggPositions.length).toBeLessThanOrEqual(1);
 		});
 	});
 });

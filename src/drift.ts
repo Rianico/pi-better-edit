@@ -8,7 +8,7 @@ import {
 	currentPositionOfDrifted,
 	driftReported,
 	markDriftReported,
-	recordServed,
+	recordServedTruncated,
 	servedPositionsOf,
 } from "./served-state";
 
@@ -151,10 +151,11 @@ export async function scanDrift(input: {
 	const reported = await driftReported(input.sessionKey, input.path);
 	const result = computeDrift({ ...input, reported });
 	if (!result || result.allAlreadyReported) return result?.text;
-	await recordServed(
+	await recordServedTruncated(
 		input.sessionKey,
 		input.path,
 		result.rows.map((row) => ({ position: row.position, hash: row.hash })),
+		input.resultLines.length,
 	);
 	await markDriftReported(
 		input.sessionKey,

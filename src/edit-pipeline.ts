@@ -167,6 +167,7 @@ export async function applyOneEdit(
 				input.absolutePath,
 				error.servedRows,
 				input.servePolicy,
+				input.hashes.length,
 			);
 			return input.onRejected(error);
 		}

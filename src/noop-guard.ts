@@ -76,7 +76,7 @@ export async function runNoopPolicy(
 			input.hashes,
 		);
 		const echo = fmtServedRows(echoRows, input.lines);
-		await recordEchoServes(input.sessionKey, input.absolutePath, echoRows, "live");
+		await recordEchoServes(input.sessionKey, input.absolutePath, echoRows, "live", input.hashes.length);
 		const message = input.batch
 			? `[E_NOOP_LOOP] ${input.ref}: this exact edit (anchors ${input.removeFrom} to ${input.removeTo}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend it; it will never change the file. The whole batch was rejected and nothing was written. Current on-disk range:\n${echo}`
 			: `[E_NOOP_LOOP] This exact edit (anchors ${input.removeFrom} to ${input.removeTo} ${input.ref}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend this edit; it will never change the file. Current range:\n${echo}`;
