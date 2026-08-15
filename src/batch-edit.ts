@@ -31,16 +31,16 @@ import {
 } from "./edit-response";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
-import { loadServed, sessionKeyFor } from "./served-state";
+import { loadServed, recordEchoServes, sessionKeyFor } from "./served-state";
 import {
 	AnchorMismatchError,
 	ServedRejectionError,
 	buildRangeEcho,
 	fmtServedRows,
-	recordEchoServes,
 	type ResolvedRange,
 	type ServedRow,
 } from "./hashline/served";
+import { loadHashStore, snapshotIOFor, type HashStore } from "./hash-store";
 import { BATCH_EDIT_MAX_ITEMS, NOOP_LOOP_THRESHOLD } from "./constants";
 import {
 	collectRemovedHashes,
@@ -258,7 +258,7 @@ type ProcessedFile = {
 async function processFile(
 	items: PreparedItem[],
 	cwd: string,
-	opts: { signal?: AbortSignal; accessMode: number; sessionKey: string },
+	opts: { signal?: AbortSignal; accessMode: number; sessionKey: string; store: HashStore },
 ): Promise<ProcessedFile> {
 	const first = items[0]!;
 	abortIf(opts.signal);
@@ -409,7 +409,7 @@ async function processFile(
 			nextContent,
 			absolutePath,
 			{ content: currentContent, hashes: currentHashes, removedHashes },
-			undefined,
+			snapshotIOFor(opts.store),
 			false,
 		);
 		const { totalAddedLines: added, totalRemovedLines: removed } =
@@ -443,7 +443,7 @@ async function processFile(
 				hashes: lastApplied.hashes,
 				removedHashes: lastApplied.removedHashes,
 			},
-			undefined,
+			snapshotIOFor(opts.store),
 			true,
 		);
 	}
@@ -532,6 +532,7 @@ async function executeBatch(
 }> {
 	const sessionKey = sessionKeyFor(ctx);
 	const items = await prepareItems(params, cwd);
+	const hashStore = await loadHashStore();
 	const groups = groupByPath(items);
 
 	const processed: ProcessedFile[] = [];
@@ -542,6 +543,7 @@ async function executeBatch(
 				signal,
 				accessMode: constants.R_OK | constants.W_OK,
 				sessionKey,
+				store: hashStore,
 			}),
 		);
 	}

@@ -1,13 +1,10 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
-import {
-	recordEchoServes,
-	ServedRejectionError,
-} from "../../src/hashline/served";
+import { ServedRejectionError } from "../../src/hashline/served";
 import { finalizeToolResult } from "../../src/edit-response";
+import { loadServed, recordEchoServes } from "../../src/served-state";
 import { applyEdit, _lineHashesPure, type HEdit } from "../../src/hashline";
-import { loadServed } from "../../src/served-state";
 import { shutdownHashStore } from "../../src/hash-store";
 import { initHasher } from "../../src/hashline/hasher";
 import { getWritableTempRoot } from "../support/fixtures";
@@ -36,7 +33,12 @@ describe("recordEchoServes — serve-record policy", () => {
 	it("records nothing when the policy is preview", async () => {
 		await withTempHome(async () => {
 			const path = "/a.ts";
-			await recordEchoServes("sessionA", path, [{ position: 0, hash: "h00" }], "preview");
+			await recordEchoServes(
+				"sessionA",
+				path,
+				[{ position: 0, hash: "h00" }],
+				"preview",
+			);
 			expect(await loadServed("sessionA", path)).toEqual([]);
 		});
 	});

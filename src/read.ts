@@ -9,11 +9,16 @@ import {
 import { Type } from "typebox";
 import { MAX_READ_LINE_BYTES } from "./constants";
 import { loadFileKindAndText } from "./file-kind";
+import { loadHashStore } from "./hash-store";
 import { readNormFile } from "./file-reader";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline";
 import type { ServedRow } from "./hashline/served";
 import { toCwd } from "./paths";
-import { recordServedTruncated, clearDriftReported, sessionKeyFor } from "./served-state";
+import {
+	recordServedTruncated,
+	clearDriftReported,
+	sessionKeyFor,
+} from "./served-state";
 import { abortIf, isRec, normalizeFilePath } from "./utils";
 import { fileSnap } from "./file-reader";
 import { visLines } from "./utils";
@@ -265,6 +270,7 @@ export function regRead(pi: ExtensionAPI): void {
 				signal,
 				preloadedFile: file,
 				maxLines: MAX_HASH_LINES,
+				store: await loadHashStore(),
 			});
 			const preview = await fmtReadPreview(
 				normalized,

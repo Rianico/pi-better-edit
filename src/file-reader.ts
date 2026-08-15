@@ -8,7 +8,7 @@ import { detectEnding, toLF, stripBOM, type LineEnding } from "./edit-diff";
 import { abortIf } from "./utils";
 import { valKind, valAccess } from "./validation";
 import { visLines } from "./utils";
-import type { HashStore } from "./hash-store";
+import { loadHashStore, snapshotIOFor, type HashStore } from "./hash-store";
 export interface NormFile {
 	absolutePath: string;
 	normalized: string;
@@ -89,11 +89,12 @@ export async function readNormFile(
 		}
 	}
 
+	const hashStore = options?.store ?? await loadHashStore();
 	const fileHashes = await lineHashes(
 		normalized,
 		resolvedPath,
 		undefined,
-		options?.store,
+		snapshotIOFor(hashStore),
 		options?.noPersist !== true,
 	);
 	return {

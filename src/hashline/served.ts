@@ -1,5 +1,4 @@
 import { HASH_SEP } from "./hash";
-import { recordServed, servedPositionsOf } from "../served-state";
 import { SERVED_ECHO_CAP } from "../constants";
 
 export type ServedCode =
@@ -77,6 +76,17 @@ function retryHint(): string {
 
 function paginationHint(nextOffset: number, more: number): string {
 	return `[... ${more} more lines — use read with offset=${nextOffset} to see the rest]`;
+}
+
+export function servedPositionsOf(
+	served: (string | null)[],
+	hash: string,
+): number[] {
+	const out: number[] = [];
+	for (let i = 0; i < served.length; i++) {
+		if (served[i] === hash) out.push(i);
+	}
+	return out;
 }
 
 export function verifyServedRange(args: {
@@ -180,14 +190,3 @@ export interface ResolvedRange {
 	delta: number;
 }
 
-export type ServeRecordPolicy = "live" | "preview";
-
-export async function recordEchoServes(
-	sessionKey: string,
-	path: string,
-	rows: ServedRow[],
-	policy: ServeRecordPolicy,
-): Promise<void> {
-	if (policy !== "live") return;
-	await recordServed(sessionKey, path, rows);
-}

@@ -1,3 +1,6 @@
+import { recordServed } from "./served-store";
+import type { ServedRow } from "./hashline/served";
+
 export {
 	type ServedEntry,
 	loadServed,
@@ -10,15 +13,18 @@ export {
 	sessionKeyFor,
 } from "./served-store";
 
-export function servedPositionsOf(
-	served: (string | null)[],
-	hash: string,
-): number[] {
-	const out: number[] = [];
-	for (let i = 0; i < served.length; i++) {
-		if (served[i] === hash) out.push(i);
-	}
-	return out;
+export { servedPositionsOf } from "./hashline/served";
+
+export type ServeRecordPolicy = "live" | "preview";
+
+export async function recordEchoServes(
+	sessionKey: string,
+	path: string,
+	rows: ServedRow[],
+	policy: ServeRecordPolicy,
+): Promise<void> {
+	if (policy !== "live") return;
+	await recordServed(sessionKey, path, rows);
 }
 
 function nearestSurvivingPosition(

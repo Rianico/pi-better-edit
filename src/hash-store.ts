@@ -4,8 +4,9 @@ import { DatabaseSync } from "node:sqlite";
 import { hashStorePath, hashStoreDir, legacyHashStorePath } from "./paths";
 import { errCode, splitLines } from "./utils";
 import { initHasher, contentChecksum } from "./hashline/hasher";
+import { setDefaultHashSnapshotIO, type HashSnapshotIO } from "./hashline/hash";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT, SERVED_TTL_MS } from "./constants";
-import { isValidSnapshot } from "./snapshot-store";
+import { getSnapshot, upsertSnapshot, isValidSnapshot } from "./snapshot-store";
 
 type SqlParams = (string | number)[];
 
@@ -395,6 +396,28 @@ export function withStore(fn: () => void): void {
 		fn();
 	}
 }
+
+export function snapshotIOFor(store: HashStore): HashSnapshotIO {
+	return {
+		async get(path, content, deleteCorrupt) {
+			return getSnapshot(store, path, content, deleteCorrupt);
+		},
+		async upsert(path, checksum, lineCount, hashes) {
+			upsertSnapshot(store, path, checksum, lineCount, hashes);
+		},
+	};
+}
+
+setDefaultHashSnapshotIO({
+	async get(path, content, deleteCorrupt) {
+		const store = await loadHashStore();
+		return getSnapshot(store, path, content, deleteCorrupt);
+	},
+	async upsert(path, checksum, lineCount, hashes) {
+		const store = await loadHashStore();
+		upsertSnapshot(store, path, checksum, lineCount, hashes);
+	},
+});
 
 async function migrateLegacy(db: DatabaseSync): Promise<void> {
 	const legacyPath = legacyHashStorePath();

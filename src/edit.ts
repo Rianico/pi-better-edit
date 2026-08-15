@@ -49,7 +49,7 @@ import {
 import { DebouncedPreview } from "./preview-controller";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
-import { type HashStore } from "./hash-store";
+import { loadHashStore, snapshotIOFor, type HashStore } from "./hash-store";
 import {
 	NOOP_LOOP_THRESHOLD,
 	clearNoopLoop,
@@ -57,14 +57,12 @@ import {
 	trackNoopPayload,
 } from "./noop-guard";
 import { findSnapshotPathsByHashes } from "./snapshot-store";
-import { loadServed, sessionKeyFor } from "./served-state";
+import { loadServed, recordEchoServes, sessionKeyFor, type ServeRecordPolicy } from "./served-state";
 import {
 	AnchorMismatchError,
 	ServedRejectionError,
 	buildRangeEcho,
 	fmtServedRows,
-	recordEchoServes,
-	type ServeRecordPolicy,
 	type ResolvedRange,
 } from "./hashline/served";
 
@@ -252,7 +250,7 @@ export async function execPipeline(
 		editWarnings,
 	);
 
-	const hashStore = options?.store;
+	const hashStore = options?.store ?? await loadHashStore();
 	const {
 		normalized: originalNormalized,
 		bom,
@@ -314,7 +312,7 @@ export async function execPipeline(
 					hashes: originalHashes,
 					removedHashes,
 				},
-				hashStore,
+				snapshotIOFor(hashStore),
 				noPersist !== true,
 			);
 	const warnings = [...editWarnings, ...(anchorResult.warnings ?? [])];
