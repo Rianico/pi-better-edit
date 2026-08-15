@@ -6,7 +6,6 @@ import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { constants } from "fs";
 import { restoreEndings, type LineEnding } from "./edit-diff";
-import { readNormFile } from "./file-reader";
 import { scanDrift } from "./drift";
 import {
 	abortIf,
@@ -16,13 +15,7 @@ import {
 	splitLines,
 } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
-import {
-	applyEdit,
-	lineHashes,
-	resEdit,
-	MAX_HASH_LINES,
-	type HEdit,
-} from "./hashline";
+import { lineHashes, resEdit, type HEdit } from "./hashline";
 import { toCwd } from "./paths";
 import {
 	buildBatchResult,
@@ -31,10 +24,8 @@ import {
 } from "./edit-response";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
-import { loadServed, recordEchoServes, sessionKeyFor } from "./served-state";
+import { sessionKeyFor } from "./served-state";
 import {
-	AnchorMismatchError,
-	ServedRejectionError,
 	buildRangeEcho,
 	fmtServedRows,
 	type ResolvedRange,
@@ -42,16 +33,19 @@ import {
 } from "./hashline/served";
 import { loadHashStore, type HashStore } from "./hash-store";
 import { snapshotIOFor } from "./snapshot-store";
-import { BATCH_EDIT_MAX_ITEMS, NOOP_LOOP_THRESHOLD } from "./constants";
+import { BATCH_EDIT_MAX_ITEMS } from "./constants";
 import {
-	collectRemovedHashes,
-	countLineChanges,
 	removeFromSchema,
 	removeToSchema,
 	replacementTextSchema,
 	resolveMissingPath,
 } from "./edit";
-import { clearNoopLoop, noopPayloadKey, trackNoopPayload } from "./noop-guard";
+import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
+import {
+	applyOneEdit,
+	countLineChanges,
+	loadEditFile,
+} from "./edit-pipeline";
 
 type BatchItem = {
 	path?: string;
@@ -270,13 +264,15 @@ async function processFile(
 		fileHashes: originalHashes,
 		hadUtf8DecodeErrors,
 		absolutePath,
-	} = await readNormFile(first.path, cwd, {
+		served,
+	} = await loadEditFile({
+		path: first.path,
+		cwd,
 		signal: opts.signal,
 		accessMode: opts.accessMode,
-		maxLines: MAX_HASH_LINES,
+		sessionKey: opts.sessionKey,
+		store: opts.store,
 	});
-
-	const served = await loadServed(opts.sessionKey, absolutePath);
 	const warnings: string[] = [];
 
 	let currentContent = originalNormalized;
@@ -313,34 +309,24 @@ async function processFile(
 			);
 		}
 
-		let anchorResult: ReturnType<typeof applyEdit>;
-		try {
-			anchorResult = applyEdit(
-				currentContent,
-				edit,
-				opts.signal,
-				currentHashes,
-				item.path,
-				served,
-			);
-		} catch (error) {
-			if (
-				error instanceof AnchorMismatchError ||
-				error instanceof ServedRejectionError
-			) {
+		const outcome = await applyOneEdit({
+			content: currentContent,
+			hashes: currentHashes,
+			edit,
+			signal: opts.signal,
+			filePath: item.path,
+			served,
+			sessionKey: opts.sessionKey,
+			absolutePath,
+			store: opts.store,
+			persistHashes: false,
+			servePolicy: "live",
+			onRejected: async (error) => {
 				const originalLines = splitLines(originalNormalized);
 				const echoRows =
 					error.servedRows.length > 0
 						? error.servedRows
 						: echoRowsForItem(edit, originalHashes);
-				if (echoRows) {
-					await recordEchoServes(
-						opts.sessionKey,
-						absolutePath,
-						echoRows,
-						"live",
-					);
-				}
 				const echoBlock = echoRows
 					? ` Current on-disk range for edits[${item.index}] (unchanged — nothing was written):\n${fmtServedRows(echoRows, originalLines)}`
 					: " Call read() to get fresh anchors.";
@@ -348,13 +334,10 @@ async function processFile(
 					`[E_BATCH_ABORT] edits[${item.index}] (${item.path}) failed: ${error.message}${echoBlock}\n` +
 						`The whole batch was rejected and NOTHING was written — no file changed and earlier items in the batch were NOT applied. Fix the failing edit (and any later edit that depends on it), then resubmit the batch.`,
 				);
-			}
-			throw error;
-		}
+			},
+		});
 
-		const nextContent = anchorResult.content;
-		const isNoop = nextContent === currentContent;
-		const range = anchorResult.range;
+		const range = outcome.range;
 		if (range.startLine < unionStartLine) {
 			unionStartLine = range.startLine;
 			unionStartHash = range.startHash;
@@ -364,73 +347,48 @@ async function processFile(
 			unionEndHash = range.endHash;
 		}
 
-		if (isNoop) {
+		if (outcome.kind === "noop") {
 			noopCount += 1;
-			const payload = noopPayloadKey(
+			const decision = await runNoopPolicy({
 				absolutePath,
-				item.remove_from,
-				item.remove_to,
-				item.replacement_text,
-			);
-			const count = trackNoopPayload(absolutePath, payload);
-			if (count >= NOOP_LOOP_THRESHOLD) {
-				const originalLines = splitLines(originalNormalized);
-				const echoRows = echoRowsForItem(edit, originalHashes);
-				if (echoRows) {
-					await recordEchoServes(
-						opts.sessionKey,
-						absolutePath,
-						echoRows,
-						"live",
-					);
-				}
-				throw new Error(
-					`[E_NOOP_LOOP] edits[${item.index}] (${item.path}): this exact edit (anchors ${item.remove_from} to ${item.remove_to}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend it; it will never change the file. The whole batch was rejected and nothing was written.` +
-						(echoRows
-							? ` Current on-disk range:\n${fmtServedRows(echoRows, originalLines)}`
-							: ""),
-				);
-			}
-			if (count === 2) {
-				warnings.push(
-					`[E_NOOP_LOOP] Notice: edits[${item.index}] (${item.path}) — this exact edit has produced no changes twice in a row; the range already contains the replacement text. Resending it again will reject the batch.`,
-				);
-			}
+				removeFrom: item.remove_from,
+				removeTo: item.remove_to,
+				replacementText: item.replacement_text,
+				ref: `edits[${item.index}] (${item.path})`,
+				batch: true,
+				range,
+				hashes: currentHashes,
+				lines: splitLines(currentContent),
+				sessionKey: opts.sessionKey,
+			});
+			if (decision.action === "reject") throw new Error(decision.message);
+			if (decision.action === "warn") warnings.push(decision.notice);
 			warnings.push(
 				`edits[${item.index}] (${item.path}) was a noop: the range already contains the replacement text.`,
 			);
-			if (anchorResult.warnings?.length)
-				warnings.push(...anchorResult.warnings);
+			if (outcome.anchorWarnings?.length) warnings.push(...outcome.anchorWarnings);
 			continue;
 		}
 
 		appliedCount += 1;
-		const removedHashes = collectRemovedHashes(edit, currentHashes);
-		const nextHashes = await lineHashes(
-			nextContent,
-			absolutePath,
-			{ content: currentContent, hashes: currentHashes, removedHashes },
-			snapshotIOFor(opts.store),
-			false,
-		);
 		const { totalAddedLines: added, totalRemovedLines: removed } =
 			countLineChanges(
 				edit,
 				originalHashes,
 				false,
-				anchorResult.autoFixes?.length ?? 0,
+				outcome.autoFixes?.length ?? 0,
 			);
 		totalAddedLines += added;
 		totalRemovedLines += removed;
 		lastApplied = {
 			content: currentContent,
 			hashes: currentHashes,
-			removedHashes,
+			removedHashes: outcome.removedHashes,
 		};
-		currentContent = nextContent;
-		currentHashes = nextHashes;
+		currentContent = outcome.content;
+		currentHashes = outcome.hashes;
 		clearNoopLoop(absolutePath);
-		if (anchorResult.warnings?.length) warnings.push(...anchorResult.warnings);
+		if (outcome.anchorWarnings?.length) warnings.push(...outcome.anchorWarnings);
 	}
 
 	const result = currentContent;
@@ -505,7 +463,6 @@ async function processFile(
 		},
 	};
 }
-
 function toSection(file: ProcessedFile): BatchSection {
 	return {
 		path: file.displayPath,

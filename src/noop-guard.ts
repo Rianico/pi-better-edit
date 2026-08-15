@@ -1,4 +1,11 @@
 import { NOOP_LOOP_THRESHOLD } from "./constants";
+import {
+	buildRangeEcho,
+	fmtServedRows,
+	type ResolvedRange,
+	type ServedRow,
+} from "./hashline/served";
+import { recordEchoServes } from "./served-state";
 
 type NoopLoopEntry = {
 	payload: string;
@@ -32,3 +39,56 @@ export function clearNoopLoop(absolutePath: string): void {
 }
 
 export { NOOP_LOOP_THRESHOLD };
+
+export interface NoopPolicyInput {
+	absolutePath: string;
+	removeFrom: string;
+	removeTo: string;
+	replacementText: string;
+	ref: string;
+	batch: boolean;
+	range: ResolvedRange;
+	hashes: string[];
+	lines: string[];
+	sessionKey: string;
+}
+
+export type NoopPolicyOutcome =
+	| { action: "proceed"; count: number }
+	| { action: "warn"; count: number; notice: string }
+	| { action: "reject"; count: number; message: string; echoRows: ServedRow[] };
+
+export async function runNoopPolicy(
+	input: NoopPolicyInput,
+): Promise<NoopPolicyOutcome> {
+	const payload = noopPayloadKey(
+		input.absolutePath,
+		input.removeFrom,
+		input.removeTo,
+		input.replacementText,
+	);
+	const count = trackNoopPayload(input.absolutePath, payload);
+
+	if (count >= NOOP_LOOP_THRESHOLD) {
+		const echoRows = buildRangeEcho(
+			input.range.startLine,
+			input.range.endLine,
+			input.hashes,
+		);
+		const echo = fmtServedRows(echoRows, input.lines);
+		await recordEchoServes(input.sessionKey, input.absolutePath, echoRows, "live");
+		const message = input.batch
+			? `[E_NOOP_LOOP] ${input.ref}: this exact edit (anchors ${input.removeFrom} to ${input.removeTo}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend it; it will never change the file. The whole batch was rejected and nothing was written. Current on-disk range:\n${echo}`
+			: `[E_NOOP_LOOP] This exact edit (anchors ${input.removeFrom} to ${input.removeTo} ${input.ref}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend this edit; it will never change the file. Current range:\n${echo}`;
+		return { action: "reject", count, message, echoRows };
+	}
+
+	if (count === 2) {
+		const notice = input.batch
+			? `[E_NOOP_LOOP] Notice: ${input.ref} — this exact edit has produced no changes twice in a row; the range already contains the replacement text. Resending it again will reject the batch.`
+			: `[E_NOOP_LOOP] Notice: this exact edit (anchors ${input.removeFrom} to ${input.removeTo} ${input.ref}) has produced no changes twice in a row. The range already contains the replacement text; resending it again will be rejected.`;
+		return { action: "warn", count, notice };
+	}
+
+	return { action: "proceed", count };
+}

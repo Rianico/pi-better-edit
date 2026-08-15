@@ -7,7 +7,6 @@ import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { constants } from "fs";
 import { genDiff, restoreEndings, type LineEnding } from "./edit-diff";
-import { readNormFile } from "./file-reader";
 import { scanDrift } from "./drift";
 import { normReq } from "./edit-normalize";
 import {
@@ -18,15 +17,7 @@ import {
 	splitLines,
 } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
-import {
-	applyEdit,
-	lineHashes,
-	resEdit,
-	parseHashRef,
-	MAX_HASH_LINES,
-	type HEdit,
-	type NEdit,
-} from "./hashline";
+import { resEdit, parseHashRef, type NEdit } from "./hashline";
 import { toCwd } from "./paths";
 import { fileSnap } from "./file-reader";
 import {
@@ -50,22 +41,11 @@ import { DebouncedPreview } from "./preview-controller";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
 import { loadHashStore, type HashStore } from "./hash-store";
-import { snapshotIOFor } from "./snapshot-store";
-import {
-	NOOP_LOOP_THRESHOLD,
-	clearNoopLoop,
-	noopPayloadKey,
-	trackNoopPayload,
-} from "./noop-guard";
+import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
 import { findSnapshotPathsByHashes } from "./snapshot-store";
-import { loadServed, recordEchoServes, sessionKeyFor, type ServeRecordPolicy } from "./served-state";
-import {
-	AnchorMismatchError,
-	ServedRejectionError,
-	buildRangeEcho,
-	fmtServedRows,
-	type ResolvedRange,
-} from "./hashline/served";
+import { sessionKeyFor } from "./served-state";
+import type { ResolvedRange } from "./hashline/served";
+import { applyOneEdit, countLineChanges, loadEditFile } from "./edit-pipeline";
 
 export const replacementTextSchema = Type.String({
 	description:
@@ -196,44 +176,6 @@ export interface ExecPipelineOptions {
 	sessionKey?: string;
 }
 
-export function collectRemovedHashes(
-	edit: HEdit,
-	originalHashes: string[],
-): Set<string> {
-	const removedHashes = new Set<string>();
-	const startHash = edit.hash_bounds[0].hash;
-	const endHash = edit.hash_bounds[1].hash;
-	const startLine = originalHashes.indexOf(startHash);
-	const endLine = originalHashes.indexOf(endHash);
-	if (startLine >= 0 && endLine >= 0) {
-		const firstLine = Math.min(startLine, endLine);
-		const lastLine = Math.max(startLine, endLine);
-		for (let i = firstLine; i <= lastLine; i++) {
-			removedHashes.add(originalHashes[i]!);
-		}
-	}
-	return removedHashes;
-}
-
-export function countLineChanges(
-	edit: HEdit,
-	originalHashes: string[],
-	isNoop: boolean,
-	removedAutoFixes: number,
-): { totalAddedLines: number; totalRemovedLines: number } {
-	if (isNoop) return { totalAddedLines: 0, totalRemovedLines: 0 };
-	let totalRemovedLines = 0;
-	const startLine = originalHashes.indexOf(edit.hash_bounds[0].hash);
-	const endLine = originalHashes.indexOf(edit.hash_bounds[1].hash);
-	if (startLine >= 0 && endLine >= 0) {
-		totalRemovedLines = Math.abs(endLine - startLine) + 1;
-	}
-	return {
-		totalAddedLines: Math.max(0, edit.content_lines.length - removedAutoFixes),
-		totalRemovedLines,
-	};
-}
-
 export async function execPipeline(
 	params: EditParams,
 	cwd: string,
@@ -251,7 +193,8 @@ export async function execPipeline(
 		editWarnings,
 	);
 
-	const hashStore = options?.store ?? await loadHashStore();
+	const hashStore = options?.store ?? (await loadHashStore());
+	const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
 	const {
 		normalized: originalNormalized,
 		bom,
@@ -259,69 +202,43 @@ export async function execPipeline(
 		fileHashes: originalHashes,
 		hadUtf8DecodeErrors,
 		absolutePath,
-	} = await readNormFile(path, cwd, {
+		served,
+	} = await loadEditFile({
+		path,
+		cwd,
 		signal: options?.signal,
 		accessMode: options?.accessMode,
-		maxLines: MAX_HASH_LINES,
+		sessionKey,
 		store: hashStore,
 		noPersist: options?.noPersist,
 	});
 
-	const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
-	const served = await loadServed(sessionKey, absolutePath);
-	const policy: ServeRecordPolicy =
-		options?.noPersist === true ? "preview" : "live";
+	const outcome = await applyOneEdit({
+		content: originalNormalized,
+		hashes: originalHashes,
+		edit,
+		signal: options?.signal,
+		filePath: path,
+		served,
+		sessionKey,
+		absolutePath,
+		store: hashStore,
+		persistHashes: options?.noPersist !== true,
+		servePolicy: options?.noPersist === true ? "preview" : "live",
+		onRejected: async (error) => {
+			throw error;
+		},
+	});
 
-	let anchorResult: ReturnType<typeof applyEdit>;
-	try {
-		anchorResult = applyEdit(
-			originalNormalized,
-			edit,
-			options?.signal,
-			originalHashes,
-			path,
-			served,
-		);
-	} catch (error) {
-		if (
-			error instanceof AnchorMismatchError ||
-			error instanceof ServedRejectionError
-		) {
-			await recordEchoServes(
-				sessionKey,
-				absolutePath,
-				error.servedRows,
-				policy,
-			);
-		}
-		throw error;
-	}
-	const result = anchorResult.content;
-	const isNoop = result === originalNormalized;
-
-	const noPersist = options?.noPersist;
-	const removedHashes = isNoop
-		? undefined
-		: collectRemovedHashes(edit, originalHashes);
-	const resultHashes = isNoop
-		? originalHashes
-		: await lineHashes(
-				result,
-				absolutePath,
-				{
-					content: originalNormalized,
-					hashes: originalHashes,
-					removedHashes,
-				},
-				snapshotIOFor(hashStore),
-				noPersist !== true,
-			);
-	const warnings = [...editWarnings, ...(anchorResult.warnings ?? [])];
+	const isNoop = outcome.kind === "noop";
+	const result = outcome.kind === "applied" ? outcome.content : originalNormalized;
+	const resultHashes = outcome.kind === "applied" ? outcome.hashes : originalHashes;
+	const warnings = [...editWarnings, ...(outcome.anchorWarnings ?? [])];
 	const { totalAddedLines, totalRemovedLines } = countLineChanges(
 		edit,
 		originalHashes,
 		isNoop,
-		anchorResult.autoFixes?.length ?? 0,
+		outcome.kind === "applied" ? outcome.autoFixes?.length ?? 0 : 0,
 	);
 
 	let driftNotice: string | undefined;
@@ -332,7 +249,7 @@ export async function execPipeline(
 				served,
 				resultHashes,
 				resultLines: splitLines(result),
-				range: anchorResult.range,
+				range: outcome.range,
 				path: absolutePath,
 			});
 		} catch (error) {
@@ -348,16 +265,25 @@ export async function execPipeline(
 		originalEnding,
 		hadUtf8DecodeErrors,
 		warnings,
-		noopEdit: anchorResult.noopEdit,
-		firstChangedLine: anchorResult.firstChangedLine,
-		lastChangedLine: anchorResult.lastChangedLine,
+		noopEdit: outcome.kind === "noop" ? outcome.noopEdit : undefined,
+		firstChangedLine: outcome.kind === "applied" ? outcome.firstChangedLine : undefined,
+		lastChangedLine: outcome.kind === "applied" ? outcome.lastChangedLine : undefined,
 		resultHashes,
 		originalHashes,
 		totalAddedLines,
 		totalRemovedLines,
 		driftNotice,
-		range: anchorResult.range,
+		range: outcome.range,
 	};
+}
+
+export function reuseText(context: any, content: string): Text {
+	const t =
+		context.lastComponent instanceof Text
+			? context.lastComponent
+			: new Text("", 0, 0);
+	t.setText(content);
+	return t;
 }
 
 export async function compPreview(
@@ -391,14 +317,6 @@ type ToolDef = ToolDefinition<any, EditDetails, RRState> & {
 	renderShell?: "default" | "self";
 };
 
-export function reuseText(context: any, content: string): Text {
-	const t =
-		context.lastComponent instanceof Text
-			? context.lastComponent
-			: new Text("", 0, 0);
-	t.setText(content);
-	return t;
-}
 
 export function reuseMarkdown(
 	context: any,
@@ -528,36 +446,24 @@ export function buildToolDef(): ToolDef {
 
 				const editsAttempted = 1;
 				if (originalNormalized === result) {
-					const payload = noopPayloadKey(
+					const decision = await runNoopPolicy({
 						absolutePath,
-						canonical.remove_from,
-						canonical.remove_to,
-						canonical.replacement_text,
-					);
-					const count = trackNoopPayload(absolutePath, payload);
-
-					if (count >= NOOP_LOOP_THRESHOLD) {
-						const echoRows = buildRangeEcho(
-							range.startLine,
-							range.endLine,
-							originalHashes,
-						);
-						const echo = fmtServedRows(
-							echoRows,
-							splitLines(originalNormalized),
-						);
-						await recordEchoServes(sessionKey, absolutePath, echoRows, "live");
-						throw new Error(
-							`[E_NOOP_LOOP] This exact edit (anchors ${canonical.remove_from} to ${canonical.remove_to} in ${path}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend this edit; it will never change the file. Current range:\n${echo}`,
-						);
+						removeFrom: canonical.remove_from,
+						removeTo: canonical.remove_to,
+						replacementText: canonical.replacement_text,
+						ref: `in ${path}`,
+						batch: false,
+						range,
+						hashes: originalHashes,
+						lines: splitLines(originalNormalized),
+						sessionKey,
+					});
+					if (decision.action === "reject") {
+						throw new Error(decision.message);
 					}
-
-					if (count === 2) {
-						warnings.push(
-							`[E_NOOP_LOOP] Notice: this exact edit (anchors ${canonical.remove_from} to ${canonical.remove_to} in ${path}) has produced no changes twice in a row. The range already contains the replacement text; resending it again will be rejected.`,
-						);
+					if (decision.action === "warn") {
+						warnings.push(decision.notice);
 					}
-
 					let noopSnapshotId: string | undefined;
 					try {
 						noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
