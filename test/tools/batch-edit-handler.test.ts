@@ -2,7 +2,8 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { loadHashStore, getServed } from "../../src/hash-store";
+import { loadHashStore } from "../../src/hash-store";
+import { getServed } from "../../src/served-state";
 import { lineHashes } from "../../src/hashline";
 import { useTestHome, withTempDir } from "../support/fixtures";
 

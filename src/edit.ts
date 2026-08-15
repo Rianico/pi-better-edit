@@ -49,7 +49,8 @@ import {
 import { DebouncedPreview } from "./preview-controller";
 import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
-import { loadHashStore, snapshotIOFor, type HashStore } from "./hash-store";
+import { loadHashStore, type HashStore } from "./hash-store";
+import { snapshotIOFor } from "./snapshot-store";
 import {
 	NOOP_LOOP_THRESHOLD,
 	clearNoopLoop,

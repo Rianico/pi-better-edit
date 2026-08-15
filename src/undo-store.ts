@@ -1,5 +1,6 @@
-import { loadHashStore, type HashStore } from "./hash-store";
-import { isValidHashList } from "./snapshot-store";
+import { DatabaseSync } from "node:sqlite";
+import { loadHashStore, withBusyRetry, type HashStore } from "./hash-store";
+import { isValidHashList } from "./hashline/hash";
 
 export interface UndoRecord {
 	content: string;
@@ -9,12 +10,69 @@ export interface UndoRecord {
 	resultContent: string;
 }
 
+export interface UndoStmts {
+	undoUpsert: (
+		path: string,
+		content: string,
+		bom: string,
+		ending: string,
+		hashes: string,
+		resultContent: string,
+		updatedAt: number,
+	) => void;
+	undoGet: (path: string) => Record<string, unknown> | undefined;
+	undoDelete: (path: string) => void;
+}
+
+const stmtsCache = new WeakMap<DatabaseSync, UndoStmts>();
+
+export function undoStmts(db: DatabaseSync): UndoStmts {
+	let stmts = stmtsCache.get(db);
+	if (stmts) return stmts;
+	stmts = buildStmts(db);
+	stmtsCache.set(db, stmts);
+	return stmts;
+}
+
+function buildStmts(db: DatabaseSync): UndoStmts {
+	const undoUpsertStmt = db.prepare(
+		"INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) " +
+			"ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, updated_at = excluded.updated_at",
+	);
+	const undoGetStmt = db.prepare(
+		"SELECT content, bom, ending, hashes, result_content FROM undo WHERE path = ?",
+	);
+	const undoDelStmt = db.prepare("DELETE FROM undo WHERE path = ?");
+	return {
+		undoUpsert: (path, content, bom, ending, hashes, resultContent, updatedAt) => {
+			withBusyRetry(() => {
+				undoUpsertStmt.run(
+					path,
+					content,
+					bom,
+					ending,
+					hashes,
+					resultContent,
+					updatedAt,
+				);
+			});
+		},
+		undoGet: (...params) =>
+			undoGetStmt.get(...params) as Record<string, unknown> | undefined,
+		undoDelete: (path) => {
+			withBusyRetry(() => {
+				undoDelStmt.run(path);
+			});
+		},
+	};
+}
+
 export function upsertUndo(
 	store: HashStore,
 	path: string,
 	entry: UndoRecord,
 ): void {
-	store.stmts.undoUpsert(
+	undoStmts(store.db).undoUpsert(
 		path,
 		entry.content,
 		entry.bom,
@@ -29,12 +87,12 @@ export function getUndoEntry(
 	store: HashStore,
 	path: string,
 ): UndoRecord | undefined {
-	const row = store.stmts.undoGet(path);
+	const row = undoStmts(store.db).undoGet(path);
 	if (!row) return undefined;
 	try {
 		const parsed = JSON.parse(row.hashes as string);
 		if (!isValidHashList(parsed)) {
-			store.stmts.undoDelete(path);
+			undoStmts(store.db).undoDelete(path);
 			return undefined;
 		}
 		return {
@@ -45,13 +103,13 @@ export function getUndoEntry(
 			resultContent: row.result_content as string,
 		};
 	} catch {
-		store.stmts.undoDelete(path);
+		undoStmts(store.db).undoDelete(path);
 		return undefined;
 	}
 }
 
 export function deleteUndo(store: HashStore, path: string): void {
-	store.stmts.undoDelete(path);
+	undoStmts(store.db).undoDelete(path);
 }
 
 export async function readUndo(path: string): Promise<UndoRecord | undefined> {

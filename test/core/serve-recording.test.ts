@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
-import { getServed, upsertServed } from "../../src/served-store";
+import { getServed, upsertServed } from "../../src/served-state";
 import {
 	planServeRecording,
 	recordDiffServes,

@@ -40,7 +40,8 @@ import {
 	type ResolvedRange,
 	type ServedRow,
 } from "./hashline/served";
-import { loadHashStore, snapshotIOFor, type HashStore } from "./hash-store";
+import { loadHashStore, type HashStore } from "./hash-store";
+import { snapshotIOFor } from "./snapshot-store";
 import { BATCH_EDIT_MAX_ITEMS, NOOP_LOOP_THRESHOLD } from "./constants";
 import {
 	collectRemovedHashes,

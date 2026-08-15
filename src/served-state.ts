@@ -1,6 +1,14 @@
 import { randomUUID } from "crypto";
+import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "./hashline/alphabet";
-import { loadHashStore, withStore, type HashStore } from "./hash-store";
+import { SERVED_TTL_MS } from "./constants";
+import {
+	loadHashStore,
+	onStoreOpen,
+	withStore,
+	withBusyRetry,
+	type HashStore,
+} from "./hash-store";
 import type { ServedRow } from "./hashline/served";
 
 export type ServedEntry = { position: number; hash: string | null };
@@ -15,6 +23,112 @@ export function sessionKeyFor(ctx?: {
 	fallbackSessionKey ??= randomUUID();
 	return fallbackSessionKey;
 }
+
+export interface ServedStmts {
+	servedGet: (
+		sessionKey: string,
+		path: string,
+	) => Record<string, unknown> | undefined;
+	servedUpsert: (
+		sessionKey: string,
+		path: string,
+		hashes: string,
+		updatedAt: number,
+	) => void;
+	servedReportedUpsert: (
+		sessionKey: string,
+		path: string,
+		reported: string,
+		updatedAt: number,
+	) => void;
+	servedReportedClear: (
+		sessionKey: string,
+		updatedAt: number,
+		path: string,
+	) => void;
+	servedDelete: (sessionKey: string, path: string) => void;
+	servedDeletePath: (path: string) => void;
+	servedWipe: (sessionKey: string) => void;
+	servedPruneOlderThan: (updatedBefore: number) => void;
+}
+
+const stmtsCache = new WeakMap<DatabaseSync, ServedStmts>();
+
+export function servedStmts(db: DatabaseSync): ServedStmts {
+	let stmts = stmtsCache.get(db);
+	if (stmts) return stmts;
+	stmts = buildStmts(db);
+	stmtsCache.set(db, stmts);
+	return stmts;
+}
+
+function buildStmts(db: DatabaseSync): ServedStmts {
+	const servedGetStmt = db.prepare(
+		"SELECT hashes, reported FROM served WHERE session_id = ? AND path = ?",
+	);
+	const servedUpsertStmt = db.prepare(
+		"INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
+			"ON CONFLICT(session_id, path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
+	);
+	const servedReportedUpsertStmt = db.prepare(
+		"INSERT INTO served (session_id, path, hashes, reported, updated_at) VALUES (?, ?, '[]', ?, ?) " +
+			"ON CONFLICT(session_id, path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at",
+	);
+	const servedReportedClearStmt = db.prepare(
+		"UPDATE served SET reported = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
+	);
+	const servedDeleteStmt = db.prepare(
+		"DELETE FROM served WHERE session_id = ? AND path = ?",
+	);
+	const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
+	const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
+	const servedPruneOlderThanStmt = db.prepare(
+		"DELETE FROM served WHERE updated_at < ?",
+	);
+	return {
+		servedGet: (...params) =>
+			servedGetStmt.get(...params) as Record<string, unknown> | undefined,
+		servedUpsert: (sessionKey, path, hashes, updatedAt) => {
+			withBusyRetry(() => {
+				servedUpsertStmt.run(sessionKey, path, hashes, updatedAt);
+			});
+		},
+		servedReportedUpsert: (sessionKey, path, reported, updatedAt) => {
+			withBusyRetry(() => {
+				servedReportedUpsertStmt.run(sessionKey, path, reported, updatedAt);
+			});
+		},
+		servedReportedClear: (sessionKey, updatedAt, path) => {
+			withBusyRetry(() => {
+				servedReportedClearStmt.run(updatedAt, sessionKey, path);
+			});
+		},
+		servedDelete: (sessionKey, path) => {
+			withBusyRetry(() => {
+				servedDeleteStmt.run(sessionKey, path);
+			});
+		},
+		servedDeletePath: (path) => {
+			withBusyRetry(() => {
+				servedDeletePathStmt.run(path);
+			});
+		},
+		servedWipe: (sessionKey) => {
+			withBusyRetry(() => {
+				servedWipeStmt.run(sessionKey);
+			});
+		},
+		servedPruneOlderThan: (updatedBefore) => {
+			withBusyRetry(() => {
+				servedPruneOlderThanStmt.run(updatedBefore);
+			});
+		},
+	};
+}
+
+onStoreOpen((db) => {
+	servedStmts(db).servedPruneOlderThan(Date.now() - SERVED_TTL_MS);
+});
 
 function isValidServedList(value: unknown): value is (string | null)[] {
 	if (!Array.isArray(value)) return false;
@@ -51,15 +165,15 @@ export function getServed(
 	sessionKey: string,
 	path: string,
 ): (string | null)[] {
-	const row = store.stmts.servedGet(sessionKey, path);
+	const row = servedStmts(store.db).servedGet(sessionKey, path);
 	if (!row) return [];
 	try {
 		const parsed = JSON.parse(row.hashes as string);
 		if (isValidServedList(parsed)) return parsed;
-		store.stmts.servedDelete(sessionKey, path);
+		servedStmts(store.db).servedDelete(sessionKey, path);
 		return [];
 	} catch {
-		store.stmts.servedDelete(sessionKey, path);
+		servedStmts(store.db).servedDelete(sessionKey, path);
 		return [];
 	}
 }
@@ -74,7 +188,7 @@ export function upsertServed(
 	withStore(() => {
 		const updated = getServed(store, sessionKey, path).slice();
 		patchServed(updated, entries);
-		store.stmts.servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+		servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
 	});
 }
 
@@ -109,7 +223,7 @@ export function recordServesTruncated(
 				for (let i = clearFrom; i < updated.length; i++) updated[i] = null;
 			}
 			patchServed(updated, rows);
-			store.stmts.servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+			servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
 		});
 	} catch (error) {
 		console.error("Failed to record truncated served rows:", error);
@@ -117,7 +231,7 @@ export function recordServesTruncated(
 }
 
 export function getReported(store: HashStore, sessionKey: string, path: string): Set<string> {
-	const row = store.stmts.servedGet(sessionKey, path);
+	const row = servedStmts(store.db).servedGet(sessionKey, path);
 	if (!row) return new Set();
 	const raw = row.reported;
 	if (typeof raw !== "string" || raw.length === 0) return new Set();
@@ -145,7 +259,7 @@ export function addReported(
 	withStore(() => {
 		const current = getReported(store, sessionKey, path);
 		for (const hash of valid) current.add(hash);
-		store.stmts.servedReportedUpsert(
+		servedStmts(store.db).servedReportedUpsert(
 			sessionKey,
 			path,
 			JSON.stringify([...current]),
@@ -156,16 +270,20 @@ export function addReported(
 
 export function clearReported(store: HashStore, sessionKey: string, path: string): void {
 	withStore(() => {
-		store.stmts.servedReportedClear(sessionKey, Date.now(), path);
+		servedStmts(store.db).servedReportedClear(sessionKey, Date.now(), path);
 	});
 }
 
 export function deleteServed(store: HashStore, sessionKey: string, path: string): void {
-	store.stmts.servedDelete(sessionKey, path);
+	servedStmts(store.db).servedDelete(sessionKey, path);
+}
+
+export function deleteServedByPath(store: HashStore, path: string): void {
+	servedStmts(store.db).servedDeletePath(path);
 }
 
 export function wipeServed(store: HashStore, sessionKey: string): void {
-	store.stmts.servedWipe(sessionKey);
+	servedStmts(store.db).servedWipe(sessionKey);
 }
 
 export async function loadServed(

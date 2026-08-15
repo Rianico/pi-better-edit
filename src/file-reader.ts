@@ -8,7 +8,8 @@ import { detectEnding, toLF, stripBOM, type LineEnding } from "./edit-diff";
 import { abortIf } from "./utils";
 import { valKind, valAccess } from "./validation";
 import { visLines } from "./utils";
-import { loadHashStore, snapshotIOFor, type HashStore } from "./hash-store";
+import { loadHashStore, type HashStore } from "./hash-store";
+import { snapshotIOFor } from "./snapshot-store";
 export interface NormFile {
 	absolutePath: string;
 	normalized: string;

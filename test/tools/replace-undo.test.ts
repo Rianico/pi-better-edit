@@ -2,11 +2,8 @@ import { describe, expect, it, vi } from "vitest";
 import { readFile, writeFile, rm } from "fs/promises";
 import { join } from "path";
 import { lineHashes } from "../../src/hashline";
-import {
-	loadHashStore,
-	getSnapshot,
-	shutdownHashStore,
-} from "../../src/hash-store";
+import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
+import { getSnapshot } from "../../src/snapshot-store";
 import * as undoStoreModule from "../../src/undo-store";
 import * as fsWriteModule from "../../src/fs-write";
 import * as editUndoModule from "../../src/edit-undo";

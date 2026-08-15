@@ -9,6 +9,7 @@ export {
 	HL_PREFIX_PLUS_RE,
 	HL_PREFIX_MINUS_RE,
 	HL_BARE_PREFIX_RE,
+	isValidHashList,
 	lineHashes,
 	_lineHashesPure,
 	initHasher,

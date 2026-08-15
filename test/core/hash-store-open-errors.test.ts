@@ -123,7 +123,8 @@ describe("hash store open error handling", () => {
   });
 
   it("retries a transient busy error on statement execution", async () => {
-    const { loadHashStore, shutdownHashStore, upsertSnapshot } = await import("../../src/hash-store");
+    const { loadHashStore, shutdownHashStore } = await import("../../src/hash-store");
+      const { upsertSnapshot } = await import("../../src/snapshot-store");
     shutdownHashStore();
     const store = await loadHashStore();
     state.busyOnce = busyError("database is locked");
@@ -134,7 +135,8 @@ describe("hash store open error handling", () => {
   });
 
   it("propagates a persistent busy error after exhausting retries", async () => {
-    const { loadHashStore, shutdownHashStore, upsertSnapshot } = await import("../../src/hash-store");
+    const { loadHashStore, shutdownHashStore } = await import("../../src/hash-store");
+      const { upsertSnapshot } = await import("../../src/snapshot-store");
     shutdownHashStore();
     const store = await loadHashStore();
     state.busyOnce = busyError("database is locked");

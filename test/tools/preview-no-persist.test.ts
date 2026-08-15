@@ -3,7 +3,8 @@ import { readFile, writeFile } from "fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { lineHashes } from "../../src/hashline";
 import { compPreview } from "../../src/edit";
-import { loadHashStore, getSnapshot } from "../../src/hash-store";
+import { loadHashStore } from "../../src/hash-store";
+import { getSnapshot } from "../../src/snapshot-store";
 import { hashStorePath } from "../../src/paths";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 

@@ -9,7 +9,7 @@ import {
 	shutdownHashStore,
 	type HashStore,
 } from "../../src/hash-store";
-import { getSnapshot, upsertSnapshot } from "../../src/snapshot-store";
+import { getSnapshot, upsertSnapshot, snapshotStmts } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION } from "../../src/constants";
 import { initHasher, contentChecksum } from "../../src/hashline/hasher";
@@ -170,7 +170,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
 			await writeLegacyStore(home, ["not-an-object"]);
 
 			const store = await loadHashStore();
-			const paths = store.stmts.allPaths();
+			const paths = snapshotStmts(store.db).allPaths();
 			expect(paths).toEqual([]);
 		});
 	});
@@ -178,7 +178,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
 	it("does not run migration when no legacy file exists", async () => {
 		await withTempHome(async (home) => {
 			const store = await loadHashStore();
-			expect(store.stmts.allPaths()).toEqual([]);
+			expect(snapshotStmts(store.db).allPaths()).toEqual([]);
 			expect(existsSync(`${legacyPath(home)}.bak`)).toBe(false);
 		});
 	});

@@ -1,38 +1,10 @@
 import { existsSync } from "fs";
-import { readFile, rename, mkdir } from "fs/promises";
+import { rename, mkdir } from "fs/promises";
 import { DatabaseSync } from "node:sqlite";
-import { hashStorePath, hashStoreDir, legacyHashStorePath } from "./paths";
-import { errCode, splitLines } from "./utils";
-import { initHasher, contentChecksum } from "./hashline/hasher";
-import { setDefaultHashSnapshotIO, type HashSnapshotIO } from "./hashline/hash";
-import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT, SERVED_TTL_MS } from "./constants";
-import { getSnapshot, upsertSnapshot, isValidSnapshot } from "./snapshot-store";
-
-type SqlParams = (string | number)[];
-
-interface Prepared {
-	get: (...params: SqlParams) => Record<string, unknown> | undefined;
-	allPaths: (...params: SqlParams) => Record<string, unknown>[];
-	allHashes: (...params: SqlParams) => Record<string, unknown>[];
-	deleteOne: (...params: SqlParams) => void;
-	upsert: (...params: SqlParams) => void;
-	undoUpsert: (...params: SqlParams) => void;
-	undoGet: (...params: SqlParams) => Record<string, unknown> | undefined;
-	undoDelete: (...params: SqlParams) => void;
-	servedGet: (...params: SqlParams) => Record<string, unknown> | undefined;
-	servedUpsert: (...params: SqlParams) => void;
-	servedReportedUpsert: (...params: SqlParams) => void;
-	servedReportedClear: (...params: SqlParams) => void;
-	servedDelete: (...params: SqlParams) => void;
-	servedDeletePath: (...params: SqlParams) => void;
-	servedWipe: (...params: SqlParams) => void;
-	servedPruneOlderThan: (...params: SqlParams) => void;
-}
-
-export interface HashStore {
-	readonly stmts: Prepared;
-	readonly engine: "node:sqlite";
-}
+import { hashStorePath, hashStoreDir } from "./paths";
+import { errCode } from "./utils";
+import { initHasher } from "./hashline/hasher";
+import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
 
 export function isCorruptionError(error: unknown): boolean {
 	if (error && typeof error === "object") {
@@ -65,7 +37,7 @@ function sleepSync(ms: number): void {
 const BUSY_RETRIES = 3;
 const BUSY_RETRY_DELAY_MS = 100;
 
-function withBusyRetry<T>(fn: () => T): T {
+export function withBusyRetry<T>(fn: () => T): T {
 	let lastError: unknown;
 	for (let attempt = 0; attempt <= BUSY_RETRIES; attempt++) {
 		try {
@@ -79,31 +51,46 @@ function withBusyRetry<T>(fn: () => T): T {
 	throw lastError;
 }
 
-function openDbWithBusyRetry(storePath: string): {
-	db: DatabaseSync;
-	stmts: Prepared;
-} {
+export interface HashStore {
+	readonly db: DatabaseSync;
+	readonly engine: "node:sqlite";
+}
+
+let cachedDb: { path: string; db: DatabaseSync } | null = null;
+let opening: { path: string; promise: Promise<HashStore> } | null = null;
+let exitHandlerRegistered = false;
+
+export type StoreOpenHook = (
+	db: DatabaseSync,
+	info: { existed: boolean },
+) => void | Promise<void>;
+
+const openHooks: StoreOpenHook[] = [];
+
+export function onStoreOpen(hook: StoreOpenHook): void {
+	openHooks.push(hook);
+}
+
+function openDbWithBusyRetry(storePath: string): DatabaseSync {
 	return withBusyRetry(() => openDb(storePath));
 }
 
-let cachedDb: { path: string; db: DatabaseSync; stmts: Prepared } | null = null;
-let opening: { path: string; promise: Promise<HashStore> } | null = null;
-let exitHandlerRegistered = false;
-function openDb(storePath: string): { db: DatabaseSync; stmts: Prepared } {
+function openDb(storePath: string): DatabaseSync {
 	const db = new DatabaseSync(storePath, {
 		timeout: HASH_STORE_BUSY_TIMEOUT,
 	});
 	try {
-		return buildStore(db);
+		buildStore(db);
 	} catch (error) {
 		try {
 			db.close();
 		} catch {}
 		throw error;
 	}
+	return db;
 }
 
-function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
+function buildStore(db: DatabaseSync): void {
 	db.exec("PRAGMA journal_mode = WAL");
 	db.exec("PRAGMA synchronous = NORMAL");
 	db.exec(
@@ -165,116 +152,6 @@ function buildStore(db: DatabaseSync): { db: DatabaseSync; stmts: Prepared } {
 		"INSERT INTO meta (key, value) VALUES ('version', ?) " +
 			"ON CONFLICT(key) DO UPDATE SET value = excluded.value",
 	).run(String(HASH_STORE_VERSION));
-	const getStmt = db.prepare(
-		"SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?",
-	);
-	const allStmt = db.prepare(
-		"SELECT path FROM snapshots UNION SELECT path FROM undo UNION SELECT path FROM served",
-	);
-	const allHashesStmt = db.prepare("SELECT path, hashes FROM snapshots");
-	const delStmt = db.prepare("DELETE FROM snapshots WHERE path = ?");
-	const upsertStmt = db.prepare(
-		"INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?) " +
-			"ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at",
-	);
-	const undoUpsertStmt = db.prepare(
-		"INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) " +
-			"ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, updated_at = excluded.updated_at",
-	);
-	const undoGetStmt = db.prepare(
-		"SELECT content, bom, ending, hashes, result_content FROM undo WHERE path = ?",
-	);
-	const undoDelStmt = db.prepare("DELETE FROM undo WHERE path = ?");
-	const servedGetStmt = db.prepare(
-		"SELECT hashes, reported FROM served WHERE session_id = ? AND path = ?",
-	);
-	const servedUpsertStmt = db.prepare(
-		"INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
-			"ON CONFLICT(session_id, path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
-	);
-	const servedReportedUpsertStmt = db.prepare(
-		"INSERT INTO served (session_id, path, hashes, reported, updated_at) VALUES (?, ?, '[]', ?, ?) " +
-			"ON CONFLICT(session_id, path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at",
-	);
-	const servedReportedClearStmt = db.prepare(
-		"UPDATE served SET reported = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
-	);
-	const servedDeleteStmt = db.prepare(
-		"DELETE FROM served WHERE session_id = ? AND path = ?",
-	);
-	const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
-	const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
-	const servedPruneOlderThanStmt = db.prepare(
-		"DELETE FROM served WHERE updated_at < ?",
-	);
-	const stmts: Prepared = {
-		get: (...params) =>
-			getStmt.get(...params) as Record<string, unknown> | undefined,
-		allPaths: (...params) =>
-			allStmt.all(...params) as Record<string, unknown>[],
-		allHashes: (...params) =>
-			allHashesStmt.all(...params) as Record<string, unknown>[],
-		deleteOne: (...params) => {
-			withBusyRetry(() => {
-				delStmt.run(...params);
-			});
-		},
-		upsert: (...params) => {
-			withBusyRetry(() => {
-				upsertStmt.run(...params);
-			});
-		},
-		undoUpsert: (...params) => {
-			withBusyRetry(() => {
-				undoUpsertStmt.run(...params);
-			});
-		},
-		undoGet: (...params) =>
-			undoGetStmt.get(...params) as Record<string, unknown> | undefined,
-		undoDelete: (...params) => {
-			withBusyRetry(() => {
-				undoDelStmt.run(...params);
-			});
-		},
-		servedGet: (...params) =>
-			servedGetStmt.get(...params) as Record<string, unknown> | undefined,
-		servedUpsert: (...params) => {
-			withBusyRetry(() => {
-				servedUpsertStmt.run(...params);
-			});
-		},
-		servedReportedUpsert: (...params) => {
-			withBusyRetry(() => {
-				servedReportedUpsertStmt.run(...params);
-			});
-		},
-		servedReportedClear: (...params) => {
-			withBusyRetry(() => {
-				servedReportedClearStmt.run(params[1], params[0], params[2]);
-			});
-		},
-		servedDelete: (...params) => {
-			withBusyRetry(() => {
-				servedDeleteStmt.run(...params);
-			});
-		},
-		servedDeletePath: (...params) => {
-			withBusyRetry(() => {
-				servedDeletePathStmt.run(...params);
-			});
-		},
-		servedWipe: (...params) => {
-			withBusyRetry(() => {
-				servedWipeStmt.run(...params);
-			});
-		},
-		servedPruneOlderThan: (...params) => {
-			withBusyRetry(() => {
-				servedPruneOlderThanStmt.run(...params);
-			});
-		},
-	};
-	return { db, stmts };
 }
 
 function isHealthy(db: DatabaseSync): boolean {
@@ -316,31 +193,28 @@ async function openStore(storePath: string): Promise<HashStore> {
 	await mkdir(hashStoreDir(), { recursive: true });
 
 	let existed = existsSync(storePath);
-	let opened: { db: DatabaseSync; stmts: Prepared };
+	let db: DatabaseSync;
 	try {
-		opened = openDbWithBusyRetry(storePath);
+		db = openDbWithBusyRetry(storePath);
 	} catch (error) {
 		if (!isCorruptionError(error)) throw error;
 		console.error("Hash store failed to open, rebuilding:", error);
 		await quarantineStore(storePath);
 		existed = false;
-		opened = openDbWithBusyRetry(storePath);
+		db = openDbWithBusyRetry(storePath);
 	}
-	if (!isHealthy(opened.db)) {
-		shutdownDb(opened.db);
+	if (!isHealthy(db)) {
+		shutdownDb(db);
 		await quarantineStore(storePath);
 		existed = false;
-		opened = openDbWithBusyRetry(storePath);
+		db = openDbWithBusyRetry(storePath);
 	}
-	const { db, stmts } = opened;
 
-	if (!existed) {
-		await migrateLegacy(db);
+	for (const hook of openHooks) {
+		await hook(db, { existed });
 	}
-	withBusyRetry(() => {
-		stmts.servedPruneOlderThan(Date.now() - SERVED_TTL_MS);
-	});
-	cachedDb = { path: storePath, db, stmts };
+
+	cachedDb = { path: storePath, db };
 
 	if (!exitHandlerRegistered) {
 		exitHandlerRegistered = true;
@@ -353,13 +227,13 @@ async function openStore(storePath: string): Promise<HashStore> {
 		}
 	}
 
-	return { stmts, engine: "node:sqlite" };
+	return { db, engine: "node:sqlite" };
 }
 
 export function loadHashStore(): Promise<HashStore> {
 	const storePath = hashStorePath();
 	if (cachedDb && cachedDb.path === storePath && cachedDb.db.isOpen) {
-		return Promise.resolve({ stmts: cachedDb.stmts, engine: "node:sqlite" });
+		return Promise.resolve({ db: cachedDb.db, engine: "node:sqlite" });
 	}
 	if (opening && opening.path === storePath) {
 		return opening.promise;
@@ -396,116 +270,3 @@ export function withStore(fn: () => void): void {
 		fn();
 	}
 }
-
-export function snapshotIOFor(store: HashStore): HashSnapshotIO {
-	return {
-		async get(path, content, deleteCorrupt) {
-			return getSnapshot(store, path, content, deleteCorrupt);
-		},
-		async upsert(path, checksum, lineCount, hashes) {
-			upsertSnapshot(store, path, checksum, lineCount, hashes);
-		},
-	};
-}
-
-setDefaultHashSnapshotIO({
-	async get(path, content, deleteCorrupt) {
-		const store = await loadHashStore();
-		return getSnapshot(store, path, content, deleteCorrupt);
-	},
-	async upsert(path, checksum, lineCount, hashes) {
-		const store = await loadHashStore();
-		upsertSnapshot(store, path, checksum, lineCount, hashes);
-	},
-});
-
-async function migrateLegacy(db: DatabaseSync): Promise<void> {
-	const legacyPath = legacyHashStorePath();
-	let content: string;
-	try {
-		content = await readFile(legacyPath, "utf-8");
-	} catch (error: unknown) {
-		if (errCode(error) === "ENOENT") return;
-		console.error("Failed to read legacy hash store for migration:", error);
-		return;
-	}
-
-	let parsed: { snapshots?: Record<string, unknown> };
-	try {
-		parsed = JSON.parse(content) as typeof parsed;
-	} catch (error) {
-		console.error(
-			"Failed to parse legacy hash store, skipping migration:",
-			error,
-		);
-		return;
-	}
-
-	const raw = parsed.snapshots;
-	if (!raw || typeof raw !== "object" || Array.isArray(raw)) return;
-
-	const rows: [string, string, number, string, number][] = [];
-	for (const [key, value] of Object.entries(raw)) {
-		if (!isValidSnapshot(value)) continue;
-		if (new Set(value.hashes).size !== value.hashes.length) {
-			console.warn(
-				`Skipped legacy snapshot with duplicate hashes for ${key}; it will be re-hashed on next read.`,
-			);
-			continue;
-		}
-		rows.push([
-			key,
-			contentChecksum(value.content),
-			splitLines(value.content).length,
-			JSON.stringify(value.hashes),
-			Date.now(),
-		]);
-	}
-	if (rows.length > 0) {
-		db.exec("BEGIN IMMEDIATE");
-		try {
-			const stmt = db.prepare(
-				"INSERT OR REPLACE INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)",
-			);
-			for (const row of rows) stmt.run(...row);
-			db.exec("COMMIT");
-		} catch (e) {
-			db.exec("ROLLBACK");
-			throw e;
-		}
-	}
-
-	try {
-		await rename(legacyPath, `${legacyPath}.bak`);
-	} catch (error) {
-		console.error("Failed to rename legacy hash store after migration:", error);
-	}
-}
-
-export {
-	getSnapshot,
-	upsertSnapshot,
-	findSnapshotPaths,
-	pruneMissing,
-	isValidHashList,
-	isValidSnapshot,
-} from "./snapshot-store";
-export type { LegacySnapshot } from "./snapshot-store";
-export {
-	getServed,
-	upsertServed,
-	recordServes,
-	recordServesTruncated,
-	getReported,
-	addReported,
-	clearReported,
-	deleteServed,
-	wipeServed,
-} from "./served-store";
-export type { ServedEntry } from "./served-store";
-export {
-	upsertUndo,
-	getUndoEntry,
-	deleteUndo,
-} from "./undo-store";
-export type { UndoRecord } from "./undo-store";

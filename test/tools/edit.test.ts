@@ -332,7 +332,7 @@ describe("regEdit — robustness", () => {
 					undefined,
 					ctx,
 				);
-				const hashStore = await import("../../src/hash-store");
+				const hashStore = await import("../../src/snapshot-store");
 				const spy = vi
 					.spyOn(hashStore, "upsertSnapshot")
 					.mockImplementation(() => {

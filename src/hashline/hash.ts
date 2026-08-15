@@ -1,6 +1,6 @@
 import { splitLines } from "../utils";
 import { xxh32, contentChecksum, initHasher } from "./hasher";
-import { HASH_LEN, ALPH, ALPH_RE, HASH_CLASS } from "./alphabet";
+import { HASH_LEN, ALPH, ALPH_RE, HASH_CLASS, HASH_RE } from "./alphabet";
 export { initHasher, HASH_LEN, ALPH_RE, HASH_CLASS };
 
 export interface HashSnapshotIO {
@@ -30,6 +30,13 @@ export const HASH_SEP = "│";
 export const HASH_SPACE = ALPH.length ** HASH_LEN;
 export const MAX_HASH_LINES = HASH_SPACE;
 
+export function isValidHashList(value: unknown): value is string[] {
+	if (!Array.isArray(value)) return false;
+	for (const hash of value) {
+		if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
+	}
+	return true;
+}
 export const HASH_PROBE_STRIDE = ALPH.length ** 2 + ALPH.length + 1;
 
 function idxToHash(idx: number): string {
