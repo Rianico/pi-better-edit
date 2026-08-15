@@ -10,10 +10,7 @@ export interface PreviewHost {
 	invalidate: () => void;
 }
 
-export type PreviewCompute = (
-	args: unknown,
-	cwd: string,
-) => Promise<RPreview>;
+export type PreviewCompute = (args: unknown, cwd: string) => Promise<RPreview>;
 
 export class DebouncedPreview {
 	constructor(
