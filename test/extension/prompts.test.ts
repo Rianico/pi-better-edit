@@ -65,6 +65,7 @@ describe("prompt guidelines", () => {
 		expect(content).toContain("remove_from");
 		expect(content).toContain("remove_to");
 		expect(content).toContain("replacement_text");
+		expect(content).toContain("fresh anchors");
 		expect(content).not.toContain("hash_bounds");
 		expect(content).not.toContain("new_content");
 		expect(content).not.toContain("{{");
@@ -82,7 +83,7 @@ describe("prompt guidelines", () => {
 			"utf-8",
 		);
 		expect(content).toContain("never served");
-		expect(content).toContain("fresh anchors");
+		expect(content).toContain("auto-read diff");
 		expect(content).not.toContain("re-read");
 		expect(content).not.toContain("call again after any edit");
 		expect(content).not.toContain("call before `edit`");

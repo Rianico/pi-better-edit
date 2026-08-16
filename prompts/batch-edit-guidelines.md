@@ -1,6 +1,2 @@
-- batch_edit: each item takes the same fields as edit — { path?, remove_from, remove_to, replacement_text }. remove_from and remove_to take ONLY the bare 3-char hash from read/diff output; never the line content.
-- batch_edit: items are applied in order. Edits to the same file must not overlap — an item whose range was changed by an earlier item in the batch is rejected.
-- batch_edit: the whole batch is all-or-nothing. If any item fails validation, nothing is written anywhere; the failing item's current range is echoed as fresh HASH│content rows that count as serves.
-- batch_edit: every item is verified against what the tool served you — stale anchors, changed interiors, or never-served lines reject the batch.
 - batch_edit: a noop item (the range already contains the replacement text) is reported without failing the batch; an all-noop batch reports no changes.
 - batch_edit: the result is one combined diff per file with fresh anchors — anchor follow-up edits on those rows without re-reading.

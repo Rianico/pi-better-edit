@@ -1,2 +1,1 @@
-- `undo_last_edit`: reverts only the most recent edit on the file — any write to the file clears the undo history, so call it immediately after a bad edit. An edit is bad when its post-edit diff shows `-HASH│` rows for lines you meant to keep (a closing brace, import, or declaration).
-- `undo_last_edit`: when auto-read shows the post-edit diff, its `+HASH│` and ` HASH│` rows are the fresh anchors for the restored file, so follow-up edits can anchor on the diff.
+- undo_last_edit: reverts only the most recent edit on the file — any write to the file clears the undo history, so call it immediately after a bad edit. An edit is bad when its post-edit diff shows `-HASH│` rows for lines you meant to keep (a closing brace, import, or declaration).
