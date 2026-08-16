@@ -79,8 +79,7 @@ const batchItemSchema = Type.Object(
 	{
 		path: Type.Optional(
 			Type.String({
-				description:
-					"Path to edit. Required — always provide it explicitly; it is only auto-resolved from the anchors when they uniquely identify a file in the hash store.",
+				description: "Required; auto-resolved when anchors uniquely identify a file",
 			}),
 		),
 		remove_from: removeFromSchema,
@@ -93,11 +92,7 @@ const batchItemSchema = Type.Object(
 export const batchEditToolSchema = Type.Object(
 	{
 		edits: Type.Array(batchItemSchema, {
-			description:
-				`Ordered list of edits, each with the same shape as the edit tool: { path?, remove_from, remove_to, replacement_text }. ` +
-				`Edits to the same file are applied in order and verified against what was served before anything is written. ` +
-				`The batch is all-or-nothing: if any edit fails validation, nothing is written and the failing edit's current range is served back. ` +
-				`Use batch_edit when you have multiple edits; do not issue several edit calls in one message.`,
+			description: "Ordered list of edit items",
 			minItems: 1,
 			maxItems: BATCH_EDIT_MAX_ITEMS,
 		}),

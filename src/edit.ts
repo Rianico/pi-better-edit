@@ -48,26 +48,22 @@ import type { ResolvedRange } from "./hashline/served";
 import { applyOneEdit, countLineChanges, loadEditFile } from "./edit-pipeline";
 
 export const replacementTextSchema = Type.String({
-	description:
-		'Replacement text as a single string with \\n line separators; every \\n separates lines, so a trailing \\n adds a final empty line. Mirror the removed lines exactly, blank lines included. A replacement that is only blank lines is written as one \\n per blank line. Use "" to delete the range.',
+	description: 'Complete replacement for the range; use "" to delete',
 });
 
 export const removeFromSchema = Type.String({
-	description:
-		'Bare 3-char HASH only (e.g. "aB3") — copy just the hash from the leftmost column of a read row like `aB3│content`; never the line content. Marks the FIRST line to remove (inclusive)',
+	description: "First line to remove (inclusive)",
 });
 
 export const removeToSchema = Type.String({
-	description:
-		'Bare 3-char HASH only (e.g. "aB3") — copy just the hash from the leftmost column of a read row like `aB3│content`; never the line content. Marks the LAST line to remove (inclusive)',
+	description: "Last line to remove (inclusive)",
 });
 
 export const editToolSchema = Type.Object(
 	{
 		path: Type.Optional(
 			Type.String({
-				description:
-					"Path to edit. Required — always provide it explicitly; it is only auto-resolved from the anchors as a fallback when omitted by mistake.",
+				description: "Required; auto-resolved from anchors only as fallback",
 			}),
 		),
 		remove_from: removeFromSchema,
