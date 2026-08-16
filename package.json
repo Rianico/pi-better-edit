@@ -12,7 +12,7 @@
   "bugs": {
     "url": "https://github.com/Rianico/pi-hashline-edit-lsz/issues"
   },
-  "author": "pi-hashline-edit-lsz contributors",
+  "author": "rianico",
   "keywords": [
     "pi-package",
     "pi",
@@ -23,11 +23,9 @@
     "hash",
     "anchors",
     "read",
-    "replace",
     "edit",
     "undo",
-    "file-editing",
-    "stable"
+    "file-editing"
   ],
   "license": "MIT",
   "files": [
