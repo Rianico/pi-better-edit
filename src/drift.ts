@@ -129,9 +129,7 @@ export function computeDrift(
 
 	const rowsText = fmtServedRows(rows, resultLines);
 	const moreText =
-		unshown > 0
-			? `\n[... ${unshown} more — re-read to see]`
-			: "";
+		unshown > 0 ? `\n[... ${unshown} more — re-read to see]` : "";
 	return {
 		text: `${DRIFT_NOTICE_HEADING} ${countLabel} changed outside the range:\n${rowsText}${moreText}`,
 		rows,

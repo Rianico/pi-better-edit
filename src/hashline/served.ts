@@ -189,4 +189,3 @@ export interface ResolvedRange {
 	endHash: string;
 	delta: number;
 }
-

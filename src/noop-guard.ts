@@ -76,7 +76,13 @@ export async function runNoopPolicy(
 			input.hashes,
 		);
 		const echo = fmtServedRows(echoRows, input.lines);
-		await recordEchoServes(input.sessionKey, input.absolutePath, echoRows, "live", input.hashes.length);
+		await recordEchoServes(
+			input.sessionKey,
+			input.absolutePath,
+			echoRows,
+			"live",
+			input.hashes.length,
+		);
 		const message = input.batch
 			? `[E_NOOP_LOOP] ${input.ref}: identical edit (${input.removeFrom} → ${input.removeTo}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject the batch. Current range:\n${echo}`
 			: `[E_NOOP_LOOP] identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject. Current range:\n${echo}`;

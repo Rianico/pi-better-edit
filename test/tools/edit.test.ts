@@ -196,7 +196,9 @@ describe("regEdit", () => {
 				"Added 1 line(s), removed 2 line(s).",
 			);
 			expect(result.content[0].text).toContain("[E_BAD_OP]");
-			expect(result.content[0].text).toContain("reversed remove_from/remove_to");
+			expect(result.content[0].text).toContain(
+				"reversed remove_from/remove_to",
+			);
 			expect(result.details?.diff).toContain("X");
 		});
 	});
