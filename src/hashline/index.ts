@@ -10,6 +10,7 @@ export {
 	HL_PREFIX_MINUS_RE,
 	HL_BARE_PREFIX_RE,
 	isValidHashList,
+	CANON_VERSION,
 	lineHashes,
 	_lineHashesPure,
 	initHasher,

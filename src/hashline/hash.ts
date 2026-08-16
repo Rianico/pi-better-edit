@@ -66,8 +66,10 @@ export const HL_PREFIX_MINUS_RE = new RegExp(
 
 export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
 
+export const CANON_VERSION = 2;
+
 export function canon(line: string): string {
-	return line.replace(/\r/g, "").trimEnd();
+	return line.replace(/[ \t\r\n]+/g, "");
 }
 
 const BITSET_WORDS = Math.ceil(HASH_SPACE / 32);

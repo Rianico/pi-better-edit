@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { contentChecksum } from "./hashline/hasher";
 import {
 	isValidHashList,
+	CANON_VERSION,
 	setDefaultHashSnapshotIO,
 	type HashSnapshotIO,
 } from "./hashline/hash";
@@ -81,6 +82,9 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
 		},
 	};
 }
+function cacheKey(checksum: string): string {
+	return `${CANON_VERSION}:${checksum}`;
+}
 
 export function isValidSnapshot(value: unknown): value is LegacySnapshot {
 	if (typeof value !== "object" || value === null) return false;
@@ -95,7 +99,7 @@ export function getSnapshot(
 	content: string,
 	deleteCorrupt = true,
 ): string[] | undefined {
-	const checksum = contentChecksum(content);
+	const checksum = cacheKey(contentChecksum(content));
 	const lineCount = splitLines(content).length;
 	const row = snapshotStmts(store.db).get(path, checksum, lineCount);
 	if (!row) return undefined;
@@ -119,7 +123,7 @@ export function upsertSnapshot(
 ): void {
 	snapshotStmts(store.db).upsert(
 		path,
-		checksum,
+		cacheKey(checksum),
 		lineCount,
 		JSON.stringify(hashes),
 		Date.now(),
