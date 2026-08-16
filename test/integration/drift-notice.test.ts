@@ -48,7 +48,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
 				const resultText = getText(result);
 				expect(resultText).toContain("Successfully edited");
-				expect(resultText).toContain("Drift notice:");
+				expect(resultText).toContain("drift:");
 				const driftRow = resultText
 					.split("\n")
 					.find((l) => /^[A-Za-z0-9]{3}│DELTA$/.test(l));
@@ -109,7 +109,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
 				const resultText = getText(result);
 				expect(resultText).toContain("No changes made to sample.ts");
-				expect(resultText).toContain("Drift notice:");
+				expect(resultText).toContain("drift:");
 				const currentHashes = await lineHashes(
 					"alpha\nbeta\ngamma\nDELTA\n",
 					home.testPath,
@@ -151,7 +151,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 					undefined,
 					ctx,
 				);
-				expect(getText(first)).toContain("Drift notice:");
+				expect(getText(first)).toContain("drift:");
 				expect(getText(first)).toContain("│DELTA");
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA2\n", "utf-8");
@@ -256,7 +256,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 					ctx,
 				);
 				const thirdText = getText(third);
-				expect(thirdText).toContain("Drift notice:");
+				expect(thirdText).toContain("drift:");
 				expect(thirdText).toContain("│DELTA3");
 				expect(thirdText).not.toContain("already reported");
 			},
@@ -349,7 +349,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
 				const resultText = getText(result);
 				expect(resultText).toContain("Successfully edited");
-				const notice = resultText.split("Drift notice:")[1] ?? "";
+				const notice = resultText.split("drift:")[1] ?? "";
 				expect(notice).toContain("2 line(s)");
 				expect(notice.match(/^[A-Za-z0-9]{3}│R$/gm)).toHaveLength(1);
 				expect(notice).toMatch(/^[A-Za-z0-9]{3}│l1$/m);
@@ -397,7 +397,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 					undefined,
 					ctx,
 				);
-				expect(getText(edited)).toContain("Drift notice:");
+				expect(getText(edited)).toContain("drift:");
 
 				const undone = await undoTool.execute(
 					"u1",
@@ -451,7 +451,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
 				const resultText = getText(result);
 				expect(resultText).toContain("Successfully edited");
-				expect(resultText).toContain("Drift notice:");
+				expect(resultText).toContain("drift:");
 
 				const betaRow = resultText
 					.split("\n")
@@ -465,7 +465,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 				expect(betaRow).toBeDefined();
 				expect(gammaRow).toBeDefined();
 				expect(deltaRow).toBeDefined();
-				const notice = resultText.split("Drift notice:")[1] ?? "";
+				const notice = resultText.split("drift:")[1] ?? "";
 				expect(notice.indexOf(betaRow!)).toBeLessThan(
 					notice.indexOf(gammaRow!),
 				);

@@ -78,15 +78,15 @@ export async function runNoopPolicy(
 		const echo = fmtServedRows(echoRows, input.lines);
 		await recordEchoServes(input.sessionKey, input.absolutePath, echoRows, "live", input.hashes.length);
 		const message = input.batch
-			? `[E_NOOP_LOOP] ${input.ref}: this exact edit (anchors ${input.removeFrom} to ${input.removeTo}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend it; it will never change the file. The whole batch was rejected and nothing was written. Current on-disk range:\n${echo}`
-			: `[E_NOOP_LOOP] This exact edit (anchors ${input.removeFrom} to ${input.removeTo} ${input.ref}) has been submitted ${count} times and produced no changes each time — the range already contains the replacement text. Do not resend this edit; it will never change the file. Current range:\n${echo}`;
+			? `[E_NOOP_LOOP] ${input.ref}: identical edit (${input.removeFrom} → ${input.removeTo}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject the batch. Current range:\n${echo}`
+			: `[E_NOOP_LOOP] identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject. Current range:\n${echo}`;
 		return { action: "reject", count, message, echoRows };
 	}
 
 	if (count === 2) {
 		const notice = input.batch
-			? `[E_NOOP_LOOP] Notice: ${input.ref} — this exact edit has produced no changes twice in a row; the range already contains the replacement text. Resending it again will reject the batch.`
-			: `[E_NOOP_LOOP] Notice: this exact edit (anchors ${input.removeFrom} to ${input.removeTo} ${input.ref}) has produced no changes twice in a row. The range already contains the replacement text; resending it again will be rejected.`;
+			? `[E_NOOP_LOOP] Notice: ${input.ref} — identical edit no-op'd twice; range already has this text. Resend will reject the batch.`
+			: `[E_NOOP_LOOP] Notice: identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) no-op'd twice; range already has this text. Resend will reject.`;
 		return { action: "warn", count, notice };
 	}
 

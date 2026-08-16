@@ -386,7 +386,7 @@ describe("edit diff in model-visible text", () => {
 			const handler = handlers.get("tool_result");
 			const diff = " aaa\n-   │bbb\n+XYZ│BBB\n ccc";
 			const summary =
-				'Successfully edited in warn.txt. Added 1 line(s), removed 1 line(s).\n\nWarnings:\n[E_BARE_HASH_PREFIX] Autocorrected: stripped "HASH│" prefix copied from read output in replacement_text line 1.';
+				'Successfully edited in warn.txt. Added 1 line(s), removed 1 line(s).\n\nWarnings:\n[E_BARE_HASH_PREFIX] stripped "HASH│" prefix from replacement_text line 1.';
 
 			const result = await handler!(
 				{
@@ -397,7 +397,7 @@ describe("edit diff in model-visible text", () => {
 						diff,
 						metrics: { classification: "applied" },
 						warnings: [
-							'[E_BARE_HASH_PREFIX] Autocorrected: stripped "HASH│" prefix copied from read output in replacement_text line 1.',
+							'[E_BARE_HASH_PREFIX] stripped "HASH│" prefix from replacement_text line 1.',
 						],
 					},
 					content: [{ type: "text", text: summary }],
@@ -409,7 +409,7 @@ describe("edit diff in model-visible text", () => {
 				result as { content: Array<{ type: string; text: string }> }
 			).content[0].text;
 			expect(text).toContain(diff);
-			expect(text).toContain("Warnings:");
+			expect(text).toContain("[E_BARE_HASH_PREFIX]");
 			expect(text).toContain("[E_BARE_HASH_PREFIX]");
 			expect(text).not.toContain("Successfully edited");
 			expect(text).not.toContain("--- Auto-read");

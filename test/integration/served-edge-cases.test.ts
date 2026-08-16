@@ -60,7 +60,7 @@ describe("served-state edge cases for edit", () => {
 				rejected = error as Error;
 			}
 			expect(rejected).toBeDefined();
-			expect(rejected!.message).toMatch(/E_RANGE_UNSERVED.*Line 4/);
+			expect(rejected!.message).toMatch(/E_RANGE_UNSERVED.*line 4/);
 			expect(await readFile(path, "utf-8")).toBe(content);
 
 			const echoLines = rejected!.message
@@ -117,7 +117,7 @@ describe("served-state edge cases for edit", () => {
 					undefined,
 					ctx,
 				),
-			).rejects.toThrow(/E_RANGE_STALE.*Line 3/);
+			).rejects.toThrow(/E_RANGE_STALE.*line 3/);
 
 			expect(await readFile(path, "utf-8")).toBe("a\nb\nb\nd\n");
 		});
@@ -250,14 +250,14 @@ describe("served-state edge cases for edit", () => {
 				rejected = error as Error;
 			}
 			expect(rejected).toBeDefined();
-			expect(rejected!.message).toMatch(/E_RANGE_STALE.*Line 100/);
+			expect(rejected!.message).toMatch(/E_RANGE_STALE.*line 100/);
 
 			const echoLines = rejected!.message
 				.split("\n")
 				.filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
 			expect(echoLines).toHaveLength(150);
 			expect(rejected!.message).toMatch(
-				/\[\s*\.\.\.\s*50 more lines — use read with offset=151 to see the rest\]/,
+				/\[\s*\.\.\.\s*50 more — read offset=151\]/,
 			);
 			expect(await readFile(path, "utf-8")).toBe(mutated);
 		});

@@ -242,7 +242,7 @@ describe("buildAppliedText", () => {
 		};
 		const result = buildAppliedText(details, mockTheme);
 		expect(result).toContain("[success]");
-		expect(result).toContain("Warnings:");
+		expect(result).toContain("Warning 1");
 	});
 
 	it("returns undefined for no content", () => {
@@ -265,8 +265,8 @@ describe("fmtResultMd", () => {
 	});
 
 	it("keeps interior blank lines", () => {
-		const text = "Summary\n\nWarnings:\nWarning 1";
-		expect(fmtResultMd(text)).toBe("Summary\n\nWarnings:\nWarning 1");
+		const text = "Summary\n\nWarning 1";
+		expect(fmtResultMd(text)).toBe("Summary\n\nWarning 1");
 	});
 });
 

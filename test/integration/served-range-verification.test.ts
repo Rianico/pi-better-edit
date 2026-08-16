@@ -49,7 +49,7 @@ describe("served-state range verification for edit", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/E_RANGE_STALE.*Line 2/);
+				).rejects.toThrow(/E_RANGE_STALE.*line 2/);
 
 				expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 			},
@@ -405,7 +405,7 @@ describe("served-state range verification for edit", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/Cannot verify the range against served state/);
+				).rejects.toThrow(/cannot verify range against served state/);
 
 				expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ngamma\n");
 			},

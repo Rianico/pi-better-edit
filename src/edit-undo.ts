@@ -150,7 +150,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
 						content: [
 							{
 								type: "text",
-								text: `[E_UNDO_STALE] Cannot undo last edit on ${path}: the file no longer exists. Call read() to inspect the current state.`,
+								text: `[E_UNDO_STALE] cannot undo on ${path}: file no longer exists.`,
 							},
 						],
 						isError: true,
@@ -166,7 +166,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
 						content: [
 							{
 								type: "text",
-								text: `[E_UNDO_STALE] Cannot undo last edit on ${path}: the file was modified after the edit, so undoing would overwrite those changes. Call read() to inspect the current state.`,
+								text: `[E_UNDO_STALE] cannot undo on ${path}: file modified after edit — undo would overwrite changes.`,
 							},
 						],
 						isError: true,
@@ -227,7 +227,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
 					);
 				}
 				parts.push(
-					"File reverted to previous state. The post-edit diff rows carry the restored file's fresh anchors for follow-up edits.",
+					"File reverted; diff rows carry fresh anchors for follow-up edits.",
 				);
 
 				const details: EditDetails = {

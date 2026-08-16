@@ -773,7 +773,7 @@ describe("undo_last_edit", () => {
 		});
 	});
 
-	it("refuses to undo when the file was modified after the edit", async () => {
+	it("refuses to undo when the file was file modified after edit", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { getTool, ctx } = setupIntegrationTest(cwd);
 			const readTool = getTool("read");
@@ -812,7 +812,7 @@ describe("undo_last_edit", () => {
 			);
 			expect(undoResult.isError).toBe(true);
 			expect(getText(undoResult)).toMatch(/E_UNDO_STALE/);
-			expect(getText(undoResult)).toMatch(/modified after the edit/i);
+			expect(getText(undoResult)).toMatch(/file modified after edit/i);
 
 			const content = await readFile(join(cwd, "sample.ts"), "utf-8");
 			expect(content).toBe("aaa\nEXTERNAL\nccc\n");

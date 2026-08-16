@@ -38,14 +38,14 @@ describe("edit tool noop-loop guard", () => {
 			expect(second.details.classification).toBe("noop");
 			expect(getText(second)).toContain("No changes made");
 			expect(getText(second)).toContain("[E_NOOP_LOOP] Notice:");
-			expect(getText(second)).toContain("produced no changes twice");
+			expect(getText(second)).toContain("no-op'd twice");
 
 			const err = (await editTool
 				.execute("e3", payload, undefined, undefined, ctx)
 				.catch((e: unknown) => e)) as Error;
 			expect(err).toBeInstanceOf(Error);
 			expect(err.message).toContain("[E_NOOP_LOOP]");
-			expect(err.message).toContain("has been submitted 3 times");
+			expect(err.message).toContain("submitted 3×");
 			expect(err.message).toContain(`│${NOOP_LINE_1}`);
 		});
 	});
@@ -127,7 +127,7 @@ describe("edit tool noop-loop guard", () => {
 			);
 			expect(third.details.classification).toBe("noop");
 			expect(getText(third)).not.toContain("[E_NOOP_LOOP]");
-			expect(getText(third)).not.toContain("produced no changes twice");
+			expect(getText(third)).not.toContain("no-op'd twice");
 		});
 	});
 
@@ -201,7 +201,7 @@ describe("edit tool noop-loop guard", () => {
 			);
 			expect(missingPath.details.classification).toBe("noop");
 			expect(getText(missingPath)).toContain("[E_NOOP_LOOP] Notice:");
-			expect(getText(missingPath)).toContain("produced no changes twice");
+			expect(getText(missingPath)).toContain("no-op'd twice");
 
 			const err = (await editTool
 				.execute(
@@ -218,7 +218,7 @@ describe("edit tool noop-loop guard", () => {
 				)
 				.catch((e: unknown) => e)) as Error;
 			expect(err.message).toContain("[E_NOOP_LOOP]");
-			expect(err.message).toContain("has been submitted 3 times");
+			expect(err.message).toContain("submitted 3×");
 		});
 	});
 

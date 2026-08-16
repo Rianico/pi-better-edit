@@ -239,10 +239,10 @@ describe("compPreview — served-state staleness surfacing", () => {
 				);
 				expect(preview).toHaveProperty("error");
 				const errorText = (preview as { error: string }).error;
-				expect(errorText).toMatch(/\[E_RANGE_STALE\] Line 2 in sample.ts/);
+				expect(errorText).toMatch(/\[E_RANGE_STALE\] line 2 in sample.ts/);
 				expect(errorText).toContain("Current range:");
 				expect(errorText).toContain("│BETA");
-				expect(errorText).toContain("Retry the edit");
+				expect(errorText).toContain("Retry with these anchors");
 			},
 		);
 	});
@@ -283,7 +283,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 				);
 				expect(preview).toHaveProperty("error");
 				const errorText = (preview as { error: string }).error;
-				expect(errorText).toMatch(/\[E_RANGE_UNSERVED\] Line 2 in sample.ts/);
+				expect(errorText).toMatch(/\[E_RANGE_UNSERVED\] line 2 in sample.ts/);
 				expect(errorText).toContain("Current range:");
 			},
 		);
@@ -720,12 +720,12 @@ describe("renderResult", () => {
 			content: [
 				{
 					type: "text",
-					text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_BAD_OP] Autocorrected: swapped the pair.",
+					text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_BAD_OP] reversed remove_from/remove_to; swapped.",
 				},
 			],
 			details: {
 				diff: "+aB3│BBB",
-				warnings: ["[E_BAD_OP] Autocorrected: swapped the pair."],
+				warnings: ["[E_BAD_OP] reversed remove_from/remove_to; swapped."],
 				metrics: {
 					classification: "applied",
 					added_lines: 1,
@@ -741,7 +741,7 @@ describe("renderResult", () => {
 		) as Text;
 		const text = (component as any).text as string;
 		expect(text).toContain("+aB3│BBB");
-		expect(text).toContain("[E_BAD_OP] Autocorrected: swapped the pair.");
+		expect(text).toContain("[E_BAD_OP] reversed remove_from/remove_to; swapped.");
 	});
 
 	it("returns an empty component when there is nothing to render", () => {

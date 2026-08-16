@@ -140,7 +140,7 @@ export function buildAppliedText(
 
 	const warnings = details?.warnings;
 	if (warnings?.length) {
-		sections.push(`Warnings:\n${warnings.join("\n")}`);
+		sections.push(warnings.join("\n"));
 	}
 
 	return sections.length > 0 ? sections.join("\n\n") : undefined;

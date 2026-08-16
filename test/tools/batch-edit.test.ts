@@ -469,7 +469,7 @@ describe("batch_edit tool", () => {
 				expect(getText(result)).toContain("Successfully edited");
 				expect(
 					result.details.warnings?.some((w: string) =>
-						w.includes("[E_BAD_OP] Autocorrected"),
+						w.includes("[E_BAD_OP]"),
 					),
 				).toBe(true);
 				expect(await readFile(path, "utf-8")).toBe("XX\n");
@@ -509,7 +509,7 @@ describe("batch_edit tool", () => {
 					ctx,
 				);
 				expect(getText(result)).toContain("Successfully edited");
-				expect(result.details.driftNotice).toContain("Drift notice:");
+				expect(result.details.driftNotice).toContain("drift:");
 				expect(result.details.driftNotice).toContain("ECHO");
 				expect(await readFile(path, "utf-8")).toBe(
 					"alpha\nBETA\ngamma\ndelta\nECHO\n",

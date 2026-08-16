@@ -128,7 +128,7 @@ describe("regEdit", () => {
 				ctx,
 			);
 			expect(result.content[0].text).toContain("Successfully edited");
-			expect(result.content[0].text).toContain("Warnings:");
+			expect(result.content[0].text).toContain("[E_BARE_HASH_PREFIX]");
 			expect(result.content[0].text).toContain(`stripped "HASH│" prefix`);
 			expect(result.details?.diff).toContain("BBB");
 			expect(result.details?.diff).not.toContain(`${hashes[1]}│BBB`);
@@ -160,7 +160,7 @@ describe("regEdit", () => {
 				ctx,
 			);
 			expect(result.content[0].text).toContain("Successfully edited");
-			expect(result.content[0].text).toContain("Warnings:");
+			expect(result.content[0].text).toContain("[E_INVALID_PATCH]");
 			expect(result.content[0].text).toContain(`stripped diff-preview marker`);
 			expect(result.details?.diff).toContain("BBB");
 			expect(result.details?.diff).not.toContain(`+${hashes[1]}│BBB`);
@@ -195,8 +195,8 @@ describe("regEdit", () => {
 			expect(result.content[0].text).toContain(
 				"Added 1 line(s), removed 2 line(s).",
 			);
-			expect(result.content[0].text).toContain("Warnings:");
-			expect(result.content[0].text).toContain("were reversed");
+			expect(result.content[0].text).toContain("[E_BAD_OP]");
+			expect(result.content[0].text).toContain("reversed remove_from/remove_to");
 			expect(result.details?.diff).toContain("X");
 		});
 	});
@@ -229,7 +229,7 @@ describe("regEdit", () => {
 					ctx,
 				);
 				expect(result.content[0].text).toContain("Successfully edited");
-				expect(result.content[0].text).toContain("Warnings:");
+				expect(result.content[0].text).toContain("[E_BAD_REF]");
 				expect(result.content[0].text).toContain(`stripped "HASH│" prefix`);
 				expect(result.details?.diff).toContain("BBB");
 				const content = await readFile(path, "utf-8");

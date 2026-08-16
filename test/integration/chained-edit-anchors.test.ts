@@ -164,7 +164,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
       expect(editResult.content[0].text).toContain("Successfully edited in stable.ts");
-      expect(editResult.content[0].text).toContain("Warnings:");
+      expect(editResult.content[0].text).toContain("[E_BAD_OP]");
 
       const alphaEdit = await editTool.execute(
         "e2",

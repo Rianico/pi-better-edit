@@ -71,11 +71,11 @@ export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
 }
 
 function retryHint(): string {
-	return "Retry the edit with remove_from/remove_to copied from these fresh rows (no read needed).";
+	return "Retry with these anchors (no read needed).";
 }
 
 function paginationHint(nextOffset: number, more: number): string {
-	return `[... ${more} more lines — use read with offset=${nextOffset} to see the rest]`;
+	return `[... ${more} more — read offset=${nextOffset}]`;
 }
 
 export function servedPositionsOf(
@@ -139,8 +139,8 @@ export function verifyServedRange(args: {
 		throw new ServedRejectionError({
 			code: "E_RANGE_UNVERIFIED",
 			message:
-				`[E_RANGE_UNVERIFIED] Cannot verify the range against served state${where}: ${problems.join("; ")}. ` +
-				`The tool only verifies what it delivered to the model's context; a boundary anchor that cannot be verified is never guessed at. Current range:\n${echo}\n${retryHint()}`,
+				`[E_RANGE_UNVERIFIED] cannot verify range against served state${where}: ${problems.join("; ")}. ` +
+				`Current range:\n${echo}\n${retryHint()}`,
 			servedRows: echoRows,
 		});
 	}
@@ -152,7 +152,7 @@ export function verifyServedRange(args: {
 		if (served[i] === null) {
 			throw new ServedRejectionError({
 				code: "E_RANGE_UNSERVED",
-				message: `[E_RANGE_UNSERVED] Line ${i + 1}${where} was never served to the model — the range includes lines the model has not seen. Current range:\n${echo}\n${retryHint()}`,
+				message: `[E_RANGE_UNSERVED] line ${i + 1}${where} was never served.\nCurrent range:\n${echo}\n${retryHint()}`,
 				firstOffendingLine: i + 1,
 				servedRows: echoRows,
 			});
@@ -164,7 +164,7 @@ export function verifyServedRange(args: {
 	if (servedLen !== currentLen) {
 		throw new ServedRejectionError({
 			code: "E_RANGE_STALE",
-			message: `[E_RANGE_STALE] The served span (${servedLen} lines) no longer matches the current range (${currentLen} lines)${where}. Current range:\n${echo}\n${retryHint()}`,
+			message: `[E_RANGE_STALE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${echo}\n${retryHint()}`,
 			firstOffendingLine: startLine,
 			servedRows: echoRows,
 		});
@@ -174,7 +174,7 @@ export function verifyServedRange(args: {
 			const offendingLine = startLine + k;
 			throw new ServedRejectionError({
 				code: "E_RANGE_STALE",
-				message: `[E_RANGE_STALE] Line ${offendingLine}${where} differs from what you were served — the file changed on disk since it was read. Current range:\n${echo}\n${retryHint()}`,
+				message: `[E_RANGE_STALE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
 				firstOffendingLine: offendingLine,
 				servedRows: echoRows,
 			});
