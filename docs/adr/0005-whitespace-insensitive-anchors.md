@@ -14,7 +14,7 @@ accepted
 
 ## Consequences
 
-- Anchor derivation strips ASCII whitespace only (`[ \t\r\n]`); NBSP and all Unicode whitespace remain significant. String contents, regex classes, and indentation-sensitive language semantics remain detectable — the strip never collapses `"a b"` vs `"ab"` because `{`/`"`/letters are not whitespace.
+- Anchor derivation strips ASCII whitespace only (`[ \t\r\n]`); NBSP and all Unicode whitespace remain significant. Token-level changes stay detectable — `func hello()` vs `func hello() {`, quotes, semicolons, arrow-parens all still rotate because `{`/`"`/letters are not whitespace. **Caveat (verified): whitespace *inside* string literals and regexes is stripped too** — `const s = "x y"` and `const s = "xy"` canonicalize identically, so a whitespace-only change within a string is invisible to verification. Benign under the linter-only assumption (formatters never alter string contents); a concurrent-human workflow must revisit this (see the fingerprint note below).
 - The survivor/removed-hash reuse in the stable mapping keys on the same stripped canon, so `func(a, b)` and `func(a,b)` match as the same line across a format pass.
 - The snapshot cache keys on the raw whole-file checksum, which is unchanged; a canon version must participate in snapshot-cache invalidation so pre-change cached hashes are not served as valid after upgrade.
 - In-flight anchors rotate once at upgrade (all served rows re-derive); per-session served state is short-lived (cleared at session start / TTL-swept), so no migration is needed — only snapshot-cache invalidation.
