@@ -7,13 +7,13 @@ const edits = [
 	["c03", "const cacheTtl = 60;", "const cacheTtl = 120;"],
 	["d04", "const batchSize = 16;", "const batchSize = 32;"],
 	["e05", "const maxItems = 100;", "const maxItems = 250;"],
-	["f06", "const logLevel = \"info\";", "const logLevel = \"debug\";"],
+	["f06", 'const logLevel = "info";', 'const logLevel = "debug";'],
 	["g07", "const useCache = false;", "const useCache = true;"],
 	["h08", "const keepAlive = false;", "const keepAlive = true;"],
 	["i09", "const port = 3000;", "const port = 3001;"],
-	["j10", "const host = \"localhost\";", "const host = \"127.0.0.1\";"],
-	["k11", "const region = \"us-east-1\";", "const region = \"us-west-2\";"],
-	["l12", "const mode = \"safe\";", "const mode = \"strict\";"],
+	["j10", 'const host = "localhost";', 'const host = "127.0.0.1";'],
+	["k11", 'const region = "us-east-1";', 'const region = "us-west-2";'],
+	["l12", 'const mode = "safe";', 'const mode = "strict";'],
 ];
 
 const tokenCount = (value) => encode(value).length;
@@ -30,9 +30,13 @@ const strReplaceTokens = strReplaceCalls.reduce(
 	(total, call) => total + tokenCount(call),
 	0,
 );
-const editTokens = editCalls.reduce((total, call) => total + tokenCount(call), 0);
+const editTokens = editCalls.reduce(
+	(total, call) => total + tokenCount(call),
+	0,
+);
 const batchTokens = tokenCount(batchCall);
-const savedRate = (tokens) => ((1 - tokens / strReplaceTokens) * 100).toFixed(1);
+const savedRate = (tokens) =>
+	((1 - tokens / strReplaceTokens) * 100).toFixed(1);
 
 const result = {
 	benchmark: "token-economics",

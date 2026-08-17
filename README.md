@@ -172,23 +172,19 @@ The compact JSON contract is primarily a **token-saving envelope change**. It re
 - `batch_edit` is now a root array of tuples, with no `{"edits": ...}` wrapper;
 - replacement text is emitted once, and the old text is never repeated in the call.
 
-An external pinned 12-edit reference snapshot on the same corpus and `cl100k_base` tokenizer reports:
+The reproducible token measurements are combined below. Saved rates are only comparable within the same fixture and baseline; the external snapshot and local fixture are deliberately labeled separately.
 
-| arm | payload shape | tokens | saved vs `str_replace` |
-| --- | --- | ---: | ---: |
-| sibling JSON hashline tool call | structured JSON edit call | 702 | **31%** |
-| oh-my-pi per-edit patch document | one patch section per edit | 590 | **42%** |
-| oh-my-pi one-batch patch document | one document for all edits | 480 | **53%** |
-**Local 12-edit payload benchmark** — a fixed 12-edit configuration-refactor fixture, tokenized with `cl100k_base` by `npm run benchmark:tokens`:
+| fixture / baseline | arm | payload shape | tokens | saved vs same-fixture `str_replace` |
+| --- | --- | --- | ---: | ---: |
+| external pinned 12-edit snapshot | `str_replace` baseline | structured JSON replace call | 1015 | — |
+| external pinned 12-edit snapshot | sibling JSON hashline tool call | structured JSON edit call | 702 | **31%** |
+| external pinned 12-edit snapshot | oh-my-pi per-edit patch document | one patch section per edit | 590 | **42%** |
+| external pinned 12-edit snapshot | oh-my-pi one-batch patch document | one document for all edits | 480 | **53%** |
+| local 12-edit configuration refactor | `str_replace`-style JSON baseline | twelve individual calls | 358 | — |
+| local 12-edit configuration refactor | this project, `edit` | twelve compact tuple calls | 248 | **30.7%** |
+| local 12-edit configuration refactor | this project, `batch_edit` | one root-array call | 238 | **33.5%** |
 
-| arm | tokens | saved vs local `str_replace` baseline |
-| --- | ---: | ---: |
-| str_replace-style JSON | 358 | — |
-| this project, `edit` | 248 | **30.7%** |
-| this project, `batch_edit` | 238 | **33.5%** |
-
-The local benchmark counts serialized payloads: twelve individual calls for `edit`, one root-array call for `batch_edit`, and twelve individual `str_replace` calls. It measures envelope tokens only; correctness is covered separately by the deterministic tool battery.
-The external table is a reproducible **envelope reference**, not a correctness score and not a claim that every host tokenizer produces the same count. The local rows are measured by this repository's pinned tokenizer and fixture. Reproduce them with `npm run benchmark:tokens`; reproduce correctness with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`. The external snapshot is documented in `../oh-my-pi.md` and can be regenerated with `npm run benchmark` in its source benchmark checkout.
+The local benchmark counts serialized payload tokens with the pinned `cl100k_base` tokenizer. Reproduce it with `npm run benchmark:tokens`; reproduce final correctness separately with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`. The external snapshot is documented in `../oh-my-pi.md` and can be regenerated with `npm run benchmark` in its source benchmark checkout.
 
 ### Capability comparison
 

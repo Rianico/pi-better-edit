@@ -17,27 +17,28 @@ doesn't. This is deliberately a *correctness* benchmark: does each engine
 reject stale edits instead of corrupting files?
 
 Token economics is measured separately because token counts depend on the
-payload corpus and tokenizer. This repository now ships a pinned local fixture:
+payload corpus and tokenizer. The reproducible measurements are combined below;
+saved rates are only comparable within the same fixture and baseline.
 
 ```bash
 npm run benchmark:tokens
 ```
 
-For the 12-edit configuration-refactor fixture, `cl100k_base` reports:
+| fixture / baseline | arm | tokens | saved vs same-fixture `str_replace` |
+| --- | --- | ---: | ---: |
+| external pinned 12-edit snapshot | `str_replace` baseline | 1015 | — |
+| external pinned 12-edit snapshot | sibling JSON hashline tool call | 702 | **31%** |
+| external pinned 12-edit snapshot | oh-my-pi per-edit patch document | 590 | **42%** |
+| external pinned 12-edit snapshot | oh-my-pi one-batch patch document | 480 | **53%** |
+| local 12-edit configuration refactor | `str_replace`-style JSON baseline | 358 | — |
+| local 12-edit configuration refactor | this project, `edit` | 248 | **30.7%** |
+| local 12-edit configuration refactor | this project, `batch_edit` | 238 | **33.5%** |
 
-| arm | tokens | saved vs local `str_replace` baseline |
-| --- | ---: | ---: |
-| str_replace-style JSON | 358 | — |
-| this project, `edit` | 248 | **30.7%** |
-| this project, `batch_edit` | 238 | **33.5%** |
-
-The benchmark counts serialized payload tokens: twelve individual `edit` calls,
-one root-array `batch_edit` call, and twelve individual `str_replace` calls. It is
-an envelope measurement; final correctness remains covered by the tool and library
-batteries below. The external pinned 12-edit `cl100k_base` snapshot is documented in
-`../oh-my-pi.md` and reports 31% for the sibling JSON hashline arm, 42% for oh-my-pi
-per-edit patches, and 53% for one batched patch document.
-
+The local benchmark counts serialized payload tokens with `cl100k_base`: twelve
+individual `edit` calls, one root-array `batch_edit` call, and twelve individual
+`str_replace` calls. Final correctness remains covered by the batteries below.
+The external snapshot is documented in `../oh-my-pi.md` and can be regenerated with
+`npm run benchmark` in its source benchmark checkout.
 ## Tool battery
 
 Method: each scenario creates a scratch file, performs the tool calls exactly
