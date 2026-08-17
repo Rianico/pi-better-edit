@@ -34,12 +34,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -60,12 +55,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BETA",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BETA"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -86,12 +76,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -111,12 +96,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -136,12 +116,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -163,11 +138,7 @@ describe("compPreview", () => {
 				{
 					path: "sample.ts",
 					changes: [
-						{
-							remove_from: hashes[1]!,
-							remove_to: hashes[1]!,
-							replacement_text: "BBB",
-						},
+						[null, [hashes[1]!, hashes[1]!], "BBB"],
 					],
 				},
 				cwd,
@@ -189,12 +160,7 @@ describe("compPreview", () => {
 				{ cwd } as any,
 			);
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -229,12 +195,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 				await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
 				const preview = await compPreview(
-					{
-						path: "sample.ts",
-						remove_from: alphaRef,
-						remove_to: gammaRef,
-						replacement_text: "X",
-					},
+					["sample.ts", [alphaRef, gammaRef], "X"],
 					cwd,
 				);
 				expect(preview).toHaveProperty("error");
@@ -273,12 +234,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 				);
 
 				const preview = await compPreview(
-					{
-						path: "sample.ts",
-						remove_from: hashes[0]!,
-						remove_to: hashes[3]!,
-						replacement_text: "X",
-					},
+					["sample.ts", [hashes[0]!, hashes[3]!], "X"],
 					cwd,
 				);
 				expect(preview).toHaveProperty("error");
@@ -293,12 +249,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 		await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
 			const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[0]!,
-					remove_to: hashes[2]!,
-					replacement_text: "X",
-				},
+				["sample.ts", [hashes[0]!, hashes[2]!], "X"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("error");
@@ -321,12 +272,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[0]!,
-					remove_to: hashes[2]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[0]!, hashes[2]!], "BBB"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -389,12 +335,7 @@ describe("renderCall preview", () => {
 
 			const harness = makeHarness(cwd);
 			tool.renderCall(
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				harness.theme,
 				harness.context,
 			);
@@ -426,12 +367,7 @@ describe("renderCall preview", () => {
 
 				const harness = makeHarness(cwd);
 				tool.renderCall(
-					{
-						path: "sample.ts",
-						remove_from: hashes[0]!,
-						remove_to: hashes[2]!,
-						replacement_text: "X",
-					},
+					["sample.ts", [hashes[0]!, hashes[2]!], "X"],
 					harness.theme,
 					harness.context,
 				);
@@ -465,11 +401,7 @@ describe("renderCall preview", () => {
 				{
 					path: "sample.ts",
 					changes: [
-						{
-							remove_from: hashes[1]!,
-							remove_to: hashes[1]!,
-							replacement_text: "BBB",
-						},
+						[null, [hashes[1]!, hashes[1]!], "BBB"],
 					],
 				},
 				harness.theme,
@@ -500,23 +432,13 @@ describe("renderCall preview", () => {
 			try {
 				const harness = makeHarness(cwd);
 				tool.renderCall(
-					{
-						path: "sample.ts",
-						remove_from: hashes[1]!,
-						remove_to: hashes[1]!,
-						replacement_text: "BBB",
-					},
+					["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 					harness.theme,
 					harness.context,
 				);
 				expect(harness.state.preview).toBeUndefined();
 				tool.renderCall(
-					{
-						path: "sample.ts",
-						remove_from: hashes[1]!,
-						remove_to: hashes[1]!,
-						replacement_text: "CCC",
-					},
+					["sample.ts", [hashes[1]!, hashes[1]!], "CCC"],
 					harness.theme,
 					harness.context,
 				);
@@ -549,12 +471,7 @@ describe("compPreview — noop", () => {
 				{ cwd } as any,
 			);
 			const preview = await compPreview(
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "bbb",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
 				cwd,
 			);
 			expect(preview).toEqual({
@@ -592,12 +509,7 @@ describe("renderCall state transitions", () => {
 		state.preview = { diff: "stale diff" };
 		state.previewGeneration = 7;
 		const component = tool.renderCall!(
-			{
-				path: "x.ts",
-				remove_from: "AAA",
-				remove_to: "BBB",
-				replacement_text: "x",
-			},
+			["x.ts", ["AAA", "BBB"], "x"],
 			theme as any,
 			context as any,
 		) as Text;
@@ -615,12 +527,7 @@ describe("renderCall state transitions", () => {
 		state.preview = { diff: "stale diff" };
 		state.previewGeneration = 2;
 		tool.renderCall!(
-			{
-				path: "x.ts",
-				remove_from: "AAA",
-				remove_to: "BBB",
-				replacement_text: "x",
-			},
+			["x.ts", ["AAA", "BBB"], "x"],
 			theme as any,
 			context as any,
 		);

@@ -25,12 +25,7 @@ describe("regEdit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: hashes[0]!,
-						remove_to: hashes[0]!,
-						replacement_text: null,
-					},
+					["sample.ts", [hashes[0]!, hashes[0]!], null],
 					undefined,
 					undefined,
 					ctx,
@@ -53,12 +48,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.ts",
-					remove_from: hashes[0]!,
-					remove_to: hashes[0]!,
-					replacement_text: "a\nb",
-				},
+				["sample.ts", [hashes[0]!, hashes[0]!], "a\nb"],
 				undefined,
 				undefined,
 				ctx,
@@ -84,12 +74,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				undefined,
 				undefined,
 				ctx,
@@ -117,12 +102,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: `${hashes[1]!}│BBB`,
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], `${hashes[1]!}│BBB`],
 				undefined,
 				undefined,
 				ctx,
@@ -149,12 +129,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: `+${hashes[1]!}│BBB`,
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], `+${hashes[1]!}│BBB`],
 				undefined,
 				undefined,
 				ctx,
@@ -181,12 +156,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.ts",
-					remove_from: hashes[2]!,
-					remove_to: hashes[1]!,
-					replacement_text: "X",
-				},
+				["sample.ts", [hashes[2]!, hashes[1]!], "X"],
 				undefined,
 				undefined,
 				ctx,
@@ -220,12 +190,7 @@ describe("regEdit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: `${hashes[1]!}│bbb`,
-						remove_to: `${hashes[1]!}│bbb`,
-						replacement_text: "BBB",
-					},
+					["sample.ts", [`${hashes[1]!}│bbb`, `${hashes[1]!}│bbb`], "BBB"],
 					undefined,
 					undefined,
 					ctx,
@@ -263,12 +228,7 @@ describe("regEdit — robustness", () => {
 				try {
 					const result = await editTool.execute(
 						"e1",
-						{
-							path: "sample.ts",
-							remove_from: hashes[1]!,
-							remove_to: hashes[1]!,
-							replacement_text: "BBB",
-						},
+						["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 						undefined,
 						undefined,
 						ctx,
@@ -302,12 +262,7 @@ describe("regEdit — robustness", () => {
 			try {
 				const result = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: hashes[1]!,
-						remove_to: hashes[1]!,
-						replacement_text: "bbb",
-					},
+					["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
 					undefined,
 					undefined,
 					ctx,
@@ -343,12 +298,7 @@ describe("regEdit — robustness", () => {
 				try {
 					const result = await editTool.execute(
 						"e1",
-						{
-							path: "sample.ts",
-							remove_from: hashes[1]!,
-							remove_to: hashes[1]!,
-							replacement_text: "BBB",
-						},
+						["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 						undefined,
 						undefined,
 						ctx,
@@ -385,12 +335,7 @@ describe("regEdit — robustness", () => {
 					await expect(
 						editTool.execute(
 							"e1",
-							{
-								path: "sample.ts",
-								remove_from: hashes[1]!,
-								remove_to: hashes[1]!,
-								replacement_text: "BBB",
-							},
+							["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 							undefined,
 							undefined,
 							ctx,

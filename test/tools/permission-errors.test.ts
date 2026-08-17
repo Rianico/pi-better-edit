@@ -67,10 +67,7 @@ describe.skipIf(isRoot || isWindows)("permission errors", () => {
         await expect(
           editTool.execute(
             "e1",
-            {
-              path: filePath,
-              remove_from: "abc", remove_to: "abc", replacement_text: "new content",
-            },
+            [filePath, ["abc", "abc"], "new content"],
             undefined,
             undefined,
             { cwd: tempDir } as any,

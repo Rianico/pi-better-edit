@@ -8,12 +8,13 @@ import { Type } from "typebox";
 import { constants } from "fs";
 import { genDiff, restoreEndings, type LineEnding } from "./edit-diff";
 import { scanDrift } from "./drift";
-import { normReq } from "./edit-normalize";
 import {
-	isRec,
+	isNormalizedEdit,
+	normReq,
+} from "./edit-normalize";
+import {
 	rejectUnknownFields,
 	abortIf,
-	normalizeFilePath,
 	splitLines,
 } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
@@ -59,25 +60,28 @@ export const removeToSchema = Type.String({
 	description: "Last line to remove (inclusive)",
 });
 
-export const editToolSchema = Type.Object(
-	{
-		path: Type.Optional(
-			Type.String({
-				description: "Required; auto-resolved from anchors only as fallback",
-			}),
-		),
-		remove_from: removeFromSchema,
-		remove_to: removeToSchema,
-		replacement_text: replacementTextSchema,
-	},
-	{ additionalProperties: false },
-);
+const editPathSchema = Type.Union([
+	Type.String({ minLength: 1, description: "File path; null infers it from anchors" }),
+	Type.Null(),
+]);
+
+export const editToolSchema = Type.Tuple([
+	editPathSchema,
+	Type.Tuple([removeFromSchema, removeToSchema], {
+		description: "Inclusive [remove_from, remove_to] anchor range",
+	}),
+	replacementTextSchema,
+], {
+	description: "[path, [remove_from, remove_to], replacement_text]",
+});
+
 export type EditParams = {
-	path: string;
+	path: string | null;
 	remove_from: string;
 	remove_to: string;
 	replacement_text: string;
 };
+
 
 interface PipelineResult {
 	path: string;
@@ -106,28 +110,33 @@ const ROOT_KS = new Set([
 ]);
 
 export function assertReq(request: unknown): asserts request is EditParams {
-	if (!isRec(request)) {
-		throw new Error("[E_BAD_SHAPE] Edit request must be an object.");
+	const candidate = Array.isArray(request) ? normReq(request) : request;
+	if (!isNormalizedEdit(candidate)) {
+		throw new Error(
+			"[E_BAD_SHAPE] Edit request must be exactly [path, [remove_from, remove_to], replacement_text].",
+		);
 	}
 
-	rejectUnknownFields(request, ROOT_KS, "Edit request");
+	rejectUnknownFields(candidate, ROOT_KS, "Edit request");
 
-	if (typeof request.path !== "string" || request.path.length === 0) {
+	if (candidate.path !== null && (typeof candidate.path !== "string" || candidate.path.length === 0)) {
 		throw new Error(
-			'[E_BAD_SHAPE] Edit request requires a non-empty "path" string.',
+			'[E_BAD_SHAPE] Edit request path must be a non-empty string or null.',
 		);
 	}
 
 	if (
-		typeof request.remove_from !== "string" ||
-		typeof request.remove_to !== "string" ||
-		typeof request.replacement_text !== "string"
+		typeof candidate.remove_from !== "string" ||
+		typeof candidate.remove_to !== "string" ||
+		typeof candidate.replacement_text !== "string"
 	) {
 		throw new Error(
-			'[E_BAD_SHAPE] Edit request requires "remove_from", "remove_to", and "replacement_text" at the top level.',
+			'[E_BAD_SHAPE] Edit request requires a two-anchor range and string replacement_text.',
 		);
 	}
 }
+
+
 
 export async function resolveMissingPath(
 	request: Record<string, unknown>,
@@ -176,7 +185,10 @@ export async function execPipeline(
 	params: EditParams,
 	cwd: string,
 	options?: ExecPipelineOptions,
-): Promise<PipelineResult> {
+	): Promise<PipelineResult> {
+	if (params.path === null) {
+		throw new Error("[E_BAD_SHAPE] Edit request path could not be inferred from anchors.");
+	}
 	const path = params.path;
 
 	const editWarnings: string[] = [];
@@ -289,6 +301,9 @@ export async function compPreview(
 	try {
 		const normalized = normReq(request);
 		assertReq(normalized);
+		const resolution = await resolveMissingPath(normalized);
+		if (resolution) normalized.path = resolution.path;
+		assertReq(normalized);
 		const { path, originalNormalized, result, resultHashes, originalHashes } =
 			await execPipeline(normalized, cwd, {
 				accessMode: constants.R_OK,
@@ -341,12 +356,7 @@ export function buildToolDef(): ToolDef {
 		parameters,
 		promptSnippet: E_SNIPPET,
 		promptGuidelines: E_GUIDE,
-		prepareArguments: (args: unknown) => {
-			if (!isRec(args)) return args as any;
-			const record = { ...args };
-			normalizeFilePath(record);
-			return record;
-		},
+		prepareArguments: (args: unknown) => args as any,
 		renderShell: "default",
 		renderCall(args, theme, context) {
 			preview.renderCall(context, args);
@@ -398,16 +408,18 @@ export function buildToolDef(): ToolDef {
 
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const canonical = normReq(params);
-			const resolution = isRec(canonical)
-				? await resolveMissingPath(canonical)
-				: undefined;
-			if (resolution && isRec(canonical)) {
+			assertReq(canonical);
+			const resolution = await resolveMissingPath(canonical);
+			if (resolution) {
 				canonical.path = resolution.path;
 			}
 			assertReq(canonical);
+			if (canonical.path === null) {
+				throw new Error("[E_BAD_SHAPE] Edit request path could not be inferred from anchors.");
+			}
 
 			const normalizedParams = canonical;
-			const path = normalizedParams.path;
+			const path = canonical.path as string;
 			const absolutePath = toCwd(path, ctx.cwd);
 			const mutationTargetPath = await resolveTarget(absolutePath);
 			const sessionKey = sessionKeyFor(ctx);

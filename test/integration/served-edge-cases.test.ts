@@ -46,12 +46,7 @@ describe("served-state edge cases for edit", () => {
 			try {
 				await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: l3Ref,
-						remove_to: l7Ref,
-						replacement_text: "X",
-					},
+					["sample.ts", [l3Ref, l7Ref], "X"],
 					undefined,
 					undefined,
 					ctx,
@@ -72,12 +67,7 @@ describe("served-state edge cases for edit", () => {
 			const retryTo = echoLines[4]!.split("│")[0]!;
 			const retry = await editTool.execute(
 				"e2",
-				{
-					path: "sample.ts",
-					remove_from: retryFrom,
-					remove_to: retryTo,
-					replacement_text: "X\nY",
-				},
+				["sample.ts", [retryFrom, retryTo], "X\nY"],
 				undefined,
 				undefined,
 				ctx,
@@ -107,12 +97,7 @@ describe("served-state edge cases for edit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: aRef,
-						remove_to: dRef,
-						replacement_text: "X",
-					},
+					["sample.ts", [aRef, dRef], "X"],
 					undefined,
 					undefined,
 					ctx,
@@ -152,12 +137,7 @@ describe("served-state edge cases for edit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: aRef,
-						remove_to: aRef,
-						replacement_text: "X",
-					},
+					["sample.ts", [aRef, aRef], "X"],
 					undefined,
 					undefined,
 					ctx,
@@ -186,12 +166,7 @@ describe("served-state edge cases for edit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: hashes[3]!,
-						remove_to: hashes[4]!,
-						replacement_text: "X",
-					},
+					["sample.ts", [hashes[3]!, hashes[4]!], "X"],
 					undefined,
 					undefined,
 					ctx,
@@ -236,12 +211,7 @@ describe("served-state edge cases for edit", () => {
 			try {
 				await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: firstRef,
-						remove_to: lastRef,
-						replacement_text: "X",
-					},
+					["sample.ts", [firstRef, lastRef], "X"],
 					undefined,
 					undefined,
 					ctx,

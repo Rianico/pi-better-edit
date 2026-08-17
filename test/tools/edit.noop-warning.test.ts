@@ -13,10 +13,7 @@ describe("edit tool noop + warnings", () => {
 
       const result = await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "bbb",
-        },
+        ["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
         undefined,
         undefined,
         ctx,
@@ -33,10 +30,7 @@ describe("edit tool noop + warnings", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB\nccc",
-        },
+        ["sample.ts", [hashes[1]!, hashes[1]!], "BBB\nccc"],
         undefined,
         undefined,
         ctx,

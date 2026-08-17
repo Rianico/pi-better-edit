@@ -15,10 +15,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA",
-        },
+        ["sample.ts", [betaRef, betaRef], "BETA"],
         undefined,
         undefined,
         ctx,
@@ -27,10 +24,7 @@ describe("strict hashline tool loop", () => {
       await expect(
         editTool.execute(
           "e2",
-          {
-            path: "sample.ts",
-            remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA-AGAIN",
-          },
+          ["sample.ts", [betaRef, betaRef], "BETA-AGAIN"],
           undefined,
           undefined,
           ctx,
@@ -46,10 +40,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e3",
-        {
-          path: "sample.ts",
-          remove_from: freshRef, remove_to: freshRef, replacement_text: "BETA-AGAIN",
-        },
+        ["sample.ts", [freshRef, freshRef], "BETA-AGAIN"],
         undefined,
         undefined,
         ctx,
@@ -67,7 +58,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e1",
-        { path: "empty.ts", remove_from: emptyHash, remove_to: emptyHash, replacement_text: "first\nsecond" },
+        ["empty.ts", [emptyHash, emptyHash], "first\nsecond" ],
         undefined,
         undefined,
         ctx,
@@ -92,7 +83,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "crlf.ts", remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA" },
+        ["crlf.ts", [betaRef, betaRef], "BETA" ],
         undefined,
         undefined,
         ctx,
@@ -118,7 +109,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "lf.ts", remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA" },
+        ["lf.ts", [betaRef, betaRef], "BETA" ],
         undefined,
         undefined,
         ctx,
@@ -149,7 +140,7 @@ describe("UTF-8 BOM handling", () => {
 
       await editTool.execute(
         "e1",
-        { path: "bom.ts", remove_from: betaRef, remove_to: betaRef, replacement_text: "BETA" },
+        ["bom.ts", [betaRef, betaRef], "BETA" ],
         undefined,
         undefined,
         ctx,

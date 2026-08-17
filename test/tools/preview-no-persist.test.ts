@@ -36,12 +36,7 @@ describe("compPreview no-persist guarantee", () => {
 			const cHash = hashes[2]!;
 
 			const preview = await compPreview(
-				{
-					path: "sample.txt",
-					remove_from: bHash,
-					remove_to: cHash,
-					replacement_text: "B",
-				},
+				["sample.txt", [bHash, cHash], "B"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -73,12 +68,7 @@ describe("compPreview no-persist guarantee", () => {
 			const hashes = await lineHashes(content, absolutePath);
 
 			await compPreview(
-				{
-					path: "sample.txt",
-					remove_from: hashes[1]!,
-					remove_to: hashes[2]!,
-					replacement_text: "X\nY",
-				},
+				["sample.txt", [hashes[1]!, hashes[2]!], "X\nY"],
 				cwd,
 			);
 
@@ -107,12 +97,7 @@ describe("compPreview no-persist guarantee", () => {
 			const hashes = await lineHashes(content, absolutePath);
 
 			const preview = await compPreview(
-				{
-					path: "sample.txt",
-					remove_from: hashes[0]!,
-					remove_to: hashes[2]!,
-					replacement_text: "x",
-				},
+				["sample.txt", [hashes[0]!, hashes[2]!], "x"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -147,12 +132,7 @@ describe("compPreview no-persist guarantee", () => {
 			db.close();
 
 			const preview = await compPreview(
-				{
-					path: "sample.txt",
-					remove_from: hashes[0]!,
-					remove_to: hashes[1]!,
-					replacement_text: "X",
-				},
+				["sample.txt", [hashes[0]!, hashes[1]!], "X"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -191,12 +171,7 @@ describe("compPreview no-persist guarantee", () => {
 			await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
 			const preview = await compPreview(
-				{
-					path: "sample.txt",
-					remove_from: alphaRef,
-					remove_to: gammaRef,
-					replacement_text: "X",
-				},
+				["sample.txt", [alphaRef, gammaRef], "X"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("error");
@@ -204,12 +179,7 @@ describe("compPreview no-persist guarantee", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.txt",
-						remove_from: alphaRef,
-						remove_to: gammaRef,
-						replacement_text: "X",
-					},
+					["sample.txt", [alphaRef, gammaRef], "X"],
 					undefined,
 					undefined,
 					ctx,
@@ -245,12 +215,7 @@ describe("compPreview no-persist guarantee", () => {
 			const hashes = await lineHashes(content, absolutePath);
 
 			const preview = await compPreview(
-				{
-					path: "sample.txt",
-					remove_from: hashes[0]!,
-					remove_to: hashes[3]!,
-					replacement_text: "X",
-				},
+				["sample.txt", [hashes[0]!, hashes[3]!], "X"],
 				cwd,
 			);
 			expect(preview).toHaveProperty("error");
@@ -261,12 +226,7 @@ describe("compPreview no-persist guarantee", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.txt",
-						remove_from: hashes[0]!,
-						remove_to: hashes[3]!,
-						replacement_text: "X",
-					},
+					["sample.txt", [hashes[0]!, hashes[3]!], "X"],
 					undefined,
 					undefined,
 					ctx,

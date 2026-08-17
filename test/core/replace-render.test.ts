@@ -27,14 +27,9 @@ describe("getPreviewInput", () => {
 		expect(getPreviewInput(42)).toBeNull();
 	});
 
-	it("returns null for record without path", () => {
-		expect(
-			getPreviewInput({
-				remove_from: "AAA",
-				remove_to: "BBB",
-				replacement_text: "new",
-			}),
-		).toBeNull();
+	it("accepts null path for anchor-based inference", () => {
+		const result = getPreviewInput([null, ["AAA", "BBB"], "new"]);
+		expect(result?.path).toBeNull();
 	});
 
 	it("returns null for record with non-string path", () => {
@@ -45,26 +40,14 @@ describe("getPreviewInput", () => {
 		expect(getPreviewInput({ path: "test.txt" })).toBeNull();
 	});
 
-	it("returns request for valid input", () => {
-		const input = {
+	it("normalizes valid tuple input", () => {
+		const result = getPreviewInput(["test.txt", ["AAA", "BBB"], "new"]);
+		expect(result).toEqual({
 			path: "test.txt",
 			remove_from: "AAA",
 			remove_to: "BBB",
 			replacement_text: "new",
-		};
-		const result = getPreviewInput(input);
-		expect(result).toEqual(input);
-	});
-
-	it("normalizes file_path to path", () => {
-		const input = {
-			file_path: "test.txt",
-			remove_from: "AAA",
-			remove_to: "BBB",
-			replacement_text: "new",
-		};
-		const result = getPreviewInput(input);
-		expect(result?.path).toBe("test.txt");
+		});
 	});
 });
 

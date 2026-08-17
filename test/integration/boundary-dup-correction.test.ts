@@ -17,11 +17,7 @@ describe("boundary duplication auto-fix", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: line2Hash, remove_to: line3Hash,
-          replacement_text: `  const y = 2;\n  return y;\n}`,
-        },
+        ["sample.ts", [line2Hash, line3Hash], `  const y = 2;\n  return y;\n}`],
         undefined,
         undefined,
         ctx,
@@ -44,11 +40,7 @@ describe("boundary duplication auto-fix", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: line2Hash, remove_to: line3Hash,
-          replacement_text: `  const y = 2;\n  return y;\n}`,
-        },
+        ["sample.ts", [line2Hash, line3Hash], `  const y = 2;\n  return y;\n}`],
         undefined,
         undefined,
         ctx,
@@ -76,11 +68,7 @@ describe("boundary duplication auto-fix", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "server.ts",
-          remove_from: line2Hash, remove_to: line3Hash,
-          replacement_text: `  const result = processData();\n  res.json(result);\n});`,
-        },
+        ["server.ts", [line2Hash, line3Hash], `  const result = processData();\n  res.json(result);\n});`],
         undefined,
         undefined,
         ctx,
@@ -103,11 +91,7 @@ describe("boundary duplication auto-fix", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "logic.ts",
-          remove_from: line2Hash, remove_to: line3Hash,
-          replacement_text: `before();\nif (ok) {\n  runSafe();`,
-        },
+        ["logic.ts", [line2Hash, line3Hash], `before();\nif (ok) {\n  runSafe();`],
         undefined,
         undefined,
         ctx,
@@ -135,11 +119,7 @@ describe("boundary duplication auto-fix", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "multi.ts",
-          remove_from: line4Hash, remove_to: line5Hash,
-          replacement_text: `if (b) {\n  yNew();\n}`,
-        },
+        ["multi.ts", [line4Hash, line5Hash], `if (b) {\n  yNew();\n}`],
         undefined,
         undefined,
         ctx,
@@ -177,10 +157,7 @@ describe("boundary duplication auto-fix", () => {
 
       const edit1 = await editTool.execute(
         "e1",
-        {
-          path: "fourth.ts",
-          remove_from: fooHash, remove_to: barHash, replacement_text: `foo();\nbar();\n}`,
-        },
+        ["fourth.ts", [fooHash, barHash], `foo();\nbar();\n}`],
         undefined,
         undefined,
         ctx,
@@ -219,18 +196,18 @@ describe("new-line boundary duplication (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "overlay.ts",
-          remove_from: classHash, remove_to: blankHash,
-          replacement_text: [
-            "export class WorkflowEditorOverlay {",
-            "  private activeTab = 0;",
-            "  private confirmingClose = false;",
-            "",
-            "  constructor() {",
-            "  }",
-          ].join("\n"),
-        },
+		[
+			"overlay.ts",
+			[classHash, blankHash],
+			[
+				"export class WorkflowEditorOverlay {",
+				"  private activeTab = 0;",
+				"  private confirmingClose = false;",
+				"",
+				"  constructor() {",
+				"  }",
+			].join("\n"),
+		],
         undefined,
         undefined,
         ctx,
@@ -258,11 +235,7 @@ describe("new-line boundary duplication (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "reorder.ts",
-          remove_from: barHash, remove_to: bazHash,
-          replacement_text: "bar();\nbaz();\nfoo();",
-        },
+        ["reorder.ts", [barHash, bazHash], "bar();\nbaz();\nfoo();"],
         undefined,
         undefined,
         ctx,
@@ -295,11 +268,7 @@ describe("new-line boundary duplication (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "multi.ts",
-          remove_from: bHash, remove_to: yHash,
-          replacement_text: "if (b) {\n  yNew();\n}",
-        },
+        ["multi.ts", [bHash, yHash], "if (b) {\n  yNew();\n}"],
         undefined,
         undefined,
         ctx,
@@ -326,11 +295,7 @@ describe("new-line boundary duplication (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "plain.ts",
-          remove_from: aHash, remove_to: bHash,
-          replacement_text: "a\nb\nX",
-        },
+        ["plain.ts", [aHash, bHash], "a\nb\nX"],
         undefined,
         undefined,
         ctx,
@@ -363,17 +328,17 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "imports.ts",
-          remove_from: piHash, remove_to: piHash,
-          replacement_text: [
-            `import { ScrollableTabContent } from "./scrollable";`,
-            `import { StatsTabContent } from "./stats";`,
-            `import { TabbedOverlay } from "./overlay";`,
-            `import { formatTokens } from "./tokens";`,
-            `type SessionEntry = { id: string };`,
-          ].join("\n"),
-        },
+		[
+			"imports.ts",
+			[piHash, piHash],
+			[
+				`import { ScrollableTabContent } from "./scrollable";`,
+				`import { StatsTabContent } from "./stats";`,
+				`import { TabbedOverlay } from "./overlay";`,
+				`import { formatTokens } from "./tokens";`,
+				`type SessionEntry = { id: string };`,
+			].join("\n"),
+		],
         undefined,
         undefined,
         ctx,
@@ -408,11 +373,7 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "nested.ts",
-          remove_from: bodyHash, remove_to: bodyHash,
-          replacement_text: "  const x = 2;\n}\n}",
-        },
+        ["nested.ts", [bodyHash, bodyHash], "  const x = 2;\n}\n}"],
         undefined,
         undefined,
         ctx,
@@ -435,11 +396,7 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "before-run.ts",
-          remove_from: targetHash, remove_to: targetHash,
-          replacement_text: "NEW();\nbefore1();\nbefore2();",
-        },
+        ["before-run.ts", [targetHash, targetHash], "NEW();\nbefore1();\nbefore2();"],
         undefined,
         undefined,
         ctx,
@@ -462,11 +419,7 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "leading-run.ts",
-          remove_from: targetHash, remove_to: targetHash,
-          replacement_text: "c\nb\na\nX",
-        },
+        ["leading-run.ts", [targetHash, targetHash], "c\nb\na\nX"],
         undefined,
         undefined,
         ctx,
@@ -489,11 +442,7 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "prefix-copy.ts",
-          remove_from: targetHash, remove_to: targetHash,
-          replacement_text: "a\nb\nc\nX",
-        },
+        ["prefix-copy.ts", [targetHash, targetHash], "a\nb\nc\nX"],
         undefined,
         undefined,
         ctx,
@@ -516,11 +465,7 @@ describe("multi-line boundary duplication runs (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "both-edges.ts",
-          remove_from: targetHash, remove_to: targetHash,
-          replacement_text: "X",
-        },
+        ["both-edges.ts", [targetHash, targetHash], "X"],
         undefined,
         undefined,
         ctx,
@@ -546,11 +491,7 @@ describe("section-unique boundary duplication (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "iface.ts",
-          remove_from: blankHash, remove_to: blankHash,
-          replacement_text: "export interface Foo {\n  x: number;\n}\n\nexport function main2() {}",
-        },
+        ["iface.ts", [blankHash, blankHash], "export interface Foo {\n  x: number;\n}\n\nexport function main2() {}"],
         undefined,
         undefined,
         ctx,
@@ -575,11 +516,7 @@ describe("section-unique boundary duplication (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "pre-block.ts",
-          remove_from: targetHash, remove_to: targetHash,
-          replacement_text: "NEW\nif (b) {\n  y();\n}",
-        },
+        ["pre-block.ts", [targetHash, targetHash], "NEW\nif (b) {\n  y();\n}"],
         undefined,
         undefined,
         ctx,
@@ -602,11 +539,7 @@ describe("section-unique boundary duplication (auto-fix)", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "repeat.ts",
-          remove_from: xHash, remove_to: xHash,
-          replacement_text: "X\nY\nZ",
-        },
+        ["repeat.ts", [xHash, xHash], "X\nY\nZ"],
         undefined,
         undefined,
         ctx,

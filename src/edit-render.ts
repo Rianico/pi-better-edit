@@ -1,8 +1,8 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { normReq } from "./edit-normalize";
+import { normReq, isNormalizedEdit } from "./edit-normalize";
 import type { EditParams } from "./edit";
 import type { EditDetails } from "./edit-response";
-import { isRec } from "./utils";
+
 
 export type FgT = Pick<Theme, "fg">;
 export type CallT = Pick<Theme, "fg" | "bold">;
@@ -27,10 +27,15 @@ export function getPreviewInput(args: unknown): EditParams | null {
 	} catch {
 		return null;
 	}
-	if (!isRec(normalized) || typeof normalized.path !== "string") {
+	if (!isNormalizedEdit(normalized)) {
 		return null;
 	}
-
+	if (
+		normalized.path !== null &&
+		(typeof normalized.path !== "string" || normalized.path.length === 0)
+	) {
+		return null;
+	}
 	if (
 		typeof normalized.remove_from !== "string" ||
 		typeof normalized.remove_to !== "string" ||
@@ -39,14 +44,14 @@ export function getPreviewInput(args: unknown): EditParams | null {
 		return null;
 	}
 
-	const request: EditParams = {
+	return {
 		path: normalized.path,
 		remove_from: normalized.remove_from,
 		remove_to: normalized.remove_to,
 		replacement_text: normalized.replacement_text,
 	};
-	return request;
 }
+
 
 export function colorLines(lines: string[], theme: FgT): string[] {
 	return lines.map((line) => {

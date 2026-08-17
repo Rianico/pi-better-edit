@@ -136,12 +136,7 @@ describe("batch_edit tool_result handler", () => {
 
 			const followUp = await editTool.execute(
 				"e1",
-				{
-					path: "a.txt",
-					remove_from: betaHash,
-					remove_to: betaHash,
-					replacement_text: "BETA2",
-				},
+				["a.txt", [betaHash, betaHash], "BETA2"],
 				undefined,
 				undefined,
 				ctx,

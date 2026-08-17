@@ -6,12 +6,7 @@ import {
 } from "../../src/preview-controller";
 import type { RPreview, RRState } from "../../src/edit-render";
 
-const sampleArgs = {
-	path: "sample.ts",
-	remove_from: "AAA",
-	remove_to: "BBB",
-	replacement_text: "x",
-};
+const sampleArgs = ["sample.ts", ["AAA", "BBB"], "x"] as const;
 
 function makeHost(overrides: Partial<PreviewHost> = {}): {
 	host: PreviewHost;
@@ -42,7 +37,7 @@ describe("DebouncedPreview", () => {
 			const controller = new DebouncedPreview(compute);
 			const { host, state, invalidated } = makeHost();
 			controller.renderCall(host, sampleArgs);
-			controller.renderCall(host, { ...sampleArgs, replacement_text: "y" });
+			controller.renderCall(host, [sampleArgs[0], sampleArgs[1], "y"]);
 			expect(compute).not.toHaveBeenCalled();
 			await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS - 1);
 			expect(compute).not.toHaveBeenCalled();
@@ -51,7 +46,7 @@ describe("DebouncedPreview", () => {
 			await settled;
 			expect(compute).toHaveBeenCalledTimes(1);
 			expect(compute).toHaveBeenCalledWith(
-				{ ...sampleArgs, replacement_text: "y" },
+				[sampleArgs[0], sampleArgs[1], "y"],
 				"/tmp",
 			);
 			expect(state.preview).toEqual({ diff: "D" });
@@ -62,7 +57,7 @@ describe("DebouncedPreview", () => {
 					remove_from: "AAA",
 					remove_to: "BBB",
 					replacement_text: "y",
-				}),
+				})
 			);
 		} finally {
 			vi.useRealTimers();
@@ -106,7 +101,7 @@ describe("DebouncedPreview", () => {
 			const { host, state } = makeHost();
 			controller.renderCall(host, sampleArgs);
 			await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS);
-			controller.renderCall(host, { ...sampleArgs, replacement_text: "y" });
+			controller.renderCall(host, [sampleArgs[0], sampleArgs[1], "y"]);
 			resolveCompute!({ diff: "STALE" });
 			await Promise.resolve();
 			await Promise.resolve();

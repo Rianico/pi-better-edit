@@ -39,12 +39,7 @@ describe("served-state range verification for edit", () => {
 				await expect(
 					editTool.execute(
 						"e1",
-						{
-							path: "sample.ts",
-							remove_from: alphaRef,
-							remove_to: gammaRef,
-							replacement_text: "X",
-						},
+						["sample.ts", [alphaRef, gammaRef], "X"],
 						undefined,
 						undefined,
 						ctx,
@@ -84,12 +79,7 @@ describe("served-state range verification for edit", () => {
 				try {
 					await editTool.execute(
 						"e1",
-						{
-							path: "sample.ts",
-							remove_from: alphaRef,
-							remove_to: gammaRef,
-							replacement_text: "X",
-						},
+						["sample.ts", [alphaRef, gammaRef], "X"],
 						undefined,
 						undefined,
 						ctx,
@@ -117,12 +107,7 @@ describe("served-state range verification for edit", () => {
 				const retryTo = echoLines[2]!.split("│")[0]!;
 				const retry = await editTool.execute(
 					"e2",
-					{
-						path: "sample.ts",
-						remove_from: retryFrom,
-						remove_to: retryTo,
-						replacement_text: "X\nY",
-					},
+					["sample.ts", [retryFrom, retryTo], "X\nY"],
 					undefined,
 					undefined,
 					ctx,
@@ -133,12 +118,7 @@ describe("served-state range verification for edit", () => {
 				await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 				const secondStale = await editTool.execute(
 					"e3",
-					{
-						path: "sample.ts",
-						remove_from: retryFrom,
-						remove_to: retryTo,
-						replacement_text: "Z",
-					},
+					["sample.ts", [retryFrom, retryTo], "Z"],
 					undefined,
 					undefined,
 					ctx,
@@ -175,12 +155,7 @@ describe("served-state range verification for edit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: alphaRef,
-						remove_to: betaRef,
-						replacement_text: "A\nB",
-					},
+					["sample.ts", [alphaRef, betaRef], "A\nB"],
 					undefined,
 					undefined,
 					ctx,
@@ -217,12 +192,7 @@ describe("served-state range verification for edit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: betaRef,
-						remove_to: gammaRef,
-						replacement_text: "B\nG",
-					},
+					["sample.ts", [betaRef, gammaRef], "B\nG"],
 					undefined,
 					undefined,
 					ctx,
@@ -260,12 +230,7 @@ describe("served-state range verification for edit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: alphaRef,
-						remove_to: gammaRef,
-						replacement_text: "X\nY",
-					},
+					["sample.ts", [alphaRef, gammaRef], "X\nY"],
 					undefined,
 					undefined,
 					ctx,
@@ -297,12 +262,7 @@ describe("served-state range verification for edit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: betaRef,
-						remove_to: betaRef,
-						replacement_text: "BETA",
-					},
+					["sample.ts", [betaRef, betaRef], "BETA"],
 					undefined,
 					undefined,
 					ctx,
@@ -341,12 +301,7 @@ describe("served-state range verification for edit", () => {
 			try {
 				await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: alphaRef,
-						remove_to: betaRef,
-						replacement_text: "X",
-					},
+					["sample.ts", [alphaRef, betaRef], "X"],
 					undefined,
 					undefined,
 					ctx,
@@ -369,12 +324,7 @@ describe("served-state range verification for edit", () => {
 
 			const retry = await editTool.execute(
 				"e2",
-				{
-					path: "sample.ts",
-					remove_from: betaRefFromContext,
-					remove_to: betaRefFromContext,
-					replacement_text: "BETA2",
-				},
+				["sample.ts", [betaRefFromContext, betaRefFromContext], "BETA2"],
 				undefined,
 				undefined,
 				ctx,
@@ -395,12 +345,7 @@ describe("served-state range verification for edit", () => {
 				await expect(
 					editTool.execute(
 						"e1",
-						{
-							path: "sample.ts",
-							remove_from: hashes[0]!,
-							remove_to: hashes[2]!,
-							replacement_text: "X",
-						},
+						["sample.ts", [hashes[0]!, hashes[2]!], "X"],
 						undefined,
 						undefined,
 						ctx,

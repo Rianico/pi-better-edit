@@ -113,13 +113,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
 				const edit1: any = await editTool.execute(
 					"e1",
-					{
-						path: "render.ts",
-						remove_from: pushRef,
-						remove_to: pushRef,
-						replacement_text:
-							"try {\n          out.push(it.name);\n        } catch {}",
-					},
+					["render.ts", [pushRef, pushRef], "try {\n          out.push(it.name);\n        } catch {}"],
 					undefined,
 					undefined,
 					ctx,
@@ -141,12 +135,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
 				const edit2: any = await editTool.execute(
 					"e2",
-					{
-						path: "render.ts",
-						remove_from: pushRef,
-						remove_to: pushRef,
-						replacement_text: "out.push(it.name); // tagged",
-					},
+					["render.ts", [pushRef, pushRef], "out.push(it.name); // tagged"],
 					undefined,
 					undefined,
 					ctx,
@@ -178,12 +167,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 				await expect(
 					editTool.execute(
 						"e1",
-						{
-							path: "f.ts",
-							remove_from: sigRef,
-							remove_to: sigRef,
-							replacement_text: "func hello() /* marked */",
-						},
+						["f.ts", [sigRef, sigRef], "func hello() /* marked */"],
 						undefined,
 						undefined,
 						ctx,
@@ -222,12 +206,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
 				const edit1: any = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: betaRef,
-						remove_to: betaRef,
-						replacement_text: "const beta = 22;",
-					},
+					["sample.ts", [betaRef, betaRef], "const beta = 22;"],
 					undefined,
 					undefined,
 					ctx,
@@ -268,12 +247,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
 				const edit2: any = await editTool.execute(
 					"e2",
-					{
-						path: "sample.ts",
-						remove_from: gammaRef,
-						remove_to: gammaRef,
-						replacement_text: "const gamma = 33;",
-					},
+					["sample.ts", [gammaRef, gammaRef], "const gamma = 33;"],
 					undefined,
 					undefined,
 					ctx,

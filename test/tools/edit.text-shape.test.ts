@@ -23,12 +23,7 @@ describe("edit tool text shape (token budget)", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				undefined,
 				undefined,
 				ctx,
@@ -56,12 +51,7 @@ describe("edit tool text shape (token budget)", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 				undefined,
 				undefined,
 				ctx,
@@ -88,12 +78,7 @@ describe("edit tool text shape (token budget)", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: hashes[0]!,
-						remove_to: hashes[0]!,
-						replacement_text: "",
-					},
+					["sample.ts", [hashes[0]!, hashes[0]!], ""],
 					undefined,
 					undefined,
 					ctx,
@@ -123,12 +108,7 @@ describe("edit tool text shape (token budget)", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: hashes[1]!,
-						remove_to: hashes[1]!,
-						replacement_text: `b${longLine.slice(1)}`,
-					},
+					["sample.ts", [hashes[1]!, hashes[1]!], `b${longLine.slice(1)}`],
 					undefined,
 					undefined,
 					ctx,

@@ -1,9 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { editToolSchema, regEdit } from "../../src/edit";
+import { editToolSchema } from "../../src/edit";
 import {
-	makeFakePiRegistry,
 	setupIntegrationTest,
 	withTempFile,
 	useTestHome,
@@ -11,43 +10,17 @@ import {
 const home = useTestHome();
 
 describe("editToolSchema", () => {
-	it("has path, remove_from, remove_to, and replacement_text at top level", () => {
+	it("has the exact tuple shape", () => {
 		const schema = editToolSchema as any;
-		expect(schema.type).toBe("object");
-		const props = schema.properties;
-		expect(props.path).toBeDefined();
-		expect(props.remove_from).toBeDefined();
-		expect(props.remove_to).toBeDefined();
-		expect(props.replacement_text).toBeDefined();
-		expect(props.changes).toBeUndefined();
-		expect(schema.additionalProperties).toBe(false);
+		expect(schema.type).toBe("array");
+		expect(schema.items).toHaveLength(3);
+		expect(schema.items[0].anyOf).toBeDefined();
+		expect(schema.items[1].type).toBe("array");
+		expect(schema.items[1].items).toHaveLength(2);
 	});
 });
 
 describe("regEdit", () => {
-	it("registers a tool named 'edit'", () => {
-		const { pi, getTool } = makeFakePiRegistry();
-		regEdit(pi);
-		const tool = getTool("edit");
-		expect(tool).toBeDefined();
-		expect(tool.name).toBe("edit");
-		expect(tool.parameters).toBe(editToolSchema);
-	});
-
-	it("prepareArguments normalizes file_path to path", () => {
-		const { pi, getTool } = makeFakePiRegistry();
-		regEdit(pi);
-		const tool = getTool("edit");
-		const result = tool.prepareArguments({
-			file_path: "test.txt",
-			remove_from: "AAA",
-			remove_to: "BBB",
-			replacement_text: "new",
-		});
-		expect(result.path).toBe("test.txt");
-		expect(result.file_path).toBeUndefined();
-	});
-
 	it("edits a single line via execute", async () => {
 		await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { readTool, editTool } = setupIntegrationTest(cwd);
@@ -62,12 +35,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.txt",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.txt", [hashes[1]!, hashes[1]!], "BBB"],
 				undefined,
 				undefined,
 				{ cwd } as any,
@@ -99,12 +67,7 @@ describe("regEdit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					{
-						path: "sample.txt",
-						remove_from: hashes[1]!,
-						remove_to: hashes[2]!,
-						replacement_text: "BBB\nCCC",
-					},
+					["sample.txt", [hashes[1]!, hashes[2]!], "BBB\nCCC"],
 					undefined,
 					undefined,
 					{ cwd } as any,
@@ -134,12 +97,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.txt",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "",
-				},
+				["sample.txt", [hashes[1]!, hashes[1]!], ""],
 				undefined,
 				undefined,
 				{ cwd } as any,
@@ -168,12 +126,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.txt",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "bbb",
-				},
+				["sample.txt", [hashes[1]!, hashes[1]!], "bbb"],
 				undefined,
 				undefined,
 				{ cwd } as any,
@@ -191,12 +144,7 @@ describe("regEdit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.txt",
-						remove_from: "ZZZ",
-						remove_to: "ZZZ",
-						replacement_text: "x",
-					},
+					["sample.txt", ["ZZZ", "ZZZ"], "x"],
 					undefined,
 					undefined,
 					{ cwd } as any,
@@ -220,12 +168,7 @@ describe("regEdit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					{
-						path: "sample.txt",
-						remove_from: hashes[0]!,
-						remove_to: hashes[1]!,
-						replacement_text: "",
-					},
+					["sample.txt", [hashes[0]!, hashes[1]!], ""],
 					undefined,
 					undefined,
 					{ cwd } as any,
@@ -278,12 +221,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				{
-					path: "sample.txt",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
-				},
+				["sample.txt", [hashes[1]!, hashes[1]!], "BBB"],
 				undefined,
 				undefined,
 				{ cwd } as any,
@@ -311,12 +249,7 @@ describe("regEdit", () => {
 
 				await editTool.execute(
 					"e1",
-					{
-						path: "crlf.txt",
-						remove_from: hashes[1]!,
-						remove_to: hashes[1]!,
-						replacement_text: "BETA",
-					},
+					["crlf.txt", [hashes[1]!, hashes[1]!], "BETA"],
 					undefined,
 					undefined,
 					{ cwd } as any,

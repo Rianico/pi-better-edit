@@ -21,10 +21,7 @@ describe("file kind guards in tools", () => {
 
       const result = await editTool.execute(
         "e1",
-        {
-          path: "bad-utf.ts",
-          remove_from: intRef, remove_to: intRef, replacement_text: "long",
-        },
+        ["bad-utf.ts", [intRef, intRef], "long"],
         undefined,
         undefined,
         ctx,
@@ -42,10 +39,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          {
-            path: "image.png",
-            remove_from: "AAA", remove_to: "BBB", replacement_text: "x",
-          },
+          ["image.png", ["AAA", "BBB"], "x"],
           undefined,
           undefined,
           ctx,
@@ -62,10 +56,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          {
-            path: "utf16.txt",
-            remove_from: "AAA", remove_to: "BBB", replacement_text: "x",
-          },
+          ["utf16.txt", ["AAA", "BBB"], "x"],
           undefined,
           undefined,
           ctx,
@@ -82,10 +73,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          {
-            path: "mydir",
-            remove_from: "AAA", remove_to: "BBB", replacement_text: "x",
-          },
+          ["mydir", ["AAA", "BBB"], "x"],
           undefined,
           undefined,
           ctx,
@@ -103,10 +91,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          {
-            path: "empty.txt",
-            remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "",
-          },
+          ["empty.txt", [hashes[0]!, hashes[0]!], ""],
           undefined,
           undefined,
           ctx,

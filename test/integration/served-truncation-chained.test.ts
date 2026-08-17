@@ -86,12 +86,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
 				const edit1 = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: refs["a"]!,
-						remove_to: refs["c"]!,
-						replacement_text: "",
-					},
+					["sample.ts", [refs["a"]!, refs["c"]!], ""],
 					undefined,
 					undefined,
 					ctx,
@@ -120,12 +115,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
 				const edit2 = await editTool.execute(
 					"e2",
-					{
-						path: "sample.ts",
-						remove_from: refs["d"]!,
-						remove_to: refs["e"]!,
-						replacement_text: "",
-					},
+					["sample.ts", [refs["d"]!, refs["e"]!], ""],
 					undefined,
 					undefined,
 					ctx,
@@ -173,12 +163,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 				const refs = await hashRefs(readTool, "sample.ts", ctx, ["d", "e"]);
 				const edit = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: refs["d"]!,
-						remove_to: refs["e"]!,
-						replacement_text: "",
-					},
+					["sample.ts", [refs["d"]!, refs["e"]!], ""],
 					undefined,
 					undefined,
 					ctx,
@@ -254,12 +239,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
 				const edit = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: refs["d"]!,
-						remove_to: refs["e"]!,
-						replacement_text: "",
-					},
+					["sample.ts", [refs["d"]!, refs["e"]!], ""],
 					undefined,
 					undefined,
 					ctx,

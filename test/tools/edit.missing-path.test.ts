@@ -13,7 +13,7 @@ describe("edit — missing path resolution", () => {
 
       const result = await editTool.execute(
         "e1",
-        { remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" },
+        [null, [hashes[0]!, hashes[0]!], "AAA" ],
         undefined,
         undefined,
         ctx,
@@ -39,7 +39,7 @@ describe("edit — missing path resolution", () => {
       await expect(
         editTool.execute(
           "e1",
-          { remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "X" },
+          [null, [hashes[0]!, hashes[0]!], "X" ],
           undefined,
           undefined,
           ctx,
@@ -55,12 +55,12 @@ describe("edit — missing path resolution", () => {
       await expect(
         editTool.execute(
           "e1",
-          { remove_from: "AAA", remove_to: "AAA", replacement_text: "X" },
+          [null, ["AAA", "AAA"], "X" ],
           undefined,
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/requires a non-empty "path"/);
+      ).rejects.toThrow(/path could not be inferred/);
     });
   });
 
@@ -72,7 +72,7 @@ describe("edit — missing path resolution", () => {
 
       const result = await editTool.execute(
         "e1",
-        { remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "BBB" },
+        [null, [hashes[1]!, hashes[1]!], "BBB" ],
         undefined,
         undefined,
         ctx,

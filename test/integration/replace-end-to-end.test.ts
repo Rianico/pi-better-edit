@@ -16,11 +16,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: betaHash, remove_to: betaHash,
-          replacement_text: "BBB",
-        },
+        ["sample.ts", [betaHash, betaHash], "BBB"],
         undefined,
         undefined,
         ctx,
@@ -45,11 +41,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: bHash, remove_to: cHash,
-          replacement_text: "B\nC",
-        },
+        ["sample.ts", [bHash, cHash], "B\nC"],
         undefined,
         undefined,
         ctx,
@@ -74,11 +66,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: bHash, remove_to: cHash,
-          replacement_text: "",
-        },
+        ["sample.ts", [bHash, cHash], ""],
         undefined,
         undefined,
         ctx,
@@ -105,11 +93,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: betaRef, remove_to: betaRef,
-          replacement_text: "BBB",
-        },
+        ["sample.ts", [betaRef, betaRef], "BBB"],
         undefined,
         undefined,
         ctx,
@@ -118,11 +102,7 @@ describe("edit tool — end-to-end", () => {
       await expect(
         editTool.execute(
           "e2",
-          {
-            path: "sample.ts",
-            remove_from: betaRef, remove_to: betaRef,
-            replacement_text: "BBB-AGAIN",
-          },
+          ["sample.ts", [betaRef, betaRef], "BBB-AGAIN"],
           undefined,
           undefined,
           ctx,
@@ -141,11 +121,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "empty.ts",
-          remove_from: emptyHash, remove_to: emptyHash,
-          replacement_text: "first\nsecond",
-        },
+        ["empty.ts", [emptyHash, emptyHash], "first\nsecond"],
         undefined,
         undefined,
         ctx,
@@ -168,11 +144,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "crlf.ts",
-          remove_from: betaRef, remove_to: betaRef,
-          replacement_text: "BETA",
-        },
+        ["crlf.ts", [betaRef, betaRef], "BETA"],
         undefined,
         undefined,
         ctx,
@@ -196,11 +168,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        {
-          path: "cr.ts",
-          remove_from: betaRef, remove_to: betaRef,
-          replacement_text: "BETA",
-        },
+        ["cr.ts", [betaRef, betaRef], "BETA"],
         undefined,
         undefined,
         ctx,
@@ -244,7 +212,7 @@ describe("edit tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            { path: c.fileName, remove_from: betaRef, remove_to: betaRef, replacement_text: "" },
+            [c.fileName, [betaRef, betaRef], "" ],
             undefined,
             undefined,
             ctx,
@@ -264,7 +232,7 @@ describe("edit tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            { path: c.fileName, remove_from: betaRef, remove_to: betaRef, replacement_text: "beta" },
+            [c.fileName, [betaRef, betaRef], "beta" ],
             undefined,
             undefined,
             ctx,
@@ -283,11 +251,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        {
-          path: "sample.ts",
-          remove_from: hashes[1]!, remove_to: hashes[1]!,
-          replacement_text: "BBB",
-        },
+        ["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
         undefined,
         undefined,
         ctx,

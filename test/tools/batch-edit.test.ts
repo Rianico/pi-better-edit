@@ -220,12 +220,7 @@ describe("batch_edit tool", () => {
 				const editTool = getTool("edit");
 				const followUp = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: echoedHash,
-						remove_to: echoedHash,
-						replacement_text: "beta",
-					},
+					["sample.ts", [echoedHash, echoedHash], "beta"],
 					undefined,
 					undefined,
 					ctx,
@@ -610,12 +605,7 @@ describe("batch_edit tool", () => {
 				const editTool = getTool("edit");
 				const followUp = await editTool.execute(
 					"e1",
-					{
-						path: "sample.ts",
-						remove_from: echoedHash,
-						remove_to: echoedHash,
-						replacement_text: "BBB",
-					},
+					["sample.ts", [echoedHash, echoedHash], "BBB"],
 					undefined,
 					undefined,
 					ctx,

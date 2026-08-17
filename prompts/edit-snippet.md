@@ -1,1 +1,1 @@
-Edit lines in a text file via bare 3-char HASH anchors from read — hash only, never line content; anchor exactly the lines that change; one edit per tool call
+Edit lines with the exact payload `[path, [remove_from, remove_to], replacement_text]`; use a non-empty path or `null` for anchor-based inference, and bare 3-character HASH anchors only.

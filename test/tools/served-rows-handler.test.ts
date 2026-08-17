@@ -78,12 +78,7 @@ describe("served-rows tool_result handler", () => {
 
 			const editResult = await editTool.execute(
 				"e1",
-				{
-					path: "sample.txt",
-					remove_from: betaRef,
-					remove_to: betaRef,
-					replacement_text: "BETA",
-				},
+				["sample.txt", [betaRef, betaRef], "BETA"],
 				undefined,
 				undefined,
 				ctx,
@@ -146,12 +141,7 @@ describe("served-rows tool_result handler", () => {
 
 			await editTool.execute(
 				"e1",
-				{
-					path: "sample.txt",
-					remove_from: originalHashes[1]!,
-					remove_to: originalHashes[1]!,
-					replacement_text: "BETA",
-				},
+				["sample.txt", [originalHashes[1]!, originalHashes[1]!], "BETA"],
 				undefined,
 				undefined,
 				ctx,
