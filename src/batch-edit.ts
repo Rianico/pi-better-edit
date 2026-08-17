@@ -9,8 +9,6 @@ import { restoreEndings, type LineEnding } from "./edit-diff";
 import { scanDrift } from "./drift";
 import {
 	abortIf,
-	isRec,
-	rejectUnknownFields,
 	splitLines,
 } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
@@ -51,13 +49,9 @@ type BatchItem = [string | null, [string, string], string];
 
 type CanonicalBatchItem = EditParams;
 
-export type BatchEditParams = {
-	edits: BatchItem[];
-};
+export type BatchEditParams = BatchItem[];
 
-type CanonicalBatchEditParams = {
-	edits: CanonicalBatchItem[];
-};
+type CanonicalBatchEditParams = CanonicalBatchItem[];
 
 type PreparedItem = {
 	index: number;
@@ -71,63 +65,48 @@ type PreparedItem = {
 
 const batchItemSchema = editToolSchema;
 
-export const batchEditToolSchema = Type.Object(
-	{
-		edits: Type.Array(batchItemSchema, {
-			description: "Ordered list of edit tuples",
-			minItems: 1,
-			maxItems: BATCH_EDIT_MAX_ITEMS,
-		}),
-	},
-	{ additionalProperties: false },
-);
+export const batchEditToolSchema = Type.Array(batchItemSchema, {
+	description: "Ordered list of edit tuples",
+	minItems: 1,
+	maxItems: BATCH_EDIT_MAX_ITEMS,
+});
 
 function assertBatchReq(request: unknown): asserts request is BatchEditParams {
-	if (!isRec(request)) {
+	if (!Array.isArray(request)) {
 		throw new Error(
-			'[E_BAD_SHAPE] batch_edit request must be an object with an "edits" array.',
+			"[E_BAD_SHAPE] batch_edit request must be a root array of edit tuples.",
 		);
 	}
-	rejectUnknownFields(
-		request,
-		new Set(["edits"]),
-		"batch_edit request",
-		"The request takes only { edits: [...] }.",
-	);
-	const edits = request.edits;
-	if (!Array.isArray(edits)) {
-		throw new Error('[E_BAD_SHAPE] "edits" must be an array of edit tuples.');
-	}
-	if (edits.length === 0) {
+	if (request.length === 0) {
 		throw new Error(
-			'[E_BAD_SHAPE] "edits" must not be empty — provide at least one edit.',
+			"[E_BAD_SHAPE] batch_edit request must not be empty — provide at least one edit.",
 		);
 	}
-	if (edits.length > BATCH_EDIT_MAX_ITEMS) {
+	if (request.length > BATCH_EDIT_MAX_ITEMS) {
 		throw new Error(
-			`[E_BAD_SHAPE] batch_edit accepts at most ${BATCH_EDIT_MAX_ITEMS} edits per call; got ${edits.length}. Split the batch into smaller calls.`,
+			`[E_BAD_SHAPE] batch_edit accepts at most ${BATCH_EDIT_MAX_ITEMS} edits per call; got ${request.length}. Split the batch into smaller calls.`,
 		);
 	}
-	for (let index = 0; index < edits.length; index++) {
-		const normalized = normReq(edits[index]);
+	for (let index = 0; index < request.length; index++) {
+		const normalized = normReq(request[index]);
 		try {
 			assertReq(normalized);
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(`[E_BAD_SHAPE] edits[${index}] ${message.replace(/^\[E_BAD_SHAPE\] /, "")}`);
+			throw new Error(
+				`[E_BAD_SHAPE] batch_edit[${index}] ${message.replace(/^\[E_BAD_SHAPE\] /, "")}`,
+			);
 		}
 	}
 }
 
 function canonicalizeBatchReq(request: unknown): CanonicalBatchEditParams {
 	assertBatchReq(request);
-	return {
-		edits: request.edits.map((item) => {
-			const normalized = normReq(item);
-			assertReq(normalized);
-			return normalized;
-		}),
-	};
+	return request.map((item) => {
+		const normalized = normReq(item);
+		assertReq(normalized);
+		return normalized;
+	});
 }
 
 
@@ -136,8 +115,8 @@ async function prepareItems(
 	cwd: string,
 ): Promise<PreparedItem[]> {
 	const items: PreparedItem[] = [];
-	for (let index = 0; index < params.edits.length; index++) {
-		const raw = params.edits[index]!;
+	for (let index = 0; index < params.length; index++) {
+		const raw = params[index]!;
 		const record: Record<string, unknown> = { ...raw };
 
 		let path = typeof record.path === "string" ? record.path : undefined;
@@ -148,7 +127,7 @@ async function prepareItems(
 				resolution = await resolveMissingPath(record);
 			} catch (error) {
 				if (error instanceof Error) {
-					throw new Error(`edits[${index}]: ${error.message}`);
+					throw new Error(`batch_edit[${index}]: ${error.message}`);
 				}
 				throw error;
 			}
@@ -159,7 +138,7 @@ async function prepareItems(
 		}
 		if (!path) {
 			throw new Error(
-				`[E_BAD_SHAPE] edits[${index}] requires a non-empty "path" string, and its anchors match no known file.`,
+				`[E_BAD_SHAPE] batch_edit[${index}] requires a non-empty path, and its anchors match no known file.`,
 			);
 		}
 
@@ -271,7 +250,7 @@ async function processFile(
 		} catch (error) {
 			const message = error instanceof Error ? error.message : String(error);
 			throw new Error(
-				`[E_BATCH_ABORT] edits[${item.index}] (${item.path}) failed: ${message}\n` +
+				`[E_BATCH_ABORT] batch_edit[${item.index}] (${item.path}) failed: ${message}\n` +
 					`The whole batch was rejected and NOTHING was written — no file changed and earlier items in the batch were NOT applied.`,
 			);
 		}
@@ -295,10 +274,10 @@ async function processFile(
 						? error.servedRows
 						: echoRowsForItem(edit, originalHashes);
 				const echoBlock = echoRows
-					? ` Current on-disk range for edits[${item.index}] (unchanged — nothing was written):\n${fmtServedRows(echoRows, originalLines)}`
+					? ` Current on-disk range for batch_edit[${item.index}] (unchanged — nothing was written):\n${fmtServedRows(echoRows, originalLines)}`
 					: " Call read() to get fresh anchors.";
 				throw new Error(
-					`[E_BATCH_ABORT] edits[${item.index}] (${item.path}) failed: ${error.message}${echoBlock}\n` +
+					`[E_BATCH_ABORT] batch_edit[${item.index}] (${item.path}) failed: ${error.message}${echoBlock}\n` +
 						`The whole batch was rejected and NOTHING was written — no file changed and earlier items in the batch were NOT applied. Fix the failing edit (and any later edit that depends on it), then resubmit the batch.`,
 				);
 			},
@@ -321,7 +300,7 @@ async function processFile(
 				removeFrom: item.remove_from,
 				removeTo: item.remove_to,
 				replacementText: item.replacement_text,
-				ref: `edits[${item.index}] (${item.path})`,
+				ref: `batch_edit[${item.index}] (${item.path})`,
 				batch: true,
 				range,
 				hashes: currentHashes,
@@ -331,7 +310,7 @@ async function processFile(
 			if (decision.action === "reject") throw new Error(decision.message);
 			if (decision.action === "warn") warnings.push(decision.notice);
 			warnings.push(
-				`edits[${item.index}] (${item.path}) was a noop: the range already contains the replacement text.`,
+				`batch_edit[${item.index}] (${item.path}) was a noop: the range already contains the replacement text.`
 			);
 			if (outcome.anchorWarnings?.length) warnings.push(...outcome.anchorWarnings);
 			continue;

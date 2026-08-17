@@ -77,6 +77,6 @@ Side discussion comparing three hash-anchor editing implementations for LLM codi
 
 ## Resolved calling contract
 
-The project reduces JSON envelope cost without adding tools or adopting a textual patch language. The single `edit` payload is `[path, [remove_from, remove_to], replacement_text]`; `path` is a string or `null` for anchor-based path inference, and the anchor range is inclusive. The `batch_edit` payload remains an object with an `edits` array of those tuples. Both forms normalize through the existing served-state verification and atomic batch pipeline.
+The project reduces JSON envelope cost without adding tools or adopting a textual patch language. The single `edit` payload is `[path, [remove_from, remove_to], replacement_text]`; `path` is a string or `null` for anchor-based path inference, and the anchor range is inclusive. The `batch_edit` payload is a root array of those tuples. Both forms normalize through the existing served-state verification and atomic batch pipeline.
 
 The old named-object payload is not retained, and no format configuration is exposed. Unified diff remains a possible future interoperability adapter, not an alternate mutation contract; block operations, registers, silent remapping, and fuzzy recovery remain rejected.

@@ -7,7 +7,7 @@ import { withTempFile, getText, extractHash } from "../support/fixtures";
 type ToolResultEvent = {
 	toolName: string;
 	isError: boolean;
-	input: Record<string, unknown>;
+	input: unknown;
 	details: any;
 	content: Array<{ type: string; text: string }>;
 };
@@ -201,11 +201,9 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
 				const batchResult = await batchTool.execute(
 					"b1",
-					{
-						edits: [
+					[
 							["sample.ts", [refs["a"]!, refs["c"]!], ""],
 						],
-					},
 					undefined,
 					undefined,
 					ctx,
@@ -216,7 +214,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 					{
 						toolName: "batch_edit",
 						isError: false,
-						input: { edits: [["sample.ts", [refs["a"]!, refs["c"]!], ""]] },
+						input: [["sample.ts", [refs["a"]!, refs["c"]!], ""]],
 						details: batchResult.details,
 						content: batchResult.content,
 					},

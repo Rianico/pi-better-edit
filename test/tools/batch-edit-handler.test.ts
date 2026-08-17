@@ -56,12 +56,10 @@ describe("batch_edit tool_result handler", () => {
 
 			const result = await batchTool.execute(
 				"b1",
-				{
-					edits: [
+				[
 						["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
 						["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"],
 					],
-				},
 				undefined,
 				undefined,
 				ctx,
@@ -72,7 +70,7 @@ describe("batch_edit tool_result handler", () => {
 				{
 					toolName: "batch_edit",
 					isError: false,
-					input: { edits: [["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"], ["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"]] },
+					input: [["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"], ["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"]],
 					details: result.details,
 					content: result.content,
 				},
@@ -108,11 +106,9 @@ describe("batch_edit tool_result handler", () => {
 
 			const result = await batchTool.execute(
 				"b1",
-				{
-					edits: [
+				[
 						["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
 					],
-				},
 				undefined,
 				undefined,
 				ctx,
@@ -122,7 +118,7 @@ describe("batch_edit tool_result handler", () => {
 				{
 					toolName: "batch_edit",
 					isError: false,
-					input: { edits: [["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"]] },
+					input: [["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"]],
 					details: result.details,
 					content: result.content,
 				},

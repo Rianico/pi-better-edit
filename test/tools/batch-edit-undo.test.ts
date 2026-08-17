@@ -22,12 +22,10 @@ describe("batch_edit undo", () => {
 
 			const result = await batchTool.execute(
 				"b1",
-				{
-					edits: [
+				[
 						["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
 						["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"],
 					],
-				},
 				undefined,
 				undefined,
 				ctx,

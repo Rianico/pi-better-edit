@@ -280,13 +280,12 @@ compared by design, not by score.
 | `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
 | `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit. |
 | `edit` | A fixed tuple `[path, [remove_from, remove_to], replacement_text]`; the path may be `null` for anchor-based inference. Verifies every line of the inclusive range and reject-and-serve returns fresh anchors. |
-| `batch_edit` | `{ edits: [tuple, …] }`; applies up to 32 tuples atomically. |
+| `batch_edit` | A root array of tuples `[[path, [remove_from, remove_to], replacement_text], …]`; applies up to 32 tuples atomically. |
 
-`edit` accepts `[path, [remove_from, remove_to], replacement_text]`; `batch_edit` accepts
-`{ edits: [tuple, …] }`. The path position is a non-empty string or `null` for unique
-anchor-based inference. The range is inclusive, and an empty replacement deletes the range.
-Both contracts are checked before file I/O; use `batch_edit` for multiple edits on the same
-file in one message.
+`edit` accepts `[path, [remove_from, remove_to], replacement_text]`; `batch_edit` accepts a root
+array of tuples. The path position is a non-empty string or `null` for unique anchor-based
+inference. The range is inclusive, and an empty replacement deletes the range. Both contracts
+are checked before file I/O; use `batch_edit` for multiple edits on the same file in one message.
 
 ### Error codes
 

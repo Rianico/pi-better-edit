@@ -29,12 +29,10 @@ describe("batch_edit tool", () => {
 
 				const result = await batchTool.execute(
 					"b1",
-					{
-						edits: [
+					[
 							["sample.ts", [hashes[0]!, hashes[0]!], "AAA"],
 							["sample.ts", [hashes[2]!, hashes[2]!], "CCC"],
 						],
-					},
 					undefined,
 					undefined,
 					ctx,
@@ -64,12 +62,10 @@ describe("batch_edit tool", () => {
 
 			const result = await batchTool.execute(
 				"b1",
-				{
-					edits: [
+				[
 						["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
 						["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"],
 					],
-				},
 				undefined,
 				undefined,
 				ctx,
@@ -93,11 +89,9 @@ describe("batch_edit tool", () => {
 
 				const result = await batchTool.execute(
 					"b1",
-					{
-						edits: [
+					[
 							["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 						],
-					},
 					undefined,
 					undefined,
 					ctx,
@@ -128,17 +122,15 @@ describe("batch_edit tool", () => {
 			await expect(
 				batchTool.execute(
 					"b1",
-					{
-						edits: [
+					[
 							["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
 							["b.txt", [bHashes[1]!, bHashes[1]!], "two"],
 						],
-					},
 					undefined,
 					undefined,
 					ctx,
 				),
-			).rejects.toThrow(/\[E_BATCH_ABORT\] edits\[1\] \(b\.txt\) failed/);
+			).rejects.toThrow(/\[E_BATCH_ABORT\] batch_edit\[1\] \(b\.txt\) failed/);
 
 			expect(await readFile(first, "utf-8")).toBe("alpha\nbeta\ngamma\n");
 			expect(await readFile(second, "utf-8")).toBe("one\nTWO\nthree\n");
@@ -160,11 +152,9 @@ describe("batch_edit tool", () => {
 				const err = (await batchTool
 					.execute(
 						"b1",
-						{
-							edits: [
+						[
 								["sample.ts", [hashes[1]!, hashes[2]!], "BETA\ngamma"],
 							],
-						},
 						undefined,
 						undefined,
 						ctx,
@@ -206,17 +196,15 @@ describe("batch_edit tool", () => {
 				await expect(
 					batchTool.execute(
 						"b1",
-						{
-							edits: [
+						[
 								["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 								["sample.ts", [hashes[1]!, hashes[1]!], "XX"],
 							],
-						},
 						undefined,
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/\[E_BATCH_ABORT\] edits\[1\] \(sample\.ts\) failed/);
+				).rejects.toThrow(/\[E_BATCH_ABORT\] batch_edit\[1\] \(sample\.ts\) failed/);
 
 				expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
 			},
@@ -235,12 +223,10 @@ describe("batch_edit tool", () => {
 
 				const result = await batchTool.execute(
 					"b1",
-					{
-						edits: [
+					[
 							["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 							["sample.ts", [hashes[2]!, hashes[2]!], "ccc"],
 						],
-					},
 					undefined,
 					undefined,
 					ctx,
@@ -265,11 +251,9 @@ describe("batch_edit tool", () => {
 
 				const result = await batchTool.execute(
 					"b1",
-					{
-						edits: [
+					[
 							["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
 						],
-					},
 					undefined,
 					undefined,
 					ctx,
@@ -293,34 +277,32 @@ describe("batch_edit tool", () => {
 
 				const validItem = ["sample.ts", [hashes[0]!, hashes[0]!], "AAA"];
 				const validator = Compile(batchEditToolSchema);
-				expect(validator.Check({ edits: [validItem] })).toBe(true);
-				expect(validator.Check({ edits: [{ path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" }] })).toBe(false);
+				expect(validator.Check([validItem])).toBe(true);
+				expect(validator.Check([{ path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" }])).toBe(false);
 
 				await expect(
 					batchTool.execute(
 						"b1",
-						{ edits: [{ path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" }] } as any,
+						[{ path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" }] as any,
 						undefined,
 						undefined,
 						ctx,
 					),
 				).rejects.toThrow(/E_BAD_SHAPE/);
 				await expect(
-					batchTool.execute("b1", { edits: [] }, undefined, undefined, ctx),
+					batchTool.execute("b1", [], undefined, undefined, ctx),
 				).rejects.toThrow(/E_BAD_SHAPE/);
 
 				await expect(
-					batchTool.execute("b1", { edits: "nope" }, undefined, undefined, ctx),
+					batchTool.execute("b1", "nope", undefined, undefined, ctx),
 				).rejects.toThrow(/E_BAD_SHAPE/);
 
 				await expect(
 					batchTool.execute(
 						"b1",
-						{
-							edits: [
+						[
 								["sample.ts", [hashes[0]!, hashes[0]!]],
 							],
-						},
 						undefined,
 						undefined,
 						ctx,
@@ -331,7 +313,7 @@ describe("batch_edit tool", () => {
 				await expect(
 					batchTool.execute(
 						"b1",
-						{ edits: tooMany },
+						tooMany,
 						undefined,
 						undefined,
 						ctx,
@@ -352,11 +334,9 @@ describe("batch_edit tool", () => {
 
 			const result = await batchTool.execute(
 				"b1",
-				{
-					edits: [
+				[
 						[null, [hashes[0]!, hashes[0]!], "AAA"],
 					],
-				},
 				undefined,
 				undefined,
 				ctx,
@@ -383,11 +363,9 @@ describe("batch_edit tool", () => {
 
 				const result = await batchTool.execute(
 					"b1",
-					{
-						edits: [
+					[
 							["sample.ts", [hashes[2]!, hashes[0]!], "XX"],
 						],
-					},
 					undefined,
 					undefined,
 					ctx,
@@ -420,11 +398,9 @@ describe("batch_edit tool", () => {
 
 				const result = await batchTool.execute(
 					"b1",
-					{
-						edits: [
+					[
 							["sample.ts", [hashes[1]!, hashes[1]!], "BETA"],
 						],
-					},
 					undefined,
 					undefined,
 					ctx,
@@ -449,11 +425,9 @@ describe("batch_edit tool", () => {
 				const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
 				await readBatchTool(ctx, readTool, "sample.ts");
 
-				const payload = {
-					edits: [
+				const payload = [
 						["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
-					],
-				};
+					];
 
 				const first = await batchTool.execute(
 					"b1",
@@ -495,12 +469,10 @@ describe("batch_edit tool", () => {
 				const err = (await batchTool
 					.execute(
 						"b1",
-						{
-							edits: [
+						[
 								["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 								["sample.ts", [hashes[1]!, hashes[1]!], "XX"],
 							],
-						},
 						undefined,
 						undefined,
 						ctx,

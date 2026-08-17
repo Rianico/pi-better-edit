@@ -27,15 +27,13 @@ The payload must have exactly three positions. Missing positions, extra position
 
 ### `batch_edit`
 
-The top-level payload remains an object with exactly one field, `edits`:
+The complete payload is a root JSON array of tuples:
 
 ```json
-{
-  "edits": [
-    ["src/a.ts", ["abx", "sdc"], "first replacement"],
-    [null, ["qwe", "rty"], "second replacement"]
-  ]
-}
+[
+  ["src/a.ts", ["abx", "sdc"], "first replacement"],
+  [null, ["qwe", "rty"], "second replacement"]
+]
 ```
 
 Each item is the same fixed three-position tuple as `edit`. Existing batch limits, ordering, overlap checks, served-range verification, all-or-nothing writes, rollback, and persisted undo remain unchanged.
