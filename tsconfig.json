@@ -10,5 +10,5 @@
     "resolveJsonModule": true,
     "isolatedModules": true
   },
-  "include": ["index.ts", "src/**/*.ts", "test/**/*.ts"]
+  "include": ["index.ts", "src/**/*.ts", "test/**/*.ts", "benchmarks/**/*.mts"]
 }

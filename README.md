@@ -10,9 +10,55 @@ Inspired by [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by R
 - **Served-state range verification** — `edit` verifies *every line* of the resolved range against what the model was actually shown, not just the two boundary anchors. A line inside the range that changed on disk since it was served is hard-rejected with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]`, and the current range is echoed back as fresh anchors so the retry needs no `read` (reject-and-serve).
 - **Drift notices** — when served territory outside the edit range changed on disk, the result carries an informational notice with the current content around the drift, once per episode.
 - **Chained edits without re-reading** — post-edit diff rows and rejection echoes count as serves, so follow-up edits verify cleanly; prompts present `read` as on-demand recovery, not a per-edit ritual.
-- **Verified against upstream** — the comparison battery scores this fork 23/23; upstream `pi-hashline-edit-pro` 2.4.1 scores 17/23 (five silent data-loss cases on stale interiors plus a cross-session serve leak) and 2.5.0 scores 21/23 (a blind-edit hole and a cross-session serve leak).
+- **Verified against upstream** — two deterministic batteries (23 tool scenarios, 10 hashline library scenarios) gate correctness on every run; the fork is 23/23, upstream `pi-hashline-edit-pro` 2.4.1 is 17/23 and 2.5.0 is 21/23. See [Numbers](#numbers).
 - **Architecture** — a dedicated served-state module owns serve recording and the served-span reconstruction; post-edit result assembly is a single pure function over structured warnings.
 - **Own identity** — published as the `pi-hashline-edit-lsz` npm package, with its own config and hash-store directory (`~/.config/pi-hashline-edit-lsz`).
+
+## Numbers
+
+The honest measurement is a deterministic correctness battery, not a sampled model run: every scenario performs the exact tool calls a model would (read → edit → verify, including the reject-and-serve retry path) against a scratch file, then checks the outcome **and** the final content against an expected verdict. No LLM in the loop — a run either reproduces or it doesn't. That trades stochastic headline numbers for something narrower but exact: stale edits are rejected before they corrupt files, on every run.
+
+**Tool battery — 23 scenarios, same tool seam, three targets (2026-08-17):**
+
+| vs expected verdict | correct | silent data-loss cases |
+| --- | --: | --: |
+| **this fork (1.1.3)** | **23/23** | 0 |
+| `pi-hashline-edit-pro@2.4.1` (fork base) | 17/23 | 5 silent data-loss cases (B3, B7, B8, B10, B15) + B22 cross-session leak |
+| `pi-hashline-edit-pro@2.5.0` (latest) | 21/23 | B8 blind-edit + B22 cross-session leak |
+
+The four interior-drift failures (B3, B7, B10, B15) are the exact data-loss class the served-state range verification exists to prevent: the file changed inside the edit range after it was read, and the upstream `replace` applied anyway, silently overwriting the drifted lines. B8 is the blind-edit case: an edit anchored on a boundary line the model was never shown still landed, overwriting unseen content. B22 — present in both versions — is the cross-session serve leak.
+
+**Library battery — `@oh-my-pi/hashline` 17.3.5, 10/10 (2026-08-17):** the hashline patch engine is tested in its own model: stale tags are either recovered with an explicit `Recovered from a stale file hash…` warning or rejected with a `MismatchError` — never silently applied (H2/H3), head/tail inserts warn on drift (H4), unseen anchors reject then retry cleanly (H7), multi-section patches preflight before any write (H8).
+
+Both batteries gate the same claim this project is built on: **stale edits are detected, never silently applied**. Full method, per-scenario tables, and limitations: [benchmarks/README.md](benchmarks/README.md) and [benchmarks/results/](benchmarks/results/).
+
+Reproduce:
+
+```bash
+npm run eval            # this fork, 23/23
+npm run eval:compare    # + upstream pi-hashline-edit-pro 2.4.1 / 2.5.0
+npm run eval:hashline   # + @oh-my-pi/hashline (installs bun into a temp dir)
+```
+
+### vs @oh-my-pi/hashline
+
+`@oh-my-pi/hashline` is the library that originated the hashline concept this project implements; this extension is a tool layer built on the same idea (credit: [can1357](https://github.com/can1357)). The comparison is a design comparison plus two per-engine batteries — not a single score, because the layers differ: a library has no tools, a tool layer has no `Patcher`.
+
+| | `pi-hashline-edit-lsz` (this project) | `@oh-my-pi/hashline` |
+| --- | --- | --- |
+| Layer | pi extension: `read` / `edit` / `undo_last_edit` / `batch_edit` | patch engine: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
+| Anchor model | per-line 3-char content-derived hash, whitespace-insensitive, unique by construction | 4-hex whole-file content tag + line numbers |
+| Stale detection | served-state range verification; reject with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]` and re-serve fresh anchors | tag validation; recovery-with-warning when anchors still map, `MismatchError` otherwise |
+| Blind-edit guard | never-served boundary/interior rejected (B7, B8, B22) | seen-lines provenance reject + content reveal, retry passes (H7) |
+| Noop | "No changes made", anchors intact (B11, B12) | applies, content unchanged (H5) |
+| Empty-file insert | supported (B14) | supported (H6) |
+| Batch atomicity | `batch_edit` all-or-nothing (`[E_BATCH_ABORT]`) | multi-section preflight, all-or-nothing (H8) |
+| Undo | persisted per-file, survives restarts | none (recovery only) |
+| Runtime | pi (Node) | bun ≥ 1.3.14 (TypeScript source) |
+
+The honest read: hashline's recovery policy is more forgiving — it tries to relocate a stale edit onto live content and warns; this project's policy is fail-closed — any doubt about the served state rejects and re-serves. Both satisfy the shared guarantee; they differ on what happens when drift is detected (recover-with-warning vs reject-and-serve).
+
+**What these numbers do not claim:** no token, cost, or latency figures — those depend on the host model and session and would not be honest in a deterministic battery. The "calls" / "chars" aggregates in the results are the batteries' own transcript sizes, for cross-version comparability only.
 
 ## What you get
 
@@ -222,16 +268,24 @@ Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
 
 ## Evaluation
 
-A cross-version behavior battery lives in `test/eval/` (external-behavior only, `RUN_EVAL`-gated). Run it against this fork:
+The [Numbers](#numbers) section is produced by deterministic batteries in `test/eval/` and `benchmarks/`; full method, per-scenario tables, and dated results live in [benchmarks/](benchmarks/README.md). Everything is `RUN_EVAL`-gated so none of it runs in `npm test`.
 
-    npm run eval
+Tool battery — this fork vs published upstream `pi-hashline-edit-pro`:
 
-Or compare this fork against the published upstream npm package (`pi-hashline-edit-pro`), by default `2.4.1` (the fork base) and `2.5.0` (latest); pass target specs as arguments to override:
+```bash
+npm run eval
+npm run eval:compare
+npm run eval:compare -- local pi-hashline-edit-pro@2.5.0   # override targets
+```
 
-    npm run eval:compare
-    npm run eval:compare -- local pi-hashline-edit-pro@2.5.0
+`eval:compare` installs the requested package versions into `node_modules` temporarily (`--no-save --no-package-lock`), runs the 23-scenario battery against each target, prints a per-scenario correctness table plus aggregate call/token counts, then restores `node_modules` to the lockfile state.
 
-The compare script installs the requested package versions into `node_modules` temporarily (`--no-save --no-package-lock`), runs the battery against each target, prints a per-scenario correctness table plus aggregate call/token counts, then restores `node_modules` to the lockfile state.
+Library battery — `@oh-my-pi/hashline` (installs bun + the package into a temp dir; nothing lands in this repo):
+
+```bash
+npm run eval:hashline
+npm run eval:hashline -- @oh-my-pi/hashline@17.3.5   # pin a version
+```
 
 ## License
 
