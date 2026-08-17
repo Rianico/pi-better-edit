@@ -44,13 +44,7 @@ async function hashRefs(
 	ctx: ToolResultCtx,
 	needles: string[],
 ): Promise<Record<string, string>> {
-	const read = await readTool.execute(
-		"r1",
-		{ path },
-		undefined,
-		undefined,
-		ctx,
-	);
+	const read = await readTool.execute("r1", { path }, undefined, undefined, ctx);
 	const lines = getText(read).split("\n");
 	const out: Record<string, string> = {};
 	for (const needle of needles) {
@@ -121,9 +115,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 					ctx,
 				);
 				expect(getText(edit2)).toContain("Successfully edited");
-				expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe(
-					"b\nb\nf\n",
-				);
+				expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe("b\nb\nf\n");
 			},
 		);
 	});
@@ -169,9 +161,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 					ctx,
 				);
 				expect(getText(edit)).toContain("Successfully edited");
-				expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe(
-					"b\nb\nf\n",
-				);
+				expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe("b\nb\nf\n");
 			},
 		);
 	});
@@ -201,9 +191,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
 				const batchResult = await batchTool.execute(
 					"b1",
-					[
-							["sample.ts", [refs["a"]!, refs["c"]!], ""],
-						],
+					[["sample.ts", [refs["a"]!, refs["c"]!], ""]],
 					undefined,
 					undefined,
 					ctx,
@@ -238,9 +226,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 					ctx,
 				);
 				expect(getText(edit)).toContain("Successfully edited");
-				expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe(
-					"b\nb\nf\n",
-				);
+				expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe("b\nb\nf\n");
 			},
 		);
 	});
