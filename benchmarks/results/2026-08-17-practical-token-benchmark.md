@@ -18,12 +18,12 @@ Configuration:
 
 ## Results
 
-`@oh-my-pi/hashline` is the practical baseline for the relative column in this run.
+`@oh-my-pi/hashline` is the practical baseline for the relative column in this run. The project's practical advantage is fewer round trips: **3 tool calls versus 6 for OMP**.
 
 | engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
 | --- | ---: | ---: | ---: | :---: |
-| `@oh-my-pi/hashline` wrapper | 6 | 28,467 | 0.0% | ✅ |
-| this project (`batch_edit`) | 3 | 12,593 | **55.8%** | ✅ |
+| `@oh-my-pi/hashline` wrapper | **6** | 28,467 | 0.0% | ✅ |
+| this project (`batch_edit`) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
 
 Usage breakdown:
 

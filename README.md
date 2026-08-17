@@ -30,6 +30,8 @@
 
 > *"The harness — not the model — is the bottleneck."*
 > — Can Bölük, [*The Harness Problem*](https://stencil.so/blog/the-harness-problem)
+>
+> **Practical advantage: fewer tool calls.** In the recorded coding-agent benchmark, this project completed the same external-drift refactor in **3 tool calls** versus **6 for OMP**. Fewer calls mean fewer model/tool round trips while preserving exact final-file correctness; see the practical benchmark below for the measured sample.
 
 Line numbers shift the moment anything above them changes, and str_replace-style tools
 make the model re-type the code it is replacing. Hashline gives every line a **content
@@ -185,12 +187,12 @@ All percentages are savings against the `str_replace` value in the same row. The
 
 #### Practical benchmark — coding-agent session
 
-This benchmark measures a real coding-agent loop rather than serialized envelopes. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. OMP is the practical baseline below; usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
+This benchmark measures a real coding-agent loop rather than serialized envelopes. The practical advantage is round-trip efficiency: this project completed the scenario in **3 tool calls**, versus **6 for OMP**. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. OMP is the practical baseline below; usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
 
 | engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
 | --- | ---: | ---: | ---: | :---: |
-| OMP patch wrapper | 6 | 28,467 | 0.0% | ✅ |
-| this project (`batch_edit`) | 3 | 12,593 | **55.8%** | ✅ |
+| OMP patch wrapper | **6** | 28,467 | 0.0% | ✅ |
+| this project (`batch_edit`) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
 
 Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
 
