@@ -138,8 +138,12 @@ export default function (pi: ExtensionAPI): void {
 		const { content, servedRows } = finalizeToolResult(details);
 		if (servedRows && servedRows.length > 0) {
 			try {
-				const rawPath = (event.input as Record<string, unknown> | undefined)
-					?.path;
+				const rawPath =
+					event.toolName === "edit"
+						? Array.isArray(event.input) && typeof event.input[0] === "string"
+							? event.input[0]
+							: details.path
+						: (event.input as Record<string, unknown> | undefined)?.path;
 				if (typeof rawPath === "string") {
 					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
 					await recordDiffServes({
@@ -157,6 +161,7 @@ export default function (pi: ExtensionAPI): void {
 				);
 			}
 		}
+
 		return { content };
 	});
 }

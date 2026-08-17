@@ -1,6 +1,6 @@
 # Compact JSON Edit Payload Specification
 
-**Status:** accepted design; implementation pending
+**Status:** implemented
 **Decision:** [ADR-0006](../adr/0006-compact-json-edit-payload.md)
 
 ## Goal

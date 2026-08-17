@@ -93,7 +93,7 @@ describe("served-rows tool_result handler", () => {
 				{
 					toolName: "edit",
 					isError: false,
-					input: { path: "sample.txt" },
+					input: [null, [betaRef, betaRef], "BETA"],
 					details: editResult.details,
 					content: editResult.content,
 				},

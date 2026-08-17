@@ -88,12 +88,7 @@ kQm│}
 `edit` targets a range of hashes, so edits always land on the lines you meant:
 
 ```json
-{
-  "path": "src/main.ts",
-  "remove_from": "szJ",
-  "remove_to": "szJ",
-  "replacement_text": "  console.log('hi');"
-}
+["src/main.ts", ["szJ", "szJ"], "  console.log('hi');"]
 ```
 
 and returns a diff with fresh anchors, so the next edit verifies cleanly with no re-read:
@@ -284,24 +279,21 @@ compared by design, not by score.
 | ------ | -------------- |
 | `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
 | `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit. |
-| `edit` | Replaces a range of lines by hash. `path` · `remove_from` · `remove_to` · `replacement_text` (`""` deletes). Verifies **every line** of the resolved range against served state; `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]` reject-and-serve fresh anchors. |
-| `batch_edit` | 1–32 items in one atomic call: `{ edits: [{ path?, remove_from, remove_to, replacement_text }, …] }`. All-or-nothing; the failing item's range is echoed as fresh serves, one combined diff per file. |
-| `undo_last_edit` | `{ path }` reverts the last hashline edit, restoring exact previous content (BOM and line endings included) plus the previous anchors; survives restarts. |
+| `edit` | A fixed tuple `[path, [remove_from, remove_to], replacement_text]`; the path may be `null` for anchor-based inference. Verifies every line of the inclusive range and reject-and-serve returns fresh anchors. |
+| `batch_edit` | `{ edits: [tuple, …] }`; applies up to 32 tuples atomically. |
 
-`file_path` works as an alias for `path` in all three tools. `edit` notes: the request is
-checked before any file I/O, so a bad request never touches the file; copy-paste slips are
-autocorrected and reported (a leftover `HASH│` prefix, diff-preview rows, a reversed range,
-a boundary line pasted twice, re-including an unchanged adjacent block); a missing `path`
-is resolved from the anchors when they uniquely identify a file in the hash store (else
-rejected with the candidates named). Do not issue multiple edit calls on the same file in
-one message — use `batch_edit`.
+`edit` accepts `[path, [remove_from, remove_to], replacement_text]`; `batch_edit` accepts
+`{ edits: [tuple, …] }`. The path position is a non-empty string or `null` for unique
+anchor-based inference. The range is inclusive, and an empty replacement deletes the range.
+Both contracts are checked before file I/O; use `batch_edit` for multiple edits on the same
+file in one message.
 
 ### Error codes
 
 | Code | Meaning |
 | --- | --- |
-| `[E_BAD_SHAPE]` | Request envelope or edit item has unknown, missing, or wrongly-typed fields (for example `replacement_text` must be a string with `\n` line separators). |
-| `[E_BAD_REF]` | An anchor in `remove_from`/`remove_to` is not a bare 3-char hash. |
+| `[E_BAD_SHAPE]` | The payload is not the fixed tuple shape, or a tuple member has an unknown, missing, or wrongly-typed value. |
+| `[E_BAD_REF]` | An anchor in the inclusive range is not a bare 3-char hash. |
 | `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; call `read` for fresh anchors. |
 | `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
 | `[E_INVALID_PATCH]` | A `replacement_text` line is a diff-preview row (`+HASH│`, `-HASH│`, `-   │`). The marker is stripped automatically with a warning. |
@@ -318,7 +310,7 @@ one message — use `batch_edit`.
 | `[E_RANGE_UNSERVED]` | A line inside the resolved edit range was never served to the model (paged reads, truncated output). The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_RANGE_UNVERIFIED]` | A boundary anchor (`remove_from`/`remove_to`) has no served position or was served at multiple positions, so the range cannot be verified against served state. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
-| `[E_BATCH_ABORT]` | `batch_edit` rejected the whole batch: the named item failed validation or served-state verification. Nothing was written anywhere; the failing item's current range is echoed as fresh `HASH│content` rows. |
+| `[E_BATCH_ABORT]` | `batch_edit` rejected the whole batch: a tuple item failed validation or served-state verification. Nothing was written anywhere; the failing item's current range is echoed as fresh `HASH│content` rows. |
 
 ## Undo
 

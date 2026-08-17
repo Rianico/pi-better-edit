@@ -3,6 +3,7 @@ import { genDiff } from "./edit-diff";
 import { visLines, clipLine } from "./utils";
 
 export type EditDetails = {
+	path?: string;
 	diff: string;
 	firstChangedLine?: number;
 	resultLineCount?: number;
@@ -152,6 +153,7 @@ export function buildNoop(input: NoopInput): TResult {
 	return {
 		content: [{ type: "text", text }],
 		details: {
+			path,
 			diff: "",
 			firstChangedLine: undefined,
 			snapshotId,
@@ -213,6 +215,7 @@ export function buildChanged(input: SuccessInput): TResult {
 	return {
 		content: [{ type: "text", text }],
 		details: {
+			path,
 			diff: diffResult.diff,
 			firstChangedLine:
 				editMeta.firstChangedLine ?? diffResult.firstChangedLine,

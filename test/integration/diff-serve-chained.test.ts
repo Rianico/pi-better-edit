@@ -7,7 +7,7 @@ import { withTempFile, getText, extractHash } from "../support/fixtures";
 type ToolResultEvent = {
 	toolName: string;
 	isError: boolean;
-	input: Record<string, unknown>;
+	input: unknown;
 	details: any;
 	content: Array<{ type: string; text: string }>;
 };
@@ -78,7 +78,7 @@ describe("diff rows serve chained edits", () => {
 				{
 					toolName: "edit",
 					isError: false,
-					input: { path: "sample.ts" },
+					input: ["sample.ts", [l2Ref, l2Ref], "X"],
 					details: editResult.details,
 					content: editResult.content,
 				},
