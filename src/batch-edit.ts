@@ -7,10 +7,7 @@ import { Type } from "typebox";
 import { constants } from "fs";
 import { restoreEndings, type LineEnding } from "./edit-diff";
 import { scanDrift } from "./drift";
-import {
-	abortIf,
-	splitLines,
-} from "./utils";
+import { abortIf, isRec, splitLines } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { lineHashes, resEdit, type HEdit } from "./hashline";
 import { toCwd } from "./paths";
@@ -33,23 +30,19 @@ import { snapshotIOFor } from "./snapshot-store";
 import { BATCH_EDIT_MAX_ITEMS } from "./constants";
 import {
 	assertReq,
-	editToolSchema,
+	editTupleSchema,
 	resolveMissingPath,
 	type EditParams,
 } from "./edit";
 import { normReq } from "./edit-normalize";
 import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
-import {
-	applyOneEdit,
-	countLineChanges,
-	loadEditFile,
-} from "./edit-pipeline";
+import { applyOneEdit, countLineChanges, loadEditFile } from "./edit-pipeline";
 
 type BatchItem = [string | null, [string, string], string];
 
 type CanonicalBatchItem = EditParams;
 
-export type BatchEditParams = BatchItem[];
+export type BatchEditParams = BatchItem[] | { batch: BatchItem[] };
 
 type CanonicalBatchEditParams = CanonicalBatchItem[];
 
@@ -63,32 +56,47 @@ type PreparedItem = {
 	pathWarning?: string;
 };
 
-const batchItemSchema = editToolSchema;
+const batchItemSchema = editTupleSchema;
 
-export const batchEditToolSchema = Type.Array(batchItemSchema, {
-	description: "Ordered list of edit tuples",
-	minItems: 1,
-	maxItems: BATCH_EDIT_MAX_ITEMS,
-});
+export const batchEditToolSchema = Type.Object(
+	{
+		batch: Type.Array(batchItemSchema, {
+			description: "Ordered list of edit tuples",
+			minItems: 1,
+			maxItems: BATCH_EDIT_MAX_ITEMS,
+		}),
+	},
+	{ additionalProperties: false },
+);
+
+function rawBatchItems(request: unknown): unknown[] {
+	if (Array.isArray(request)) return request;
+	if (
+		isRec(request) &&
+		Object.keys(request).length === 1 &&
+		Array.isArray(request.batch)
+	) {
+		return request.batch;
+	}
+	throw new Error(
+		'[E_BAD_SHAPE] batch_edit request must be an object with a "batch" array.',
+	);
+}
 
 function assertBatchReq(request: unknown): asserts request is BatchEditParams {
-	if (!Array.isArray(request)) {
-		throw new Error(
-			"[E_BAD_SHAPE] batch_edit request must be a root array of edit tuples.",
-		);
-	}
-	if (request.length === 0) {
+	const items = rawBatchItems(request);
+	if (items.length === 0) {
 		throw new Error(
 			"[E_BAD_SHAPE] batch_edit request must not be empty — provide at least one edit.",
 		);
 	}
-	if (request.length > BATCH_EDIT_MAX_ITEMS) {
+	if (items.length > BATCH_EDIT_MAX_ITEMS) {
 		throw new Error(
-			`[E_BAD_SHAPE] batch_edit accepts at most ${BATCH_EDIT_MAX_ITEMS} edits per call; got ${request.length}. Split the batch into smaller calls.`,
+			`[E_BAD_SHAPE] batch_edit accepts at most ${BATCH_EDIT_MAX_ITEMS} edits per call; got ${items.length}. Split the batch into smaller calls.`,
 		);
 	}
-	for (let index = 0; index < request.length; index++) {
-		const normalized = normReq(request[index]);
+	for (let index = 0; index < items.length; index++) {
+		const normalized = normReq(items[index]);
 		try {
 			assertReq(normalized);
 		} catch (error) {
@@ -101,14 +109,14 @@ function assertBatchReq(request: unknown): asserts request is BatchEditParams {
 }
 
 function canonicalizeBatchReq(request: unknown): CanonicalBatchEditParams {
+	const items = rawBatchItems(request);
 	assertBatchReq(request);
-	return request.map((item) => {
+	return items.map((item) => {
 		const normalized = normReq(item);
 		assertReq(normalized);
 		return normalized;
 	});
 }
-
 
 async function prepareItems(
 	params: CanonicalBatchEditParams,
@@ -199,7 +207,12 @@ type ProcessedFile = {
 async function processFile(
 	items: PreparedItem[],
 	cwd: string,
-	opts: { signal?: AbortSignal; accessMode: number; sessionKey: string; store: HashStore },
+	opts: {
+		signal?: AbortSignal;
+		accessMode: number;
+		sessionKey: string;
+		store: HashStore;
+	},
 ): Promise<ProcessedFile> {
 	const first = items[0]!;
 	abortIf(opts.signal);
@@ -310,7 +323,7 @@ async function processFile(
 			if (decision.action === "reject") throw new Error(decision.message);
 			if (decision.action === "warn") warnings.push(decision.notice);
 			warnings.push(
-				`batch_edit[${item.index}] (${item.path}) was a noop: the range already contains the replacement text.`
+				`batch_edit[${item.index}] (${item.path}) was a noop: the range already contains the replacement text.`,
 			);
 			if (outcome.anchorWarnings?.length) warnings.push(...outcome.anchorWarnings);
 			continue;
@@ -452,8 +465,7 @@ async function executeBatch(
 		);
 	}
 
-	const undos: Array<{ file: ProcessedFile; restore: () => Promise<void> }> =
-		[];
+	const undos: Array<{ file: ProcessedFile; restore: () => Promise<void> }> = [];
 	for (const file of processed) {
 		if (file.appliedCount === 0) continue;
 		const undo = await saveUndo(file.absolutePath, {
@@ -468,10 +480,7 @@ async function executeBatch(
 				try {
 					await u.restore();
 				} catch (error) {
-					console.error(
-						"Failed to restore undo entry after batch abort:",
-						error,
-					);
+					console.error("Failed to restore undo entry after batch abort:", error);
 				}
 			}
 			throw new Error(
@@ -533,7 +542,8 @@ export function buildBatchToolDef(): ToolDefinition<any, BatchDetails, any> {
 		parameters: batchEditToolSchema,
 		promptSnippet: loadP("../prompts/batch-edit-snippet.md"),
 		promptGuidelines: loadGuide("../prompts/batch-edit-guidelines.md"),
-		prepareArguments: (args: unknown) => args as any,
+		prepareArguments: (args: unknown) =>
+			Array.isArray(args) ? { batch: args } : (args as any),
 		renderShell: "default",
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			return executeBatch(canonicalizeBatchReq(params), ctx.cwd, signal, ctx);

@@ -8,15 +8,8 @@ import { Type } from "typebox";
 import { constants } from "fs";
 import { genDiff, restoreEndings, type LineEnding } from "./edit-diff";
 import { scanDrift } from "./drift";
-import {
-	isNormalizedEdit,
-	normReq,
-} from "./edit-normalize";
-import {
-	rejectUnknownFields,
-	abortIf,
-	splitLines,
-} from "./utils";
+import { isNormalizedEdit, normReq } from "./edit-normalize";
+import { rejectUnknownFields, abortIf, splitLines } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { resEdit, parseHashRef, type NEdit } from "./hashline";
 import { toCwd } from "./paths";
@@ -61,19 +54,30 @@ export const removeToSchema = Type.String({
 });
 
 const editPathSchema = Type.Union([
-	Type.String({ minLength: 1, description: "File path; null infers it from anchors" }),
+	Type.String({
+		minLength: 1,
+		description: "File path; null infers it from anchors",
+	}),
 	Type.Null(),
 ]);
 
-export const editToolSchema = Type.Tuple([
-	editPathSchema,
-	Type.Tuple([removeFromSchema, removeToSchema], {
-		description: "Inclusive [remove_from, remove_to] anchor range",
-	}),
-	replacementTextSchema,
-], {
-	description: "[path, [remove_from, remove_to], replacement_text]",
-});
+export const editTupleSchema = Type.Tuple(
+	[
+		editPathSchema,
+		Type.Tuple([removeFromSchema, removeToSchema], {
+			description: "Inclusive [remove_from, remove_to] anchor range",
+		}),
+		replacementTextSchema,
+	],
+	{
+		description: "[path, [remove_from, remove_to], replacement_text]",
+	},
+);
+
+export const editToolSchema = Type.Object(
+	{ edit: editTupleSchema },
+	{ additionalProperties: false },
+);
 
 export type EditParams = {
 	path: string | null;
@@ -81,7 +85,6 @@ export type EditParams = {
 	remove_to: string;
 	replacement_text: string;
 };
-
 
 interface PipelineResult {
 	path: string;
@@ -119,9 +122,12 @@ export function assertReq(request: unknown): asserts request is EditParams {
 
 	rejectUnknownFields(candidate, ROOT_KS, "Edit request");
 
-	if (candidate.path !== null && (typeof candidate.path !== "string" || candidate.path.length === 0)) {
+	if (
+		candidate.path !== null &&
+		(typeof candidate.path !== "string" || candidate.path.length === 0)
+	) {
 		throw new Error(
-			'[E_BAD_SHAPE] Edit request path must be a non-empty string or null.',
+			"[E_BAD_SHAPE] Edit request path must be a non-empty string or null.",
 		);
 	}
 
@@ -131,12 +137,10 @@ export function assertReq(request: unknown): asserts request is EditParams {
 		typeof candidate.replacement_text !== "string"
 	) {
 		throw new Error(
-			'[E_BAD_SHAPE] Edit request requires a two-anchor range and string replacement_text.',
+			"[E_BAD_SHAPE] Edit request requires a two-anchor range and string replacement_text.",
 		);
 	}
 }
-
-
 
 export async function resolveMissingPath(
 	request: Record<string, unknown>,
@@ -185,9 +189,11 @@ export async function execPipeline(
 	params: EditParams,
 	cwd: string,
 	options?: ExecPipelineOptions,
-	): Promise<PipelineResult> {
+): Promise<PipelineResult> {
 	if (params.path === null) {
-		throw new Error("[E_BAD_SHAPE] Edit request path could not be inferred from anchors.");
+		throw new Error(
+			"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
+		);
 	}
 	const path = params.path;
 
@@ -239,14 +245,16 @@ export async function execPipeline(
 	});
 
 	const isNoop = outcome.kind === "noop";
-	const result = outcome.kind === "applied" ? outcome.content : originalNormalized;
-	const resultHashes = outcome.kind === "applied" ? outcome.hashes : originalHashes;
+	const result =
+		outcome.kind === "applied" ? outcome.content : originalNormalized;
+	const resultHashes =
+		outcome.kind === "applied" ? outcome.hashes : originalHashes;
 	const warnings = [...editWarnings, ...(outcome.anchorWarnings ?? [])];
 	const { totalAddedLines, totalRemovedLines } = countLineChanges(
 		edit,
 		originalHashes,
 		isNoop,
-		outcome.kind === "applied" ? outcome.autoFixes?.length ?? 0 : 0,
+		outcome.kind === "applied" ? (outcome.autoFixes?.length ?? 0) : 0,
 	);
 
 	let driftNotice: string | undefined;
@@ -274,8 +282,10 @@ export async function execPipeline(
 		hadUtf8DecodeErrors,
 		warnings,
 		noopEdit: outcome.kind === "noop" ? outcome.noopEdit : undefined,
-		firstChangedLine: outcome.kind === "applied" ? outcome.firstChangedLine : undefined,
-		lastChangedLine: outcome.kind === "applied" ? outcome.lastChangedLine : undefined,
+		firstChangedLine:
+			outcome.kind === "applied" ? outcome.firstChangedLine : undefined,
+		lastChangedLine:
+			outcome.kind === "applied" ? outcome.lastChangedLine : undefined,
 		resultHashes,
 		originalHashes,
 		totalAddedLines,
@@ -328,7 +338,6 @@ type ToolDef = ToolDefinition<any, EditDetails, RRState> & {
 	renderShell?: "default" | "self";
 };
 
-
 export function reuseMarkdown(
 	context: any,
 	content: string,
@@ -356,7 +365,8 @@ export function buildToolDef(): ToolDef {
 		parameters,
 		promptSnippet: E_SNIPPET,
 		promptGuidelines: E_GUIDE,
-		prepareArguments: (args: unknown) => args as any,
+		prepareArguments: (args: unknown) =>
+			Array.isArray(args) ? { edit: args } : (args as any),
 		renderShell: "default",
 		renderCall(args, theme, context) {
 			preview.renderCall(context, args);
@@ -397,9 +407,7 @@ export function buildToolDef(): ToolDef {
 
 			if (isApplied(typedResult.details)) {
 				const appliedText = buildAppliedText(typedResult.details, theme);
-				return appliedText
-					? reuseText(context, appliedText)
-					: new Text("", 0, 0);
+				return appliedText ? reuseText(context, appliedText) : new Text("", 0, 0);
 			}
 
 			if (!renderedText) return new Text("", 0, 0);
@@ -415,7 +423,9 @@ export function buildToolDef(): ToolDef {
 			}
 			assertReq(canonical);
 			if (canonical.path === null) {
-				throw new Error("[E_BAD_SHAPE] Edit request path could not be inferred from anchors.");
+				throw new Error(
+					"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
+				);
 			}
 
 			const normalizedParams = canonical;

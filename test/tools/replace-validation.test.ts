@@ -46,9 +46,9 @@ describe("anchor validation order", () => {
 });
 
 describe("prepareArguments normalization", () => {
-	it("passes tuple arguments through unchanged", () => {
+	it("wraps tuple arguments for the object-root tool schema", () => {
 		const tool = buildToolDef();
 		const args = ["test.txt", ["AAA", "BBB"], "line1\nline2"];
-		expect(tool.prepareArguments!(args)).toBe(args);
+		expect(tool.prepareArguments!(args)).toEqual({ edit: args });
 	});
 });

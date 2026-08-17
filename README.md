@@ -86,7 +86,7 @@ kQm│}
 `edit` targets a range of hashes, so edits always land on the lines you meant:
 
 ```json
-["src/main.ts", ["szJ", "szJ"], "  console.log('hi');"]
+{ "edit": ["src/main.ts", ["szJ", "szJ"], "  console.log('hi');"] }
 ```
 
 and returns a diff with fresh anchors, so the next edit verifies cleanly with no re-read:
@@ -106,12 +106,12 @@ anchors after each change.
 | ------ | -------------- |
 | `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
 | `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit. |
-| `edit` | A fixed tuple `[path, [remove_from, remove_to], replacement_text]`; the path may be `null` for anchor-based inference. Verifies every line of the inclusive range and reject-and-serve returns fresh anchors. |
-| `batch_edit` | A root array of tuples `[[path, [remove_from, remove_to], replacement_text], …]`; applies up to 32 tuples atomically. |
+| `edit` | An object-root payload `{ "edit": [path, [remove_from, remove_to], replacement_text] }`; the path may be `null` for anchor-based inference. Verifies every line of the inclusive range and reject-and-serve returns fresh anchors. |
+| `batch_edit` | An object-root payload `{ "batch": [[path, [remove_from, remove_to], replacement_text], …] }`; applies up to 32 tuples atomically. |
 | `undo_last_edit` | `{ path }` restores the most recent successful edit with its original content, BOM, line endings, and anchors; persisted across restarts. |
 
-`edit` accepts `[path, [remove_from, remove_to], replacement_text]`; `batch_edit` accepts a root
-array of tuples. The path position is a non-empty string or `null` for unique anchor-based
+`edit` accepts `{ "edit": [path, [remove_from, remove_to], replacement_text] }`; `batch_edit` accepts
+`{ "batch": [tuple, …] }`. The path position is a non-empty string or `null` for unique anchor-based
 inference. The range is inclusive, and an empty replacement deletes the range. Both contracts
 are checked before file I/O; use `batch_edit` for multiple edits on the same file in one message.
 
@@ -168,8 +168,8 @@ edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]
 
 The compact JSON contract is primarily a **token-saving envelope change**. It removes repeated field names and escaped wrapper syntax while leaving the verified edit semantics unchanged:
 
-- `edit` is one fixed tuple: `[path, [from, to], replacement]`;
-- `batch_edit` is now a root array of tuples, with no `{"edits": ...}` wrapper;
+- `edit` is one fixed tuple inside an object-root schema: `{ "edit": [path, [from, to], replacement] }`;
+- `batch_edit` is a compact tuple array inside an object-root schema: `{ "batch": [[path, [from, to], replacement], …] }`;
 - replacement text is emitted once, and the old text is never repeated in the call.
 
 The reproducible token measurements are combined below. Saved rates are only comparable within the same fixture and baseline; the external snapshot and local fixture are deliberately labeled separately.
@@ -181,8 +181,8 @@ The reproducible token measurements are combined below. Saved rates are only com
 | external pinned 12-edit snapshot | oh-my-pi per-edit patch document | one patch section per edit | 590 | **42%** |
 | external pinned 12-edit snapshot | oh-my-pi one-batch patch document | one document for all edits | 480 | **53%** |
 | local 12-edit configuration refactor | `str_replace`-style JSON baseline | twelve individual calls | 358 | — |
-| local 12-edit configuration refactor | this project, `edit` | twelve compact tuple calls | 248 | **30.7%** |
-| local 12-edit configuration refactor | this project, `batch_edit` | one root-array call | 238 | **33.5%** |
+| local 12-edit configuration refactor | this project, `edit` | twelve compact object-root tuple calls | 272 | **24.0%** |
+| local 12-edit configuration refactor | this project, `batch_edit` | one object-root batch call | 241 | **32.7%** |
 
 The local benchmark counts serialized payload tokens with the pinned `cl100k_base` tokenizer. Reproduce it with `npm run benchmark:tokens`; reproduce final correctness separately with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`. The external snapshot is documented in `../oh-my-pi.md` and can be regenerated with `npm run benchmark` in its source benchmark checkout.
 
@@ -310,6 +310,12 @@ retry cleanly (H7), multi-section patches preflight before any write (H8).
 
 Full method, per-scenario tables, and limitations: [benchmarks/README.md](benchmarks/README.md)
 and [benchmarks/results/](benchmarks/results/).
+
+### Practical model-run benchmark
+
+`npm run benchmark:practical` runs the same edge scenario through pi with `opencode-go/gpt-5.6-luna` at `high` thinking for this project's `batch_edit` and an oh-my-pi patch wrapper. The scenario reads a file, calls bash once to create an external interior change, applies the requested refactor through the editing tool, and checks the exact final file content. The JSON output includes real pi usage totals, usage breakdown, tool calls, and final correctness.
+
+Latest dated sample: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md). Results are stochastic and should be regenerated rather than treated as universal performance claims.
 
 ### Reproduce
 

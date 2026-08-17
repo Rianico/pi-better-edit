@@ -277,8 +277,8 @@ describe("batch_edit tool", () => {
 
 				const validItem = ["sample.ts", [hashes[0]!, hashes[0]!], "AAA"];
 				const validator = Compile(batchEditToolSchema);
-				expect(validator.Check([validItem])).toBe(true);
-				expect(validator.Check([{ path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" }])).toBe(false);
+				expect(validator.Check({ batch: [validItem] })).toBe(true);
+				expect(validator.Check({ batch: [{ path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" }] })).toBe(false);
 
 				await expect(
 					batchTool.execute(

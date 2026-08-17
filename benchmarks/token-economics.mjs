@@ -21,11 +21,11 @@ const strReplaceCalls = edits.map(([, oldText, newText]) =>
 	JSON.stringify({ path, old_string: oldText, new_string: newText }),
 );
 const editCalls = edits.map(([anchor, , newText]) =>
-	JSON.stringify([path, [anchor, anchor], newText]),
+	JSON.stringify({ edit: [path, [anchor, anchor], newText] }),
 );
-const batchCall = JSON.stringify(
-	edits.map(([anchor, , newText]) => [path, [anchor, anchor], newText]),
-);
+const batchCall = JSON.stringify({
+	batch: edits.map(([anchor, , newText]) => [path, [anchor, anchor], newText]),
+});
 const strReplaceTokens = strReplaceCalls.reduce(
 	(total, call) => total + tokenCount(call),
 	0,

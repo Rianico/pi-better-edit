@@ -16,7 +16,7 @@ import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
 import { resolveTarget } from "./src/fs-write";
 import { valAccess } from "./src/validation";
-import { visLines } from "./src/utils";
+import { isRec, visLines } from "./src/utils";
 
 export default function (pi: ExtensionAPI): void {
 	regRead(pi);
@@ -138,10 +138,14 @@ export default function (pi: ExtensionAPI): void {
 		const { content, servedRows } = finalizeToolResult(details);
 		if (servedRows && servedRows.length > 0) {
 			try {
+				const editPayload =
+					isRec(event.input) && Array.isArray(event.input.edit)
+						? event.input.edit
+						: event.input;
 				const rawPath =
 					event.toolName === "edit"
-						? Array.isArray(event.input) && typeof event.input[0] === "string"
-							? event.input[0]
+						? Array.isArray(editPayload) && typeof editPayload[0] === "string"
+							? editPayload[0]
 							: details.path
 						: (event.input as Record<string, unknown> | undefined)?.path;
 				if (typeof rawPath === "string") {

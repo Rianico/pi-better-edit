@@ -7,13 +7,14 @@ import { lineHashes } from "../../src/hashline";
 import { setupIntegrationTest, withTempFile } from "../support/fixtures";
 
 describe("edit tuple contract", () => {
-	it("registers exactly [path, [range], replacement]", () => {
+	it("registers an object-root tuple payload", () => {
 		const validator = Compile(editToolSchema);
-		expect(validator.Check(["sample.ts", ["aB3", "cD4"], "new"])).toBe(true);
-		expect(validator.Check([null, ["aB3", "cD4"], "new"])).toBe(true);
+		expect(validator.Check({ edit: ["sample.ts", ["aB3", "cD4"], "new"] })).toBe(true);
+		expect(validator.Check({ edit: [null, ["aB3", "cD4"], "new"] })).toBe(true);
 		expect(validator.Check({ path: "sample.ts", remove_from: "aB3" })).toBe(false);
-		expect(validator.Check(["", ["aB3", "cD4"], "new"])).toBe(false);
-		expect(validator.Check(["sample.ts", ["aB3"], "new"])).toBe(false);
+		expect(validator.Check(["sample.ts", ["aB3", "cD4"], "new"])).toBe(false);
+		expect(validator.Check({ edit: ["", ["aB3", "cD4"], "new"] })).toBe(false);
+		expect(validator.Check({ edit: ["sample.ts", ["aB3"], "new"] })).toBe(false);
 	});
 
 	it("normalizes only valid tuple structure and rejects named objects", () => {

@@ -12,11 +12,12 @@ const home = useTestHome();
 describe("editToolSchema", () => {
 	it("has the exact tuple shape", () => {
 		const schema = editToolSchema as any;
-		expect(schema.type).toBe("array");
-		expect(schema.items).toHaveLength(3);
-		expect(schema.items[0].anyOf).toBeDefined();
-		expect(schema.items[1].type).toBe("array");
-		expect(schema.items[1].items).toHaveLength(2);
+		expect(schema.type).toBe("object");
+		expect(schema.properties.edit.type).toBe("array");
+		expect(schema.properties.edit.items).toHaveLength(3);
+		expect(schema.properties.edit.items[0].anyOf).toBeDefined();
+		expect(schema.properties.edit.items[1].type).toBe("array");
+		expect(schema.properties.edit.items[1].items).toHaveLength(2);
 	});
 });
 

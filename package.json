@@ -65,6 +65,7 @@
     "eval:compare": "node scripts/eval-compare.mjs",
     "eval:hashline": "node benchmarks/hashline-compare.mjs",
     "benchmark:tokens": "node benchmarks/token-economics.mjs",
+    "benchmark:practical": "node scripts/practical-token-benchmark.mjs",
     "test:runtime": "node scripts/runtime-edge-test.mjs"
   },
   "devDependencies": {

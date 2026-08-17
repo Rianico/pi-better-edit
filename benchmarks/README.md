@@ -31,14 +31,19 @@ npm run benchmark:tokens
 | external pinned 12-edit snapshot | oh-my-pi per-edit patch document | 590 | **42%** |
 | external pinned 12-edit snapshot | oh-my-pi one-batch patch document | 480 | **53%** |
 | local 12-edit configuration refactor | `str_replace`-style JSON baseline | 358 | — |
-| local 12-edit configuration refactor | this project, `edit` | 248 | **30.7%** |
-| local 12-edit configuration refactor | this project, `batch_edit` | 238 | **33.5%** |
+| local 12-edit configuration refactor | this project, `edit` | 272 | **24.0%** |
+| local 12-edit configuration refactor | this project, `batch_edit` | 241 | **32.7%** |
 
 The local benchmark counts serialized payload tokens with `cl100k_base`: twelve
-individual `edit` calls, one root-array `batch_edit` call, and twelve individual
+individual object-root `edit` calls, one object-root `batch_edit` call, and twelve individual
 `str_replace` calls. Final correctness remains covered by the batteries below.
 The external snapshot is documented in `../oh-my-pi.md` and can be regenerated with
 `npm run benchmark` in its source benchmark checkout.
+
+## Practical model-run benchmark
+
+`npm run benchmark:practical` runs the external-drift scenario through pi using `opencode-go/gpt-5.6-luna` with `high` thinking. It compares this project's `batch_edit` against an oh-my-pi patch wrapper, records pi's real usage fields, counts tool calls, and checks exact final-file correctness. The dated sample is [2026-08-17 practical token benchmark](results/2026-08-17-practical-token-benchmark.md); rerun it because model behavior and cache state are stochastic.
+
 ## Tool battery
 
 Method: each scenario creates a scratch file, performs the tool calls exactly

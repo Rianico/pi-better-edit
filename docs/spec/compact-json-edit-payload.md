@@ -11,29 +11,33 @@ Reduce repeated JSON keys in model-facing edit calls without changing the verifi
 
 ### Single `edit`
 
-The complete payload is a fixed three-position JSON array:
+The model-facing payload is an object-root schema containing one fixed three-position JSON tuple:
 
 ```json
-["src/file.ts", ["abx", "sdc"], "replacement text"]
+{
+  "edit": ["src/file.ts", ["abx", "sdc"], "replacement text"]
+}
 ```
 
-Positions are:
+Positions inside `edit` are:
 
 1. `path`: a non-empty string, or `null` to invoke the existing unique anchor-based path resolution;
 2. `range`: a two-element array `[remove_from, remove_to]` of 3-character anchor strings, inclusive at both ends;
 3. `replacement_text`: the complete replacement text. An empty string deletes the range.
 
-The payload must have exactly three positions. Missing positions, extra positions, wrong JSON types, empty paths, malformed anchors, and ambiguous path resolution are rejected with the existing `[E_BAD_SHAPE]`/anchor error conventions.
+The root object must contain only `edit`, and the tuple must have exactly three positions. Missing positions, extra positions, wrong JSON types, empty paths, malformed anchors, and ambiguous path resolution are rejected with the existing `[E_BAD_SHAPE]`/anchor error conventions.
 
 ### `batch_edit`
 
-The complete payload is a root JSON array of tuples:
+The model-facing payload is an object-root schema containing a `batch` array:
 
 ```json
-[
-  ["src/a.ts", ["abx", "sdc"], "first replacement"],
-  [null, ["qwe", "rty"], "second replacement"]
-]
+{
+  "batch": [
+    ["src/a.ts", ["abx", "sdc"], "first replacement"],
+    [null, ["qwe", "rty"], "second replacement"]
+  ]
+}
 ```
 
 Each item is the same fixed three-position tuple as `edit`. Existing batch limits, ordering, overlap checks, served-range verification, all-or-nothing writes, rollback, and persisted undo remain unchanged.
