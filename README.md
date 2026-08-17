@@ -12,9 +12,7 @@
 <p align="center">
   <a href="#quick-start">Quick Start</a> •
   <a href="#why-hashline">Why Hashline</a> •
-  <a href="#how-it-compares">How It Compares</a> •
-  <a href="#correctness-in-edge-cases">Correctness in Edge Cases</a> •
-  <a href="#benchmark">Benchmark</a> •
+  <a href="#comparison">Comparison</a> •
   <a href="#tools">Tools</a> •
   <a href="#how-anchors-work">How Anchors Work</a> •
   <a href="#development">Development</a> •
@@ -43,7 +41,7 @@ This is the **self-maintained fork** of [pi-hashline-edit-pro](https://github.co
 (which forked [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit)). It is not
 affiliated with either upstream, and it deliberately diverges where noted below. The
 hashline concept descends from [@oh-my-pi/hashline](https://www.npmjs.com/package/@oh-my-pi/hashline);
-the [comparison](#how-it-compares) is the honest read of who does what.
+the [comparison](#comparison) is the honest read of who does what.
 
 ## Why you need this
 
@@ -125,6 +123,8 @@ echoes all count as serves. `read` is on-demand recovery, not a per-edit ritual.
 same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `batch_edit` applies up to 32
 edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]`.
 
+## Comparison
+
 ### Token economics: envelope savings
 
 The compact JSON contract is primarily a **token-saving envelope change**. It removes repeated field names and escaped wrapper syntax while leaving the verified edit semantics unchanged:
@@ -135,16 +135,18 @@ The compact JSON contract is primarily a **token-saving envelope change**. It re
 
 A pinned 12-edit reference snapshot on the same corpus and `cl100k_base` tokenizer reports:
 
-| arm | tokens | saved vs `str_replace` |
-| --- | ---: | ---: |
-| `str_replace` | 1015 | — |
-| JSON hashline tool call | 702 | **31%** |
-| oh-my-pi per-edit patch document | 590 | **42%** |
-| oh-my-pi one-batch patch document | 480 | **53%** |
+| arm | payload shape | tokens | saved vs `str_replace` |
+| --- | --- | ---: | ---: |
+| this project, `edit` | `[path, [from, to], replacement]` | not independently counted | — |
+| this project, `batch_edit` | `[[path, [from, to], replacement], …]` | not independently counted | — |
+| sibling JSON hashline tool call | structured JSON edit call | 702 | **31%** |
+| oh-my-pi per-edit patch document | one patch section per edit | 590 | **42%** |
+| oh-my-pi one-batch patch document | one document for all edits | 480 | **53%** |
 
-This table is a reproducible **envelope reference**, not a correctness score and not a claim that every host tokenizer produces the same count. The snapshot is documented in `../oh-my-pi.md`; regenerate it with `npm run benchmark` in the benchmark checkout that produced that record. Reproduce this repository's correctness comparison with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`.
+This is a reproducible **envelope reference**, not a correctness score and not a claim that every host tokenizer produces the same count. The first two rows describe this project's current compact `edit` and `batch_edit` shapes; their token counts are intentionally left open until they are measured with the same fixture and tokenizer. The sibling snapshot is documented in `../oh-my-pi.md`; regenerate it with `npm run benchmark` in the benchmark checkout that produced that record. Reproduce this repository's correctness comparison with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`.
 
-### How It Compares
+### Capability comparison
+
 | | **pi-hashline-edit-lsz** (this) | pi-hashline-edit (original) | pi-hashline-edit-pro (upstream) | @oh-my-pi/hashline |
 | --- | --- | --- | --- | --- |
 | Layer | pi tools: `read` / `read_skill` / `edit` / `batch_edit` / `undo_last_edit` | pi tool override: `read` / `edit` + opt-in `grep` | pi tools: `read` / `replace` / `undo_last_replace` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
@@ -213,7 +215,7 @@ closes those with session-keyed, per-line served-state verification plus `batch_
 - **Own identity** — published as `pi-hashline-edit-lsz`, with its own config and hash-store
   directory (`~/.config/pi-hashline-edit-lsz`).
 
-### Correctness in Edge Cases
+### Correctness in edge cases
 
 The battery below measures *behavior*, where the two hashline implementations actually
 diverge. These are the real failure modes from the harness-problem literature, and what
@@ -236,7 +238,7 @@ each tool does when they hit:
 > never silently applied** — with different policies when drift is found (recover-with-
 > warning vs fail-closed rejection).
 
-## Benchmark
+### Reproducible benchmark
 
 The claims above are measured, not asserted. Two deterministic batteries — no LLM in the
 loop, no sampling: a run either reproduces or it doesn't. That trades stochastic headline
@@ -251,6 +253,7 @@ files, on every run.
 | `pi-hashline-edit-pro@2.4.1` (fork base) | 17/23 | 5 silent data-loss cases (B3, B7, B8, B10, B15) + B22 cross-session leak |
 | `pi-hashline-edit-pro@2.5.3` (latest) | 21/23 | B8 blind-edit + B22 cross-session leak |
 
+**oh-my-pi comparison boundary:** `@oh-my-pi/hashline` is not runnable through this pi tool seam. Its separate library battery covers 10 comparable scenarios and is reported as 10/10 for version 17.3.5; reproduce it with `npm run eval:hashline`. This is a library-layer reference, not an extra row in the 23-scenario tool-battery table.
 The four interior-drift failures (B3, B7, B10, B15) are the exact data-loss class the
 served-state range verification exists to prevent: the file changed inside the edit range
 after it was read, and the upstream `replace` applied anyway, silently overwriting the
@@ -299,6 +302,7 @@ compared by design, not by score.
 | `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit. |
 | `edit` | A fixed tuple `[path, [remove_from, remove_to], replacement_text]`; the path may be `null` for anchor-based inference. Verifies every line of the inclusive range and reject-and-serve returns fresh anchors. |
 | `batch_edit` | A root array of tuples `[[path, [remove_from, remove_to], replacement_text], …]`; applies up to 32 tuples atomically. |
+| `undo_last_edit` | `{ path }` restores the most recent successful edit with its original content, BOM, line endings, and anchors; persisted across restarts. |
 
 `edit` accepts `[path, [remove_from, remove_to], replacement_text]`; `batch_edit` accepts a root
 array of tuples. The path position is a non-empty string or `null` for unique anchor-based
@@ -447,7 +451,7 @@ temporary-extension form (`pi -e npm:pi-fabric`) so nothing is installed into yo
 needs network access to install the temp extension and takes a few minutes; exit code 0
 means the suite passed.
 
-**Evaluation.** The [Benchmark](#benchmark) section is produced by the same commands:
+**Evaluation.** The [Comparison](#comparison) section's reproducible benchmark is produced by the same commands:
 `npm run eval`, `npm run eval:compare`, `npm run eval:hashline` — all `RUN_EVAL`-gated so
 none of it runs in `npm test`.
 
