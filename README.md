@@ -143,7 +143,6 @@ edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]
 | Blind edit — lines never shown | ✅ hard reject (`[E_RANGE_UNVERIFIED]` / `[E_RANGE_UNSERVED]`) | ❌ applies | ❌ applies (B8) | ~ reject when seen-lines recorded (H7) |
 | Batch atomicity | ✅ `batch_edit` — all-or-nothing, `[E_BATCH_ABORT]` | ~ op array, one snapshot, bottom-up | ❌ one `replace` per call | ✅ multi-section preflight (H8) |
 | Undo (persisted) | ✅ survives restarts | ❌ | ✅ `undo_last_replace`, persisted | ❌ none |
-| Block ops / registers / `REM` / `MV` | ❌ | ❌ | ❌ | ✅ |
 | `grep` tool | ❌ | ✅ opt-in | ❌ | ❌ |
 | Sub-agent session isolation | ✅ session-keyed served state (B19–B22) | — | ❌ leak (B22) | ~ |
 | Deterministic battery | ✅ 23/23 | — schema differs, design-only | 17/23 (2.4.1) · 21/23 (2.5.x) | ✅ 10/10 library |
@@ -157,19 +156,18 @@ Both this extension and `@oh-my-pi/hashline` descend from the harness-problem in
 the model should never re-type old code, but they are different layers.
 
 `@oh-my-pi/hashline` is a **patch-language library**: `[path#tag]` headers bind every hunk
-to a full-file content hash, `PUT N.=M:` addresses lines by number, and it ships syntactic
-block ops (`PUT N*:`), registers, `REM`/`MV`, multi-hunk documents, a pluggable filesystem
-for any backend (disk, in-memory, network), and session-aware 3-way-merge recovery on
-stale tags. Its payload per edit is lighter and it cannot be confused by repeated text —
-the line number is unambiguous.
-
+to a full-file content hash, `PUT N.=M:` addresses lines by number, and it ships multi-hunk
+documents, a pluggable filesystem for any backend (disk, in-memory, network), and
+session-aware 3-way-merge recovery on stale tags. Its payload per edit is lighter and it cannot
+be confused by repeated text — the line number is unambiguous.
 This extension is a **pi tool pair**: `read` hands the model 3-char content hashes, `edit`
 takes two of them, and every resolved line is verified against the served state — no line
 numbers to renumber, no tag to refetch, a wrong anchor can never land on the wrong line,
 and `undo_last_edit` survives restarts. Its trade-offs: a JSON envelope per edit costs a
-little payload, there are no block ops, and it lives inside pi (Node) rather than as a
-standalone patcher (Bun). Pick hashline-the-library for a cross-backend patch format; pick
-hashline-the-tool for verified, content-addressed edits in your agent.
+little payload, and it lives inside pi (Node) rather than as a standalone patcher (Bun). Pick
+hashline-the-library for a cross-backend patch format; pick hashline-the-tool for verified,
+content-addressed edits in your agent. Syntax-aware structural edits and file-lifecycle operations
+remain outside this verified line-range contract.
 
 Against the two pi extensions in the family: the **original** `pi-hashline-edit`
 introduced line+hash anchors and grep-to-edit, but has no served-state record (it verifies
@@ -215,7 +213,6 @@ each tool does when they hit:
 | An edit above shifts the file | Nothing shifts — anchors are content addresses; the diff serves fresh anchors | **Every edit renumbers** — the format's own #1 rule is "re-ground after every edit"; the model carries the bookkeeping |
 | Repeated / identical text | Per-line hashes are unique (collision-resolved); ambiguity → `[E_AMBIGUOUS_ANCHOR]` | Position-based, so repeats don't confuse it — but the position itself is unverified |
 | Lines never shown to the model | `[E_RANGE_UNSERVED]` — hard reject with fresh anchors | Undisplayed hunks rejected when seen-lines are recorded — same reliance on the model knowing what it saw |
-| Mid-expression / wrong block node | Irrelevant — any verified line range is valid | Grammar rules + `PUT N*:` node choice; mispointing can silently land wrong |
 | Multi-edit batch fails mid-way | `batch_edit` — atomic, all-or-nothing; the failing item is echoed as fresh serves | Multi-section patches preflighted up front — also atomic |
 
 > The oh-my-pi payload saving is a lighter wire format; the table above is what that format

@@ -1,6 +1,6 @@
 # Hashline-Edit Absorption Plan (side conversation)
 
-**Status:** retained for further discussion — not yet resolved whether this lands as a section in issue #22 or as a standalone design note.
+**Status:** resolved in [ADR-0006](adr/0006-compact-json-edit-payload.md): absorb oh-my-pi's envelope efficiency through a compact JSON tuple, while retaining this project's verified edit protocol.
 
 ## Context
 
@@ -75,6 +75,8 @@ Side discussion comparing three hash-anchor editing implementations for LLM codi
 2. Item 4 (batch preflight) becomes safe once #22's interior verification exists
 3. Item 5 (noop guard) is shippable anytime — a day's work
 
-## Outstanding question
+## Resolved calling contract
 
-Whether to append a "Patterns absorbed from oh-my-pi / pi-hashline-edit" section to issue #22, or keep this as a separate design note — **not yet resolved**.
+The project reduces JSON envelope cost without adding tools or adopting a textual patch language. The single `edit` payload is `[path, [remove_from, remove_to], replacement_text]`; `path` is a string or `null` for anchor-based path inference, and the anchor range is inclusive. The `batch_edit` payload remains an object with an `edits` array of those tuples. Both forms normalize through the existing served-state verification and atomic batch pipeline.
+
+The old named-object payload is not retained, and no format configuration is exposed. Unified diff remains a possible future interoperability adapter, not an alternate mutation contract; block operations, registers, silent remapping, and fuzzy recovery remain rejected.

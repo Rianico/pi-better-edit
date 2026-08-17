@@ -66,3 +66,19 @@ _Avoid_: unmanaged read
 **tool-name-as-intent**:
 The principle that a tool's name encodes the model's intent — `read` (hashed, editable) vs `read_skill` (plain, consumable) — so the model always knows what it's getting.
 _Avoid_: —
+
+**payload contract**:
+The model-facing JSON shape used to state a file edit; it carries a path, an inclusive anchor range, and replacement text without changing the verified edit semantics.
+_Avoid_: patch language, command language
+
+**inclusive anchor range**:
+A pair of boundary anchors identifying the first and last lines of a model-facing range; both boundaries are included.
+_Avoid_: hunk, region
+
+**nullable path**:
+A path position that may be `null` when the tool can resolve a unique target from the anchor range. The position remains present in a fixed tuple.
+_Avoid_: optional path
+
+**compact JSON tuple**:
+A fixed three-position JSON array representing path, inclusive anchor range, and replacement text.
+_Avoid_: patch language, array shorthand
