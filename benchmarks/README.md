@@ -13,10 +13,16 @@ cover the two layers of the stack:
 
 Every scenario is a deterministic check with a pass/fail verdict — no model in
 the loop, no sampling, no stochastic variance. A run either reproduces or it
-doesn't. This is deliberately a *correctness* benchmark (does each engine
-reject stale edits instead of corrupting files), not a token/cost/latency
-benchmark: those would depend on the host model and session, so they are not
-claimed here.
+doesn't. This is deliberately a *correctness* benchmark: does each engine
+reject stale edits instead of corrupting files?
+
+Token economics is measured separately because token counts depend on the
+payload corpus and tokenizer. The pinned 12-edit `cl100k_base` reference snapshot
+is documented in `../oh-my-pi.md` and reports 31% savings for the JSON hashline
+arm, 42% for oh-my-pi per-edit patches, and 53% for one batched patch document
+against `str_replace`. Reproduce that snapshot with `npm run benchmark` in its
+source benchmark checkout. The commands below reproduce this repository's
+correctness batteries, not those token counts.
 
 ## Tool battery
 
@@ -37,8 +43,8 @@ npm run eval:compare -- local pi-hashline-edit-pro@2.5.0   # override targets
 
 `eval:compare` installs each target into a temporary directory
 (`--no-save --no-package-lock`), symlinks it into `node_modules`, runs the
-battery, prints a per-scenario correctness table plus aggregate call/token
-counts, then restores `node_modules` to the lockfile state.
+battery, prints a per-scenario correctness table plus aggregate call/
+character counts, then restores
 
 ### Results (2026-08-17, Node 22, macOS arm64)
 

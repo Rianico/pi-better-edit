@@ -125,8 +125,26 @@ echoes all count as serves. `read` is on-demand recovery, not a per-edit ritual.
 same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `batch_edit` applies up to 32
 edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]`.
 
-### How It Compares
+### Token economics: envelope savings
 
+The compact JSON contract is primarily a **token-saving envelope change**. It removes repeated field names and escaped wrapper syntax while leaving the verified edit semantics unchanged:
+
+- `edit` is one fixed tuple: `[path, [from, to], replacement]`;
+- `batch_edit` is now a root array of tuples, with no `{"edits": ...}` wrapper;
+- replacement text is emitted once, and the old text is never repeated in the call.
+
+A pinned 12-edit reference snapshot on the same corpus and `cl100k_base` tokenizer reports:
+
+| arm | tokens | saved vs `str_replace` |
+| --- | ---: | ---: |
+| `str_replace` | 1015 | — |
+| JSON hashline tool call | 702 | **31%** |
+| oh-my-pi per-edit patch document | 590 | **42%** |
+| oh-my-pi one-batch patch document | 480 | **53%** |
+
+This table is a reproducible **envelope reference**, not a correctness score and not a claim that every host tokenizer produces the same count. The snapshot is documented in `../oh-my-pi.md`; regenerate it with `npm run benchmark` in the benchmark checkout that produced that record. Reproduce this repository's correctness comparison with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`.
+
+### How It Compares
 | | **pi-hashline-edit-lsz** (this) | pi-hashline-edit (original) | pi-hashline-edit-pro (upstream) | @oh-my-pi/hashline |
 | --- | --- | --- | --- | --- |
 | Layer | pi tools: `read` / `read_skill` / `edit` / `batch_edit` / `undo_last_edit` | pi tool override: `read` / `edit` + opt-in `grep` | pi tools: `read` / `replace` / `undo_last_replace` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
@@ -266,12 +284,12 @@ is **not** runnable in the tool battery — its edit envelope (`edits: [{op, pos
 and `LINE#HASH:` read format differ from the `remove_from`/`remove_to` schema — so it is
 compared by design, not by score.
 
-> **Scope & honesty.** These are correctness gates, not throughput numbers. No token, cost,
-> or latency figures are claimed — those depend on the host model and session and would not
-> be honest in a deterministic battery. "Calls" / "chars" aggregates in the results are the
-> batteries' own transcript sizes, for cross-version comparability only. Dated results live
-> in `benchmarks/results/`; when you re-run and numbers drift, commit a new dated file
-> rather than editing an old one.
+> **Scope & honesty.** The batteries below are correctness gates, not throughput numbers:
+> they do not claim token, cost, or latency performance. The token table above is a separate,
+> pinned `cl100k_base` envelope snapshot with its own reproduction instructions. "Calls" / "chars"
+> aggregates in the results are the batteries' own transcript sizes, included only for
+> cross-version comparability. Dated results live in `benchmarks/results/`; when you re-run and
+> numbers drift, commit a new dated file rather than editing an old one.
 
 ## Tools
 
