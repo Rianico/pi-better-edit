@@ -64,6 +64,7 @@
     "eval": "RUN_EVAL=1 EVAL_TARGET=local vitest run test/eval/comparison-battery.test.ts",
     "eval:compare": "node scripts/eval-compare.mjs",
     "eval:hashline": "node benchmarks/hashline-compare.mjs",
+    "benchmark:tokens": "node benchmarks/token-economics.mjs",
     "test:runtime": "node scripts/runtime-edge-test.mjs"
   },
   "devDependencies": {
@@ -72,6 +73,7 @@
     "@types/node": "^24.0.0",
     "@vitest/coverage-v8": "^4.1.10",
     "eslint": "^10.7.0",
+    "gpt-tokenizer": "4.0.0",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.8"

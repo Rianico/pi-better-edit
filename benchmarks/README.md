@@ -17,12 +17,26 @@ doesn't. This is deliberately a *correctness* benchmark: does each engine
 reject stale edits instead of corrupting files?
 
 Token economics is measured separately because token counts depend on the
-payload corpus and tokenizer. The pinned 12-edit `cl100k_base` reference snapshot
-is documented in `../oh-my-pi.md` and reports 31% savings for the JSON hashline
-arm, 42% for oh-my-pi per-edit patches, and 53% for one batched patch document
-against `str_replace`. Reproduce that snapshot with `npm run benchmark` in its
-source benchmark checkout. The commands below reproduce this repository's
-correctness batteries, not those token counts.
+payload corpus and tokenizer. This repository now ships a pinned local fixture:
+
+```bash
+npm run benchmark:tokens
+```
+
+For the 12-edit configuration-refactor fixture, `cl100k_base` reports:
+
+| arm | tokens | saved vs local `str_replace` baseline |
+| --- | ---: | ---: |
+| str_replace-style JSON | 358 | — |
+| this project, `edit` | 248 | **30.7%** |
+| this project, `batch_edit` | 238 | **33.5%** |
+
+The benchmark counts serialized payload tokens: twelve individual `edit` calls,
+one root-array `batch_edit` call, and twelve individual `str_replace` calls. It is
+an envelope measurement; final correctness remains covered by the tool and library
+batteries below. The external pinned 12-edit `cl100k_base` snapshot is documented in
+`../oh-my-pi.md` and reports 31% for the sibling JSON hashline arm, 42% for oh-my-pi
+per-edit patches, and 53% for one batched patch document.
 
 ## Tool battery
 
@@ -108,7 +122,7 @@ Per-scenario table: [results/2026-08-17-hashline-library.md](results/2026-08-17-
 - `hashline` is a library; this project is a tool layer built on the same
   concept (per-line content-derived anchors, fail-closed on stale state). The
   mapping between the two is a design comparison, not a score comparison; see
-  the main README's [Benchmark section](../README.md#benchmark).
+  the main README's [Comparison section](../README.md#comparison).
 - These are correctness gates, not throughput numbers. "Calls" and "chars"
   aggregates are the battery's own transcript sizes, included for
   cross-version comparability, not a performance claim.

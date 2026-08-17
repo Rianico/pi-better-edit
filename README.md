@@ -172,17 +172,23 @@ The compact JSON contract is primarily a **token-saving envelope change**. It re
 - `batch_edit` is now a root array of tuples, with no `{"edits": ...}` wrapper;
 - replacement text is emitted once, and the old text is never repeated in the call.
 
-A pinned 12-edit reference snapshot on the same corpus and `cl100k_base` tokenizer reports:
+An external pinned 12-edit reference snapshot on the same corpus and `cl100k_base` tokenizer reports:
 
 | arm | payload shape | tokens | saved vs `str_replace` |
 | --- | --- | ---: | ---: |
-| this project, `edit` | `[path, [from, to], replacement]` | not independently counted | — |
-| this project, `batch_edit` | `[[path, [from, to], replacement], …]` | not independently counted | — |
 | sibling JSON hashline tool call | structured JSON edit call | 702 | **31%** |
 | oh-my-pi per-edit patch document | one patch section per edit | 590 | **42%** |
 | oh-my-pi one-batch patch document | one document for all edits | 480 | **53%** |
+**Local 12-edit payload benchmark** — a fixed 12-edit configuration-refactor fixture, tokenized with `cl100k_base` by `npm run benchmark:tokens`:
 
-This is a reproducible **envelope reference**, not a correctness score and not a claim that every host tokenizer produces the same count. The first two rows describe this project's current compact `edit` and `batch_edit` shapes; their token counts are intentionally left open until they are measured with the same fixture and tokenizer. The sibling snapshot is documented in `../oh-my-pi.md`; regenerate it with `npm run benchmark` in the benchmark checkout that produced that record. Reproduce this repository's correctness comparison with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`.
+| arm | tokens | saved vs local `str_replace` baseline |
+| --- | ---: | ---: |
+| str_replace-style JSON | 358 | — |
+| this project, `edit` | 248 | **30.7%** |
+| this project, `batch_edit` | 238 | **33.5%** |
+
+The local benchmark counts serialized payloads: twelve individual calls for `edit`, one root-array call for `batch_edit`, and twelve individual `str_replace` calls. It measures envelope tokens only; correctness is covered separately by the deterministic tool battery.
+The external table is a reproducible **envelope reference**, not a correctness score and not a claim that every host tokenizer produces the same count. The local rows are measured by this repository's pinned tokenizer and fixture. Reproduce them with `npm run benchmark:tokens`; reproduce correctness with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`. The external snapshot is documented in `../oh-my-pi.md` and can be regenerated with `npm run benchmark` in its source benchmark checkout.
 
 ### Capability comparison
 
@@ -332,7 +338,6 @@ compared by design, not by score.
 > aggregates in the results are the batteries' own transcript sizes, included only for
 > cross-version comparability. Dated results live in `benchmarks/results/`; when you re-run and
 > numbers drift, commit a new dated file rather than editing an old one.
-
 
 ## Undo
 
