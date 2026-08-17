@@ -18,18 +18,18 @@ Configuration:
 
 ## Results
 
-`local` is the baseline for the relative column in this run.
+`@oh-my-pi/hashline` is the practical baseline for the relative column in this run.
 
-| engine | tool calls | total tokens | relative saved vs local | final correctness |
+| engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
 | --- | ---: | ---: | ---: | :---: |
-| this project (`batch_edit`) | 3 | 12,593 | 0.0% | ✅ |
-| `@oh-my-pi/hashline` wrapper | 6 | 28,467 | **-126.1%** | ✅ |
+| `@oh-my-pi/hashline` wrapper | 6 | 28,467 | 0.0% | ✅ |
+| this project (`batch_edit`) | 3 | 12,593 | **55.8%** | ✅ |
 
 Usage breakdown:
 
 | engine | input | output | reasoning | cache read | cache write |
 | --- | ---: | ---: | ---: | ---: | ---: |
+| OMP wrapper | 21 | 3,016 | 2,215 | 19,100 | 6,330 |
 | this project | 12 | 475 | 161 | 8,592 | 3,514 |
-| oh-my-pi wrapper | 21 | 3,016 | 2,215 | 19,100 | 6,330 |
 
 Both engines preserved the external `retries = 5` edit and produced the expected final file in this sample. The OMP run required four patch attempts. Model behavior and cache state are stochastic, so this is one dated sample. Re-run the command to produce another result; do not treat a single run as a universal performance claim.

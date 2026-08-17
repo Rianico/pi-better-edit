@@ -234,7 +234,8 @@ function runEngine(engine) {
 	}
 }
 const results = engines.map(runEngine);
-const baselineTokens = results[0]?.usage.totalTokens ?? 0;
+const baselineResult = results.find((result) => result.engine === "omp");
+const baselineTokens = baselineResult?.usage.totalTokens ?? 0;
 for (const result of results) {
 	result.relativeSavedPercent =
 		baselineTokens > 0
@@ -247,7 +248,7 @@ console.log(
 			benchmark: "practical-token-correctness",
 			model,
 			thinking,
-			baseline: results[0]?.engine,
+			baseline: baselineResult?.engine,
 			results,
 		},
 		null,

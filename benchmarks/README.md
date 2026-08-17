@@ -27,18 +27,16 @@ This benchmark measures payload shape only. It excludes model reasoning, tool de
 
 Percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; its historical sibling record is preserved in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproduced with `npm run benchmark:tokens`.
 
-
 ## Practical benchmark — coding-agent run
 
-This benchmark measures a real coding-agent loop rather than serialized envelopes. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking, compares this project's `batch_edit` with an OMP patch wrapper, and checks exact final-file correctness after an external bash mutation.
+This benchmark measures a real coding-agent loop rather than serialized envelopes. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking, compares this project's `batch_edit` with an OMP patch wrapper, and checks exact final-file correctness after an external bash mutation. OMP is the practical baseline below.
 
-| engine | tool calls | total tokens | saved vs this project | final correctness |
+| engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
 | --- | ---: | ---: | ---: | :---: |
-| this project (`batch_edit`) | 3 | 12,593 | 0.0% | ✅ |
-| OMP patch wrapper | 6 | 28,467 | **-126.1%** | ✅ |
+| OMP patch wrapper | 6 | 28,467 | 0.0% | ✅ |
+| this project (`batch_edit`) | 3 | 12,593 | **55.8%** | ✅ |
 
 This sample includes pi-reported input, output, reasoning, cache-read, and cache-write tokens. Both engines preserved the external change; OMP required four patch attempts. Model behavior and cache state are stochastic, so re-run the command before making a broader performance claim. Full output: [2026-08-17 practical token benchmark](results/2026-08-17-practical-token-benchmark.md).
-
 
 ## Tool battery
 

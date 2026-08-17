@@ -183,6 +183,16 @@ This benchmark counts only the serialized edit payloads, not model reasoning, to
 
 All percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; the historical sibling record remains available in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproducible with `npm run benchmark:tokens`; correctness is measured separately with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`.
 
+#### Practical benchmark — coding-agent session
+
+This benchmark measures a real coding-agent loop rather than serialized envelopes. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. OMP is the practical baseline below; usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
+
+| engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
+| --- | ---: | ---: | ---: | :---: |
+| OMP patch wrapper | 6 | 28,467 | 0.0% | ✅ |
+| this project (`batch_edit`) | 3 | 12,593 | **55.8%** | ✅ |
+
+Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
 
 ### Capability comparison
 
@@ -308,18 +318,6 @@ retry cleanly (H7), multi-section patches preflight before any write (H8).
 
 Full method, per-scenario tables, and limitations: [benchmarks/README.md](benchmarks/README.md)
 and [benchmarks/results/](benchmarks/results/).
-
-### Practical benchmark — coding-agent run
-
-This benchmark measures a real coding-agent loop rather than serialized envelopes. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. Usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
-
-| engine | tool calls | total tokens | saved vs this project | final correctness |
-| --- | ---: | ---: | ---: | :---: |
-| this project (`batch_edit`) | 3 | 12,593 | 0.0% | ✅ |
-| OMP patch wrapper | 6 | 28,467 | **-126.1%** | ✅ |
-
-Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
-
 
 ### Reproduce
 
