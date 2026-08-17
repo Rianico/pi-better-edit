@@ -11,9 +11,9 @@
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> •
+  <a href="#tools">Tools</a> •
   <a href="#why-hashline">Why Hashline</a> •
   <a href="#comparison">Comparison</a> •
-  <a href="#tools">Tools</a> •
   <a href="#how-anchors-work">How Anchors Work</a> •
   <a href="#development">Development</a> •
   <a href="#acknowledgments">Acknowledgments</a>
@@ -99,6 +99,45 @@ and returns a diff with fresh anchors, so the next edit verifies cleanly with no
 
 Keep editing — anchors for lines you didn't touch stay valid, and auto-read hands you fresh
 anchors after each change.
+
+## Tools
+
+| Tool | What it does |
+| ------ | -------------- |
+| `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
+| `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit. |
+| `edit` | A fixed tuple `[path, [remove_from, remove_to], replacement_text]`; the path may be `null` for anchor-based inference. Verifies every line of the inclusive range and reject-and-serve returns fresh anchors. |
+| `batch_edit` | A root array of tuples `[[path, [remove_from, remove_to], replacement_text], …]`; applies up to 32 tuples atomically. |
+| `undo_last_edit` | `{ path }` restores the most recent successful edit with its original content, BOM, line endings, and anchors; persisted across restarts. |
+
+`edit` accepts `[path, [remove_from, remove_to], replacement_text]`; `batch_edit` accepts a root
+array of tuples. The path position is a non-empty string or `null` for unique anchor-based
+inference. The range is inclusive, and an empty replacement deletes the range. Both contracts
+are checked before file I/O; use `batch_edit` for multiple edits on the same file in one message.
+
+### Error codes
+
+| Code | Meaning |
+| --- | --- |
+| `[E_BAD_SHAPE]` | The payload is not the fixed tuple shape, or a tuple member has an unknown, missing, or wrongly-typed value. |
+| `[E_BAD_REF]` | An anchor in the inclusive range is not a bare 3-char hash. |
+| `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; call `read` for fresh anchors. |
+| `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
+| `[E_INVALID_PATCH]` | A `replacement_text` line is a diff-preview row (`+HASH│`, `-HASH│`, `-   │`). The marker is stripped automatically with a warning. |
+| `[E_BARE_HASH_PREFIX]` | A `replacement_text` line starts with a hash-like `HASH│` prefix. The prefix is stripped automatically with a warning. |
+| `[E_BAD_OP]` | Range start line is after range end line. The pair is swapped automatically with a warning. |
+| `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
+| `[E_NOT_FOUND]` | The path does not exist. |
+| `[E_ACCESS]` | The path is not readable or writable. |
+| `[E_NOT_TEXT]` | The path is a directory, binary file, image, or UTF-16/UTF-32 encoded text; hashline editing only supports text files. |
+| `[E_UNDO_STALE]` | `undo_last_edit` refused: the file was modified or deleted after the last edit. |
+| `[E_UNDO_UNAVAILABLE]` | Undo history could not be persisted to the hash store; the `edit` was refused and the file was left unchanged. |
+| `[E_FILE_TOO_LARGE]` | The file exceeds the 238,328-line hashline limit. |
+| `[E_RANGE_STALE]` | A line inside the resolved edit range changed on disk since it was served (read output, diff, or rejection feedback). The edit is refused and the current range is echoed as fresh `HASH│content` rows; retry with those rows (no `read` needed). |
+| `[E_RANGE_UNSERVED]` | A line inside the resolved edit range was never served to the model (paged reads, truncated output). The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
+| `[E_RANGE_UNVERIFIED]` | A boundary anchor (`remove_from`/`remove_to`) has no served position or was served at multiple positions, so the range cannot be verified against served state. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
+| `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
+| `[E_BATCH_ABORT]` | `batch_edit` rejected the whole batch: a tuple item failed validation or served-state verification. Nothing was written anywhere; the failing item's current range is echoed as fresh `HASH│content` rows. |
 
 ## Why Hashline
 
@@ -294,44 +333,6 @@ compared by design, not by score.
 > cross-version comparability. Dated results live in `benchmarks/results/`; when you re-run and
 > numbers drift, commit a new dated file rather than editing an old one.
 
-## Tools
-
-| Tool | What it does |
-| ------ | -------------- |
-| `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
-| `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit. |
-| `edit` | A fixed tuple `[path, [remove_from, remove_to], replacement_text]`; the path may be `null` for anchor-based inference. Verifies every line of the inclusive range and reject-and-serve returns fresh anchors. |
-| `batch_edit` | A root array of tuples `[[path, [remove_from, remove_to], replacement_text], …]`; applies up to 32 tuples atomically. |
-| `undo_last_edit` | `{ path }` restores the most recent successful edit with its original content, BOM, line endings, and anchors; persisted across restarts. |
-
-`edit` accepts `[path, [remove_from, remove_to], replacement_text]`; `batch_edit` accepts a root
-array of tuples. The path position is a non-empty string or `null` for unique anchor-based
-inference. The range is inclusive, and an empty replacement deletes the range. Both contracts
-are checked before file I/O; use `batch_edit` for multiple edits on the same file in one message.
-
-### Error codes
-
-| Code | Meaning |
-| --- | --- |
-| `[E_BAD_SHAPE]` | The payload is not the fixed tuple shape, or a tuple member has an unknown, missing, or wrongly-typed value. |
-| `[E_BAD_REF]` | An anchor in the inclusive range is not a bare 3-char hash. |
-| `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; call `read` for fresh anchors. |
-| `[E_AMBIGUOUS_ANCHOR]` | An anchor matches multiple lines; call `read` for fresh anchors. |
-| `[E_INVALID_PATCH]` | A `replacement_text` line is a diff-preview row (`+HASH│`, `-HASH│`, `-   │`). The marker is stripped automatically with a warning. |
-| `[E_BARE_HASH_PREFIX]` | A `replacement_text` line starts with a hash-like `HASH│` prefix. The prefix is stripped automatically with a warning. |
-| `[E_BAD_OP]` | Range start line is after range end line. The pair is swapped automatically with a warning. |
-| `[E_WOULD_EMPTY]` | An edit would empty a non-empty file; use `write` instead. |
-| `[E_NOT_FOUND]` | The path does not exist. |
-| `[E_ACCESS]` | The file is not readable or writable. |
-| `[E_NOT_TEXT]` | The path is a directory, binary file, image, or UTF-16/UTF-32 encoded text; hashline editing only supports text files. |
-| `[E_UNDO_STALE]` | `undo_last_edit` refused: the file was modified or deleted after the last edit. |
-| `[E_UNDO_UNAVAILABLE]` | Undo history could not be persisted to the hash store; the `edit` was refused and the file was left unchanged. |
-| `[E_FILE_TOO_LARGE]` | The file exceeds the 238,328-line hashline limit. |
-| `[E_RANGE_STALE]` | A line inside the resolved edit range changed on disk since it was served (read output, diff, or rejection feedback). The edit is refused and the current range is echoed as fresh `HASH│content` rows; retry with those rows (no `read` needed). |
-| `[E_RANGE_UNSERVED]` | A line inside the resolved edit range was never served to the model (paged reads, truncated output). The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
-| `[E_RANGE_UNVERIFIED]` | A boundary anchor (`remove_from`/`remove_to`) has no served position or was served at multiple positions, so the range cannot be verified against served state. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
-| `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
-| `[E_BATCH_ABORT]` | `batch_edit` rejected the whole batch: a tuple item failed validation or served-state verification. Nothing was written anywhere; the failing item's current range is echoed as fresh `HASH│content` rows. |
 
 ## Undo
 
