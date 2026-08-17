@@ -29,8 +29,9 @@ const batchCall = JSON.stringify({
 const ompPath = "src/service.ts";
 const ompTag = "a1b2";
 const ompHunk = (line, replacement) => `PUT ${line}.=${line}:\n+${replacement}`;
-const ompSeqCalls = edits.map(([, , newText], index) =>
-	`[${ompPath}#${ompTag}]\n${ompHunk(index + 1, newText)}`,
+const ompSeqCalls = edits.map(
+	([, , newText], index) =>
+		`[${ompPath}#${ompTag}]\n${ompHunk(index + 1, newText)}`,
 );
 const ompBatchCall = `[${ompPath}#${ompTag}]\n${edits
 	.map(([, , newText], index) => ompHunk(index + 1, newText))
