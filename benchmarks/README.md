@@ -31,7 +31,7 @@ Reproduce (Node ≥ 22.19, network needed to install the upstream targets):
 
 ```bash
 npm run eval              # this fork, local checkout
-npm run eval:compare      # local vs pi-hashline-edit-pro@2.4.1 vs 2.5.0
+npm run eval:compare      # local vs pi-hashline-edit-pro@2.4.1 vs 2.5.3
 npm run eval:compare -- local pi-hashline-edit-pro@2.5.0   # override targets
 ```
 
@@ -46,7 +46,7 @@ counts, then restores `node_modules` to the lockfile state.
 | --- | --: | --: |
 | **this fork (1.1.3)** | **23/23** | 0 |
 | `pi-hashline-edit-pro@2.4.1` (fork base) | 17/23 | 5 (B3, B7, B8, B10, B15) + B22 cross-session serve leak |
-| `pi-hashline-edit-pro@2.5.0` (latest) | 21/23 | 0 (B8 blind-edit hole, B22 cross-session serve leak) |
+| `pi-hashline-edit-pro@2.5.3` (latest) | 21/23 | 0 (B8 blind-edit hole, B22 cross-session serve leak) |
 
 Per-scenario table: [results/2026-08-17-tool-battery.md](results/2026-08-17-tool-battery.md).
 
@@ -102,7 +102,7 @@ Per-scenario table: [results/2026-08-17-hashline-library.md](results/2026-08-17-
 - `hashline` is a library; this project is a tool layer built on the same
   concept (per-line content-derived anchors, fail-closed on stale state). The
   mapping between the two is a design comparison, not a score comparison; see
-  the main README's [Numbers section](../README.md#numbers).
+  the main README's [Benchmark section](../README.md#benchmark).
 - These are correctness gates, not throughput numbers. "Calls" and "chars"
   aggregates are the battery's own transcript sizes, included for
   cross-version comparability, not a performance claim.

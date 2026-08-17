@@ -2,13 +2,13 @@
 
 Ran with `npm run eval:compare` on Node 22 (macOS arm64). Targets: this fork
 (`local`, 1.1.3) vs `pi-hashline-edit-pro@2.4.1` (fork base) and
-`pi-hashline-edit-pro@2.5.0` (latest published). All three targets run the
+`pi-hashline-edit-pro@2.5.3` (latest published; 2.5.0 scored identically). All three targets run the
 same 23 scenarios through the same tool seam; a `WRONG` cell means the
 scenario's expected verdict (outcome + preserved content) did not hold.
 
 ## Correctness
 
-| scenario | local | pro 2.4.1 | pro 2.5.0 |
+| scenario | local | pro 2.4.1 | pro 2.5.3 |
 | --- | :--: | :--: | :--: |
 | B1 single-line replace | success | success | success |
 | B2 range replace | success | success | success |
@@ -54,7 +54,7 @@ scenario's expected verdict (outcome + preserved content) did not hold.
 | --- | --: | --: | --: | --: | --: |
 | local (1.1.3) | 23/23 | 15 | 8 | 51 | 7,925 |
 | pi-hashline-edit-pro@2.4.1 | 17/23 | 21 | 2 | 51 | 5,644 |
-| pi-hashline-edit-pro@2.5.0 | 21/23 | 17 | 6 | 51 | 7,759 |
+| pi-hashline-edit-pro@2.5.3 | 21/23 | 17 | 6 | 51 | 7,759 |
 
 `calls` is the total number of tool invocations the battery made; `chars` is
 the total output characters it received. Same 51 calls across targets (the
@@ -66,7 +66,7 @@ grows.
 
 - Deterministic fixture battery: it gates the exact stale-serve scenarios,
   not model behavior or throughput.
-- 2.4.1/2.5.0 are pinned by `scripts/eval-compare.mjs` defaults; a different
+- 2.4.1/2.5.3 are pinned by `scripts/eval-compare.mjs` defaults; 2.5.0 scored identically; a different
   upstream release may differ.
 - Run environment: Node 22 (macOS arm64); outcomes are content-deterministic
   and should hold on any platform that runs the test suite.

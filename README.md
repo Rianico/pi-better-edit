@@ -1,99 +1,66 @@
-# pi-hashline-edit-lsz
+<p align="center">
+  <img src="assets/banner.jpeg" alt="pi-hashline-edit-lsz banner" width="640">
+</p>
 
-Hash-anchored `read` and `edit` tools for [pi-coding-agent](https://github.com/badlogic/pi-mono/tree/main/packages/coding-agent). Every line of a file gets a unique 3-character hash, and you edit by hash. No line numbers, no fuzzy matching, no edits landing on the wrong line.
+<h1 align="center">pi-hashline-edit-lsz</h1>
 
-Inspired by [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit) by RimuruW and [pi-hashline-edit-pro](https://github.com/YuGiMob/pi-hashline-edit-pro) — thanks to the original authors for their excellent work. This project is a **self-maintained version**: it is not affiliated with either upstream, exists to carry its own fixes and refinements forward, and deliberately diverges where noted below.
+<p align="center">
+  <strong>Hash-anchored `read` / `edit` / `undo` tools for pi-coding-agent.<br>
+  Edit by content address — not by line number, not by string replacement. Every resolved line is verified against what the model actually saw; a stale or never-served edit is rejected before anything is written.</strong>
+</p>
 
-## Refinements over upstream
+<p align="center">
+  <a href="#quick-start">Quick Start</a> •
+  <a href="#why-hashline">Why Hashline</a> •
+  <a href="#how-it-compares">How It Compares</a> •
+  <a href="#correctness-in-edge-cases">Correctness in Edge Cases</a> •
+  <a href="#benchmark">Benchmark</a> •
+  <a href="#tools">Tools</a> •
+  <a href="#how-anchors-work">How Anchors Work</a> •
+  <a href="#development">Development</a> •
+  <a href="#acknowledgments">Acknowledgments</a>
+</p>
 
-- **`edit` / `undo_last_edit`** — the tools are renamed from `replace` / `undo_last_replace`, and this extension's `edit` replaces pi's built-in edit tool.
-- **Served-state range verification** — `edit` verifies *every line* of the resolved range against what the model was actually shown, not just the two boundary anchors. A line inside the range that changed on disk since it was served is hard-rejected with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]`, and the current range is echoed back as fresh anchors so the retry needs no `read` (reject-and-serve).
-- **Drift notices** — when served territory outside the edit range changed on disk, the result carries an informational notice with the current content around the drift, once per episode.
-- **Chained edits without re-reading** — post-edit diff rows and rejection echoes count as serves, so follow-up edits verify cleanly; prompts present `read` as on-demand recovery, not a per-edit ritual.
-- **Verified against upstream** — two deterministic batteries (23 tool scenarios, 10 hashline library scenarios) gate correctness on every run; the fork is 23/23, upstream `pi-hashline-edit-pro` 2.4.1 is 17/23 and 2.5.0 is 21/23. See [Numbers](#numbers).
-- **Architecture** — a dedicated served-state module owns serve recording and the served-span reconstruction; post-edit result assembly is a single pure function over structured warnings.
-- **Own identity** — published as the `pi-hashline-edit-lsz` npm package, with its own config and hash-store directory (`~/.config/pi-hashline-edit-lsz`).
+<p align="center">
+  <img src="https://img.shields.io/npm/v/pi-hashline-edit-lsz" alt="npm version">
+  <img src="https://img.shields.io/npm/dm/pi-hashline-edit-lsz" alt="npm downloads">
+  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License">
+  <img src="https://img.shields.io/github/stars/Rianico/pi-hashline-edit-lsz?style=social" alt="GitHub stars">
+</p>
 
-## Numbers
+---
 
-The honest measurement is a deterministic correctness battery, not a sampled model run: every scenario performs the exact tool calls a model would (read → edit → verify, including the reject-and-serve retry path) against a scratch file, then checks the outcome **and** the final content against an expected verdict. No LLM in the loop — a run either reproduces or it doesn't. That trades stochastic headline numbers for something narrower but exact: stale edits are rejected before they corrupt files, on every run.
+> *"The harness — not the model — is the bottleneck."*
+> — Can Bölük, [*The Harness Problem*](https://stencil.so/blog/the-harness-problem)
 
-**Tool battery — 23 scenarios, same tool seam, three targets (2026-08-17):**
+Line numbers shift the moment anything above them changes, and str_replace-style tools
+make the model re-type the code it is replacing. Hashline gives every line a **content
+address** instead: `edit` targets two 3-character hashes, the old text is never echoed,
+anchors survive edits above, and every resolved range is verified against the exact rows
+the model was shown. A wrong-line edit cannot silently land.
 
-| vs expected verdict | correct | silent data-loss cases |
-| --- | --: | --: |
-| **this fork (1.1.3)** | **23/23** | 0 |
-| `pi-hashline-edit-pro@2.4.1` (fork base) | 17/23 | 5 silent data-loss cases (B3, B7, B8, B10, B15) + B22 cross-session leak |
-| `pi-hashline-edit-pro@2.5.0` (latest) | 21/23 | B8 blind-edit + B22 cross-session leak |
+This is the **self-maintained fork** of [pi-hashline-edit-pro](https://github.com/YuGiMob/pi-hashline-edit-pro)
+(which forked [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit)). It is not
+affiliated with either upstream, and it deliberately diverges where noted below. The
+hashline concept descends from [@oh-my-pi/hashline](https://www.npmjs.com/package/@oh-my-pi/hashline);
+the [comparison](#how-it-compares) is the honest read of who does what.
 
-The four interior-drift failures (B3, B7, B10, B15) are the exact data-loss class the served-state range verification exists to prevent: the file changed inside the edit range after it was read, and the upstream `replace` applied anyway, silently overwriting the drifted lines. B8 is the blind-edit case: an edit anchored on a boundary line the model was never shown still landed, overwriting unseen content. B22 — present in both versions — is the cross-session serve leak.
+## Why you need this
 
-**Library battery — `@oh-my-pi/hashline` 17.3.5, 10/10 (2026-08-17):** the hashline patch engine is tested in its own model: stale tags are either recovered with an explicit `Recovered from a stale file hash…` warning or rejected with a `MismatchError` — never silently applied (H2/H3), head/tail inserts warn on drift (H4), unseen anchors reject then retry cleanly (H7), multi-section patches preflight before any write (H8).
+`str_replace` makes the model re-type the code it is replacing — output tokens billed at
+~5-6× the input rate — and wrong-line edits are how agents corrupt files: one edit lands
+on line 47 instead of 74 because everything above it shifted. Hashline replaces the old
+text with two content hashes, so the call never echoes what it replaces, and the tool
+checks every line of the resolved range against what the model was shown before writing
+anything. Stale anchors and unverified ranges are hard-rejected, and the current range is
+echoed back as fresh anchors — the retry needs no `read` (reject-and-serve).
 
-Both batteries gate the same claim this project is built on: **stale edits are detected, never silently applied**. Full method, per-scenario tables, and limitations: [benchmarks/README.md](benchmarks/README.md) and [benchmarks/results/](benchmarks/results/).
+Not for one-line touch-ups (near parity) or brand-new files (`write`). It pays off in long
+sessions and structural edits — anywhere an edit must not land on the wrong line.
 
-Reproduce:
+## Quick Start
 
-```bash
-npm run eval            # this fork, 23/23
-npm run eval:compare    # + upstream pi-hashline-edit-pro 2.4.1 / 2.5.0
-npm run eval:hashline   # + @oh-my-pi/hashline (installs bun into a temp dir)
-```
-
-### vs @oh-my-pi/hashline
-
-`@oh-my-pi/hashline` is the library that originated the hashline concept this project implements; this extension is a tool layer built on the same idea (credit: [can1357](https://github.com/can1357)). The comparison is a design comparison plus two per-engine batteries — not a single score, because the layers differ: a library has no tools, a tool layer has no `Patcher`.
-
-| | `pi-hashline-edit-lsz` (this project) | `@oh-my-pi/hashline` |
-| --- | --- | --- |
-| Layer | pi extension: `read` / `edit` / `undo_last_edit` / `batch_edit` | patch engine: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
-| Anchor model | per-line 3-char content-derived hash, whitespace-insensitive, unique by construction | 4-hex whole-file content tag + line numbers |
-| Stale detection | served-state range verification; reject with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]` and re-serve fresh anchors | tag validation; recovery-with-warning when anchors still map, `MismatchError` otherwise |
-| Blind-edit guard | never-served boundary/interior rejected (B7, B8, B22) | seen-lines provenance reject + content reveal, retry passes (H7) |
-| Noop | "No changes made", anchors intact (B11, B12) | applies, content unchanged (H5) |
-| Empty-file insert | supported (B14) | supported (H6) |
-| Batch atomicity | `batch_edit` all-or-nothing (`[E_BATCH_ABORT]`) | multi-section preflight, all-or-nothing (H8) |
-| Undo | persisted per-file, survives restarts | none (recovery only) |
-| Runtime | pi (Node) | bun ≥ 1.3.14 (TypeScript source) |
-
-The honest read: hashline's recovery policy is more forgiving — it tries to relocate a stale edit onto live content and warns; this project's policy is fail-closed — any doubt about the served state rejects and re-serves. Both satisfy the shared guarantee; they differ on what happens when drift is detected (recover-with-warning vs reject-and-serve).
-
-**What these numbers do not claim:** no token, cost, or latency figures — those depend on the host model and session and would not be honest in a deterministic battery. The "calls" / "chars" aggregates in the results are the batteries' own transcript sizes, for cross-version comparability only.
-
-## What you get
-
-- **Read with anchors.** Every line comes back as `HASH│content`. The hash is the line's address.
-- **Edit by hash.** `edit` targets a range of hashes, so edits always land on the lines you meant.
-- **Anchors that stay put.** Edit one part of a file and the hashes of the rest stay the same. Read once, keep editing.
-- **Fresh anchors, automatically.** After every `write` you get the new anchors. After every `edit` you get the diff with the new hashes.
-- **Undo when you need it.** The last edit on a file can be reverted, even after a restart.
-- **Safe writes.** Permissions, line endings, BOMs, symlinks, and hard links survive every edit.
-- **Plain skill reads.** `read_skill` returns skill content as plain text — no hash noise when the model loads a skill to invoke it.
-
-## Quick start
-
-1. Read a file:
-
-```text
-ve7│function hello() {
-szJ│  console.log("world");
-kQm│}
-```
-
-1. Edit a line by its hash:
-
-```json
-{
-  "path": "src/main.ts",
-  "remove_from": "szJ",
-  "remove_to": "szJ",
-  "replacement_text": "  console.log('hi');"
-}
-```
-
-1. Keep editing. Anchors for lines you didn't touch stay valid, and auto-read hands you fresh anchors after each change.
-
-## Installation
+### Install
 
 ```bash
 pi install npm:pi-hashline-edit-lsz
@@ -105,114 +72,234 @@ From a local checkout:
 pi install /path/to/pi-hashline-edit-lsz
 ```
 
-## The read tool
-
-`read` returns a text file with every line prefixed by `HASH│content`. The hash is 3 characters from `A-Za-z0-9` (for example `aB3`). To load skill content as plain text, use `read_skill` instead.
-
-| Parameter | Description |
+| Requirement | |
 | --- | --- |
-| `offset` | Start reading from this line number (1-indexed). |
-| `limit` | Maximum number of lines to return. |
+| Node | ≥ 22.19.0 (`engines`) |
+| pi-coding-agent | ≥ 0.75.0 (peer dependency) |
 
-Paged output ends with a continuation hint, for example `[Showing lines 1-50 of 120. Use offset=51 to continue.]`.
+`read` returns every line prefixed by its hash — the hash *is* the line's address:
 
-Lines up to 200KB are shown in full. Larger lines are shown as a marker with a bash inspection hint (`sed -n 'Np' <path> | head -c 204800`), because hash anchors need full lines.
+```text
+ve7│function hello() {
+szJ│  console.log("world");
+kQm│}
+```
 
-Edge cases:
-
-- Images (JPEG, PNG, GIF, WebP) come back as visual attachments.
-- Binary files and directories are rejected with a descriptive error.
-- UTF-16 and UTF-32 text (detected via BOM) is rejected, since editing it would corrupt the file.
-- Empty files come back as a single empty-line hash (`HASH│`); use `edit` on that hash to insert content.
-- BOMs are stripped for display. Non-UTF-8 bytes are shown as `U+FFFD`; editing such a file rewrites it as UTF-8, with a warning.
-- Files over 238,328 lines are rejected with `[E_FILE_TOO_LARGE]`.
-
-## The read_skill tool
-
-`read_skill` returns a file's content as plain text — no `HASH│` prefixes, no served state. Use it to load skill content (SKILL.md or any file in its directory) for invocation and reference; the content is for consumption, not editing.
-
-- It accepts any path — it is not restricted to registered skills.
-- Images come back as visual attachments; binary files and directories are rejected, same as `read`.
-- It records no served rows; editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit — use `read` for files you may edit.
-- The tool's name encodes the intent: `read` → hashed anchors (editable), `read_skill` → plain text (consumable).
-
-## The edit tool
-
-This extension's `edit` replaces pi's built-in edit tool, and it takes the hash anchors from `read` output.
-
-One edit per call, with `remove_from`, `remove_to`, and `replacement_text` at the top level:
+`edit` targets a range of hashes, so edits always land on the lines you meant:
 
 ```json
 {
   "path": "src/main.ts",
   "remove_from": "szJ",
-  "remove_to": "kQm",
-  "replacement_text": "  console.log('hi');\n}"
+  "remove_to": "szJ",
+  "replacement_text": "  console.log('hi');"
 }
 ```
 
-| Field | Description |
-| --- | --- |
-| `remove_from` | 3-char hash from `read` output marking the FIRST line to remove (inclusive). |
-| `remove_to` | 3-char hash from `read` output marking the LAST line to remove (inclusive). |
-| `replacement_text` | Replacement text as a single string with `\n` line separators; every `\n` separates lines, so a trailing `\n` adds a final empty line — mirror the removed lines exactly, blank lines included (a replacement that is only blank lines is written as one `\n` per blank line). Use `""` to delete the range. |
+and returns a diff with fresh anchors, so the next edit verifies cleanly with no re-read:
 
-Notes:
+```text
+- szJ │   console.log("world");
++ a3m │   console.log('hi');
+  kQm │ }
+```
 
-- The request is checked before any file I/O, so a bad request never touches the file.
-- Common copy-paste slips are fixed automatically and reported: a leftover `HASH│` prefix in `replacement_text` or `remove_from`/`remove_to`, diff-preview rows pasted into the replacement, a reversed range, or a boundary line pasted twice. New lines that re-include a block adjacent to the range are stripped automatically when that block is unique in the file — the whole run is stripped as one unit (including repeated structural lines like `}`), so re-including an unchanged block next to the range never duplicates it. A missing `path` is resolved from the anchors when they uniquely identify a file in the hash store (reported as a warning); when the anchors match multiple known files the request is rejected with the candidate paths named. `file_path` works as an alias for `path` in all three tools.
-- An edit that produces identical content reports `No changes made` and leaves the anchors alone.
-- After a successful edit you get the post-edit diff with fresh anchors, so you can keep editing without re-reading.
-- Do not issue multiple edit calls on the same file in one message; use `batch_edit` instead — it validates every edit before writing anything and returns one combined diff per file.
+Keep editing — anchors for lines you didn't touch stay valid, and auto-read hands you fresh
+anchors after each change.
 
-## The batch_edit tool
+## Why Hashline
 
-`batch_edit` applies several edits in one atomic call. Each item has the same shape as `edit` (`path`, `remove_from`, `remove_to`, `replacement_text`; `path` is optional per item and resolved from the anchors when they uniquely identify a file). Items are applied in order; edits to the same file are applied as one in-memory chain, so disjoint ranges compose while overlapping ranges fail closed.
+**Correctness, not just brevity.** Every resolved edit range is verified against the
+served rows — what `read`, a post-edit diff, or a rejection echo actually showed the model.
+A line inside the range that changed on disk since it was served, or was never served, is
+hard-rejected before any file I/O: `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` /
+`[E_RANGE_UNVERIFIED]`, and the current range is echoed as fresh `HASH│content` rows. The
+retry needs no `read`. Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
+never validate the main session's edits and vice versa.
 
-The batch is **all-or-nothing**:
+**Content-addressed anchors.** Anchors are derived from line content (ASCII-whitespace
+stripped), not position: edit one part of a file and the hashes of the rest stay put, so
+chained edits need no re-reads. Re-inserting identical text keeps its hash — "edit X with
+X" doesn't rotate the anchor. Anchors are unique by construction — repeated `}` or
+`import` lines never share one.
 
-- **Preflight / application**: every item is resolved and its served-state span is verified before anything is written. If any item fails — stale or ambiguous anchor, `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]`, or a range that changed because of an earlier item in the batch — the whole batch is rejected with `[E_BATCH_ABORT]` and **no file changes**. The failing item's current range is echoed as fresh `HASH│content` rows (recorded as serves), so the retry needs no `read`.
-- **Writes**: each touched file is written exactly once (original BOM and line endings preserved), after an undo record for every touched file is persisted. If a write fails, already-written files are restored from their undo records. `undo_last_edit` on any touched file reverts the batch's effect on that file.
-- **Noops**: an item whose range already contains the replacement is reported without failing the batch; an all-noop batch reports "No changes made". The noop-loop guard applies per payload per file.
-- **Result**: one combined diff per file with fresh anchors, aggregated warnings, and per-file drift notices. All diff rows count as serves, so follow-up `edit` calls anchor on the diff without re-reading.
+**Chained edits without re-reading.** Post-edit diff rows, auto-read rows, and rejection
+echoes all count as serves. `read` is on-demand recovery, not a per-edit ritual.
 
-`batch_edit` accepts 1–32 items (`[E_BAD_SHAPE]` otherwise). Malformed envelopes are rejected before any file I/O.
+**Stop the loop.** A no-op edit reports `No changes made` and leaves anchors alone; the
+same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `batch_edit` applies up to 32
+edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]`.
 
-## Undo
+### How It Compares
 
-`undo_last_edit` reverts the most recent successful `edit` on a file, restoring the exact previous content, BOM and line endings included, plus the previous anchors.
+| | **pi-hashline-edit-lsz** (this) | pi-hashline-edit (original) | pi-hashline-edit-pro (upstream) | @oh-my-pi/hashline |
+| --- | --- | --- | --- | --- |
+| Layer | pi tools: `read` / `read_skill` / `edit` / `batch_edit` / `undo_last_edit` | pi tool override: `read` / `edit` + opt-in `grep` | pi tools: `read` / `replace` / `undo_last_replace` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
+| Address format | `HASH│` — 3-char content hash, no line number | `LINE#HASH:` — line number + 2-4 char hash | `HASH│` — 3-char content hash, no line number | `[path#tag]` — full-file content tag + line numbers |
+| Whitespace-insensitive anchors | ✅ all ASCII whitespace stripped — survives reformatting | ❌ exact content match | ~ trailing whitespace trimmed only | ~ n/a (anchors are line numbers) |
+| Duplicate lines | ✅ unique per line (collision-resolved); ambiguity → `[E_AMBIGUOUS_ANCHOR]` | ~ shared hash — repeats are ambiguous | ✅ unique (collision-resolved) | ~ position-based — repeats fine, position unverified |
+| Verified against what the model saw | ✅ every resolved line, per session | ❌ hash-vs-content only, no served record | ~ served-state, but blind-edit (B8) and cross-session (B22) holes | ~ seen-lines provenance + file-version tag (H7) |
+| Stale interior | ✅ reject + fresh anchors (`[E_RANGE_STALE]`) | ~ line-hash mismatch → 3-way recovery or fresh anchors | ~ version-dependent: 2.4.1 overwrote silently, 2.5.x rejects | ~ recovery-with-warning, else `MismatchError` |
+| Blind edit — lines never shown | ✅ hard reject (`[E_RANGE_UNVERIFIED]` / `[E_RANGE_UNSERVED]`) | ❌ applies | ❌ applies (B8) | ~ reject when seen-lines recorded (H7) |
+| Batch atomicity | ✅ `batch_edit` — all-or-nothing, `[E_BATCH_ABORT]` | ~ op array, one snapshot, bottom-up | ❌ one `replace` per call | ✅ multi-section preflight (H8) |
+| Undo (persisted) | ✅ survives restarts | ❌ | ✅ `undo_last_replace`, persisted | ❌ none |
+| Block ops / registers / `REM` / `MV` | ❌ | ❌ | ❌ | ✅ |
+| `grep` tool | ❌ | ✅ opt-in | ❌ | ❌ |
+| Sub-agent session isolation | ✅ session-keyed served state (B19–B22) | — | ❌ leak (B22) | ~ |
+| Deterministic battery | ✅ 23/23 | — schema differs, design-only | 17/23 (2.4.1) · 21/23 (2.5.x) | ✅ 10/10 library |
+| Runtime | pi (Node) | pi (Node) | pi (Node) | Bun ≥ 1.3.14 (TS source) |
 
-- History is per-file and single-level: only the most recent edit can be reverted.
-- History is persisted and survives session restarts. A failed `write` does not clear it.
-- Every applied edit is undoable: the undo record is saved before the edit is written.
-- A successful `write` clears the history for that file.
-- If the file was modified or deleted since the last edit, the undo is refused rather than overwriting those changes.
+> `~` = occasionally / inconsistently. `—` = not specified / not applicable.
 
-## Auto-read
+### Different jobs, same lineage
 
-Always on. After a successful `write` that changes the file, the extension reads the file and appends an `--- Auto-read (hashline anchors) ---` block to the result, so you get fresh `HASH│content` anchors without a separate `read` call.
+Both this extension and `@oh-my-pi/hashline` descend from the harness-problem insight that
+the model should never re-type old code, but they are different layers.
 
-- After `edit` and `undo_last_edit`, the result shows the post-edit diff. The `+HASH│` and `HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff directly. The `-HASH│` rows show removed lines with their old hashes, so you can see exactly which anchors were deleted (those hashes are stale after the edit). Call `read` when you want the full file's anchors.
-- Auto-read keeps a 50KB display budget. Lines over 50KB are skipped with a marker instead of their content (use `read` for lines up to 200KB).
+`@oh-my-pi/hashline` is a **patch-language library**: `[path#tag]` headers bind every hunk
+to a full-file content hash, `PUT N.=M:` addresses lines by number, and it ships syntactic
+block ops (`PUT N*:`), registers, `REM`/`MV`, multi-hunk documents, a pluggable filesystem
+for any backend (disk, in-memory, network), and session-aware 3-way-merge recovery on
+stale tags. Its payload per edit is lighter and it cannot be confused by repeated text —
+the line number is unambiguous.
 
-## How anchors work
+This extension is a **pi tool pair**: `read` hands the model 3-char content hashes, `edit`
+takes two of them, and every resolved line is verified against the served state — no line
+numbers to renumber, no tag to refetch, a wrong anchor can never land on the wrong line,
+and `undo_last_edit` survives restarts. Its trade-offs: a JSON envelope per edit costs a
+little payload, there are no block ops, and it lives inside pi (Node) rather than as a
+standalone patcher (Bun). Pick hashline-the-library for a cross-backend patch format; pick
+hashline-the-tool for verified, content-addressed edits in your agent.
 
-Each line is canonicalized (all ASCII whitespace — spaces, tabs, carriage returns, and line feeds — stripped) and hashed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm) (xxHash32), then mapped to a 3-character string over `A-Za-z0-9`, which gives 62³ = 238,328 possible anchors. The canonicalization keeps anchors stable across formatting passes and editor-save cycles that add, remove, or reindent whitespace: a line that changes only in ASCII whitespace keeps its anchor, so external linting between edits does not invalidate it. Everything that is not ASCII whitespace stays significant — string literal contents, regex classes, comments, quotes, semicolons, and Unicode whitespace such as NBSP all still rotate the anchor when they change. One caveat: ASCII whitespace *inside* string literals and regexes is stripped too, so a whitespace-only change within a string (e.g. `"x y"` → `"xy"`) is invisible to verification — benign in practice because formatters never alter string contents. Token-level edits (quote style, semicolons, arrow-parens, line wrapping, a brace merged onto a signature line) therefore still reject as stale, exactly as before.
+Against the two pi extensions in the family: the **original** `pi-hashline-edit`
+introduced line+hash anchors and grep-to-edit, but has no served-state record (it verifies
+hash-vs-content), no persisted undo, and its duplicate lines share an anchor. **pro**
+hardened the format to pure 3-char hashes with collision resolution and added the
+served-state check, persisted undo, and auto-read; the deterministic battery shows what a
+self-maintained fork keeps fixing — 2.4.1 overwrote drifted interiors silently, 2.5.x
+rejects them but still lets a blind edit and a cross-session serve through. This fork
+closes those with session-keyed, per-line served-state verification plus `batch_edit`.
 
-The alphabet is sized for an LLM consumer: the model tokenizes rather than squinting at glyphs, so case and digits are all included. The URL-safe specials `-` and `_` are deliberately excluded. A hash starting with `-` is shape-identical to a diff-preview deletion row, and `-`/`_` at a line start are markdown-active, inviting mis-copying and false autocorrections.
+### Refinements over upstream
 
-Unique anchors by construction. If a line's base hash collides with an already-assigned hash, the next free hash is allocated from a bitset by probing with a stride coprime to the hash space (O(1) amortized). The stride is `62² + 62 + 1`, so consecutive collisions, runs of blank lines, repeated `}`, land on anchors that differ in all three characters instead of sharing a prefix. Every line in a file therefore gets a unique anchor; two byte-identical lines (repeated `}`, repeated `import` statements) never share one. The same guarantee sets the file size cap: at most 238,328 lines per file, beyond which `read` and `edit` reject with `[E_FILE_TOO_LARGE]` (use `write` for very large files).
+- **`edit` / `undo_last_edit`** — renamed from `replace` / `undo_last_replace`; this
+  extension's `edit` replaces pi's built-in edit tool.
+- **Served-state range verification** — every line of the resolved range is verified
+  against what the model was shown, not just the two boundary anchors; a changed or
+  never-served interior is hard-rejected with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` /
+  `[E_RANGE_UNVERIFIED]`, and the current range is echoed as fresh anchors (reject-and-serve).
+- **Session-keyed served state** — sub-agent serves never leak into the main session
+  (ADR-0002; battery B19–B22).
+- **Drift notices** — served territory outside the edit range that changed on disk is
+  reported as an informational notice, once per episode.
+- **Chained edits without re-reading** — post-edit diff rows and rejection echoes count as
+  serves; `read` is on-demand recovery, not a per-edit ritual.
+- **`batch_edit`** — up to 32 edits in one atomic call; all-or-nothing with
+  `[E_BATCH_ABORT]` and fresh-anchor feedback for the failing item.
+- **Whitespace-insensitive anchors** — all ASCII whitespace is stripped before hashing, so
+  formatter passes that reindent don't invalidate anchors (ADR-0005); unique anchors by
+  construction (bitset probing, ADR-0003).
+- **Own identity** — published as `pi-hashline-edit-lsz`, with its own config and hash-store
+  directory (`~/.config/pi-hashline-edit-lsz`).
 
-Hashes live in a persistent per-file store (`~/.config/pi-hashline-edit-lsz/hash-store.sqlite`) that keeps the hashes of unchanged lines across edits. When a range is edited, the runtime maps the old content onto the new content and copies hashes for lines that survived; only genuinely new lines get fresh hashes.
+### Correctness in Edge Cases
 
-Two guarantees make this safe even with duplicated content:
+The battery below measures *behavior*, where the two hashline implementations actually
+diverge. These are the real failure modes from the harness-problem literature, and what
+each tool does when they hit:
 
-- An edited range never borrows a hash from a line outside it. Lines outside the edited range keep their hashes unconditionally, even when their content is byte-identical to lines inside the range.
-- Re-inserted identical text keeps its hash. If replacement content matches a line that was just removed, the removed line's hash is reused. "Edit X with X" doesn't rotate the anchor.
+| Edge case | hashline `edit` (this extension) | @oh-my-pi/hashline patch |
+| --- | --- | --- |
+| Wrong address (off-by-one anchor / line number) | **Impossible** — anchors resolve to specific lines; every resolved line is verified against served state, rejected before anything is written | **Possible** — a wrong line number against a current tag applies silently at the wrong place; the tag proves the file version, never the lines |
+| File changed on disk after the model's view | Hard reject + fresh anchors echoed (reject-and-serve); retry needs no `read` | Tag mismatch → refuse **or** best-effort 3-way merge onto unknown current content, with an explicit recovery banner |
+| An edit above shifts the file | Nothing shifts — anchors are content addresses; the diff serves fresh anchors | **Every edit renumbers** — the format's own #1 rule is "re-ground after every edit"; the model carries the bookkeeping |
+| Repeated / identical text | Per-line hashes are unique (collision-resolved); ambiguity → `[E_AMBIGUOUS_ANCHOR]` | Position-based, so repeats don't confuse it — but the position itself is unverified |
+| Lines never shown to the model | `[E_RANGE_UNSERVED]` — hard reject with fresh anchors | Undisplayed hunks rejected when seen-lines are recorded — same reliance on the model knowing what it saw |
+| Mid-expression / wrong block node | Irrelevant — any verified line range is valid | Grammar rules + `PUT N*:` node choice; mispointing can silently land wrong |
+| Multi-edit batch fails mid-way | `batch_edit` — atomic, all-or-nothing; the failing item is echoed as fresh serves | Multi-section patches preflighted up front — also atomic |
 
-A no-op edit never changes the file, so anchors remain valid. On first run after upgrading from an older version, the previous `hash-store.json` is imported once and renamed to `hash-store.json.bak`.
+> The oh-my-pi payload saving is a lighter wire format; the table above is what that format
+> asks the model to hold in its head instead — renumbering, tag-chasing, node choice — the
+> exact component that fails most with replace-style edits. This extension's contract is:
+> a wrong edit cannot land, and any rejection needs no re-read. Measured on the same
+> stale-serve scenarios, both engines gate the same guarantee — **stale edits are detected,
+> never silently applied** — with different policies when drift is found (recover-with-
+> warning vs fail-closed rejection).
 
-## Error codes
+## Benchmark
+
+The claims above are measured, not asserted. Two deterministic batteries — no LLM in the
+loop, no sampling: a run either reproduces or it doesn't. That trades stochastic headline
+numbers for something narrower but exact: stale edits are rejected before they corrupt
+files, on every run.
+
+**Tool battery — 23 scenarios, same tool seam, three targets (2026-08-17):**
+
+| vs expected verdict | correct | silent data-loss cases |
+| --- | --: | --: |
+| **this fork (1.1.3)** | **23/23** | 0 |
+| `pi-hashline-edit-pro@2.4.1` (fork base) | 17/23 | 5 silent data-loss cases (B3, B7, B8, B10, B15) + B22 cross-session leak |
+| `pi-hashline-edit-pro@2.5.3` (latest) | 21/23 | B8 blind-edit + B22 cross-session leak |
+
+The four interior-drift failures (B3, B7, B10, B15) are the exact data-loss class the
+served-state range verification exists to prevent: the file changed inside the edit range
+after it was read, and the upstream `replace` applied anyway, silently overwriting the
+drifted lines. B8 is the blind-edit case: an edit anchored on a boundary line the model
+was never shown still landed, overwriting unseen content. B22 — present in both versions —
+is the cross-session serve leak.
+
+**Library battery — `@oh-my-pi/hashline` 17.3.5, 10/10 (2026-08-17):** the hashline patch
+engine is tested in its own model: stale tags are either recovered with an explicit
+`Recovered from a stale file hash…` warning or rejected with a `MismatchError` — never
+silently applied (H2/H3), head/tail inserts warn on drift (H4), unseen anchors reject then
+retry cleanly (H7), multi-section patches preflight before any write (H8).
+
+Full method, per-scenario tables, and limitations: [benchmarks/README.md](benchmarks/README.md)
+and [benchmarks/results/](benchmarks/results/).
+
+### Reproduce
+
+```bash
+npm run eval            # this fork, 23/23
+npm run eval:compare    # + upstream pi-hashline-edit-pro 2.4.1 / 2.5.x
+npm run eval:hashline   # + @oh-my-pi/hashline (installs bun into a temp dir)
+```
+
+`eval:compare` installs the requested package versions into `node_modules` temporarily
+(`--no-save --no-package-lock`), runs the same 23 scenarios against each target, prints a
+per-scenario correctness table plus aggregate call/chars counts, then restores
+`node_modules` to the lockfile state. `eval:hashline` scratch-installs `@oh-my-pi/hashline`
+and the bun runtime; nothing lands in this repo. The original `pi-hashline-edit` (0.8.3)
+is **not** runnable in the tool battery — its edit envelope (`edits: [{op, pos, lines}]`)
+and `LINE#HASH:` read format differ from the `remove_from`/`remove_to` schema — so it is
+compared by design, not by score.
+
+> **Scope & honesty.** These are correctness gates, not throughput numbers. No token, cost,
+> or latency figures are claimed — those depend on the host model and session and would not
+> be honest in a deterministic battery. "Calls" / "chars" aggregates in the results are the
+> batteries' own transcript sizes, for cross-version comparability only. Dated results live
+> in `benchmarks/results/`; when you re-run and numbers drift, commit a new dated file
+> rather than editing an old one.
+
+## Tools
+
+| Tool | What it does |
+| ------ | -------------- |
+| `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
+| `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit. |
+| `edit` | Replaces a range of lines by hash. `path` · `remove_from` · `remove_to` · `replacement_text` (`""` deletes). Verifies **every line** of the resolved range against served state; `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]` reject-and-serve fresh anchors. |
+| `batch_edit` | 1–32 items in one atomic call: `{ edits: [{ path?, remove_from, remove_to, replacement_text }, …] }`. All-or-nothing; the failing item's range is echoed as fresh serves, one combined diff per file. |
+| `undo_last_edit` | `{ path }` reverts the last hashline edit, restoring exact previous content (BOM and line endings included) plus the previous anchors; survives restarts. |
+
+`file_path` works as an alias for `path` in all three tools. `edit` notes: the request is
+checked before any file I/O, so a bad request never touches the file; copy-paste slips are
+autocorrected and reported (a leftover `HASH│` prefix, diff-preview rows, a reversed range,
+a boundary line pasted twice, re-including an unchanged adjacent block); a missing `path`
+is resolved from the anchors when they uniquely identify a file in the hash store (else
+rejected with the candidates named). Do not issue multiple edit calls on the same file in
+one message — use `batch_edit`.
+
+### Error codes
 
 | Code | Meaning |
 | --- | --- |
@@ -236,13 +323,103 @@ A no-op edit never changes the file, so anchors remain valid. On first run after
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_BATCH_ABORT]` | `batch_edit` rejected the whole batch: the named item failed validation or served-state verification. Nothing was written anywhere; the failing item's current range is echoed as fresh `HASH│content` rows. |
 
+## Undo
+
+`undo_last_edit` reverts the most recent successful `edit` on a file, restoring the exact
+previous content, BOM and line endings included, plus the previous anchors.
+
+- History is per-file and single-level: only the most recent edit can be reverted.
+- History is persisted and survives session restarts. A failed `write` does not clear it.
+- Every applied edit is undoable: the undo record is saved before the edit is written.
+- A successful `write` clears the history for that file.
+- If the file was modified or deleted since the last edit, the undo is refused
+  (`[E_UNDO_STALE]`) rather than overwriting those changes.
+
+## Auto-read
+
+Always on. After a successful `write` that changes the file, the extension reads the file
+and appends an `--- Auto-read (hashline anchors) ---` block to the result, so you get
+fresh `HASH│content` anchors without a separate `read` call.
+
+- After `edit` and `undo_last_edit`, the result shows the post-edit diff. The `+HASH│` and
+  `HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff
+  directly. The `-HASH│` rows show removed lines with their old hashes (stale after the
+  edit). Call `read` when you want the full file's anchors.
+- Auto-read keeps a 50KB display budget. Lines over 50KB are skipped with a marker instead
+  of their content (use `read` for lines up to 200KB).
+
+`read` edge cases: images (JPEG, PNG, GIF, WebP) come back as visual attachments; binary
+files and directories are rejected with a descriptive error; UTF-16 and UTF-32 text
+(detected via BOM) is rejected, since editing it would corrupt the file; empty files come
+back as a single empty-line hash (`HASH│`), use `edit` on that hash to insert content;
+BOMs are stripped for display, non-UTF-8 bytes are shown as `U+FFFD` and editing such a
+file rewrites it as UTF-8 with a warning; files over 238,328 lines are rejected with
+`[E_FILE_TOO_LARGE]`.
+
+## How Anchors Work
+
+Each line is canonicalized (all ASCII whitespace — spaces, tabs, carriage returns, and
+line feeds — stripped) and hashed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm)
+(xxHash32), then mapped to a 3-character string over `A-Za-z0-9` — 62³ = 238,328 possible
+anchors. Canonicalization keeps anchors stable across formatting passes and editor-save
+cycles: a line that changes only in ASCII whitespace keeps its anchor, so external linting
+between edits does not invalidate it. Everything that is not ASCII whitespace stays
+significant — string contents, regex classes, comments, quotes, semicolons, and Unicode
+whitespace (NBSP) all rotate the anchor. One caveat: ASCII whitespace *inside* string
+literals and regexes is stripped too, so a whitespace-only change within a string is
+invisible to verification — benign in practice because formatters never alter string
+contents. Token-level edits (quote style, semicolons, brace placement) therefore still
+reject as stale.
+
+The alphabet is sized for an LLM consumer — the model tokenizes rather than squinting at
+glyphs, so case and digits are all included. The URL-safe specials `-` and `_` are
+deliberately excluded: a hash starting with `-` is shape-identical to a diff-preview
+deletion row, and `-`/`_` at a line start are markdown-active, inviting mis-copying.
+
+Anchors are unique by construction. If a line's base hash collides with an already-assigned
+hash, the next free hash is allocated from a bitset by probing with a stride coprime to the
+hash space (O(1) amortized; the stride is 62² + 62 + 1, so runs of blank lines or repeated
+`}` land on anchors that differ in all three characters). Every line therefore gets a
+unique anchor; two byte-identical lines never share one. The same guarantee sets the file
+size cap: at most 238,328 lines per file, beyond which `read` and `edit` reject with
+`[E_FILE_TOO_LARGE]` (use `write` for very large files).
+
+Hashes live in a persistent per-file store
+(`~/.config/pi-hashline-edit-lsz/hash-store.sqlite`, honoring `XDG_CONFIG_HOME` on
+non-Windows) that keeps the hashes of unchanged lines across edits. When a range is edited,
+the runtime maps the old content onto the new content and copies hashes for lines that
+survived; only genuinely new lines get fresh hashes. Two guarantees make this safe even
+with duplicated content:
+
+- An edited range never borrows a hash from a line outside it. Lines outside the edited
+  range keep their hashes unconditionally, even when their content is byte-identical to
+  lines inside the range.
+- Re-inserted identical text keeps its hash. If replacement content matches a line that
+  was just removed, the removed line's hash is reused. "Edit X with X" doesn't rotate the
+  anchor.
+
+A no-op edit never changes the file, so anchors remain valid. On first run after upgrading
+from an older version, the previous `hash-store.json` is imported once and renamed to
+`hash-store.json.bak`.
+
 ## Troubleshooting
 
-- Stale anchors. `[E_STALE_ANCHOR]` or `[E_AMBIGUOUS_ANCHOR]` mean the file changed since the anchors were read. Call `read` for fresh anchors and retry.
-- Reset the hash store. Anchors live in `~/.config/pi-hashline-edit-lsz/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit pi, delete those three files, and the store is rebuilt on the next session. Anchor history is lost, but no project files are touched.
-- Corrupt store. If the store fails its health check it is renamed to `hash-store.sqlite.corrupt-<timestamp>` and rebuilt automatically.
-- Config directory moved. On non-Windows platforms, if `XDG_CONFIG_HOME` is set, the config directory (and the hash store inside it) lives at `$XDG_CONFIG_HOME/pi-hashline-edit-lsz` instead of `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically. To keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) into the new directory before the first run.
-- Package renamed. This fork was renamed from `pi-hashline-edit-pro` to `pi-hashline-edit-lsz`; the config directory moved from `~/.config/pi-hashline-edit-pro` to `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically. To keep anchor and undo history, move the old `hash-store.sqlite` files (plus `-wal`/`-shm` sidecars) into the new directory before the first run.
+- Stale anchors. `[E_STALE_ANCHOR]` or `[E_AMBIGUOUS_ANCHOR]` mean the file changed since
+  the anchors were read. Call `read` for fresh anchors and retry.
+- Reset the hash store. Anchors live in
+  `~/.config/pi-hashline-edit-lsz/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit
+  pi, delete those three files, and the store is rebuilt on the next session. Anchor
+  history is lost, but no project files are touched.
+- Corrupt store. If the store fails its health check it is renamed to
+  `hash-store.sqlite.corrupt-<timestamp>` and rebuilt automatically.
+- Config directory moved. On non-Windows platforms, if `XDG_CONFIG_HOME` is set, the
+  config directory (and the hash store inside it) lives at
+  `$XDG_CONFIG_HOME/pi-hashline-edit-lsz` instead of `~/.config/pi-hashline-edit-lsz`. An
+  existing store is not migrated automatically; move the old `hash-store.sqlite` files
+  (plus sidecars) into the new directory before the first run.
+- Package renamed. This fork was renamed from `pi-hashline-edit-pro` to
+  `pi-hashline-edit-lsz`; the config directory moved from `~/.config/pi-hashline-edit-pro`
+  to `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically.
 
 ## Development
 
@@ -257,36 +434,38 @@ npm run typecheck
 
 Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
 
-### Runtime edge-suite
+**Runtime edge-suite.** `npm run test:runtime` runs the served-state edge scenarios
+(stale-interior reject-and-serve, chained edits without re-read, undo, never-served
+interior, drift notice) as one `fabric_exec` program against real pi, using the
+temporary-extension form (`pi -e npm:pi-fabric`) so nothing is installed into your pi. It
+needs network access to install the temp extension and takes a few minutes; exit code 0
+means the suite passed.
 
-`npm run test:runtime` runs the served-state edge scenarios (stale-interior reject-and-serve, chained edits without re-read, undo, never-served interior, drift notice) as one `fabric_exec` program against real pi, using the **temporary-extension** form (`pi -e npm:pi-fabric`) so nothing is installed into your pi. It needs network access to install the temp extension and takes a few minutes; exit code 0 means the suite passed.
+**Evaluation.** The [Benchmark](#benchmark) section is produced by the same commands:
+`npm run eval`, `npm run eval:compare`, `npm run eval:hashline` — all `RUN_EVAL`-gated so
+none of it runs in `npm test`.
 
-## Credits
+## Contributing
 
-- [RimuruW](https://github.com/RimuruW), original `pi-hashline-edit` and the strict-semantics policy
-- [can1357](https://github.com/can1357), original [oh-my-pi](https://github.com/can1357/oh-my-pi) implementation and the hashline concept
-
-## Evaluation
-
-The [Numbers](#numbers) section is produced by deterministic batteries in `test/eval/` and `benchmarks/`; full method, per-scenario tables, and dated results live in [benchmarks/](benchmarks/README.md). Everything is `RUN_EVAL`-gated so none of it runs in `npm test`.
-
-Tool battery — this fork vs published upstream `pi-hashline-edit-pro`:
-
-```bash
-npm run eval
-npm run eval:compare
-npm run eval:compare -- local pi-hashline-edit-pro@2.5.0   # override targets
-```
-
-`eval:compare` installs the requested package versions into `node_modules` temporarily (`--no-save --no-package-lock`), runs the 23-scenario battery against each target, prints a per-scenario correctness table plus aggregate call/token counts, then restores `node_modules` to the lockfile state.
-
-Library battery — `@oh-my-pi/hashline` (installs bun + the package into a temp dir; nothing lands in this repo):
-
-```bash
-npm run eval:hashline
-npm run eval:hashline -- @oh-my-pi/hashline@17.3.5   # pin a version
-```
+Open an [issue](https://github.com/Rianico/pi-hashline-edit-lsz/issues) or PR. The most
+valuable contributions right now are more battery scenarios and edge-case tests for the
+served-state verification.
 
 ## License
 
-[MIT](LICENSE)
+[MIT](LICENSE).
+
+## Acknowledgments
+
+Hash-anchored editing descends from Can Bölük's
+[*The Harness Problem*](https://stencil.so/blog/the-harness-problem). This project stands
+on the shoulders of:
+
+- [**pi-hashline-edit**](https://github.com/RimuruW/pi-hashline-edit) by RimuruW — the
+  original pi-coding-agent extension that introduced hash anchors and the strict-semantics
+  policy.
+- [**pi-hashline-edit-pro**](https://github.com/YuGiMob/pi-hashline-edit-pro) by YuGiMob —
+  the hardened fork this project is self-maintained from (3-char hashes, collision
+  resolution, served-state verification, persisted undo).
+- [**@oh-my-pi/hashline**](https://github.com/can1357/oh-my-pi/tree/main/packages/hashline)
+  by can1357 — the original oh-my-pi implementation and the hashline patch-language concept.

@@ -16,7 +16,7 @@ const scratchRoot = mkdtempSync(join(tmpdir(), "pi-eval-targets-"));
 const defaultTargets = [
 	"local",
 	"pi-hashline-edit-pro@2.4.1",
-	"pi-hashline-edit-pro@2.5.0",
+	"pi-hashline-edit-pro@2.5.3",
 ];
 const targets =
 	process.argv.slice(2).length > 0 ? process.argv.slice(2) : defaultTargets;
