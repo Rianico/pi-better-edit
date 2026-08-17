@@ -16,33 +16,29 @@ the loop, no sampling, no stochastic variance. A run either reproduces or it
 doesn't. This is deliberately a *correctness* benchmark: does each engine
 reject stale edits instead of corrupting files?
 
-Token economics is measured separately because token counts depend on the
-payload corpus and tokenizer. The reproducible measurements are combined below;
-saved rates are only comparable within the same fixture and baseline.
+## Theoretical benchmark — serialized envelopes
 
-```bash
-npm run benchmark:tokens
-```
+This benchmark measures payload shape only. It excludes model reasoning, tool descriptions, reads, retries, and cache traffic. Both fixtures compare `str_replace`, this project, and OMP:
 
-| fixture / baseline | arm | tokens | saved vs same-fixture `str_replace` |
-| --- | --- | ---: | ---: |
-| external pinned 12-edit snapshot | `str_replace` baseline | 1015 | — |
-| external pinned 12-edit snapshot | sibling JSON hashline tool call | 702 | **31%** |
-| external pinned 12-edit snapshot | oh-my-pi per-edit patch document | 590 | **42%** |
-| external pinned 12-edit snapshot | oh-my-pi one-batch patch document | 480 | **53%** |
-| local 12-edit configuration refactor | `str_replace`-style JSON baseline | 358 | — |
-| local 12-edit configuration refactor | this project, `edit` | 272 | **24.0%** |
-| local 12-edit configuration refactor | this project, `batch_edit` | 241 | **32.7%** |
+| snapshot | `str_replace` | this project: `edit` | this project: `batch_edit` | OMP: per-edit | OMP: one batch |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| external pinned 12-edit corpus, current-envelope recount | 1,015 | 609 (**40.0%**) | 582 (**42.7%**) | 590 (**41.9%**) | 480 (**52.7%**) |
+| local 12-edit configuration snapshot | 358 | 272 (**24.0%**) | 241 (**32.7%**) | 268 (**25.1%**) | 180 (**49.7%**) |
 
-The local benchmark counts serialized payload tokens with `cl100k_base`: twelve
-individual object-root `edit` calls, one object-root `batch_edit` call, and twelve individual
-`str_replace` calls. Final correctness remains covered by the batteries below.
-The external snapshot is documented in `../oh-my-pi.md` and can be regenerated with
-`npm run benchmark` in its source benchmark checkout.
+Percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; its historical sibling record is preserved in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproduced with `npm run benchmark:tokens`.
 
-## Practical model-run benchmark
 
-`npm run benchmark:practical` runs the external-drift scenario through pi using `opencode-go/gpt-5.6-luna` with `high` thinking. It compares this project's `batch_edit` against an oh-my-pi patch wrapper, records pi's real usage fields, counts tool calls, and checks exact final-file correctness. The dated sample is [2026-08-17 practical token benchmark](results/2026-08-17-practical-token-benchmark.md); rerun it because model behavior and cache state are stochastic.
+## Practical benchmark — coding-agent run
+
+This benchmark measures a real coding-agent loop rather than serialized envelopes. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking, compares this project's `batch_edit` with an OMP patch wrapper, and checks exact final-file correctness after an external bash mutation.
+
+| engine | tool calls | total tokens | saved vs this project | final correctness |
+| --- | ---: | ---: | ---: | :---: |
+| this project (`batch_edit`) | 3 | 12,593 | 0.0% | ✅ |
+| OMP patch wrapper | 6 | 28,467 | **-126.1%** | ✅ |
+
+This sample includes pi-reported input, output, reasoning, cache-read, and cache-write tokens. Both engines preserved the external change; OMP required four patch attempts. Model behavior and cache state are stochastic, so re-run the command before making a broader performance claim. Full output: [2026-08-17 practical token benchmark](results/2026-08-17-practical-token-benchmark.md).
+
 
 ## Tool battery
 

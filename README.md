@@ -172,19 +172,17 @@ The compact JSON contract is primarily a **token-saving envelope change**. It re
 - `batch_edit` is a compact tuple array inside an object-root schema: `{ "batch": [[path, [from, to], replacement], …] }`;
 - replacement text is emitted once, and the old text is never repeated in the call.
 
-The reproducible token measurements are combined below. Saved rates are only comparable within the same fixture and baseline; the external snapshot and local fixture are deliberately labeled separately.
+#### Theoretical benchmark — serialized envelopes
 
-| fixture / baseline | arm | payload shape | tokens | saved vs same-fixture `str_replace` |
-| --- | --- | --- | ---: | ---: |
-| external pinned 12-edit snapshot | `str_replace` baseline | structured JSON replace call | 1015 | — |
-| external pinned 12-edit snapshot | sibling JSON hashline tool call | structured JSON edit call | 702 | **31%** |
-| external pinned 12-edit snapshot | oh-my-pi per-edit patch document | one patch section per edit | 590 | **42%** |
-| external pinned 12-edit snapshot | oh-my-pi one-batch patch document | one document for all edits | 480 | **53%** |
-| local 12-edit configuration refactor | `str_replace`-style JSON baseline | twelve individual calls | 358 | — |
-| local 12-edit configuration refactor | this project, `edit` | twelve compact object-root tuple calls | 272 | **24.0%** |
-| local 12-edit configuration refactor | this project, `batch_edit` | one object-root batch call | 241 | **32.7%** |
+This benchmark counts only the serialized edit payloads, not model reasoning, tool descriptions, reads, retries, or cache traffic. It compares the same three editing families on two 12-edit fixtures: `str_replace`, this project, and `@oh-my-pi/hashline` (OMP).
 
-The local benchmark counts serialized payload tokens with the pinned `cl100k_base` tokenizer. Reproduce it with `npm run benchmark:tokens`; reproduce final correctness separately with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`. The external snapshot is documented in `../oh-my-pi.md` and can be regenerated with `npm run benchmark` in its source benchmark checkout.
+| snapshot | `str_replace` | this project: `edit` | this project: `batch_edit` | OMP: per-edit | OMP: one batch |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| external pinned 12-edit corpus, current-envelope recount | 1,015 | 609 (**40.0%**) | 582 (**42.7%**) | 590 (**41.9%**) | 480 (**52.7%**) |
+| local 12-edit configuration snapshot | 358 | 272 (**24.0%**) | 241 (**32.7%**) | 268 (**25.1%**) | 180 (**49.7%**) |
+
+All percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; the historical sibling record remains available in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproducible with `npm run benchmark:tokens`; correctness is measured separately with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`.
+
 
 ### Capability comparison
 
@@ -311,11 +309,17 @@ retry cleanly (H7), multi-section patches preflight before any write (H8).
 Full method, per-scenario tables, and limitations: [benchmarks/README.md](benchmarks/README.md)
 and [benchmarks/results/](benchmarks/results/).
 
-### Practical model-run benchmark
+### Practical benchmark — coding-agent run
 
-`npm run benchmark:practical` runs the same edge scenario through pi with `opencode-go/gpt-5.6-luna` at `high` thinking for this project's `batch_edit` and an oh-my-pi patch wrapper. The scenario reads a file, calls bash once to create an external interior change, applies the requested refactor through the editing tool, and checks the exact final file content. The JSON output includes real pi usage totals, usage breakdown, tool calls, and final correctness.
+This benchmark measures a real coding-agent loop rather than serialized envelopes. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. Usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
 
-Latest dated sample: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md). Results are stochastic and should be regenerated rather than treated as universal performance claims.
+| engine | tool calls | total tokens | saved vs this project | final correctness |
+| --- | ---: | ---: | ---: | :---: |
+| this project (`batch_edit`) | 3 | 12,593 | 0.0% | ✅ |
+| OMP patch wrapper | 6 | 28,467 | **-126.1%** | ✅ |
+
+Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
+
 
 ### Reproduce
 

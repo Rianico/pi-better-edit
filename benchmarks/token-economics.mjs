@@ -26,6 +26,20 @@ const editCalls = edits.map(([anchor, , newText]) =>
 const batchCall = JSON.stringify({
 	batch: edits.map(([anchor, , newText]) => [path, [anchor, anchor], newText]),
 });
+const ompPath = "src/service.ts";
+const ompTag = "a1b2";
+const ompHunk = (line, replacement) => `PUT ${line}.=${line}:\n+${replacement}`;
+const ompSeqCalls = edits.map(([, , newText], index) =>
+	`[${ompPath}#${ompTag}]\n${ompHunk(index + 1, newText)}`,
+);
+const ompBatchCall = `[${ompPath}#${ompTag}]\n${edits
+	.map(([, , newText], index) => ompHunk(index + 1, newText))
+	.join("\n")}\n`;
+const ompSeqTokens = ompSeqCalls.reduce(
+	(total, call) => total + tokenCount(call),
+	0,
+);
+const ompBatchTokens = tokenCount(ompBatchCall);
 const strReplaceTokens = strReplaceCalls.reduce(
 	(total, call) => total + tokenCount(call),
 	0,
@@ -60,6 +74,18 @@ const result = {
 			name: "this project: batch_edit",
 			tokens: batchTokens,
 			savedPercent: savedRate(batchTokens),
+			calls: 1,
+		},
+		{
+			name: "oh-my-pi: per-edit patch",
+			tokens: ompSeqTokens,
+			savedPercent: savedRate(ompSeqTokens),
+			calls: ompSeqCalls.length,
+		},
+		{
+			name: "oh-my-pi: one-batch patch",
+			tokens: ompBatchTokens,
+			savedPercent: savedRate(ompBatchTokens),
 			calls: 1,
 		},
 	],
