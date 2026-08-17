@@ -58,8 +58,8 @@ describe("batch_edit tool_result handler", () => {
 				"b1",
 				{
 					edits: [
-						{ path: "a.txt", remove_from: aHashes[1]!, remove_to: aHashes[1]!, replacement_text: "BETA" },
-						{ path: "b.txt", remove_from: bHashes[1]!, remove_to: bHashes[1]!, replacement_text: "TWO" },
+						["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
+						["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"],
 					],
 				},
 				undefined,
@@ -72,7 +72,7 @@ describe("batch_edit tool_result handler", () => {
 				{
 					toolName: "batch_edit",
 					isError: false,
-					input: { edits: [{ path: "a.txt" }, { path: "b.txt" }] },
+					input: { edits: [["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"], ["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"]] },
 					details: result.details,
 					content: result.content,
 				},
@@ -110,7 +110,7 @@ describe("batch_edit tool_result handler", () => {
 				"b1",
 				{
 					edits: [
-						{ path: "a.txt", remove_from: aHashes[1]!, remove_to: aHashes[1]!, replacement_text: "BETA" },
+						["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
 					],
 				},
 				undefined,
@@ -122,7 +122,7 @@ describe("batch_edit tool_result handler", () => {
 				{
 					toolName: "batch_edit",
 					isError: false,
-					input: { edits: [{ path: "a.txt" }] },
+					input: { edits: [["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"]] },
 					details: result.details,
 					content: result.content,
 				},

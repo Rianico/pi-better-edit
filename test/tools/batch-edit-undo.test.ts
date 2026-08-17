@@ -24,8 +24,8 @@ describe("batch_edit undo", () => {
 				"b1",
 				{
 					edits: [
-						{ path: "a.txt", remove_from: aHashes[1]!, remove_to: aHashes[1]!, replacement_text: "BETA" },
-						{ path: "b.txt", remove_from: bHashes[1]!, remove_to: bHashes[1]!, replacement_text: "TWO" },
+						["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
+						["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"],
 					],
 				},
 				undefined,

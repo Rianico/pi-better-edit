@@ -1,2 +1,3 @@
-- batch_edit: a noop item (the range already contains the replacement text) is reported without failing the batch; an all-noop batch reports no changes.
+- batch_edit: a noop tuple (the range already contains the replacement text) is reported without failing the batch; an all-noop batch reports no changes.
 - batch_edit: the result is one combined diff per file with fresh anchors — anchor follow-up edits on those rows without re-reading.
+- batch_edit items must use [path, [remove_from, remove_to], replacement_text]; do not use named-object items.

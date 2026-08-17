@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
+import { Compile } from "typebox/compile";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { lineHashes } from "../../src/hashline";
+import { batchEditToolSchema } from "../../src/batch-edit";
 import {
 	withTempFile,
 	withTempDir,
@@ -29,18 +31,8 @@ describe("batch_edit tool", () => {
 					"b1",
 					{
 						edits: [
-							{
-								path: "sample.ts",
-								remove_from: hashes[0]!,
-								remove_to: hashes[0]!,
-								replacement_text: "AAA",
-							},
-							{
-								path: "sample.ts",
-								remove_from: hashes[2]!,
-								remove_to: hashes[2]!,
-								replacement_text: "CCC",
-							},
+							["sample.ts", [hashes[0]!, hashes[0]!], "AAA"],
+							["sample.ts", [hashes[2]!, hashes[2]!], "CCC"],
 						],
 					},
 					undefined,
@@ -74,18 +66,8 @@ describe("batch_edit tool", () => {
 				"b1",
 				{
 					edits: [
-						{
-							path: "a.txt",
-							remove_from: aHashes[1]!,
-							remove_to: aHashes[1]!,
-							replacement_text: "BETA",
-						},
-						{
-							path: "b.txt",
-							remove_from: bHashes[1]!,
-							remove_to: bHashes[1]!,
-							replacement_text: "TWO",
-						},
+						["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
+						["b.txt", [bHashes[1]!, bHashes[1]!], "TWO"],
 					],
 				},
 				undefined,
@@ -113,12 +95,7 @@ describe("batch_edit tool", () => {
 					"b1",
 					{
 						edits: [
-							{
-								path: "sample.ts",
-								remove_from: hashes[1]!,
-								remove_to: hashes[1]!,
-								replacement_text: "BBB",
-							},
+							["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
 						],
 					},
 					undefined,
@@ -153,18 +130,8 @@ describe("batch_edit tool", () => {
 					"b1",
 					{
 						edits: [
-							{
-								path: "a.txt",
-								remove_from: aHashes[1]!,
-								remove_to: aHashes[1]!,
-								replacement_text: "BETA",
-							},
-							{
-								path: "b.txt",
-								remove_from: bHashes[1]!,
-								remove_to: bHashes[1]!,
-								replacement_text: "two",
-							},
+							["a.txt", [aHashes[1]!, aHashes[1]!], "BETA"],
+							["b.txt", [bHashes[1]!, bHashes[1]!], "two"],
 						],
 					},
 					undefined,
@@ -195,12 +162,7 @@ describe("batch_edit tool", () => {
 						"b1",
 						{
 							edits: [
-								{
-									path: "sample.ts",
-									remove_from: hashes[1]!,
-									remove_to: hashes[2]!,
-									replacement_text: "BETA\ngamma",
-								},
+								["sample.ts", [hashes[1]!, hashes[2]!], "BETA\ngamma"],
 							],
 						},
 						undefined,
@@ -246,18 +208,8 @@ describe("batch_edit tool", () => {
 						"b1",
 						{
 							edits: [
-								{
-									path: "sample.ts",
-									remove_from: hashes[1]!,
-									remove_to: hashes[1]!,
-									replacement_text: "BBB",
-								},
-								{
-									path: "sample.ts",
-									remove_from: hashes[1]!,
-									remove_to: hashes[1]!,
-									replacement_text: "XX",
-								},
+								["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+								["sample.ts", [hashes[1]!, hashes[1]!], "XX"],
 							],
 						},
 						undefined,
@@ -285,18 +237,8 @@ describe("batch_edit tool", () => {
 					"b1",
 					{
 						edits: [
-							{
-								path: "sample.ts",
-								remove_from: hashes[1]!,
-								remove_to: hashes[1]!,
-								replacement_text: "BBB",
-							},
-							{
-								path: "sample.ts",
-								remove_from: hashes[2]!,
-								remove_to: hashes[2]!,
-								replacement_text: "ccc",
-							},
+							["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+							["sample.ts", [hashes[2]!, hashes[2]!], "ccc"],
 						],
 					},
 					undefined,
@@ -325,12 +267,7 @@ describe("batch_edit tool", () => {
 					"b1",
 					{
 						edits: [
-							{
-								path: "sample.ts",
-								remove_from: hashes[1]!,
-								remove_to: hashes[1]!,
-								replacement_text: "bbb",
-							},
+							["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
 						],
 					},
 					undefined,
@@ -354,13 +291,20 @@ describe("batch_edit tool", () => {
 				const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
 				await readBatchTool(ctx, readTool, "sample.ts");
 
-				const validItem = {
-					path: "sample.ts",
-					remove_from: hashes[0]!,
-					remove_to: hashes[0]!,
-					replacement_text: "AAA",
-				};
+				const validItem = ["sample.ts", [hashes[0]!, hashes[0]!], "AAA"];
+				const validator = Compile(batchEditToolSchema);
+				expect(validator.Check({ edits: [validItem] })).toBe(true);
+				expect(validator.Check({ edits: [{ path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" }] })).toBe(false);
 
+				await expect(
+					batchTool.execute(
+						"b1",
+						{ edits: [{ path: "sample.ts", remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "AAA" }] } as any,
+						undefined,
+						undefined,
+						ctx,
+					),
+				).rejects.toThrow(/E_BAD_SHAPE/);
 				await expect(
 					batchTool.execute("b1", { edits: [] }, undefined, undefined, ctx),
 				).rejects.toThrow(/E_BAD_SHAPE/);
@@ -374,11 +318,7 @@ describe("batch_edit tool", () => {
 						"b1",
 						{
 							edits: [
-								{
-									path: "sample.ts",
-									remove_from: hashes[0]!,
-									remove_to: hashes[0]!,
-								},
+								["sample.ts", [hashes[0]!, hashes[0]!]],
 							],
 						},
 						undefined,
@@ -387,7 +327,7 @@ describe("batch_edit tool", () => {
 					),
 				).rejects.toThrow(/E_BAD_SHAPE/);
 
-				const tooMany = Array.from({ length: 33 }, () => ({ ...validItem }));
+				const tooMany = Array.from({ length: 33 }, () => validItem);
 				await expect(
 					batchTool.execute(
 						"b1",
@@ -414,11 +354,7 @@ describe("batch_edit tool", () => {
 				"b1",
 				{
 					edits: [
-						{
-							remove_from: hashes[0]!,
-							remove_to: hashes[0]!,
-							replacement_text: "AAA",
-						},
+						[null, [hashes[0]!, hashes[0]!], "AAA"],
 					],
 				},
 				undefined,
@@ -449,12 +385,7 @@ describe("batch_edit tool", () => {
 					"b1",
 					{
 						edits: [
-							{
-								path: "sample.ts",
-								remove_from: hashes[2]!,
-								remove_to: hashes[0]!,
-								replacement_text: "XX",
-							},
+							["sample.ts", [hashes[2]!, hashes[0]!], "XX"],
 						],
 					},
 					undefined,
@@ -491,12 +422,7 @@ describe("batch_edit tool", () => {
 					"b1",
 					{
 						edits: [
-							{
-								path: "sample.ts",
-								remove_from: hashes[1]!,
-								remove_to: hashes[1]!,
-								replacement_text: "BETA",
-							},
+							["sample.ts", [hashes[1]!, hashes[1]!], "BETA"],
 						],
 					},
 					undefined,
@@ -525,12 +451,7 @@ describe("batch_edit tool", () => {
 
 				const payload = {
 					edits: [
-						{
-							path: "sample.ts",
-							remove_from: hashes[1]!,
-							remove_to: hashes[1]!,
-							replacement_text: "bbb",
-						},
+						["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
 					],
 				};
 
@@ -576,18 +497,8 @@ describe("batch_edit tool", () => {
 						"b1",
 						{
 							edits: [
-								{
-									path: "sample.ts",
-									remove_from: hashes[1]!,
-									remove_to: hashes[1]!,
-									replacement_text: "BBB",
-								},
-								{
-									path: "sample.ts",
-									remove_from: hashes[1]!,
-									remove_to: hashes[1]!,
-									replacement_text: "XX",
-								},
+								["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+								["sample.ts", [hashes[1]!, hashes[1]!], "XX"],
 							],
 						},
 						undefined,

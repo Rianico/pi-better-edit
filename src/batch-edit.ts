@@ -10,7 +10,6 @@ import { scanDrift } from "./drift";
 import {
 	abortIf,
 	isRec,
-	normalizeFilePath,
 	rejectUnknownFields,
 	splitLines,
 } from "./utils";
@@ -35,11 +34,12 @@ import { loadHashStore, type HashStore } from "./hash-store";
 import { snapshotIOFor } from "./snapshot-store";
 import { BATCH_EDIT_MAX_ITEMS } from "./constants";
 import {
-	removeFromSchema,
-	removeToSchema,
-	replacementTextSchema,
+	assertReq,
+	editToolSchema,
 	resolveMissingPath,
+	type EditParams,
 } from "./edit";
+import { normReq } from "./edit-normalize";
 import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
 import {
 	applyOneEdit,
@@ -47,15 +47,16 @@ import {
 	loadEditFile,
 } from "./edit-pipeline";
 
-type BatchItem = {
-	path?: string;
-	remove_from: string;
-	remove_to: string;
-	replacement_text: string;
-};
+type BatchItem = [string | null, [string, string], string];
+
+type CanonicalBatchItem = EditParams;
 
 export type BatchEditParams = {
 	edits: BatchItem[];
+};
+
+type CanonicalBatchEditParams = {
+	edits: CanonicalBatchItem[];
 };
 
 type PreparedItem = {
@@ -68,31 +69,12 @@ type PreparedItem = {
 	pathWarning?: string;
 };
 
-const BATCH_ITEM_KS = new Set([
-	"path",
-	"remove_from",
-	"remove_to",
-	"replacement_text",
-]);
-
-const batchItemSchema = Type.Object(
-	{
-		path: Type.Optional(
-			Type.String({
-				description: "Required; auto-resolved when anchors uniquely identify a file",
-			}),
-		),
-		remove_from: removeFromSchema,
-		remove_to: removeToSchema,
-		replacement_text: replacementTextSchema,
-	},
-	{ additionalProperties: false },
-);
+const batchItemSchema = editToolSchema;
 
 export const batchEditToolSchema = Type.Object(
 	{
 		edits: Type.Array(batchItemSchema, {
-			description: "Ordered list of edit items",
+			description: "Ordered list of edit tuples",
 			minItems: 1,
 			maxItems: BATCH_EDIT_MAX_ITEMS,
 		}),
@@ -114,7 +96,7 @@ function assertBatchReq(request: unknown): asserts request is BatchEditParams {
 	);
 	const edits = request.edits;
 	if (!Array.isArray(edits)) {
-		throw new Error('[E_BAD_SHAPE] "edits" must be an array of edit items.');
+		throw new Error('[E_BAD_SHAPE] "edits" must be an array of edit tuples.');
 	}
 	if (edits.length === 0) {
 		throw new Error(
@@ -126,47 +108,37 @@ function assertBatchReq(request: unknown): asserts request is BatchEditParams {
 			`[E_BAD_SHAPE] batch_edit accepts at most ${BATCH_EDIT_MAX_ITEMS} edits per call; got ${edits.length}. Split the batch into smaller calls.`,
 		);
 	}
-	edits.forEach((item, index) => {
-		if (!isRec(item)) {
-			throw new Error(
-				`[E_BAD_SHAPE] edits[${index}] must be an object with { path?, remove_from, remove_to, replacement_text }.`,
-			);
+	for (let index = 0; index < edits.length; index++) {
+		const normalized = normReq(edits[index]);
+		try {
+			assertReq(normalized);
+		} catch (error) {
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(`[E_BAD_SHAPE] edits[${index}] ${message.replace(/^\[E_BAD_SHAPE\] /, "")}`);
 		}
-		rejectUnknownFields(
-			item,
-			BATCH_ITEM_KS,
-			`edits[${index}]`,
-			"Each item takes only { path, remove_from, remove_to, replacement_text }.",
-		);
-		if (
-			typeof item.remove_from !== "string" ||
-			typeof item.remove_to !== "string" ||
-			typeof item.replacement_text !== "string"
-		) {
-			throw new Error(
-				`[E_BAD_SHAPE] edits[${index}] requires "remove_from", "remove_to", and "replacement_text" strings.`,
-			);
-		}
-		if (
-			item.path !== undefined &&
-			(typeof item.path !== "string" || item.path.length === 0)
-		) {
-			throw new Error(
-				`[E_BAD_SHAPE] edits[${index}].path must be a non-empty string.`,
-			);
-		}
-	});
+	}
 }
 
+function canonicalizeBatchReq(request: unknown): CanonicalBatchEditParams {
+	assertBatchReq(request);
+	return {
+		edits: request.edits.map((item) => {
+			const normalized = normReq(item);
+			assertReq(normalized);
+			return normalized;
+		}),
+	};
+}
+
+
 async function prepareItems(
-	params: BatchEditParams,
+	params: CanonicalBatchEditParams,
 	cwd: string,
 ): Promise<PreparedItem[]> {
 	const items: PreparedItem[] = [];
 	for (let index = 0; index < params.edits.length; index++) {
 		const raw = params.edits[index]!;
 		const record: Record<string, unknown> = { ...raw };
-		normalizeFilePath(record);
 
 		let path = typeof record.path === "string" ? record.path : undefined;
 		let pathWarning: string | undefined;
@@ -475,7 +447,7 @@ function toSection(file: ProcessedFile): BatchSection {
 }
 
 async function executeBatch(
-	params: BatchEditParams,
+	params: CanonicalBatchEditParams,
 	cwd: string,
 	signal: AbortSignal | undefined,
 	ctx: { cwd: string; sessionManager?: { getSessionId(): string } },
@@ -582,23 +554,10 @@ export function buildBatchToolDef(): ToolDefinition<any, BatchDetails, any> {
 		parameters: batchEditToolSchema,
 		promptSnippet: loadP("../prompts/batch-edit-snippet.md"),
 		promptGuidelines: loadGuide("../prompts/batch-edit-guidelines.md"),
-		prepareArguments: (args: unknown) => {
-			if (!isRec(args)) return args as any;
-			const record = { ...args };
-			if (Array.isArray(record.edits)) {
-				record.edits = record.edits.map((item: unknown) => {
-					if (!isRec(item)) return item;
-					const cloned = { ...item };
-					normalizeFilePath(cloned);
-					return cloned;
-				});
-			}
-			return record as any;
-		},
+		prepareArguments: (args: unknown) => args as any,
 		renderShell: "default",
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-			assertBatchReq(params);
-			return executeBatch(params, ctx.cwd, signal, ctx);
+			return executeBatch(canonicalizeBatchReq(params), ctx.cwd, signal, ctx);
 		},
 	};
 }

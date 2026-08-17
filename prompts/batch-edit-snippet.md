@@ -1,1 +1,1 @@
-batch_edit — atomic all-or-nothing batch of edit items.
+batch_edit — atomic all-or-nothing batch of edit tuples: { edits: [[path, [remove_from, remove_to], replacement_text], ...] }. A path is a non-empty string or null for anchor-based inference; an empty replacement deletes.

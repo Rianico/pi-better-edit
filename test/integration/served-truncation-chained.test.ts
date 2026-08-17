@@ -203,12 +203,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 					"b1",
 					{
 						edits: [
-							{
-								path: "sample.ts",
-								remove_from: refs["a"]!,
-								remove_to: refs["c"]!,
-								replacement_text: "",
-							},
+							["sample.ts", [refs["a"]!, refs["c"]!], ""],
 						],
 					},
 					undefined,
@@ -221,7 +216,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 					{
 						toolName: "batch_edit",
 						isError: false,
-						input: { edits: [{ path: "sample.ts" }] },
+						input: { edits: [["sample.ts", [refs["a"]!, refs["c"]!], ""]] },
 						details: batchResult.details,
 						content: batchResult.content,
 					},
