@@ -68,17 +68,21 @@ The principle that a tool's name encodes the model's intent — `read` (hashed, 
 _Avoid_: —
 
 **payload contract**:
-The model-facing JSON shape used to state a file edit; it carries a path, an inclusive anchor range, and replacement text without changing the verified edit semantics.
+The model-facing JSON shape used to state one or more file edits in a single `edit` call: `{ "path": …, "edits": [[remove_from, remove_to, replacement_text], …] }`. The path is hoisted to the payload root (see nullable path), and the `edits` array expresses arity — length 1 is a single edit, longer is a batched edit applied atomically to one file. There is no separate batch tool.
 _Avoid_: patch language, command language
+
+**edits**:
+The payload's array of compact JSON tuples; its length is the call's arity. The tool name `edit` covers single and batched edits — intent is expressed by arity, not by a separate tool.
+_Avoid_: batch_edit (removed tool)
 
 **inclusive anchor range**:
 A pair of boundary anchors identifying the first and last lines of a model-facing range; both boundaries are included.
 _Avoid_: hunk, region
 
 **nullable path**:
-A path position that may be `null` when the tool can resolve a unique target from the anchor range. The position remains present in a fixed tuple.
+A top-level `path` position that may be `null` when the tool can resolve a unique target from the anchor range. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file.
 _Avoid_: optional path
 
 **compact JSON tuple**:
-A fixed three-position JSON array representing path, inclusive anchor range, and replacement text.
+A fixed three-position JSON array `[remove_from, remove_to, replacement_text]` — one edit item inside the payload's `edits` array, the model-facing unit of mutation. The path is not part of the item; it is hoisted to the payload root.
 _Avoid_: patch language, array shorthand
