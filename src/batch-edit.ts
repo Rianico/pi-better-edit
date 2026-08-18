@@ -69,6 +69,38 @@ export const batchEditToolSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
+const BATCH_TUPLE_HINT =
+	'batch_edit must be called with exactly one batch. Use the canonical payload ' +
+	'{"batch": [[path, [remove_from, remove_to], replacement_text], ...]}: an ' +
+	"array of fixed 3-position edit tuples where path is a non-empty string (or " +
+	"null to infer from anchors), the two anchors are inclusive, and " +
+	"replacement_text is the full replacement.";
+
+function unwrapBatch(args: unknown): unknown[] | undefined {
+	if (Array.isArray(args)) return args;
+	if (isRec(args) && "batch" in args) {
+		const inner = args.batch;
+		if (Array.isArray(inner)) return inner;
+		if (isRec(inner) && "batch" in inner && Array.isArray(inner.batch))
+			return inner.batch;
+	}
+	return undefined;
+}
+
+export function prepareBatchArguments(
+	args: unknown,
+): Record<string, unknown> {
+	const items = unwrapBatch(args);
+	if (items) return { batch: items };
+	throw new Error(
+		`[E_BAD_SHAPE] ${BATCH_TUPLE_HINT} ${
+			args === undefined
+				? "Received no arguments."
+				: `Received: ${JSON.stringify(args)}`
+		}`,
+	);
+}
+
 function rawBatchItems(request: unknown): unknown[] {
 	if (Array.isArray(request)) return request;
 	if (
@@ -542,8 +574,7 @@ export function buildBatchToolDef(): ToolDefinition<any, BatchDetails, any> {
 		parameters: batchEditToolSchema,
 		promptSnippet: loadP("../prompts/batch-edit-snippet.md"),
 		promptGuidelines: loadGuide("../prompts/batch-edit-guidelines.md"),
-		prepareArguments: (args: unknown) =>
-			Array.isArray(args) ? { batch: args } : (args as any),
+		prepareArguments: prepareBatchArguments,
 		renderShell: "default",
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			return executeBatch(canonicalizeBatchReq(params), ctx.cwd, signal, ctx);

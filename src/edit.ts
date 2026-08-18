@@ -8,7 +8,7 @@ import { Type } from "typebox";
 import { constants } from "fs";
 import { genDiff, restoreEndings, type LineEnding } from "./edit-diff";
 import { scanDrift } from "./drift";
-import { isNormalizedEdit, normReq } from "./edit-normalize";
+import { isNormalizedEdit, normReq, prepareEditArguments } from "./edit-normalize";
 import { rejectUnknownFields, abortIf, splitLines } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { resEdit, parseHashRef, type NEdit } from "./hashline";
@@ -365,8 +365,7 @@ export function buildToolDef(): ToolDef {
 		parameters,
 		promptSnippet: E_SNIPPET,
 		promptGuidelines: E_GUIDE,
-		prepareArguments: (args: unknown) =>
-			Array.isArray(args) ? { edit: args } : (args as any),
+		prepareArguments: prepareEditArguments,
 		renderShell: "default",
 		renderCall(args, theme, context) {
 			preview.renderCall(context, args);

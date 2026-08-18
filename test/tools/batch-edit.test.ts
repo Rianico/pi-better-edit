@@ -3,7 +3,7 @@ import { Compile } from "typebox/compile";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { lineHashes } from "../../src/hashline";
-import { batchEditToolSchema } from "../../src/batch-edit";
+import { batchEditToolSchema, prepareBatchArguments } from "../../src/batch-edit";
 import {
 	withTempFile,
 	withTempDir,
@@ -497,5 +497,32 @@ describe("batch_edit tool", () => {
 				expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\n");
 			},
 		);
+	});
+});
+
+describe("prepareBatchArguments normalization", () => {
+	it("keeps the canonical object-root batch unchanged", () => {
+		expect(prepareBatchArguments({ batch: [["a.ts", ["AAA", "BBB"], "x"]] })).toEqual({
+			batch: [["a.ts", ["AAA", "BBB"], "x"]],
+		});
+	});
+
+	it("wraps a bare array batch", () => {
+		expect(prepareBatchArguments([["a.ts", ["AAA", "BBB"], "x"]])).toEqual({
+			batch: [["a.ts", ["AAA", "BBB"], "x"]],
+		});
+	});
+
+	it("unwraps a one-level deep double wrap", () => {
+		expect(
+			prepareBatchArguments({ batch: { batch: [["a.ts", ["AAA", "BBB"], "x"]] } }),
+		).toEqual({ batch: [["a.ts", ["AAA", "BBB"], "x"]] });
+	});
+
+	it("rejects malformed shapes with an actionable E_BAD_SHAPE hint", () => {
+		for (const args of [undefined, {}, "a.ts", { batch: "nope" }, { batch: 42 }]) {
+			expect(() => prepareBatchArguments(args)).toThrow(/^\[E_BAD_SHAPE\]/);
+			expect(() => prepareBatchArguments(args)).toThrow(/canonical payload/);
+		}
 	});
 });
