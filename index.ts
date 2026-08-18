@@ -3,7 +3,6 @@ import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { initHasher } from "./src/hashline";
 import { regEdit } from "./src/edit";
 import { regEditUndo, clearUndo } from "./src/edit-undo";
-import { regBatchEdit } from "./src/batch-edit";
 import { regRead, fmtReadPreview } from "./src/read";
 import { regReadSkill } from "./src/read-skill";
 import { finalizeToolResult, type EditDetails } from "./src/edit-response";
@@ -16,14 +15,13 @@ import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
 import { resolveTarget } from "./src/fs-write";
 import { valAccess } from "./src/validation";
-import { isRec, visLines } from "./src/utils";
+import { visLines } from "./src/utils";
 
 export default function (pi: ExtensionAPI): void {
 	regRead(pi);
 	regReadSkill(pi);
 
 	regEdit(pi);
-	regBatchEdit(pi);
 	regEditUndo(pi);
 
 	pi.on("session_start", async (_event, ctx) => {
@@ -100,34 +98,6 @@ export default function (pi: ExtensionAPI): void {
 			}
 		}
 
-		if (event.toolName === "batch_edit") {
-			const batchDetails = event.details as EditDetails | undefined;
-			if (batchDetails?.metrics?.classification === "noop") return;
-			if (!batchDetails?.diff) return;
-			const { content } = finalizeToolResult(batchDetails);
-			if (batchDetails.servedByPath && batchDetails.servedByPath.length > 0) {
-				for (const entry of batchDetails.servedByPath) {
-					if (entry.servedRows.length === 0) continue;
-					try {
-						const resolvedPath = await resolveTarget(toCwd(entry.path, ctx.cwd));
-						await recordDiffServes({
-							sessionKey: sessionKeyFor(ctx),
-							path: resolvedPath,
-							servedRows: entry.servedRows,
-							resultLineCount: entry.resultLineCount,
-							firstChangedLine: entry.firstChangedLine,
-						});
-					} catch (error) {
-						console.error(
-							"Failed to record served rows from batch_edit diff:",
-							error,
-						);
-					}
-				}
-			}
-			return { content };
-		}
-
 		if (event.toolName !== "edit" && event.toolName !== "undo_last_edit")
 			return;
 
@@ -136,20 +106,36 @@ export default function (pi: ExtensionAPI): void {
 		if (!details?.diff) return;
 
 		const { content, servedRows } = finalizeToolResult(details);
-		if (servedRows && servedRows.length > 0) {
+		if (details.servedByPath && details.servedByPath.length > 0) {
+			for (const entry of details.servedByPath) {
+				if (entry.servedRows.length === 0) continue;
+				try {
+					const resolvedPath = await resolveTarget(
+						toCwd(entry.path, ctx.cwd),
+					);
+					await recordDiffServes({
+						sessionKey: sessionKeyFor(ctx),
+						path: resolvedPath,
+						servedRows: entry.servedRows,
+						resultLineCount: entry.resultLineCount,
+						firstChangedLine: entry.firstChangedLine,
+					});
+				} catch (error) {
+					console.error(
+						"Failed to record served rows from edit diff:",
+						error,
+					);
+				}
+			}
+		} else if (servedRows && servedRows.length > 0) {
 			try {
-				const editPayload =
-					isRec(event.input) && Array.isArray(event.input.edit)
-						? event.input.edit
-						: event.input;
-				const rawPath =
-					event.toolName === "edit"
-						? Array.isArray(editPayload) && typeof editPayload[0] === "string"
-							? editPayload[0]
-							: details.path
-						: (event.input as Record<string, unknown> | undefined)?.path;
+				const rawPath = (
+					event.input as Record<string, unknown> | undefined
+				)?.path;
 				if (typeof rawPath === "string") {
-					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
+					const resolvedPath = await resolveTarget(
+						toCwd(rawPath, ctx.cwd),
+					);
 					await recordDiffServes({
 						sessionKey: sessionKeyFor(ctx),
 						path: resolvedPath,

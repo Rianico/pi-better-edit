@@ -2,41 +2,16 @@ import { isRec } from "./utils";
 
 export const normalizedEdit = Symbol("normalizedEdit");
 
-export function normReq(input: unknown): unknown {
-	let tuple: unknown;
-	if (Array.isArray(input)) {
-		tuple = input;
-	} else if (
-		isRec(input) &&
-		Object.keys(input).length === 1 &&
-		"edit" in input
-	) {
-		tuple = input.edit;
-	} else {
-		return input;
-	}
+export type EditItem = {
+	remove_from: string;
+	remove_to: string;
+	replacement_text: string;
+};
 
-	if (!Array.isArray(tuple) || tuple.length !== 3) {
-		return input;
-	}
-
-	const [path, range, replacement_text] = tuple;
-	if (!Array.isArray(range) || range.length !== 2) {
-		return input;
-	}
-
-	const record: Record<string | symbol, unknown> = {
-		path,
-		remove_from: range[0],
-		remove_to: range[1],
-		replacement_text,
-	};
-	Object.defineProperty(record, normalizedEdit, {
-		value: true,
-		enumerable: false,
-	});
-	return record;
-}
+export type NormalizedEditRequest = {
+	path: string | null;
+	edits: EditItem[];
+};
 
 export function isNormalizedEdit(
 	input: unknown,
@@ -47,24 +22,56 @@ export function isNormalizedEdit(
 	);
 }
 
-export const EDIT_TUPLE_HINT =
-	"Edit must be called with exactly one edit. Use the canonical payload " +
-	'{"edit": [path, [remove_from, remove_to], replacement_text]}: a fixed ' +
-	"3-position array where path is a non-empty string (or null to infer from " +
-	"anchors), the two anchors are inclusive, and replacement_text is the full " +
-	"replacement (an empty string deletes the range).";
-
-function editTupleFrom(value: unknown): unknown[] | undefined {
+export function itemFromTuple(value: unknown): EditItem | undefined {
 	if (!Array.isArray(value) || value.length !== 3) return undefined;
-	const [path, range, replacement_text] = value;
-	if (!Array.isArray(range) || range.length !== 2) return undefined;
-	if (path !== null && (typeof path !== "string" || path.length === 0))
+	const [remove_from, remove_to, replacement_text] = value;
+	if (
+		typeof remove_from !== "string" ||
+		typeof remove_to !== "string" ||
+		typeof replacement_text !== "string"
+	) {
 		return undefined;
-	if (typeof range[0] !== "string" || typeof range[1] !== "string")
-		return undefined;
-	if (typeof replacement_text !== "string") return undefined;
-	return value;
+	}
+	return { remove_from, remove_to, replacement_text };
 }
+
+export function editRequestFrom(
+	input: unknown,
+): NormalizedEditRequest | undefined {
+	if (!isRec(input) || !("path" in input) || !("edits" in input)) {
+		return undefined;
+	}
+	const { path, edits } = input as { path?: unknown; edits?: unknown };
+	if (path !== null && (typeof path !== "string" || path.length === 0)) {
+		return undefined;
+	}
+	if (!Array.isArray(edits) || edits.length === 0) return undefined;
+	const items: EditItem[] = [];
+	for (const item of edits) {
+		const normalized = itemFromTuple(item);
+		if (!normalized) return undefined;
+		items.push(normalized);
+	}
+	return { path: path as string | null, edits: items };
+}
+
+export function normReq(input: unknown): unknown {
+	const valid = editRequestFrom(input);
+	if (!valid) return input;
+	const record = { path: valid.path, edits: valid.edits };
+	Object.defineProperty(record, normalizedEdit, {
+		value: true,
+		enumerable: false,
+	});
+	return record;
+}
+
+export const EDIT_TUPLE_HINT =
+	"Edit must be called with exactly one payload. Use the canonical payload " +
+	'{"path": path, "edits": [[remove_from, remove_to, replacement_text], ...]}: ' +
+	"path is a non-empty string (or null to infer from anchors), each item is a " +
+	"fixed 3-position array of two inclusive bare-3-char anchors and the full " +
+	"replacement (an empty string deletes the range).";
 
 function describeReceived(input: unknown): string {
 	if (input === undefined) return "Received no arguments.";
@@ -80,23 +87,9 @@ function describeReceived(input: unknown): string {
 }
 
 export function prepareEditArguments(args: unknown): Record<string, unknown> {
-	let tuple: unknown;
-	if (Array.isArray(args)) {
-		tuple = args;
-	} else if (isRec(args) && "edit" in args) {
-		const inner = args.edit;
-		if (Array.isArray(inner)) {
-			tuple = inner;
-		} else if (isRec(inner) && "edit" in inner) {
-			tuple = inner.edit;
-		} else {
-			tuple = undefined;
-		}
-	} else {
-		tuple = undefined;
+	const valid = editRequestFrom(args);
+	if (valid) {
+		return { path: valid.path, edits: (args as Record<string, unknown>).edits };
 	}
-
-	const valid = editTupleFrom(tuple);
-	if (valid) return { edit: valid };
 	throw new Error(`[E_BAD_SHAPE] ${EDIT_TUPLE_HINT} ${describeReceived(args)}`);
 }

@@ -1,6 +1,9 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { normReq, isNormalizedEdit } from "./edit-normalize";
-import type { EditParams } from "./edit";
+import {
+	normReq,
+	isNormalizedEdit,
+	type EditItem,
+} from "./edit-normalize";
 import type { EditDetails } from "./edit-response";
 
 
@@ -20,7 +23,9 @@ export type RRState = {
 	previewTimer?: ReturnType<typeof setTimeout>;
 };
 
-export function getPreviewInput(args: unknown): EditParams | null {
+export function getPreviewInput(
+	args: unknown,
+): { path: string | null; edits: EditItem[] } | null {
 	let normalized: unknown;
 	try {
 		normalized = normReq(args);
@@ -36,19 +41,22 @@ export function getPreviewInput(args: unknown): EditParams | null {
 	) {
 		return null;
 	}
-	if (
-		typeof normalized.remove_from !== "string" ||
-		typeof normalized.remove_to !== "string" ||
-		typeof normalized.replacement_text !== "string"
-	) {
+	if (!Array.isArray(normalized.edits) || normalized.edits.length === 0) {
 		return null;
+	}
+	for (const item of normalized.edits) {
+		if (
+			typeof item.remove_from !== "string" ||
+			typeof item.remove_to !== "string" ||
+			typeof item.replacement_text !== "string"
+		) {
+			return null;
+		}
 	}
 
 	return {
-		path: normalized.path,
-		remove_from: normalized.remove_from,
-		remove_to: normalized.remove_to,
-		replacement_text: normalized.replacement_text,
+		path: normalized.path as string | null,
+		edits: normalized.edits,
 	};
 }
 
@@ -87,7 +95,7 @@ export function fmtResult(diff: string, theme: FgT): string {
 }
 
 export function fmtCall(
-	args: EditParams | undefined,
+	args: { path: string | null; edits: EditItem[] } | null,
 	state: RRState,
 	expanded: boolean,
 	theme: CallT,
@@ -97,7 +105,8 @@ export function fmtCall(
 		typeof path === "string" && path.length > 0
 			? theme.fg("accent", path)
 			: theme.fg("toolOutput", "...");
-	let text = `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}`;
+	const arity = args && args.edits.length > 1 ? ` (${args.edits.length} edits)` : "";
+	let text = `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}${arity}`;
 
 	if (!state.preview) {
 		return text;

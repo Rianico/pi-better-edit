@@ -17,7 +17,7 @@ describe("extension registration", () => {
 
 		register(pi);
 
-		expect(toolNames.sort()).toEqual(["batch_edit", "edit", "read", "read_skill", "undo_last_edit"]);
+		expect(toolNames.sort()).toEqual(["edit", "read", "read_skill", "undo_last_edit"]);
 
 		expect(eventNames).toEqual(["session_start", "tool_result"]);
 	});

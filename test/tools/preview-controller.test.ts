@@ -6,7 +6,14 @@ import {
 } from "../../src/preview-controller";
 import type { RPreview, RRState } from "../../src/edit-render";
 
-const sampleArgs = ["sample.ts", ["AAA", "BBB"], "x"] as const;
+const sampleArgs = {
+	path: "sample.ts",
+	edits: [["AAA", "BBB", "x"]],
+};
+const otherArgs = {
+	path: "sample.ts",
+	edits: [["AAA", "BBB", "y"]],
+};
 
 function makeHost(overrides: Partial<PreviewHost> = {}): {
 	host: PreviewHost;
@@ -37,7 +44,7 @@ describe("DebouncedPreview", () => {
 			const controller = new DebouncedPreview(compute);
 			const { host, state, invalidated } = makeHost();
 			controller.renderCall(host, sampleArgs);
-			controller.renderCall(host, [sampleArgs[0], sampleArgs[1], "y"]);
+			controller.renderCall(host, otherArgs);
 			expect(compute).not.toHaveBeenCalled();
 			await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS - 1);
 			expect(compute).not.toHaveBeenCalled();
@@ -45,19 +52,20 @@ describe("DebouncedPreview", () => {
 			await vi.advanceTimersByTimeAsync(1);
 			await settled;
 			expect(compute).toHaveBeenCalledTimes(1);
-			expect(compute).toHaveBeenCalledWith(
-				[sampleArgs[0], sampleArgs[1], "y"],
-				"/tmp",
-			);
+			expect(compute).toHaveBeenCalledWith(otherArgs, "/tmp");
 			expect(state.preview).toEqual({ diff: "D" });
 			expect(state.previewTimer).toBeUndefined();
 			expect(state.argsKey).toBe(
 				JSON.stringify({
 					path: "sample.ts",
-					remove_from: "AAA",
-					remove_to: "BBB",
-					replacement_text: "y",
-				})
+					edits: [
+						{
+							remove_from: "AAA",
+							remove_to: "BBB",
+							replacement_text: "y",
+						},
+					],
+				}),
 			);
 		} finally {
 			vi.useRealTimers();
@@ -101,7 +109,7 @@ describe("DebouncedPreview", () => {
 			const { host, state } = makeHost();
 			controller.renderCall(host, sampleArgs);
 			await vi.advanceTimersByTimeAsync(PREVIEW_DEBOUNCE_MS);
-			controller.renderCall(host, [sampleArgs[0], sampleArgs[1], "y"]);
+			controller.renderCall(host, otherArgs);
 			resolveCompute!({ diff: "STALE" });
 			await Promise.resolve();
 			await Promise.resolve();
@@ -137,7 +145,7 @@ describe("DebouncedPreview", () => {
 		expect(state.previewTimer).toBeUndefined();
 	});
 
-	it("does not schedule a preview when args lack a flat edit shape", () => {
+	it("does not schedule a preview when args lack the edit shape", () => {
 		vi.useFakeTimers();
 		try {
 			const compute = vi.fn(async () => ({ diff: "D" }));

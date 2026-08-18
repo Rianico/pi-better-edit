@@ -263,7 +263,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
 		.join("\n\n");
 
 	if (allNoop) {
-		const text = `No changes made. All ${totalEdits} edit(s) in the batch produced identical content.\nClassification: noop${warnBlock(warnings)}${driftBlock(driftNotice)}`;
+		const text = `No changes made. All ${totalEdits} edit(s) in the call produced identical content.\nClassification: noop${warnBlock(warnings)}${driftBlock(driftNotice)}`;
 		return {
 			content: [{ type: "text", text }],
 			details: {

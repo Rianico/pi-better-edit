@@ -8,17 +8,21 @@ import { Type } from "typebox";
 import { constants } from "fs";
 import { genDiff, restoreEndings, type LineEnding } from "./edit-diff";
 import { scanDrift } from "./drift";
-import { isNormalizedEdit, normReq, prepareEditArguments } from "./edit-normalize";
-import { rejectUnknownFields, abortIf, splitLines } from "./utils";
-import { resolveTarget, writeAtomic } from "./fs-write";
-import { resEdit, parseHashRef, type NEdit } from "./hashline";
-import { toCwd } from "./paths";
-import { fileSnap } from "./file-reader";
 import {
-	buildChanged,
-	buildNoop,
+	isNormalizedEdit,
+	normReq,
+	prepareEditArguments,
+	type NormalizedEditRequest,
+} from "./edit-normalize";
+import { abortIf, rejectUnknownFields, splitLines } from "./utils";
+import { resolveTarget, writeAtomic } from "./fs-write";
+import { lineHashes, resEdit, type HEdit } from "./hashline";
+import { parseHashRef } from "./hashline";
+import { toCwd } from "./paths";
+import {
+	buildBatchResult,
+	type BatchSection,
 	type EditDetails,
-	type RMeta,
 } from "./edit-response";
 import {
 	buildAppliedText,
@@ -37,9 +41,16 @@ import { saveUndo } from "./edit-undo";
 import { loadHashStore, type HashStore } from "./hash-store";
 import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
 import { findSnapshotPathsByHashes } from "./snapshot-store";
+import { snapshotIOFor } from "./snapshot-store";
 import { sessionKeyFor } from "./served-state";
-import type { ResolvedRange } from "./hashline/served";
+import {
+	buildRangeEcho,
+	fmtServedRows,
+	type ResolvedRange,
+	type ServedRow,
+} from "./hashline/served";
 import { applyOneEdit, countLineChanges, loadEditFile } from "./edit-pipeline";
+import { EDITS_MAX_ITEMS } from "./constants";
 
 export const replacementTextSchema = Type.String({
 	description: 'Complete replacement for the range; use "" to delete',
@@ -62,83 +73,90 @@ const editPathSchema = Type.Union([
 ]);
 
 export const editTupleSchema = Type.Tuple(
-	[
-		editPathSchema,
-		Type.Tuple([removeFromSchema, removeToSchema], {
-			description: "Inclusive [remove_from, remove_to] anchor range",
-		}),
-		replacementTextSchema,
-	],
+	[removeFromSchema, removeToSchema, replacementTextSchema],
 	{
-		description: "[path, [remove_from, remove_to], replacement_text]",
+		description: "[remove_from, remove_to, replacement_text]",
 	},
 );
 
 export const editToolSchema = Type.Object(
-	{ edit: editTupleSchema },
+	{
+		path: editPathSchema,
+		edits: Type.Array(editTupleSchema, {
+			description: "Ordered list of edit tuples",
+			minItems: 1,
+			maxItems: EDITS_MAX_ITEMS,
+		}),
+	},
 	{ additionalProperties: false },
 );
 
 export type EditParams = {
-	path: string | null;
 	remove_from: string;
 	remove_to: string;
 	replacement_text: string;
 };
 
-interface PipelineResult {
+export type EditRequest = NormalizedEditRequest;
+
+interface ProcessedEditFile {
 	path: string;
+	absolutePath: string;
 	originalNormalized: string;
 	result: string;
 	bom: string;
 	originalEnding: LineEnding;
 	hadUtf8DecodeErrors: boolean;
 	warnings: string[];
-	noopEdit?: NEdit;
-	firstChangedLine?: number;
-	lastChangedLine?: number;
 	originalHashes: string[];
 	resultHashes: string[];
+	appliedCount: number;
+	noopCount: number;
 	totalAddedLines: number;
 	totalRemovedLines: number;
-	driftNotice?: string;
+	driftNotice: string | undefined;
 	range: ResolvedRange;
 }
 
-const ROOT_KS = new Set([
-	"path",
-	"remove_from",
-	"remove_to",
-	"replacement_text",
-]);
+const ROOT_KS = new Set(["path", "edits"]);
 
-export function assertReq(request: unknown): asserts request is EditParams {
-	const candidate = Array.isArray(request) ? normReq(request) : request;
-	if (!isNormalizedEdit(candidate)) {
+export function assertReq(
+	request: unknown,
+): asserts request is NormalizedEditRequest {
+	if (!isNormalizedEdit(request)) {
 		throw new Error(
-			"[E_BAD_SHAPE] Edit request must be exactly [path, [remove_from, remove_to], replacement_text].",
+			"[E_BAD_SHAPE] Edit request must be exactly { path, edits: [[remove_from, remove_to, replacement_text], ...] }.",
 		);
 	}
 
-	rejectUnknownFields(candidate, ROOT_KS, "Edit request");
+	rejectUnknownFields(request, ROOT_KS, "Edit request");
 
 	if (
-		candidate.path !== null &&
-		(typeof candidate.path !== "string" || candidate.path.length === 0)
+		request.path !== null &&
+		(typeof request.path !== "string" || request.path.length === 0)
 	) {
 		throw new Error(
 			"[E_BAD_SHAPE] Edit request path must be a non-empty string or null.",
 		);
 	}
 
-	if (
-		typeof candidate.remove_from !== "string" ||
-		typeof candidate.remove_to !== "string" ||
-		typeof candidate.replacement_text !== "string"
-	) {
+	if (!Array.isArray(request.edits) || request.edits.length === 0) {
 		throw new Error(
-			"[E_BAD_SHAPE] Edit request requires a two-anchor range and string replacement_text.",
+			"[E_BAD_SHAPE] Edit request requires a non-empty \"edits\" array.",
 		);
+	}
+
+	for (let index = 0; index < request.edits.length; index++) {
+		const item = request.edits[index]!;
+		if (
+			typeof item.remove_from !== "string" ||
+			typeof item.remove_to !== "string" ||
+			typeof item.replacement_text !== "string"
+		) {
+			throw new Error(
+				`[E_BAD_SHAPE] Edit request edits[${index}] must be a three-position array [remove_from, remove_to, replacement_text].`,
+			);
+		}
 	}
 }
 
@@ -185,30 +203,59 @@ export interface ExecPipelineOptions {
 	sessionKey?: string;
 }
 
-export async function execPipeline(
-	params: EditParams,
+function echoRowsForEdit(
+	edit: HEdit,
+	originalHashes: string[],
+): ServedRow[] | undefined {
+	const startHash = edit.hash_bounds[0].hash;
+	const endHash = edit.hash_bounds[1].hash;
+	const s = originalHashes.indexOf(startHash);
+	const e = originalHashes.indexOf(endHash);
+	if (s < 0 || e < 0) return undefined;
+	return buildRangeEcho(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes);
+}
+
+export async function execEdits(
+	request: NormalizedEditRequest,
 	cwd: string,
 	options?: ExecPipelineOptions,
-): Promise<PipelineResult> {
-	if (params.path === null) {
+): Promise<ProcessedEditFile> {
+	if (request.path === null) {
 		throw new Error(
 			"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
 		);
 	}
-	const path = params.path;
-
-	const editWarnings: string[] = [];
-	const edit = resEdit(
-		{
-			remove_from: params.remove_from,
-			remove_to: params.remove_to,
-			replacement_text: params.replacement_text,
-		},
-		editWarnings,
-	);
-
+	const path = request.path;
+	const items = request.edits;
 	const hashStore = options?.store ?? (await loadHashStore());
 	const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
+	const warnings: string[] = [];
+	abortIf(options?.signal);
+
+	const parsed: HEdit[] = [];
+	for (let index = 0; index < items.length; index++) {
+		const item = items[index]!;
+		try {
+			parsed.push(
+				resEdit(
+					{
+						remove_from: item.remove_from,
+						remove_to: item.remove_to,
+						replacement_text: item.replacement_text,
+					},
+					warnings,
+				),
+			);
+		} catch (error) {
+			if (items.length === 1) throw error;
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${message}\n` +
+					`The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.`,
+			);
+		}
+	}
+
 	const {
 		normalized: originalNormalized,
 		bom,
@@ -227,45 +274,159 @@ export async function execPipeline(
 		noPersist: options?.noPersist,
 	});
 
-	const outcome = await applyOneEdit({
-		content: originalNormalized,
-		hashes: originalHashes,
-		edit,
-		signal: options?.signal,
-		filePath: path,
-		served,
-		sessionKey,
-		absolutePath,
-		store: hashStore,
-		persistHashes: options?.noPersist !== true,
-		servePolicy: options?.noPersist === true ? "preview" : "live",
-		onRejected: async (error) => {
-			throw error;
-		},
-	});
+	let currentContent = originalNormalized;
+	let currentHashes = originalHashes;
+	let appliedCount = 0;
+	let noopCount = 0;
+	let totalAddedLines = 0;
+	let totalRemovedLines = 0;
+	let unionStartLine = Infinity;
+	let unionEndLine = -Infinity;
+	let unionStartHash = "";
+	let unionEndHash = "";
+	let lastApplied:
+		| { content: string; hashes: string[]; removedHashes: Set<string> }
+		| undefined;
 
-	const isNoop = outcome.kind === "noop";
-	const result =
-		outcome.kind === "applied" ? outcome.content : originalNormalized;
-	const resultHashes =
-		outcome.kind === "applied" ? outcome.hashes : originalHashes;
-	const warnings = [...editWarnings, ...(outcome.anchorWarnings ?? [])];
-	const { totalAddedLines, totalRemovedLines } = countLineChanges(
-		edit,
-		originalHashes,
-		isNoop,
-		outcome.kind === "applied" ? (outcome.autoFixes?.length ?? 0) : 0,
-	);
+	for (let index = 0; index < items.length; index++) {
+		abortIf(options?.signal);
+		const item = items[index]!;
+		const edit = parsed[index]!;
+
+		const outcome = await applyOneEdit({
+			content: currentContent,
+			hashes: currentHashes,
+			edit,
+			signal: options?.signal,
+			filePath: path,
+			served,
+			sessionKey,
+			absolutePath,
+			store: hashStore,
+			persistHashes: options?.noPersist !== true,
+			servePolicy: options?.noPersist === true ? "preview" : "live",
+			onRejected: async (error) => {
+				if (items.length === 1) throw error;
+				const originalLines = splitLines(originalNormalized);
+				const echoRows =
+					error.servedRows.length > 0
+						? error.servedRows
+						: echoRowsForEdit(edit, originalHashes);
+				const echoBlock = echoRows
+					? ` Current on-disk range for edit[${index}] (unchanged — nothing was written):\n${fmtServedRows(echoRows, originalLines)}`
+					: " Call read() to get fresh anchors.";
+				throw new Error(
+					`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${error.message}${echoBlock}\n` +
+						`The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied. Fix the failing edit (and any later edit that depends on it), then resubmit.`,
+				);
+			},
+		});
+
+		const range = outcome.range;
+		if (range.startLine < unionStartLine) {
+			unionStartLine = range.startLine;
+			unionStartHash = range.startHash;
+		}
+		if (range.endLine > unionEndLine) {
+			unionEndLine = range.endLine;
+			unionEndHash = range.endHash;
+		}
+
+		if (outcome.kind === "noop") {
+			noopCount += 1;
+			if (options?.noPersist === true) {
+				if (outcome.anchorWarnings?.length) {
+					warnings.push(...outcome.anchorWarnings);
+				}
+				continue;
+			}
+			const decision = await runNoopPolicy({
+				absolutePath,
+				removeFrom: item.remove_from,
+				removeTo: item.remove_to,
+				replacementText: item.replacement_text,
+				ref: `edit[${index}] (${path})`,
+				batch: true,
+				range,
+				hashes: currentHashes,
+				lines: splitLines(currentContent),
+				sessionKey,
+			});
+			if (decision.action === "reject") throw new Error(decision.message);
+			if (decision.action === "warn") warnings.push(decision.notice);
+			if (items.length > 1) {
+				warnings.push(
+					`edit[${index}] (${path}) was a noop: the range already contains the replacement text.`,
+				);
+			}
+			if (outcome.anchorWarnings?.length) {
+				warnings.push(...outcome.anchorWarnings);
+			}
+			continue;
+		}
+
+		appliedCount += 1;
+		const { totalAddedLines: added, totalRemovedLines: removed } =
+			countLineChanges(
+				edit,
+				originalHashes,
+				false,
+				outcome.autoFixes?.length ?? 0,
+			);
+		totalAddedLines += added;
+		totalRemovedLines += removed;
+		lastApplied = {
+			content: currentContent,
+			hashes: currentHashes,
+			removedHashes: outcome.removedHashes,
+		};
+		currentContent = outcome.content;
+		currentHashes = outcome.hashes;
+		if (options?.noPersist !== true) clearNoopLoop(absolutePath);
+		if (outcome.anchorWarnings?.length) {
+			warnings.push(...outcome.anchorWarnings);
+		}
+	}
+
+	const result = currentContent;
+	let resultHashes = currentHashes;
+	if (appliedCount > 0 && lastApplied) {
+		resultHashes = await lineHashes(
+			result,
+			absolutePath,
+			{
+				content: lastApplied.content,
+				hashes: lastApplied.hashes,
+				removedHashes: lastApplied.removedHashes,
+			},
+			snapshotIOFor(hashStore),
+			options?.noPersist !== true,
+		);
+	}
+
+	if (hadUtf8DecodeErrors) {
+		warnings.push(
+			"Non-UTF-8 bytes were shown as U+FFFD; this edit rewrote the file as UTF-8.",
+		);
+	}
 
 	let driftNotice: string | undefined;
-	if (options?.noPersist !== true) {
+	if (options?.noPersist !== true && unionStartLine !== Infinity) {
+		const resultLines = splitLines(result);
+		const originalLines = splitLines(originalNormalized);
 		try {
 			driftNotice = await scanDrift({
 				sessionKey,
 				served,
 				resultHashes,
-				resultLines: splitLines(result),
-				range: outcome.range,
+				resultLines,
+				range: {
+					startLine: unionStartLine,
+					endLine: unionEndLine,
+					startHash: unionStartHash,
+					endHash: unionEndHash,
+					delta: resultLines.length - originalLines.length,
+				},
 				path: absolutePath,
 			});
 		} catch (error) {
@@ -275,23 +436,43 @@ export async function execPipeline(
 
 	return {
 		path,
+		absolutePath,
 		originalNormalized,
 		result,
 		bom,
 		originalEnding,
 		hadUtf8DecodeErrors,
 		warnings,
-		noopEdit: outcome.kind === "noop" ? outcome.noopEdit : undefined,
-		firstChangedLine:
-			outcome.kind === "applied" ? outcome.firstChangedLine : undefined,
-		lastChangedLine:
-			outcome.kind === "applied" ? outcome.lastChangedLine : undefined,
-		resultHashes,
 		originalHashes,
+		resultHashes,
+		appliedCount,
+		noopCount,
 		totalAddedLines,
 		totalRemovedLines,
 		driftNotice,
-		range: outcome.range,
+		range: {
+			startLine: unionStartLine,
+			endLine: unionEndLine,
+			startHash: unionStartHash,
+			endHash: unionEndHash,
+			delta: splitLines(result).length - splitLines(originalNormalized).length,
+		},
+	};
+}
+
+function toSection(file: ProcessedEditFile): BatchSection {
+	return {
+		path: file.path,
+		originalNormalized: file.originalNormalized,
+		result: file.result,
+		originalHashes: file.originalHashes,
+		resultHashes: file.resultHashes,
+		warnings: file.warnings,
+		driftNotice: file.driftNotice,
+		appliedCount: file.appliedCount,
+		noopCount: file.noopCount,
+		totalAddedLines: file.totalAddedLines,
+		totalRemovedLines: file.totalRemovedLines,
 	};
 }
 
@@ -311,23 +492,38 @@ export async function compPreview(
 	try {
 		const normalized = normReq(request);
 		assertReq(normalized);
-		const resolution = await resolveMissingPath(normalized);
-		if (resolution) normalized.path = resolution.path;
-		assertReq(normalized);
-		const { path, originalNormalized, result, resultHashes, originalHashes } =
-			await execPipeline(normalized, cwd, {
-				accessMode: constants.R_OK,
-				noPersist: true,
+		let pathWarning: string | undefined;
+		if (normalized.path === null) {
+			const resolution = await resolveMissingPath({
+				path: normalized.path,
+				remove_from: normalized.edits[0]!.remove_from,
+				remove_to: normalized.edits[0]!.remove_to,
 			});
-		if (originalNormalized === result) {
+			if (resolution) {
+				normalized.path = resolution.path;
+				pathWarning = resolution.warning;
+			}
+		}
+		assertReq(normalized);
+		const file = await execEdits(normalized, cwd, {
+			accessMode: constants.R_OK,
+			noPersist: true,
+		});
+		if (pathWarning) file.warnings.unshift(pathWarning);
+		if (file.originalNormalized === file.result) {
 			return {
-				error: `No changes made to ${path}. The edit produced identical content.`,
+				error: `No changes made to ${file.path}. The edit produced identical content.`,
 			};
 		}
 
 		return {
-			diff: genDiff(originalNormalized, result, 4, resultHashes, originalHashes)
-				.diff,
+			diff: genDiff(
+				file.originalNormalized,
+				file.result,
+				4,
+				file.resultHashes,
+				file.originalHashes,
+			).diff,
 		};
 	} catch (error: unknown) {
 		return { error: error instanceof Error ? error.message : String(error) };
@@ -373,7 +569,7 @@ export function buildToolDef(): ToolDef {
 				(context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
 			text.setText(
 				fmtCall(
-					getPreviewInput(args) ?? undefined,
+					getPreviewInput(args),
 					context.state as RRState,
 					context.expanded,
 					theme,
@@ -416,9 +612,17 @@ export function buildToolDef(): ToolDef {
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const canonical = normReq(params);
 			assertReq(canonical);
-			const resolution = await resolveMissingPath(canonical);
-			if (resolution) {
-				canonical.path = resolution.path;
+			let pathWarning: string | undefined;
+			if (canonical.path === null) {
+				const resolution = await resolveMissingPath({
+					path: canonical.path,
+					remove_from: canonical.edits[0]!.remove_from,
+					remove_to: canonical.edits[0]!.remove_to,
+				});
+				if (resolution) {
+					canonical.path = resolution.path;
+					pathWarning = resolution.warning;
+				}
 			}
 			assertReq(canonical);
 			if (canonical.path === null) {
@@ -427,7 +631,6 @@ export function buildToolDef(): ToolDef {
 				);
 			}
 
-			const normalizedParams = canonical;
 			const path = canonical.path as string;
 			const absolutePath = toCwd(path, ctx.cwd);
 			const mutationTargetPath = await resolveTarget(absolutePath);
@@ -435,88 +638,24 @@ export function buildToolDef(): ToolDef {
 			return withFileMutationQueue(mutationTargetPath, async () => {
 				abortIf(signal);
 
-				const {
-					originalNormalized,
-					originalHashes,
-					result,
-					bom,
-					originalEnding,
-					hadUtf8DecodeErrors,
-					warnings,
-					noopEdit,
-					firstChangedLine,
-					lastChangedLine,
-					resultHashes,
-					totalAddedLines,
-					totalRemovedLines,
-					driftNotice,
-					range,
-				} = await execPipeline(normalizedParams, ctx.cwd, {
+				const file = await execEdits(canonical, ctx.cwd, {
 					accessMode: constants.R_OK | constants.W_OK,
 					signal,
 					sessionKey,
 				});
+				if (pathWarning) file.warnings.unshift(pathWarning);
 
-				if (resolution) {
-					warnings.unshift(resolution.warning);
-				}
-
-				const editsAttempted = 1;
-				if (originalNormalized === result) {
-					const decision = await runNoopPolicy({
-						absolutePath,
-						removeFrom: canonical.remove_from,
-						removeTo: canonical.remove_to,
-						replacementText: canonical.replacement_text,
-						ref: `in ${path}`,
-						batch: false,
-						range,
-						hashes: originalHashes,
-						lines: splitLines(originalNormalized),
-						sessionKey,
-					});
-					if (decision.action === "reject") {
-						throw new Error(decision.message);
-					}
-					if (decision.action === "warn") {
-						warnings.push(decision.notice);
-					}
-					let noopSnapshotId: string | undefined;
-					try {
-						noopSnapshotId = (await fileSnap(absolutePath)).snapshotId;
-					} catch (error) {
-						console.error("Failed to compute snapshot for noop edit:", error);
-					}
-					return buildNoop({
-						path,
-						noopEdit,
-						snapshotId: noopSnapshotId,
-						editMeta: {
-							editsAttempted,
-							noopEditsCount: noopEdit ? 1 : 0,
-							addedLines: 0,
-							removedLines: 0,
-						},
-						warnings,
-						driftNotice,
-					});
-				}
-
-				clearNoopLoop(absolutePath);
-
-				if (hadUtf8DecodeErrors) {
-					warnings.push(
-						"Non-UTF-8 bytes were shown as U+FFFD; this edit rewrote the file as UTF-8.",
-					);
+				if (file.appliedCount === 0) {
+					return buildBatchResult([toSection(file)]);
 				}
 
 				abortIf(signal);
 				const undo = await saveUndo(mutationTargetPath, {
-					content: originalNormalized,
-					bom,
-					originalEnding,
-					hashes: originalHashes,
-					resultContent: result,
+					content: file.originalNormalized,
+					bom: file.bom,
+					originalEnding: file.originalEnding,
+					hashes: file.originalHashes,
+					resultContent: file.result,
 				});
 				if (!undo.persisted) {
 					throw new Error(
@@ -526,41 +665,15 @@ export function buildToolDef(): ToolDef {
 				try {
 					abortIf(signal);
 					await writeAtomic(
-						absolutePath,
-						bom + restoreEndings(result, originalEnding),
+						file.absolutePath,
+						file.bom + restoreEndings(file.result, file.originalEnding),
 					);
 				} catch (error) {
 					await undo.restore();
 					throw error;
 				}
-				let updatedSnapshotId: string | undefined;
-				try {
-					updatedSnapshotId = (await fileSnap(absolutePath)).snapshotId;
-				} catch (error) {
-					console.error("Failed to compute post-edit snapshot:", error);
-				}
 
-				const editMeta: RMeta = {
-					editsAttempted,
-					noopEditsCount: noopEdit ? 1 : 0,
-					firstChangedLine,
-					lastChangedLine,
-					addedLines: totalAddedLines,
-					removedLines: totalRemovedLines,
-				};
-
-				const successInput = {
-					path,
-					originalNormalized,
-					originalHashes,
-					result,
-					resultHashes,
-					warnings,
-					snapshotId: updatedSnapshotId,
-					editMeta,
-					driftNotice,
-				};
-				return buildChanged(successInput);
+				return buildBatchResult([toSection(file)]);
 			});
 		},
 	};

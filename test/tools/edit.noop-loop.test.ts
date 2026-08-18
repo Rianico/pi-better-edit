@@ -22,7 +22,7 @@ describe("edit tool noop-loop guard", () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await readSample(ctx, readTool);
-			const payload = ["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1];
+			const payload = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] };
 
 			const first = await editTool.execute("e1", payload, undefined, undefined, ctx);
 			expect(first.details.classification).toBe("noop");
@@ -49,13 +49,13 @@ describe("edit tool noop-loop guard", () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await readSample(ctx, readTool);
-			const noopPayload = ["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1];
+			const noopPayload = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] };
 
 			await editTool.execute("e1", noopPayload, undefined, undefined, ctx);
 
 			await editTool.execute(
 				"e2",
-				["sample.ts", [hashes[0]!, hashes[0]!], "AAA"],
+				{ path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "AAA"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -75,14 +75,14 @@ describe("edit tool noop-loop guard", () => {
 
 			await editTool.execute(
 				"e1",
-				["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 				undefined,
 				undefined,
 				ctx,
 			);
 			await editTool.execute(
 				"e2",
-				["sample.ts", [hashes[2]!, hashes[2]!], "ccc"],
+				{ path: "sample.ts", edits: [[hashes[2]!, hashes[2]!, "ccc"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -90,7 +90,7 @@ describe("edit tool noop-loop guard", () => {
 
 			const third = await editTool.execute(
 				"e3",
-				["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 				undefined,
 				undefined,
 				ctx,
@@ -109,13 +109,13 @@ describe("edit tool noop-loop guard", () => {
 			const hashes = await readSample(ctx, readTool);
 			await readTool.execute("r1", { path: "other.ts" }, undefined, undefined, ctx);
 
-			const payloadA = ["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1];
+			const payloadA = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] };
 			await editTool.execute("a1", payloadA, undefined, undefined, ctx);
 			await editTool.execute("a2", payloadA, undefined, undefined, ctx);
 
 			const other = await editTool.execute(
 				"b1",
-				["other.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1],
+				{ path: "other.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 				undefined,
 				undefined,
 				ctx,
@@ -137,7 +137,7 @@ describe("edit tool noop-loop guard", () => {
 
 			await editTool.execute(
 				"e1",
-				["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 				undefined,
 				undefined,
 				ctx,
@@ -145,7 +145,7 @@ describe("edit tool noop-loop guard", () => {
 
 			const missingPath = await editTool.execute(
 				"e2",
-				[null, [hashes[1]!, hashes[1]!], NOOP_LINE_1],
+				{ path: null, edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 				undefined,
 				undefined,
 				ctx,
@@ -157,7 +157,7 @@ describe("edit tool noop-loop guard", () => {
 			const err = (await editTool
 				.execute(
 					"e3",
-					["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1],
+					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 					undefined,
 					undefined,
 					ctx,
@@ -172,7 +172,7 @@ describe("edit tool noop-loop guard", () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await readSample(ctx, readTool);
-			const payload = ["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1];
+			const payload = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] };
 
 			await editTool.execute("e1", payload, undefined, undefined, ctx);
 			await editTool.execute("e2", payload, undefined, undefined, ctx);
@@ -188,7 +188,7 @@ describe("edit tool noop-loop guard", () => {
 
 			const followUp = await editTool.execute(
 				"e4",
-				["sample.ts", [echoedHash, echoedHash], "BBB"],
+				{ path: "sample.ts", edits: [[echoedHash, echoedHash, "BBB"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -205,7 +205,7 @@ describe("edit tool noop-loop guard", () => {
 
 			for (let i = 0; i < 5; i++) {
 				const preview = await compPreview(
-					["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1],
+					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 					cwd,
 				);
 				expect("error" in preview ? preview.error : "no error").toContain(
@@ -215,7 +215,7 @@ describe("edit tool noop-loop guard", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.ts", [hashes[1]!, hashes[1]!], NOOP_LINE_1],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 				undefined,
 				undefined,
 				ctx,

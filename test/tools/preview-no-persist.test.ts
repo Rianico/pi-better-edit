@@ -36,7 +36,7 @@ describe("compPreview no-persist guarantee", () => {
 			const cHash = hashes[2]!;
 
 			const preview = await compPreview(
-				["sample.txt", [bHash, cHash], "B"],
+				{ path: "sample.txt", edits: [[bHash, cHash, "B"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -68,7 +68,7 @@ describe("compPreview no-persist guarantee", () => {
 			const hashes = await lineHashes(content, absolutePath);
 
 			await compPreview(
-				["sample.txt", [hashes[1]!, hashes[2]!], "X\nY"],
+				{ path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "X\nY"]] },
 				cwd,
 			);
 
@@ -97,7 +97,7 @@ describe("compPreview no-persist guarantee", () => {
 			const hashes = await lineHashes(content, absolutePath);
 
 			const preview = await compPreview(
-				["sample.txt", [hashes[0]!, hashes[2]!], "x"],
+				{ path: "sample.txt", edits: [[hashes[0]!, hashes[2]!, "x"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -132,7 +132,7 @@ describe("compPreview no-persist guarantee", () => {
 			db.close();
 
 			const preview = await compPreview(
-				["sample.txt", [hashes[0]!, hashes[1]!], "X"],
+				{ path: "sample.txt", edits: [[hashes[0]!, hashes[1]!, "X"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -171,7 +171,7 @@ describe("compPreview no-persist guarantee", () => {
 			await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
 			const preview = await compPreview(
-				["sample.txt", [alphaRef, gammaRef], "X"],
+				{ path: "sample.txt", edits: [[alphaRef, gammaRef, "X"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("error");
@@ -179,7 +179,7 @@ describe("compPreview no-persist guarantee", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					["sample.txt", [alphaRef, gammaRef], "X"],
+					{ path: "sample.txt", edits: [[alphaRef, gammaRef, "X"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -215,7 +215,7 @@ describe("compPreview no-persist guarantee", () => {
 			const hashes = await lineHashes(content, absolutePath);
 
 			const preview = await compPreview(
-				["sample.txt", [hashes[0]!, hashes[3]!], "X"],
+				{ path: "sample.txt", edits: [[hashes[0]!, hashes[3]!, "X"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("error");
@@ -226,7 +226,7 @@ describe("compPreview no-persist guarantee", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					["sample.txt", [hashes[0]!, hashes[3]!], "X"],
+					{ path: "sample.txt", edits: [[hashes[0]!, hashes[3]!, "X"]] },
 					undefined,
 					undefined,
 					ctx,

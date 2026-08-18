@@ -16,7 +16,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        ["sample.ts", [betaHash, betaHash], "BBB"],
+        { path: "sample.ts", edits: [[betaHash, betaHash, "BBB"]] },
         undefined,
         undefined,
         ctx,
@@ -41,7 +41,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        ["sample.ts", [bHash, cHash], "B\nC"],
+        { path: "sample.ts", edits: [[bHash, cHash, "B\nC"]] },
         undefined,
         undefined,
         ctx,
@@ -66,7 +66,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        ["sample.ts", [bHash, cHash], ""],
+        { path: "sample.ts", edits: [[bHash, cHash, ""]] },
         undefined,
         undefined,
         ctx,
@@ -93,7 +93,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        ["sample.ts", [betaRef, betaRef], "BBB"],
+        { path: "sample.ts", edits: [[betaRef, betaRef, "BBB"]] },
         undefined,
         undefined,
         ctx,
@@ -102,7 +102,7 @@ describe("edit tool — end-to-end", () => {
       await expect(
         editTool.execute(
           "e2",
-          ["sample.ts", [betaRef, betaRef], "BBB-AGAIN"],
+          { path: "sample.ts", edits: [[betaRef, betaRef, "BBB-AGAIN"]] },
           undefined,
           undefined,
           ctx,
@@ -121,7 +121,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        ["empty.ts", [emptyHash, emptyHash], "first\nsecond"],
+        { path: "empty.ts", edits: [[emptyHash, emptyHash, "first\nsecond"]] },
         undefined,
         undefined,
         ctx,
@@ -144,7 +144,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        ["crlf.ts", [betaRef, betaRef], "BETA"],
+        { path: "crlf.ts", edits: [[betaRef, betaRef, "BETA"]] },
         undefined,
         undefined,
         ctx,
@@ -168,7 +168,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        ["cr.ts", [betaRef, betaRef], "BETA"],
+        { path: "cr.ts", edits: [[betaRef, betaRef, "BETA"]] },
         undefined,
         undefined,
         ctx,
@@ -212,7 +212,7 @@ describe("edit tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            [c.fileName, [betaRef, betaRef], "" ],
+            { path: c.fileName, edits: [[betaRef, betaRef, ""]] },
             undefined,
             undefined,
             ctx,
@@ -232,7 +232,7 @@ describe("edit tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            [c.fileName, [betaRef, betaRef], "beta" ],
+            { path: c.fileName, edits: [[betaRef, betaRef, "beta"]] },
             undefined,
             undefined,
             ctx,
@@ -251,7 +251,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        ["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         undefined,
         undefined,
         ctx,

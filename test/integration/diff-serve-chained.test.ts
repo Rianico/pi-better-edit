@@ -65,7 +65,7 @@ describe("diff rows serve chained edits", () => {
 
 			const editResult = await editTool.execute(
 				"e1",
-				["sample.ts", [l2Ref, l2Ref], "X"],
+				{ path: "sample.ts", edits: [[l2Ref, l2Ref, "X"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -96,7 +96,7 @@ describe("diff rows serve chained edits", () => {
 
 			const chained = await editTool.execute(
 				"e2",
-				["sample.ts", [l1Ref, xRef], "A\nB"],
+				{ path: "sample.ts", edits: [[l1Ref, xRef, "A\nB"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -129,7 +129,7 @@ describe("diff rows serve chained edits", () => {
 
 			const editResult = await editTool.execute(
 				"e1",
-				["sample.ts", [l2Ref, l2Ref], "X"],
+				{ path: "sample.ts", edits: [[l2Ref, l2Ref, "X"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -148,7 +148,7 @@ describe("diff rows serve chained edits", () => {
 			await expect(
 				editTool.execute(
 					"e2",
-					["sample.ts", [l1Ref, xRef], "A\nB"],
+					{ path: "sample.ts", edits: [[l1Ref, xRef, "A\nB"]] },
 					undefined,
 					undefined,
 					ctx,

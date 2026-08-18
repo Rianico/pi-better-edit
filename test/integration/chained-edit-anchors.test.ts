@@ -14,13 +14,13 @@ describe("chained edit anchors", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        ["sample.ts", [betaRef, betaRef], "BETA" ],
+        { path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
         undefined,
         undefined,
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully edited in sample.ts");
+      expect(editResult.content[0].text).toContain("Successfully edited");
       expect(editResult.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const secondRead = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
       const freshRef = secondRead.content[0].text
@@ -30,13 +30,13 @@ describe("chained edit anchors", () => {
 
       const editResult2 = await editTool.execute(
         "e2",
-        ["sample.ts", [freshRef, freshRef], "BETA-CHAINED" ],
+        { path: "sample.ts", edits: [[freshRef, freshRef, "BETA-CHAINED"]] },
         undefined,
         undefined,
         ctx,
       );
 
-      expect(editResult2.content[0].text).toContain("Successfully edited in sample.ts");
+      expect(editResult2.content[0].text).toContain("Successfully edited");
       expect(editResult2.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     });
   });
@@ -60,13 +60,13 @@ describe("chained edit anchors", () => {
       const newLines = Array.from({ length: 15 }, (_, i) => `NEW ${i + 1}`);
       const editResult = await editTool.execute(
         "e1",
-        ["big.ts", [line1Ref, line15Ref], newLines.join("\n")],
+        { path: "big.ts", edits: [[line1Ref, line15Ref, newLines.join("\n")]] },
         undefined,
         undefined,
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully edited in big.ts");
+      expect(editResult.content[0].text).toContain("Successfully edited");
     });
   });
   it("omits anchors when single-line edit expands beyond budget", async () => {
@@ -83,13 +83,13 @@ describe("chained edit anchors", () => {
       const newLines = Array.from({ length: 11 }, (_, i) => `EXPANDED ${i + 1}`);
       const editResult = await editTool.execute(
         "e1",
-        ["expand.ts", [targetRef, targetRef], newLines.join("\n") ],
+        { path: "expand.ts", edits: [[targetRef, targetRef, newLines.join("\n")]] },
         undefined,
         undefined,
         ctx,
       );
 
-      expect(editResult.content[0].text).toContain("Successfully edited in expand.ts");
+      expect(editResult.content[0].text).toContain("Successfully edited");
     });
   });
 
@@ -109,7 +109,7 @@ describe("chained edit anchors", () => {
 
       await editTool.execute(
         "e1",
-        ["stale.ts", [betaRef, betaRef], "BETA" ],
+        { path: "stale.ts", edits: [[betaRef, betaRef, "BETA"]] },
         undefined,
         undefined,
         ctx,
@@ -117,7 +117,7 @@ describe("chained edit anchors", () => {
       await expect(
         editTool.execute(
           "e2-stale",
-          ["stale.ts", [betaRef, betaRef], "BETA-AGAIN" ],
+          { path: "stale.ts", edits: [[betaRef, betaRef, "BETA-AGAIN"]] },
           undefined,
           undefined,
           ctx,
@@ -126,12 +126,12 @@ describe("chained edit anchors", () => {
 
       const alphaEdit = await editTool.execute(
         "e3",
-        ["stale.ts", [alphaRef, alphaRef], "ALPHA" ],
+        { path: "stale.ts", edits: [[alphaRef, alphaRef, "ALPHA"]] },
         undefined,
         undefined,
         ctx,
       );
-      expect(alphaEdit.content[0].text).toContain("Successfully edited in stale.ts");
+      expect(alphaEdit.content[0].text).toContain("Successfully edited");
     });
   });
 
@@ -155,22 +155,22 @@ describe("chained edit anchors", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        ["stable.ts", [gammaRef, betaRef], "X" ],
+        { path: "stable.ts", edits: [[gammaRef, betaRef, "X"]] },
         undefined,
         undefined,
         ctx,
       );
-      expect(editResult.content[0].text).toContain("Successfully edited in stable.ts");
+      expect(editResult.content[0].text).toContain("Successfully edited");
       expect(editResult.content[0].text).toContain("[E_BAD_OP]");
 
       const alphaEdit = await editTool.execute(
         "e2",
-        ["stable.ts", [alphaRef, alphaRef], "ALPHA" ],
+        { path: "stable.ts", edits: [[alphaRef, alphaRef, "ALPHA"]] },
         undefined,
         undefined,
         ctx,
       );
-      expect(alphaEdit.content[0].text).toContain("Successfully edited in stable.ts");
+      expect(alphaEdit.content[0].text).toContain("Successfully edited");
     });
   });
 });

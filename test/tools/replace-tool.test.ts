@@ -10,14 +10,15 @@ import {
 const home = useTestHome();
 
 describe("editToolSchema", () => {
-	it("has the exact tuple shape", () => {
+	it("has the object-root { path, edits } shape", () => {
 		const schema = editToolSchema as any;
 		expect(schema.type).toBe("object");
-		expect(schema.properties.edit.type).toBe("array");
-		expect(schema.properties.edit.items).toHaveLength(3);
-		expect(schema.properties.edit.items[0].anyOf).toBeDefined();
-		expect(schema.properties.edit.items[1].type).toBe("array");
-		expect(schema.properties.edit.items[1].items).toHaveLength(2);
+		expect(schema.properties.path.anyOf).toBeDefined();
+		expect(schema.properties.edits.type).toBe("array");
+		expect(schema.properties.edits.items.type).toBe("array");
+		expect(schema.properties.edits.items.items).toHaveLength(3);
+		expect(schema.properties.edits.items.items[0].type).toBe("string");
+		expect(schema.properties.edits.items.items[1].type).toBe("string");
 	});
 });
 
@@ -36,14 +37,14 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.txt", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				undefined,
 				undefined,
 				{ cwd } as any,
 			);
 
 			expect(result.content[0].text).toContain(
-				"Successfully edited in sample.txt",
+				"Successfully edited",
 			);
 			expect(result.content[0].text).toContain(
 				"Added 1 line(s), removed 1 line(s).",
@@ -68,14 +69,14 @@ describe("regEdit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					["sample.txt", [hashes[1]!, hashes[2]!], "BBB\nCCC"],
+					{ path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "BBB\nCCC"]] },
 					undefined,
 					undefined,
 					{ cwd } as any,
 				);
 
 				expect(result.content[0].text).toContain(
-					"Successfully edited in sample.txt",
+					"Successfully edited",
 				);
 				expect(result.content[0].text).toContain(
 					"Added 2 line(s), removed 2 line(s).",
@@ -98,14 +99,14 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.txt", [hashes[1]!, hashes[1]!], ""],
+				{ path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, ""]] },
 				undefined,
 				undefined,
 				{ cwd } as any,
 			);
 
 			expect(result.content[0].text).toContain(
-				"Successfully edited in sample.txt",
+				"Successfully edited",
 			);
 			expect(result.content[0].text).toContain(
 				"Added 0 line(s), removed 1 line(s).",
@@ -127,13 +128,13 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.txt", [hashes[1]!, hashes[1]!], "bbb"],
+				{ path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
 				undefined,
 				undefined,
 				{ cwd } as any,
 			);
 
-			expect(result.content[0].text).toContain("No changes made to sample.txt");
+			expect(result.content[0].text).toContain("No changes made");
 			expect(result.details.classification).toBe("noop");
 		});
 	});
@@ -145,7 +146,7 @@ describe("regEdit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					["sample.txt", ["ZZZ", "ZZZ"], "x"],
+					{ path: "sample.txt", edits: [["ZZZ", "ZZZ", "x"]] },
 					undefined,
 					undefined,
 					{ cwd } as any,
@@ -169,7 +170,7 @@ describe("regEdit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					["sample.txt", [hashes[0]!, hashes[1]!], ""],
+					{ path: "sample.txt", edits: [[hashes[0]!, hashes[1]!, ""]] },
 					undefined,
 					undefined,
 					{ cwd } as any,
@@ -222,7 +223,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.txt", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				undefined,
 				undefined,
 				{ cwd } as any,
@@ -250,7 +251,7 @@ describe("regEdit", () => {
 
 				await editTool.execute(
 					"e1",
-					["crlf.txt", [hashes[1]!, hashes[1]!], "BETA"],
+					{ path: "crlf.txt", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
 					undefined,
 					undefined,
 					{ cwd } as any,

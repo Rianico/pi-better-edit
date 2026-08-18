@@ -1,5 +1,6 @@
-- edit: use exactly `{ "edit": [path, [remove_from, remove_to], replacement_text] }`; `path` is a non-empty string or `null`, the range is exactly two inclusive anchors, and replacement_text is complete (use `""` to delete).
+- edit: use exactly `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }`; `path` is a non-empty string or `null`, each range is exactly two inclusive anchors, and replacement_text is complete (use `""` to delete).
 - edit: remove_from and remove_to mark the exact lines that are REMOVED; anchor only the first and last line that actually change. Nothing outside the range changes.
 - edit: every `\n` in replacement_text separates lines; mirror trailing blank lines explicitly.
 - edit: every line of your range is verified against what the tool served. If stale or never-served, the edit is hard-rejected and echoes fresh anchors for retry.
 - edit: post-edit diff rows carry fresh anchors for follow-up edits without re-reading.
+- edit: one edit per call is the norm; batch several edits to the SAME file in one call only when they are already verified and independent (they apply atomically in order).

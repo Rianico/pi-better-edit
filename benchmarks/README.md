@@ -20,7 +20,7 @@ reject stale edits instead of corrupting files?
 
 This benchmark measures payload shape only. It excludes model reasoning, tool descriptions, reads, retries, and cache traffic. Both fixtures compare `str_replace`, this project, and OMP:
 
-| snapshot | `str_replace` | this project: `edit` | this project: `batch_edit` | OMP: per-edit | OMP: one batch |
+| snapshot | `str_replace` | this project: `edit` | this project: `edit` (multi-item) | OMP: per-edit | OMP: one batch |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | external pinned 12-edit corpus, current-envelope recount | 1,015 | 609 (**40.0%**) | 582 (**42.7%**) | 590 (**41.9%**) | 480 (**52.7%**) |
 | local 12-edit configuration snapshot | 358 | 272 (**24.0%**) | 241 (**32.7%**) | 268 (**25.1%**) | 180 (**49.7%**) |
@@ -29,12 +29,12 @@ Percentages are savings against the `str_replace` value in the same row. The ext
 
 ## Practical benchmark — coding-agent run
 
-This benchmark measures a real coding-agent loop rather than serialized envelopes. The practical advantage is round-trip efficiency: this project completed the scenario in **3 tool calls**, versus **6 for OMP**. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking, compares this project's `batch_edit` with an OMP patch wrapper, and checks exact final-file correctness after an external bash mutation. OMP is the practical baseline below.
+This benchmark measures a real coding-agent loop rather than serialized envelopes. The practical advantage is round-trip efficiency: this project completed the scenario in **3 tool calls**, versus **6 for OMP**. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking, compares this project's multi-item `edit` with an OMP patch wrapper, and checks exact final-file correctness after an external bash mutation. OMP is the practical baseline below.
 
 | engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
 | --- | ---: | ---: | ---: | :---: |
 | OMP patch wrapper | **6** | 28,467 | 0.0% | ✅ |
-| this project (`batch_edit`) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
+| this project (`edit`, multi-item) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
 
 This sample includes pi-reported input, output, reasoning, cache-read, and cache-write tokens. Both engines preserved the external change; OMP required four patch attempts. Model behavior and cache state are stochastic, so re-run the command before making a broader performance claim. Full output: [2026-08-17 practical token benchmark](results/2026-08-17-practical-token-benchmark.md).
 

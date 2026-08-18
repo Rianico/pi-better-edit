@@ -39,7 +39,7 @@ describe("served-state range verification for edit", () => {
 				await expect(
 					editTool.execute(
 						"e1",
-						["sample.ts", [alphaRef, gammaRef], "X"],
+						{ path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
 						undefined,
 						undefined,
 						ctx,
@@ -79,7 +79,7 @@ describe("served-state range verification for edit", () => {
 				try {
 					await editTool.execute(
 						"e1",
-						["sample.ts", [alphaRef, gammaRef], "X"],
+						{ path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
 						undefined,
 						undefined,
 						ctx,
@@ -107,7 +107,7 @@ describe("served-state range verification for edit", () => {
 				const retryTo = echoLines[2]!.split("│")[0]!;
 				const retry = await editTool.execute(
 					"e2",
-					["sample.ts", [retryFrom, retryTo], "X\nY"],
+					{ path: "sample.ts", edits: [[retryFrom, retryTo, "X\nY"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -118,7 +118,7 @@ describe("served-state range verification for edit", () => {
 				await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 				const secondStale = await editTool.execute(
 					"e3",
-					["sample.ts", [retryFrom, retryTo], "Z"],
+					{ path: "sample.ts", edits: [[retryFrom, retryTo, "Z"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -155,7 +155,7 @@ describe("served-state range verification for edit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					["sample.ts", [alphaRef, betaRef], "A\nB"],
+					{ path: "sample.ts", edits: [[alphaRef, betaRef, "A\nB"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -192,7 +192,7 @@ describe("served-state range verification for edit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					["sample.ts", [betaRef, gammaRef], "B\nG"],
+					{ path: "sample.ts", edits: [[betaRef, gammaRef, "B\nG"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -230,7 +230,7 @@ describe("served-state range verification for edit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					["sample.ts", [alphaRef, gammaRef], "X\nY"],
+					{ path: "sample.ts", edits: [[alphaRef, gammaRef, "X\nY"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -262,7 +262,7 @@ describe("served-state range verification for edit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					["sample.ts", [betaRef, betaRef], "BETA"],
+					{ path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -301,7 +301,7 @@ describe("served-state range verification for edit", () => {
 			try {
 				await editTool.execute(
 					"e1",
-					["sample.ts", [alphaRef, betaRef], "X"],
+					{ path: "sample.ts", edits: [[alphaRef, betaRef, "X"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -324,7 +324,7 @@ describe("served-state range verification for edit", () => {
 
 			const retry = await editTool.execute(
 				"e2",
-				["sample.ts", [betaRefFromContext, betaRefFromContext], "BETA2"],
+				{ path: "sample.ts", edits: [[betaRefFromContext, betaRefFromContext, "BETA2"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -345,7 +345,7 @@ describe("served-state range verification for edit", () => {
 				await expect(
 					editTool.execute(
 						"e1",
-						["sample.ts", [hashes[0]!, hashes[2]!], "X"],
+						{ path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "X"]] },
 						undefined,
 						undefined,
 						ctx,

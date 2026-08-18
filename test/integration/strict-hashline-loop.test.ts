@@ -15,7 +15,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e1",
-        ["sample.ts", [betaRef, betaRef], "BETA"],
+        { path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
         undefined,
         undefined,
         ctx,
@@ -24,7 +24,7 @@ describe("strict hashline tool loop", () => {
       await expect(
         editTool.execute(
           "e2",
-          ["sample.ts", [betaRef, betaRef], "BETA-AGAIN"],
+          { path: "sample.ts", edits: [[betaRef, betaRef, "BETA-AGAIN"]] },
           undefined,
           undefined,
           ctx,
@@ -40,7 +40,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e3",
-        ["sample.ts", [freshRef, freshRef], "BETA-AGAIN"],
+        { path: "sample.ts", edits: [[freshRef, freshRef, "BETA-AGAIN"]] },
         undefined,
         undefined,
         ctx,
@@ -58,7 +58,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e1",
-        ["empty.ts", [emptyHash, emptyHash], "first\nsecond" ],
+        { path: "empty.ts", edits: [[emptyHash, emptyHash, "first\nsecond"]] },
         undefined,
         undefined,
         ctx,
@@ -83,7 +83,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        ["crlf.ts", [betaRef, betaRef], "BETA" ],
+        { path: "crlf.ts", edits: [[betaRef, betaRef, "BETA"]] },
         undefined,
         undefined,
         ctx,
@@ -109,7 +109,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        ["lf.ts", [betaRef, betaRef], "BETA" ],
+        { path: "lf.ts", edits: [[betaRef, betaRef, "BETA"]] },
         undefined,
         undefined,
         ctx,
@@ -140,7 +140,7 @@ describe("UTF-8 BOM handling", () => {
 
       await editTool.execute(
         "e1",
-        ["bom.ts", [betaRef, betaRef], "BETA" ],
+        { path: "bom.ts", edits: [[betaRef, betaRef, "BETA"]] },
         undefined,
         undefined,
         ctx,

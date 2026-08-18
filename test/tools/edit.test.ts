@@ -25,7 +25,7 @@ describe("regEdit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					["sample.ts", [hashes[0]!, hashes[0]!], null],
+					{ path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, null]] },
 					undefined,
 					undefined,
 					ctx,
@@ -48,7 +48,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.ts", [hashes[0]!, hashes[0]!], "a\nb"],
+				{ path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "a\nb"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -74,7 +74,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -102,7 +102,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.ts", [hashes[1]!, hashes[1]!], `${hashes[1]!}│BBB`],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `${hashes[1]!}│BBB`]] },
 				undefined,
 				undefined,
 				ctx,
@@ -129,7 +129,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.ts", [hashes[1]!, hashes[1]!], `+${hashes[1]!}│BBB`],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `+${hashes[1]!}│BBB`]] },
 				undefined,
 				undefined,
 				ctx,
@@ -156,7 +156,7 @@ describe("regEdit", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.ts", [hashes[2]!, hashes[1]!], "X"],
+				{ path: "sample.ts", edits: [[hashes[2]!, hashes[1]!, "X"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -190,7 +190,7 @@ describe("regEdit", () => {
 
 				const result = await editTool.execute(
 					"e1",
-					["sample.ts", [`${hashes[1]!}│bbb`, `${hashes[1]!}│bbb`], "BBB"],
+					{ path: "sample.ts", edits: [[`${hashes[1]!}│bbb`, `${hashes[1]!}│bbb`, "BBB"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -228,7 +228,7 @@ describe("regEdit — robustness", () => {
 				try {
 					const result = await editTool.execute(
 						"e1",
-						["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+						{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 						undefined,
 						undefined,
 						ctx,
@@ -262,7 +262,7 @@ describe("regEdit — robustness", () => {
 			try {
 				const result = await editTool.execute(
 					"e1",
-					["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
+					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -298,7 +298,7 @@ describe("regEdit — robustness", () => {
 				try {
 					const result = await editTool.execute(
 						"e1",
-						["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+						{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 						undefined,
 						undefined,
 						ctx,
@@ -335,7 +335,7 @@ describe("regEdit — robustness", () => {
 					await expect(
 						editTool.execute(
 							"e1",
-							["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+							{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 							undefined,
 							undefined,
 							ctx,

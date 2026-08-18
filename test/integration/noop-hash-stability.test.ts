@@ -29,7 +29,7 @@ describe("noop edit hash stability", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.ts", [hashBefore, hashBefore], "bbb"],
+				{ path: "sample.ts", edits: [[hashBefore, hashBefore, "bbb"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -67,7 +67,7 @@ describe("noop edit hash stability", () => {
 			for (let i = 0; i < 2; i++) {
 				await editTool.execute(
 					`e${i}`,
-					["sample.ts", [hashBefore, hashBefore], "bbb"],
+					{ path: "sample.ts", edits: [[hashBefore, hashBefore, "bbb"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -105,7 +105,7 @@ describe("noop edit hash stability", () => {
 
 			const noop = await editTool.execute(
 				"e1",
-				["sample.ts", [bbbHash, bbbHash], "bbb"],
+				{ path: "sample.ts", edits: [[bbbHash, bbbHash, "bbb"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -114,7 +114,7 @@ describe("noop edit hash stability", () => {
 
 			const result = await editTool.execute(
 				"e2",
-				["sample.ts", [dddHash, dddHash], "DDD"],
+				{ path: "sample.ts", edits: [[dddHash, dddHash, "DDD"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -155,7 +155,7 @@ describe("noop edit hash stability", () => {
 
 				const noop = await editTool.execute(
 					"e1",
-					["sample.ts", [hashBefore, hashBefore], "bbb"],
+					{ path: "sample.ts", edits: [[hashBefore, hashBefore, "bbb"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -164,7 +164,7 @@ describe("noop edit hash stability", () => {
 
 				const followUp = await editTool.execute(
 					"e2",
-					["sample.ts", [hashBefore, hashBefore], "BBB"],
+					{ path: "sample.ts", edits: [[hashBefore, hashBefore, "BBB"]] },
 					undefined,
 					undefined,
 					ctx,

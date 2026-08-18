@@ -13,14 +13,14 @@ describe("edit tool file mutation queue", () => {
 
       const r1 = await editTool.execute(
         "e1",
-        ["sample.ts", [hashes[0]!, hashes[0]!], "ALPHA" ],
+        { path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "ALPHA"]] },
         undefined, undefined, ctx,
       );
       expect(r1.content[0].text).toContain("Successfully edited");
       expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const r2 = await editTool.execute(
         "e2",
-        ["sample.ts", [hashes[1]!, hashes[1]!], "BETA" ],
+        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
         undefined, undefined, ctx,
       );
       expect(r2.content[0].text).toContain("Successfully edited");
@@ -38,14 +38,14 @@ describe("edit tool file mutation queue", () => {
 
       const r1 = await editTool.execute(
         "e1",
-        ["target.ts", [hashes[0]!, hashes[0]!], "ALPHA" ],
+        { path: "target.ts", edits: [[hashes[0]!, hashes[0]!, "ALPHA"]] },
         undefined, undefined, ctx,
       );
       expect(r1.content[0].text).toContain("Successfully edited");
       expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const r2 = await editTool.execute(
         "e2",
-        ["link.ts", [hashes[1]!, hashes[1]!], "BETA" ],
+        { path: "link.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
         undefined, undefined, ctx,
       );
       expect(r2.content[0].text).toContain("Successfully edited");
@@ -71,14 +71,14 @@ describe("edit tool file mutation queue", () => {
 
     const r1 = await editTool.execute(
       "e1",
-      ["sub/target.ts", [hashes[0]!, hashes[0]!], "ALPHA" ],
+      { path: "sub/target.ts", edits: [[hashes[0]!, hashes[0]!, "ALPHA"]] },
       undefined, undefined, ctx,
     );
     expect(r1.content[0].text).toContain("Successfully edited");
     expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
     const r2 = await editTool.execute(
       "e2",
-      ["linkdir/sub/target.ts", [hashes[1]!, hashes[1]!], "BETA" ],
+      { path: "linkdir/sub/target.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
       undefined, undefined, ctx,
     );
     expect(r2.content[0].text).toContain("Successfully edited");

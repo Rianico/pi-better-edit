@@ -23,7 +23,7 @@ Configuration:
 | engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
 | --- | ---: | ---: | ---: | :---: |
 | `@oh-my-pi/hashline` wrapper | **6** | 28,467 | 0.0% | ✅ |
-| this project (`batch_edit`) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
+| this project (`edit`, multi-item) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
 
 Usage breakdown:
 

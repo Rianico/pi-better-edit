@@ -34,7 +34,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -55,7 +55,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				["sample.ts", [hashes[1]!, hashes[1]!], "BETA"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -76,7 +76,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -96,7 +96,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -116,7 +116,7 @@ describe("compPreview", () => {
 			);
 
 			const preview = await compPreview(
-				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -160,7 +160,7 @@ describe("compPreview", () => {
 				{ cwd } as any,
 			);
 			const preview = await compPreview(
-				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -195,7 +195,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 				await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
 				const preview = await compPreview(
-					["sample.ts", [alphaRef, gammaRef], "X"],
+					{ path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
 					cwd,
 				);
 				expect(preview).toHaveProperty("error");
@@ -234,7 +234,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 				);
 
 				const preview = await compPreview(
-					["sample.ts", [hashes[0]!, hashes[3]!], "X"],
+					{ path: "sample.ts", edits: [[hashes[0]!, hashes[3]!, "X"]] },
 					cwd,
 				);
 				expect(preview).toHaveProperty("error");
@@ -249,7 +249,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 		await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
 			const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 			const preview = await compPreview(
-				["sample.ts", [hashes[0]!, hashes[2]!], "X"],
+				{ path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "X"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("error");
@@ -272,7 +272,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
 			const preview = await compPreview(
-				["sample.ts", [hashes[0]!, hashes[2]!], "BBB"],
+				{ path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "BBB"]] },
 				cwd,
 			);
 			expect(preview).toHaveProperty("diff");
@@ -335,7 +335,7 @@ describe("renderCall preview", () => {
 
 			const harness = makeHarness(cwd);
 			tool.renderCall(
-				["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 				harness.theme,
 				harness.context,
 			);
@@ -367,7 +367,7 @@ describe("renderCall preview", () => {
 
 				const harness = makeHarness(cwd);
 				tool.renderCall(
-					["sample.ts", [hashes[0]!, hashes[2]!], "X"],
+					{ path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "X"]] },
 					harness.theme,
 					harness.context,
 				);
@@ -432,13 +432,13 @@ describe("renderCall preview", () => {
 			try {
 				const harness = makeHarness(cwd);
 				tool.renderCall(
-					["sample.ts", [hashes[1]!, hashes[1]!], "BBB"],
+					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
 					harness.theme,
 					harness.context,
 				);
 				expect(harness.state.preview).toBeUndefined();
 				tool.renderCall(
-					["sample.ts", [hashes[1]!, hashes[1]!], "CCC"],
+					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "CCC"]] },
 					harness.theme,
 					harness.context,
 				);
@@ -471,7 +471,7 @@ describe("compPreview — noop", () => {
 				{ cwd } as any,
 			);
 			const preview = await compPreview(
-				["sample.ts", [hashes[1]!, hashes[1]!], "bbb"],
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
 				cwd,
 			);
 			expect(preview).toEqual({

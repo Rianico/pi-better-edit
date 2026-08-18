@@ -31,7 +31,7 @@ describe("snapshotId surface (details-only after W2)", () => {
 				await expect(
 					editTool.execute(
 						"e1",
-						["sample.ts", [alphaRef, gammaRef], "X"],
+						{ path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
 						undefined,
 						undefined,
 						ctx,
@@ -62,7 +62,7 @@ describe("snapshotId surface (details-only after W2)", () => {
 
 			const result = await editTool.execute(
 				"e1",
-				["sample.ts", [betaRef, betaRef], "BETA"],
+				{ path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -90,7 +90,7 @@ describe("snapshotId surface (details-only after W2)", () => {
 
 			await editTool.execute(
 				"e1",
-				["sample.ts", [betaRef, betaRef], "BETA"],
+				{ path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -99,7 +99,7 @@ describe("snapshotId surface (details-only after W2)", () => {
 			await expect(
 				editTool.execute(
 					"e2",
-					["sample.ts", [betaRef, betaRef], "BETA-AGAIN"],
+					{ path: "sample.ts", edits: [[betaRef, betaRef, "BETA-AGAIN"]] },
 					undefined,
 					undefined,
 					ctx,

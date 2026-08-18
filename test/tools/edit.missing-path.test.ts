@@ -13,7 +13,7 @@ describe("edit — missing path resolution", () => {
 
       const result = await editTool.execute(
         "e1",
-        [null, [hashes[0]!, hashes[0]!], "AAA" ],
+        { path: null, edits: [[hashes[0]!, hashes[0]!, "AAA"]] },
         undefined,
         undefined,
         ctx,
@@ -39,7 +39,7 @@ describe("edit — missing path resolution", () => {
       await expect(
         editTool.execute(
           "e1",
-          [null, [hashes[0]!, hashes[0]!], "X" ],
+          { path: null, edits: [[hashes[0]!, hashes[0]!, "X"]] },
           undefined,
           undefined,
           ctx,
@@ -55,7 +55,7 @@ describe("edit — missing path resolution", () => {
       await expect(
         editTool.execute(
           "e1",
-          [null, ["AAA", "AAA"], "X" ],
+          { path: null, edits: [["AAA", "AAA", "X"]] },
           undefined,
           undefined,
           ctx,
@@ -72,7 +72,7 @@ describe("edit — missing path resolution", () => {
 
       const result = await editTool.execute(
         "e1",
-        [null, [hashes[1]!, hashes[1]!], "BBB" ],
+        { path: null, edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         undefined,
         undefined,
         ctx,

@@ -45,8 +45,8 @@ const expected = `export function buildConfig() {
 `;
 const prompt = (readTool, patchTool) => {
 	const application =
-		patchTool === "batch_edit"
-			? `Call batch_edit once with { "batch": [...] }. Use one tuple for each requested line change and do not use edit for this scenario.`
+		patchTool === "edit"
+			? `Call edit once with { "path": "scenario.ts", "edits": [...] }. Use one tuple for each requested line change.`
 			: `Call omp_patch once with one patch document for the requested changes.`;
 	return `You are running a practical file-edit benchmark using ${patchTool}.
 
@@ -195,7 +195,7 @@ function runEngine(engine) {
 		if (engine === "local") {
 			runtime = {
 				extension: join(root, "index.ts"),
-				tools: "read,bash,batch_edit",
+				tools: "read,bash,edit",
 				env: {},
 			};
 		} else if (engine === "omp") {
@@ -209,7 +209,7 @@ function runEngine(engine) {
 			throw new Error(`unknown engine ${engine}`);
 		}
 		const readTool = engine === "local" ? "read" : "omp_read";
-		const patchTool = engine === "local" ? "batch_edit" : "omp_patch";
+		const patchTool = engine === "local" ? "edit" : "omp_patch";
 		const run = runPi({
 			cwd,
 			extension: runtime.extension,

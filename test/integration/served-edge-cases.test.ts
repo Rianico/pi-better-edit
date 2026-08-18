@@ -46,7 +46,7 @@ describe("served-state edge cases for edit", () => {
 			try {
 				await editTool.execute(
 					"e1",
-					["sample.ts", [l3Ref, l7Ref], "X"],
+					{ path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -67,7 +67,7 @@ describe("served-state edge cases for edit", () => {
 			const retryTo = echoLines[4]!.split("│")[0]!;
 			const retry = await editTool.execute(
 				"e2",
-				["sample.ts", [retryFrom, retryTo], "X\nY"],
+				{ path: "sample.ts", edits: [[retryFrom, retryTo, "X\nY"]] },
 				undefined,
 				undefined,
 				ctx,
@@ -97,7 +97,7 @@ describe("served-state edge cases for edit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					["sample.ts", [aRef, dRef], "X"],
+					{ path: "sample.ts", edits: [[aRef, dRef, "X"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -137,7 +137,7 @@ describe("served-state edge cases for edit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					["sample.ts", [aRef, aRef], "X"],
+					{ path: "sample.ts", edits: [[aRef, aRef, "X"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -166,7 +166,7 @@ describe("served-state edge cases for edit", () => {
 			await expect(
 				editTool.execute(
 					"e1",
-					["sample.ts", [hashes[3]!, hashes[4]!], "X"],
+					{ path: "sample.ts", edits: [[hashes[3]!, hashes[4]!, "X"]] },
 					undefined,
 					undefined,
 					ctx,
@@ -211,7 +211,7 @@ describe("served-state edge cases for edit", () => {
 			try {
 				await editTool.execute(
 					"e1",
-					["sample.ts", [firstRef, lastRef], "X"],
+					{ path: "sample.ts", edits: [[firstRef, lastRef, "X"]] },
 					undefined,
 					undefined,
 					ctx,

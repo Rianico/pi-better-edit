@@ -108,14 +108,14 @@ anchors after each change.
 | ------ | -------------- |
 | `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
 | `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_RANGE_UNSERVED]` serve on the first edit. |
-| `edit` | An object-root payload `{ "edit": [path, [remove_from, remove_to], replacement_text] }`; the path may be `null` for anchor-based inference. Verifies every line of the inclusive range and reject-and-serve returns fresh anchors. |
-| `batch_edit` | An object-root payload `{ "batch": [[path, [remove_from, remove_to], replacement_text], …] }`; applies up to 32 tuples atomically. |
+| `edit` | An object-root payload `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], …] }`; the path may be `null` for anchor-based inference. A single item edits one range; several items batch same-file edits atomically (up to 32). Verifies every line of each inclusive range and reject-and-serve returns fresh anchors. |
 | `undo_last_edit` | `{ path }` restores the most recent successful edit with its original content, BOM, line endings, and anchors; persisted across restarts. |
 
-`edit` accepts `{ "edit": [path, [remove_from, remove_to], replacement_text] }`; `batch_edit` accepts
-`{ "batch": [tuple, …] }`. The path position is a non-empty string or `null` for unique anchor-based
-inference. The range is inclusive, and an empty replacement deletes the range. Both contracts
-are checked before file I/O; use `batch_edit` for multiple edits on the same file in one message.
+`edit` accepts `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], …] }`. The path
+position is a non-empty string or `null` for unique anchor-based inference. Each range is inclusive,
+and an empty replacement deletes the range. All items are checked before file I/O and applied
+atomically to that one file — one item per call is the norm, several same-file items batch in one call.
+`batch_edit` no longer exists as a separate tool.
 
 ### Error codes
 
@@ -139,7 +139,7 @@ are checked before file I/O; use `batch_edit` for multiple edits on the same fil
 | `[E_RANGE_UNSERVED]` | A line inside the resolved edit range was never served to the model (paged reads, truncated output). The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_RANGE_UNVERIFIED]` | A boundary anchor (`remove_from`/`remove_to`) has no served position or was served at multiple positions, so the range cannot be verified against served state. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
-| `[E_BATCH_ABORT]` | `batch_edit` rejected the whole batch: a tuple item failed validation or served-state verification. Nothing was written anywhere; the failing item's current range is echoed as fresh `HASH│content` rows. |
+| `[E_BATCH_ABORT]` | A multi-item `edit` call was rejected as a whole: an item failed validation or served-state verification. Nothing was written; the failing item's current range is echoed as fresh `HASH│content` rows. |
 
 ## Why Hashline
 
@@ -161,7 +161,7 @@ X" doesn't rotate the anchor. Anchors are unique by construction — repeated `}
 echoes all count as serves. `read` is on-demand recovery, not a per-edit ritual.
 
 **Stop the loop.** A no-op edit reports `No changes made` and leaves anchors alone; the
-same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `batch_edit` applies up to 32
+same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `edit` applies up to 32
 edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]`.
 
 ## Comparison
@@ -171,14 +171,14 @@ edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]
 The compact JSON contract is primarily a **token-saving envelope change**. It removes repeated field names and escaped wrapper syntax while leaving the verified edit semantics unchanged:
 
 - `edit` is one fixed tuple inside an object-root schema: `{ "edit": [path, [from, to], replacement] }`;
-- `batch_edit` is a compact tuple array inside an object-root schema: `{ "batch": [[path, [from, to], replacement], …] }`;
+- `edit` is a compact tuple array inside an object-root schema: `{ "path": path, "edits": [[from, to, replacement], …] }`;
 - replacement text is emitted once, and the old text is never repeated in the call.
 
 #### Theoretical benchmark — serialized envelopes
 
 This benchmark counts only the serialized edit payloads, not model reasoning, tool descriptions, reads, retries, or cache traffic. It compares the same three editing families on two 12-edit fixtures: `str_replace`, this project, and `@oh-my-pi/hashline` (OMP).
 
-| snapshot | `str_replace` | this project: `edit` | this project: `batch_edit` | OMP: per-edit | OMP: one batch |
+| snapshot | `str_replace` | this project: `edit` | this project: `edit` (multi-item) | OMP: per-edit | OMP: one batch |
 | --- | ---: | ---: | ---: | ---: | ---: |
 | external pinned 12-edit corpus, current-envelope recount | 1,015 | 609 (**40.0%**) | 582 (**42.7%**) | 590 (**41.9%**) | 480 (**52.7%**) |
 | local 12-edit configuration snapshot | 358 | 272 (**24.0%**) | 241 (**32.7%**) | 268 (**25.1%**) | 180 (**49.7%**) |
@@ -192,7 +192,7 @@ This benchmark measures a real coding-agent loop rather than serialized envelope
 | engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
 | --- | ---: | ---: | ---: | :---: |
 | OMP patch wrapper | **6** | 28,467 | 0.0% | ✅ |
-| this project (`batch_edit`) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
+| this project (`edit`, multi-item) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
 
 Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
 
@@ -200,14 +200,14 @@ Both engines preserved the external change and produced the expected final file 
 
 | | **pi-hashline-edit-lsz** (this) | pi-hashline-edit (original) | pi-hashline-edit-pro (upstream) | @oh-my-pi/hashline |
 | --- | --- | --- | --- | --- |
-| Layer | pi tools: `read` / `read_skill` / `edit` / `batch_edit` / `undo_last_edit` | pi tool override: `read` / `edit` + opt-in `grep` | pi tools: `read` / `replace` / `undo_last_replace` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
+| Layer | pi tools: `read` / `read_skill` / `edit` / `undo_last_edit` | pi tool override: `read` / `edit` + opt-in `grep` | pi tools: `read` / `replace` / `undo_last_replace` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
 | Address format | `HASH│` — 3-char content hash, no line number | `LINE#HASH:` — line number + 2-4 char hash | `HASH│` — 3-char content hash, no line number | `[path#tag]` — full-file content tag + line numbers |
 | Whitespace-insensitive anchors | ✅ all ASCII whitespace stripped — survives reformatting | ❌ exact content match | ~ trailing whitespace trimmed only | ~ n/a (anchors are line numbers) |
 | Duplicate lines | ✅ unique per line (collision-resolved); ambiguity → `[E_AMBIGUOUS_ANCHOR]` | ~ shared hash — repeats are ambiguous | ✅ unique (collision-resolved) | ~ position-based — repeats fine, position unverified |
 | Verified against what the model saw | ✅ every resolved line, per session | ❌ hash-vs-content only, no served record | ~ served-state, but blind-edit (B8) and cross-session (B22) holes | ~ seen-lines provenance + file-version tag (H7) |
 | Stale interior | ✅ reject + fresh anchors (`[E_RANGE_STALE]`) | ~ line-hash mismatch → 3-way recovery or fresh anchors | ~ version-dependent: 2.4.1 overwrote silently, 2.5.x rejects | ~ recovery-with-warning, else `MismatchError` |
 | Blind edit — lines never shown | ✅ hard reject (`[E_RANGE_UNVERIFIED]` / `[E_RANGE_UNSERVED]`) | ❌ applies | ❌ applies (B8) | ~ reject when seen-lines recorded (H7) |
-| Batch atomicity | ✅ `batch_edit` — all-or-nothing, `[E_BATCH_ABORT]` | ~ op array, one snapshot, bottom-up | ❌ one `replace` per call | ✅ multi-section preflight (H8) |
+| Batch atomicity | ✅ `edit` multi-item — all-or-nothing, `[E_BATCH_ABORT]` | ~ op array, one snapshot, bottom-up | ❌ one `replace` per call | ✅ multi-section preflight (H8) |
 | Undo (persisted) | ✅ survives restarts | ❌ | ✅ `undo_last_replace`, persisted | ❌ none |
 | `grep` tool | ❌ | ✅ opt-in | ❌ | ❌ |
 | Sub-agent session isolation | ✅ session-keyed served state (B19–B22) | — | ❌ leak (B22) | ~ |
@@ -242,7 +242,7 @@ hardened the format to pure 3-char hashes with collision resolution and added th
 served-state check, persisted undo, and auto-read; the deterministic battery shows what a
 self-maintained fork keeps fixing — 2.4.1 overwrote drifted interiors silently, 2.5.x
 rejects them but still lets a blind edit and a cross-session serve through. This fork
-closes those with session-keyed, per-line served-state verification plus `batch_edit`.
+closes those with session-keyed, per-line served-state verification plus multi-item `edit`.
 
 ### Refinements over upstream
 
@@ -258,7 +258,7 @@ closes those with session-keyed, per-line served-state verification plus `batch_
   reported as an informational notice, once per episode.
 - **Chained edits without re-reading** — post-edit diff rows and rejection echoes count as
   serves; `read` is on-demand recovery, not a per-edit ritual.
-- **`batch_edit`** — up to 32 edits in one atomic call; all-or-nothing with
+- **`edit` (multi-item)** — up to 32 edits to one file in one atomic call; all-or-nothing with
   `[E_BATCH_ABORT]` and fresh-anchor feedback for the failing item.
 - **Whitespace-insensitive anchors** — all ASCII whitespace is stripped before hashing, so
   formatter passes that reindent don't invalidate anchors (ADR-0005); unique anchors by
@@ -279,7 +279,7 @@ each tool does when they hit:
 | An edit above shifts the file | Nothing shifts — anchors are content addresses; the diff serves fresh anchors | **Every edit renumbers** — the format's own #1 rule is "re-ground after every edit"; the model carries the bookkeeping |
 | Repeated / identical text | Per-line hashes are unique (collision-resolved); ambiguity → `[E_AMBIGUOUS_ANCHOR]` | Position-based, so repeats don't confuse it — but the position itself is unverified |
 | Lines never shown to the model | `[E_RANGE_UNSERVED]` — hard reject with fresh anchors | Undisplayed hunks rejected when seen-lines are recorded — same reliance on the model knowing what it saw |
-| Multi-edit batch fails mid-way | `batch_edit` — atomic, all-or-nothing; the failing item is echoed as fresh serves | Multi-section patches preflighted up front — also atomic |
+| Multi-edit batch fails mid-way | `edit` multi-item — atomic, all-or-nothing; the failing item is echoed as fresh serves | Multi-section patches preflighted up front — also atomic |
 
 > The oh-my-pi payload saving is a lighter wire format; the table above is what that format
 > asks the model to hold in its head instead — renumbering, tag-chasing, node choice — the

@@ -102,7 +102,7 @@ describe("stable hashing with duplicate content lines", () => {
       const line1Hash = extractHash(lines1.find((l) => l.includes("│function a()"))!);
       await editTool.execute(
         "e1",
-        ["sample.ts", [line1Hash, firstBraceHash], ""],
+        { path: "sample.ts", edits: [[line1Hash, firstBraceHash, ""]] },
         undefined,
         undefined,
         ctx,
@@ -136,7 +136,7 @@ describe("stable hashing with duplicate content lines", () => {
 
       await editTool.execute(
         "e1",
-        ["sample.ts", [aHash, cHash], ""],
+        { path: "sample.ts", edits: [[aHash, cHash, ""]] },
         undefined,
         undefined,
         ctx,
@@ -173,7 +173,7 @@ describe("stable hashing with duplicate content lines", () => {
 
       await editTool.execute(
         "e1",
-        ["sample.ts", [aHash, cHash], ""],
+        { path: "sample.ts", edits: [[aHash, cHash, ""]] },
         undefined,
         undefined,
         ctx,
@@ -181,7 +181,7 @@ describe("stable hashing with duplicate content lines", () => {
 
       await editTool.execute(
         "e2",
-        ["sample.ts", [dHash, eHash], ""],
+        { path: "sample.ts", edits: [[dHash, eHash, ""]] },
         undefined,
         undefined,
         ctx,

@@ -72,7 +72,7 @@ const result = {
 			calls: editCalls.length,
 		},
 		{
-			name: "this project: batch_edit",
+			name: "this project: edit (multi-item)",
 			tokens: batchTokens,
 			savedPercent: savedRate(batchTokens),
 			calls: 1,
