@@ -5,10 +5,7 @@ import { DatabaseSync } from "node:sqlite";
 
 import { lineHashes, _lineHashesPure, CANON_VERSION } from "../../src/hashline";
 import { initHasher } from "../../src/hashline/hasher";
-import {
-	loadHashStore,
-	shutdownHashStore,
-} from "../../src/hash-store";
+import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import {
 	getSnapshot,
 	upsertSnapshot,
@@ -94,7 +91,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
 	}
 
 	function sqlitePath(home: string): string {
-		return join(home, ".config", "pi-hashline-edit-lsz", "hash-store.sqlite");
+		return join(home, ".config", "pi-better-edit", "hash-store.sqlite");
 	}
 
 	it("round-trips a snapshot under the current canon version", async () => {
@@ -163,9 +160,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
 				.prepare("SELECT checksum FROM snapshots WHERE path = ?")
 				.get("/p.ts") as { checksum: string } | undefined;
 			db.close();
-			expect(row?.checksum).toBe(
-				`${CANON_VERSION}:${contentChecksum(content)}`,
-			);
+			expect(row?.checksum).toBe(`${CANON_VERSION}:${contentChecksum(content)}`);
 		});
 	});
 });

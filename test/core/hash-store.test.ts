@@ -9,7 +9,11 @@ import {
 	shutdownHashStore,
 	type HashStore,
 } from "../../src/hash-store";
-import { getSnapshot, upsertSnapshot, snapshotStmts } from "../../src/snapshot-store";
+import {
+	getSnapshot,
+	upsertSnapshot,
+	snapshotStmts,
+} from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION } from "../../src/constants";
 import { CANON_VERSION } from "../../src/hashline";
@@ -40,7 +44,7 @@ async function withTempHome(
 }
 
 function configHome(home: string): string {
-	return join(home, ".config", "pi-hashline-edit-lsz");
+	return join(home, ".config", "pi-better-edit");
 }
 
 function sqlitePath(home: string): string {
@@ -135,7 +139,9 @@ describe("hash-store — migration from legacy hash-store.json", () => {
 			const paths = snapshotStmts(store.db)
 				.allPaths()
 				.map((row) => row.path as string);
-			expect(paths).toEqual(expect.arrayContaining(["/valid.ts", "/also-valid.ts"]));
+			expect(paths).toEqual(
+				expect.arrayContaining(["/valid.ts", "/also-valid.ts"]),
+			);
 		});
 	});
 
@@ -294,11 +300,7 @@ describe("hash-store — corrupt database recovery", () => {
 	it("rebuilds the store when the database file is corrupt", async () => {
 		await withTempHome(async (home) => {
 			await mkdir(configHome(home), { recursive: true });
-			await writeFile(
-				sqlitePath(home),
-				"this is not a sqlite database",
-				"utf-8",
-			);
+			await writeFile(sqlitePath(home), "this is not a sqlite database", "utf-8");
 
 			const store = await loadHashStore();
 			expect(getSnapshot(store, "/x.ts", "a\n")).toBeUndefined();

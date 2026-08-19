@@ -1,4 +1,4 @@
-# Fitting pi-hashline-edit-lsz to "Hash anchors + Myers diff + single-token anchors"
+# Fitting pi-better-edit to "Hash anchors + Myers diff + single-token anchors"
 
 **Status:** analysis / design review
 **Source:** [Hash anchors + Myers diff + single-token anchors: 60% cheaper AI code edits](https://dirac.run/posts/hash-anchors-myers-diff-single-token) (Dirac Posts)

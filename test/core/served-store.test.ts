@@ -65,7 +65,12 @@ describe("hash-store — served state (issue #2)", () => {
 		await withTempHome(async () => {
 			const store = await loadHashStore();
 			upsertServed(store, "sessionA", "/p.ts", [{ position: 3, hash: "abc" }]);
-			expect(getServed(store, "sessionA", "/p.ts")).toEqual([null, null, null, "abc"]);
+			expect(getServed(store, "sessionA", "/p.ts")).toEqual([
+				null,
+				null,
+				null,
+				"abc",
+			]);
 		});
 	});
 
@@ -171,7 +176,11 @@ describe("hash-store — served state (issue #2)", () => {
 			]);
 			shutdownHashStore();
 			const reloaded = await loadHashStore();
-			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual(["abc", null, "def"]);
+			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([
+				"abc",
+				null,
+				"def",
+			]);
 		});
 	});
 });
@@ -250,9 +259,9 @@ describe("hash-store — served corrupt row handling", () => {
 		value: string,
 	): Promise<void> {
 		const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-		db.prepare(
-			"UPDATE served SET hashes = ? WHERE session_id = ? AND path = ?",
-		).run(value, sessionKey, path);
+		db
+			.prepare("UPDATE served SET hashes = ? WHERE session_id = ? AND path = ?")
+			.run(value, sessionKey, path);
 		db.close();
 	}
 
@@ -400,7 +409,9 @@ describe("hash-store — served pruneMissing", () => {
 	it("prunes served-only records for files with no snapshot or undo row", async () => {
 		await withTempHome(async () => {
 			const store = await loadHashStore();
-			upsertServed(store, "sessionA", "/orphan.ts", [{ position: 0, hash: "ORG" }]);
+			upsertServed(store, "sessionA", "/orphan.ts", [
+				{ position: 0, hash: "ORG" },
+			]);
 			await pruneMissing(store);
 			expect(getServed(store, "sessionA", "/orphan.ts")).toEqual([]);
 		});
@@ -467,9 +478,11 @@ describe("hash-store — reported drift set (issue #6)", () => {
 			const db = new DatabaseSync(sqlitePath(home), {
 				defensive: false,
 			} as any);
-			db.prepare(
-				"UPDATE served SET reported = 'not json' WHERE session_id = ? AND path = ?",
-			).run("sessionA", "/p.ts");
+			db
+				.prepare(
+					"UPDATE served SET reported = 'not json' WHERE session_id = ? AND path = ?",
+				)
+				.run("sessionA", "/p.ts");
 			db.close();
 			expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set());
 		});
@@ -523,9 +536,11 @@ describe("hash-store — served TTL sweep (issue #17)", () => {
 		updatedAt: number,
 	): Promise<void> {
 		const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-		db.prepare(
-			"UPDATE served SET updated_at = ? WHERE session_id = ? AND path = ?",
-		).run(updatedAt, sessionKey, path);
+		db
+			.prepare(
+				"UPDATE served SET updated_at = ? WHERE session_id = ? AND path = ?",
+			)
+			.run(updatedAt, sessionKey, path);
 		db.close();
 	}
 
@@ -537,7 +552,12 @@ describe("hash-store — served TTL sweep (issue #17)", () => {
 				{ position: 2, hash: "def" },
 			]);
 			shutdownHashStore();
-			await ageServedRow(home, "sessionA", "/p.ts", Date.now() - SERVED_TTL_MS - 1000);
+			await ageServedRow(
+				home,
+				"sessionA",
+				"/p.ts",
+				Date.now() - SERVED_TTL_MS - 1000,
+			);
 			const reloaded = await loadHashStore();
 			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
 			const check = new DatabaseSync(sqlitePath(home), {
@@ -562,21 +582,26 @@ describe("hash-store — served TTL sweep (issue #17)", () => {
 			]);
 			shutdownHashStore();
 			const reloaded = await loadHashStore();
-			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual(["abc", null, "def"]);
+			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([
+				"abc",
+				null,
+				"def",
+			]);
 		});
 	});
 
 	it("prunes an old row of one session while keeping another session's fresh row", async () => {
 		await withTempHome(async (home) => {
 			const store = await loadHashStore();
-			upsertServed(store, "sessionA", "/p.ts", [
-				{ position: 0, hash: "abc" },
-			]);
-			upsertServed(store, "sessionB", "/p.ts", [
-				{ position: 0, hash: "def" },
-			]);
+			upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
+			upsertServed(store, "sessionB", "/p.ts", [{ position: 0, hash: "def" }]);
 			shutdownHashStore();
-			await ageServedRow(home, "sessionA", "/p.ts", Date.now() - SERVED_TTL_MS - 1000);
+			await ageServedRow(
+				home,
+				"sessionA",
+				"/p.ts",
+				Date.now() - SERVED_TTL_MS - 1000,
+			);
 			const reloaded = await loadHashStore();
 			expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
 			expect(getServed(reloaded, "sessionB", "/p.ts")).toEqual(["def"]);
@@ -644,11 +669,7 @@ describe("hash-store — recordServesTruncated", () => {
 				3,
 				1,
 			);
-			expect(getServed(store, "sessionA", "/p.ts")).toEqual([
-				"aaa",
-				"BET",
-				"ccc",
-			]);
+			expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaa", "BET", "ccc"]);
 		});
 	});
 
@@ -669,11 +690,7 @@ describe("hash-store — recordServesTruncated", () => {
 				[{ position: 0, hash: "xxx" }],
 				3,
 			);
-			expect(getServed(store, "sessionA", "/p.ts")).toEqual([
-				"xxx",
-				"bbb",
-				"ccc",
-			]);
+			expect(getServed(store, "sessionA", "/p.ts")).toEqual(["xxx", "bbb", "ccc"]);
 		});
 	});
 
@@ -731,7 +748,7 @@ async function withTempHome(
 }
 
 function configHome(home: string): string {
-	return join(home, ".config", "pi-hashline-edit-lsz");
+	return join(home, ".config", "pi-better-edit");
 }
 
 function sqlitePath(home: string): string {

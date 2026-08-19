@@ -8,7 +8,7 @@ Side discussion comparing three hash-anchor editing implementations for LLM codi
 
 - **oh-my-pi** — line numbers + whole-file 4-hex hash tag
 - **pi-hashline-edit** — `LINE#HASH` per-line, context-based hashing
-- **pro** (this project, pi-hashline-edit-lsz) — bare 3-char per-line hashes, persistent store, stable for unchanged lines
+- **pro** (this project, pi-better-edit) — bare 3-char per-line hashes, persistent store, stable for unchanged lines
 
 ## Key decisions & insights
 

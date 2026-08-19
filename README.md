@@ -1,8 +1,8 @@
 <p align="center">
-  <img src="assets/banner.jpeg" alt="pi-hashline-edit-lsz banner" width="640">
+  <img src="assets/banner.jpeg" alt="pi-better-edit banner" width="640">
 </p>
 
-<h1 align="center">pi-hashline-edit-lsz</h1>
+<h1 align="center">pi-better-edit</h1>
 
 <p align="center">
   <strong>Hash-anchored `read` / `edit` / `undo` tools for pi-coding-agent.<br>
@@ -20,10 +20,10 @@
 </p>
 
 <p align="center">
-  <img src="https://img.shields.io/npm/v/pi-hashline-edit-lsz" alt="npm version">
-  <img src="https://img.shields.io/npm/dm/pi-hashline-edit-lsz" alt="npm downloads">
+  <img src="https://img.shields.io/npm/v/pi-better-edit" alt="npm version">
+  <img src="https://img.shields.io/npm/dm/pi-better-edit" alt="npm downloads">
   <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License">
-  <img src="https://img.shields.io/github/stars/Rianico/pi-hashline-edit-lsz?style=social" alt="GitHub stars">
+  <img src="https://img.shields.io/github/stars/Rianico/pi-better-edit?style=social" alt="GitHub stars">
 </p>
 
 ---
@@ -63,13 +63,13 @@ sessions and structural edits — anywhere an edit must not land on the wrong li
 ### Install
 
 ```bash
-pi install npm:pi-hashline-edit-lsz
+pi install npm:pi-better-edit
 ```
 
 From a local checkout:
 
 ```bash
-pi install /path/to/pi-hashline-edit-lsz
+pi install /path/to/pi-better-edit
 ```
 
 | Requirement | |
@@ -198,7 +198,7 @@ Both engines preserved the external change and produced the expected final file 
 
 ### Capability comparison
 
-| | **pi-hashline-edit-lsz** (this) | pi-hashline-edit (original) | pi-hashline-edit-pro (upstream) | @oh-my-pi/hashline |
+| | **pi-better-edit** (this) | pi-hashline-edit (original) | pi-hashline-edit-pro (upstream) | @oh-my-pi/hashline |
 | --- | --- | --- | --- | --- |
 | Layer | pi tools: `read` / `read_skill` / `edit` / `undo_last_edit` | pi tool override: `read` / `edit` + opt-in `grep` | pi tools: `read` / `replace` / `undo_last_replace` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
 | Address format | `HASH│` — 3-char content hash, no line number | `LINE#HASH:` — line number + 2-4 char hash | `HASH│` — 3-char content hash, no line number | `[path#tag]` — full-file content tag + line numbers |
@@ -263,8 +263,8 @@ closes those with session-keyed, per-line served-state verification plus multi-i
 - **Whitespace-insensitive anchors** — all ASCII whitespace is stripped before hashing, so
   formatter passes that reindent don't invalidate anchors (ADR-0005); unique anchors by
   construction (bitset probing, ADR-0003).
-- **Own identity** — published as `pi-hashline-edit-lsz`, with its own config and hash-store
-  directory (`~/.config/pi-hashline-edit-lsz`).
+- **Own identity** — published as `pi-better-edit`, with its own config and hash-store
+  directory (`~/.config/pi-better-edit`).
 
 ### Correctness in edge cases
 
@@ -407,7 +407,7 @@ size cap: at most 238,328 lines per file, beyond which `read` and `edit` reject 
 `[E_FILE_TOO_LARGE]` (use `write` for very large files).
 
 Hashes live in a persistent per-file store
-(`~/.config/pi-hashline-edit-lsz/hash-store.sqlite`, honoring `XDG_CONFIG_HOME` on
+(`~/.config/pi-better-edit/hash-store.sqlite`, honoring `XDG_CONFIG_HOME` on
 non-Windows) that keeps the hashes of unchanged lines across edits. When a range is edited,
 the runtime maps the old content onto the new content and copies hashes for lines that
 survived; only genuinely new lines get fresh hashes. Two guarantees make this safe even
@@ -429,19 +429,19 @@ from an older version, the previous `hash-store.json` is imported once and renam
 - Stale anchors. `[E_STALE_ANCHOR]` or `[E_AMBIGUOUS_ANCHOR]` mean the file changed since
   the anchors were read. Call `read` for fresh anchors and retry.
 - Reset the hash store. Anchors live in
-  `~/.config/pi-hashline-edit-lsz/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit
+  `~/.config/pi-better-edit/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit
   pi, delete those three files, and the store is rebuilt on the next session. Anchor
   history is lost, but no project files are touched.
 - Corrupt store. If the store fails its health check it is renamed to
   `hash-store.sqlite.corrupt-<timestamp>` and rebuilt automatically.
 - Config directory moved. On non-Windows platforms, if `XDG_CONFIG_HOME` is set, the
   config directory (and the hash store inside it) lives at
-  `$XDG_CONFIG_HOME/pi-hashline-edit-lsz` instead of `~/.config/pi-hashline-edit-lsz`. An
+  `$XDG_CONFIG_HOME/pi-better-edit` instead of `~/.config/pi-better-edit`. An
   existing store is not migrated automatically; move the old `hash-store.sqlite` files
   (plus sidecars) into the new directory before the first run.
 - Package renamed. This fork was renamed from `pi-hashline-edit-pro` to
-  `pi-hashline-edit-lsz`; the config directory moved from `~/.config/pi-hashline-edit-pro`
-  to `~/.config/pi-hashline-edit-lsz`. An existing store is not migrated automatically.
+  `pi-better-edit` (published earlier as `pi-hashline-edit-lsz`); the config directory
+  moved to `~/.config/pi-better-edit`. An existing store is not migrated automatically.
 
 ## Development
 
@@ -469,7 +469,7 @@ none of it runs in `npm test`.
 
 ## Contributing
 
-Open an [issue](https://github.com/Rianico/pi-hashline-edit-lsz/issues) or PR. The most
+Open an [issue](https://github.com/Rianico/pi-better-edit/issues) or PR. The most
 valuable contributions right now are more battery scenarios and edge-case tests for the
 served-state verification.
 

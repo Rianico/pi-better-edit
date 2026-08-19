@@ -41,7 +41,7 @@ async function withTempHome(
 }
 
 function configHome(home: string): string {
-	return join(home, ".config", "pi-hashline-edit-lsz");
+	return join(home, ".config", "pi-better-edit");
 }
 
 function sqlitePath(home: string): string {
@@ -119,10 +119,7 @@ describe("snapshot-store — corrupt row handling", () => {
 		value: string,
 	): Promise<void> {
 		const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
-		db.prepare("UPDATE snapshots SET hashes = ? WHERE path = ?").run(
-			value,
-			path,
-		);
+		db.prepare("UPDATE snapshots SET hashes = ? WHERE path = ?").run(value, path);
 		db.close();
 	}
 

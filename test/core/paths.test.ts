@@ -8,9 +8,7 @@ describe("configDir", () => {
 		const previousXdg = process.env.XDG_CONFIG_HOME;
 		delete process.env.XDG_CONFIG_HOME;
 		try {
-			expect(configDir()).toBe(
-				join(homedir(), ".config", "pi-hashline-edit-lsz"),
-			);
+			expect(configDir()).toBe(join(homedir(), ".config", "pi-better-edit"));
 		} finally {
 			if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
 			else process.env.XDG_CONFIG_HOME = previousXdg;
@@ -23,7 +21,7 @@ describe("configDir", () => {
 			const previousXdg = process.env.XDG_CONFIG_HOME;
 			process.env.XDG_CONFIG_HOME = "/custom/xdg";
 			try {
-				expect(configDir()).toBe(join("/custom/xdg", "pi-hashline-edit-lsz"));
+				expect(configDir()).toBe(join("/custom/xdg", "pi-better-edit"));
 			} finally {
 				if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
 				else process.env.XDG_CONFIG_HOME = previousXdg;
@@ -35,9 +33,7 @@ describe("configDir", () => {
 		const previousXdg = process.env.XDG_CONFIG_HOME;
 		process.env.XDG_CONFIG_HOME = "";
 		try {
-			expect(configDir()).toBe(
-				join(homedir(), ".config", "pi-hashline-edit-lsz"),
-			);
+			expect(configDir()).toBe(join(homedir(), ".config", "pi-better-edit"));
 		} finally {
 			if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
 			else process.env.XDG_CONFIG_HOME = previousXdg;

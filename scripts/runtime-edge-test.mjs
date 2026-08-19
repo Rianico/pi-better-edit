@@ -114,11 +114,7 @@ function runPi(extraArgs, prompt) {
 }
 
 function readServedHashes() {
-	const storePath = join(
-		isolatedStore,
-		"pi-hashline-edit-lsz",
-		"hash-store.sqlite",
-	);
+	const storePath = join(isolatedStore, "pi-better-edit", "hash-store.sqlite");
 	if (!existsSync(storePath)) return null;
 	const db = new DatabaseSync(storePath, { timeout: 2000 });
 	try {
@@ -129,7 +125,8 @@ function readServedHashes() {
 		if (!row) return null;
 		const parsed = JSON.parse(row.hashes);
 		if (!Array.isArray(parsed) || parsed.length < 4) return null;
-		if (typeof parsed[1] !== "string" || typeof parsed[3] !== "string") return null;
+		if (typeof parsed[1] !== "string" || typeof parsed[3] !== "string")
+			return null;
 		return parsed;
 	} finally {
 		db.close();
@@ -201,7 +198,11 @@ if (cont2) {
 cleanup();
 
 const { summary, codes, pass } = verdictFrom(main.output);
-const contVerdict = continuityVerdictFrom(servedHashes, cont2 ? cont2.output : "", fixtureAfter);
+const contVerdict = continuityVerdictFrom(
+	servedHashes,
+	cont2 ? cont2.output : "",
+	fixtureAfter,
+);
 
 console.log("=== runtime edge-suite (pi -e npm:pi-fabric, one session) ===");
 console.log(main.output.trim() || "(no output)");
@@ -216,18 +217,24 @@ console.log(
 );
 console.log("--- process 1 (read) ---");
 console.log(cont1.output.trim() || "(no output)");
-console.log(`process-1 served hashes found in shared store: ${servedHashes ? servedHashes.length : 0}`);
+console.log(
+	`process-1 served hashes found in shared store: ${servedHashes ? servedHashes.length : 0}`,
+);
 if (cont2) {
 	console.log("--- process 2 (pi -c) ---");
 	console.log(cont2.output.trim() || "(no output)");
 }
 console.log("--- continuity verdict ---");
-console.log(`process-1 served hashes found in shared store: ${servedHashes ? servedHashes.length : 0}`);
+console.log(
+	`process-1 served hashes found in shared store: ${servedHashes ? servedHashes.length : 0}`,
+);
 console.log(
 	`process-2 fabric report summary: ${contVerdict.summary ?? "NOT FOUND"}`,
 );
 console.log(`process-2 saw E_RANGE_UNVERIFIED: ${contVerdict.unverified}`);
-console.log(`process-2 edited fixture to BETA/DELTA on disk: ${contVerdict.fileOk}`);
+console.log(
+	`process-2 edited fixture to BETA/DELTA on disk: ${contVerdict.fileOk}`,
+);
 
 const timedOut =
 	main.timedOut || cont1.timedOut || (cont2 ? cont2.timedOut : false);

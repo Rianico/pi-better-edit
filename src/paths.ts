@@ -15,7 +15,7 @@ function configBase(): string {
 }
 
 export function configDir(): string {
-	return join(configBase(), "pi-hashline-edit-lsz");
+	return join(configBase(), "pi-better-edit");
 }
 
 export function hashStorePath(): string {
