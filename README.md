@@ -5,8 +5,8 @@
 <h1 align="center">pi-better-edit</h1>
 
 <p align="center">
-  <strong>Hash-anchored `read` / `edit` / `undo` tools for pi-coding-agent.<br>
-  Edit by content address — not by line number, not by string replacement. Every resolved line is verified against what the model actually saw; a stale or never-served edit is rejected before anything is written.</strong>
+  <strong>Hash-anchored `edit` for π.<br>
+  Powered By Hashline Positioning — not by line number, not by string replacement. More successful tool calls, with fewer tool‑call rounds. Lower token consumption, which means higher context space for your work.</strong>
 </p>
 
 <p align="center">
@@ -33,19 +33,13 @@
 >
 > **Practical advantage: fewer tool calls.** In the recorded coding-agent benchmark, this project completed the same external-drift refactor in **3 tool calls** versus **6 for OMP**. Fewer calls mean fewer model/tool round trips while preserving exact final-file correctness; see the practical benchmark below for the measured sample.
 
-Line numbers shift the moment anything above them changes, and str_replace-style tools
-make the model re-type the code it is replacing. Hashline gives every line a **content
+## Why you need this
+
+Line numbers shift the moment anything above them changes, and str_replace-style(e.g. Claude Code, Codex) 
+tools make the model re-type the code it is replacing. Hashline gives every line a **content
 address** instead: `edit` targets two 3-character hashes, the old text is never echoed,
 anchors survive edits above, and every resolved range is verified against the exact rows
 the model was shown. A wrong-line edit cannot silently land.
-
-This is the **self-maintained fork** of [pi-hashline-edit-pro](https://github.com/YuGiMob/pi-hashline-edit-pro)
-(which forked [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit)). It is not
-affiliated with either upstream, and it deliberately diverges where noted below. The
-hashline concept descends from [@oh-my-pi/hashline](https://www.npmjs.com/package/@oh-my-pi/hashline);
-the [comparison](#comparison) is the honest read of who does what.
-
-## Why you need this
 
 `str_replace` makes the model re-type the code it is replacing — output tokens billed at
 ~5-6× the input rate — and wrong-line edits are how agents corrupt files: one edit lands
@@ -57,6 +51,8 @@ echoed back as fresh anchors — the retry needs no `read` (reject-and-serve).
 
 Not for one-line touch-ups (near parity) or brand-new files (`write`). It pays off in long
 sessions and structural edits — anywhere an edit must not land on the wrong line.
+
+More introductions referred to <a href="#why-hashline">Why Hashline</a> and <a href="#practical-benchmark--coding-agent-session">Benchmark with oh-my-pi#hashline</a>
 
 ## Quick Start
 
@@ -115,7 +111,6 @@ anchors after each change.
 position is a non-empty string or `null` for unique anchor-based inference. Each range is inclusive,
 and an empty replacement deletes the range. All items are checked before file I/O and applied
 atomically to that one file — one item per call is the norm, several same-file items batch in one call.
-`batch_edit` no longer exists as a separate tool.
 
 ### Error codes
 
@@ -164,7 +159,6 @@ echoes all count as serves. `read` is on-demand recovery, not a per-edit ritual.
 same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `edit` applies up to 32
 edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]`.
 
-## Comparison
 
 ### Token economics: envelope savings
 
@@ -195,6 +189,9 @@ This benchmark measures a real coding-agent loop rather than serialized envelope
 | this project (`edit`, multi-item) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
 
 Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
+
+
+## Comparison
 
 ### Capability comparison
 
@@ -478,6 +475,12 @@ served-state verification.
 [MIT](LICENSE).
 
 ## Acknowledgments
+
+This is the **self-maintained fork** of [pi-hashline-edit-pro](https://github.com/YuGiMob/pi-hashline-edit-pro)
+(which forked [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit)). It is not
+affiliated with either upstream, and it deliberately diverges where noted below. The
+hashline concept descends from [@oh-my-pi/hashline](https://www.npmjs.com/package/@oh-my-pi/hashline);
+the [comparison](#comparison) is the honest read of who does what.
 
 Hash-anchored editing descends from Can Bölük's
 [*The Harness Problem*](https://stencil.so/blog/the-harness-problem). This project stands
