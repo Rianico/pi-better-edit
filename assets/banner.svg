@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 800 300" width="800" height="300">
+  <defs>
+    <linearGradient id="bg6" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#0D0D18"/>
+      <stop offset="100%" stop-color="#181830"/>
+    </linearGradient>
+    <filter id="glow6">
+      <feGaussianBlur stdDeviation="5" result="blur"/>
+      <feMerge><feMergeNode in="blur"/><feMergeNode in="SourceGraphic"/></feMerge>
+    </filter>
+    <style>
+      @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;600;700&amp;display=swap');
+      text { font-family: 'IBM Plex Mono', monospace; }
+      .pill-teal-6 {
+        animation: floatTeal6 4.2s ease-in-out infinite;
+        fill: transparent;
+        stroke: #2DD4BF;
+        stroke-width: 1.5;
+      }
+      .pill-pink-6 {
+        animation: floatPink6 4.0s ease-in-out infinite;
+        fill: transparent;
+        stroke: #F472B6;
+        stroke-width: 1.5;
+      }
+      @keyframes floatTeal6 {
+        0%, 100% { transform: translate(0px, 0px); }
+        20% { transform: translate(9px, -20px); }
+        40% { transform: translate(-11px, 10px); }
+        60% { transform: translate(13px, -14px); }
+        80% { transform: translate(-5px, 17px); }
+      }
+      @keyframes floatPink6 {
+        0%, 100% { transform: translate(0px, 0px); }
+        20% { transform: translate(-13px, 17px); }
+        40% { transform: translate(11px, -20px); }
+        60% { transform: translate(-7px, 14px); }
+        80% { transform: translate(9px, -10px); }
+      }
+    </style>
+  </defs>
+
+  <rect width="800" height="300" rx="20" fill="url(#bg6)" stroke="#2A2A4A" stroke-width="2"/>
+
+  <!-- Particles v6 - scattered wide -->
+  <g opacity="0.12" fill="#6366F1">
+    <circle cx="35" cy="48" r="2.2"><animate attributeName="cy" values="48;42;54;48" dur="5.3s" repeatCount="indefinite"/></circle>
+    <circle cx="130" cy="258" r="1.6"><animate attributeName="cx" values="130;138;122;130" dur="6.7s" repeatCount="indefinite"/></circle>
+    <circle cx="235" cy="22" r="2.5"><animate attributeName="cy" values="22;16;28;22" dur="7.4s" repeatCount="indefinite"/></circle>
+    <circle cx="370" cy="276" r="1.7"><animate attributeName="cx" values="370;362;378;370" dur="5.6s" repeatCount="indefinite"/></circle>
+    <circle cx="470" cy="18" r="2"><animate attributeName="cy" values="18;12;24;18" dur="6.5s" repeatCount="indefinite"/></circle>
+    <circle cx="615" cy="278" r="2.4"><animate attributeName="cx" values="615;623;607;615" dur="7.2s" repeatCount="indefinite"/></circle>
+    <circle cx="690" cy="35" r="1.9"><animate attributeName="cy" values="35;29;41;35" dur="5.5s" repeatCount="indefinite"/></circle>
+    <circle cx="785" cy="242" r="2.3"><animate attributeName="cx" values="785;777;793;785" dur="6.9s" repeatCount="indefinite"/></circle>
+    <circle cx="80" cy="178" r="1.4"><animate attributeName="cy" values="178;172;184;178" dur="8.4s" repeatCount="indefinite"/></circle>
+    <circle cx="725" cy="148" r="2.1"><animate attributeName="cy" values="148;142;154;148" dur="7.6s" repeatCount="indefinite"/></circle>
+    <circle cx="295" cy="132" r="1.8"><animate attributeName="cx" values="295;287;303;295" dur="6.2s" repeatCount="indefinite"/></circle>
+    <circle cx="535" cy="144" r="2"><animate attributeName="cx" values="535;543;527;535" dur="8.0s" repeatCount="indefinite"/></circle>
+    <circle cx="185" cy="98" r="1.5"><animate attributeName="cy" values="98;92;104;98" dur="7.8s" repeatCount="indefinite"/></circle>
+    <circle cx="640" cy="96" r="1.7"><animate attributeName="cy" values="96;90;102;96" dur="6.1s" repeatCount="indefinite"/></circle>
+  </g>
+
+  <!-- Brackets -->
+  <g fill="none" stroke="#6366F1" stroke-width="3" opacity="0.3">
+    <path d="M25 50 L10 50 L10 250 L25 250"/>
+    <path d="M775 50 L790 50 L790 250 L775 250"/>
+  </g>
+
+  <!-- Hero -->
+  <rect x="265" y="16" width="270" height="50" rx="8" fill="#22D3EE" fill-opacity="0.15" stroke="#22D3EE" stroke-width="1.5" filter="url(#glow6)"/>
+  <text x="400" y="48" text-anchor="middle" fill="#22D3EE" font-size="19" font-weight="700" filter="url(#glow6)">π better edit</text>
+
+  <!-- Cards -->
+  <g font-size="11" font-weight="600">
+    <rect x="50" y="76" width="230" height="60" rx="8" fill="#0A0E1A" stroke="#22D3EE" stroke-width="1"/>
+    <text x="165" y="100" text-anchor="middle" fill="#67E8F9" font-size="13">stable addressing</text>
+    <text x="165" y="123" text-anchor="middle" fill="#94A3B8" font-size="9">content-hash IDs never drift</text>
+
+    <rect x="285" y="76" width="230" height="60" rx="8" fill="#0A0E1A" stroke="#F472B6" stroke-width="1"/>
+    <text x="400" y="100" text-anchor="middle" fill="#FB7185" font-size="13">atomic apply</text>
+    <text x="400" y="123" text-anchor="middle" fill="#94A3B8" font-size="9">all-or-nothing mutations</text>
+
+    <rect x="520" y="76" width="230" height="60" rx="8" fill="#0A0E1A" stroke="#22D3EE" stroke-width="1"/>
+    <text x="635" y="100" text-anchor="middle" fill="#67E8F9" font-size="13">verifiable chain</text>
+    <text x="635" y="123" text-anchor="middle" fill="#94A3B8" font-size="9">cryptographic edit log</text>
+  </g>
+
+  <!-- Bars -->
+  <g font-size="11">
+    <rect x="70" y="150" width="660" height="42" rx="6" fill="#111127" stroke="#2A2A4A" stroke-width="1"/>
+    <text x="400" y="176" text-anchor="middle" fill="#94A3B8" font-weight="600">content-addressed precision · every byte identified by hash</text>
+
+    <rect x="70" y="200" width="660" height="42" rx="6" fill="#111127" stroke="#2A2A4A" stroke-width="1"/>
+    <text x="400" y="226" text-anchor="middle" fill="#94A3B8" font-weight="600">agent-safe protocol · structured contracts prevent corruption</text>
+  </g>
+
+  <!-- Pills -->
+  <g>
+    <rect class="pill-teal-6" x="82" y="255" width="112" height="28" rx="14"/>
+    <text x="138" y="273" text-anchor="middle" fill="#2DD4BF" font-size="10" font-weight="600" style="animation: floatTeal6 4.2s ease-in-out infinite;">no re-read</text>
+
+    <rect class="pill-pink-6" x="594" y="255" width="122" height="28" rx="14"/>
+    <text x="655" y="273" text-anchor="middle" fill="#F472B6" font-size="10" font-weight="600" style="animation: floatPink6 4.0s ease-in-out infinite;">format-tolerance</text>
+  </g>
+</svg>

@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/banner.jpeg" alt="pi-better-edit banner" width="640">
+  <img src="assets/banner.svg" alt="pi-better-edit banner" width="640">
 </p>
 
 <h1 align="center">pi-better-edit</h1>
