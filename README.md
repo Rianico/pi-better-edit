@@ -59,14 +59,15 @@ More introductions referred to <a href="#why-hashline">Why Hashline</a> and <a h
 ### Install
 
 ```bash
+# from npm
 pi install npm:pi-better-edit
-```
-
-From a local checkout:
-
-```bash
+# from github
+pi install git:github.com/Rianico/pi-better-edit
+# From a local checkout:
 pi install /path/to/pi-better-edit
 ```
+
+
 
 | Requirement | |
 | --- | --- |
