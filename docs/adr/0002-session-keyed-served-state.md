@@ -1,12 +1,20 @@
 # Session-Keyed Served State; Global Undo and Snapshots
 
-Served state is the tool's record of which file lines it delivered into the model's context, used to verify edit ranges. It was stored as a global per-path namespace and wiped entirely at every session start. Because every pi process that loads the extension — main session, sub-agents, nested runs — fires `session_start`, any process start destroyed every other process's served record, and `pi -c` (continue) lost the rows the restarted session still needed. We decided to **key the served table by session id** (`(session_id, path)`), scope every served-state operation to the session's own rows, and **remove the session-start wipe**; GC is a TTL sweep on store open (no shutdown delete, so `pi -c` continuity holds). Session identity is `ctx.sessionManager.getSessionId()` — never `process.env.PI_SESSION_ID`, which a nested pi process inherits from its parent's bash spawn env (verified unreliable).
+Date: 2026-08-12
 
 ## Status
 
 accepted
 
-## Considered Options
+## Context
+
+Served state is the tool's record of which file lines it delivered into the model's context, used to verify edit ranges. It was stored as a global per-path namespace and wiped entirely at every session start. Because every pi process that loads the extension — main session, sub-agents, nested runs — fires `session_start`, any process start destroyed every other process's served record, and `pi -c` (continue) lost the rows the restarted session still needed.
+
+## Decision
+
+We decided to **key the served table by session id** (`(session_id, path)`), scope every served-state operation to the session's own rows, and **remove the session-start wipe**; GC is a TTL sweep on store open (no shutdown delete, so `pi -c` continuity holds). Session identity is `ctx.sessionManager.getSessionId()` — never `process.env.PI_SESSION_ID`, which a nested pi process inherits from its parent's bash spawn env (verified unreliable).
+
+### Considered Options
 
 - **Per-agent store files (physical isolation via `XDG_CONFIG_HOME` or a store override)** — rejected: requires launcher env injection into sub-agents (the subagent tool exposes no env field); fractures snapshot reuse and undo sharing, which are file-derived facts, not session knowledge; file sprawl plus GC; and it papers over the wrong global-wipe semantics instead of partitioning by the correct authority.
 - **Session-keyed rows in one store** — accepted: the store's fact authority is *what this session's context has been shown*, so the partition is the session. pi already hands every process a unique, stable session id (`ctx.sessionManager.getSessionId()`; distinct per process, stable across `pi -c` — both verified), so isolation is automatic with no launcher cooperation and no env injection.

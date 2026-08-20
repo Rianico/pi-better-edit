@@ -1,12 +1,20 @@
 # Served-State Range Verification for replace
 
-replace verifies only its two boundary anchors today; a change to an interior line slips through and is silently overwritten. We decided replace must verify every line of the resolved range against the served state — the tool's session-scoped, per-line record of the hashes it delivered to the model — rejecting with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` plus fresh range content when the interior no longer matches what the model was shown. The check is boundary-anchored span comparison: the served span between the two anchors' served positions must equal the current resolved span line-for-line. The model is never asked to supply verification data or to re-read; the tool owns verification, the model owns intent.
+Date: 2026-08-11
 
 ## Status
 
 accepted
 
-## Considered Options
+## Context
+
+`replace` verifies only its two boundary anchors today; a change to an interior line slips through and is silently overwritten. Paged reads, truncated previews, and disjoint diff hunks mean full-file content diffing is unreliable without served-content storage and coverage bookkeeping. Reread nudges and diff visibility alone do not narrow the tool's two-line validation scope.
+
+## Decision
+
+We decided `replace` must verify every line of the resolved range against the served state — the tool's session-scoped, per-line record of the hashes it delivered to the model — rejecting with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` plus fresh range content when the interior no longer matches what the model was shown. The check is boundary-anchored span comparison: the served span between the two anchors' served positions must equal the current resolved span line-for-line. The model is never asked to supply verification data or to re-read; the tool owns verification, the model owns intent.
+
+### Considered Options
 
 - **expected_hashes (the model submits the hash of every removed line)** — rejected on the model–tool boundary: it makes the model supply verification data and multiplies the hash-copy error surface the autocorrection layer already exists to paper over.
 - **edit `force` / model-asserted serve override** (apply unverified ranges anyway, or record the model's claim that it saw content through bash or another channel) — rejected on the model–tool boundary: the tool would certify content it never delivered, corrupting the served mirror and unsoundly waiving verification. A soft "asserted-not-served" variant was considered and rejected for the same confabulation risk (a context-lost, looping model reaches for whatever waives verification). Only the tool's own serves — read output, post-edit diffs, rejection echoes — count.

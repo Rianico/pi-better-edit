@@ -1,12 +1,20 @@
 # Two-signal line identity: whitespace-stripped anchors + raw fingerprints
 
-Lint passes (prettier, black, eslint --fix) mostly rewrite whitespace — measured on this repo's own source, ~93–98% of lines prettier changed rotate their anchor under the old canon because the change was internal or leading whitespace, which trailing-trim did not absorb. We decided that line anchors are computed from the line with ASCII whitespace (`[ \t\r\n]`) stripped, so formatting survives, while a second, tool-internal **fingerprint** (the hash of the raw line, whitespace included) preserves byte-level change detection; verification runs on anchors, and a fingerprint mismatch alone is informational drift, never a rejection.
+Date: 2026-08-16
 
 ## Status
 
 superseded by ADR-0005 (anchor-strip adopted; fingerprint dropped)
 
-## Considered options
+## Context
+
+Lint passes (prettier, black, eslint --fix) mostly rewrite whitespace — measured on this repo's own source, ~93–98% of lines prettier changed rotate their anchor under the old canon because the change was internal or leading whitespace, which trailing-trim did not absorb.
+
+## Decision
+
+We decided that line anchors are computed from the line with ASCII whitespace (`[ \t\r\n]`) stripped, so formatting survives, while a second, tool-internal **fingerprint** (the hash of the raw line, whitespace included) preserves byte-level change detection; verification runs on anchors, and a fingerprint mismatch alone is informational drift, never a rejection.
+
+### Considered Options
 
 - **Strip all whitespace, no fingerprint** — maximal lint survival, but empirically makes `"x y"` vs `"xy"`, `\s+` vs `\+`, and 4-space vs 8-space Python nesting hash identically: the tool silently verifies as "unchanged" ranges whose runtime behavior changed. Rejected: that is the exact failure ADR-0001 exists to prevent.
 - **Two signals (chosen)** — the anchor absorbs ASCII whitespace (lint survives); the fingerprint sees every byte change (staleness stays honest). A whitespace-only change re-serves the current row but does not rotate the anchor, so retry needs no re-read.

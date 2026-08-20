@@ -1,10 +1,20 @@
 # Merged edit payload with hoisted path
 
-The `edit` tool is the only mutation tool, carrying one uniform payload — `{ "path": ..., "edits": [[remove_from, remove_to, replacement_text], ...] }` — and `batch_edit` is removed. We chose this after the ADR-0006 tuple payload broke `edit` in two ways: `parameters` as a bare array was rejected by OpenAI-compatible transports ("schema must be of type object"), and the object-wrapped `{ "edit": [...] }` shape dropped top-level `path`, which crashed `tool_call` hooks such as pi-permission-lsz that read `event.input.path` on the `edit` tool (`path.isAbsolute(undefined)` → `ERR_INVALID_ARG_TYPE`). Hoisting `path` to the payload root keeps the tuple token savings (no repeated path or keys), keeps an object-root schema, and restores the implicit contract that a tool named `edit` carries its target path at the top level.
+Date: 2026-08-18
 
-**Status:** accepted; supersedes [ADR-0006](0006-compact-json-edit-payload.md).
+## Status
 
-## Considered options
+accepted; supersedes [ADR-0006](0006-compact-json-edit-payload.md)
+
+## Context
+
+The ADR-0006 tuple payload broke `edit` in two ways: `parameters` as a bare array was rejected by OpenAI-compatible transports ("schema must be of type object"), and the object-wrapped `{ "edit": [...] }` shape dropped top-level `path`, which crashed `tool_call` hooks such as pi-permission-lsz that read `event.input.path` on the `edit` tool (`path.isAbsolute(undefined)` → `ERR_INVALID_ARG_TYPE`). Google's Gemini API also requires `items` to be a single schema object, not a tuple array. We needed an object-root schema that keeps tuple token savings and restores the top-level `path` contract.
+
+## Decision
+
+We decided the `edit` tool is the only mutation tool, carrying one uniform payload — `{ "path": ..., "edits": [[remove_from, remove_to, replacement_text], ...] }` — and `batch_edit` is removed. Hoisting `path` to the payload root keeps the tuple token savings (no repeated path or keys), keeps an object-root schema, and restores the implicit contract that a tool named `edit` carries its target path at the top level.
+
+### Considered Options
 
 - **Bare tuple `parameters`** (ADR-0006's first cut): rejected by OpenAI-compatible transports — `type: "array"` root is not a valid function-tool schema.
 - **Object-wrapped tuple `{ "edit": [...] }`**: provider-valid, but removes top-level `path`; any `tool_call` hook on `edit` that reads `event.input.path` (pi-permission-lsz) crashes with a Node path `TypeError`. Also rejected by Google's Gemini API, which requires `items` to be a single schema object, not a tuple array.

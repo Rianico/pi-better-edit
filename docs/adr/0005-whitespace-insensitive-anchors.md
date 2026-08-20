@@ -1,12 +1,20 @@
 # Whitespace-insensitive anchors — ASCII strip, no fingerprint
 
-In workflows where an external formatter runs between edits (editor format-on-save, CI, a watcher — the linter being the only external writer), every whitespace-only lint pass rotated anchors under the trailing-trim canon, forcing `E_STALE_ANCHOR` rejections and full re-reads (measured: edit → prettier → edit rejects; ~93–98% of prettier's changed lines are whitespace-only). We decided the anchor is computed from the line with ASCII whitespace (`[ \t\r\n]`) removed, so formatting survives; verification keys on these anchors; and — because the only external writer is a formatter, which never alters semantics — no fingerprint is added. Any token-level change (quotes, semicolons, arrow-parens, wrapping, a brace merged onto a signature line) still rotates the anchor and is rejected as today.
+Date: 2026-08-16
 
 ## Status
 
 accepted
 
-## Considered options
+## Context
+
+In workflows where an external formatter runs between edits (editor format-on-save, CI, a watcher — the linter being the only external writer), every whitespace-only lint pass rotated anchors under the trailing-trim canon, forcing `E_STALE_ANCHOR` rejections and full re-reads (measured: edit → prettier → edit rejects; ~93–98% of prettier's changed lines are whitespace-only).
+
+## Decision
+
+We decided the anchor is computed from the line with ASCII whitespace (`[ \t\r\n]`) removed, so formatting survives; verification keys on these anchors; and — because the only external writer is a formatter, which never alters semantics — no fingerprint is added. Any token-level change (quotes, semicolons, arrow-parens, wrapping, a brace merged onto a signature line) still rotates the anchor and is rejected as today.
+
+### Considered Options
 
 - **Anchor-strip only, no fingerprint (chosen)** — the anchor absorbs ASCII whitespace; verification semantics for every *non-whitespace* change stay identical to today. Linter-only workflows lose the rejection/re-read tax on whitespace churn; the ~2–7% token-level lint changes remain visible rejections, which is correct. Schema stays one value per line; no served-store change beyond the anchor derivation.
 - **Anchor-strip + fingerprint (ADR-0003)** — the fingerprint was designed to catch semantic whitespace changes (`"x y"` vs `"xy"`, regex classes, Python re-indent). In a linter-only workflow those changes cannot occur (formatters never alter string/comment/regex contents), so the fingerprint is dead weight: a second value on every served line for a signal that never fires. Dropped.
