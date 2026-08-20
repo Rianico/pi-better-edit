@@ -55,6 +55,18 @@ _Avoid_: modification, external change (the tool cannot know the source)
 The informational section appended to a replace result (applied or noop, not undo) when drift lies in served territory outside the replacement range: the current content of the drifted lines, capped, with rows counting as serves. Fires once per drift episode — already-reported drift shrinks to a one-line pointer until a read re-serves the lines.
 _Avoid_: warning (the operation succeeded; it is information, not a warning)
 
+**orphaned serve**:
+An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range.
+_Avoid_: stale serve (ambiguous with boundary staleness)
+
+**orphaning re-serve**:
+The serve event that creates an orphan: re-serving the same hash at a new position without nulling its previous served position — typically a partial re-read (or an echo/diff that covers the new but not the old slot) after an external relocation that kept the hash. A full re-read heals by overwriting every position; an orphaning re-serve leaves the stale slot behind.
+_Avoid_: duplicate serve (conflates duplicated content with relocated-line-keeps-hash)
+
+**relocated line keeps its hash**:
+The file condition where a line's content survives an external write and, because no probe collision occurs at its new spot, the same hash is reproduced by a fresh hashing pass. Distinct from "duplicated content" (same text at two positions in one file gets two different hashes via probing).
+_Avoid_: duplicate content (implies same hash, which perfect hashing prevents)
+
 **read_skill**:
 To read a file's content as plain text — no hash prefixes, no served rows. The model's tool for loading skill content (SKILL.md or any file in its directory) to invoke and consume; `read` remains the hashed read for edit targets.
 _Avoid_: plain read, skill tool

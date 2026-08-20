@@ -154,6 +154,13 @@ function patchServed(
 			throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
 		}
 		while (updated.length <= entry.position) updated.push(null);
+		if (entry.hash !== null) {
+			for (let i = 0; i < updated.length; i++) {
+				if (i !== entry.position && updated[i] === entry.hash) {
+					updated[i] = null;
+				}
+			}
+		}
 		updated[entry.position] = entry.hash;
 	}
 	while (updated.length > 0 && updated[updated.length - 1] === null)

@@ -638,7 +638,7 @@ describe("hash-store — recordServesTruncated", () => {
 				0,
 			);
 			expect(getServed(store, "sessionA", "/p.ts")).toEqual([
-				"bbb",
+				null,
 				"ddd",
 				"eee",
 				"bbb",
