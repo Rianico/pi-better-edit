@@ -143,6 +143,16 @@ function patchServed(
 	updated: (string | null)[],
 	entries: Array<{ position: number; hash: string | null }>,
 ): void {
+	const index = new Map<string, number>();
+	for (let i = 0; i < updated.length; i++) {
+		const h = updated[i];
+		if (h === null) continue;
+		const prev = index.get(h);
+		if (prev !== undefined) {
+			updated[prev] = null;
+		}
+		index.set(h, i);
+	}
 	for (const entry of entries) {
 		if (!Number.isInteger(entry.position) || entry.position < 0) {
 			throw new TypeError(`Invalid served position: ${entry.position}`);
@@ -155,11 +165,19 @@ function patchServed(
 		}
 		while (updated.length <= entry.position) updated.push(null);
 		if (entry.hash !== null) {
-			for (let i = 0; i < updated.length; i++) {
-				if (i !== entry.position && updated[i] === entry.hash) {
-					updated[i] = null;
-				}
+			const existing = index.get(entry.hash);
+			if (existing !== undefined && existing !== entry.position) {
+				updated[existing] = null;
+				index.delete(entry.hash);
 			}
+			const oldAtPos = updated[entry.position];
+			if (oldAtPos !== null && oldAtPos !== entry.hash) {
+				index.delete(oldAtPos);
+			}
+			index.set(entry.hash, entry.position);
+		} else {
+			const oldAtPos = updated[entry.position];
+			if (oldAtPos !== null) index.delete(oldAtPos);
 		}
 		updated[entry.position] = entry.hash;
 	}
@@ -224,12 +242,18 @@ export function recordServesTruncated(
 	if (rows.length === 0) return;
 	try {
 		withStore(() => {
-			const updated = getServed(store, sessionKey, path).slice();
+			const before = getServed(store, sessionKey, path);
+			const updated = before.slice();
 			if (updated.length > lineCount) updated.length = lineCount;
 			if (clearFrom !== undefined) {
 				for (let i = clearFrom; i < updated.length; i++) updated[i] = null;
 			}
 			patchServed(updated, rows);
+			if (
+				before.length === updated.length &&
+				before.every((v, i) => v === updated[i])
+			)
+				return;
 			servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
 		});
 	} catch (error) {

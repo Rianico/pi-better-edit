@@ -519,7 +519,15 @@ export function valEdit(
 	}
 	const endLine = endResolved.line;
 	const rangeLines = fileLines.slice(startResolved.line - 1, endLine);
-	const canonLines = fileLines.map((line) => canon(line));
+	const canonCache = new Map<string, string>();
+	const getCanonMemo = (line: string): string => {
+		let v = canonCache.get(line);
+		if (v !== undefined) return v;
+		v = canon(line);
+		canonCache.set(line, v);
+		return v;
+	};
+	const canonLines = fileLines.map((line) => getCanonMemo(line));
 	boundaryDups.push(
 		...trailingDups(edit.content_lines, fileLines, endLine),
 		...leadingDups(edit.content_lines, fileLines, startResolved.line),
