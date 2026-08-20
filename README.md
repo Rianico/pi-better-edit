@@ -3,16 +3,20 @@
 </p>
 
 <h1 align="center">pi-better-edit</h1>
-
 <p align="center">
-  <strong>Hash-anchored `edit` for π.<br>
-  Powered By Hashline Positioning — not by line number, not by string replacement. More successful tool calls, with fewer tool‑call rounds. Lower token consumption, which means higher context space for your work.</strong>
+  <strong>Your agent's edits land on the right line. Every time.<br>
+  Hash-anchored <code>edit</code> for &pi; &mdash; no line numbers, no re-typing, no silent overwrites. Verified before it writes.</strong>
+</p>
+<p align="center">
+  <a href="#why-you-need-this"><img src="https://img.shields.io/badge/why-hashline-blue?style=flat" alt="why hashline"></a>
+  <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-30s-brightgreen?style=flat" alt="quick start 30s"></a>
+  <a href="#comparison"><img src="https://img.shields.io/badge/correctness-23%2F23-success?style=flat" alt="23/23 battery"></a>
 </p>
 
 <p align="center">
   <a href="#quick-start">Quick Start</a> •
-  <a href="#tools">Tools</a> •
   <a href="#why-hashline">Why Hashline</a> •
+  <a href="#tools">Tools</a> •
   <a href="#comparison">Comparison</a> •
   <a href="#how-anchors-work">How Anchors Work</a> •
   <a href="#development">Development</a> •
@@ -28,35 +32,37 @@
 
 ---
 
-> *"The harness — not the model — is the bottleneck."*
-> — Can Bölük, [*The Harness Problem*](https://stencil.so/blog/the-harness-problem)
+> *"The harness — not the model — is the bottleneck."* — Can Bölük, [*The Harness Problem*](https://stencil.so/blog/the-harness-problem)
 >
-> **Practical advantage: fewer tool calls.** In the recorded coding-agent benchmark, this project completed the same external-drift refactor in **3 tool calls** versus **6 for OMP**. Fewer calls mean fewer model/tool round trips while preserving exact final-file correctness; see the practical benchmark below for the measured sample.
+> **This is the harness fix.** Content hashes replace line numbers — an edit above never shifts the anchor below. Every range is verified against what the agent actually saw. Stale or unseen lines are hard-rejected with fresh anchors to retry — no `read` needed.
+>
+> **3 tool calls vs 6 · -55.8% tokens · 23/23 correctness.** Same external-drift refactor, same correct file (single stochastic run vs OMP; [full method](benchmarks/results/2026-08-17-practical-token-benchmark.md)).
 
 ## Why you need this
 
-Line numbers shift the moment anything above them changes, and str_replace-style(e.g. Claude Code, Codex) 
-tools make the model re-type the code it is replacing. Hashline gives every line a **content
-address** instead: `edit` targets two 3-character hashes, the old text is never echoed,
-anchors survive edits above, and every resolved range is verified against the exact rows
-the model was shown. A wrong-line edit cannot silently land.
+**If you've watched an agent corrupt a file because `line 47` became `line 74` after an insert — this is for you.**
 
-`str_replace` makes the model re-type the code it is replacing — output tokens billed at
-~5-6× the input rate — and wrong-line edits are how agents corrupt files: one edit lands
-on line 47 instead of 74 because everything above it shifted. Hashline replaces the old
-text with two content hashes, so the call never echoes what it replaces, and the tool
-checks every line of the resolved range against what the model was shown before writing
-anything. Stale anchors and unverified ranges are hard-rejected, and the current range is
-echoed back as fresh anchors — the retry needs no `read` (reject-and-serve).
+| Before: `str_replace` / line numbers | After: hashline `edit` |
+| --- | --- |
+| Model re-types old code (output billed ~5-6× input) | Sends two 3-char hashes — old text is never echoed |
+| One insert above shifts every number below → wrong line lands silently | Anchors are content addresses → edits above don't move anchors below |
+| No check that the range matches what was shown | Every line verified against served rows; `[E_RANGE_STALE]`/`[E_RANGE_UNSERVED]` reject before any write, then **reject-and-serve** returns fresh `HASH│content` to retry |
 
-Not for one-line touch-ups (near parity) or brand-new files (`write`). It pays off in long
-sessions and structural edits — anywhere an edit must not land on the wrong line.
+> [!TIP]
+> **Shining points — honest and measured:**
+> - **Self-healing, not silent.** External edits never get overwritten — stale ranges are rejected and re-served as fresh `HASH│content` to retry; orphaned serves heal without a full re-read (ADR-0008). Fail-closed, not auto-merge.
+> - **Formatter-tolerant.** ASCII-whitespace-insensitive anchors survive `prettier`/`black`/`eslint --fix` between edits (`formatOnSave`, watcher, CI). Linter-only assumption — whitespace inside string literals is not distinguished (ADR-0005).
+> - **Chained & batched, no re-read ritual.** Anchors for untouched lines stay valid; diff/echo/reject rows count as serves. `edit` batches up to 32 same-file edits atomically (`[E_BATCH_ABORT]`), ~-40% envelope vs `str_replace` on the pinned 12-edit corpus.
+> - **Read guard enforced.** Never edits what it hasn't seen — `[E_RANGE_UNSERVED]`/`[E_RANGE_UNVERIFIED]`/`[E_STALE_ANCHOR]` reject before any write, then `reject-and-serve`.
+> - **Fewer round-trips in practice.** Dated run: **3 calls vs 6** for the OMP wrapper on the same external-drift refactor, same correct file; envelope vs `str_replace` is the durable number — run `npm run benchmark:practical` to reproduce (stochastic, single sample). Correctness `23/23` deterministic.
 
-More introductions referred to <a href="#why-hashline">Why Hashline</a> and <a href="#practical-benchmark--coding-agent-session">Benchmark with oh-my-pi#hashline</a>
+Not for one-line touch-ups (near parity) or brand-new files (`write`). It pays off in long sessions and structural edits — anywhere an edit must not land on the wrong line.
 
-## Quick Start
+> Deep dive: <a href="#why-hashline">Why Hashline</a> · <a href="#comparison">Comparison</a> · <a href="benchmarks/README.md">Benchmarks</a>
 
-### Install
+## Quick Start — from install to verified edit in 30s
+
+### Install (pick one)
 
 ```bash
 # from npm
@@ -67,12 +73,14 @@ pi install git:github.com/Rianico/pi-better-edit
 pi install /path/to/pi-better-edit
 ```
 
-
+No config. `pi` discovers the extension on next run. See the agent's install log for `pi-better-edit: active`.
 
 | Requirement | |
 | --- | --- |
 | Node | ≥ 22.19.0 (`engines`) |
 | pi-coding-agent | ≥ 0.75.0 (peer dependency) |
+
+### See it work
 
 `read` returns every line prefixed by its hash — the hash *is* the line's address:
 
@@ -96,8 +104,63 @@ and returns a diff with fresh anchors, so the next edit verifies cleanly with no
   kQm │ }
 ```
 
-Keep editing — anchors for lines you didn't touch stay valid, and auto-read hands you fresh
-anchors after each change.
+Chained edits stay cheap — anchors for untouched lines remain valid, diff/echo rows count as serves, and `read` becomes on-demand recovery, not a ritual. Try batching: `{"path":"src/main.ts","edits":[["a1b","a1b","new line 1\n"],["c3d","c3d","new line 2"]]}` is atomic — one fails, none write.
+
+> [!TIP]
+> **Want proof before you install?** Run `npm run eval` — 23/23 correctness, no LLM. Stale edits are rejected before they corrupt a file, on every run. Then `pi install npm:pi-better-edit` and watch the `read` → `edit` → diff loop stay verified.
+
+## Why Hashline
+
+**Correctness, not just brevity.** Every resolved edit range is verified against the
+served rows — what `read`, a post-edit diff, or a rejection echo actually showed the model.
+A line inside the range that changed on disk since it was served, or was never served, is
+hard-rejected before any file I/O: `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` /
+`[E_RANGE_UNVERIFIED]`, and the current range is echoed as fresh `HASH│content` rows. The
+retry needs no `read`. Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
+never validate the main session's edits and vice versa.
+
+**Content-addressed anchors.** Anchors are derived from line content (ASCII-whitespace
+stripped), not position: edit one part of a file and the hashes of the rest stay put, so
+chained edits need no re-reads. Re-inserting identical text keeps its hash — "edit X with
+X" doesn't rotate the anchor. Anchors are unique by construction — repeated `}` or
+`import` lines never share one.
+
+**Chained edits without re-reading.** Post-edit diff rows, auto-read rows, and rejection
+echoes all count as serves. `read` is on-demand recovery, not a per-edit ritual.
+
+**Stop the loop.** A no-op edit reports `No changes made` and leaves anchors alone; the
+same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `edit` applies up to 32
+edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]`.
+
+### Token economics: envelope savings
+
+The compact JSON contract is primarily a **token-saving envelope change**. It removes repeated field names and escaped wrapper syntax while leaving the verified edit semantics unchanged:
+
+- `edit` is one fixed tuple inside an object-root schema: `{ "edit": [path, [from, to], replacement] }`;
+- `edit` is a compact tuple array inside an object-root schema: `{ "path": path, "edits": [[from, to, replacement], …] }`;
+- replacement text is emitted once, and the old text is never repeated in the call.
+
+#### Theoretical benchmark — serialized envelopes
+
+This benchmark counts only the serialized edit payloads, not model reasoning, tool descriptions, reads, retries, or cache traffic. It compares the same three editing families on two 12-edit fixtures: `str_replace`, pi-better-edit, and `@oh-my-pi/hashline` (OMP).
+
+| snapshot | `str_replace` | pi-better-edit: `edit` | pi-better-edit: `edit` (multi-item) | OMP: per-edit | OMP: one batch |
+| --- | ---: | ---: | ---: | ---: | ---: |
+| external pinned 12-edit corpus, current-envelope recount | 1,015 | 609 (**-40.0%**) | 582 (**-42.7%**) | 590 (**-41.9%**) | 480 (**-52.7%**) |
+| local 12-edit configuration snapshot | 358 | 272 (**-24.0%**) | 241 (**-32.7%**) | 268 (**-25.1%**) | 180 (**-49.7%**) |
+
+All percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; the historical sibling record remains available in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproducible with `npm run benchmark:tokens`; correctness is measured separately with `npm run eval` and `npm run eval:hashline`.
+
+#### Practical benchmark — coding-agent session
+
+This benchmark measures a real coding-agent loop rather than serialized envelopes. The practical advantage is round-trip efficiency: pi-better-edit completed the scenario in **3 tool calls**, versus **6 for OMP**. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. OMP is the practical baseline below; usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
+
+| engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
+| --- | ---: | ---: | ---: | :---: |
+| OMP patch wrapper | **6** | 28,467 | 0.0% | ✅ |
+| pi-better-edit (`edit`, multi-item) | **3 (fewest)** | 12,593 | **-55.8%** | ✅ |
+
+Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
 
 ## Tools
 
@@ -137,80 +200,24 @@ atomically to that one file — one item per call is the norm, several same-file
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_BATCH_ABORT]` | A multi-item `edit` call was rejected as a whole: an item failed validation or served-state verification. Nothing was written; the failing item's current range is echoed as fresh `HASH│content` rows. |
 
-## Why Hashline
-
-**Correctness, not just brevity.** Every resolved edit range is verified against the
-served rows — what `read`, a post-edit diff, or a rejection echo actually showed the model.
-A line inside the range that changed on disk since it was served, or was never served, is
-hard-rejected before any file I/O: `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` /
-`[E_RANGE_UNVERIFIED]`, and the current range is echoed as fresh `HASH│content` rows. The
-retry needs no `read`. Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
-never validate the main session's edits and vice versa.
-
-**Content-addressed anchors.** Anchors are derived from line content (ASCII-whitespace
-stripped), not position: edit one part of a file and the hashes of the rest stay put, so
-chained edits need no re-reads. Re-inserting identical text keeps its hash — "edit X with
-X" doesn't rotate the anchor. Anchors are unique by construction — repeated `}` or
-`import` lines never share one.
-
-**Chained edits without re-reading.** Post-edit diff rows, auto-read rows, and rejection
-echoes all count as serves. `read` is on-demand recovery, not a per-edit ritual.
-
-**Stop the loop.** A no-op edit reports `No changes made` and leaves anchors alone; the
-same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `edit` applies up to 32
-edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]`.
-
-
-### Token economics: envelope savings
-
-The compact JSON contract is primarily a **token-saving envelope change**. It removes repeated field names and escaped wrapper syntax while leaving the verified edit semantics unchanged:
-
-- `edit` is one fixed tuple inside an object-root schema: `{ "edit": [path, [from, to], replacement] }`;
-- `edit` is a compact tuple array inside an object-root schema: `{ "path": path, "edits": [[from, to, replacement], …] }`;
-- replacement text is emitted once, and the old text is never repeated in the call.
-
-#### Theoretical benchmark — serialized envelopes
-
-This benchmark counts only the serialized edit payloads, not model reasoning, tool descriptions, reads, retries, or cache traffic. It compares the same three editing families on two 12-edit fixtures: `str_replace`, this project, and `@oh-my-pi/hashline` (OMP).
-
-| snapshot | `str_replace` | this project: `edit` | this project: `edit` (multi-item) | OMP: per-edit | OMP: one batch |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| external pinned 12-edit corpus, current-envelope recount | 1,015 | 609 (**40.0%**) | 582 (**42.7%**) | 590 (**41.9%**) | 480 (**52.7%**) |
-| local 12-edit configuration snapshot | 358 | 272 (**24.0%**) | 241 (**32.7%**) | 268 (**25.1%**) | 180 (**49.7%**) |
-
-All percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; the historical sibling record remains available in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproducible with `npm run benchmark:tokens`; correctness is measured separately with `npm run eval`, `npm run eval:compare`, and `npm run eval:hashline`.
-
-#### Practical benchmark — coding-agent session
-
-This benchmark measures a real coding-agent loop rather than serialized envelopes. The practical advantage is round-trip efficiency: this project completed the scenario in **3 tool calls**, versus **6 for OMP**. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. OMP is the practical baseline below; usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
-
-| engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
-| --- | ---: | ---: | ---: | :---: |
-| OMP patch wrapper | **6** | 28,467 | 0.0% | ✅ |
-| this project (`edit`, multi-item) | **3 (fewest)** | 12,593 | **55.8%** | ✅ |
-
-Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
-
-
 ## Comparison
 
 ### Capability comparison
 
-| | **pi-better-edit** (this) | pi-hashline-edit (original) | pi-hashline-edit-pro (upstream) | @oh-my-pi/hashline |
-| --- | --- | --- | --- | --- |
-| Layer | pi tools: `read` / `read_skill` / `edit` / `undo_last_edit` | pi tool override: `read` / `edit` + opt-in `grep` | pi tools: `read` / `replace` / `undo_last_replace` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
-| Address format | `HASH│` — 3-char content hash, no line number | `LINE#HASH:` — line number + 2-4 char hash | `HASH│` — 3-char content hash, no line number | `[path#tag]` — full-file content tag + line numbers |
-| Whitespace-insensitive anchors | ✅ all ASCII whitespace stripped — survives reformatting | ❌ exact content match | ~ trailing whitespace trimmed only | ~ n/a (anchors are line numbers) |
-| Duplicate lines | ✅ unique per line (collision-resolved); ambiguity → `[E_AMBIGUOUS_ANCHOR]` | ~ shared hash — repeats are ambiguous | ✅ unique (collision-resolved) | ~ position-based — repeats fine, position unverified |
-| Verified against what the model saw | ✅ every resolved line, per session | ❌ hash-vs-content only, no served record | ~ served-state, but blind-edit (B8) and cross-session (B22) holes | ~ seen-lines provenance + file-version tag (H7) |
-| Stale interior | ✅ reject + fresh anchors (`[E_RANGE_STALE]`) | ~ line-hash mismatch → 3-way recovery or fresh anchors | ~ version-dependent: 2.4.1 overwrote silently, 2.5.x rejects | ~ recovery-with-warning, else `MismatchError` |
-| Blind edit — lines never shown | ✅ hard reject (`[E_RANGE_UNVERIFIED]` / `[E_RANGE_UNSERVED]`) | ❌ applies | ❌ applies (B8) | ~ reject when seen-lines recorded (H7) |
-| Batch atomicity | ✅ `edit` multi-item — all-or-nothing, `[E_BATCH_ABORT]` | ~ op array, one snapshot, bottom-up | ❌ one `replace` per call | ✅ multi-section preflight (H8) |
-| Undo (persisted) | ✅ survives restarts | ❌ | ✅ `undo_last_replace`, persisted | ❌ none |
-| `grep` tool | ❌ | ✅ opt-in | ❌ | ❌ |
-| Sub-agent session isolation | ✅ session-keyed served state (B19–B22) | — | ❌ leak (B22) | ~ |
-| Deterministic battery | ✅ 23/23 | — schema differs, design-only | 17/23 (2.4.1) · 21/23 (2.5.x) | ✅ 10/10 library |
-| Runtime | pi (Node) | pi (Node) | pi (Node) | Bun ≥ 1.3.14 (TS source) |
+| | **pi-better-edit** (this) | @oh-my-pi/hashline |
+| --- | --- | --- |
+| Layer | pi tools: `read` / `read_skill` / `edit` / `undo_last_edit` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
+| Address format | `HASH│` — 3-char content hash, no line number | `[path#tag]` — full-file content tag + line numbers |
+| Whitespace-insensitive anchors | ✅ all ASCII whitespace stripped — survives `prettier`/`black`/`eslint --fix` | ~ n/a (anchors are line numbers) |
+| Duplicate lines | ✅ unique per line (collision-resolved); ambiguity → `[E_AMBIGUOUS_ANCHOR]` | ~ position-based — repeats fine, position unverified |
+| Verified against what the model saw | ✅ every resolved line, per session — `[E_RANGE_STALE]`/`[E_RANGE_UNSERVED]` reject before write | ~ seen-lines provenance + file-version tag (H7) |
+| Stale interior | ✅ reject + fresh anchors (`[E_RANGE_STALE]`) | ~ recovery-with-warning, else `MismatchError` |
+| Blind edit — lines never shown | ✅ hard reject (`[E_RANGE_UNVERIFIED]` / `[E_RANGE_UNSERVED]`) | ~ reject when seen-lines recorded (H7) |
+| Batch atomicity | ✅ `edit` multi-item — all-or-nothing, `[E_BATCH_ABORT]` | ✅ multi-section preflight (H8) |
+| Undo (persisted) | ✅ survives restarts | ❌ none |
+| Sub-agent session isolation | ✅ session-keyed served state | ~ |
+| Deterministic battery | ✅ 23/23 | ✅ 10/10 library (own seam) |
+| Runtime | pi (Node) | Bun ≥ 1.3.14 (TS source) |
 
 > `~` = occasionally / inconsistently. `—` = not specified / not applicable.
 
@@ -233,36 +240,16 @@ hashline-the-library for a cross-backend patch format; pick hashline-the-tool fo
 content-addressed edits in your agent. Syntax-aware structural edits and file-lifecycle operations
 remain outside this verified line-range contract.
 
-Against the two pi extensions in the family: the **original** `pi-hashline-edit`
-introduced line+hash anchors and grep-to-edit, but has no served-state record (it verifies
-hash-vs-content), no persisted undo, and its duplicate lines share an anchor. **pro**
-hardened the format to pure 3-char hashes with collision resolution and added the
-served-state check, persisted undo, and auto-read; the deterministic battery shows what a
-self-maintained fork keeps fixing — 2.4.1 overwrote drifted interiors silently, 2.5.x
-rejects them but still lets a blind edit and a cross-session serve through. This fork
-closes those with session-keyed, per-line served-state verification plus multi-item `edit`.
 
-### Refinements over upstream
 
-- **`edit` / `undo_last_edit`** — renamed from `replace` / `undo_last_replace`; this
-  extension's `edit` replaces pi's built-in edit tool.
-- **Served-state range verification** — every line of the resolved range is verified
-  against what the model was shown, not just the two boundary anchors; a changed or
-  never-served interior is hard-rejected with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` /
-  `[E_RANGE_UNVERIFIED]`, and the current range is echoed as fresh anchors (reject-and-serve).
-- **Session-keyed served state** — sub-agent serves never leak into the main session
-  (ADR-0002; battery B19–B22).
-- **Drift notices** — served territory outside the edit range that changed on disk is
-  reported as an informational notice, once per episode.
-- **Chained edits without re-reading** — post-edit diff rows and rejection echoes count as
-  serves; `read` is on-demand recovery, not a per-edit ritual.
-- **`edit` (multi-item)** — up to 32 edits to one file in one atomic call; all-or-nothing with
-  `[E_BATCH_ABORT]` and fresh-anchor feedback for the failing item.
-- **Whitespace-insensitive anchors** — all ASCII whitespace is stripped before hashing, so
-  formatter passes that reindent don't invalidate anchors (ADR-0005); unique anchors by
-  construction (bitset probing, ADR-0003).
-- **Own identity** — published as `pi-better-edit`, with its own config and hash-store
-  directory (`~/.config/pi-better-edit`).
+### What you get
+
+- **Verified before it writes** — every line of the resolved range is checked against served rows; stale or never-served interiors are hard-rejected (`[E_RANGE_STALE]`/`[E_RANGE_UNSERVED]`/`[E_RANGE_UNVERIFIED]`) and re-served as fresh anchors.
+- **Session-keyed** — sub-agent serves never validate the main session's edits and vice versa (ADR-0002).
+- **Drift notices** — served territory outside the range that changed on disk is reported once per episode, not as a warning.
+- **Chained without re-reads** — diff, auto-read, and rejection rows all count as serves.
+- **Atomic batch** — up to 32 same-file edits in one `edit` call, all-or-nothing with `[E_BATCH_ABORT]`.
+- **Formatter-tolerant** — ASCII-whitespace-insensitive anchors survive re-indents; unique by construction (bitset probing, ADR-0003/0005).
 
 ### Correctness in edge cases
 
@@ -294,21 +281,13 @@ loop, no sampling: a run either reproduces or it doesn't. That trades stochastic
 numbers for something narrower but exact: stale edits are rejected before they corrupt
 files, on every run.
 
-**Tool battery — 23 scenarios, same tool seam, three targets (2026-08-17):**
+**Tool battery — 23 scenarios (2026-08-17):**
 
 | vs expected verdict | correct | silent data-loss cases |
 | --- | --: | --: |
-| **this fork (1.1.3)** | **23/23** | 0 |
-| `pi-hashline-edit-pro@2.4.1` (fork base) | 17/23 | 5 silent data-loss cases (B3, B7, B8, B10, B15) + B22 cross-session leak |
-| `pi-hashline-edit-pro@2.5.3` (latest) | 21/23 | B8 blind-edit + B22 cross-session leak |
+| **pi-better-edit (1.1.3)** | **23/23** | 0 |
 
-**oh-my-pi comparison boundary:** `@oh-my-pi/hashline` is not runnable through this pi tool seam. Its separate library battery covers 10 comparable scenarios and is reported as 10/10 for version 17.3.5; reproduce it with `npm run eval:hashline`. This is a library-layer reference, not an extra row in the 23-scenario tool-battery table.
-The four interior-drift failures (B3, B7, B10, B15) are the exact data-loss class the
-served-state range verification exists to prevent: the file changed inside the edit range
-after it was read, and the upstream `replace` applied anyway, silently overwriting the
-drifted lines. B8 is the blind-edit case: an edit anchored on a boundary line the model
-was never shown still landed, overwriting unseen content. B22 — present in both versions —
-is the cross-session serve leak.
+Separate library battery for `@oh-my-pi/hashline` (own seam) is 10/10 for 17.3.5 — stale tags are either recovered with `Recovered from a stale file hash…` or rejected with `MismatchError`, never silently applied. Reproduce with `npm run eval:hashline`; this is a library-layer reference, not an extra row in the tool table.
 
 **Library battery — `@oh-my-pi/hashline` 17.3.5, 10/10 (2026-08-17):** the hashline patch
 engine is tested in its own model: stale tags are either recovered with an explicit
@@ -322,19 +301,11 @@ and [benchmarks/results/](benchmarks/results/).
 ### Reproduce
 
 ```bash
-npm run eval            # this fork, 23/23
-npm run eval:compare    # + upstream pi-hashline-edit-pro 2.4.1 / 2.5.x
-npm run eval:hashline   # + @oh-my-pi/hashline (installs bun into a temp dir)
+npm run eval            # pi-better-edit, 23/23 — no LLM, deterministic
+npm run eval:hashline   # + @oh-my-pi/hashline library battery (installs bun temp)
 ```
 
-`eval:compare` installs the requested package versions into `node_modules` temporarily
-(`--no-save --no-package-lock`), runs the same 23 scenarios against each target, prints a
-per-scenario correctness table plus aggregate call/chars counts, then restores
-`node_modules` to the lockfile state. `eval:hashline` scratch-installs `@oh-my-pi/hashline`
-and the bun runtime; nothing lands in this repo. The original `pi-hashline-edit` (0.8.3)
-is **not** runnable in the tool battery — its edit envelope (`edits: [{op, pos, lines}]`)
-and `LINE#HASH:` read format differ from the `remove_from`/`remove_to` schema — so it is
-compared by design, not by score.
+`npm run eval` runs the 23-scenario tool battery; `eval:hashline` scratch-installs `@oh-my-pi/hashline` and bun — nothing lands in this repo.
 
 > **Scope & honesty.** The batteries below are correctness gates, not throughput numbers:
 > they do not claim token, cost, or latency performance. The token table above is a separate,
@@ -461,9 +432,7 @@ temporary-extension form (`pi -e npm:pi-fabric`) so nothing is installed into yo
 needs network access to install the temp extension and takes a few minutes; exit code 0
 means the suite passed.
 
-**Evaluation.** The [Comparison](#comparison) section's reproducible benchmark is produced by the same commands:
-`npm run eval`, `npm run eval:compare`, `npm run eval:hashline` — all `RUN_EVAL`-gated so
-none of it runs in `npm test`.
+**Evaluation.** The [Comparison](#comparison) section's reproducible benchmark is produced by `npm run eval` and `npm run eval:hashline` — both `RUN_EVAL`-gated so neither runs in `npm test`.
 
 ## Contributing
 
