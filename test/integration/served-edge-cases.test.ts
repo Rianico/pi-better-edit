@@ -108,7 +108,7 @@ describe("served-state edge cases for edit", () => {
 		});
 	});
 
-	it("fail-safes with [E_RANGE_UNVERIFIED] when a boundary hash was served at two positions", async () => {
+	it("recovers from a stale duplicate by disambiguating to the valid served position", async () => {
 		await withTempFile("sample.ts", "a\nb\nc\n", async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -134,17 +134,15 @@ describe("served-state edge cases for edit", () => {
 				ctx,
 			);
 
-			await expect(
-				editTool.execute(
-					"e1",
-					{ path: "sample.ts", edits: [[aRef, aRef, "X"]] },
-					undefined,
-					undefined,
-					ctx,
-				),
-			).rejects.toThrow(/E_RANGE_UNVERIFIED.*served at 2 positions/);
-
-			expect(await readFile(path, "utf-8")).toBe("x\ny\na\n");
+			const result = await editTool.execute(
+				"e1",
+				{ path: "sample.ts", edits: [[aRef, aRef, "X"]] },
+				undefined,
+				undefined,
+				ctx,
+			);
+			expect(getText(result)).toContain("Successfully edited");
+			expect(await readFile(path, "utf-8")).toBe("x\ny\nX\n");
 		});
 	});
 
