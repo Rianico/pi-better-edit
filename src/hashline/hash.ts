@@ -59,6 +59,16 @@ function hashAt(idx: number): string {
 	return hash;
 }
 
+const hashToCanon = new Map<string, string>();
+
+export function rememberHashCanon(hash: string, canonText: string): void {
+	if (!hashToCanon.has(hash)) hashToCanon.set(hash, canonText);
+}
+
+export function getCanonForHash(hash: string): string | undefined {
+	return hashToCanon.get(hash);
+}
+
 export const HL_PREFIX_PLUS_RE = new RegExp(`^\\+${HASH_CLASS}│`);
 export const HL_PREFIX_MINUS_RE = new RegExp(
 	`^-(?:${HASH_CLASS}│| {${ANCHOR_LEN}}│)`,
@@ -131,7 +141,9 @@ export function _lineHashesPure(content: string): string[] {
 	for (let i = 0; i < lines.length; i++) {
 		const c = getCanon(canonCache, lines[i]!);
 		const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
-		hashes[i] = assignHash(used, baseIdx, hint);
+		const h = assignHash(used, baseIdx, hint);
+		hashes[i] = h;
+		rememberHashCanon(h, c);
 	}
 	return hashes;
 }
@@ -294,7 +306,9 @@ function mapStableHashes(
 	};
 
 	for (const entry of survivors) {
-		const candidates = newByContent.get(getCanon(canonCache, oldLines[entry.index]!));
+		const candidates = newByContent.get(
+			getCanon(canonCache, oldLines[entry.index]!),
+		);
 		if (!candidates || candidates.length === 0) continue;
 		const target =
 			entry.index > spanEnd ? entry.index + shiftAfterSpan : entry.index;
@@ -303,6 +317,7 @@ function mapStableHashes(
 		const newIdx = candidates.splice(pos, 1)[0]!;
 		newHashes[newIdx] = entry.hash;
 		markUsed(entry.hash);
+		rememberHashCanon(entry.hash, getCanon(canonCache, oldLines[entry.index]!));
 	}
 
 	const removedByContent = new Map<string, { hashes: string[]; pos: number }>();
@@ -320,15 +335,19 @@ function mapStableHashes(
 		if (newHashes[i]) continue;
 		const queue = removedByContent.get(getCanon(canonCache, newLines[i]!));
 		if (!queue || queue.pos >= queue.hashes.length) continue;
-		newHashes[i] = queue.hashes[queue.pos]!;
+		const h = queue.hashes[queue.pos]!;
+		newHashes[i] = h;
 		queue.pos += 1;
+		rememberHashCanon(h, getCanon(canonCache, newLines[i]!));
 	}
 
 	for (let i = 0; i < newLines.length; i++) {
 		if (newHashes[i]) continue;
 		const c = getCanon(canonCache, newLines[i]!);
 		const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
-		newHashes[i] = assignHash(used, baseIdx, hint);
+		const h = assignHash(used, baseIdx, hint);
+		newHashes[i] = h;
+		rememberHashCanon(h, c);
 	}
 
 	return newHashes;

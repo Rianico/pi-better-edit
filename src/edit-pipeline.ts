@@ -16,8 +16,11 @@ import {
 	ServedRejectionError,
 	type ResolvedRange,
 } from "./hashline/served";
-import { loadServed, recordEchoServes, type ServeRecordPolicy } from "./served-state";
-
+import {
+	loadServed,
+	recordEchoServes,
+	type ServeRecordPolicy,
+} from "./served-state";
 
 export function collectRemovedHashes(
 	edit: HEdit,
@@ -185,6 +188,10 @@ export async function applyOneEdit(
 		};
 	}
 
+	if (!input.hashes || input.hashes.length === 0)
+		throw new Error(
+			"[E_STALE_ANCHOR] missing previous hashes for stable anchoring",
+		);
 	const removedHashes = collectRemovedHashes(input.edit, input.hashes);
 	const nextHashes = await lineHashes(
 		nextContent,
