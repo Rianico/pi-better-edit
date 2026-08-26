@@ -92,7 +92,7 @@ import {
 	type HEdit,
 	type NEdit,
 } from "./hashline";
-import { defaultHashIdentity } from "./hashline/hash-identity";
+import { defaultHashIdentity, lineHashes } from "./hashline/hash-identity";
 import {
 	AnchorMismatchError,
 	ServedRejectionError,
