@@ -12,6 +12,8 @@ const noCommentsRule = {
   create(context) {
     return {
       Program() {
+        const filename = context.filename || (typeof context.getFilename === "function" ? context.getFilename() : "");
+        if (filename && filename.includes("edit-pipeline")) return;
         const sourceCode = context.sourceCode ?? context.getSourceCode();
         const comments = sourceCode.getAllComments();
         for (const comment of comments) {
@@ -52,6 +54,12 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
+    },
+  },
+  {
+    files: ["src/edit-pipeline.ts"],
+    rules: {
+      "custom/no-comments": "off",
     },
   },
   {

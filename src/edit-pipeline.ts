@@ -730,9 +730,7 @@ export async function apply(
 
 		try {
 			const resultLineCount = visLines(file.result).length;
-			// Dense serves: mirror handler's dense recording so chained edits
-			// verify without a read, even if tool_result handler hasn't run.
-			// genDiff window would miss drift tail, so we build dense.
+
 			const diffInfo = genDiff(
 				file.originalNormalized,
 				file.result,

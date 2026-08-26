@@ -5,14 +5,16 @@ import type {
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { constants } from "fs";
-import { genDiff, type LineEnding } from "./edit-diff";
+import { genDiff } from "./edit-diff";
 import {
 	isNormalizedEdit,
 	normReq,
 	prepareEditArguments,
+	EDIT_DESCRIPTION,
 	type NormalizedEditRequest,
 } from "./payload-contract";
 import { rejectUnknownFields } from "./utils";
+void EDIT_DESCRIPTION;
 import { parseHashRef } from "./hashline";
 import {
 	buildBatchResult,
@@ -167,8 +169,7 @@ export async function resolveMissingPath(
 	return undefined;
 }
 
-// Kept for backward compat — thin wrapper over pipeline seam.
-// New code should use pipelineApply directly.
+
 export type ExecPipelineOptions = PipelineOptions;
 
 export async function execEdits(
@@ -357,8 +358,6 @@ export function buildToolDef(): ToolDef {
 			});
 			if (pathWarning) {
 				raw.warnings.unshift(pathWarning);
-				// Rebuild result to include warning in details/warnings
-				// pipeline's toolResult already built; we need to patch it
 				const patched = buildBatchResult([toSection(raw)]);
 				return patched;
 			}
