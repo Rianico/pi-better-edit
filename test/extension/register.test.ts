@@ -24,14 +24,13 @@ describe("extension registration", () => {
 });
 
 describe("tool prompt file references", () => {
-	it("edit.ts loads the consolidated edit.md prompt", () => {
+	it("edit.ts consolidates payload via payload-contract (single source)", () => {
 		const source = readFileSync(
 			new URL("../../src/edit.ts", import.meta.url),
 			"utf-8",
 		);
-		expect(source).toContain("../prompts/edit.md");
-		expect(source).toContain("../prompts/edit-snippet.md");
-		expect(source).toContain("../prompts/edit-guidelines.md");
+		expect(source).toContain("payload-contract");
+		expect(source).toContain("EDIT_DESCRIPTION");
 	});
 
 	it("read-skill.ts loads the read-skill prompts", () => {

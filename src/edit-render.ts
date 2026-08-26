@@ -1,10 +1,7 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import {
-	normReq,
-	isNormalizedEdit,
-	type EditItem,
-} from "./edit-normalize";
+import { getPreviewInput as contractPreviewInput, type EditItem } from "./payload-contract";
 import type { EditDetails } from "./edit-response";
+
 
 
 export type FgT = Pick<Theme, "fg">;
@@ -26,38 +23,7 @@ export type RRState = {
 export function getPreviewInput(
 	args: unknown,
 ): { path: string | null; edits: EditItem[] } | null {
-	let normalized: unknown;
-	try {
-		normalized = normReq(args);
-	} catch {
-		return null;
-	}
-	if (!isNormalizedEdit(normalized)) {
-		return null;
-	}
-	if (
-		normalized.path !== null &&
-		(typeof normalized.path !== "string" || normalized.path.length === 0)
-	) {
-		return null;
-	}
-	if (!Array.isArray(normalized.edits) || normalized.edits.length === 0) {
-		return null;
-	}
-	for (const item of normalized.edits) {
-		if (
-			typeof item.remove_from !== "string" ||
-			typeof item.remove_to !== "string" ||
-			typeof item.replacement_text !== "string"
-		) {
-			return null;
-		}
-	}
-
-	return {
-		path: normalized.path as string | null,
-		edits: normalized.edits,
-	};
+	return contractPreviewInput(args);
 }
 
 

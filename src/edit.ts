@@ -4,17 +4,24 @@ import type {
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
 import { constants } from "fs";
 import { genDiff, restoreEndings, type LineEnding } from "./edit-diff";
 import { scanDrift } from "./drift";
 import {
-	isNormalizedEdit,
 	normReq,
 	prepareEditArguments,
+	assertReq,
+	editToolSchema,
+	editTupleSchema,
+	replacementTextSchema,
+	removeFromSchema,
+	removeToSchema,
+	EDIT_DESCRIPTION,
+	EDIT_SNIPPET,
+	EDIT_GUIDELINES,
 	type NormalizedEditRequest,
-} from "./edit-normalize";
-import { abortIf, rejectUnknownFields, splitLines } from "./utils";
+} from "./payload-contract";
+import { abortIf, splitLines } from "./utils";
 import { resolveTarget, writeAtomic } from "./fs-write";
 import { lineHashes, resEdit, type HEdit } from "./hashline";
 import { parseHashRef } from "./hashline";
@@ -36,7 +43,6 @@ import {
 	type RRState,
 } from "./edit-render";
 import { DebouncedPreview } from "./preview-controller";
-import { loadP, loadGuide } from "./prompts";
 import { saveUndo } from "./edit-undo";
 import { loadHashStore, type HashStore } from "./hash-store";
 import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
@@ -50,46 +56,8 @@ import {
 	type ServedRow,
 } from "./hashline/served";
 import { applyOneEdit, countLineChanges, loadEditFile } from "./edit-pipeline";
-import { EDITS_MAX_ITEMS } from "./constants";
 
-export const replacementTextSchema = Type.String({
-	description: 'Complete replacement for the range; use "" to delete',
-});
-
-export const removeFromSchema = Type.String({
-	description: "First line to remove (inclusive)",
-});
-
-export const removeToSchema = Type.String({
-	description: "Last line to remove (inclusive)",
-});
-
-const editPathSchema = Type.Union([
-	Type.String({
-		minLength: 1,
-		description: "File path; null infers it from anchors",
-	}),
-	Type.Null(),
-]);
-
-export const editTupleSchema = Type.Tuple(
-	[removeFromSchema, removeToSchema, replacementTextSchema],
-	{
-		description: "[remove_from, remove_to, replacement_text]",
-	},
-);
-
-export const editToolSchema = Type.Object(
-	{
-		path: editPathSchema,
-		edits: Type.Array(editTupleSchema, {
-			description: "Ordered list of edit tuples",
-			minItems: 1,
-			maxItems: EDITS_MAX_ITEMS,
-		}),
-	},
-	{ additionalProperties: false },
-);
+export { editToolSchema, editTupleSchema, replacementTextSchema, removeFromSchema, removeToSchema, assertReq };
 
 export type EditParams = {
 	remove_from: string;
@@ -118,47 +86,6 @@ interface ProcessedEditFile {
 	range: ResolvedRange;
 }
 
-const ROOT_KS = new Set(["path", "edits"]);
-
-export function assertReq(
-	request: unknown,
-): asserts request is NormalizedEditRequest {
-	if (!isNormalizedEdit(request)) {
-		throw new Error(
-			"[E_BAD_SHAPE] Edit request must be exactly { path, edits: [[remove_from, remove_to, replacement_text], ...] }.",
-		);
-	}
-
-	rejectUnknownFields(request, ROOT_KS, "Edit request");
-
-	if (
-		request.path !== null &&
-		(typeof request.path !== "string" || request.path.length === 0)
-	) {
-		throw new Error(
-			"[E_BAD_SHAPE] Edit request path must be a non-empty string or null.",
-		);
-	}
-
-	if (!Array.isArray(request.edits) || request.edits.length === 0) {
-		throw new Error(
-			"[E_BAD_SHAPE] Edit request requires a non-empty \"edits\" array.",
-		);
-	}
-
-	for (let index = 0; index < request.edits.length; index++) {
-		const item = request.edits[index]!;
-		if (
-			typeof item.remove_from !== "string" ||
-			typeof item.remove_to !== "string" ||
-			typeof item.replacement_text !== "string"
-		) {
-			throw new Error(
-				`[E_BAD_SHAPE] Edit request edits[${index}] must be a three-position array [remove_from, remove_to, replacement_text].`,
-			);
-		}
-	}
-}
 
 export async function resolveMissingPath(
 	request: Record<string, unknown>,
@@ -548,9 +475,9 @@ export function reuseMarkdown(
 }
 
 export function buildToolDef(): ToolDef {
-	const E_DESC = loadP("../prompts/edit.md");
-	const E_SNIPPET = loadP("../prompts/edit-snippet.md");
-	const E_GUIDE = loadGuide("../prompts/edit-guidelines.md");
+	const E_DESC = EDIT_DESCRIPTION;
+	const E_SNIPPET = EDIT_SNIPPET;
+	const E_GUIDE = EDIT_GUIDELINES;
 
 	const parameters = editToolSchema;
 	const preview = new DebouncedPreview(compPreview);
