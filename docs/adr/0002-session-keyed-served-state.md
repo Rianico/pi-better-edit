@@ -28,3 +28,26 @@ We decided to **key the served table by session id** (`(session_id, path)`), sco
 - Drift-notice "once per episode" is per-session: each session's context receives its own notice for a drift it has not been told about.
 - Dead sessions' served rows linger until the TTL sweep (7 days); rows are small and bounded by files read.
 - Undo and snapshots keep their file-global semantics and their existing safety guards; no behavior change for single-session use.
+
+## Amendment 2026-08-26 — Store seam deepening (Candidate 4)
+
+### What changed
+
+- **Schema ownership moved to domains.** `hash-store.ts` no longer owns `CREATE TABLE` for `snapshots` / `undo` / `served`. Each domain now exports `ensure*Schema(db)` and registers it via `onStoreOpen` — the Store lifecycle (`hash-store.ts`) only owns `PRAGMA` + `meta` + version handling. A fallback `CREATE IF NOT EXISTS` remains in `buildStore` for isolated tests that import only `hash-store`.
+- **Unified busy-retry + statement cache.** `withBusyRetry` and `getCached` are now single helpers in `hash-store.ts` (re-exported via `src/store.ts` for the port). Per-module `WeakMap` caches still exist but go through `getCached`, replacing three duplicated retry wrappers.
+- **Paths private inside Store.** `hashStorePath`, `hashStoreDir`, `legacyHashStorePath`, `configDir` are now defined privately in `hash-store.ts` (the Store lifecycle). `src/paths.ts` re-exports them for backward compatibility but is now a thin facade; `toCwd` stays in `paths.ts` (used by `edit`/`read`/`file-reader`).
+- **withStore now fails loud.** Previously `withStore(fn)` silently ran `fn` without a transaction when `cachedDb` was null, losing atomicity for `pruneMissing`'s cross-table deletes. It now throws `Error("withStore requires an open SQLite store …")` if no DB is open. Tests that need no-DB behaviour use `MemorySnapshotStore`.
+- **MemoryStore adapter.** `src/store.ts` introduces the Store port `SnapshotStore { get/put/delete/allHashes/allPaths }` with two adapters: `SQLiteSnapshotStore` (prod, wraps `DatabaseSync`) and `MemorySnapshotStore` (tests, pure `Map`). The two adapters justify the seam; existing SQLite tests keep passing, new `store-memory.test.ts` exercises the port contract without touching `fs` or `node:sqlite`.
+- **hashline coupling is now explicit.** `snapshot-store.ts` still installs `setDefaultHashSnapshotIO` at import time for early cache availability, but also re-installs it via `onStoreOpen` — the Store lifecycle is the authority, not a hidden import side-effect. Callers that pass an explicit `store` via `snapshotIOFor(store)` bypass the default entirely (as `edit`/`file-reader`/`edit-pipeline` already do).
+
+### Why session-keyed served was kept
+
+The Store deepening is a structural refactor, not a semantic one. Session-keyed `served` (ADR-0002) remains correct: served state tracks *what this session's context has been shown*, while `undo` and `snapshots` track *file-derived facts*. The TTL sweep that was previously registered by `served-state` via `onStoreOpen` is now explicitly owned by `ensureServedSchema`'s `onStoreOpen` hook — unified opening, same GC semantics (7-day `SERVED_TTL_MS` sweep on open, no shutdown wipe, so `pi -c` continuity holds).
+
+### Consequences of this amendment
+
+- `buildStore` is no longer a god function; adding a new domain requires only a new `ensureSchema` + `onStoreOpen` — no lifecycle edit.
+- `withStore` callers that previously relied on the silent no-op now fail fast; `pruneMissing` and served `upsert` paths already ensure a store is open before calling it, so no behaviour change in prod.
+- `MemorySnapshotStore` lets unit tests for snapshot logic run without `HOME`/`XDG_CONFIG_HOME` temp dirs or real SQLite files.
+- `ADR-0002`'s decision (session-keyed served) is unchanged; only the opening/ownership mechanics were deepened.
+
