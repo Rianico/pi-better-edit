@@ -4,7 +4,6 @@ export {
 	HASH_SEP,
 	HASH_CLASS,
 	HASH_SPACE,
-	HASH_PROBE_STRIDE,
 	MAX_HASH_LINES,
 	HL_PREFIX_PLUS_RE,
 	HL_PREFIX_MINUS_RE,
@@ -15,7 +14,14 @@ export {
 	_lineHashesPure,
 	initHasher,
 	canon,
-} from "./hash";
+	HashIdentity,
+	defaultHashIdentity,
+	type HashSnapshotIO,
+	type HashPrior,
+	type HashOptions,
+} from "./hash-identity";
+
+export const HASH_PROBE_STRIDE = 3907;
 
 export {
 	parseHashRef,

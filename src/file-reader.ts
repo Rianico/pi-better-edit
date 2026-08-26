@@ -1,6 +1,6 @@
 import { constants } from "fs";
 import { stat } from "fs/promises";
-import { lineHashes } from "./hashline";
+import { defaultHashIdentity } from "./hashline/hash-identity";
 import { loadFileKindAndText, type LFile } from "./file-kind";
 import { resolveTarget } from "./fs-write";
 import { toCwd } from "./paths";
@@ -91,13 +91,11 @@ export async function readNormFile(
 	}
 
 	const hashStore = options?.store ?? await loadHashStore();
-	const fileHashes = await lineHashes(
-		normalized,
-		resolvedPath,
-		undefined,
-		snapshotIOFor(hashStore),
-		options?.noPersist !== true,
-	);
+	const fileHashes = await defaultHashIdentity.hashesFor(normalized, {
+		path: resolvedPath,
+		persist: options?.noPersist !== true,
+		snapshotIO: snapshotIOFor(hashStore),
+	});
 	return {
 		absolutePath: resolvedPath,
 		normalized,

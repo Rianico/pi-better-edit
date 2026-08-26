@@ -5,12 +5,12 @@ import type { HashStore } from "./hash-store";
 import { snapshotIOFor } from "./snapshot-store";
 import {
 	applyEdit,
-	lineHashes,
 	MAX_HASH_LINES,
 	type AutoFix,
 	type HEdit,
 	type NEdit,
 } from "./hashline";
+import { defaultHashIdentity } from "./hashline/hash-identity";
 import {
 	AnchorMismatchError,
 	ServedRejectionError,
@@ -193,13 +193,12 @@ export async function applyOneEdit(
 			"[E_STALE_ANCHOR] missing previous hashes for stable anchoring",
 		);
 	const removedHashes = collectRemovedHashes(input.edit, input.hashes);
-	const nextHashes = await lineHashes(
-		nextContent,
-		input.absolutePath,
-		{ content: input.content, hashes: input.hashes, removedHashes },
-		snapshotIOFor(input.store),
-		input.persistHashes,
-	);
+	const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
+		path: input.absolutePath,
+		prior: { content: input.content, hashes: input.hashes, removedHashes },
+		persist: input.persistHashes,
+		snapshotIO: snapshotIOFor(input.store),
+	});
 	return {
 		kind: "applied",
 		content: nextContent,

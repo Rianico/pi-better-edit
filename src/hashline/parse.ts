@@ -1,7 +1,7 @@
 import {
 	ANCHOR_LEN,
 	ALPH_RE,
-} from "./hash";
+} from "./hash-identity";
 import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
 
 export type Anchor = { hash: string };
