@@ -28,7 +28,7 @@ describe("disjoint batch drift gap", () => {
       expect(await readFile(path, "utf-8")).toBe("a\nB\nc\nd\nE\nf\ng\nH\ni\nJ\n");
       // The disjoint warning documents the gap bug; per-edit drift would report E, but union does not.
       // Verify file hashes for B and H are correctly applied.
-      const hashes = await lineHashes("a\nB\nc\nd\nE\nf\ng\nH\ni\nJ\n", path);
+      const _hashes = await lineHashes("a\nB\nc\nd\nE\nf\ng\nH\ni\nJ\n", path);
       // If drift for J is reported, resultText should contain J's hash row when not already reported
       // For this single drift episode, J should be in drift notice unless capped.
       // We don't assert strict drift content, just that warning exists and no crash.

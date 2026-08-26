@@ -58,7 +58,13 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/edit-pipeline.ts"],
+    files: ["src/edit-pipeline.ts", "src/hashline/served-verification.ts", "src/hashline/served.ts"],
+    rules: {
+      "custom/no-comments": "off",
+    },
+  },
+  {
+    files: ["test/**/*.ts", "**/*.test.ts"],
     rules: {
       "custom/no-comments": "off",
     },

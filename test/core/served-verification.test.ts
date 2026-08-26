@@ -4,7 +4,7 @@ import { _lineHashesPure, createCanonStore, canon } from "../../src/hashline/has
 import {
 	ServedVerification,
 	verifyServedRange,
-	verifyServedRangeResult,
+	verifyServedRangeResult as _verifyServedRangeResult,
 	buildRangeEcho,
 	fmtServedRows,
 	servedPositionsOf,
@@ -219,8 +219,8 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		const lines = Array.from({ length: 200 }, (_, i) => `line_${String(i + 1).padStart(3, "0")}`);
 		const content = lines.join("\n");
 		const hashes = _lineHashesPure(content, store);
-		const fileLines = lines;
-		const fileHashes = hashes;
+		const _fileLines = lines;
+		const _fileHashes = hashes;
 		const served: (string | null)[] = [...hashes];
 
 		// Create a stale interior at line 100 to trigger rejection with large echo
