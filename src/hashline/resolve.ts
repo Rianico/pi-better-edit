@@ -207,6 +207,15 @@ function assertItem(edit: Record<string, unknown>): void {
 }
 
 const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
+function firstHashFromBlock(block: string): string | undefined {
+	for (const line of block.split("\n")) {
+		const m = line.match(ANCHOR_ROW_RE);
+		if (m) return m[2]!;
+		const bare = line.match(new RegExp(HASH_CLASS));
+		if (bare) return bare[0]!;
+	}
+	return undefined;
+}
 
 export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
 	assertItem(edit as Record<string, unknown>);
@@ -214,6 +223,14 @@ export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
 	const editLines = parseText(edit.replacement_text);
 	const bounds = [edit.remove_from, edit.remove_to].map((ref) => {
 		const trimmed = ref.trim();
+		if (trimmed.includes("\n")) {
+			const hash = firstHashFromBlock(trimmed);
+			if (hash) {
+				const lines = trimmed.split("\n").length;
+				warnings?.push(`[E_BAD_REF] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`);
+				return hash;
+			}
+		}
 		const match = trimmed.match(ANCHOR_ROW_RE);
 		if (match) {
 			let message: string;
@@ -265,9 +282,15 @@ export function stripBarePrefixes(
 		matchedCount === 0
 			? "0 matched — verify literal 'HASH│' content"
 			: `${matchedCount}/${stripped.length} matched`;
-	warnings.push(
-		`[E_BARE_HASH_PREFIX] stripped "HASH│" prefix from ${locations} (${evidence}).`,
-	);
+	if (matchedCount === stripped.length) {
+		warnings.push(
+			`[info E_BARE_HASH_PREFIX] stripped "HASH│" prefix from ${locations} (${evidence}) — use bare content without HASH│ next time.`,
+		);
+	} else {
+		warnings.push(
+			`[E_BARE_HASH_PREFIX] stripped "HASH│" prefix from ${locations} (${evidence}).`,
+		);
+	}
 	return { ...edit, content_lines: contentLines };
 }
 
@@ -465,7 +488,7 @@ export function valEdit(
 	edit: HEdit,
 	fileLines: string[],
 	fileHashes: string[],
-	warnings: string[],
+	_warnings: string[],
 	signal: AbortSignal | undefined,
 ): {
 	resolved: RHEdit | undefined;

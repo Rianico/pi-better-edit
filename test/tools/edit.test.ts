@@ -108,7 +108,7 @@ describe("regEdit", () => {
 				ctx,
 			);
 			expect(result.content[0].text).toContain("Successfully edited");
-			expect(result.content[0].text).toContain("[E_BARE_HASH_PREFIX]");
+			expect(result.content[0].text).toContain("E_BARE_HASH_PREFIX");
 			expect(result.content[0].text).toContain(`stripped "HASH│" prefix`);
 			expect(result.details?.diff).toContain("BBB");
 			expect(result.details?.diff).not.toContain(`${hashes[1]}│BBB`);
