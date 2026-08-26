@@ -2,9 +2,15 @@ import { readFileSync, readdirSync, existsSync } from "fs";
 import { dirname, join, resolve } from "path";
 import { fileURLToPath } from "url";
 import { describe, expect, it } from "vitest";
-import { loadGuide } from "../../src/prompts";
+import { loadGuide, loadP } from "../../src/prompts";
 import { regRead } from "../../src/read";
 import { makeFakePiRegistry } from "../support/fixtures";
+import {
+	EDIT_DESCRIPTION,
+	EDIT_SNIPPET,
+	EDIT_GUIDELINES,
+} from "../../src/payload-contract";
+import { buildToolDef } from "../../src/edit";
 
 function collectTsFiles(dir: string): string[] {
 	const out: string[] = [];
@@ -21,11 +27,39 @@ const editPrompt = readFileSync(
 	"utf-8",
 );
 
+const editSnippet = readFileSync(
+	new URL("../../prompts/edit-snippet.md", import.meta.url),
+	"utf-8",
+);
+
 describe("prompts/edit.md (model-facing contract)", () => {
 	it("declares the tool purpose", () => {
 		expect(editPrompt).toMatch(
 			/Edit a range of lines in a text file.*HASH anchors/,
 		);
+	});
+
+	it("is single-sourced from payload-contract EDIT_DESCRIPTION", () => {
+		expect(editPrompt.trim()).toBe(EDIT_DESCRIPTION);
+		expect(loadP("../prompts/edit.md").trim()).toBe(EDIT_DESCRIPTION);
+	});
+});
+
+describe("prompts/edit-snippet.md (single source)", () => {
+	it("is single-sourced from payload-contract EDIT_SNIPPET", () => {
+		expect(editSnippet.trim()).toBe(EDIT_SNIPPET);
+		expect(loadP("../prompts/edit-snippet.md").trim()).toBe(EDIT_SNIPPET);
+	});
+
+	it("snippet and description share canonical payload shape (single source)", () => {
+		const canonical = '{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }';
+		expect(editPrompt).toContain(canonical);
+		expect(editSnippet).toContain(canonical);
+		const tool = buildToolDef();
+		expect(tool.description).toBe(EDIT_DESCRIPTION);
+		expect(tool.promptSnippet).toBe(EDIT_SNIPPET);
+		expect(tool.promptSnippet).toContain(canonical);
+		expect(tool.description).toContain(canonical);
 	});
 });
 
@@ -69,6 +103,13 @@ describe("prompt guidelines", () => {
 		expect(content).not.toContain("hash_bounds");
 		expect(content).not.toContain("new_content");
 		expect(content).not.toContain("{{");
+	});
+
+	it("edit-guidelines.md is single-sourced from payload-contract", () => {
+		const fileGuidelines = loadGuide("../prompts/edit-guidelines.md");
+		expect(fileGuidelines).toEqual(EDIT_GUIDELINES);
+		const tool = buildToolDef();
+		expect(tool.promptGuidelines).toEqual(EDIT_GUIDELINES);
 	});
 
 	it("loadGuide returns an array of guidelines", () => {
@@ -133,5 +174,13 @@ describe("prompt file packaging", () => {
 			}
 		}
 		expect(refs).toBeGreaterThan(0);
+	});
+});
+
+describe("payload-contract prompt generation", () => {
+	it("generates prompts from single source with no drift", () => {
+		expect(readFileSync(new URL("../../prompts/edit.md", import.meta.url), "utf-8").trim()).toBe(EDIT_DESCRIPTION);
+		expect(readFileSync(new URL("../../prompts/edit-snippet.md", import.meta.url), "utf-8").trim()).toBe(EDIT_SNIPPET);
+		expect(loadGuide("../prompts/edit-guidelines.md")).toEqual(EDIT_GUIDELINES);
 	});
 });

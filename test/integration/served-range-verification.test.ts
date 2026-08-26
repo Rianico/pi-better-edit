@@ -116,14 +116,26 @@ describe("served-state range verification for edit", () => {
 				expect(await readFile(path, "utf-8")).toBe("X\nY\n");
 
 				await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
-				const secondStale = await editTool.execute(
-					"e3",
-					{ path: "sample.ts", edits: [[retryFrom, retryTo, "Z"]] },
-					undefined,
-					undefined,
-					ctx,
-				);
-				expect(getText(secondStale)).toContain("Successfully edited");
+				// Pipeline now records dense serves for the successful retry (X/Y),
+				// so the old echo anchors (for alpha/BETA/gamma) are no longer
+				// served. The stale retry must be rejected and requires a fresh read.
+				await expect(
+					editTool.execute(
+						"e3",
+						{ path: "sample.ts", edits: [[retryFrom, retryTo, "Z"]] },
+						undefined,
+						undefined,
+						ctx,
+					),
+				).rejects.toThrow(/E_RANGE_UNVERIFIED|E_RANGE_STALE/);
+				expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
+				// Fresh read re-serves and then edit succeeds
+				const freshRead = await readTool.execute("r3", { path: "sample.ts" }, undefined, undefined, ctx);
+				const freshText = getText(freshRead);
+				const freshAlpha = extractHash(freshText.split("\n").find((l) => l.includes("│alpha"))!);
+				const freshGamma = extractHash(freshText.split("\n").find((l) => l.includes("│gamma"))!);
+				const final = await editTool.execute("e4", { path: "sample.ts", edits: [[freshAlpha, freshGamma, "Z"]] }, undefined, undefined, ctx);
+				expect(getText(final)).toContain("Successfully edited");
 				expect(await readFile(path, "utf-8")).toBe("Z\n");
 			},
 		);

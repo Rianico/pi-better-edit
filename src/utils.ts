@@ -3,8 +3,30 @@ export function isRec(value: unknown): value is Record<string, unknown> {
 }
 
 export function normalizeFilePath(record: Record<string, unknown>): void {
-  if (typeof record.path !== "string" && typeof record.file_path === "string") {
-    record.path = record.file_path;
+  const hasPath = typeof record.path === "string";
+  const hasFilePath = typeof record.file_path === "string";
+  if (!hasPath && hasFilePath) {
+    console.warn(
+      `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(record.file_path)}. This alias will be removed in a future version.`,
+    );
+    record.path = record.file_path as string;
+    delete record.file_path;
+    return;
+  }
+  if (hasFilePath) {
+    console.warn(
+      `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(record.file_path)}. This alias will be removed in a future version.`,
+    );
+    delete record.file_path;
+    return;
+  }
+  if ("file_path" in record) {
+    const fp = (record as Record<string, unknown>).file_path;
+    if (fp !== undefined) {
+      console.warn(
+        `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(fp)}. This alias will be removed in a future version.`,
+      );
+    }
     delete record.file_path;
   }
 }

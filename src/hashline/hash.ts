@@ -1,7 +1,9 @@
 import { splitLines } from "../utils";
-import { xxh32, contentChecksum, initHasher } from "./hasher";
+import { initHasher } from "./hasher";
 import { HASH_LEN, ALPH, ALPH_RE, HASH_CLASS, HASH_RE } from "./alphabet";
 export { initHasher, HASH_LEN, ALPH_RE, HASH_CLASS };
+import { defaultHashIdentity as _defaultHI } from "./hash-identity";
+import type { HashSnapshotIO as _HSIO } from "./hash-identity";
 
 export interface HashSnapshotIO {
 	get(
@@ -17,10 +19,8 @@ export interface HashSnapshotIO {
 	): Promise<void>;
 }
 
-let defaultHashSnapshotIO: HashSnapshotIO | undefined;
-
 export function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
-	defaultHashSnapshotIO = io;
+	(_defaultHI as any).setSnapshotIO(io as any);
 }
 
 export const ANCHOR_LEN = HASH_LEN;
@@ -39,297 +39,77 @@ export function isValidHashList(value: unknown): value is string[] {
 }
 export const HASH_PROBE_STRIDE = ALPH.length ** 2 + ALPH.length + 1;
 
-function idxToHash(idx: number): string {
-	let out = "";
-	for (let j = 0; j < HASH_LEN; j++) {
-		out = ALPH[idx % ALPH.length]! + out;
-		idx = Math.floor(idx / ALPH.length);
-	}
-	return out;
+export function rememberHashCanon(hash: string, canonText: string): void {
+	_defaultHI.rememberHashCanon(hash, canonText);
 }
 
-const hashCache = new Map<number, string>();
+export function getCanonForHash(hash: string): string | undefined {
+	return _defaultHI.getCanonForHash(hash);
+}
 
-function hashAt(idx: number): string {
-	let hash = hashCache.get(idx);
-	if (hash === undefined) {
-		hash = idxToHash(idx);
-		hashCache.set(idx, hash);
-	}
-	return hash;
+export interface CanonStore {
+	get(hash: string): string | undefined;
+	set(hash: string, canonText: string): void;
+}
+
+export function createCanonStore(): CanonStore {
+	const m = new Map<string, string>();
+	return {
+		get(hash) { return m.get(hash); },
+		set(hash, canonText) { if (!m.has(hash)) m.set(hash, canonText); },
+	};
+}
+
+export function createCanonStoreFromEntries(entries: Array<[string, string]>): CanonStore {
+	const m = new Map<string, string>(entries);
+	return {
+		get(hash) { return m.get(hash); },
+		set(hash, canonText) { if (!m.has(hash)) m.set(hash, canonText); },
+	};
+}
+
+export const globalCanonStore: CanonStore = {
+	get(hash) { return getCanonForHash(hash); },
+	set(hash, canonText) { rememberHashCanon(hash, canonText); },
+};
+
+export function __clearGlobalCanonStoreForTest(): void {
+	_defaultHI.clearCanon();
+}
+
+export function __globalCanonEntriesForTest(): Array<[string, string]> {
+	return [..._defaultHI.canonEntries()];
 }
 
 export const HL_PREFIX_PLUS_RE = new RegExp(`^\\+${HASH_CLASS}│`);
-export const HL_PREFIX_MINUS_RE = new RegExp(
-	`^-(?:${HASH_CLASS}│| {${ANCHOR_LEN}}│)`,
-);
-
+export const HL_PREFIX_MINUS_RE = new RegExp(`^-(?:${HASH_CLASS}│| {${ANCHOR_LEN}}│)`);
 export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
-
 export const CANON_VERSION = 2;
-
 const CANON_RE = /[ \t\r\n]+/g;
 
 export function canon(line: string): string {
 	return line.replace(CANON_RE, "");
 }
 
-function getCanon(cache: Map<string, string>, line: string): string {
-	let v = cache.get(line);
-	if (v !== undefined) return v;
-	v = canon(line);
-	cache.set(line, v);
-	return v;
-}
-
-const BITSET_WORDS = Math.ceil(HASH_SPACE / 32);
-
-function getBit(bits: Uint32Array, idx: number): boolean {
-	return ((bits[idx >>> 5] >>> (idx & 31)) & 1) !== 0;
-}
-
-function setBit(bits: Uint32Array, idx: number): void {
-	bits[idx >>> 5] |= 1 << (idx & 31);
-}
-
-function nextZeroBit(bits: Uint32Array, start: number): number {
-	const totalBits = HASH_SPACE;
-	let idx = start % totalBits;
-	for (let i = 0; i < totalBits; i++) {
-		if (!getBit(bits, idx)) return idx;
-		idx += HASH_PROBE_STRIDE;
-		if (idx >= totalBits) idx -= totalBits;
-	}
-	throw new Error(
-		`[E_FILE_TOO_LARGE] Cannot allocate a unique hash anchor: the file exceeds the ${HASH_SPACE}-line limit for ${HASH_LEN}-char hashline anchors. For very large files use write or a non-line-based approach.`,
-	);
-}
-
-function assignHash(
-	used: Uint32Array,
-	baseIdx: number,
-	hint: { value: number },
-): string {
-	if (!getBit(used, baseIdx)) {
-		setBit(used, baseIdx);
-		hint.value = baseIdx + HASH_PROBE_STRIDE;
-		return hashAt(baseIdx);
-	}
-	const nextIdx = nextZeroBit(used, hint.value);
-	setBit(used, nextIdx);
-	hint.value = nextIdx + HASH_PROBE_STRIDE;
-	return hashAt(nextIdx);
-}
-
-export function _lineHashesPure(content: string): string[] {
-	const lines = splitLines(content);
-	const hashes = new Array<string>(lines.length);
-	const used = new Uint32Array(BITSET_WORDS);
-	const hint = { value: 0 };
-	const canonCache = new Map<string, string>();
-
-	for (let i = 0; i < lines.length; i++) {
-		const c = getCanon(canonCache, lines[i]!);
-		const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
-		hashes[i] = assignHash(used, baseIdx, hint);
-	}
-	return hashes;
-}
-
-export async function lineHashes(
-	content: string,
-	path?: string,
-	previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
-	io?: HashSnapshotIO,
-	persist?: boolean,
-): Promise<string[]> {
-	await initHasher();
-	if (!path) {
-		return _lineHashesPure(content);
-	}
-
-	const snapshotIO = io ?? defaultHashSnapshotIO;
-
-	if (previous) {
-		const newHashes = mapStableHashes(
-			previous.content,
-			previous.hashes,
-			content,
-			previous.removedHashes,
-		);
-		if (persist !== false && snapshotIO) {
-			try {
-				await snapshotIO.upsert(
-					path,
-					contentChecksum(content),
-					splitLines(content).length,
-					newHashes,
-				);
-			} catch (error) {
-				console.error("Failed to persist hash snapshot:", error);
-			}
+export function _lineHashesPure(content: string, canonStore?: CanonStore): string[] {
+	if (canonStore && canonStore !== globalCanonStore) {
+		const lines = splitLines(content);
+		const tmp = _defaultHI.hashesForSync(content);
+		for (let i = 0; i < tmp.length; i++) {
+			const h = tmp[i]!;
+			const c = canon(lines[i] ?? "");
+			canonStore.set(h, c);
 		}
-		return newHashes;
+		return tmp;
 	}
-
-	let cached: string[] | undefined;
-	if (snapshotIO) {
-		try {
-			cached = await snapshotIO.get(path, content, persist !== false);
-		} catch (error) {
-			console.error("Failed to read hash store snapshot:", error);
-		}
-	}
-	if (cached) {
-		return cached;
-	}
-
-	const newHashes = _lineHashesPure(content);
-	if (persist !== false && snapshotIO) {
-		try {
-			await snapshotIO.upsert(
-				path,
-				contentChecksum(content),
-				splitLines(content).length,
-				newHashes,
-			);
-		} catch (error) {
-			console.error("Failed to persist hash snapshot:", error);
-		}
-	}
-	return newHashes;
+	return _defaultHI.hashesForSync(content);
 }
 
-function hashToIndex(hash: string): number {
-	let idx = 0;
-	for (let j = 0; j < HASH_LEN; j++) {
-		const charIdx = ALPH.indexOf(hash[j]!);
-		if (charIdx < 0) return -1;
-		idx = idx * ALPH.length + charIdx;
-	}
-	return idx;
-}
-
-function nearestNew(candidates: number[], target: number): number {
-	let lo = 0;
-	let hi = candidates.length;
-	while (lo < hi) {
-		const mid = (lo + hi) >>> 1;
-		if (candidates[mid]! < target) lo = mid + 1;
-		else hi = mid;
-	}
-	const left = lo - 1;
-	const right = lo;
-	if (
-		left >= 0 &&
-		(right >= candidates.length ||
-			target - candidates[left]! <= candidates[right]! - target)
-	) {
-		return left;
-	}
-	return right < candidates.length ? right : -1;
-}
-
-function mapStableHashes(
-	oldContent: string,
-	oldHashes: string[],
-	newContent: string,
-	removedHashes?: Set<string>,
-): string[] {
-	const oldLines = splitLines(oldContent);
-	const newLines = splitLines(newContent);
-	const canonCache = new Map<string, string>();
-	const newHashes = new Array<string>(newLines.length);
-	const used = new Uint32Array(BITSET_WORDS);
-	const hint = { value: 0 };
-	const removed = removedHashes ?? new Set<string>();
-
-	const oldHashIndex = new Map<string, number>();
-	for (let i = 0; i < oldHashes.length; i++) {
-		const hash = oldHashes[i]!;
-		oldHashIndex.set(hash, i);
-		const idx = hashToIndex(hash);
-		if (idx >= 0) setBit(used, idx);
-	}
-
-	const removedIndexes = new Set<number>();
-	for (const hash of removed) {
-		const idx = oldHashIndex.get(hash);
-		if (idx !== undefined) removedIndexes.add(idx);
-	}
-
-	let spanStart = oldLines.length;
-	let spanEnd = -1;
-	for (const idx of removedIndexes) {
-		if (idx < spanStart) spanStart = idx;
-		if (idx > spanEnd) spanEnd = idx;
-	}
-	const spanLen = spanEnd >= spanStart ? spanEnd - spanStart + 1 : 0;
-	const replacementLen = newLines.length - oldLines.length + spanLen;
-	const shiftAfterSpan = spanEnd >= spanStart ? replacementLen - spanLen : 0;
-
-	const survivors: { index: number; hash: string }[] = [];
-	const removedEntries: { index: number; hash: string }[] = [];
-	for (let i = 0; i < oldLines.length; i++) {
-		const entry = { index: i, hash: oldHashes[i]! };
-		if (removedIndexes.has(i)) removedEntries.push(entry);
-		else survivors.push(entry);
-	}
-
-	const newByContent = new Map<string, number[]>();
-	for (let i = 0; i < newLines.length; i++) {
-		const key = getCanon(canonCache, newLines[i]!);
-		const list = newByContent.get(key);
-		if (list) list.push(i);
-		else newByContent.set(key, [i]);
-	}
-
-	const markUsed = (hash: string): void => {
-		const idx = hashToIndex(hash);
-		if (idx >= 0) {
-			setBit(used, idx);
-			if (idx + HASH_PROBE_STRIDE > hint.value)
-				hint.value = idx + HASH_PROBE_STRIDE;
-		}
-	};
-
-	for (const entry of survivors) {
-		const candidates = newByContent.get(getCanon(canonCache, oldLines[entry.index]!));
-		if (!candidates || candidates.length === 0) continue;
-		const target =
-			entry.index > spanEnd ? entry.index + shiftAfterSpan : entry.index;
-		const pos = nearestNew(candidates, target);
-		if (pos < 0) continue;
-		const newIdx = candidates.splice(pos, 1)[0]!;
-		newHashes[newIdx] = entry.hash;
-		markUsed(entry.hash);
-	}
-
-	const removedByContent = new Map<string, { hashes: string[]; pos: number }>();
-	for (const entry of removedEntries) {
-		const key = getCanon(canonCache, oldLines[entry.index]!);
-		let queue = removedByContent.get(key);
-		if (!queue) {
-			queue = { hashes: [], pos: 0 };
-			removedByContent.set(key, queue);
-		}
-		queue.hashes.push(entry.hash);
-	}
-
-	for (let i = 0; i < newLines.length; i++) {
-		if (newHashes[i]) continue;
-		const queue = removedByContent.get(getCanon(canonCache, newLines[i]!));
-		if (!queue || queue.pos >= queue.hashes.length) continue;
-		newHashes[i] = queue.hashes[queue.pos]!;
-		queue.pos += 1;
-	}
-
-	for (let i = 0; i < newLines.length; i++) {
-		if (newHashes[i]) continue;
-		const c = getCanon(canonCache, newLines[i]!);
-		const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
-		newHashes[i] = assignHash(used, baseIdx, hint);
-	}
-
-	return newHashes;
+export async function lineHashes(content: string, path?: string, previous?: { content: string; hashes: string[]; removedHashes?: Set<string> }, io?: HashSnapshotIO, persist?: boolean, _canonStore?: CanonStore): Promise<string[]> {
+	return _defaultHI.hashesFor(content, {
+		path,
+		prior: previous,
+		persist: persist ?? true,
+		snapshotIO: io as any,
+	});
 }

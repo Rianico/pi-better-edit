@@ -3,22 +3,19 @@ import type {
 	ExtensionAPI,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { constants } from "fs";
-import { genDiff, restoreEndings, type LineEnding } from "./edit-diff";
-import { scanDrift } from "./drift";
+import { genDiff } from "./edit-diff";
 import {
 	isNormalizedEdit,
 	normReq,
 	prepareEditArguments,
+	EDIT_DESCRIPTION,
 	type NormalizedEditRequest,
-} from "./edit-normalize";
-import { abortIf, rejectUnknownFields, splitLines } from "./utils";
-import { resolveTarget, writeAtomic } from "./fs-write";
-import { lineHashes, resEdit, type HEdit } from "./hashline";
+} from "./payload-contract";
+import { rejectUnknownFields } from "./utils";
+void EDIT_DESCRIPTION;
 import { parseHashRef } from "./hashline";
-import { toCwd } from "./paths";
 import {
 	buildBatchResult,
 	type BatchSection,
@@ -37,19 +34,15 @@ import {
 } from "./edit-render";
 import { DebouncedPreview } from "./preview-controller";
 import { loadP, loadGuide } from "./prompts";
-import { saveUndo } from "./edit-undo";
-import { loadHashStore, type HashStore } from "./hash-store";
-import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
 import { findSnapshotPathsByHashes } from "./snapshot-store";
-import { snapshotIOFor } from "./snapshot-store";
 import { sessionKeyFor } from "./served-state";
 import {
-	buildRangeEcho,
-	fmtServedRows,
-	type ResolvedRange,
-	type ServedRow,
-} from "./hashline/served";
-import { applyOneEdit, countLineChanges, loadEditFile } from "./edit-pipeline";
+	apply as pipelineApply,
+	execEdits as pipelineExecEdits,
+	previewEdits as pipelinePreview,
+	type PipelineOptions,
+	type ProcessedEditFile,
+} from "./edit-pipeline";
 import { EDITS_MAX_ITEMS } from "./constants";
 
 export const replacementTextSchema = Type.String({
@@ -98,25 +91,6 @@ export type EditParams = {
 };
 
 export type EditRequest = NormalizedEditRequest;
-
-interface ProcessedEditFile {
-	path: string;
-	absolutePath: string;
-	originalNormalized: string;
-	result: string;
-	bom: string;
-	originalEnding: LineEnding;
-	hadUtf8DecodeErrors: boolean;
-	warnings: string[];
-	originalHashes: string[];
-	resultHashes: string[];
-	appliedCount: number;
-	noopCount: number;
-	totalAddedLines: number;
-	totalRemovedLines: number;
-	driftNotice: string | undefined;
-	range: ResolvedRange;
-}
 
 const ROOT_KS = new Set(["path", "edits"]);
 
@@ -195,269 +169,15 @@ export async function resolveMissingPath(
 	return undefined;
 }
 
-export interface ExecPipelineOptions {
-	accessMode?: number;
-	signal?: AbortSignal;
-	store?: HashStore;
-	noPersist?: boolean;
-	sessionKey?: string;
-}
 
-function echoRowsForEdit(
-	edit: HEdit,
-	originalHashes: string[],
-): ServedRow[] | undefined {
-	const startHash = edit.hash_bounds[0].hash;
-	const endHash = edit.hash_bounds[1].hash;
-	const s = originalHashes.indexOf(startHash);
-	const e = originalHashes.indexOf(endHash);
-	if (s < 0 || e < 0) return undefined;
-	return buildRangeEcho(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes);
-}
+export type ExecPipelineOptions = PipelineOptions;
 
 export async function execEdits(
 	request: NormalizedEditRequest,
 	cwd: string,
 	options?: ExecPipelineOptions,
 ): Promise<ProcessedEditFile> {
-	if (request.path === null) {
-		throw new Error(
-			"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
-		);
-	}
-	const path = request.path;
-	const items = request.edits;
-	const hashStore = options?.store ?? (await loadHashStore());
-	const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
-	const warnings: string[] = [];
-	abortIf(options?.signal);
-
-	const parsed: HEdit[] = [];
-	for (let index = 0; index < items.length; index++) {
-		const item = items[index]!;
-		try {
-			parsed.push(
-				resEdit(
-					{
-						remove_from: item.remove_from,
-						remove_to: item.remove_to,
-						replacement_text: item.replacement_text,
-					},
-					warnings,
-				),
-			);
-		} catch (error) {
-			if (items.length === 1) throw error;
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(
-				`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${message}\n` +
-					`The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.`,
-			);
-		}
-	}
-
-	const {
-		normalized: originalNormalized,
-		bom,
-		originalEnding,
-		fileHashes: originalHashes,
-		hadUtf8DecodeErrors,
-		absolutePath,
-		served,
-	} = await loadEditFile({
-		path,
-		cwd,
-		signal: options?.signal,
-		accessMode: options?.accessMode,
-		sessionKey,
-		store: hashStore,
-		noPersist: options?.noPersist,
-	});
-
-	let currentContent = originalNormalized;
-	let currentHashes = originalHashes;
-	let appliedCount = 0;
-	let noopCount = 0;
-	let totalAddedLines = 0;
-	let totalRemovedLines = 0;
-	let unionStartLine = Infinity;
-	let unionEndLine = -Infinity;
-	let unionStartHash = "";
-	let unionEndHash = "";
-	let lastApplied:
-		| { content: string; hashes: string[]; removedHashes: Set<string> }
-		| undefined;
-
-	for (let index = 0; index < items.length; index++) {
-		abortIf(options?.signal);
-		const item = items[index]!;
-		const edit = parsed[index]!;
-
-		const outcome = await applyOneEdit({
-			content: currentContent,
-			hashes: currentHashes,
-			edit,
-			signal: options?.signal,
-			filePath: path,
-			served,
-			sessionKey,
-			absolutePath,
-			store: hashStore,
-			persistHashes: options?.noPersist !== true,
-			servePolicy: options?.noPersist === true ? "preview" : "live",
-			onRejected: async (error) => {
-				if (items.length === 1) throw error;
-				const originalLines = splitLines(originalNormalized);
-				const echoRows =
-					error.servedRows.length > 0
-						? error.servedRows
-						: echoRowsForEdit(edit, originalHashes);
-				const echoBlock = echoRows
-					? ` Current on-disk range for edit[${index}] (unchanged — nothing was written):\n${fmtServedRows(echoRows, originalLines)}`
-					: " Call read() to get fresh anchors.";
-				throw new Error(
-					`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${error.message}${echoBlock}\n` +
-						`The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied. Fix the failing edit (and any later edit that depends on it), then resubmit.`,
-				);
-			},
-		});
-
-		const range = outcome.range;
-		if (range.startLine < unionStartLine) {
-			unionStartLine = range.startLine;
-			unionStartHash = range.startHash;
-		}
-		if (range.endLine > unionEndLine) {
-			unionEndLine = range.endLine;
-			unionEndHash = range.endHash;
-		}
-
-		if (outcome.kind === "noop") {
-			noopCount += 1;
-			if (options?.noPersist === true) {
-				if (outcome.anchorWarnings?.length) {
-					warnings.push(...outcome.anchorWarnings);
-				}
-				continue;
-			}
-			const decision = await runNoopPolicy({
-				absolutePath,
-				removeFrom: item.remove_from,
-				removeTo: item.remove_to,
-				replacementText: item.replacement_text,
-				ref: `edit[${index}] (${path})`,
-				batch: true,
-				range,
-				hashes: currentHashes,
-				lines: splitLines(currentContent),
-				sessionKey,
-			});
-			if (decision.action === "reject") throw new Error(decision.message);
-			if (decision.action === "warn") warnings.push(decision.notice);
-			if (items.length > 1) {
-				warnings.push(
-					`edit[${index}] (${path}) was a noop: the range already contains the replacement text.`,
-				);
-			}
-			if (outcome.anchorWarnings?.length) {
-				warnings.push(...outcome.anchorWarnings);
-			}
-			continue;
-		}
-
-		appliedCount += 1;
-		const { totalAddedLines: added, totalRemovedLines: removed } =
-			countLineChanges(
-				edit,
-				originalHashes,
-				false,
-				outcome.autoFixes?.length ?? 0,
-			);
-		totalAddedLines += added;
-		totalRemovedLines += removed;
-		lastApplied = {
-			content: currentContent,
-			hashes: currentHashes,
-			removedHashes: outcome.removedHashes,
-		};
-		currentContent = outcome.content;
-		currentHashes = outcome.hashes;
-		if (options?.noPersist !== true) clearNoopLoop(absolutePath);
-		if (outcome.anchorWarnings?.length) {
-			warnings.push(...outcome.anchorWarnings);
-		}
-	}
-
-	const result = currentContent;
-	let resultHashes = currentHashes;
-	if (appliedCount > 0 && lastApplied) {
-		resultHashes = await lineHashes(
-			result,
-			absolutePath,
-			{
-				content: lastApplied.content,
-				hashes: lastApplied.hashes,
-				removedHashes: lastApplied.removedHashes,
-			},
-			snapshotIOFor(hashStore),
-			options?.noPersist !== true,
-		);
-	}
-
-	if (hadUtf8DecodeErrors) {
-		warnings.push(
-			"Non-UTF-8 bytes were shown as U+FFFD; this edit rewrote the file as UTF-8.",
-		);
-	}
-
-	let driftNotice: string | undefined;
-	if (options?.noPersist !== true && unionStartLine !== Infinity) {
-		const resultLines = splitLines(result);
-		const originalLines = splitLines(originalNormalized);
-		try {
-			driftNotice = await scanDrift({
-				sessionKey,
-				served,
-				resultHashes,
-				resultLines,
-				range: {
-					startLine: unionStartLine,
-					endLine: unionEndLine,
-					startHash: unionStartHash,
-					endHash: unionEndHash,
-					delta: resultLines.length - originalLines.length,
-				},
-				path: absolutePath,
-			});
-		} catch (error) {
-			console.error("Failed to compute drift notice:", error);
-		}
-	}
-
-	return {
-		path,
-		absolutePath,
-		originalNormalized,
-		result,
-		bom,
-		originalEnding,
-		hadUtf8DecodeErrors,
-		warnings,
-		originalHashes,
-		resultHashes,
-		appliedCount,
-		noopCount,
-		totalAddedLines,
-		totalRemovedLines,
-		driftNotice,
-		range: {
-			startLine: unionStartLine,
-			endLine: unionEndLine,
-			startHash: unionStartHash,
-			endHash: unionEndHash,
-			delta: splitLines(result).length - splitLines(originalNormalized).length,
-		},
-	};
+	return pipelineExecEdits(request, cwd, options);
 }
 
 function toSection(file: ProcessedEditFile): BatchSection {
@@ -505,9 +225,8 @@ export async function compPreview(
 			}
 		}
 		assertReq(normalized);
-		const file = await execEdits(normalized, cwd, {
+		const file = await pipelinePreview(normalized, cwd, {
 			accessMode: constants.R_OK,
-			noPersist: true,
 		});
 		if (pathWarning) file.warnings.unshift(pathWarning);
 		if (file.originalNormalized === file.result) {
@@ -631,50 +350,18 @@ export function buildToolDef(): ToolDef {
 				);
 			}
 
-			const path = canonical.path as string;
-			const absolutePath = toCwd(path, ctx.cwd);
-			const mutationTargetPath = await resolveTarget(absolutePath);
 			const sessionKey = sessionKeyFor(ctx);
-			return withFileMutationQueue(mutationTargetPath, async () => {
-				abortIf(signal);
-
-				const file = await execEdits(canonical, ctx.cwd, {
-					accessMode: constants.R_OK | constants.W_OK,
-					signal,
-					sessionKey,
-				});
-				if (pathWarning) file.warnings.unshift(pathWarning);
-
-				if (file.appliedCount === 0) {
-					return buildBatchResult([toSection(file)]);
-				}
-
-				abortIf(signal);
-				const undo = await saveUndo(mutationTargetPath, {
-					content: file.originalNormalized,
-					bom: file.bom,
-					originalEnding: file.originalEnding,
-					hashes: file.originalHashes,
-					resultContent: file.result,
-				});
-				if (!undo.persisted) {
-					throw new Error(
-						`[E_UNDO_UNAVAILABLE] Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. Retry the edit, or use write if the store cannot be recovered.`,
-					);
-				}
-				try {
-					abortIf(signal);
-					await writeAtomic(
-						file.absolutePath,
-						file.bom + restoreEndings(file.result, file.originalEnding),
-					);
-				} catch (error) {
-					await undo.restore();
-					throw error;
-				}
-
-				return buildBatchResult([toSection(file)]);
+			const { toolResult, raw } = await pipelineApply(canonical, ctx.cwd, {
+				accessMode: constants.R_OK | constants.W_OK,
+				signal,
+				sessionKey,
 			});
+			if (pathWarning) {
+				raw.warnings.unshift(pathWarning);
+				const patched = buildBatchResult([toSection(raw)]);
+				return patched;
+			}
+			return toolResult;
 		},
 	};
 }

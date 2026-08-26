@@ -10,8 +10,8 @@ import {
 	HL_BARE_PREFIX_RE,
 	HL_PREFIX_PLUS_RE,
 	HL_PREFIX_MINUS_RE,
-	canon,
-} from "./hash";
+} from "./hash-identity";
+import { canon } from "./hash-identity";
 import { parseHashRef, parseText, type Anchor } from "./parse";
 import type { ServedRow } from "./served";
 import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";

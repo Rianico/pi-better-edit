@@ -1,1 +1,1 @@
-Edit lines with the exact payload `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }`; use a non-empty path or `null` for anchor-based inference, bare 3-character HASH anchors only, and one call can carry several same-file edits.
+Edit lines with `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }`; `path` `string|null`, two bare 3-char HASHes per range (e.g. `"aB3"`). After success chain from diff anchors (formatter-safe, no `read`); on error obey its hint — 'no read needed' → retry from echo, 're-read' → call `read`.

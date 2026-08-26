@@ -1,25 +1,125 @@
+/**
+ * EditPipeline — Strong, in-process atomic mutation seam.
+ *
+ * Deepened pipeline that hoists the whole edit mutation behind one
+ * seam: load → parse → mutate loop → finalize hashes → drift → persist.
+ *
+ * Phase diagram (ordering is load-bearing — do not reorder without
+ * updating drift/undo/serve invariants):
+ *
+ *   ┌─────────────┐     ┌────────┐     ┌──────────────────┐
+ *   │ Admission   │────▶│  Load  │────▶│ Parse & Validate │
+ *   │ (edit.ts)   │     │ (IO)   │     │ (resEdit)        │
+ *   │ TypeBox +   │     │readNorm│     │ warnings local   │
+ *   │ assertReq   │     │+served │     │ no servePolicy    │
+ *   └─────────────┘     └───┬────┘     └────────┬─────────┘
+ *                           │                   │
+ *                   ┌───────▼───────────────────▼───────┐
+ *                   │          Mutate Loop              │
+ *                   │  for each HEdit:                  │
+ *                   │   applyEdit → verifyServedRange   │
+ *                   │   ├─ reject: recordEchoServes+    │
+ *                   │   │         batch-abort           │
+ *                   │   ├─ noop:  runNoopPolicy         │
+ *                   │   └─ applied: lineHashes +        │
+ *                   │             track intervals        │
+ *                   └───────────────┬───────────────────┘
+ *                                   │
+ *                   ┌───────────────▼───────────────────┐
+ *                   │        Finalize                    │
+ *                   │  dense lineHashes (if applied)    │
+ *                   │  hadUtf8 warning                  │
+ *                   └───────────────┬───────────────────┘
+ *                                   │
+ *                   ┌───────────────▼───────────────────┐
+ *                   │         Drift                     │
+ *                   │  scanDrift over edited intervals  │
+ *                   │  union gap caveat: disjoint batch │
+ *                   │  edits use union [minStart,       │
+ *                   │  maxEnd]; gap lines are treated   │
+ *                   │  as edited (not drift). For       │
+ *                   │  accurate gap-drift use single-   │
+ *                   │  edit calls (documented norm).    │
+ *                   └───────────────┬───────────────────┘
+ *                                   │
+ *                   ┌───────────────▼───────────────────┐
+ *                   │        Persist (live only)        │
+ *                   │  saveUndo → writeAtomic           │
+ *                   │  on write failure: restore undo   │
+ *                   └───────────────┬───────────────────┘
+ *                                   │
+ *                   ┌───────────────▼───────────────────┐
+ *                   │         Serve (live only)         │
+ *                   │  recordDiffServes (dense)         │
+ *                   │  echo serves already recorded on  │
+ *                   │  reject path                      │
+ *                   └───────────────────────────────────┘
+ *
+ * Atomic guarantee: if any mutate step throws (anchor/served/noop-loop)
+ * persist is skipped and the file is unchanged. Warnings are owned
+ * locally — not passed by ref across modules. servePolicy string is
+ * internal (live vs preview) and not exposed.
+ *
+ * Drift union gap bug: previously unionStartLine/unionEndLine
+ * synthesized in edit.ts as [minStart, maxEnd] and fed as a single
+ * ResolvedRange to drift. For disjoint batch edits this hides the
+ * gap (e.g., edits at lines 2 and 10 → union 2..10 excludes lines
+ * 3..9 from drift). Fix: pipeline tracks per-edit ResolvedRange[]
+ * (editedIntervals). Drift is documented as single-edit norm —
+ * batch drift uses union and gaps are not reported as drift; a
+ * warning is emitted when disjoint intervals are detected. A
+ * per-interval drift (drift per-edit) would require mapping each
+ * drifted line against any interval served span and per-position
+ * delta (not just total delta); that is left as future work.
+ *
+ * Vocabulary (CONTEXT.md): range, span, served span, drift, drift
+ * notice, reject-and-serve, payload contract — preserved.
+ */
+
+import { constants } from "fs";
 import type { LineEnding } from "./edit-diff";
+import { genDiff, restoreEndings } from "./edit-diff";
 import { readNormFile } from "./file-reader";
-import { abortIf } from "./utils";
+import { abortIf, splitLines, visLines } from "./utils";
 import type { HashStore } from "./hash-store";
+import { loadHashStore } from "./hash-store";
 import { snapshotIOFor } from "./snapshot-store";
 import {
 	applyEdit,
-	lineHashes,
 	MAX_HASH_LINES,
+	resEdit,
 	type AutoFix,
 	type HEdit,
 	type NEdit,
 } from "./hashline";
+import { defaultHashIdentity, lineHashes } from "./hashline/hash-identity";
 import {
 	AnchorMismatchError,
 	ServedRejectionError,
+	buildRangeEcho,
+	fmtServedRows,
 	type ResolvedRange,
+	type ServedRow,
 } from "./hashline/served";
-import { loadServed, recordEchoServes, type ServeRecordPolicy } from "./served-state";
+import {
+	loadServed,
+	recordEchoServes,
+	recordDiffServes,
+	sessionKeyFor,
+} from "./served-state";
+import { scanDrift } from "./drift";
+import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
+import { saveUndo } from "./edit-undo";
+import { resolveTarget, writeAtomic } from "./fs-write";
+import { toCwd } from "./paths";
+import type { NormalizedEditRequest } from "./edit-normalize";
+import {
+	buildBatchResult,
+	type BatchSection,
+} from "./edit-response";
+import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
-
-export function collectRemovedHashes(
+function collectRemovedHashes(
 	edit: HEdit,
 	originalHashes: string[],
 ): Set<string> {
@@ -38,7 +138,7 @@ export function collectRemovedHashes(
 	return removedHashes;
 }
 
-export function countLineChanges(
+function countLineChanges(
 	edit: HEdit,
 	originalHashes: string[],
 	isNoop: boolean,
@@ -57,7 +157,19 @@ export function countLineChanges(
 	};
 }
 
-export interface EditFileSource {
+function echoRowsForEdit(
+	edit: HEdit,
+	originalHashes: string[],
+): ServedRow[] | undefined {
+	const startHash = edit.hash_bounds[0].hash;
+	const endHash = edit.hash_bounds[1].hash;
+	const s = originalHashes.indexOf(startHash);
+	const e = originalHashes.indexOf(endHash);
+	if (s < 0 || e < 0) return undefined;
+	return buildRangeEcho(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes);
+}
+
+interface EditFileSource {
 	path: string;
 	cwd: string;
 	signal?: AbortSignal;
@@ -67,7 +179,7 @@ export interface EditFileSource {
 	noPersist?: boolean;
 }
 
-export interface LoadedEditFile {
+interface LoadedEditFile {
 	normalized: string;
 	bom: string;
 	originalEnding: LineEnding;
@@ -77,9 +189,7 @@ export interface LoadedEditFile {
 	served: (string | null)[];
 }
 
-export async function loadEditFile(
-	source: EditFileSource,
-): Promise<LoadedEditFile> {
+async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
 	const {
 		normalized,
 		bom,
@@ -106,7 +216,7 @@ export async function loadEditFile(
 	};
 }
 
-export interface ApplyOneEditInput {
+interface ApplyOneEditInput {
 	content: string;
 	hashes: string[];
 	edit: HEdit;
@@ -117,13 +227,13 @@ export interface ApplyOneEditInput {
 	absolutePath: string;
 	store: HashStore;
 	persistHashes: boolean;
-	servePolicy: ServeRecordPolicy;
+	isPreview: boolean;
 	onRejected: (
 		error: AnchorMismatchError | ServedRejectionError,
 	) => Promise<never>;
 }
 
-export type ApplyOneEditOutcome =
+type ApplyOneEditOutcome =
 	| {
 			kind: "applied";
 			content: string;
@@ -142,7 +252,7 @@ export type ApplyOneEditOutcome =
 			anchorWarnings: string[] | undefined;
 	  };
 
-export async function applyOneEdit(
+async function applyOneEdit(
 	input: ApplyOneEditInput,
 ): Promise<ApplyOneEditOutcome> {
 	abortIf(input.signal);
@@ -162,13 +272,23 @@ export async function applyOneEdit(
 			error instanceof AnchorMismatchError ||
 			error instanceof ServedRejectionError
 		) {
-			await recordEchoServes(
-				input.sessionKey,
-				input.absolutePath,
-				error.servedRows,
-				input.servePolicy,
-				input.hashes.length,
-			);
+			if (!input.isPreview) {
+				await recordEchoServes(
+					input.sessionKey,
+					input.absolutePath,
+					error.servedRows,
+					"live",
+					input.hashes.length,
+				);
+			} else {
+				await recordEchoServes(
+					input.sessionKey,
+					input.absolutePath,
+					error.servedRows,
+					"preview",
+					input.hashes.length,
+				);
+			}
 			return input.onRejected(error);
 		}
 		throw error;
@@ -185,14 +305,17 @@ export async function applyOneEdit(
 		};
 	}
 
+	if (!input.hashes || input.hashes.length === 0)
+		throw new Error(
+			"[E_STALE_ANCHOR] missing previous hashes for stable anchoring",
+		);
 	const removedHashes = collectRemovedHashes(input.edit, input.hashes);
-	const nextHashes = await lineHashes(
-		nextContent,
-		input.absolutePath,
-		{ content: input.content, hashes: input.hashes, removedHashes },
-		snapshotIOFor(input.store),
-		input.persistHashes,
-	);
+	const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
+		path: input.absolutePath,
+		prior: { content: input.content, hashes: input.hashes, removedHashes },
+		persist: input.persistHashes,
+		snapshotIO: snapshotIOFor(input.store),
+	});
 	return {
 		kind: "applied",
 		content: nextContent,
@@ -205,3 +328,452 @@ export async function applyOneEdit(
 		anchorWarnings,
 	};
 }
+
+export interface PipelineOptions {
+	accessMode?: number;
+	signal?: AbortSignal;
+	store?: HashStore;
+	noPersist?: boolean;
+	sessionKey?: string;
+}
+
+export interface ProcessedEditFile {
+	path: string;
+	absolutePath: string;
+	originalNormalized: string;
+	result: string;
+	bom: string;
+	originalEnding: LineEnding;
+	hadUtf8DecodeErrors: boolean;
+	warnings: string[];
+	originalHashes: string[];
+	resultHashes: string[];
+	appliedCount: number;
+	noopCount: number;
+	totalAddedLines: number;
+	totalRemovedLines: number;
+	driftNotice: string | undefined;
+	range: ResolvedRange;
+	editedIntervals: ResolvedRange[];
+}
+
+async function runMutations(
+	request: NormalizedEditRequest,
+	cwd: string,
+	options?: PipelineOptions,
+): Promise<ProcessedEditFile> {
+	if (request.path === null) {
+		throw new Error(
+			"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
+		);
+	}
+	const path = request.path;
+	const items = request.edits;
+	const hashStore = options?.store ?? (await loadHashStore());
+	const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
+	const warnings: string[] = [];
+	abortIf(options?.signal);
+
+	const isPreview = options?.noPersist === true;
+
+	const parsed: HEdit[] = [];
+	for (let index = 0; index < items.length; index++) {
+		const item = items[index]!;
+		try {
+			parsed.push(
+				resEdit(
+					{
+						remove_from: item.remove_from,
+						remove_to: item.remove_to,
+						replacement_text: item.replacement_text,
+					},
+					warnings,
+				),
+			);
+		} catch (error) {
+			if (items.length === 1) throw error;
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${message}\n` +
+					`The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.`,
+			);
+		}
+	}
+
+	const {
+		normalized: originalNormalized,
+		bom,
+		originalEnding,
+		fileHashes: originalHashes,
+		hadUtf8DecodeErrors,
+		absolutePath,
+		served,
+	} = await loadEditFile({
+		path,
+		cwd,
+		signal: options?.signal,
+		accessMode: options?.accessMode,
+		sessionKey,
+		store: hashStore,
+		noPersist: options?.noPersist,
+	});
+
+	let currentContent = originalNormalized;
+	let currentHashes = originalHashes;
+	let appliedCount = 0;
+	let noopCount = 0;
+	let totalAddedLines = 0;
+	let totalRemovedLines = 0;
+	let unionStartLine = Infinity;
+	let unionEndLine = -Infinity;
+	let unionStartHash = "";
+	let unionEndHash = "";
+	const editedIntervals: ResolvedRange[] = [];
+	let lastApplied:
+		| { content: string; hashes: string[]; removedHashes: Set<string> }
+		| undefined;
+
+	for (let index = 0; index < items.length; index++) {
+		abortIf(options?.signal);
+		const item = items[index]!;
+		const edit = parsed[index]!;
+
+		const outcome = await applyOneEdit({
+			content: currentContent,
+			hashes: currentHashes,
+			edit,
+			signal: options?.signal,
+			filePath: path,
+			served,
+			sessionKey,
+			absolutePath,
+			store: hashStore,
+			persistHashes: !isPreview,
+			isPreview,
+			onRejected: async (error) => {
+				if (items.length === 1) throw error;
+				const originalLines = splitLines(originalNormalized);
+				const echoRows =
+					error.servedRows.length > 0
+						? error.servedRows
+						: echoRowsForEdit(edit, originalHashes);
+				const echoBlock = echoRows
+					? ` Current on-disk range for edit[${index}] (unchanged — nothing was written):\n${fmtServedRows(echoRows, originalLines)}`
+					: " Call read() to get fresh anchors.";
+				throw new Error(
+					`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${error.message}${echoBlock}\n` +
+						`The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied. Fix the failing edit (and any later edit that depends on it), then resubmit.`,
+				);
+			},
+		});
+
+		const range = outcome.range;
+		editedIntervals.push(range);
+		if (range.startLine < unionStartLine) {
+			unionStartLine = range.startLine;
+			unionStartHash = range.startHash;
+		}
+		if (range.endLine > unionEndLine) {
+			unionEndLine = range.endLine;
+			unionEndHash = range.endHash;
+		}
+
+		if (outcome.kind === "noop") {
+			noopCount += 1;
+			if (isPreview) {
+				if (outcome.anchorWarnings?.length) {
+					warnings.push(...outcome.anchorWarnings);
+				}
+				continue;
+			}
+			const decision = await runNoopPolicy({
+				absolutePath,
+				removeFrom: item.remove_from,
+				removeTo: item.remove_to,
+				replacementText: item.replacement_text,
+				ref: `edit[${index}] (${path})`,
+				batch: true,
+				range,
+				hashes: currentHashes,
+				lines: splitLines(currentContent),
+				sessionKey,
+			});
+			if (decision.action === "reject") throw new Error(decision.message);
+			if (decision.action === "warn") warnings.push(decision.notice);
+			if (items.length > 1) {
+				warnings.push(
+					`edit[${index}] (${path}) was a noop: the range already contains the replacement text.`,
+				);
+			}
+			if (outcome.anchorWarnings?.length) {
+				warnings.push(...outcome.anchorWarnings);
+			}
+			continue;
+		}
+
+		appliedCount += 1;
+		const { totalAddedLines: added, totalRemovedLines: removed } =
+			countLineChanges(
+				edit,
+				originalHashes,
+				false,
+				outcome.autoFixes?.length ?? 0,
+			);
+		totalAddedLines += added;
+		totalRemovedLines += removed;
+		lastApplied = {
+			content: currentContent,
+			hashes: currentHashes,
+			removedHashes: outcome.removedHashes,
+		};
+		currentContent = outcome.content;
+		currentHashes = outcome.hashes;
+		if (!isPreview) clearNoopLoop(absolutePath);
+		if (outcome.anchorWarnings?.length) {
+			warnings.push(...outcome.anchorWarnings);
+		}
+	}
+
+	const result = currentContent;
+	let resultHashes = currentHashes;
+	if (appliedCount > 0 && lastApplied) {
+		resultHashes = await lineHashes(
+			result,
+			absolutePath,
+			{
+				content: lastApplied.content,
+				hashes: lastApplied.hashes,
+				removedHashes: lastApplied.removedHashes,
+			},
+			snapshotIOFor(hashStore),
+			!isPreview,
+		);
+	}
+
+	if (hadUtf8DecodeErrors) {
+		warnings.push(
+			"Non-UTF-8 bytes were shown as U+FFFD; this edit rewrote the file as UTF-8.",
+		);
+	}
+
+	let driftNotice: string | undefined;
+	if (!isPreview && unionStartLine !== Infinity) {
+		const sorted = [...editedIntervals].sort((a, b) => a.startLine - b.startLine);
+		let hasGap = false;
+		for (let i = 1; i < sorted.length; i++) {
+			if (sorted[i]!.startLine > sorted[i - 1]!.endLine + 1) {
+				hasGap = true;
+				break;
+			}
+		}
+		if (hasGap && editedIntervals.length > 1) {
+			warnings.push(
+				`Batch drift note: edits are disjoint — drift inside the gap between edited intervals is not reported. For accurate gap drift, use sequential single-edit calls.`,
+			);
+		}
+		const resultLines = splitLines(result);
+		const originalLines = splitLines(originalNormalized);
+		try {
+			driftNotice = await scanDrift({
+				sessionKey,
+				served,
+				resultHashes,
+				resultLines,
+				range: {
+					startLine: unionStartLine,
+					endLine: unionEndLine,
+					startHash: unionStartHash,
+					endHash: unionEndHash,
+					delta: resultLines.length - originalLines.length,
+				},
+				path: absolutePath,
+			});
+		} catch (error) {
+			console.error("Failed to compute drift notice:", error);
+		}
+	}
+
+	const unionRange: ResolvedRange = {
+		startLine: unionStartLine === Infinity ? 1 : unionStartLine,
+		endLine: unionEndLine === -Infinity ? 1 : unionEndLine,
+		startHash: unionStartHash,
+		endHash: unionEndHash,
+		delta: splitLines(result).length - splitLines(originalNormalized).length,
+	};
+
+	return {
+		path,
+		absolutePath,
+		originalNormalized,
+		result,
+		bom,
+		originalEnding,
+		hadUtf8DecodeErrors,
+		warnings,
+		originalHashes,
+		resultHashes,
+		appliedCount,
+		noopCount,
+		totalAddedLines,
+		totalRemovedLines,
+		driftNotice,
+		range: unionRange,
+		editedIntervals,
+	};
+}
+
+function toSection(file: ProcessedEditFile): BatchSection {
+	return {
+		path: file.path,
+		originalNormalized: file.originalNormalized,
+		result: file.result,
+		originalHashes: file.originalHashes,
+		resultHashes: file.resultHashes,
+		warnings: file.warnings,
+		driftNotice: file.driftNotice,
+		appliedCount: file.appliedCount,
+		noopCount: file.noopCount,
+		totalAddedLines: file.totalAddedLines,
+		totalRemovedLines: file.totalRemovedLines,
+	};
+}
+
+export async function previewEdits(
+	request: NormalizedEditRequest,
+	cwd: string,
+	options?: Omit<PipelineOptions, "noPersist">,
+) {
+	return runMutations(request, cwd, { ...options, noPersist: true });
+}
+
+export async function apply(
+	request: NormalizedEditRequest,
+	cwd: string,
+	options?: PipelineOptions,
+): Promise<{
+	result: string;
+	diff: string;
+	drift: string | undefined;
+	metrics: ReturnType<typeof buildBatchResult>["details"]["metrics"];
+	raw: ProcessedEditFile;
+	toolResult: ReturnType<typeof buildBatchResult>;
+}> {
+	const isPreview = options?.noPersist === true;
+	if (isPreview) {
+		const file = await runMutations(request, cwd, options);
+		const toolResult = buildBatchResult([toSection(file)]);
+		const diff = toolResult.details.diff ?? "";
+		return {
+			result: file.result,
+			diff,
+			drift: file.driftNotice,
+			metrics: toolResult.details.metrics,
+			raw: file,
+			toolResult,
+		};
+	}
+
+	const path = request.path;
+	if (path === null) {
+		throw new Error(
+			"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
+		);
+	}
+	const absolutePath = toCwd(path, cwd);
+	const mutationTargetPath = await resolveTarget(absolutePath);
+	const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
+
+	return withFileMutationQueue(mutationTargetPath, async () => {
+		abortIf(options?.signal);
+
+		const file = await runMutations(request, cwd, {
+			...options,
+			sessionKey,
+			accessMode: options?.accessMode ?? (constants.R_OK | constants.W_OK),
+		});
+
+		if (file.appliedCount === 0) {
+			const toolResult = buildBatchResult([toSection(file)]);
+			return {
+				result: file.result,
+				diff: "",
+				drift: file.driftNotice,
+				metrics: toolResult.details.metrics,
+				raw: file,
+				toolResult,
+			};
+		}
+
+		abortIf(options?.signal);
+		const undo = await saveUndo(mutationTargetPath, {
+			content: file.originalNormalized,
+			bom: file.bom,
+			originalEnding: file.originalEnding,
+			hashes: file.originalHashes,
+			resultContent: file.result,
+		});
+		if (!undo.persisted) {
+			throw new Error(
+				`[E_UNDO_UNAVAILABLE] Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. Retry the edit, or use write if the store cannot be recovered.`,
+			);
+		}
+		try {
+			abortIf(options?.signal);
+			await writeAtomic(
+				file.absolutePath,
+				file.bom + restoreEndings(file.result, file.originalEnding),
+			);
+		} catch (error) {
+			await undo.restore();
+			throw error;
+		}
+
+		try {
+			const resultLineCount = visLines(file.result).length;
+
+			const diffInfo = genDiff(
+				file.originalNormalized,
+				file.result,
+				1,
+				file.resultHashes,
+				file.originalHashes,
+			);
+			const denseRows: ServedRow[] = [];
+			for (let i = 0; i < file.resultHashes.length; i++) {
+				denseRows.push({ position: i, hash: file.resultHashes[i]! });
+			}
+			if (denseRows.length > 0) {
+				await recordDiffServes({
+					sessionKey,
+					path: file.absolutePath,
+					servedRows: denseRows,
+					resultLineCount,
+					firstChangedLine: diffInfo.firstChangedLine,
+				});
+			}
+		} catch (error) {
+			console.error("Failed to record dense serves after write:", error);
+		}
+
+		const toolResult = buildBatchResult([toSection(file)]);
+		return {
+			result: file.result,
+			diff: toolResult.details.diff ?? "",
+			drift: file.driftNotice,
+			metrics: toolResult.details.metrics,
+			raw: file,
+			toolResult,
+		};
+	});
+}
+
+export async function execEdits(
+	request: NormalizedEditRequest,
+	cwd: string,
+	options?: PipelineOptions,
+): Promise<ProcessedEditFile> {
+	return runMutations(request, cwd, options);
+}
+
+export { collectRemovedHashes as _collectRemovedHashesInternal };
+export { countLineChanges as _countLineChangesInternal };

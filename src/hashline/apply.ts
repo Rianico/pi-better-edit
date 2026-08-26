@@ -1,5 +1,5 @@
 import { abortIf, splitLines } from "../utils";
-import { _lineHashesPure, HASH_SEP } from "./hash";
+import { HASH_SEP, defaultHashIdentity } from "./hash-identity";
 import {
 	AnchorMismatchError,
 	verifyServedRange,
@@ -164,7 +164,7 @@ export function applyEdit(
 	abortIf(signal);
 
 	const lineIndex = buildIdx(content);
-	const fileHashes = precomputedHashes ?? _lineHashesPure(content);
+	const fileHashes = precomputedHashes ?? defaultHashIdentity.hashesForSync(content);
 	const warnings: string[] = [];
 
 	const rangeFixed = swapReversedRanges(edit, fileHashes, warnings);

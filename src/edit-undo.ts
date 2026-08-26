@@ -198,6 +198,10 @@ export function regEditUndo(pi: ExtensionAPI): void {
 					currentHashes,
 				);
 				const undoDiff = undoDiffResult.diff;
+				const undoDenseRows: typeof undoDiffResult.servedRows = [];
+				for (let i = 0; i < undo.hashes.length; i++) {
+					undoDenseRows.push({ position: i, hash: undo.hashes[i]! });
+				}
 
 				await writeAtomic(
 					mutationTargetPath,
@@ -232,9 +236,9 @@ export function regEditUndo(pi: ExtensionAPI): void {
 
 				const details: EditDetails = {
 					diff: undoDiff,
-					firstChangedLine: restoredRange?.firstChangedLine,
+					firstChangedLine: restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine,
 					resultLineCount: visLines(undo.content).length,
-					servedRows: undoDiffResult.servedRows,
+					servedRows: undoDenseRows,
 					metrics: buildMetrics({
 						classification: "applied",
 						editsAttempted: 1,

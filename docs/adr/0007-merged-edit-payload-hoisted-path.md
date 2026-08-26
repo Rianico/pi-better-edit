@@ -28,3 +28,28 @@ We decided the `edit` tool is the only mutation tool, carrying one uniform paylo
 - Atomicity is per-call: preflight all items, apply, roll back on failure — unchanged from `batch_edit`.
 - The nested tuple `items` arrays remain incompatible with Gemini's API; provider-agnostic support (object items) is a known, deferred follow-up.
 - Any `tool_call` hook that assumes `edit` input carries top-level `path` keeps working; hooks must still tolerate `null` paths (anchor inference) — pi-permission-lsz is patched to fall through when `path` is not a string.
+
+## PayloadContract single source (2026-08-26, Candidate 5)
+
+The payload contract `{ path, edits: [[remove_from, remove_to, replacement_text]] }` was previously triple-defined:
+
+- `src/edit-normalize.ts` (runtime `editRequestFrom`, `EDIT_TUPLE_HINT`, branded `NormalizedEditRequest`)
+- `src/edit.ts` (TypeBox `editToolSchema` tuple)
+- `src/edit-render.ts` (`getPreviewInput` duplicate validation)
+
+plus six prompt surfaces (`prompts/edit.md`, `edit-snippet.md`, `edit-guidelines.md` and their `loadP`/`loadGuide` consumers). Changing the tuple to an object required a five-file edit; `getPreviewInput` missed the `file_path` alias, causing preview `"..."` vs execute-success flicker.
+
+**Consolidation:** `src/payload-contract.ts` is now the single owner. It exports:
+
+- `editToolSchema` / `editTupleSchema` (TypeBox, hoisted `path` + tuple arity preserved for ADR-0007 token savings)
+- `NormalizedEditRequest`, `EditItem`, `isNormalized` brand, `EDIT_TUPLE_HINT`
+- `editRequestFrom`, `itemFromTuple`, `normReq`, `prepareEditArguments`, `assertReq`, `getPreviewInput`
+- `EDIT_DESCRIPTION`, `EDIT_SNIPPET`, `EDIT_GUIDELINES` and `getPayloadPromptFragments()` — prompts are generated from the contract, not hand-synced
+- `normalizeFilePathRecord` with deprecation warning for the `file_path` alias
+
+`src/edit-normalize.ts` re-exports from the contract (backward compat), `src/edit.ts` and `src/edit-render.ts` delegate to it (`getPreviewInput` delegates to `editRequestFrom`), `src/prompts.ts` delegates edit prompts to the contract, and `src/utils.ts` `normalizeFilePath` emits the same deprecation warning. `file_path` still works but warns (`[DEPRECATED] "file_path" is deprecated, use "path"`), verified by `test/core/payload-file-path.test.ts`.
+
+Prompts are single-sourced: `src/payload-contract.ts` is the authority, `prompts/*.md` are verified against it (and can be regenerated via `scripts/generate-payload-prompts.mjs`), and `src/edit.ts` imports `EDIT_DESCRIPTION`/`EDIT_SNIPPET`/`EDIT_GUIDELINES` directly.
+
+This preserves the hoisted-path + tuple contract and CONTEXT.md language (payload contract, compact JSON tuple, nullable path, inclusive anchor range) while making future shape changes atomic.
+
