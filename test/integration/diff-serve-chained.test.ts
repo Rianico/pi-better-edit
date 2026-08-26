@@ -108,7 +108,7 @@ describe("diff rows serve chained edits", () => {
 		});
 	});
 
-	it("rejects a follow-up anchored on diff rows when the handler never ran (no serve)", async () => {
+	it("serves diff rows via pipeline so follow-up succeeds even without handler (deepened seam)", async () => {
 		await withTempFile("sample.ts", "l1\nl2\nl3\nl4\nl5\n", async ({ cwd }) => {
 			const { getTool } = makeSeamPi();
 			const readTool = getTool("read");
@@ -145,17 +145,19 @@ describe("diff rows serve chained edits", () => {
 				.find((l) => l.startsWith("+") && l.includes("│X"))!
 				.slice(1, 4);
 
-			await expect(
-				editTool.execute(
-					"e2",
-					{ path: "sample.ts", edits: [[l1Ref, xRef, "A\nB"]] },
-					undefined,
-					undefined,
-					ctx,
-				),
-			).rejects.toThrow(/E_RANGE_UNVERIFIED/);
+			// Pipeline now records dense serves inside the mutation seam, so
+			// the diff rows are valid anchors even without invoking the
+			// tool_result handler (old seam required handler).
+			const chained = await editTool.execute(
+				"e2",
+				{ path: "sample.ts", edits: [[l1Ref, xRef, "A\nB"]] },
+				undefined,
+				undefined,
+				ctx,
+			);
+			expect(getText(chained)).toContain("Successfully edited");
 			expect(await readFile(join(cwd, "sample.ts"), "utf-8")).toBe(
-				"l1\nX\nl3\nl4\nl5\n",
+				"A\nB\nl3\nl4\nl5\n",
 			);
 		});
 	});
