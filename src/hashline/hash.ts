@@ -69,6 +69,61 @@ export function getCanonForHash(hash: string): string | undefined {
 	return hashToCanon.get(hash);
 }
 
+// --- CanonStore abstraction: instance-scoped replacement for global hashToCanon ---
+
+export interface CanonStore {
+	get(hash: string): string | undefined;
+	set(hash: string, canonText: string): void;
+}
+
+/** Isolated in-memory canon store — for tests and ServedVerification instances. */
+export function createCanonStore(): CanonStore {
+	const m = new Map<string, string>();
+	return {
+		get(hash) {
+			return m.get(hash);
+		},
+		set(hash, canonText) {
+			if (!m.has(hash)) m.set(hash, canonText);
+		},
+	};
+}
+
+/** Store seeded from explicit entries — adapter for tests. */
+export function createCanonStoreFromEntries(
+	entries: Array<[string, string]>,
+): CanonStore {
+	const m = new Map<string, string>(entries);
+	return {
+		get(hash) {
+			return m.get(hash);
+		},
+		set(hash, canonText) {
+			if (!m.has(hash)) m.set(hash, canonText);
+		},
+	};
+}
+
+/** Adapter that delegates to the process-global hashToCanon — production default. */
+export const globalCanonStore: CanonStore = {
+	get(hash) {
+		return getCanonForHash(hash);
+	},
+	set(hash, canonText) {
+		rememberHashCanon(hash, canonText);
+	},
+};
+
+/** Test helper — clears the global store. Prefer instance stores in new code. */
+export function __clearGlobalCanonStoreForTest(): void {
+	hashToCanon.clear();
+}
+
+/** Snapshot helper for seeding an instance store from global state. */
+export function __globalCanonEntriesForTest(): Array<[string, string]> {
+	return [...hashToCanon.entries()];
+}
+
 export const HL_PREFIX_PLUS_RE = new RegExp(`^\\+${HASH_CLASS}│`);
 export const HL_PREFIX_MINUS_RE = new RegExp(
 	`^-(?:${HASH_CLASS}│| {${ANCHOR_LEN}}│)`,
@@ -131,7 +186,11 @@ function assignHash(
 	return hashAt(nextIdx);
 }
 
-export function _lineHashesPure(content: string): string[] {
+export function _lineHashesPure(
+	content: string,
+	canonStore?: CanonStore,
+): string[] {
+	const store = canonStore ?? globalCanonStore;
 	const lines = splitLines(content);
 	const hashes = new Array<string>(lines.length);
 	const used = new Uint32Array(BITSET_WORDS);
@@ -143,7 +202,7 @@ export function _lineHashesPure(content: string): string[] {
 		const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
 		const h = assignHash(used, baseIdx, hint);
 		hashes[i] = h;
-		rememberHashCanon(h, c);
+		store.set(h, c);
 	}
 	return hashes;
 }
@@ -154,10 +213,11 @@ export async function lineHashes(
 	previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
 	io?: HashSnapshotIO,
 	persist?: boolean,
+	canonStore?: CanonStore,
 ): Promise<string[]> {
 	await initHasher();
 	if (!path) {
-		return _lineHashesPure(content);
+		return _lineHashesPure(content, canonStore);
 	}
 
 	const snapshotIO = io ?? defaultHashSnapshotIO;
@@ -168,6 +228,7 @@ export async function lineHashes(
 			previous.hashes,
 			content,
 			previous.removedHashes,
+			canonStore,
 		);
 		if (persist !== false && snapshotIO) {
 			try {
@@ -196,7 +257,7 @@ export async function lineHashes(
 		return cached;
 	}
 
-	const newHashes = _lineHashesPure(content);
+	const newHashes = _lineHashesPure(content, canonStore);
 	if (persist !== false && snapshotIO) {
 		try {
 			await snapshotIO.upsert(
@@ -247,7 +308,9 @@ function mapStableHashes(
 	oldHashes: string[],
 	newContent: string,
 	removedHashes?: Set<string>,
+	canonStore?: CanonStore,
 ): string[] {
+	const store = canonStore ?? globalCanonStore;
 	const oldLines = splitLines(oldContent);
 	const newLines = splitLines(newContent);
 	const canonCache = new Map<string, string>();
@@ -317,7 +380,7 @@ function mapStableHashes(
 		const newIdx = candidates.splice(pos, 1)[0]!;
 		newHashes[newIdx] = entry.hash;
 		markUsed(entry.hash);
-		rememberHashCanon(entry.hash, getCanon(canonCache, oldLines[entry.index]!));
+		store.set(entry.hash, getCanon(canonCache, oldLines[entry.index]!));
 	}
 
 	const removedByContent = new Map<string, { hashes: string[]; pos: number }>();
@@ -338,7 +401,7 @@ function mapStableHashes(
 		const h = queue.hashes[queue.pos]!;
 		newHashes[i] = h;
 		queue.pos += 1;
-		rememberHashCanon(h, getCanon(canonCache, newLines[i]!));
+		store.set(h, getCanon(canonCache, newLines[i]!));
 	}
 
 	for (let i = 0; i < newLines.length; i++) {
@@ -347,7 +410,7 @@ function mapStableHashes(
 		const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
 		const h = assignHash(used, baseIdx, hint);
 		newHashes[i] = h;
-		rememberHashCanon(h, c);
+		store.set(h, c);
 	}
 
 	return newHashes;
