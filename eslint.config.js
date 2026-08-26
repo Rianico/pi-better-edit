@@ -1,6 +1,9 @@
 import js from "@eslint/js";
 import tseslint from "typescript-eslint";
 
+const GHERKIN_RE =
+  /^\s*(Given|When|Then|And|But|Feature|Scenario|Background|Scenario Outline|Examples)\b/i;
+
 const noCommentsRule = {
   meta: {
     type: "suggestion",
@@ -12,12 +15,17 @@ const noCommentsRule = {
   create(context) {
     return {
       Program() {
-        const filename = context.filename || (typeof context.getFilename === "function" ? context.getFilename() : "");
+        const filename =
+          context.filename ||
+          (typeof context.getFilename === "function"
+            ? context.getFilename()
+            : "");
         if (filename && filename.includes("edit-pipeline")) return;
         const sourceCode = context.sourceCode ?? context.getSourceCode();
         const comments = sourceCode.getAllComments();
         for (const comment of comments) {
           if (comment.value.includes("SAFETY:")) continue;
+          if (GHERKIN_RE.test(comment.value)) continue;
           context.report({
             node: comment,
             message:
@@ -58,7 +66,11 @@ export default tseslint.config(
     },
   },
   {
-    files: ["src/edit-pipeline.ts", "src/hashline/served-verification.ts", "src/hashline/served.ts"],
+    files: [
+      "src/edit-pipeline.ts",
+      "src/hashline/served-verification.ts",
+      "src/hashline/served.ts",
+    ],
     rules: {
       "custom/no-comments": "off",
     },
@@ -70,11 +82,6 @@ export default tseslint.config(
     },
   },
   {
-    ignores: [
-      "node_modules/",
-      ".git/",
-      "dist/",
-      ".tmp/",
-    ],
+    ignores: ["node_modules/", ".git/", "dist/", ".tmp/"],
   },
 );

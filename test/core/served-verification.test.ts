@@ -1,6 +1,10 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
-import { _lineHashesPure, createCanonStore, canon } from "../../src/hashline/hash";
+import {
+	_lineHashesPure,
+	createCanonStore,
+	canon,
+} from "../../src/hashline/hash";
 import {
 	ServedVerification,
 	verifyServedRange,
@@ -43,7 +47,11 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		const oldContent = "a\nb\nc";
 		const oldHashes = _lineHashesPure(oldContent, store);
 		// Served has duplicate for 'a' at positions 0 and 1 (orphaned serve duplicate)
-		const served: (string | null)[] = [oldHashes[0]!, oldHashes[0]!, oldHashes[2]!];
+		const served: (string | null)[] = [
+			oldHashes[0]!,
+			oldHashes[0]!,
+			oldHashes[2]!,
+		];
 		const newContent = "a\nb\nc";
 		const fileHashes = _lineHashesPure(newContent, store);
 		const fileLines = newContent.split("\n");
@@ -115,7 +123,9 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		const fileLines = content.split("\n");
 		const fileHashes = hashes;
 		// Simulate paged read: only lines 1-3 and 7-9 were served, middle gap is null
-		const served: (string | null)[] = hashes.map((h, i) => (i < 3 || i >= 6 ? h : null));
+		const served: (string | null)[] = hashes.map((h, i) =>
+			i < 3 || i >= 6 ? h : null,
+		);
 
 		const verifier = new ServedVerification(store);
 		const l1Hash = hashes[0]!;
@@ -216,7 +226,10 @@ describe("ServedVerification deep module — isolated store & decision table", (
 
 	it("pagination: large range echo is capped and includes pagination hint", () => {
 		const store = createCanonStore();
-		const lines = Array.from({ length: 200 }, (_, i) => `line_${String(i + 1).padStart(3, "0")}`);
+		const lines = Array.from(
+			{ length: 200 },
+			(_, i) => `line_${String(i + 1).padStart(3, "0")}`,
+		);
 		const content = lines.join("\n");
 		const hashes = _lineHashesPure(content, store);
 		const _fileLines = lines;
@@ -265,7 +278,12 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		// Verify with storeA succeeds for its own content
 		const verifierA = new ServedVerification(storeA);
 		const okA = verifierA.verify({
-			range: { startHash: hashesA[0]!, endHash: hashesA[2]!, startLine: 1, endLine: 3 },
+			range: {
+				startHash: hashesA[0]!,
+				endHash: hashesA[2]!,
+				startLine: 1,
+				endLine: 3,
+			},
 			served: [...hashesA],
 			fileHashes: hashesA,
 			fileLines: ["a", "b", "c"],
@@ -275,7 +293,12 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		// Same hashes but wrong store should still succeed via population from fileLines (store will be populated)
 		const verifierB = new ServedVerification(storeB);
 		const okB = verifierB.verify({
-			range: { startHash: hashesA[0]!, endHash: hashesA[2]!, startLine: 1, endLine: 3 },
+			range: {
+				startHash: hashesA[0]!,
+				endHash: hashesA[2]!,
+				startLine: 1,
+				endLine: 3,
+			},
 			served: [...hashesA],
 			fileHashes: hashesA,
 			fileLines: ["a", "b", "c"],
@@ -304,7 +327,12 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		).not.toThrow();
 
 		// Never-served gap should throw via top-level
-		const servedGap: (string | null)[] = [hashes[0]!, null, hashes[2]!, hashes[3]!];
+		const servedGap: (string | null)[] = [
+			hashes[0]!,
+			null,
+			hashes[2]!,
+			hashes[3]!,
+		];
 		expect(() =>
 			verifyServedRange({
 				served: servedGap,
