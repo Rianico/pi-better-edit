@@ -13,6 +13,7 @@ export function getH(): Hasher {
 }
 
 const hasherP: Promise<Hasher> = xxhash().then((h) => {
+	// SAFETY: xxhash-wasm instance exposes h32/h64ToString matching Hasher shape; cast bridges untyped wasm binding and is validated at runtime via getH/initHasher.
 	hasher = h as unknown as Hasher;
 	return hasher;
 }).catch((err: unknown) => {

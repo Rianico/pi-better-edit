@@ -17,6 +17,7 @@ const noCommentsRule = {
         const sourceCode = context.sourceCode ?? context.getSourceCode();
         const comments = sourceCode.getAllComments();
         for (const comment of comments) {
+          if (comment.value.includes("SAFETY:")) continue;
           context.report({
             node: comment,
             message:

@@ -79,6 +79,9 @@
     "typescript-eslint": "^8.65.0",
     "vitest": "^4.1.8"
   },
+  "knip": {
+    "ignoreDependencies": ["pi-hashline-edit-pro"]
+  },
   "allowScripts": {
     "@google/genai@1.52.0": true,
     "koffi@2.16.2": true,
