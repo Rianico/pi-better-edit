@@ -51,4 +51,6 @@ export {
 	applyEdit,
 	fmtRegion,
 	changedRange,
+	findEditHashEcho,
+	EditHashEchoError,
 } from "./apply";
