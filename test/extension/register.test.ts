@@ -19,7 +19,7 @@ describe("extension registration", () => {
 
 		expect(toolNames.sort()).toEqual(["edit", "read", "read_skill", "undo_last_edit"]);
 
-		expect(eventNames).toEqual(["session_start", "tool_result"]);
+		expect(eventNames.sort()).toEqual(["session_start", "tool_call", "tool_result"]);
 	});
 });
 

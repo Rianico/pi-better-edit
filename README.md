@@ -200,6 +200,7 @@ atomically to that one file — one item per call is the norm, several same-file
 | `[E_RANGE_UNVERIFIED]` | A boundary anchor (`remove_from`/`remove_to`) has no served position or was served at multiple positions, so the range cannot be verified against served state. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
 | `[E_BATCH_ABORT]` | A multi-item `edit` call was rejected as a whole: an item failed validation or served-state verification. Nothing was written; the failing item's current range is echoed as fresh `HASH│content` rows. |
+| `[E_WRITE_HASH_ECHO]` | A `write` `content` line begins with the exact `HASH│` anchor served for the same session, canonical path, and line. The write is refused, file byte-identical; retry with bare content (remove the copied anchor chain). |
 
 ## Comparison
 
