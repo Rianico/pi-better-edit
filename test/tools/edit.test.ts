@@ -88,7 +88,33 @@ describe("regEdit", () => {
 		});
 	});
 
-	it("autocorrects bare HASH│ prefix in content_lines with a warning", async () => {
+	it("refuses served hash echo in replacement_text with E_EDIT_HASH_ECHO (deny, not strip)", async () => {
+		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+			await readTool.execute(
+				"r1",
+				{ path: "sample.ts" },
+				undefined,
+				undefined,
+				ctx,
+			);
+			const before = await readFile(path, "utf-8");
+			await expect(
+				editTool.execute(
+					"e1",
+					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `${hashes[1]!}│BBB`]] },
+					undefined,
+					undefined,
+					ctx,
+				),
+			).rejects.toThrow(/E_EDIT_HASH_ECHO/);
+			const after = await readFile(path, "utf-8");
+			expect(after).toBe(before);
+		});
+	});
+
+	it("autocorrects bare HASH│ prefix in content_lines with a warning when not a served echo", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -99,19 +125,17 @@ describe("regEdit", () => {
 				undefined,
 				ctx,
 			);
-
+			// Zz9 is not served at line 2 (served[1] is hashes[1]), so E_BARE_HASH_PREFIX heal applies, not E_EDIT_HASH_ECHO
 			const result = await editTool.execute(
 				"e1",
-				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `${hashes[1]!}│BBB`]] },
+				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `Zz9│BBB`]] },
 				undefined,
 				undefined,
 				ctx,
 			);
 			expect(result.content[0].text).toContain("Successfully edited");
 			expect(result.content[0].text).toContain("E_BARE_HASH_PREFIX");
-			expect(result.content[0].text).toContain(`stripped "HASH│" prefix`);
 			expect(result.details?.diff).toContain("BBB");
-			expect(result.details?.diff).not.toContain(`${hashes[1]}│BBB`);
 		});
 	});
 

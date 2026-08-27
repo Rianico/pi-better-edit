@@ -10,6 +10,7 @@ import { MAX_HASH_LINES } from "./src/hashline";
 import { AUTO_READ_MAX } from "./src/constants";
 import { pruneMissingAll } from "./src/snapshot-store";
 import { recordDiffServes, sessionKeyFor } from "./src/served-state";
+import { registerWriteHook } from "./src/write-hook";
 import { readNormFile } from "./src/file-reader";
 import { loadFileKindAndText } from "./src/file-kind";
 import { toCwd } from "./src/paths";
@@ -23,6 +24,7 @@ export default function (pi: ExtensionAPI): void {
 
 	regEdit(pi);
 	regEditUndo(pi);
+	registerWriteHook(pi);
 
 	pi.on("session_start", async (_event, ctx) => {
 		await initHasher();
