@@ -1,6 +1,6 @@
 {
   "name": "pi-better-edit",
-  "version": "1.2.0",
+  "version": "1.2.1",
   "type": "module",
   "description": "Hash-anchored read/edit/undo tools for pi-coding-agent. Every line gets a unique 3-char hash (A-Za-z0-9) that stays stable across edits; stale or ambiguous anchors are rejected, never fuzzy-matched. Undo persists across restarts.",
   "main": "index.ts",
@@ -80,7 +80,9 @@
     "vitest": "^4.1.8"
   },
   "knip": {
-    "ignoreDependencies": ["pi-hashline-edit-pro"]
+    "ignoreDependencies": [
+      "pi-hashline-edit-pro"
+    ]
   },
   "allowScripts": {
     "@google/genai@1.52.0": true,
