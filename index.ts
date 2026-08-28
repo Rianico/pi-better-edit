@@ -1,22 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { initHasher } from "./src/hashline/index.js";
 import { regEdit } from "./src/edit.js";
 import { regEditUndo, clearUndo } from "./src/edit-undo.js";
-import { regRead, fmtReadPreview } from "./src/read.js";
+import { regRead } from "./src/read.js";
 import { regReadSkill } from "./src/read-skill.js";
 import { finalizeToolResult, type EditDetails } from "./src/edit-response.js";
-import { MAX_HASH_LINES } from "./src/hashline/index.js";
-import { AUTO_READ_MAX } from "./src/constants.js";
 import { pruneMissingAll } from "./src/snapshot-store.js";
 import { recordDiffServes, sessionKeyFor } from "./src/served-state.js";
 import { registerWriteHook } from "./src/write-hook.js";
-import { readNormFile } from "./src/file-reader.js";
-import { loadFileKindAndText } from "./src/file-kind.js";
+import { prepareFile } from "./src/file-content/index.js";
+import { visLines } from "./src/utils.js";
 import { toCwd } from "./src/paths.js";
 import { resolveTarget } from "./src/fs-write.js";
-import { valAccess } from "./src/validation.js";
-import { visLines } from "./src/utils.js";
 
 export default function (pi: ExtensionAPI): void {
 	regRead(pi);
@@ -55,38 +50,20 @@ export default function (pi: ExtensionAPI): void {
 			}
 			if (typeof writtenPath !== "string") return;
 			try {
-				const resolvedPath = await resolveTarget(toCwd(writtenPath, ctx.cwd));
-				await valAccess(resolvedPath, writtenPath);
-				const file = await loadFileKindAndText(resolvedPath, {
-					maxLines: MAX_HASH_LINES,
-					displayPath: writtenPath,
-				});
-				if (file.kind !== "text") return;
-				const { normalized, fileHashes, absolutePath } = await readNormFile(
-					writtenPath,
-					ctx.cwd,
-					{ maxLines: MAX_HASH_LINES, preloadedFile: file },
-				);
-				const preview = await fmtReadPreview(
-					normalized,
-					{},
-					fileHashes,
-					absolutePath,
-					DEFAULT_MAX_BYTES,
-					AUTO_READ_MAX,
-				);
+				const prepared = await prepareFile(writtenPath, ctx.cwd, {});
+				if (prepared.kind !== "text") return;
 				await recordDiffServes({
 					sessionKey: sessionKeyFor(ctx),
-					path: absolutePath,
-					servedRows: preview.served,
-					resultLineCount: visLines(normalized).length,
+					path: prepared.absolutePath,
+					servedRows: prepared.served,
+					resultLineCount: visLines(prepared.normalized).length,
 				});
 				return {
 					content: [
 						...(event.content ?? []),
 						{
 							type: "text",
-							text: `\n\n--- Auto-read (hashline anchors) ---\n${preview.text}`,
+							text: `\n\n--- Auto-read (hashline anchors) ---\n${prepared.preview}`,
 						},
 					],
 				};

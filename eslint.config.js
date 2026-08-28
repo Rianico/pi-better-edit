@@ -72,6 +72,10 @@ export default tseslint.config(
       "src/write-hook.ts",
       "src/hashline/served-verification.ts",
       "src/hashline/served.ts",
+      "src/file-content/**",
+      "src/file-kind.ts",
+      "src/file-reader.ts",
+      "src/read.ts",
     ],
     rules: {
       "custom/no-comments": "off",
