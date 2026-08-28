@@ -174,3 +174,8 @@ Temporary Items
 .tmp/
 .lsz/
 
+
+# Scaffold deterministic — pi-better-edit
+.pi/
+.agents/
+coverage/
