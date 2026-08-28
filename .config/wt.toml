@@ -2,7 +2,7 @@
 copy = "wt step copy-ignored"
 
 [pre-merge]
-gate = "npm run typecheck && npm test && npx commitlint --from=origin/{{ default_branch }} --to=HEAD --verbose"
+gate = "npm run typecheck && npm test && npx commitlint --from=origin/main --to=HEAD --verbose"
 
 [list]
 url = "http://localhost:{{ branch | hash_port }}"
