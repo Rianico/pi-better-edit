@@ -47,8 +47,9 @@ describe("disjoint batch drift gap", () => {
           ctx,
         );
         const resultText = getText(result);
-        // Should contain batch drift warning for disjoint gap
-        expect(resultText).toContain("Batch drift note");
+        // Batch drift note is now user-facing (details.warnings), not model content (ADR-0010)
+        expect((result as any).details?.warnings?.join("\n") ?? "").toContain("Batch drift note");
+        expect(resultText).not.toContain("Batch drift note");
         // Gap drift (E) should NOT be reported as drift because union treats gap as edited (documented norm)
         // Outside drift (J) should be reported if not already reported? Let's check drift notice
         // Since J is at line10 outside union 2..8, it should be considered drift if served and changed.
@@ -99,8 +100,10 @@ describe("disjoint batch drift gap", () => {
           ctx,
         );
         const resultText = getText(result);
-        expect(resultText).toContain("drift:");
-        expect(resultText).toContain("│E");
+        const driftNotice = (result as any).details?.driftNotice ?? "";
+        expect(driftNotice).toContain("drift:");
+        expect(driftNotice).toContain("│E");
+        expect(resultText).not.toContain("drift:");
       },
     );
   });

@@ -1,8 +1,9 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { getPreviewInput as contractPreviewInput, type EditItem } from "./payload-contract.js";
+import {
+	getPreviewInput as contractPreviewInput,
+	type EditItem,
+} from "./payload-contract.js";
 import type { EditDetails } from "./edit-response.js";
-
-
 
 export type FgT = Pick<Theme, "fg">;
 export type CallT = Pick<Theme, "fg" | "bold">;
@@ -25,7 +26,6 @@ export function getPreviewInput(
 ): { path: string | null; edits: EditItem[] } | null {
 	return contractPreviewInput(args);
 }
-
 
 export function colorLines(lines: string[], theme: FgT): string[] {
 	return lines.map((line) => {
@@ -71,7 +71,8 @@ export function fmtCall(
 		typeof path === "string" && path.length > 0
 			? theme.fg("accent", path)
 			: theme.fg("toolOutput", "...");
-	const arity = args && args.edits.length > 1 ? ` (${args.edits.length} edits)` : "";
+	const arity =
+		args && args.edits.length > 1 ? ` (${args.edits.length} edits)` : "";
 	let text = `${theme.fg("toolTitle", theme.bold("edit"))} ${pathDisplay}${arity}`;
 
 	if (!state.preview) {
@@ -113,16 +114,17 @@ export function buildAppliedText(
 	theme: FgT,
 ): string | undefined {
 	const sections: string[] = [];
-
 	if (details?.diff) {
 		sections.push(fmtResult(details.diff, theme));
 	}
-
 	const warnings = details?.warnings;
 	if (warnings?.length) {
 		sections.push(warnings.join("\n"));
 	}
-
+	const driftNotice = details?.driftNotice;
+	if (driftNotice) {
+		sections.push(theme.fg("dim", driftNotice));
+	}
 	return sections.length > 0 ? sections.join("\n\n") : undefined;
 }
 function trimEmpty(lines: string[]): string[] {
@@ -157,8 +159,7 @@ export function mkMdTheme(theme: MdTheme) {
 		listBullet: (text: string) => theme.fg("mdListBullet", text),
 		bold: (text: string) => theme.bold(text),
 		italic: (text: string) => (theme.italic ? theme.italic(text) : text),
-		underline: (text: string) =>
-			theme.underline ? theme.underline(text) : text,
+		underline: (text: string) => (theme.underline ? theme.underline(text) : text),
 		strikethrough: (text: string) =>
 			theme.strikethrough ? theme.strikethrough(text) : text,
 		highlightCode: (code: string, lang?: string) =>

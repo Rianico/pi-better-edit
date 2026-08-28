@@ -354,20 +354,34 @@ export interface ProcessedEditFile {
 	editedIntervals: ResolvedRange[];
 }
 
-
-function parseEdits(items: NormalizedEditRequest["edits"], path: string, warnings: string[]): HEdit[] {
-  const parsed: HEdit[] = [];
-  for (let index = 0; index < items.length; index++) {
-    const item = items[index]!;
-    try {
-      parsed.push(resEdit({ remove_from: item.remove_from, remove_to: item.remove_to, replacement_text: item.replacement_text }, warnings));
-    } catch (error) {
-      if (items.length === 1) throw error;
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${message}\nThe whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.`);
-    }
-  }
-  return parsed;
+function parseEdits(
+	items: NormalizedEditRequest["edits"],
+	path: string,
+	warnings: string[],
+): HEdit[] {
+	const parsed: HEdit[] = [];
+	for (let index = 0; index < items.length; index++) {
+		const item = items[index]!;
+		try {
+			parsed.push(
+				resEdit(
+					{
+						remove_from: item.remove_from,
+						remove_to: item.remove_to,
+						replacement_text: item.replacement_text,
+					},
+					warnings,
+				),
+			);
+		} catch (error) {
+			if (items.length === 1) throw error;
+			const message = error instanceof Error ? error.message : String(error);
+			throw new Error(
+				`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${message}\nThe whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.`,
+			);
+		}
+	}
+	return parsed;
 }
 async function runMutations(
 	request: NormalizedEditRequest,
@@ -557,6 +571,7 @@ async function runMutations(
 			}
 		}
 		if (hasGap && editedIntervals.length > 1) {
+			// User-facing signal: Batch drift note stays in details.warnings, filtered from model content (see ADR-0010).
 			warnings.push(
 				`Batch drift note: edits are disjoint — drift inside the gap between edited intervals is not reported. For accurate gap drift, use sequential single-edit calls.`,
 			);

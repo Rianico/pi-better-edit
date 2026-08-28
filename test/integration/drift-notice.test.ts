@@ -28,7 +28,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 				);
 				const text = getText(firstRead);
 				const alphaRef = extractHash(
-					text.split("\n").find((l) => l.includes("│alpha"))!,
+					text.split("\n").find((l: string) => l.includes("│alpha"))!,
 				);
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
@@ -43,10 +43,12 @@ describe("drift notices for changed served territory outside the edit range", ()
 
 				const resultText = getText(result);
 				expect(resultText).toContain("Successfully edited");
-				expect(resultText).toContain("drift:");
-				const driftRow = resultText
+				expect(resultText).not.toContain("drift:");
+				const driftNotice = (result as any).details?.driftNotice ?? "";
+				expect(driftNotice).toContain("drift:");
+				const driftRow = driftNotice
 					.split("\n")
-					.find((l) => /^[A-Za-z0-9]{3}│DELTA$/.test(l));
+					.find((l: string) => /^[A-Za-z0-9]{3}│DELTA$/.test(l));
 				expect(driftRow).toBeDefined();
 
 				const deltaRef = extractHash(driftRow!);
@@ -79,7 +81,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 				);
 				const text = getText(firstRead);
 				const alphaRef = extractHash(
-					text.split("\n").find((l) => l.includes("│alpha"))!,
+					text.split("\n").find((l: string) => l.includes("│alpha"))!,
 				);
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
@@ -94,12 +96,14 @@ describe("drift notices for changed served territory outside the edit range", ()
 
 				const resultText = getText(result);
 				expect(resultText).toContain("No changes made");
-				expect(resultText).toContain("drift:");
+				expect(resultText).not.toContain("drift:");
+				const driftNotice = (result as any).details?.driftNotice ?? "";
+				expect(driftNotice).toContain("drift:");
 				const currentHashes = await lineHashes(
 					"alpha\nbeta\ngamma\nDELTA\n",
 					home.testPath,
 				);
-				expect(resultText).toContain(`${currentHashes[3]}│DELTA`);
+				expect(driftNotice).toContain(`${currentHashes[3]}│DELTA`);
 			},
 		);
 	});
@@ -120,7 +124,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 				);
 				const text = getText(firstRead);
 				const alphaRef = extractHash(
-					text.split("\n").find((l) => l.includes("│alpha"))!,
+					text.split("\n").find((l: string) => l.includes("│alpha"))!,
 				);
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
@@ -131,8 +135,9 @@ describe("drift notices for changed served territory outside the edit range", ()
 					undefined,
 					ctx,
 				);
-				expect(getText(first)).toContain("drift:");
-				expect(getText(first)).toContain("│DELTA");
+				expect((first as any).details?.driftNotice ?? "").toContain("drift:");
+				expect((first as any).details?.driftNotice ?? "").toContain("│DELTA");
+				expect(getText(first)).not.toContain("drift:");
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA2\n", "utf-8");
 				const second = await editTool.execute(
@@ -143,10 +148,12 @@ describe("drift notices for changed served territory outside the edit range", ()
 					ctx,
 				);
 				const secondText = getText(second);
-				expect(secondText).toContain("already reported");
-				expect(secondText).not.toContain("│DELTA2");
+				const secondDrift = (second as any).details?.driftNotice ?? "";
+				expect(secondDrift).toContain("already reported");
+				expect(secondText).not.toContain("already reported");
+				expect(secondDrift).not.toContain("│DELTA2");
 				expect(
-					secondText.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l)),
+					secondDrift.split("\n").filter((l: string) => /^[A-Za-z0-9]{3}│/.test(l)),
 				).toHaveLength(0);
 				expect(await readFile(path, "utf-8")).toBe(
 					"alpha\nbeta\ngamma\nDELTA2\n",
@@ -172,12 +179,12 @@ describe("drift notices for changed served territory outside the edit range", ()
 				const alphaRef = extractHash(
 					getText(firstRead)
 						.split("\n")
-						.find((l) => l.includes("│alpha"))!,
+						.find((l: string) => l.includes("│alpha"))!,
 				);
 				const gammaRef = extractHash(
 					getText(firstRead)
 						.split("\n")
-						.find((l) => l.includes("│gamma"))!,
+						.find((l: string) => l.includes("│gamma"))!,
 				);
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
@@ -197,7 +204,8 @@ describe("drift notices for changed served territory outside the edit range", ()
 					undefined,
 					ctx,
 				);
-				expect(getText(second)).toContain("already reported");
+				expect((second as any).details?.driftNotice ?? "").toContain("already reported");
+				expect(getText(second)).not.toContain("already reported");
 
 				await readTool.execute(
 					"r2",
@@ -216,9 +224,11 @@ describe("drift notices for changed served territory outside the edit range", ()
 					ctx,
 				);
 				const thirdText = getText(third);
-				expect(thirdText).toContain("drift:");
-				expect(thirdText).toContain("│DELTA3");
-				expect(thirdText).not.toContain("already reported");
+				const thirdDrift = (third as any).details?.driftNotice ?? "";
+				expect(thirdDrift).toContain("drift:");
+				expect(thirdDrift).toContain("│DELTA3");
+				expect(thirdDrift).not.toContain("already reported");
+				expect(thirdText).not.toContain("drift:");
 			},
 		);
 	});
@@ -239,10 +249,10 @@ describe("drift notices for changed served territory outside the edit range", ()
 				);
 				const text = getText(firstRead);
 				const alphaRef = extractHash(
-					text.split("\n").find((l) => l.includes("│alpha"))!,
+					text.split("\n").find((l: string) => l.includes("│alpha"))!,
 				);
 				const gammaRef = extractHash(
-					text.split("\n").find((l) => l.includes("│gamma"))!,
+					text.split("\n").find((l: string) => l.includes("│gamma"))!,
 				);
 
 				await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
@@ -284,7 +294,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 				const l4Ref = extractHash(
 					getText(firstRead)
 						.split("\n")
-						.find((l) => l.includes("│l4"))!,
+						.find((l: string) => l.includes("│l4"))!,
 				);
 
 				await writeFile(path, "l0\nl1\nl4\nl5\nl6\nl7\nl8\nl9\n", "utf-8");
@@ -299,7 +309,8 @@ describe("drift notices for changed served territory outside the edit range", ()
 
 				const resultText = getText(result);
 				expect(resultText).toContain("Successfully edited");
-				const notice = resultText.split("drift:")[1] ?? "";
+				expect(resultText).not.toContain("drift:");
+				const notice = ((result as any).details?.driftNotice ?? "").split("drift:")[1] ?? "";
 				expect(notice).toContain("2 line(s)");
 				expect(notice.match(/^[A-Za-z0-9]{3}│R$/gm)).toHaveLength(1);
 				expect(notice).toMatch(/^[A-Za-z0-9]{3}│l1$/m);
@@ -331,7 +342,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 				);
 				const text = getText(firstRead);
 				const alphaRef = extractHash(
-					text.split("\n").find((l) => l.includes("│alpha"))!,
+					text.split("\n").find((l: string) => l.includes("│alpha"))!,
 				);
 
 				await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
@@ -342,7 +353,8 @@ describe("drift notices for changed served territory outside the edit range", ()
 					undefined,
 					ctx,
 				);
-				expect(getText(edited)).toContain("drift:");
+				expect((edited as any).details?.driftNotice ?? "").toContain("drift:");
+				expect(getText(edited)).not.toContain("drift:");
 
 				const undone = await undoTool.execute(
 					"u1",
@@ -376,7 +388,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 				const alphaRef = extractHash(
 					getText(firstRead)
 						.split("\n")
-						.find((l) => l.includes("│alpha"))!,
+						.find((l: string) => l.includes("│alpha"))!,
 				);
 
 				await writeFile(path, "alpha\nbeta\nGAMMA\ndelta\n", "utf-8");
@@ -391,21 +403,23 @@ describe("drift notices for changed served territory outside the edit range", ()
 
 				const resultText = getText(result);
 				expect(resultText).toContain("Successfully edited");
-				expect(resultText).toContain("drift:");
+				expect(resultText).not.toContain("drift:");
+				const driftNotice = (result as any).details?.driftNotice ?? "";
+				expect(driftNotice).toContain("drift:");
 
-				const betaRow = resultText
+				const betaRow = driftNotice
 					.split("\n")
-					.find((l) => /^[A-Za-z0-9]{3}│beta$/.test(l));
-				const gammaRow = resultText
+					.find((l: string) => /^[A-Za-z0-9]{3}│beta$/.test(l));
+				const gammaRow = driftNotice
 					.split("\n")
-					.find((l) => /^[A-Za-z0-9]{3}│GAMMA$/.test(l));
-				const deltaRow = resultText
+					.find((l: string) => /^[A-Za-z0-9]{3}│GAMMA$/.test(l));
+				const deltaRow = driftNotice
 					.split("\n")
-					.find((l) => /^[A-Za-z0-9]{3}│delta$/.test(l));
+					.find((l: string) => /^[A-Za-z0-9]{3}│delta$/.test(l));
 				expect(betaRow).toBeDefined();
 				expect(gammaRow).toBeDefined();
 				expect(deltaRow).toBeDefined();
-				const notice = resultText.split("drift:")[1] ?? "";
+				const notice = driftNotice.split("drift:")[1] ?? "";
 				expect(notice.indexOf(betaRow!)).toBeLessThan(
 					notice.indexOf(gammaRow!),
 				);
