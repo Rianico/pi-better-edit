@@ -17,6 +17,10 @@
  */
 import { HASH_SEP, canon, globalCanonStore, type CanonStore } from "./hash.js";
 import { SERVED_ECHO_CAP } from "../constants.js";
+import { healSingleCanon } from "./healing/single-canon.js";
+import { healBoundaryCanon } from "./healing/boundary.js";
+import { healOrphanedSpan } from "./healing/orphan.js";
+import { isLengthHealedViaCanon as isLengthHealedViaCanonHelper } from "./healing/helpers.js";
 
 // ---------------------------------------------------------------------------
 // Public contracts — mirrors served.ts so it can re-export without identity split
@@ -138,25 +142,6 @@ export type VerificationResult =
 // ---------------------------------------------------------------------------
 // ServedVerification — the deep module
 // ---------------------------------------------------------------------------
-
-function findCanonMatches(fileLines: string[], canonVal: string): number[] {
-  const matches: number[] = [];
-  for (let i = 0; i < fileLines.length; i++) if (canon(fileLines[i] ?? "") === canonVal) matches.push(i);
-  return matches;
-}
-function isUniqueSection(fileLines: string[], start: number, len: number): boolean {
-  if (len <= 2) return true;
-  const healedCanons: string[] = [];
-  for (let k = 0; k < len; k++) healedCanons.push(canon(fileLines[start + k] ?? ""));
-  let count = 0;
-  for (let i = 0; i <= fileLines.length - len; i++) {
-    let ok = true;
-    for (let k = 0; k < len; k++) if (canon(fileLines[i + k] ?? "") !== healedCanons[k]) { ok = false; break; }
-    if (ok) count++;
-    if (count > 1) break;
-  }
-  return count === 1;
-}
 
 export class ServedVerification {
 	private readonly store: CanonStore;
@@ -393,7 +378,7 @@ export class ServedVerification {
 		return out;
 	}
 
-	// -- private: healing -----------------------------------------------------
+	// -- private: healing — delegated to internal HealingStrategy adapters -----
 
 	private tryHealOrphanedSpan(args: {
 		served: (string | null)[];
@@ -406,11 +391,7 @@ export class ServedVerification {
 		startPositions: number[];
 		endPositions: number[];
 	}): { from: number; to: number } | undefined {
-		// Strategy 1: single-candidate canon scan for served span as content sequence
-		const healed1 = this.trySingleCandidateCanonHeal(args);
-		if (healed1) return healed1;
-		// Strategy 2: orphaned boundary via canon (hash not in file, but canon is)
-		return this.tryBoundaryCanonHeal(args);
+		return healOrphanedSpan({ ...args, store: this.store });
 	}
 
 	private trySingleCandidateCanonHeal(args: {
@@ -422,42 +403,15 @@ export class ServedVerification {
 		startPositions: number[];
 		endPositions: number[];
 	}): { from: number; to: number } | undefined {
-		const { served, currentLen, fileLines, startPositions, endPositions } = args;
-		if (startPositions.length !== 1 || endPositions.length !== 1) return undefined;
-		const sPos = startPositions[0]!;
-		const ePos = endPositions[0]!;
-		const servedFrom = Math.min(sPos, ePos);
-		const servedTo = Math.max(sPos, ePos);
-		const servedLen = servedTo - servedFrom + 1;
-		if (servedLen !== currentLen) return undefined;
-
-		const expectedCanons: string[] = [];
-		for (let k = 0; k < servedLen; k++) {
-			const h = served[servedFrom + k];
-			if (h === null) return undefined;
-			const c = this.store.get(h);
-			if (c === undefined) return undefined;
-			expectedCanons.push(c);
-		}
-
-		const matches: number[] = [];
-		for (let i = 0; i <= fileLines.length - servedLen; i++) {
-			let ok = true;
-			for (let k = 0; k < servedLen; k++) {
-				if (canon(fileLines[i + k] ?? "") !== expectedCanons[k]) {
-					ok = false;
-					break;
-				}
-			}
-			if (ok) matches.push(i);
-			if (matches.length > 1) break;
-		}
-		if (matches.length === 1) {
-			return { from: matches[0]!, to: matches[0]! + servedLen - 1 };
-		}
-		return undefined;
+		return healSingleCanon({
+			served: args.served,
+			currentLen: args.currentLen,
+			fileLines: args.fileLines,
+			startPositions: args.startPositions,
+			endPositions: args.endPositions,
+			store: this.store,
+		});
 	}
-
 
 	private tryBoundaryCanonHeal(args: {
 		served: (string | null)[];
@@ -469,19 +423,15 @@ export class ServedVerification {
 		startPositions: number[];
 		endPositions: number[];
 	}): { from: number; to: number } | undefined {
-		const { served, startHash, endHash, currentLen, fileLines, fileHashes } = args;
-		if (!served.some((h) => h !== null) || (fileHashes.includes(startHash) && fileHashes.includes(endHash))) return undefined;
-		const startCanon = this.store.get(startHash);
-		const endCanon = this.store.get(endHash);
-		if (startCanon === undefined || endCanon === undefined) return undefined;
-		const startMatches = findCanonMatches(fileLines, startCanon);
-		const endMatches = findCanonMatches(fileLines, endCanon);
-		if (startMatches.length !== 1 || endMatches.length !== 1) return undefined;
-		const healedFrom = Math.min(startMatches[0]!, endMatches[0]!);
-		const healedTo = Math.max(startMatches[0]!, endMatches[0]!);
-		if (healedTo - healedFrom + 1 !== currentLen) return undefined;
-		if (!isUniqueSection(fileLines, healedFrom, currentLen)) return undefined;
-		return { from: healedFrom, to: healedTo };
+		return healBoundaryCanon({
+			served: args.served,
+			startHash: args.startHash,
+			endHash: args.endHash,
+			currentLen: args.currentLen,
+			fileLines: args.fileLines,
+			fileHashes: args.fileHashes,
+			store: this.store,
+		});
 	}
 
 	// -- private: validation via decision table -------------------------------
@@ -572,28 +522,7 @@ export class ServedVerification {
 		servedLen: number;
 		fileLines: string[];
 	}): boolean {
-		const { served, from, servedLen, fileLines } = args;
-		const expectedCanons: string[] = [];
-		for (let k = 0; k < servedLen; k++) {
-			const h = served[from + k];
-			if (h === null) return false;
-			const c = this.store.get(h);
-			if (c === undefined) return false;
-			expectedCanons.push(c);
-		}
-		let matches = 0;
-		for (let i = 0; i <= fileLines.length - servedLen; i++) {
-			let ok = true;
-			for (let k = 0; k < servedLen; k++) {
-				if (canon(fileLines[i + k] ?? "") !== expectedCanons[k]) {
-					ok = false;
-					break;
-				}
-			}
-			if (ok) matches++;
-			if (matches > 1) break;
-		}
-		return matches === 1;
+		return isLengthHealedViaCanonHelper(args.served, args.from, args.servedLen, args.fileLines, this.store);
 	}
 
 	// -- private: throws with decision-table mapping -------------------------

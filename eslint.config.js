@@ -72,6 +72,7 @@ export default tseslint.config(
       "src/write-hook.ts",
       "src/hashline/served-verification.ts",
       "src/hashline/served.ts",
+      "src/hashline/healing/**",
     ],
     rules: {
       "custom/no-comments": "off",
