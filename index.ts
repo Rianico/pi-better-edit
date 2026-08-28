@@ -9,7 +9,7 @@ import { finalizeToolResult, type EditDetails } from "./src/edit-response.js";
 import { MAX_HASH_LINES } from "./src/hashline/index.js";
 import { AUTO_READ_MAX } from "./src/constants.js";
 import { pruneMissingAll } from "./src/snapshot-store.js";
-import { recordDiffServes, sessionKeyFor } from "./src/served-state.js";
+import { sessionFromContext } from "./src/served-session/index.js";
 import { registerWriteHook } from "./src/write-hook.js";
 import { readNormFile } from "./src/file-reader.js";
 import { loadFileKindAndText } from "./src/file-kind.js";
@@ -75,12 +75,8 @@ export default function (pi: ExtensionAPI): void {
 					DEFAULT_MAX_BYTES,
 					AUTO_READ_MAX,
 				);
-				await recordDiffServes({
-					sessionKey: sessionKeyFor(ctx),
-					path: absolutePath,
-					servedRows: preview.served,
-					resultLineCount: visLines(normalized).length,
-				});
+				const session = sessionFromContext(ctx as { sessionManager?: { getSessionId(): string } }, absolutePath);
+				await session.recordDiff(preview.served, { resultLineCount: visLines(normalized).length });
 				return {
 					content: [
 						...(event.content ?? []),
@@ -114,13 +110,8 @@ export default function (pi: ExtensionAPI): void {
 				if (entry.servedRows.length === 0) continue;
 				try {
 					const resolvedPath = await resolveTarget(toCwd(entry.path, ctx.cwd));
-					await recordDiffServes({
-						sessionKey: sessionKeyFor(ctx),
-						path: resolvedPath,
-						servedRows: entry.servedRows,
-						resultLineCount: entry.resultLineCount,
-						firstChangedLine: entry.firstChangedLine,
-					});
+					const session = sessionFromContext(ctx as { sessionManager?: { getSessionId(): string } }, resolvedPath);
+					await session.recordDiff(entry.servedRows, { resultLineCount: entry.resultLineCount, firstChangedLine: entry.firstChangedLine });
 				} catch (error) {
 					// SAFETY: best-effort serve recording after edit — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.
 					console.error("Failed to record served rows from edit diff:", error);
@@ -131,13 +122,8 @@ export default function (pi: ExtensionAPI): void {
 				const rawPath = (event.input as Record<string, unknown> | undefined)?.path;
 				if (typeof rawPath === "string") {
 					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
-					await recordDiffServes({
-						sessionKey: sessionKeyFor(ctx),
-						path: resolvedPath,
-						servedRows,
-						resultLineCount: details.resultLineCount,
-						firstChangedLine: details.firstChangedLine,
-					});
+					const session = sessionFromContext(ctx as { sessionManager?: { getSessionId(): string } }, resolvedPath);
+					await session.recordDiff(servedRows, { resultLineCount: details.resultLineCount, firstChangedLine: details.firstChangedLine });
 				}
 			} catch (error) {
 				// SAFETY: best-effort serve recording after edit — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.
