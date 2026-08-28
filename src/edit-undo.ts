@@ -1,19 +1,19 @@
-import { readFile } from "fs/promises";
+import { readFile } from "node:fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readUndo, writeUndo, removeUndo, type UndoRecord } from "./undo-store";
-import { upsertSnapshotFor } from "./snapshot-store";
-import { contentChecksum } from "./hashline/hasher";
-import { resolveTarget, writeAtomic } from "./fs-write";
-import { toCwd } from "./paths";
+import { readUndo, writeUndo, removeUndo, type UndoRecord } from "./undo-store.js";
+import { upsertSnapshotFor } from "./snapshot-store.js";
+import { contentChecksum } from "./hashline/hasher.js";
+import { resolveTarget, writeAtomic } from "./fs-write.js";
+import { toCwd } from "./paths.js";
 import {
 	toLF,
 	stripBOM,
 	genDiff,
 	restoreEndings,
 	type LineEnding,
-} from "./edit-diff";
+} from "./edit-diff.js";
 import {
 	cntDiff,
 	visLines,
@@ -21,10 +21,10 @@ import {
 	errCode,
 	isRec,
 	normalizeFilePath,
-} from "./utils";
-import { loadP, loadGuide } from "./prompts";
-import { buildMetrics, type EditDetails } from "./edit-response";
-import { changedRange, lineHashes } from "./hashline";
+} from "./utils.js";
+import { loadP, loadGuide } from "./prompts.js";
+import { buildMetrics, type EditDetails } from "./edit-response.js";
+import { changedRange, lineHashes } from "./hashline/index.js";
 export interface UndoEntry {
 	content: string;
 	bom: string;
@@ -48,6 +48,7 @@ export async function saveUndo(
 			resultContent: entry.resultContent,
 		});
 	} catch (error) {
+		// SAFETY: typed error handling — persist failure returns { persisted: false } and caller throws E_UNDO_UNAVAILABLE; logging preserves cause, not silent undefined, downstream handles rejection.
 		console.error("Failed to persist undo entry:", error);
 		return { persisted: false, restore: async () => undefined };
 	}
@@ -58,6 +59,7 @@ export async function saveUndo(
 				if (previous) await writeUndo(path, previous);
 				else await removeUndo(path);
 			} catch (error) {
+				// SAFETY: best-effort undo restore — failures to restore previous undo entry after persist failure are ignored; edit already failed and will report E_UNDO_UNAVAILABLE, stale undo state is recoverable on next edit.
 				console.error("Failed to restore previous undo entry:", error);
 			}
 		},
@@ -85,6 +87,7 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
 			resultContent: record.resultContent,
 		};
 	} catch (error) {
+		// SAFETY: best-effort undo load — failures return undefined (no history) and caller reports "No undo history"; stale or corrupt store is recoverable on next edit, not silent undefined without log.
 		console.error("Failed to load undo entry:", error);
 		return undefined;
 	}
@@ -94,6 +97,7 @@ export async function clearUndo(path: string): Promise<void> {
 	try {
 		await removeUndo(path);
 	} catch (error) {
+		// SAFETY: best-effort undo cleanup — clearUndo failures are ignored; stale undo entry will be overwritten on next edit or pruned, file content already correct.
 		console.error("Failed to clear undo entry:", error);
 	}
 }
@@ -216,10 +220,8 @@ export function regEditUndo(pi: ExtensionAPI): void {
 						undo.hashes,
 					);
 				} catch (error) {
-					console.error(
-						"Failed to restore hash store snapshot after undo:",
-						error,
-					);
+					// SAFETY: best-effort snapshot restore after undo — hash snapshot failures are ignored; file content already restored and hashes will be recomputed on next read, no data loss.
+					console.error("Failed to restore hash store snapshot after undo:", error);
 				}
 
 				await clearUndo(mutationTargetPath);
@@ -236,7 +238,8 @@ export function regEditUndo(pi: ExtensionAPI): void {
 
 				const details: EditDetails = {
 					diff: undoDiff,
-					firstChangedLine: restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine,
+					firstChangedLine:
+						restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine,
 					resultLineCount: visLines(undo.content).length,
 					servedRows: undoDenseRows,
 					metrics: buildMetrics({

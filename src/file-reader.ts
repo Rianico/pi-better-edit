@@ -1,15 +1,15 @@
-import { constants } from "fs";
-import { stat } from "fs/promises";
-import { defaultHashIdentity } from "./hashline/hash-identity";
-import { loadFileKindAndText, type LFile } from "./file-kind";
-import { resolveTarget } from "./fs-write";
-import { toCwd } from "./paths";
-import { detectEnding, toLF, stripBOM, type LineEnding } from "./edit-diff";
-import { abortIf } from "./utils";
-import { valKind, valAccess } from "./validation";
-import { visLines } from "./utils";
-import { loadHashStore, type HashStore } from "./hash-store";
-import { snapshotIOFor } from "./snapshot-store";
+import { constants } from "node:fs";
+import { stat } from "node:fs/promises";
+import { defaultHashIdentity } from "./hashline/hash-identity.js";
+import { loadFileKindAndText, type LFile } from "./file-kind.js";
+import { resolveTarget } from "./fs-write.js";
+import { toCwd } from "./paths.js";
+import { detectEnding, toLF, stripBOM, type LineEnding } from "./edit-diff.js";
+import { abortIf } from "./utils.js";
+import { valKind, valAccess } from "./validation.js";
+import { visLines } from "./utils.js";
+import { loadHashStore, type HashStore } from "./hash-store.js";
+import { snapshotIOFor } from "./snapshot-store.js";
 export interface NormFile {
 	absolutePath: string;
 	normalized: string;

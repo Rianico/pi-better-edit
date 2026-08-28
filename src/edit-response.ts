@@ -1,6 +1,6 @@
-import type { ServedRow } from "./hashline/served";
-import { genDiff } from "./edit-diff";
-import { visLines, clipLine } from "./utils";
+import type { ServedRow } from "./hashline/served.js";
+import { genDiff } from "./edit-diff.js";
+import { visLines, clipLine } from "./utils.js";
 
 export type EditDetails = {
 	path?: string;
@@ -36,7 +36,7 @@ export type RMetrics = {
 	removed_lines?: number;
 };
 
-export type RMeta = {
+type RMeta = {
 	editsAttempted: number;
 	noopEditsCount: number;
 	firstChangedLine?: number;
@@ -246,7 +246,7 @@ export type BatchSection = {
 	totalRemovedLines: number;
 };
 
-export type BatchDetails = EditDetails;
+type BatchDetails = EditDetails;
 
 export function buildBatchResult(sections: BatchSection[]): TResult {
 	const totalEdits = sections.reduce(

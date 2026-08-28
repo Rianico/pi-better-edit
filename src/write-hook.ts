@@ -6,11 +6,11 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { HASH_SEP } from "./hashline/hash-identity";
-import { abortIf, splitLines } from "./utils";
-import { resolveTarget } from "./fs-write";
-import { toCwd } from "./paths";
-import { loadServed, sessionKeyFor } from "./served-state";
+import { HASH_SEP } from "./hashline/hash-identity.js";
+import { abortIf, splitLines } from "./utils.js";
+import { resolveTarget } from "./fs-write.js";
+import { toCwd } from "./paths.js";
+import { loadServed, sessionKeyFor } from "./served-state.js";
 
 export interface ServedHashEcho {
 	/** One-based candidate line carrying the copied anchor. */
@@ -89,6 +89,7 @@ export function registerWriteHook(pi: ExtensionAPI): void {
 		if (typeof rawPath !== "string" || typeof content !== "string") return;
 
 		const cwd = ctx.cwd;
+		// SAFETY: ExtensionAPI ctx carries sessionManager at runtime; cast narrows to sessionKeyFor's expected shape which is validated by sessionKeyFor's internal guards.
 		const sessionKey = sessionKeyFor(ctx as unknown as { sessionManager?: { getSessionId(): string } });
 		const signal = ctx.signal;
 		try {
@@ -104,7 +105,7 @@ export function registerWriteHook(pi: ExtensionAPI): void {
 			}
 		} catch (error) {
 			if (signal?.aborted) throw error;
-			console.warn(
+			console.error(
 				`pi-better-edit: pre-write hash-echo guard failed open: ${error instanceof Error ? error.message : String(error)}`,
 			);
 		}

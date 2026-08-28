@@ -19,7 +19,7 @@ export {
 	type HashSnapshotIO,
 	type HashPrior,
 	type HashOptions,
-} from "./hash-identity";
+} from "./hash-identity.js";
 
 export const HASH_PROBE_STRIDE = 3907;
 
@@ -27,10 +27,9 @@ export {
 	parseHashRef,
 	parseText,
 	type Anchor,
-} from "./parse";
+} from "./parse.js";
 
 export {
-	type RAnchor,
 	type HEdit,
 	type RHEdit,
 	type HTEdit,
@@ -42,15 +41,13 @@ export {
 	stripBarePrefixes,
 	stripDiffPrefixes,
 	swapReversedRanges,
-	fmtMismatch,
 	findNewEdge,
-} from "./resolve";
+} from "./resolve.js";
 
 export {
-	buildIdx,
 	applyEdit,
 	fmtRegion,
 	changedRange,
 	findEditHashEcho,
 	EditHashEchoError,
-} from "./apply";
+} from "./apply.js";

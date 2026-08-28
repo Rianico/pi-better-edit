@@ -7,23 +7,23 @@ import {
 	type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { MAX_READ_LINE_BYTES } from "./constants";
-import { loadFileKindAndText } from "./file-kind";
-import { loadHashStore } from "./hash-store";
-import { readNormFile } from "./file-reader";
-import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline";
-import type { ServedRow } from "./hashline/served";
-import { toCwd } from "./paths";
+import { MAX_READ_LINE_BYTES } from "./constants.js";
+import { loadFileKindAndText } from "./file-kind.js";
+import { loadHashStore } from "./hash-store.js";
+import { readNormFile } from "./file-reader.js";
+import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline/index.js";
+import type { ServedRow } from "./hashline/served.js";
+import { toCwd } from "./paths.js";
 import {
 	recordServedTruncated,
 	clearDriftReported,
 	sessionKeyFor,
-} from "./served-state";
-import { abortIf, isRec, normalizeFilePath } from "./utils";
-import { fileSnap } from "./file-reader";
-import { visLines } from "./utils";
-import { loadP, loadGuide } from "./prompts";
-import { valAccess } from "./validation";
+} from "./served-state.js";
+import { abortIf, isRec, normalizeFilePath } from "./utils.js";
+import { fileSnap } from "./file-reader.js";
+import { visLines } from "./utils.js";
+import { loadP, loadGuide } from "./prompts.js";
+import { valAccess } from "./validation.js";
 
 const R_DESC = loadP("../prompts/read.md");
 
@@ -50,7 +50,7 @@ function normPosInt(
 	return value;
 }
 
-export function formatPaginationHint(
+function formatPaginationHint(
 	startLine: number,
 	endLine: number,
 	totalLines: number,
@@ -60,6 +60,72 @@ export function formatPaginationHint(
 	const sizeSuffix =
 		byteLimit !== undefined ? ` (${formatSize(byteLimit)} limit)` : "";
 	return `[Showing lines ${startLine}-${endLine} of ${totalLines}${sizeSuffix}. Use offset=${nextOffset} to continue.]`;
+}
+
+
+async function emptyFilePreview(startLine: number, text: string, precomputedHashes: string[] | undefined, path: string | undefined, HASH_SEP: string): Promise<{ text: string; served: ServedRow[] }> {
+  if (startLine === 1) {
+    const allHashes = precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+    const emptyLineHash = allHashes[0]!;
+    return { text: `${emptyLineHash}${HASH_SEP}\n[File is empty. Use edit to insert content.]`, served: [{ position: 0, hash: emptyLineHash }] };
+  }
+  return { text: `Offset ${startLine} is beyond end of file (0 lines total). The file is empty. Use edit to insert content.`, served: [] };
+}
+function oversizedWarning(oversized: { lineNumber: number }[]): { lineLabel: string; verb: string; addresses: string } {
+  const lineLabel = oversized.length === 1 ? `Line ${oversized[0]!.lineNumber}` : `Lines ${oversized.map((row) => row.lineNumber).join(", ")}`;
+  const verb = oversized.length === 1 ? "exceeds" : "exceed";
+  const addresses = oversized.map((row) => `${row.lineNumber}p`).join(";");
+  return { lineLabel, verb, addresses };
+}
+function buildOversizedPreview(params: {
+  rowSizes: { lineNumber: number; bytes: number }[];
+  selected: string[];
+  selectedHashes: string[];
+  startLine: number;
+  totalLines: number;
+  maxBytes: number;
+  maxTruncLines: number;
+}): { text: string; truncation?: TruncationResult; nextOffset?: number; served: ServedRow[] } {
+  const { rowSizes, selected, selectedHashes, startLine, totalLines, maxBytes, maxTruncLines } = params;
+  const oversized = rowSizes.filter((row) => row.bytes > maxBytes);
+  const rows = rowSizes.map((row, index) =>
+    row.bytes > maxBytes
+      ? `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`
+      : fmtRegion([selectedHashes[index]!], [selected[index]!]),
+  );
+  const skippedTruncation = truncateHead(rows.join("\n"), { maxBytes, maxLines: maxTruncLines });
+  const shownRowCount = skippedTruncation.content === "" ? 0 : skippedTruncation.content.split("\n").length;
+  const lastShownLine = shownRowCount > 0 ? startLine + shownRowCount - 1 : startLine - 1;
+  const { lineLabel, verb, addresses } = oversizedWarning(oversized);
+  const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; content not shown because hashline anchors require full lines. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
+  let preview = skippedTruncation.content;
+  let nextOffset: number | undefined;
+  if (shownRowCount > 0 && (skippedTruncation.truncated || lastShownLine < totalLines)) {
+    nextOffset = lastShownLine + 1;
+    preview += `\n\n${warning}\n${formatPaginationHint(startLine, lastShownLine, totalLines, nextOffset, skippedTruncation.truncated ? skippedTruncation.maxBytes : undefined)}`;
+  } else {
+    preview += `\n\n${warning}`;
+  }
+  const served: ServedRow[] = [];
+  for (let index = 0; index < shownRowCount; index++) if (rowSizes[index]!.bytes <= maxBytes) served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+  return { text: preview, truncation: skippedTruncation.truncated ? skippedTruncation : undefined, ...(nextOffset !== undefined ? { nextOffset } : {}), served };
+}
+function buildNormalPreview(formatted: string, startLine: number, endIdx: number, totalLines: number, maxBytes: number, maxTruncLines: number, selectedHashes: string[]): { preview: string; nextOffset?: number; truncation: ReturnType<typeof truncateHead>; served: ServedRow[] } {
+  const truncation = truncateHead(formatted, { maxBytes, maxLines: maxTruncLines });
+  let preview = truncation.content;
+  let nextOffset: number | undefined;
+  if (truncation.truncated) {
+    const endLineDisplay = startLine + truncation.outputLines - 1;
+    nextOffset = endLineDisplay + 1;
+    if (truncation.truncatedBy === "lines") preview += `\n\n${formatPaginationHint(startLine, endLineDisplay, totalLines, nextOffset)}`;
+    else preview += `\n\n${formatPaginationHint(startLine, endLineDisplay, totalLines, nextOffset, truncation.maxBytes)}`;
+  } else if (endIdx < totalLines) {
+    nextOffset = endIdx + 1;
+    preview += `\n\n${formatPaginationHint(startLine, endIdx, totalLines, nextOffset)}`;
+  }
+  const served: ServedRow[] = [];
+  for (let index = 0; index < truncation.outputLines; index++) served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+  return { preview, nextOffset, truncation, served };
 }
 
 export async function fmtReadPreview(
@@ -78,22 +144,7 @@ export async function fmtReadPreview(
 	const allLines = visLines(text);
 	const totalLines = allLines.length;
 	const startLine = normPosInt(options.offset, "offset") ?? 1;
-	if (totalLines === 0) {
-		if (startLine === 1) {
-			const allHashes =
-				precomputedHashes ??
-				(await (path ? lineHashes(text, path) : lineHashes(text)));
-			const emptyLineHash = allHashes[0]!;
-			return {
-				text: `${emptyLineHash}${HASH_SEP}\n[File is empty. Use edit to insert content.]`,
-				served: [{ position: 0, hash: emptyLineHash }],
-			};
-		}
-		return {
-			text: `Offset ${startLine} is beyond end of file (0 lines total). The file is empty. Use edit to insert content.`,
-			served: [],
-		};
-	}
+	if (totalLines === 0) return emptyFilePreview(startLine, text, precomputedHashes, path, HASH_SEP);
 	if (startLine > totalLines) {
 		return {
 			text: `Offset ${startLine} is beyond end of file (${totalLines} lines total). Use offset=1 to read from the start, or offset=${totalLines} to read the last line.`,
@@ -120,91 +171,11 @@ export async function fmtReadPreview(
 		),
 	}));
 	if (rowSizes.some((row) => row.bytes > maxBytes)) {
-		const oversized = rowSizes.filter((row) => row.bytes > maxBytes);
-		const rows = rowSizes.map((row, index) =>
-			row.bytes > maxBytes
-				? `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`
-				: fmtRegion([selectedHashes[index]!], [selected[index]!]),
-		);
-		const skippedTruncation = truncateHead(rows.join("\n"), {
-			maxBytes,
-			maxLines: maxTruncLines,
-		});
-		const shownRowCount =
-			skippedTruncation.content === ""
-				? 0
-				: skippedTruncation.content.split("\n").length;
-		const lastShownLine =
-			shownRowCount > 0 ? startLine + shownRowCount - 1 : startLine - 1;
-		const lineLabel =
-			oversized.length === 1
-				? `Line ${oversized[0]!.lineNumber}`
-				: `Lines ${oversized.map((row) => row.lineNumber).join(", ")}`;
-		const verb = oversized.length === 1 ? "exceeds" : "exceed";
-		const addresses = oversized.map((row) => `${row.lineNumber}p`).join(";");
-		const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; content not shown because hashline anchors require full lines. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
-		let preview = skippedTruncation.content;
-		let nextOffset: number | undefined;
-		if (
-			shownRowCount > 0 &&
-			(skippedTruncation.truncated || lastShownLine < totalLines)
-		) {
-			nextOffset = lastShownLine + 1;
-			preview += `\n\n${warning}\n${formatPaginationHint(startLine, lastShownLine, totalLines, nextOffset, skippedTruncation.truncated ? skippedTruncation.maxBytes : undefined)}`;
-		} else {
-			preview += `\n\n${warning}`;
-		}
-		const served = [];
-		for (let index = 0; index < shownRowCount; index++) {
-			if (rowSizes[index]!.bytes <= maxBytes) {
-				served.push({
-					position: startLine - 1 + index,
-					hash: selectedHashes[index]!,
-				});
-			}
-		}
-		return {
-			text: preview,
-			truncation: skippedTruncation.truncated ? skippedTruncation : undefined,
-			...(nextOffset !== undefined ? { nextOffset } : {}),
-			served,
-		};
+		return buildOversizedPreview({ rowSizes, selected, selectedHashes, startLine, totalLines, maxBytes, maxTruncLines });
 	}
 
-	const truncation = truncateHead(formatted, {
-		maxBytes,
-		maxLines: maxTruncLines,
-	});
-
-	let preview = truncation.content;
-	let nextOffset: number | undefined;
-	if (truncation.truncated) {
-		const endLineDisplay = startLine + truncation.outputLines - 1;
-		nextOffset = endLineDisplay + 1;
-		if (truncation.truncatedBy === "lines") {
-			preview += `\n\n${formatPaginationHint(startLine, endLineDisplay, totalLines, nextOffset)}`;
-		} else {
-			preview += `\n\n${formatPaginationHint(startLine, endLineDisplay, totalLines, nextOffset, truncation.maxBytes)}`;
-		}
-	} else if (endIdx < totalLines) {
-		nextOffset = endIdx + 1;
-		preview += `\n\n${formatPaginationHint(startLine, endIdx, totalLines, nextOffset)}`;
-	}
-
-	const served = [];
-	for (let index = 0; index < truncation.outputLines; index++) {
-		served.push({
-			position: startLine - 1 + index,
-			hash: selectedHashes[index]!,
-		});
-	}
-
-	return {
-		text: preview,
-		truncation: truncation.truncated ? truncation : undefined,
-		...(nextOffset !== undefined ? { nextOffset } : {}),
-		served,
-	};
+	const normal = buildNormalPreview(formatted, startLine, endIdx, totalLines, maxBytes, maxTruncLines, selectedHashes);
+	return { text: normal.preview, truncation: normal.truncation.truncated ? normal.truncation : undefined, ...(normal.nextOffset !== undefined ? { nextOffset: normal.nextOffset } : {}), served: normal.served };
 }
 
 export function regRead(pi: ExtensionAPI): void {
@@ -252,6 +223,7 @@ export function regRead(pi: ExtensionAPI): void {
 			});
 			if (file.kind === "image") {
 				const builtinRead = createReadTool(ctx.cwd);
+				// SAFETY: pi-coding-agent's createReadTool returns untyped execute; cast narrows to typed signature validated by runtime params and is only used to delegate with same args.
 				const executeBuiltinRead = builtinRead.execute as unknown as (
 					toolCallId: string,
 					input: typeof params,
@@ -292,6 +264,7 @@ export function regRead(pi: ExtensionAPI): void {
 			try {
 				snapshotId = (await fileSnap(absolutePath)).snapshotId;
 			} catch (error) {
+				// SAFETY: best-effort snapshot computation — failures are ignored; read succeeds without snapshotId, tool returns preview and served state, no data loss.
 				console.error("Failed to compute snapshot for read:", error);
 			}
 			const previewText = hadUtf8DecodeErrors
@@ -307,7 +280,7 @@ export function regRead(pi: ExtensionAPI): void {
 						? { nextOffset: preview.nextOffset }
 						: {}),
 					metrics: {
-						truncated: !!preview.truncation,
+						truncated: Boolean(preview.truncation),
 						...(preview.nextOffset !== undefined
 							? { next_offset: preview.nextOffset }
 							: {}),

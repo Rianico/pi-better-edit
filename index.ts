@@ -1,22 +1,22 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
-import { initHasher } from "./src/hashline";
-import { regEdit } from "./src/edit";
-import { regEditUndo, clearUndo } from "./src/edit-undo";
-import { regRead, fmtReadPreview } from "./src/read";
-import { regReadSkill } from "./src/read-skill";
-import { finalizeToolResult, type EditDetails } from "./src/edit-response";
-import { MAX_HASH_LINES } from "./src/hashline";
-import { AUTO_READ_MAX } from "./src/constants";
-import { pruneMissingAll } from "./src/snapshot-store";
-import { recordDiffServes, sessionKeyFor } from "./src/served-state";
-import { registerWriteHook } from "./src/write-hook";
-import { readNormFile } from "./src/file-reader";
-import { loadFileKindAndText } from "./src/file-kind";
-import { toCwd } from "./src/paths";
-import { resolveTarget } from "./src/fs-write";
-import { valAccess } from "./src/validation";
-import { visLines } from "./src/utils";
+import { initHasher } from "./src/hashline/index.js";
+import { regEdit } from "./src/edit.js";
+import { regEditUndo, clearUndo } from "./src/edit-undo.js";
+import { regRead, fmtReadPreview } from "./src/read.js";
+import { regReadSkill } from "./src/read-skill.js";
+import { finalizeToolResult, type EditDetails } from "./src/edit-response.js";
+import { MAX_HASH_LINES } from "./src/hashline/index.js";
+import { AUTO_READ_MAX } from "./src/constants.js";
+import { pruneMissingAll } from "./src/snapshot-store.js";
+import { recordDiffServes, sessionKeyFor } from "./src/served-state.js";
+import { registerWriteHook } from "./src/write-hook.js";
+import { readNormFile } from "./src/file-reader.js";
+import { loadFileKindAndText } from "./src/file-kind.js";
+import { toCwd } from "./src/paths.js";
+import { resolveTarget } from "./src/fs-write.js";
+import { valAccess } from "./src/validation.js";
+import { visLines } from "./src/utils.js";
 
 export default function (pi: ExtensionAPI): void {
 	regRead(pi);
@@ -31,6 +31,7 @@ export default function (pi: ExtensionAPI): void {
 		try {
 			await pruneMissingAll();
 		} catch (err) {
+			// SAFETY: best-effort startup cleanup — pruneMissingAll failures are ignored; hash store remains usable and stale entries will be retried next startup, no user data loss.
 			console.error("Failed to load or prune hash store:", err);
 		}
 		const debugValue = process.env.PI_HASHLINE_DEBUG;
@@ -48,6 +49,7 @@ export default function (pi: ExtensionAPI): void {
 				try {
 					await clearUndo(await resolveTarget(toCwd(writtenPath, ctx.cwd)));
 				} catch (error) {
+					// SAFETY: best-effort undo cleanup after write — clearUndo failures are ignored; stale undo history will be overwritten on next edit or pruned, no data loss.
 					console.error("Failed to clear undo after write:", error);
 				}
 			}
@@ -100,8 +102,7 @@ export default function (pi: ExtensionAPI): void {
 			}
 		}
 
-		if (event.toolName !== "edit" && event.toolName !== "undo_last_edit")
-			return;
+		if (event.toolName !== "edit" && event.toolName !== "undo_last_edit") return;
 
 		const details = event.details as EditDetails | undefined;
 		if (details?.metrics?.classification === "noop") return;
@@ -112,9 +113,7 @@ export default function (pi: ExtensionAPI): void {
 			for (const entry of details.servedByPath) {
 				if (entry.servedRows.length === 0) continue;
 				try {
-					const resolvedPath = await resolveTarget(
-						toCwd(entry.path, ctx.cwd),
-					);
+					const resolvedPath = await resolveTarget(toCwd(entry.path, ctx.cwd));
 					await recordDiffServes({
 						sessionKey: sessionKeyFor(ctx),
 						path: resolvedPath,
@@ -123,21 +122,15 @@ export default function (pi: ExtensionAPI): void {
 						firstChangedLine: entry.firstChangedLine,
 					});
 				} catch (error) {
-					console.error(
-						"Failed to record served rows from edit diff:",
-						error,
-					);
+					// SAFETY: best-effort serve recording after edit — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.
+					console.error("Failed to record served rows from edit diff:", error);
 				}
 			}
 		} else if (servedRows && servedRows.length > 0) {
 			try {
-				const rawPath = (
-					event.input as Record<string, unknown> | undefined
-				)?.path;
+				const rawPath = (event.input as Record<string, unknown> | undefined)?.path;
 				if (typeof rawPath === "string") {
-					const resolvedPath = await resolveTarget(
-						toCwd(rawPath, ctx.cwd),
-					);
+					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
 					await recordDiffServes({
 						sessionKey: sessionKeyFor(ctx),
 						path: resolvedPath,
@@ -147,10 +140,8 @@ export default function (pi: ExtensionAPI): void {
 					});
 				}
 			} catch (error) {
-				console.error(
-					"Failed to record served rows from post-edit diff:",
-					error,
-				);
+				// SAFETY: best-effort serve recording after edit — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.
+				console.error("Failed to record served rows from post-edit diff:", error);
 			}
 		}
 

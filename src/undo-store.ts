@@ -5,8 +5,8 @@ import {
   withBusyRetry,
   getCached,
   type HashStore,
-} from "./hash-store";
-import { isValidHashList } from "./hashline/hash";
+} from "./hash-store.js";
+import { isValidHashList } from "./hashline/hash.js";
 
 export interface UndoRecord {
   content: string;

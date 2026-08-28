@@ -148,7 +148,8 @@ vite.config.ts.timestamp-*
 __MACOSX/
 .AppleDouble
 .LSOverride
-Icon[]
+Icon[
+]
 
 # Thumbnails
 ._*
@@ -171,3 +172,5 @@ Temporary Items
 
 # Test temp directories
 .tmp/
+.lsz/
+

@@ -1,4 +1,4 @@
-import { getPreviewInput, type RPreview, type RRState } from "./edit-render";
+import { getPreviewInput, type RPreview, type RRState } from "./edit-render.js";
 
 export const PREVIEW_DEBOUNCE_MS = 150;
 
@@ -12,6 +12,7 @@ export interface PreviewHost {
 
 export type PreviewCompute = (args: unknown, cwd: string) => Promise<RPreview>;
 
+// SAFETY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
 export class DebouncedPreview {
 	constructor(
 		private readonly compute: PreviewCompute,

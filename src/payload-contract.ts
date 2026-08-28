@@ -1,10 +1,10 @@
 import { Type } from "typebox";
-import { EDITS_MAX_ITEMS } from "./constants";
+import { EDITS_MAX_ITEMS } from "./constants.js";
 
 
 
 
-export const normalizedEdit = Symbol("normalizedEdit");
+const normalizedEdit = Symbol("normalizedEdit");
 
 export type EditItem = {
 	remove_from: string;
@@ -17,11 +17,19 @@ export type NormalizedEditRequest = {
 	edits: EditItem[];
 };
 
+type NormalizedPayload = NormalizedEditRequest & {
+	readonly [normalizedEdit]: true;
+};
+
+type RawPayload = string | number | boolean | null | undefined | Record<string, unknown>;
+
+export type NormReqResult = NormalizedPayload | RawPayload;
+
 function isRec(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-export function isNormalizedEdit(
+function isNormalizedEdit(
 	input: unknown,
 ): input is Record<string, unknown> {
 	return (
@@ -71,7 +79,7 @@ export const editToolSchema = Type.Object(
 );
 
 
-export const EDIT_TUPLE_HINT =
+const EDIT_TUPLE_HINT =
 	"Edit must be called with exactly one payload. Use the canonical payload " +
 	'{"path": path, "edits": [[remove_from, remove_to, replacement_text], ...]}: ' +
 	"path is a non-empty string (or null to infer from anchors), each item is a " +
@@ -93,7 +101,7 @@ export const EDIT_GUIDELINES: string[] = [
 	'edit: `remove_from`/`remove_to` are inclusive; batch multiple edits to the same file only when independent — they apply atomically (fail → nothing written).',
 ];
 
-export function getPayloadPromptFragments(): {
+function getPayloadPromptFragments(): {
 	description: string;
 	snippet: string;
 	guidelines: string[];
@@ -112,13 +120,14 @@ function emitFilePathDeprecationWarning(
 	filePathValue: unknown,
 	context: string = "payload",
 ): void {
+	// eslint-disable-next-line no-console -- deprecated alias warning is intentional
 	console.warn(
 		`[DEPRECATED] "file_path" is deprecated, use "path" instead (${context}). Received file_path=${JSON.stringify(filePathValue)}. This alias will be removed in a future version.`,
 	);
 }
 
 
-export function normalizeFilePathRecord(
+function normalizeFilePathRecord(
 	record: Record<string, unknown>,
 	context: string = "payload",
 ): boolean {
@@ -129,11 +138,13 @@ export function normalizeFilePathRecord(
 		const fp = record.file_path as string;
 		emitFilePathDeprecationWarning(fp, context);
 		record.path = fp;
+		// eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias
 		delete record.file_path;
 		return true;
 	}
 	if (typeof record.file_path === "string") {
 		emitFilePathDeprecationWarning(record.file_path, context);
+		// eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias
 		delete record.file_path;
 		return true;
 	}
@@ -141,6 +152,7 @@ export function normalizeFilePathRecord(
 		if (record.file_path !== undefined) {
 			emitFilePathDeprecationWarning(record.file_path, context);
 		}
+		// eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias
 		delete record.file_path;
 		return true;
 	}
@@ -148,7 +160,7 @@ export function normalizeFilePathRecord(
 }
 
 
-export function itemFromTuple(value: unknown): EditItem | undefined {
+function itemFromTuple(value: unknown): EditItem | undefined {
 	if (!Array.isArray(value) || value.length !== 3) return undefined;
 	const [remove_from, remove_to, replacement_text] = value;
 	if (
@@ -204,9 +216,10 @@ export function editRequestFrom(
 	return { path: effectivePath as string | null, edits: items };
 }
 
-export function normReq(input: unknown): unknown {
+export function normReq(input: unknown): NormReqResult {
 	const valid = editRequestFrom(input);
-	if (!valid) return input;
+	// SAFETY: passthrough of unvalidated input as RawPayload preserves runtime value for caller validation; type is narrowed to string|number|boolean|null|undefined|Record<string, unknown> tested in replace-normalize.
+	if (!valid) return input as unknown as NormReqResult;
 	const record = { path: valid.path, edits: valid.edits };
 	Object.defineProperty(record, normalizedEdit, {
 		value: true,

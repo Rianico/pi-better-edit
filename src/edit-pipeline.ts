@@ -76,14 +76,14 @@
  * notice, reject-and-serve, payload contract — preserved.
  */
 
-import { constants } from "fs";
-import type { LineEnding } from "./edit-diff";
-import { genDiff, restoreEndings } from "./edit-diff";
-import { readNormFile } from "./file-reader";
-import { abortIf, splitLines, visLines } from "./utils";
-import type { HashStore } from "./hash-store";
-import { loadHashStore } from "./hash-store";
-import { snapshotIOFor } from "./snapshot-store";
+import { constants } from "node:fs";
+import type { LineEnding } from "./edit-diff.js";
+import { genDiff, restoreEndings } from "./edit-diff.js";
+import { readNormFile } from "./file-reader.js";
+import { abortIf, splitLines, visLines } from "./utils.js";
+import type { HashStore } from "./hash-store.js";
+import { loadHashStore } from "./hash-store.js";
+import { snapshotIOFor } from "./snapshot-store.js";
 import {
 	applyEdit,
 	MAX_HASH_LINES,
@@ -91,8 +91,8 @@ import {
 	type AutoFix,
 	type HEdit,
 	type NEdit,
-} from "./hashline";
-import { defaultHashIdentity, lineHashes } from "./hashline/hash-identity";
+} from "./hashline/index.js";
+import { defaultHashIdentity, lineHashes } from "./hashline/hash-identity.js";
 import {
 	AnchorMismatchError,
 	ServedRejectionError,
@@ -100,23 +100,20 @@ import {
 	fmtServedRows,
 	type ResolvedRange,
 	type ServedRow,
-} from "./hashline/served";
+} from "./hashline/served.js";
 import {
 	loadServed,
 	recordEchoServes,
 	recordDiffServes,
 	sessionKeyFor,
-} from "./served-state";
-import { scanDrift } from "./drift";
-import { clearNoopLoop, runNoopPolicy } from "./noop-guard";
-import { saveUndo } from "./edit-undo";
-import { resolveTarget, writeAtomic } from "./fs-write";
-import { toCwd } from "./paths";
-import type { NormalizedEditRequest } from "./edit-normalize";
-import {
-	buildBatchResult,
-	type BatchSection,
-} from "./edit-response";
+} from "./served-state.js";
+import { scanDrift } from "./drift.js";
+import { clearNoopLoop, runNoopPolicy } from "./noop-guard.js";
+import { saveUndo } from "./edit-undo.js";
+import { resolveTarget, writeAtomic } from "./fs-write.js";
+import { toCwd } from "./paths.js";
+import type { NormalizedEditRequest } from "./edit-normalize.js";
+import { buildBatchResult, type BatchSection } from "./edit-response.js";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 function collectRemovedHashes(
@@ -357,6 +354,21 @@ export interface ProcessedEditFile {
 	editedIntervals: ResolvedRange[];
 }
 
+
+function parseEdits(items: NormalizedEditRequest["edits"], path: string, warnings: string[]): HEdit[] {
+  const parsed: HEdit[] = [];
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index]!;
+    try {
+      parsed.push(resEdit({ remove_from: item.remove_from, remove_to: item.remove_to, replacement_text: item.replacement_text }, warnings));
+    } catch (error) {
+      if (items.length === 1) throw error;
+      const message = error instanceof Error ? error.message : String(error);
+      throw new Error(`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${message}\nThe whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.`);
+    }
+  }
+  return parsed;
+}
 async function runMutations(
 	request: NormalizedEditRequest,
 	cwd: string,
@@ -376,29 +388,7 @@ async function runMutations(
 
 	const isPreview = options?.noPersist === true;
 
-	const parsed: HEdit[] = [];
-	for (let index = 0; index < items.length; index++) {
-		const item = items[index]!;
-		try {
-			parsed.push(
-				resEdit(
-					{
-						remove_from: item.remove_from,
-						remove_to: item.remove_to,
-						replacement_text: item.replacement_text,
-					},
-					warnings,
-				),
-			);
-		} catch (error) {
-			if (items.length === 1) throw error;
-			const message = error instanceof Error ? error.message : String(error);
-			throw new Error(
-				`[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${message}\n` +
-					`The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.`,
-			);
-		}
-	}
+	const parsed = parseEdits(items, path, warnings);
 
 	const {
 		normalized: originalNormalized,
@@ -589,6 +579,7 @@ async function runMutations(
 				path: absolutePath,
 			});
 		} catch (error) {
+			// SAFETY: best-effort drift notice — scanDrift failure is informational; edit already succeeded and driftNotice is optional, swallowing preserves tool success.
 			console.error("Failed to compute drift notice:", error);
 		}
 	}
@@ -689,7 +680,7 @@ export async function apply(
 		const file = await runMutations(request, cwd, {
 			...options,
 			sessionKey,
-			accessMode: options?.accessMode ?? (constants.R_OK | constants.W_OK),
+			accessMode: options?.accessMode ?? constants.R_OK | constants.W_OK,
 		});
 
 		if (file.appliedCount === 0) {
@@ -752,6 +743,7 @@ export async function apply(
 				});
 			}
 		} catch (error) {
+			// SAFETY: best-effort serve recording — dense serve failures after successful write are ignored; file is already persisted and tool result is valid, next read will re-establish serves.
 			console.error("Failed to record dense serves after write:", error);
 		}
 
@@ -775,5 +767,5 @@ export async function execEdits(
 	return runMutations(request, cwd, options);
 }
 
-export { collectRemovedHashes as _collectRemovedHashesInternal };
-export { countLineChanges as _countLineChangesInternal };
+// _collectRemovedHashesInternal removed
+// _countLineChangesInternal removed

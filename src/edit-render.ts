@@ -1,6 +1,6 @@
 import type { Theme } from "@earendil-works/pi-coding-agent";
-import { getPreviewInput as contractPreviewInput, type EditItem } from "./payload-contract";
-import type { EditDetails } from "./edit-response";
+import { getPreviewInput as contractPreviewInput, type EditItem } from "./payload-contract.js";
+import type { EditDetails } from "./edit-response.js";
 
 
 

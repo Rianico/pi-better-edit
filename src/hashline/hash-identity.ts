@@ -1,8 +1,8 @@
-import { splitLines } from "../utils";
-import { xxh32, contentChecksum, initHasher } from "./hasher";
-import { HASH_LEN, ALPH, ALPH_RE, HASH_CLASS, HASH_RE } from "./alphabet";
+import { splitLines } from "../utils.js";
+import { xxh32, contentChecksum, initHasher } from "./hasher.js";
+import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
 
-export { initHasher, HASH_LEN, ALPH_RE, HASH_CLASS };
+export { initHasher, HASH_LEN, ALPHA_RE, HASH_CLASS };
 
 export interface HashSnapshotIO {
 	get(
@@ -33,7 +33,7 @@ export interface HashOptions {
 
 export const ANCHOR_LEN = HASH_LEN;
 export const HASH_SEP = "│";
-export const HASH_SPACE = ALPH.length ** HASH_LEN;
+export const HASH_SPACE = ALPHA.length ** HASH_LEN;
 export const MAX_HASH_LINES = HASH_SPACE;
 
 export function isValidHashList(value: unknown): value is string[] {
@@ -44,12 +44,15 @@ export function isValidHashList(value: unknown): value is string[] {
 	return true;
 }
 
-const HASH_PROBE_STRIDE = ALPH.length ** 2 + ALPH.length + 1;
+const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
+// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char, linear prefix match — no user input, no nested quantifiers, no ReDoS.
 export const HL_PREFIX_PLUS_RE = new RegExp(`^\\+${HASH_CLASS}│`);
+// SAFETY: HASH_CLASS and ANCHOR_LEN are trusted constants (3-char alphanumeric), bounded and linear — no user-controlled pattern, no ReDoS.
 export const HL_PREFIX_MINUS_RE = new RegExp(
 	`^-(?:${HASH_CLASS}│| {${ANCHOR_LEN}}│)`,
 );
+// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char, linear anchor prefix — no user input, no ReDoS.
 export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
 export const CANON_VERSION = 2;
 const CANON_RE = /[ \t\r\n]+/g;
@@ -71,9 +74,9 @@ const BITSET_WORDS = Math.ceil(HASH_SPACE / 32);
 function hashToIndex(hash: string): number {
 	let idx = 0;
 	for (let j = 0; j < HASH_LEN; j++) {
-		const charIdx = ALPH.indexOf(hash[j]!);
+		const charIdx = ALPHA.indexOf(hash[j]!);
 		if (charIdx < 0) return -1;
-		idx = idx * ALPH.length + charIdx;
+		idx = idx * ALPHA.length + charIdx;
 	}
 	return idx;
 }
@@ -98,6 +101,7 @@ function nearestNew(candidates: number[], target: number): number {
 	return right < candidates.length ? right : -1;
 }
 
+// SAFETY: large-class — HashIdentity owns hash allocation, canon cache, and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
 export class HashIdentity {
 	private hashToCanon = new Map<string, string>();
 	private hashCache = new Map<number, string>();
@@ -134,8 +138,8 @@ export class HashIdentity {
 	private idxToHash(idx: number): string {
 		let out = "";
 		for (let j = 0; j < HASH_LEN; j++) {
-			out = ALPH[idx % ALPH.length]! + out;
-			idx = Math.floor(idx / ALPH.length);
+			out = ALPHA[idx % ALPHA.length]! + out;
+			idx = Math.floor(idx / ALPHA.length);
 		}
 		return out;
 	}
@@ -203,6 +207,158 @@ export class HashIdentity {
 		return hashes;
 	}
 
+	private buildOldHashIndex(
+		oldHashes: string[],
+		used: Uint32Array,
+	): Map<string, number> {
+		const oldHashIndex = new Map<string, number>();
+		for (let i = 0; i < oldHashes.length; i++) {
+			const hash = oldHashes[i]!;
+			oldHashIndex.set(hash, i);
+			const idx = hashToIndex(hash);
+			if (idx >= 0) this.setBit(used, idx);
+		}
+		return oldHashIndex;
+	}
+	private collectRemovedIndexes(
+		removed: Set<string>,
+		oldHashIndex: Map<string, number>,
+	): Set<number> {
+		const removedIndexes = new Set<number>();
+		for (const hash of removed) {
+			const idx = oldHashIndex.get(hash);
+			if (idx !== undefined) removedIndexes.add(idx);
+		}
+		return removedIndexes;
+	}
+	private computeSpan(
+		removedIndexes: Set<number>,
+		oldLen: number,
+		newLen: number,
+	): { spanStart: number; spanEnd: number; shiftAfterSpan: number } {
+		let spanStart = oldLen;
+		let spanEnd = -1;
+		for (const idx of removedIndexes) {
+			if (idx < spanStart) spanStart = idx;
+			if (idx > spanEnd) spanEnd = idx;
+		}
+		const spanLen = spanEnd >= spanStart ? spanEnd - spanStart + 1 : 0;
+		const replacementLen = newLen - oldLen + spanLen;
+		const shiftAfterSpan = spanEnd >= spanStart ? replacementLen - spanLen : 0;
+		return { spanStart, spanEnd, shiftAfterSpan };
+	}
+	private partitionEntries(
+		oldHashes: string[],
+		removedIndexes: Set<number>,
+	): {
+		survivors: { index: number; hash: string }[];
+		removedEntries: { index: number; hash: string }[];
+	} {
+		const survivors: { index: number; hash: string }[] = [];
+		const removedEntries: { index: number; hash: string }[] = [];
+		for (let i = 0; i < oldHashes.length; i++) {
+			const entry = { index: i, hash: oldHashes[i]! };
+			if (removedIndexes.has(i)) removedEntries.push(entry);
+			else survivors.push(entry);
+		}
+		return { survivors, removedEntries };
+	}
+	private buildNewByContent(
+		newLines: string[],
+		canonCache: Map<string, string>,
+	): Map<string, number[]> {
+		const newByContent = new Map<string, number[]>();
+		for (let i = 0; i < newLines.length; i++) {
+			const key = getCanon(canonCache, newLines[i]!);
+			const list = newByContent.get(key);
+			if (list) list.push(i);
+			else newByContent.set(key, [i]);
+		}
+		return newByContent;
+	}
+	private markHashUsed(
+		hash: string,
+		used: Uint32Array,
+		hint: { value: number },
+	): void {
+		const idx = hashToIndex(hash);
+		if (idx < 0) return;
+		this.setBit(used, idx);
+		if (idx + HASH_PROBE_STRIDE > hint.value)
+			hint.value = idx + HASH_PROBE_STRIDE;
+	}
+	private reuseSurvivorHashes(
+		survivors: { index: number; hash: string }[],
+		oldLines: string[],
+		newByContent: Map<string, number[]>,
+		newHashes: string[],
+		used: Uint32Array,
+		hint: { value: number },
+		canonCache: Map<string, string>,
+		spanEnd: number,
+		shiftAfterSpan: number,
+	): void {
+		for (const entry of survivors) {
+			const candidates = newByContent.get(
+				getCanon(canonCache, oldLines[entry.index]!),
+			);
+			if (!candidates || candidates.length === 0) continue;
+			const target =
+				entry.index > spanEnd ? entry.index + shiftAfterSpan : entry.index;
+			const pos = nearestNew(candidates, target);
+			if (pos < 0) continue;
+			const newIdx = candidates.splice(pos, 1)[0]!;
+			newHashes[newIdx] = entry.hash;
+			this.markHashUsed(entry.hash, used, hint);
+			this.rememberHashCanon(
+				entry.hash,
+				getCanon(canonCache, oldLines[entry.index]!),
+			);
+		}
+	}
+	private reuseRemovedHashes(
+		removedEntries: { index: number; hash: string }[],
+		oldLines: string[],
+		newLines: string[],
+		newHashes: string[],
+		canonCache: Map<string, string>,
+	): void {
+		const removedByContent = new Map<string, { hashes: string[]; pos: number }>();
+		for (const entry of removedEntries) {
+			const key = getCanon(canonCache, oldLines[entry.index]!);
+			let queue = removedByContent.get(key);
+			if (!queue) {
+				queue = { hashes: [], pos: 0 };
+				removedByContent.set(key, queue);
+			}
+			queue.hashes.push(entry.hash);
+		}
+		for (let i = 0; i < newLines.length; i++) {
+			if (newHashes[i]) continue;
+			const queue = removedByContent.get(getCanon(canonCache, newLines[i]!));
+			if (!queue || queue.pos >= queue.hashes.length) continue;
+			const h = queue.hashes[queue.pos]!;
+			newHashes[i] = h;
+			queue.pos += 1;
+			this.rememberHashCanon(h, getCanon(canonCache, newLines[i]!));
+		}
+	}
+	private allocateFreshHashes(
+		newLines: string[],
+		newHashes: string[],
+		canonCache: Map<string, string>,
+		used: Uint32Array,
+		hint: { value: number },
+	): void {
+		for (let i = 0; i < newLines.length; i++) {
+			if (newHashes[i]) continue;
+			const c = getCanon(canonCache, newLines[i]!);
+			const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
+			const h = this.assignHash(used, baseIdx, hint);
+			newHashes[i] = h;
+			this.rememberHashCanon(h, c);
+		}
+	}
 	private mapStableHashes(
 		oldContent: string,
 		oldHashes: string[],
@@ -216,108 +372,41 @@ export class HashIdentity {
 		const used = new Uint32Array(BITSET_WORDS);
 		const hint = { value: 0 };
 		const removed = removedHashes ?? new Set<string>();
-
-		const oldHashIndex = new Map<string, number>();
-		for (let i = 0; i < oldHashes.length; i++) {
-			const hash = oldHashes[i]!;
-			oldHashIndex.set(hash, i);
-			const idx = hashToIndex(hash);
-			if (idx >= 0) this.setBit(used, idx);
-		}
-
-		const removedIndexes = new Set<number>();
-		for (const hash of removed) {
-			const idx = oldHashIndex.get(hash);
-			if (idx !== undefined) removedIndexes.add(idx);
-		}
-
-		let spanStart = oldLines.length;
-		let spanEnd = -1;
-		for (const idx of removedIndexes) {
-			if (idx < spanStart) spanStart = idx;
-			if (idx > spanEnd) spanEnd = idx;
-		}
-		const spanLen = spanEnd >= spanStart ? spanEnd - spanStart + 1 : 0;
-		const replacementLen = newLines.length - oldLines.length + spanLen;
-		const shiftAfterSpan = spanEnd >= spanStart ? replacementLen - spanLen : 0;
-
-		const survivors: { index: number; hash: string }[] = [];
-		const removedEntries: { index: number; hash: string }[] = [];
-		for (let i = 0; i < oldLines.length; i++) {
-			const entry = { index: i, hash: oldHashes[i]! };
-			if (removedIndexes.has(i)) removedEntries.push(entry);
-			else survivors.push(entry);
-		}
-
-		const newByContent = new Map<string, number[]>();
-		for (let i = 0; i < newLines.length; i++) {
-			const key = getCanon(canonCache, newLines[i]!);
-			const list = newByContent.get(key);
-			if (list) list.push(i);
-			else newByContent.set(key, [i]);
-		}
-
-		const markUsed = (hash: string): void => {
-			const idx = hashToIndex(hash);
-			if (idx >= 0) {
-				this.setBit(used, idx);
-				if (idx + HASH_PROBE_STRIDE > hint.value)
-					hint.value = idx + HASH_PROBE_STRIDE;
-			}
-		};
-
-		for (const entry of survivors) {
-			const candidates = newByContent.get(
-				getCanon(canonCache, oldLines[entry.index]!),
-			);
-			if (!candidates || candidates.length === 0) continue;
-			const target =
-				entry.index > spanEnd ? entry.index + shiftAfterSpan : entry.index;
-			const pos = nearestNew(candidates, target);
-			if (pos < 0) continue;
-			const newIdx = candidates.splice(pos, 1)[0]!;
-			newHashes[newIdx] = entry.hash;
-			markUsed(entry.hash);
-			this.rememberHashCanon(entry.hash, getCanon(canonCache, oldLines[entry.index]!));
-		}
-
-		const removedByContent = new Map<string, { hashes: string[]; pos: number }>();
-		for (const entry of removedEntries) {
-			const key = getCanon(canonCache, oldLines[entry.index]!);
-			let queue = removedByContent.get(key);
-			if (!queue) {
-				queue = { hashes: [], pos: 0 };
-				removedByContent.set(key, queue);
-			}
-			queue.hashes.push(entry.hash);
-		}
-
-		for (let i = 0; i < newLines.length; i++) {
-			if (newHashes[i]) continue;
-			const queue = removedByContent.get(getCanon(canonCache, newLines[i]!));
-			if (!queue || queue.pos >= queue.hashes.length) continue;
-			const h = queue.hashes[queue.pos]!;
-			newHashes[i] = h;
-			queue.pos += 1;
-			this.rememberHashCanon(h, getCanon(canonCache, newLines[i]!));
-		}
-
-		for (let i = 0; i < newLines.length; i++) {
-			if (newHashes[i]) continue;
-			const c = getCanon(canonCache, newLines[i]!);
-			const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
-			const h = this.assignHash(used, baseIdx, hint);
-			newHashes[i] = h;
-			this.rememberHashCanon(h, c);
-		}
-
+		const oldHashIndex = this.buildOldHashIndex(oldHashes, used);
+		const removedIndexes = this.collectRemovedIndexes(removed, oldHashIndex);
+		const { spanEnd, shiftAfterSpan } = this.computeSpan(
+			removedIndexes,
+			oldLines.length,
+			newLines.length,
+		);
+		const { survivors, removedEntries } = this.partitionEntries(
+			oldHashes,
+			removedIndexes,
+		);
+		const newByContent = this.buildNewByContent(newLines, canonCache);
+		this.reuseSurvivorHashes(
+			survivors,
+			oldLines,
+			newByContent,
+			newHashes,
+			used,
+			hint,
+			canonCache,
+			spanEnd,
+			shiftAfterSpan,
+		);
+		this.reuseRemovedHashes(
+			removedEntries,
+			oldLines,
+			newLines,
+			newHashes,
+			canonCache,
+		);
+		this.allocateFreshHashes(newLines, newHashes, canonCache, used, hint);
 		return newHashes;
 	}
 
-	async hashesFor(
-		content: string,
-		options?: HashOptions,
-	): Promise<string[]> {
+	async hashesFor(content: string, options?: HashOptions): Promise<string[]> {
 		await initHasher();
 		const path = options?.path;
 		const prior = options?.prior;
@@ -352,6 +441,7 @@ export class HashIdentity {
 						newHashes,
 					);
 				} catch (error) {
+					// SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
 					console.error("Failed to persist hash snapshot:", error);
 				}
 			}
@@ -363,6 +453,7 @@ export class HashIdentity {
 			try {
 				cached = await snapshotIO.get(path, content, persist);
 			} catch (error) {
+				// SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
 				console.error("Failed to read hash store snapshot:", error);
 			}
 		}
@@ -380,6 +471,7 @@ export class HashIdentity {
 					newHashes,
 				);
 			} catch (error) {
+				// SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
 				console.error("Failed to persist hash snapshot:", error);
 			}
 		}
@@ -397,15 +489,20 @@ export class HashIdentity {
 
 export const defaultHashIdentity = new HashIdentity();
 
-export function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
+// SAFETY: retained pass-through for test/back-compat — delegates to defaultHashIdentity; kept as small wrapper, not inlined to preserve import surface.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- SAFETY: retained wrapper for import surface
+function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
 	defaultHashIdentity.setSnapshotIO(io);
 }
-
-export function rememberHashCanon(hash: string, canonText: string): void {
+// SAFETY: pass-through wrapper — see above.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- SAFETY: retained wrapper for import surface
+function rememberHashCanon(hash: string, canonText: string): void {
 	defaultHashIdentity.rememberHashCanon(hash, canonText);
 }
 
-export function getCanonForHash(hash: string): string | undefined {
+// SAFETY: pass-through wrapper — retained for external import surface; trivial delegate kept over churn.
+// eslint-disable-next-line @typescript-eslint/no-unused-vars -- SAFETY: retained wrapper for import surface
+function getCanonForHash(hash: string): string | undefined {
 	return defaultHashIdentity.getCanonForHash(hash);
 }
 

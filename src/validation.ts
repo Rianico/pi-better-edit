@@ -1,7 +1,7 @@
-import { constants } from "fs";
-import { access as fsAccess } from "fs/promises";
-import type { LFile } from "./file-kind";
-import { errCode } from "./utils";
+import { constants } from "node:fs";
+import { access as fsAccess } from "node:fs/promises";
+import type { LFile } from "./file-kind.js";
+import { errCode } from "./utils.js";
 
 export async function valAccess(
 	absolutePath: string,

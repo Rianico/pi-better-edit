@@ -4,19 +4,19 @@ import {
 	firstNonEmptyIndex,
 	lastNonEmptyIndex,
 	clipLine,
-} from "../utils";
+} from "../utils.js";
 import {
 	HASH_CLASS,
 	HL_BARE_PREFIX_RE,
 	HL_PREFIX_PLUS_RE,
 	HL_PREFIX_MINUS_RE,
-} from "./hash-identity";
-import { canon } from "./hash-identity";
-import { parseHashRef, parseText, type Anchor } from "./parse";
-import type { ServedRow } from "./served";
-import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
+} from "./hash-identity.js";
+import { canon } from "./hash-identity.js";
+import { parseHashRef, parseText, type Anchor } from "./parse.js";
+import type { ServedRow } from "./served.js";
+import { NEW_CONTENT_NOT_STRING_MSG } from "../constants.js";
 
-export type RAnchor = {
+type RAnchor = {
 	line: number;
 	hash: string;
 	hashMatched: boolean;
@@ -87,7 +87,7 @@ function assertAligned(
 	}
 }
 
-export function fmtMismatch(
+function fmtMismatch(
 	mismatches: HMismatch[],
 	fileLines: string[],
 	fileHashes: string[],
@@ -97,6 +97,59 @@ export function fmtMismatch(
 		.message;
 }
 
+
+function formatNotFound(notFound: HMismatch[], fileLines: string[], fileHashes: string[], filePath: string | undefined, pushRow: (ln: number) => void, out: string[]): void {
+  if (notFound.length === 0) return;
+  const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
+  out.push(`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read for fresh anchors.`);
+  for (const m of notFound) {
+    const ctx = m.context;
+    if (!ctx) continue;
+    const from = Math.max(1, ctx.line - 1);
+    const to = Math.min(fileLines.length, ctx.line + 1);
+    const rows: string[] = [];
+    for (let ln = from; ln <= to; ln++) {
+      rows.push(`    ${ln}: ${fileHashes[ln - 1]}│${clipLine(fileLines[ln - 1] ?? "")}`);
+      pushRow(ln);
+    }
+    out.push("");
+    out.push(`  Current context around resolved anchor "${ctx.hash}" (line ${ctx.line}):\n${rows.join("\n")}`);
+  }
+}
+function formatAmbiguous(ambiguous: HMismatch[], fileLines: string[], fileHashes: string[], filePath: string | undefined, pushRow: (ln: number) => void, out: string[]): void {
+  if (ambiguous.length === 0) return;
+  if (out.length > 0) out.push("");
+  out.push(`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read for fresh anchors.`);
+  for (const m of ambiguous) {
+    const sample = (m.candidates ?? []).slice(0, 5);
+    const more = (m.candidates?.length ?? 0) > sample.length ? `, ... (+${(m.candidates?.length ?? 0) - sample.length} more)` : "";
+    const lines = sample.map((line) => {
+      const content = clipLine(fileLines[line - 1] ?? "");
+      pushRow(line);
+      return `    ${line}: ${fileHashes[line - 1]}│${content}`;
+    }).join("\n");
+    out.push(`  Hash "${m.ref.hash}" matches lines ${sample.join(", ")}${more}.\n${lines}`);
+  }
+}
+function buildHashIndex(fileHashes: string[]): Map<string, number[]> {
+  const hashIndex = new Map<string, number[]>();
+  for (let i = 0; i < fileHashes.length; i++) {
+    const h = fileHashes[i]!;
+    const list = hashIndex.get(h) ?? [];
+    list.push(i + 1);
+    hashIndex.set(h, list);
+  }
+  return hashIndex;
+}
+function collectBoundaryDups(edit: HEdit, fileLines: string[], startLine: number, endLine: number, canonLines: string[]): BDup[] {
+  const rangeLines = fileLines.slice(startLine - 1, endLine);
+  const dups: BDup[] = [];
+  dups.push(...trailingDups(edit.content_lines, fileLines, endLine));
+  dups.push(...leadingDups(edit.content_lines, fileLines, startLine));
+  dups.push(...firstNewAfterDups(edit.content_lines, rangeLines, canonLines, endLine));
+  dups.push(...lastNewBeforeDups(edit.content_lines, rangeLines, canonLines, startLine));
+  return dups;
+}
 export function fmtMismatchWithServes(
 	mismatches: HMismatch[],
 	fileLines: string[],
@@ -117,53 +170,8 @@ export function fmtMismatchWithServes(
 	};
 	const notFound = mismatches.filter((m) => m.kind === "not_found");
 	const ambiguous = mismatches.filter((m) => m.kind === "ambiguous");
-
-	const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
-	if (notFound.length > 0) {
-		out.push(
-			`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read for fresh anchors.`,
-		);
-		for (const m of notFound) {
-			const ctx = m.context;
-			if (!ctx) continue;
-			const from = Math.max(1, ctx.line - 1);
-			const to = Math.min(fileLines.length, ctx.line + 1);
-			const rows: string[] = [];
-			for (let ln = from; ln <= to; ln++) {
-				rows.push(
-					`    ${ln}: ${fileHashes[ln - 1]}│${clipLine(fileLines[ln - 1] ?? "")}`,
-				);
-				pushRow(ln);
-			}
-			out.push("");
-			out.push(
-				`  Current context around resolved anchor "${ctx.hash}" (line ${ctx.line}):\n${rows.join("\n")}`,
-			);
-		}
-	}
-	if (ambiguous.length > 0) {
-		if (out.length > 0) out.push("");
-		out.push(
-			`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read for fresh anchors.`,
-		);
-		for (const m of ambiguous) {
-			const sample = (m.candidates ?? []).slice(0, 5);
-			const more =
-				(m.candidates?.length ?? 0) > sample.length
-					? `, ... (+${(m.candidates?.length ?? 0) - sample.length} more)`
-					: "";
-			const lines = sample
-				.map((line) => {
-					const content = clipLine(fileLines[line - 1] ?? "");
-					pushRow(line);
-					return `    ${line}: ${fileHashes[line - 1]}│${content}`;
-				})
-				.join("\n");
-			out.push(
-				`  Hash "${m.ref.hash}" matches lines ${sample.join(", ")}${more}.\n${lines}`,
-			);
-		}
-	}
+	formatNotFound(notFound, fileLines, fileHashes, filePath, pushRow, out);
+	formatAmbiguous(ambiguous, fileLines, fileHashes, filePath, pushRow, out);
 
 	return { message: out.join("\n"), servedRows };
 }
@@ -206,11 +214,13 @@ function assertItem(edit: Record<string, unknown>): void {
 	}
 }
 
+// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, linear row prefix — bounded, no user input, no ReDoS.
 const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
 function firstHashFromBlock(block: string): string | undefined {
 	for (const line of block.split("\n")) {
 		const m = line.match(ANCHOR_ROW_RE);
 		if (m) return m[2]!;
+		// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char, linear search — no user-controlled pattern, no ReDoS.
 		const bare = line.match(new RegExp(HASH_CLASS));
 		if (bare) return bare[0]!;
 	}
@@ -227,7 +237,9 @@ export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
 			const hash = firstHashFromBlock(trimmed);
 			if (hash) {
 				const lines = trimmed.split("\n").length;
-				warnings?.push(`[E_BAD_REF] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`);
+				warnings?.push(
+					`[E_BAD_REF] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`,
+				);
 				return hash;
 			}
 		}
@@ -331,11 +343,7 @@ export function swapReversedRanges(
 	const [startRef, endRef] = edit.hash_bounds;
 	const startLine = lineByHash.get(startRef.hash);
 	const endLine = lineByHash.get(endRef.hash);
-	if (
-		startLine === undefined ||
-		endLine === undefined ||
-		startLine <= endLine
-	) {
+	if (startLine === undefined || endLine === undefined || startLine <= endLine) {
 		return edit;
 	}
 	warnings.push(
@@ -499,13 +507,7 @@ export function valEdit(
 	const mismatches: HMismatch[] = [];
 	const boundaryDups: BDup[] = [];
 
-	const hashIndex = new Map<string, number[]>();
-	for (let i = 0; i < fileHashes.length; i++) {
-		const h = fileHashes[i]!;
-		const list = hashIndex.get(h) ?? [];
-		list.push(i + 1);
-		hashIndex.set(h, list);
-	}
+	const hashIndex = buildHashIndex(fileHashes);
 
 	const tryResolve = (ref: Anchor): RAnchor | undefined => {
 		const result = resAnchorFromMap(ref, hashIndex);
@@ -541,7 +543,6 @@ export function valEdit(
 		);
 	}
 	const endLine = endResolved.line;
-	const rangeLines = fileLines.slice(startResolved.line - 1, endLine);
 	const canonCache = new Map<string, string>();
 	const getCanonMemo = (line: string): string => {
 		let v = canonCache.get(line);
@@ -551,17 +552,7 @@ export function valEdit(
 		return v;
 	};
 	const canonLines = fileLines.map((line) => getCanonMemo(line));
-	boundaryDups.push(
-		...trailingDups(edit.content_lines, fileLines, endLine),
-		...leadingDups(edit.content_lines, fileLines, startResolved.line),
-		...firstNewAfterDups(edit.content_lines, rangeLines, canonLines, endLine),
-		...lastNewBeforeDups(
-			edit.content_lines,
-			rangeLines,
-			canonLines,
-			startResolved.line,
-		),
-	);
+	boundaryDups.push(...collectBoundaryDups(edit, fileLines, startResolved.line, endLine, canonLines));
 
 	return {
 		resolved: {

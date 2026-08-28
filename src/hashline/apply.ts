@@ -1,11 +1,11 @@
-import { abortIf, splitLines } from "../utils";
-import { HASH_SEP, defaultHashIdentity } from "./hash-identity";
+import { abortIf, splitLines } from "../utils.js";
+import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
 import {
 	AnchorMismatchError,
 	verifyServedRange,
 	type ResolvedRange,
 	type ServedRow,
-} from "./served";
+} from "./served.js";
 import {
 	valEdit,
 	stripBarePrefixes,
@@ -18,14 +18,14 @@ import {
 	type HEdit,
 	type AutoFix,
 	type BDup,
-} from "./resolve";
+} from "./resolve.js";
 
 type LIdx = {
 	fileLines: string[];
 	lineStarts: number[];
 };
 
-export function buildIdx(content: string): LIdx {
+function buildIdx(content: string): LIdx {
 	const fileLines = splitLines(content);
 	const lineStarts: number[] = [];
 	let offset = 0;
@@ -64,7 +64,11 @@ export function findEditHashEcho(
 ): { k: number; hash: string } | undefined {
 	for (let k = 0; k < replacementLines.length; k++) {
 		const pos = startLine + k - 1;
-		if (pos < served.length && served[pos] !== null && replacementLines[k]!.startsWith(served[pos]! + HASH_SEP)) {
+		if (
+			pos < served.length &&
+			served[pos] !== null &&
+			replacementLines[k]!.startsWith(served[pos]! + HASH_SEP)
+		) {
 			return { k: k + 1, hash: served[pos]! };
 		}
 	}
@@ -167,6 +171,18 @@ function assemble(
 	);
 }
 
+function prepareEdit(
+	fileHashes: string[],
+	edit: HEdit,
+	warnings: string[],
+): { fixed: HEdit } {
+	const rangeFixed = swapReversedRanges(edit, fileHashes, warnings);
+	const prefixFixed = stripDiffPrefixes(
+		stripBarePrefixes(rangeFixed, fileHashes, warnings),
+		warnings,
+	);
+	return { fixed: prefixFixed };
+}
 export function applyEdit(
 	content: string,
 	edit: HEdit,
@@ -186,15 +202,12 @@ export function applyEdit(
 	abortIf(signal);
 
 	const lineIndex = buildIdx(content);
-	const fileHashes = precomputedHashes ?? defaultHashIdentity.hashesForSync(content);
+	const fileHashes =
+		precomputedHashes ?? defaultHashIdentity.hashesForSync(content);
 	const warnings: string[] = [];
-	const rawReplacementLines = edit.content_lines.slice();
+	const rawReplacementLines = [...edit.content_lines];
 
-	const rangeFixed = swapReversedRanges(edit, fileHashes, warnings);
-	const prefixFixed = stripDiffPrefixes(
-		stripBarePrefixes(rangeFixed, fileHashes, warnings),
-		warnings,
-	);
+	const { fixed: prefixFixed } = prepareEdit(fileHashes, edit, warnings);
 
 	const {
 		resolved: initialResolved,
@@ -324,8 +337,7 @@ function resolvedRange(resolved: RHEdit): ResolvedRange {
 		endLine: end.line,
 		startHash: start.hash,
 		endHash: end.hash,
-		delta:
-			resolved.content_lines.length - (Math.abs(end.line - start.line) + 1),
+		delta: resolved.content_lines.length - (Math.abs(end.line - start.line) + 1),
 	};
 }
 

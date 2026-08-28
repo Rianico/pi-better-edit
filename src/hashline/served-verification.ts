@@ -15,8 +15,8 @@
  * never-served, reject-and-serve, drift, orphaned serve, orphaning re-serve,
  * relocated line keeps its hash.
  */
-import { HASH_SEP, canon, globalCanonStore, type CanonStore } from "./hash";
-import { SERVED_ECHO_CAP } from "../constants";
+import { HASH_SEP, canon, globalCanonStore, type CanonStore } from "./hash.js";
+import { SERVED_ECHO_CAP } from "../constants.js";
 
 // ---------------------------------------------------------------------------
 // Public contracts — mirrors served.ts so it can re-export without identity split
@@ -48,7 +48,7 @@ export class ServedRejectionError extends Error {
 	}
 }
 
-export function isServedRejection(error: unknown): error is ServedRejectionError {
+function isServedRejection(error: unknown): error is ServedRejectionError {
 	return error instanceof ServedRejectionError;
 }
 
@@ -62,7 +62,7 @@ export class AnchorMismatchError extends Error {
 	}
 }
 
-export function isAnchorMismatch(error: unknown): error is AnchorMismatchError {
+function isAnchorMismatch(error: unknown): error is AnchorMismatchError {
 	return error instanceof AnchorMismatchError;
 }
 
@@ -108,7 +108,7 @@ export function servedPositionsOf(served: (string | null)[], hash: string): numb
 // Decision-table types
 // ---------------------------------------------------------------------------
 
-export interface VerificationRange {
+interface VerificationRange {
 	startHash: string;
 	endHash: string;
 	startLine: number;
@@ -139,6 +139,25 @@ export type VerificationResult =
 // ServedVerification — the deep module
 // ---------------------------------------------------------------------------
 
+function findCanonMatches(fileLines: string[], canonVal: string): number[] {
+  const matches: number[] = [];
+  for (let i = 0; i < fileLines.length; i++) if (canon(fileLines[i] ?? "") === canonVal) matches.push(i);
+  return matches;
+}
+function isUniqueSection(fileLines: string[], start: number, len: number): boolean {
+  if (len <= 2) return true;
+  const healedCanons: string[] = [];
+  for (let k = 0; k < len; k++) healedCanons.push(canon(fileLines[start + k] ?? ""));
+  let count = 0;
+  for (let i = 0; i <= fileLines.length - len; i++) {
+    let ok = true;
+    for (let k = 0; k < len; k++) if (canon(fileLines[i + k] ?? "") !== healedCanons[k]) { ok = false; break; }
+    if (ok) count++;
+    if (count > 1) break;
+  }
+  return count === 1;
+}
+
 export class ServedVerification {
 	private readonly store: CanonStore;
 
@@ -155,6 +174,7 @@ export class ServedVerification {
 		} catch (error) {
 			if (isServedRejection(error)) {
 				// reconstruct echo from servedRows + fileLines (captured in throw site)
+				// SAFETY: ServedRejectionError carries __echo as ad-hoc string attached at throw site; cast reads internal echo validated via rebuild fallback.
 				const echo = (error as unknown as { __echo?: string }).__echo as string | undefined;
 				// fallback rebuild if __echo not attached (legacy path)
 				const fallbackEcho = this.rebuildEchoForError(input, error);
@@ -438,6 +458,7 @@ export class ServedVerification {
 		return undefined;
 	}
 
+
 	private tryBoundaryCanonHeal(args: {
 		served: (string | null)[];
 		startHash: string;
@@ -449,47 +470,17 @@ export class ServedVerification {
 		endPositions: number[];
 	}): { from: number; to: number } | undefined {
 		const { served, startHash, endHash, currentLen, fileLines, fileHashes } = args;
-		const hasServed = served.some((h) => h !== null);
-		const startInFile = fileHashes.includes(startHash);
-		const endInFile = fileHashes.includes(endHash);
-		if (!hasServed || (startInFile && endInFile)) return undefined;
-
+		if (!served.some((h) => h !== null) || (fileHashes.includes(startHash) && fileHashes.includes(endHash))) return undefined;
 		const startCanon = this.store.get(startHash);
 		const endCanon = this.store.get(endHash);
 		if (startCanon === undefined || endCanon === undefined) return undefined;
-
-		const startMatches: number[] = [];
-		const endMatches: number[] = [];
-		for (let i = 0; i < fileLines.length; i++) {
-			if (canon(fileLines[i] ?? "") === startCanon) startMatches.push(i);
-			if (canon(fileLines[i] ?? "") === endCanon) endMatches.push(i);
-			if (startMatches.length > 1 && endMatches.length > 1) break;
-		}
+		const startMatches = findCanonMatches(fileLines, startCanon);
+		const endMatches = findCanonMatches(fileLines, endCanon);
 		if (startMatches.length !== 1 || endMatches.length !== 1) return undefined;
-
-		const s = startMatches[0]!;
-		const e = endMatches[0]!;
-		const healedFrom = Math.min(s, e);
-		const healedTo = Math.max(s, e);
+		const healedFrom = Math.min(startMatches[0]!, endMatches[0]!);
+		const healedTo = Math.max(startMatches[0]!, endMatches[0]!);
 		if (healedTo - healedFrom + 1 !== currentLen) return undefined;
-
-		if (currentLen > 2) {
-			const healedCanons: string[] = [];
-			for (let k = 0; k < currentLen; k++) healedCanons.push(canon(fileLines[healedFrom + k] ?? ""));
-			let count = 0;
-			for (let i = 0; i <= fileLines.length - currentLen; i++) {
-				let ok = true;
-				for (let k = 0; k < currentLen; k++) {
-					if (canon(fileLines[i + k] ?? "") !== healedCanons[k]) {
-						ok = false;
-						break;
-					}
-				}
-				if (ok) count++;
-				if (count > 1) break;
-			}
-			if (count !== 1) return undefined;
-		}
+		if (!isUniqueSection(fileLines, healedFrom, currentLen)) return undefined;
 		return { from: healedFrom, to: healedTo };
 	}
 
@@ -630,6 +621,7 @@ export class ServedVerification {
 		} else if (endPositions.length > 1) {
 			problems.push(`remove_to "${endHash}" was served at ${endPositions.length} positions`);
 		}
+		// SAFETY: augmenting ServedRejectionError with __echo for reject-and-serve; property is string set here and read only via guarded cast in verify().
 		const err = new ServedRejectionError({
 			code: "E_RANGE_UNVERIFIED",
 			message:
@@ -640,6 +632,7 @@ export class ServedVerification {
 				`Current range:\n${echo}`,
 			servedRows: echoRows,
 		});
+		// SAFETY: attaching __echo string to rejection for echo reconstruction; matches read cast in verify() and is string-typed.
 		(err as unknown as { __echo: string }).__echo = echo;
 		throw err;
 	}
@@ -656,6 +649,7 @@ export class ServedVerification {
 			firstOffendingLine: args.firstOffendingLine,
 			servedRows: args.echoRows,
 		});
+		// SAFETY: attaching __echo string to stale rejection; mirrors guarded read in verify() and is validated via echo reconstruction.
 		(err as unknown as { __echo: string }).__echo = args.echo;
 		throw err;
 	}
@@ -672,6 +666,7 @@ export class ServedVerification {
 			firstOffendingLine: args.firstOffendingLine,
 			servedRows: args.echoRows,
 		});
+		// SAFETY: attaching __echo string to unserved rejection; paired with guarded cast and fallback rebuild in verify().
 		(err as unknown as { __echo: string }).__echo = args.echo;
 		throw err;
 	}

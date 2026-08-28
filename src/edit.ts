@@ -3,24 +3,26 @@ import type {
 	ExtensionAPI,
 	ToolDefinition,
 } from "@earendil-works/pi-coding-agent";
-import { Type } from "typebox";
-import { constants } from "fs";
-import { genDiff } from "./edit-diff";
+import { constants } from "node:fs";
+import { genDiff } from "./edit-diff.js";
 import {
-	isNormalizedEdit,
 	normReq,
 	prepareEditArguments,
 	EDIT_DESCRIPTION,
 	type NormalizedEditRequest,
-} from "./payload-contract";
-import { rejectUnknownFields } from "./utils";
-void EDIT_DESCRIPTION;
-import { parseHashRef } from "./hashline";
+	editToolSchema,
+	editTupleSchema,
+	replacementTextSchema,
+	removeFromSchema,
+	removeToSchema,
+	assertReq,
+} from "./payload-contract.js";
+import { parseHashRef } from "./hashline/index.js";
 import {
 	buildBatchResult,
 	type BatchSection,
 	type EditDetails,
-} from "./edit-response";
+} from "./edit-response.js";
 import {
 	buildAppliedText,
 	mkMdTheme,
@@ -31,58 +33,28 @@ import {
 	isApplied,
 	type RPreview,
 	type RRState,
-} from "./edit-render";
-import { DebouncedPreview } from "./preview-controller";
-import { loadP, loadGuide } from "./prompts";
-import { findSnapshotPathsByHashes } from "./snapshot-store";
-import { sessionKeyFor } from "./served-state";
+} from "./edit-render.js";
+import { DebouncedPreview } from "./preview-controller.js";
+import { loadP, loadGuide } from "./prompts.js";
+import { findSnapshotPathsByHashes } from "./snapshot-store.js";
+import { sessionKeyFor } from "./served-state.js";
 import {
 	apply as pipelineApply,
 	execEdits as pipelineExecEdits,
 	previewEdits as pipelinePreview,
 	type PipelineOptions,
 	type ProcessedEditFile,
-} from "./edit-pipeline";
-import { EDITS_MAX_ITEMS } from "./constants";
+} from "./edit-pipeline.js";
 
-export const replacementTextSchema = Type.String({
-	description: 'Complete replacement for the range; use "" to delete',
-});
-
-export const removeFromSchema = Type.String({
-	description: "First line to remove (inclusive)",
-});
-
-export const removeToSchema = Type.String({
-	description: "Last line to remove (inclusive)",
-});
-
-const editPathSchema = Type.Union([
-	Type.String({
-		minLength: 1,
-		description: "File path; null infers it from anchors",
-	}),
-	Type.Null(),
-]);
-
-export const editTupleSchema = Type.Tuple(
-	[removeFromSchema, removeToSchema, replacementTextSchema],
-	{
-		description: "[remove_from, remove_to, replacement_text]",
-	},
-);
-
-export const editToolSchema = Type.Object(
-	{
-		path: editPathSchema,
-		edits: Type.Array(editTupleSchema, {
-			description: "Ordered list of edit tuples",
-			minItems: 1,
-			maxItems: EDITS_MAX_ITEMS,
-		}),
-	},
-	{ additionalProperties: false },
-);
+void EDIT_DESCRIPTION;
+export { assertReq };
+export {
+	editToolSchema,
+	editTupleSchema,
+	replacementTextSchema,
+	removeFromSchema,
+	removeToSchema,
+};
 
 export type EditParams = {
 	remove_from: string;
@@ -91,48 +63,6 @@ export type EditParams = {
 };
 
 export type EditRequest = NormalizedEditRequest;
-
-const ROOT_KS = new Set(["path", "edits"]);
-
-export function assertReq(
-	request: unknown,
-): asserts request is NormalizedEditRequest {
-	if (!isNormalizedEdit(request)) {
-		throw new Error(
-			"[E_BAD_SHAPE] Edit request must be exactly { path, edits: [[remove_from, remove_to, replacement_text], ...] }.",
-		);
-	}
-
-	rejectUnknownFields(request, ROOT_KS, "Edit request");
-
-	if (
-		request.path !== null &&
-		(typeof request.path !== "string" || request.path.length === 0)
-	) {
-		throw new Error(
-			"[E_BAD_SHAPE] Edit request path must be a non-empty string or null.",
-		);
-	}
-
-	if (!Array.isArray(request.edits) || request.edits.length === 0) {
-		throw new Error(
-			"[E_BAD_SHAPE] Edit request requires a non-empty \"edits\" array.",
-		);
-	}
-
-	for (let index = 0; index < request.edits.length; index++) {
-		const item = request.edits[index]!;
-		if (
-			typeof item.remove_from !== "string" ||
-			typeof item.remove_to !== "string" ||
-			typeof item.replacement_text !== "string"
-		) {
-			throw new Error(
-				`[E_BAD_SHAPE] Edit request edits[${index}] must be a three-position array [remove_from, remove_to, replacement_text].`,
-			);
-		}
-	}
-}
 
 export async function resolveMissingPath(
 	request: Record<string, unknown>,
@@ -169,10 +99,10 @@ export async function resolveMissingPath(
 	return undefined;
 }
 
-
 export type ExecPipelineOptions = PipelineOptions;
 
-export async function execEdits(
+// SAFETY: pass-through retained for import surface — trivial delegate; async removed to avoid needless wrapper.
+export function execEdits(
 	request: NormalizedEditRequest,
 	cwd: string,
 	options?: ExecPipelineOptions,
@@ -266,6 +196,33 @@ export function reuseMarkdown(
 	return m;
 }
 
+
+function makeRenderCall(preview: DebouncedPreview) {
+  return (args: unknown, theme: unknown, context: unknown) => {
+    const ctx = context as { lastComponent: unknown; state: unknown; expanded: unknown };
+    preview.renderCall(ctx as unknown as any, args);
+    const text = (ctx.lastComponent as Text | undefined) ?? new Text("", 0, 0);
+    text.setText(fmtCall(getPreviewInput(args), (ctx as unknown as { state: RRState }).state as RRState, (ctx as unknown as { expanded: boolean }).expanded, theme as never));
+    return text;
+  };
+}
+function makeRenderResult(preview: DebouncedPreview) {
+  return (result: unknown, opts: { isPartial: boolean }, theme: unknown, context: unknown) => {
+    const ctx = context as { lastComponent: unknown; state: unknown; isError: boolean };
+    if (opts.isPartial) return reuseText(ctx, (theme as { fg: (a: string, b: string) => string }).fg("warning", "Editing..."));
+    const typedResult = result as { content?: Array<{ type: string; text?: string }>; details?: EditDetails };
+    const renderedText = getResultText(typedResult);
+    const renderState = (ctx as unknown as { state: RRState | undefined }).state as RRState | undefined;
+    if (renderState) preview.clearResult(renderState);
+    if ((ctx as unknown as { isError: boolean }).isError) return renderedText ? reuseText(ctx, `\n${(theme as { fg: (a: string, b: string) => string }).fg("error", renderedText)}`) : new Text("", 0, 0);
+    if (isApplied(typedResult.details)) {
+      const appliedText = buildAppliedText(typedResult.details, theme as never);
+      return appliedText ? reuseText(ctx, appliedText) : new Text("", 0, 0);
+    }
+    if (!renderedText) return new Text("", 0, 0);
+    return reuseMarkdown(ctx, fmtResultMd(renderedText), theme as never);
+  };
+}
 export function buildToolDef(): ToolDef {
 	const E_DESC = loadP("../prompts/edit.md");
 	const E_SNIPPET = loadP("../prompts/edit-snippet.md");
@@ -282,51 +239,9 @@ export function buildToolDef(): ToolDef {
 		promptGuidelines: E_GUIDE,
 		prepareArguments: prepareEditArguments,
 		renderShell: "default",
-		renderCall(args, theme, context) {
-			preview.renderCall(context, args);
-			const text =
-				(context.lastComponent as Text | undefined) ?? new Text("", 0, 0);
-			text.setText(
-				fmtCall(
-					getPreviewInput(args),
-					context.state as RRState,
-					context.expanded,
-					theme,
-				),
-			);
-			return text;
-		},
+		renderCall: makeRenderCall(preview) as unknown as ToolDef["renderCall"],
 
-		renderResult(result, { isPartial }, theme, context) {
-			if (isPartial) {
-				return reuseText(context, theme.fg("warning", "Editing..."));
-			}
-
-			const typedResult = result as {
-				content?: Array<{ type: string; text?: string }>;
-				details?: EditDetails;
-			};
-			const renderedText = getResultText(typedResult);
-
-			const renderState = context.state as RRState | undefined;
-			if (renderState) {
-				preview.clearResult(renderState);
-			}
-
-			if (context.isError) {
-				return renderedText
-					? reuseText(context, `\n${theme.fg("error", renderedText)}`)
-					: new Text("", 0, 0);
-			}
-
-			if (isApplied(typedResult.details)) {
-				const appliedText = buildAppliedText(typedResult.details, theme);
-				return appliedText ? reuseText(context, appliedText) : new Text("", 0, 0);
-			}
-
-			if (!renderedText) return new Text("", 0, 0);
-			return reuseMarkdown(context, fmtResultMd(renderedText), theme);
-		},
+		renderResult: makeRenderResult(preview) as unknown as ToolDef["renderResult"],
 
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const canonical = normReq(params);

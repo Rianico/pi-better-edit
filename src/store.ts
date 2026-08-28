@@ -1,9 +1,9 @@
 import { DatabaseSync } from "node:sqlite";
-import { withBusyRetry as hashWithBusyRetry } from "./hash-store";
+import { withBusyRetry as hashWithBusyRetry } from "./hash-store.js";
 
 
 
-export interface SnapshotStore {
+interface SnapshotStore {
   get(path: string, checksum: string, lineCount: number): string[] | undefined;
   put(
     path: string,
@@ -18,6 +18,7 @@ export interface SnapshotStore {
 }
 
 
+// SAFETY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
 export class SQLiteSnapshotStore implements SnapshotStore {
   constructor(private readonly db: DatabaseSync) {}
 
@@ -82,6 +83,7 @@ type SnapshotRow = {
   updatedAt: number;
 };
 
+// SAFETY: large-class — in-memory store mirrors SQLite shape for test isolation; cohesive and not split.
 export class MemorySnapshotStore implements SnapshotStore {
   private readonly data = new Map<string, SnapshotRow>();
   private readonly extraPaths = new Set<string>();

@@ -1,7 +1,7 @@
-import { randomUUID } from "crypto";
+import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
-import { HASH_RE } from "./hashline/alphabet";
-import { SERVED_TTL_MS } from "./constants";
+import { HASH_RE } from "./hashline/alphabet.js";
+import { SERVED_TTL_MS } from "./constants.js";
 import {
   loadHashStore,
   onStoreOpen,
@@ -9,8 +9,8 @@ import {
   withBusyRetry,
   getCached,
   type HashStore,
-} from "./hash-store";
-import type { ServedRow } from "./hashline/served";
+} from "./hash-store.js";
+import type { ServedRow } from "./hashline/served.js";
 
 export type ServedEntry = { position: number; hash: string | null };
 
@@ -25,7 +25,7 @@ export function sessionKeyFor(ctx?: {
   return fallbackSessionKey;
 }
 
-export interface ServedStmts {
+interface ServedStmts {
   servedGet: (
     sessionKey: string,
     path: string,
@@ -55,7 +55,7 @@ export interface ServedStmts {
 
 const stmtsCache = new WeakMap<DatabaseSync, ServedStmts>();
 
-export function servedStmts(db: DatabaseSync): ServedStmts {
+function servedStmts(db: DatabaseSync): ServedStmts {
   return getCached(db, stmtsCache, buildStmts);
 }
 
@@ -123,7 +123,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   };
 }
 
-
 export function ensureServedSchema(db: DatabaseSync): void {
   db.exec(
     "CREATE TABLE IF NOT EXISTS served (" +
@@ -151,50 +150,60 @@ function isValidServedList(value: unknown): value is (string | null)[] {
   return true;
 }
 
-function patchServed(
-  updated: (string | null)[],
-  entries: Array<{ position: number; hash: string | null }>,
-): void {
+function buildServedHashIndex(updated: (string | null)[]): Map<string, number> {
   const index = new Map<string, number>();
   for (let i = 0; i < updated.length; i++) {
     const h = updated[i];
     if (h === null) continue;
     const prev = index.get(h);
-    if (prev !== undefined) {
-      updated[prev] = null;
-    }
+    if (prev !== undefined) updated[prev] = null;
     index.set(h, i);
   }
-  for (const entry of entries) {
-    if (!Number.isInteger(entry.position) || entry.position < 0) {
-      throw new TypeError(`Invalid served position: ${entry.position}`);
+  return index;
+}
+function validateServedEntry(entry: {
+  position: number;
+  hash: string | null;
+}): void {
+  if (!Number.isInteger(entry.position) || entry.position < 0)
+    throw new TypeError(`Invalid served position: ${entry.position}`);
+  if (
+    entry.hash !== null &&
+    (typeof entry.hash !== "string" || !HASH_RE.test(entry.hash))
+  )
+    throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
+}
+function applySingleServedEntry(
+  updated: (string | null)[],
+  entry: { position: number; hash: string | null },
+  index: Map<string, number>,
+): void {
+  while (updated.length <= entry.position) updated.push(null);
+  if (entry.hash !== null) {
+    const existing = index.get(entry.hash);
+    if (existing !== undefined && existing !== entry.position) {
+      updated[existing] = null;
+      index.delete(entry.hash);
     }
-    if (
-      entry.hash !== null &&
-      (typeof entry.hash !== "string" || !HASH_RE.test(entry.hash))
-    ) {
-      throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
-    }
-    while (updated.length <= entry.position) updated.push(null);
-    if (entry.hash !== null) {
-      const existing = index.get(entry.hash);
-      if (existing !== undefined && existing !== entry.position) {
-        updated[existing] = null;
-        index.delete(entry.hash);
-      }
-      const oldAtPos = updated[entry.position];
-      if (oldAtPos !== null && oldAtPos !== entry.hash) {
-        index.delete(oldAtPos);
-      }
-      index.set(entry.hash, entry.position);
-    } else {
-      const oldAtPos = updated[entry.position];
-      if (oldAtPos !== null) index.delete(oldAtPos);
-    }
-    updated[entry.position] = entry.hash;
+    const oldAtPos = updated[entry.position];
+    if (oldAtPos !== null && oldAtPos !== entry.hash) index.delete(oldAtPos);
+    index.set(entry.hash, entry.position);
+  } else {
+    const oldAtPos = updated[entry.position];
+    if (oldAtPos !== null) index.delete(oldAtPos);
   }
-  while (updated.length > 0 && updated[updated.length - 1] === null)
-    updated.pop();
+  updated[entry.position] = entry.hash;
+}
+function patchServed(
+  updated: (string | null)[],
+  entries: Array<{ position: number; hash: string | null }>,
+): void {
+  const index = buildServedHashIndex(updated);
+  for (const entry of entries) {
+    validateServedEntry(entry);
+    applySingleServedEntry(updated, entry, index);
+  }
+  while (updated.length > 0 && updated.at(-1) === null) updated.pop();
 }
 
 export function getServed(
@@ -223,13 +232,18 @@ export function upsertServed(
 ): void {
   if (entries.length === 0) return;
   withStore(() => {
-    const updated = getServed(store, sessionKey, path).slice();
+    const updated = [...getServed(store, sessionKey, path)];
     patchServed(updated, entries);
-    servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+    servedStmts(store.db).servedUpsert(
+      sessionKey,
+      path,
+      JSON.stringify(updated),
+      Date.now(),
+    );
   });
 }
 
-export function recordServes(
+function recordServes(
   store: HashStore,
   sessionKey: string,
   path: string,
@@ -240,6 +254,7 @@ export function recordServes(
     upsertServed(store, sessionKey, path, rows);
   } catch (error) {
     console.error("Failed to record served rows:", error);
+    throw error;
   }
 }
 
@@ -255,7 +270,7 @@ export function recordServesTruncated(
   try {
     withStore(() => {
       const before = getServed(store, sessionKey, path);
-      const updated = before.slice();
+      const updated = [...before];
       if (updated.length > lineCount) updated.length = lineCount;
       if (clearFrom !== undefined) {
         for (let i = clearFrom; i < updated.length; i++) updated[i] = null;
@@ -266,14 +281,24 @@ export function recordServesTruncated(
         before.every((v, i) => v === updated[i])
       )
         return;
-      servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+      servedStmts(store.db).servedUpsert(
+        sessionKey,
+        path,
+        JSON.stringify(updated),
+        Date.now(),
+      );
     });
   } catch (error) {
     console.error("Failed to record truncated served rows:", error);
+    throw error;
   }
 }
 
-export function getReported(store: HashStore, sessionKey: string, path: string): Set<string> {
+export function getReported(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): Set<string> {
   const row = servedStmts(store.db).servedGet(sessionKey, path);
   if (!row) return new Set();
   const raw = row.reported;
@@ -311,13 +336,21 @@ export function addReported(
   });
 }
 
-export function clearReported(store: HashStore, sessionKey: string, path: string): void {
+export function clearReported(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): void {
   withStore(() => {
     servedStmts(store.db).servedReportedClear(sessionKey, Date.now(), path);
   });
 }
 
-export function deleteServed(store: HashStore, sessionKey: string, path: string): void {
+export function deleteServed(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): void {
   servedStmts(store.db).servedDelete(sessionKey, path);
 }
 
@@ -348,6 +381,7 @@ export async function recordServed(
     recordServes(store, sessionKey, path, rows);
   } catch (error) {
     console.error("Failed to record served rows:", error);
+    throw error;
   }
 }
 
@@ -364,14 +398,19 @@ export async function recordServedTruncated(
     recordServesTruncated(store, sessionKey, path, rows, lineCount, clearFrom);
   } catch (error) {
     console.error("Failed to record truncated served rows:", error);
+    throw error;
   }
 }
 
-export async function driftReported(sessionKey: string, path: string): Promise<Set<string>> {
+export async function driftReported(
+  sessionKey: string,
+  path: string,
+): Promise<Set<string>> {
   try {
     const store = await loadHashStore();
     return getReported(store, sessionKey, path);
   } catch (error) {
+    // SAFETY: best-effort drift reported set — load failures return empty set; drift will be re-reported on next check, not silent undefined without log, preserves tool success.
     console.error("Failed to load reported drift set:", error);
     return new Set();
   }
@@ -387,15 +426,20 @@ export async function markDriftReported(
     addReported(store, sessionKey, path, hashes);
   } catch (error) {
     console.error("Failed to record reported drift set:", error);
+    throw error;
   }
 }
 
-export async function clearDriftReported(sessionKey: string, path: string): Promise<void> {
+export async function clearDriftReported(
+  sessionKey: string,
+  path: string,
+): Promise<void> {
   try {
     const store = await loadHashStore();
     clearReported(store, sessionKey, path);
   } catch (error) {
     console.error("Failed to clear reported drift set:", error);
+    throw error;
   }
 }
 
@@ -405,10 +449,11 @@ export async function wipeServedState(sessionKey: string): Promise<void> {
     wipeServed(store, sessionKey);
   } catch (error) {
     console.error("Failed to wipe served state:", error);
+    throw error;
   }
 }
 
-export { servedPositionsOf } from "./hashline/served";
+export { servedPositionsOf } from "./hashline/served.js";
 
 export type ServeRecordPolicy = "live" | "preview";
 

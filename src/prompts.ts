@@ -1,9 +1,9 @@
-import { readFileSync } from "fs";
+import { readFileSync } from "node:fs";
 import {
 	EDIT_DESCRIPTION,
 	EDIT_SNIPPET,
 	EDIT_GUIDELINES,
-} from "./payload-contract";
+} from "./payload-contract.js";
 
 
 const EDIT_PROMPT_FILES = new Set([

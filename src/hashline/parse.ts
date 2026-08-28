@@ -1,9 +1,5 @@
-import {
-	ANCHOR_LEN,
-	ALPH_RE,
-	HASH_CLASS,
-} from "./hash-identity";
-import { NEW_CONTENT_NOT_STRING_MSG } from "../constants";
+import { ANCHOR_LEN, ALPHA_RE, HASH_CLASS } from "./hash-identity.js";
+import { NEW_CONTENT_NOT_STRING_MSG } from "../constants.js";
 
 export type Anchor = { hash: string };
 
@@ -21,7 +17,8 @@ function diagRef(ref: string): string {
 	if (trimmed.includes("│") && trimmed.includes("\n")) {
 		const lines = trimmed.split("\n");
 		const first = lines[0] ?? "";
-		const last = lines[lines.length - 1] ?? "";
+		const last = lines.at(-1) ?? "";
+		// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char linear search — no user-controlled pattern, no ReDoS.
 		const hashRe = new RegExp(HASH_CLASS);
 		const firstMatch = first.match(hashRe);
 		const lastMatch = last.match(hashRe);
@@ -40,10 +37,7 @@ function diagRef(ref: string): string {
 function parseRef(ref: string): Anchor {
 	const trimmed = ref.trim();
 
-	if (
-		trimmed.length === ANCHOR_LEN &&
-		ALPH_RE.test(trimmed)
-	) {
+	if (trimmed.length === ANCHOR_LEN && ALPHA_RE.test(trimmed)) {
 		return { hash: trimmed };
 	}
 
@@ -53,11 +47,12 @@ function parseRef(ref: string): Anchor {
 export const parseHashRef = parseRef;
 
 export function parseText(edit: string): string[] {
-  if (typeof edit !== "string") {
-    throw new Error(NEW_CONTENT_NOT_STRING_MSG);
-  }
-  const normalized = edit.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-  if (normalized === "") return [];
-  if (/^\n+$/.test(normalized)) return new Array(normalized.length).fill("");
-  return normalized.split("\n");
+	if (typeof edit !== "string") {
+		throw new Error(NEW_CONTENT_NOT_STRING_MSG);
+	}
+	const normalized = edit.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+	if (normalized === "") return [];
+	if (/^\n+$/.test(normalized))
+		return Array.from({ length: normalized.length }, () => "");
+	return normalized.split("\n");
 }

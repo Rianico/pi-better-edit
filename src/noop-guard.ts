@@ -1,11 +1,11 @@
-import { NOOP_LOOP_THRESHOLD } from "./constants";
+import { NOOP_LOOP_THRESHOLD } from "./constants.js";
 import {
 	buildRangeEcho,
 	fmtServedRows,
 	type ResolvedRange,
 	type ServedRow,
-} from "./hashline/served";
-import { recordEchoServes } from "./served-state";
+} from "./hashline/served.js";
+import { recordEchoServes } from "./served-state.js";
 
 type NoopLoopEntry = {
 	payload: string;
@@ -14,7 +14,7 @@ type NoopLoopEntry = {
 
 const noopLoopTracker = new Map<string, NoopLoopEntry>();
 
-export function noopPayloadKey(
+function noopPayloadKey(
 	absolutePath: string,
 	removeFrom: string,
 	removeTo: string,
@@ -23,7 +23,7 @@ export function noopPayloadKey(
 	return JSON.stringify([absolutePath, removeFrom, removeTo, replacementText]);
 }
 
-export function trackNoopPayload(
+function trackNoopPayload(
 	absolutePath: string,
 	payload: string,
 ): number {
@@ -38,7 +38,7 @@ export function clearNoopLoop(absolutePath: string): void {
 	noopLoopTracker.delete(absolutePath);
 }
 
-export { NOOP_LOOP_THRESHOLD };
+// NOOP_LOOP_THRESHOLD re-export removed
 
 export interface NoopPolicyInput {
 	absolutePath: string;

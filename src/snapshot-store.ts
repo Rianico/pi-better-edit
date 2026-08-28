@@ -1,13 +1,13 @@
-import { readFile, rename, stat } from "fs/promises";
+import { readFile, rename, stat } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
-import { contentChecksum } from "./hashline/hasher";
+import { contentChecksum } from "./hashline/hasher.js";
 import {
   isValidHashList,
   CANON_VERSION,
   setDefaultHashSnapshotIO,
   type HashSnapshotIO,
-} from "./hashline/hash";
-import { splitLines, errCode } from "./utils";
+} from "./hashline/hash.js";
+import { splitLines, errCode } from "./utils.js";
 import {
   loadHashStore,
   onStoreOpen,
@@ -15,12 +15,12 @@ import {
   withBusyRetry,
   getCached,
   type HashStore,
-} from "./hash-store";
-import { legacyHashStorePath } from "./hash-store";
-import { deleteUndo } from "./undo-store";
-import { deleteServedByPath } from "./served-state";
+} from "./hash-store.js";
+import { legacyHashStorePath } from "./hash-store.js";
+import { deleteUndo } from "./undo-store.js";
+import { deleteServedByPath } from "./served-state.js";
 
-export interface LegacySnapshot {
+interface LegacySnapshot {
   content: string;
   hashes: string[];
 }
@@ -80,7 +80,6 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
   };
 }
 
-
 export function ensureSnapshotSchema(db: DatabaseSync): void {
   db.exec(
     "CREATE TABLE IF NOT EXISTS snapshots (" +
@@ -101,7 +100,7 @@ function cacheKey(checksum: string): string {
   return `${CANON_VERSION}:${checksum}`;
 }
 
-export function isValidSnapshot(value: unknown): value is LegacySnapshot {
+function isValidSnapshot(value: unknown): value is LegacySnapshot {
   if (typeof value !== "object" || value === null) return false;
   const v = value as Record<string, unknown>;
   if (typeof v.content !== "string") return false;
@@ -202,7 +201,7 @@ export async function upsertSnapshotFor(
   upsertSnapshot(store, path, checksum, lineCount, hashes);
 }
 
-export function findSnapshotPaths(
+function findSnapshotPaths(
   store: HashStore,
   hashes: string[],
 ): string[] {
@@ -266,6 +265,7 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
     content = await readFile(legacyPath, "utf-8");
   } catch (error: unknown) {
     if (errCode(error) === "ENOENT") return;
+    // SAFETY: best-effort legacy migration — read failures beyond ENOENT are ignored; migration is optional and fresh store remains valid, no caller depends on legacy data.
     console.error("Failed to read legacy hash store for migration:", error);
     return;
   }
@@ -274,6 +274,7 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
   try {
     parsed = JSON.parse(content) as typeof parsed;
   } catch (error) {
+    // SAFETY: best-effort legacy migration — parse failures are ignored; corrupted legacy file is skipped and fresh hashing will repopulate, no caller depends on legacy data.
     console.error(
       "Failed to parse legacy hash store, skipping migration:",
       error,
@@ -288,6 +289,7 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
   for (const [key, value] of Object.entries(raw)) {
     if (!isValidSnapshot(value)) continue;
     if (new Set(value.hashes).size !== value.hashes.length) {
+      // eslint-disable-next-line no-console -- legacy snapshot warning is intentional
       console.warn(
         `Skipped legacy snapshot with duplicate hashes for ${key}; it will be re-hashed on next read.`,
       );
@@ -318,6 +320,7 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
   try {
     await rename(legacyPath, `${legacyPath}.bak`);
   } catch (error) {
+    // SAFETY: best-effort legacy cleanup — rename failure after successful migration is ignored; legacy file remains but next migration will be skipped due to valid snapshot state, no data loss.
     console.error("Failed to rename legacy hash store after migration:", error);
   }
 }

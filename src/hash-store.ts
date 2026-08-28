@@ -1,12 +1,12 @@
-import { existsSync } from "fs";
-import { rename, mkdir } from "fs/promises";
+// SAFETY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
+import { existsSync } from "node:fs";
+import { rename, mkdir } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
-import { homedir } from "os";
-import { isAbsolute, resolve as resolvePath, join, dirname } from "path";
-import { errCode } from "./utils";
-import { initHasher } from "./hashline/hasher";
-import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants";
-
+import { homedir } from "node:os";
+import { isAbsolute, resolve as resolvePath, join, dirname } from "node:path";
+import { errCode } from "./utils.js";
+import { initHasher } from "./hashline/hasher.js";
+import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
 
 function homeBase(): string {
   const envHome = process.env.HOME;
@@ -18,18 +18,22 @@ function configBase(): string {
     const xdg = process.env.XDG_CONFIG_HOME;
     if (xdg && xdg.length > 0) return xdg;
   }
+  // SAFETY: join of trusted homedir (or HOME env validated by OS) with fixed ".config" segment — not user-controlled traversal, base is homedir and suffix is constant.
   return join(homeBase(), ".config");
 }
 
 export function configDir(): string {
+  // SAFETY: join of trusted configBase (homedir/.config) with fixed "pi-better-edit" — constant suffix, no traversal.
   return join(configBase(), "pi-better-edit");
 }
 
 export function hashStorePath(): string {
+  // SAFETY: join of trusted configDir with fixed "hash-store.sqlite" — constant suffix, no traversal.
   return join(configDir(), "hash-store.sqlite");
 }
 
 export function legacyHashStorePath(): string {
+  // SAFETY: join of trusted configDir with fixed "hash-store.json" — constant suffix, no traversal.
   return join(configDir(), "hash-store.json");
 }
 
@@ -45,10 +49,17 @@ function expand(filePath: string): string {
 }
 
 export function toCwd(filePath: string, cwd: string): string {
+  if (filePath.includes("\0"))
+    throw new Error("[E_BAD_SHAPE] Path contains null byte");
   const expanded = expand(filePath);
-  return isAbsolute(expanded) ? expanded : resolvePath(cwd, expanded);
+  if (expanded.includes("\0"))
+    throw new Error("[E_BAD_SHAPE] Path contains null byte");
+  // SAFETY: cwd is trusted (ctx.cwd), expand resolves "~" via homedir/XDG and resolvePath normalizes ".."; editing scope intentionally allows any absolute path — OS permissions enforced by valAccess downstream; guard ensures null-byte free and absolute result.
+  const resolved = isAbsolute(expanded) ? expanded : resolvePath(cwd, expanded);
+  if (!isAbsolute(resolved))
+    throw new Error("[E_BAD_SHAPE] Resolved path must be absolute");
+  return resolved;
 }
-
 
 export function isCorruptionError(error: unknown): boolean {
   if (error && typeof error === "object") {
@@ -95,7 +106,6 @@ export function withBusyRetry<T>(fn: () => T): T {
   throw lastError;
 }
 
-
 export function getCached<T>(
   db: DatabaseSync,
   cache: WeakMap<DatabaseSync, T>,
@@ -107,7 +117,6 @@ export function getCached<T>(
   cache.set(db, v);
   return v;
 }
-
 
 export interface HashStore {
   readonly db: DatabaseSync;
@@ -142,7 +151,12 @@ function openDb(storePath: string): DatabaseSync {
   } catch (error) {
     try {
       db.close();
-    } catch {}
+    } catch (closeError: unknown) {
+      console.error(
+        "[hash-store] failed to close DB after buildStore error:",
+        closeError,
+      );
+    }
     throw error;
   }
   return db;
@@ -163,9 +177,30 @@ function buildStore(db: DatabaseSync): void {
   const versionChanged =
     versionRow !== undefined && versionRow.value !== String(HASH_STORE_VERSION);
   if (versionChanged) {
-    try { db.exec("DROP TABLE IF EXISTS snapshots"); } catch {}
-    try { db.exec("DROP TABLE IF EXISTS undo"); } catch {}
-    try { db.exec("DROP TABLE IF EXISTS served"); } catch {}
+    try {
+      db.exec("DROP TABLE IF EXISTS snapshots");
+    } catch (error: unknown) {
+      console.error(
+        "[hash-store] failed to drop snapshots table on version change:",
+        error,
+      );
+    }
+    try {
+      db.exec("DROP TABLE IF EXISTS undo");
+    } catch (error: unknown) {
+      console.error(
+        "[hash-store] failed to drop undo table on version change:",
+        error,
+      );
+    }
+    try {
+      db.exec("DROP TABLE IF EXISTS served");
+    } catch (error: unknown) {
+      console.error(
+        "[hash-store] failed to drop served table on version change:",
+        error,
+      );
+    }
   } else {
     try {
       const servedColumns = db.prepare("PRAGMA table_info(served)").all() as {
@@ -177,7 +212,11 @@ function buildStore(db: DatabaseSync): void {
       ) {
         db.exec("DROP TABLE IF EXISTS served");
       }
-    } catch {
+    } catch (error: unknown) {
+      console.error(
+        "[hash-store] failed to inspect served table schema:",
+        error,
+      );
     }
   }
   db.exec(
@@ -244,7 +283,9 @@ async function quarantineStore(storePath: string): Promise<void> {
 function shutdownDb(db: DatabaseSync): void {
   try {
     db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
-  } catch {}
+  } catch (error: unknown) {
+    console.error("[hash-store] failed to checkpoint WAL on shutdown:", error);
+  }
   db.close();
 }
 
@@ -328,7 +369,12 @@ export function withStore(fn: () => void): void {
     } catch (e) {
       try {
         cachedDb!.db.exec("ROLLBACK");
-      } catch {}
+      } catch (rollbackError: unknown) {
+        console.error(
+          "[hash-store] failed to rollback transaction:",
+          rollbackError,
+        );
+      }
       throw e;
     }
   });

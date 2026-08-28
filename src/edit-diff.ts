@@ -1,6 +1,10 @@
 import * as Diff from "diff";
-import { ANCHOR_LEN, HASH_SEP, defaultHashIdentity } from "./hashline/hash-identity";
-import type { ServedRow } from "./hashline/served";
+import {
+	ANCHOR_LEN,
+	HASH_SEP,
+	defaultHashIdentity,
+} from "./hashline/hash-identity.js";
+import type { ServedRow } from "./hashline/served.js";
 
 export type LineEnding = "\r\n" | "\n" | "\r";
 
@@ -45,6 +49,58 @@ const ELLIPSIS_MARKER: unique symbol = Symbol("ellipsis");
 const isEllipsisMarker = (line: string | symbol): line is symbol =>
 	line === ELLIPSIS_MARKER;
 
+function pushAddedLines(
+	displayLines: string[],
+	effectiveNewHashes: string[],
+	newLineNum: { value: number },
+	output: string[],
+	servedRows: ServedRow[],
+): void {
+	for (let k = 0; k < displayLines.length; k++) {
+		const hash = effectiveNewHashes[newLineNum.value - 1];
+		output.push(fmtDiffLine("+", displayLines[k]!, hash));
+		if (hash !== undefined)
+			servedRows.push({ position: newLineNum.value - 1, hash });
+		newLineNum.value++;
+	}
+}
+function pushRemovedLines(
+	displayLines: string[],
+	oldContentHashes: string[] | undefined,
+	oldLineNum: { value: number },
+	output: string[],
+): void {
+	for (let k = 0; k < displayLines.length; k++) {
+		const hash = oldContentHashes?.[oldLineNum.value - 1];
+		output.push(fmtDiffLine("-", displayLines[k]!, hash));
+		oldLineNum.value++;
+	}
+}
+function contextLinesToShow(
+	displayLines: string[],
+	lastWasChange: boolean,
+	nextPartIsChange: boolean,
+	contextLines: number,
+): { linesToShow: (string | symbol)[]; skipStart: number; skipMiddle: number } {
+	let linesToShow: (string | symbol)[] = displayLines;
+	let skipStart = 0;
+	let skipMiddle = 0;
+	if (!lastWasChange) {
+		skipStart = Math.max(0, displayLines.length - contextLines);
+		linesToShow = displayLines.slice(skipStart);
+	} else if (nextPartIsChange && displayLines.length > contextLines * 2) {
+		const tail = displayLines.slice(-contextLines);
+		linesToShow = [
+			...displayLines.slice(0, contextLines),
+			ELLIPSIS_MARKER,
+			...tail,
+		];
+		skipMiddle = displayLines.length - contextLines * 2;
+	} else if (linesToShow.length > contextLines) {
+		linesToShow = linesToShow.slice(0, contextLines);
+	}
+	return { linesToShow, skipStart, skipMiddle };
+}
 export function genDiff(
 	oldContent: string,
 	newContent: string,
@@ -56,7 +112,8 @@ export function genDiff(
 	firstChangedLine: number | undefined;
 	servedRows: ServedRow[];
 } {
-	const effectiveNewHashes = newContentHashes ?? defaultHashIdentity.hashesForSync(newContent);
+	const effectiveNewHashes =
+		newContentHashes ?? defaultHashIdentity.hashesForSync(newContent);
 
 	const parts = Diff.diffLines(oldContent, newContent);
 	const output: string[] = [];
@@ -69,24 +126,19 @@ export function genDiff(
 	for (let i = 0; i < parts.length; i++) {
 		const part = parts[i]!;
 		const raw = part.value.split("\n");
-		if (raw[raw.length - 1] === "") raw.pop();
+		if (raw.at(-1) === "") raw.pop();
 		const displayLines = raw;
 
 		if (part.added || part.removed) {
 			if (firstChangedLine === undefined) firstChangedLine = newLineNum;
-			for (let k = 0; k < displayLines.length; k++) {
-				if (part.added) {
-					const hash = effectiveNewHashes[newLineNum - 1];
-					output.push(fmtDiffLine("+", displayLines[k]!, hash));
-					if (hash !== undefined) {
-						servedRows.push({ position: newLineNum - 1, hash });
-					}
-					newLineNum++;
-				} else {
-					const hash = oldContentHashes?.[oldLineNum - 1];
-					output.push(fmtDiffLine("-", displayLines[k]!, hash));
-					oldLineNum++;
-				}
+			if (part.added) {
+				const n = { value: newLineNum };
+				pushAddedLines(displayLines, effectiveNewHashes, n, output, servedRows);
+				newLineNum = n.value;
+			} else {
+				const o = { value: oldLineNum };
+				pushRemovedLines(displayLines, oldContentHashes, o, output);
+				oldLineNum = o.value;
 			}
 			lastWasChange = true;
 			continue;
@@ -95,24 +147,12 @@ export function genDiff(
 		const nextPartIsChange =
 			i < parts.length - 1 && (parts[i + 1]!.added || parts[i + 1]!.removed);
 		if (lastWasChange || nextPartIsChange) {
-			let linesToShow: (string | symbol)[] = displayLines;
-			let skipStart = 0;
-			let skipMiddle = 0;
-
-			if (!lastWasChange) {
-				skipStart = Math.max(0, displayLines.length - contextLines);
-				linesToShow = displayLines.slice(skipStart);
-			} else if (nextPartIsChange && displayLines.length > contextLines * 2) {
-				const tail = displayLines.slice(-contextLines);
-				linesToShow = [
-					...displayLines.slice(0, contextLines),
-					ELLIPSIS_MARKER,
-					...tail,
-				];
-				skipMiddle = displayLines.length - contextLines * 2;
-			} else if (linesToShow.length > contextLines) {
-				linesToShow = linesToShow.slice(0, contextLines);
-			}
+			const { linesToShow, skipStart, skipMiddle } = contextLinesToShow(
+				displayLines,
+				lastWasChange,
+				nextPartIsChange,
+				contextLines,
+			);
 
 			if (skipStart > 0) {
 				output.push(" ...");

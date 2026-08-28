@@ -1,3 +1,4 @@
+// SAFETY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
 import xxhash from "xxhash-wasm";
 
 export type Hasher = {
@@ -7,7 +8,8 @@ export type Hasher = {
 
 let hasher: Hasher | null = null;
 
-export function getH(): Hasher {
+// SAFETY: pass-through wrapper — getH centralizes hasher null check; retained over inlining for error message consistency.
+function getH(): Hasher {
 	if (hasher) return hasher;
 	throw new Error("xxhash-wasm hasher not initialized; await initHasher() before calling hashline APIs.");
 }

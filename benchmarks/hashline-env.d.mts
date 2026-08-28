@@ -21,20 +21,22 @@ declare module "@oh-my-pi/hashline" {
 		allowTagPathRecovery(authored: string, resolved: string): boolean;
 	}
 
+	export type SnapshotLookupResult = string | undefined;
+
 	export abstract class SnapshotStore {
 		abstract record(
 			path: string,
 			fullText: string,
 			seenLines?: Iterable<number>,
 		): string;
-		abstract byHash(path: string, hash: string): unknown;
-		abstract byContent(path: string, text: string): unknown;
+		abstract byHash(path: string, hash: string): SnapshotLookupResult;
+		abstract byContent(path: string, text: string): SnapshotLookupResult;
 	}
 
 	export class InMemorySnapshotStore extends SnapshotStore {
 		record(path: string, fullText: string, seenLines?: Iterable<number>): string;
-		byHash(path: string, hash: string): unknown;
-		byContent(path: string, text: string): unknown;
+		byHash(path: string, hash: string): SnapshotLookupResult;
+		byContent(path: string, text: string): SnapshotLookupResult;
 	}
 
 	export interface SectionResult {
