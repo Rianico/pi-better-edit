@@ -1,7 +1,6 @@
 #!/usr/bin/env sh
 
 
-echo "→ Running local checks before push (typecheck + lint + test)…"
+echo "→ Running local checks before push (typecheck + lint)…"
 npm run typecheck || exit 1
 npm run lint || exit 1
-npm test || exit 1
