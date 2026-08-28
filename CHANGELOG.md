@@ -4,6 +4,17 @@ All notable changes to this project will be documented in this file.
 
 ## [Unreleased]
 
+## [1.2.3] - 2026-08-28
+
+### Fixed
+
+- allow _-prefixed unused exports and scoped no-comments for publish
+
+### Changed
+
+- wire semantic-release (conventionalcommits) with pinned release workflow
+
+
 ## [1.2.2] - 2026-08-28
 
 ### Fixed
