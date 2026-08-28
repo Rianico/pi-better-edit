@@ -101,7 +101,7 @@ export const EDIT_GUIDELINES: string[] = [
 	'edit: `remove_from`/`remove_to` are inclusive; batch multiple edits to the same file only when independent — they apply atomically (fail → nothing written).',
 ];
 
-function getPayloadPromptFragments(): {
+function _getPayloadPromptFragments(): {
 	description: string;
 	snippet: string;
 	guidelines: string[];
@@ -120,14 +120,14 @@ function emitFilePathDeprecationWarning(
 	filePathValue: unknown,
 	context: string = "payload",
 ): void {
-	// eslint-disable-next-line no-console -- deprecated alias warning is intentional
+	 
 	console.warn(
 		`[DEPRECATED] "file_path" is deprecated, use "path" instead (${context}). Received file_path=${JSON.stringify(filePathValue)}. This alias will be removed in a future version.`,
 	);
 }
 
 
-function normalizeFilePathRecord(
+function _normalizeFilePathRecord(
 	record: Record<string, unknown>,
 	context: string = "payload",
 ): boolean {
@@ -138,13 +138,13 @@ function normalizeFilePathRecord(
 		const fp = record.file_path as string;
 		emitFilePathDeprecationWarning(fp, context);
 		record.path = fp;
-		// eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias
+		 
 		delete record.file_path;
 		return true;
 	}
 	if (typeof record.file_path === "string") {
 		emitFilePathDeprecationWarning(record.file_path, context);
-		// eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias
+		 
 		delete record.file_path;
 		return true;
 	}
@@ -152,7 +152,7 @@ function normalizeFilePathRecord(
 		if (record.file_path !== undefined) {
 			emitFilePathDeprecationWarning(record.file_path, context);
 		}
-		// eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias
+		 
 		delete record.file_path;
 		return true;
 	}

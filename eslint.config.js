@@ -68,6 +68,8 @@ export default tseslint.config(
   {
     files: [
       "src/edit-pipeline.ts",
+      "src/noop-guard.ts",
+      "src/write-hook.ts",
       "src/hashline/served-verification.ts",
       "src/hashline/served.ts",
     ],

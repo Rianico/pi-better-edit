@@ -87,7 +87,7 @@ function assertAligned(
 	}
 }
 
-function fmtMismatch(
+function _fmtMismatch(
 	mismatches: HMismatch[],
 	fileLines: string[],
 	fileHashes: string[],

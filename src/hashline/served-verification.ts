@@ -62,7 +62,7 @@ export class AnchorMismatchError extends Error {
 	}
 }
 
-function isAnchorMismatch(error: unknown): error is AnchorMismatchError {
+function _isAnchorMismatch(error: unknown): error is AnchorMismatchError {
 	return error instanceof AnchorMismatchError;
 }
 

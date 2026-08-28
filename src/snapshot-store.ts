@@ -289,7 +289,7 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
   for (const [key, value] of Object.entries(raw)) {
     if (!isValidSnapshot(value)) continue;
     if (new Set(value.hashes).size !== value.hashes.length) {
-      // eslint-disable-next-line no-console -- legacy snapshot warning is intentional
+       
       console.warn(
         `Skipped legacy snapshot with duplicate hashes for ${key}; it will be re-hashed on next read.`,
       );

@@ -6,33 +6,33 @@ export function normalizeFilePath(record: Record<string, unknown>): void {
   const hasPath = typeof record.path === "string";
   const hasFilePath = typeof record.file_path === "string";
   if (!hasPath && hasFilePath) {
-    // eslint-disable-next-line no-console -- deprecated alias warning is intentional and user-visible
+     
     console.warn(
       `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(record.file_path)}. This alias will be removed in a future version.`,
     );
     record.path = record.file_path as string;
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias from payload record
+     
     delete record.file_path;
     return;
   }
   if (hasFilePath) {
-    // eslint-disable-next-line no-console -- deprecated alias warning is intentional and user-visible
+     
     console.warn(
       `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(record.file_path)}. This alias will be removed in a future version.`,
     );
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias from payload record
+     
     delete record.file_path;
     return;
   }
   if ("file_path" in record) {
     const fp = (record as Record<string, unknown>).file_path;
     if (fp !== undefined) {
-      // eslint-disable-next-line no-console -- deprecated alias warning is intentional and user-visible
+       
       console.warn(
         `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(fp)}. This alias will be removed in a future version.`,
       );
     }
-    // eslint-disable-next-line @typescript-eslint/no-dynamic-delete -- removing deprecated alias from payload record
+     
     delete record.file_path;
   }
 }

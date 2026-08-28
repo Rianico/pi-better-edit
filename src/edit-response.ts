@@ -246,7 +246,7 @@ export type BatchSection = {
 	totalRemovedLines: number;
 };
 
-type BatchDetails = EditDetails;
+type _BatchDetails = EditDetails;
 
 export function buildBatchResult(sections: BatchSection[]): TResult {
 	const totalEdits = sections.reduce(

@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { describe, expect, it, vi } from "vitest";
+import { describe, expect, it } from "vitest";
 import {
 	findServedHashEcho,
 	servedHashEchoDenial,
@@ -14,7 +14,11 @@ import { toCwd } from "../../src/paths";
 
 type ToolCallHandler = (
 	event: { toolName: string; input: Record<string, unknown> },
-	ctx: { cwd: string; sessionManager: { getSessionId(): string }; signal?: AbortSignal },
+	ctx: {
+		cwd: string;
+		sessionManager: { getSessionId(): string };
+		signal?: AbortSignal;
+	},
 ) => Promise<{ block?: boolean; reason?: string } | void>;
 
 function localIO() {
@@ -26,14 +30,20 @@ function localIO() {
 	};
 }
 
-async function servedPreviewForFile(path: string, cwd: string, sessionKey: string): Promise<string> {
+async function servedPreviewForFile(
+	path: string,
+	cwd: string,
+	sessionKey: string,
+): Promise<string> {
 	await initHasher();
 	const content = await readFile(path, "utf-8");
 	const hashes = await lineHashes(content, path);
 	const rows = hashes.map((hash, idx) => ({ position: idx, hash }));
 	await recordServed(sessionKey, await resolveTarget(path), rows);
 	const { fmtRegion } = await import("../../src/hashline");
-	const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
+	const lines = content.endsWith("\n")
+		? content.slice(0, -1).split("\n")
+		: content.split("\n");
 	if (lines.length === 1 && lines[0] === "") {
 		// empty file handling not needed for this test
 		return `${hashes[0]}│`;
@@ -65,9 +75,10 @@ describe("write hash-echo guard", () => {
 	});
 
 	it("catches a repeated historical chain when its outer anchor is current", () => {
-		expect(
-			findServedHashEcho("Ab3│nT2│CCd│UIA│## 1. H1\n", ["Ab3"]),
-		).toEqual({ line: 1, hash: "Ab3" });
+		expect(findServedHashEcho("Ab3│nT2│CCd│UIA│## 1. H1\n", ["Ab3"])).toEqual({
+			line: 1,
+			hash: "Ab3",
+		});
 	});
 
 	it("rejects a copied current preview before the write body can change disk", async () => {
@@ -78,7 +89,7 @@ describe("write hash-echo guard", () => {
 			await writeFile(path, original, "utf-8");
 			const beforeBytes = await readFile(path);
 
-			const io = localIO();
+			const _io = localIO();
 			const sessionKey = "session-a";
 			const previewText = await servedPreviewForFile(path, cwd, sessionKey);
 
@@ -107,8 +118,12 @@ describe("write hash-echo guard", () => {
 			);
 
 			expect(result).toMatchObject({ block: true });
-			expect((result as { reason?: string }).reason).toContain("[E_WRITE_HASH_ECHO]");
-			expect((result as { reason?: string }).reason).toContain("HASH│ anchors are tool output");
+			expect((result as { reason?: string }).reason).toContain(
+				"[E_WRITE_HASH_ECHO]",
+			);
+			expect((result as { reason?: string }).reason).toContain(
+				"HASH│ anchors are tool output",
+			);
 			expect(await readFile(path)).toEqual(beforeBytes);
 
 			const cleanResult = await listener(
@@ -138,22 +153,10 @@ describe("write hash-echo guard", () => {
 			const previewText = await servedPreviewForFile(servedPath, cwd, "session-a");
 
 			await expect(
-				servedHashEchoDenial(
-					io,
-					servedPath,
-					previewText,
-					cwd,
-					"session-b",
-				),
+				servedHashEchoDenial(io, servedPath, previewText, cwd, "session-b"),
 			).resolves.toBeUndefined();
 			await expect(
-				servedHashEchoDenial(
-					io,
-					otherPath,
-					previewText,
-					cwd,
-					"session-a",
-				),
+				servedHashEchoDenial(io, otherPath, previewText, cwd, "session-a"),
 			).resolves.toBeUndefined();
 		});
 	});
@@ -186,7 +189,13 @@ describe("write hash-echo guard", () => {
 			await writeFile(path, "line\n", "utf-8");
 			const abs = await resolveTarget(path);
 			await recordServed("sess", abs, [{ position: 0, hash: "Ab3" }]);
-			const reason = await servedHashEchoDenial(io, path, "Ab3│line\n", cwd, "sess");
+			const reason = await servedHashEchoDenial(
+				io,
+				path,
+				"Ab3│line\n",
+				cwd,
+				"sess",
+			);
 			expect(reason).toBe(
 				`[E_WRITE_HASH_ECHO] Refused write to ${path}: line 1 begins with the exact Ab3│ anchor served for this session, path, and line. HASH│ anchors are tool output, not file content. Retry with file content only (remove the entire copied anchor chain). Nothing was written.`,
 			);
