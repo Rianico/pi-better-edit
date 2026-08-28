@@ -66,7 +66,8 @@
     "eval:hashline": "node benchmarks/hashline-compare.mjs",
     "benchmark:tokens": "node benchmarks/token-economics.mjs",
     "benchmark:practical": "node scripts/practical-token-benchmark.mjs",
-    "test:runtime": "node scripts/runtime-edge-test.mjs"
+    "test:runtime": "node scripts/runtime-edge-test.mjs",
+    "prepare": "husky"
   },
   "devDependencies": {
     "@earendil-works/pi-coding-agent": "^0.84.0",
@@ -80,6 +81,7 @@
     "conventional-changelog-conventionalcommits": "^10.4.0",
     "eslint": "^10.7.0",
     "gpt-tokenizer": "4.0.0",
+    "husky": "^9.1.7",
     "semantic-release": "^25.0.9",
     "typescript": "^5.8.0",
     "typescript-eslint": "^8.65.0",

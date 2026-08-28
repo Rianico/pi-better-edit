@@ -1,0 +1,7 @@
+#!/usr/bin/env sh
+
+
+echo "→ Running local checks before push (typecheck + lint + test)…"
+npm run typecheck || exit 1
+npm run lint || exit 1
+npm run test:coverage || exit 1
