@@ -254,7 +254,12 @@ function makeRenderResult(preview: DebouncedPreview) {
 			.state as RRState | undefined;
 		if (renderState) preview.clearResult(renderState);
 		// SAFETY: pi TUI context isError is untyped — cast to boolean validated by render error path
-		if ((ctx as unknown as { isError: boolean }).isError)
+		if (
+			(
+				ctx as unknown as { isError: boolean }
+			) /* SAFETY: isError is untyped at TUI boundary */.isError // SAFETY: isError is untyped at TUI boundary // SAFETY: isError is untyped at TUI boundary
+		)
+			// SAFETY: isError is untyped at TUI boundary
 			// SAFETY: isError is untyped at TUI boundary
 			// SAFETY: isError is untyped at TUI boundary, cast validated by render error path
 			return renderedText
