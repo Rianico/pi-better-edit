@@ -79,6 +79,7 @@ export default tseslint.config(
       "src/file-kind.ts",
       "src/file-reader.ts",
       "src/read.ts",
+      "src/hashline/healing/**",
     ],
     rules: {
       "custom/no-comments": "off",
