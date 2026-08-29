@@ -1,37 +1,35 @@
-name: Release
-
+name: Verify and Release
 on:
-  push:
-    tags: ["v*"]
-
+  repository_dispatch:
+    types: [semantic-release]
+  workflow_dispatch:
 permissions:
-  contents: write
-  issues: write
-  pull-requests: write
-  id-token: write
-
+  contents: read
 jobs:
-  release:
+  verify:
     runs-on: ubuntu-latest
     steps:
-      - name: Checkout
-        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
-          fetch-depth: 0
-          persist-credentials: false
-
-      - name: Setup Node.js
-        uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4 # zizmor: ignore[cache-poisoning]
-        with:
-          node-version: 22
-          cache: npm
-
-      - name: Install
-        run: npm ci
-
-      - name: Release
-        run: npx semantic-release
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-
-# Alternative continuous: on: push: branches: [main] — document as comment, not default.
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4  # zizmor: ignore[cache-poisoning]
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm audit signatures
+      - run: npm test
+  release:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      issues: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4  # zizmor: ignore[cache-poisoning]
+        with: { node-version: 22 }
+      - run: npm ci
+      - run: npm audit signatures
+      - run: npx semantic-release
+        env: { GITHUB_TOKEN: "${{ secrets.GITHUB_TOKEN }}" }

@@ -14,4 +14,4 @@ Single-context — one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs
 
 ### Contribution
 
-Conventional commits & changelog: see `CONTRIBUTING.md` — do not edit `CHANGELOG.md` (maintainers, tag push creates `## [X.Y.Z]`).
+Conventional commits & changelog: see CONTRIBUTING.md

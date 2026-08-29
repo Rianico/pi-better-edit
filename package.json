@@ -70,6 +70,8 @@
     "prepare": "husky"
   },
   "devDependencies": {
+    "@commitlint/cli": "^21.2.2",
+    "@commitlint/config-conventional": "^21.2.2",
     "@earendil-works/pi-coding-agent": "^0.84.0",
     "@eslint/js": "^10.0.1",
     "@semantic-release/changelog": "^7.0.0",
