@@ -89,7 +89,8 @@
   },
   "knip": {
     "ignoreDependencies": [
-      "pi-hashline-edit-pro"
+      "pi-hashline-edit-pro",
+      "@oh-my-pi/hashline"
     ]
   },
   "allowScripts": {

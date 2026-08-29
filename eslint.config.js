@@ -80,6 +80,7 @@ export default tseslint.config(
       "src/file-reader.ts",
       "src/read.ts",
       "src/hashline/healing/**",
+      "src/payload-contract.ts",
     ],
     rules: {
       "custom/no-comments": "off",

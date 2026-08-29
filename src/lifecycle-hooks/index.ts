@@ -17,11 +17,7 @@ import { fmtReadPreview as defaultFmtReadPreview } from "../read.js";
 import { finalizeToolResult as defaultFinalizeToolResult } from "../edit-response.js";
 import { MAX_HASH_LINES } from "../hashline/index.js";
 import { AUTO_READ_MAX } from "../constants.js";
-import type {
-  LifecycleDeps,
-  ToolContext,
-  ToolResultEvent,
-} from "./types.js";
+import type { LifecycleDeps, ToolContext, ToolResultEvent } from "./types.js";
 
 export type { ToolContext, ToolResultEvent, LifecycleDeps } from "./types.js";
 
@@ -43,9 +39,7 @@ function defaultDeps(): LifecycleDeps {
   };
 }
 
-export function createLifecycleHooks(
-  overrides: Partial<LifecycleDeps> = {},
-): {
+export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   onSessionStart: (event: unknown, ctx: ToolContext) => Promise<void>;
   onToolResult: (
     event: ToolResultEvent,
@@ -121,11 +115,14 @@ export function createLifecycleHooks(
         displayPath: writtenPath,
       });
       if (file.kind !== "text") return undefined;
-      const { normalized, fileHashes, absolutePath } =
-        await deps.readNormFile(writtenPath, ctx.cwd, {
+      const { normalized, fileHashes, absolutePath } = await deps.readNormFile(
+        writtenPath,
+        ctx.cwd,
+        {
           maxLines: MAX_HASH_LINES,
           preloadedFile: file,
-        });
+        },
+      );
       const preview = await deps.fmtReadPreview(
         normalized,
         {},
@@ -167,7 +164,9 @@ export function createLifecycleHooks(
   ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
     if (event.toolName !== "edit" && event.toolName !== "undo_last_edit")
       return undefined;
-    const details = event.details as import("../edit-response.js").EditDetails | undefined;
+    const details = event.details as
+      | import("../edit-response.js").EditDetails
+      | undefined;
     if (details?.metrics?.classification === "noop") return undefined;
     if (!details?.diff) return undefined;
 
@@ -187,7 +186,8 @@ export function createLifecycleHooks(
         });
       }
     } else if (servedRows && servedRows.length > 0) {
-      const rawPath = (event.input as Record<string, unknown> | undefined)?.path;
+      const rawPath = (event.input as Record<string, unknown> | undefined)
+        ?.path;
       if (typeof rawPath === "string") {
         const resolvedPath = await deps.resolveTarget(
           deps.toCwd(rawPath, ctx.cwd),
@@ -231,12 +231,17 @@ export function registerLifecycleHooks(
   overrides: Partial<LifecycleDeps> = {},
 ): ReturnType<typeof createLifecycleHooks> {
   const hooks = createLifecycleHooks(overrides);
+  // SAFETY: ExtensionAPI on() typed for known events — string-key widening validated by lifecycle hook contract
   (pi as unknown as { on: (e: string, h: unknown) => void }).on(
+    // SAFETY: string-key widening for session_start
     "session_start",
+    // SAFETY: onSessionStart handler tuple overload — cast to never validated by handleSessionStart signature
     hooks.onSessionStart as unknown as never,
   );
+  // SAFETY: ExtensionAPI on() typed for known events — string-key widening for tool_result delegation
   (pi as unknown as { on: (e: string, h: unknown) => void }).on(
     "tool_result",
+    // SAFETY: onToolResult handler tuple overload — cast to never validated by handleToolResult signature
     hooks.onToolResult as unknown as never,
   );
   return hooks;

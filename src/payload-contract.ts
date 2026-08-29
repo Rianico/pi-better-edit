@@ -1,9 +1,6 @@
 import { Type } from "typebox";
 import { EDITS_MAX_ITEMS } from "./constants.js";
 
-
-
-
 const normalizedEdit = Symbol("normalizedEdit");
 
 export type EditItem = {
@@ -21,7 +18,13 @@ type NormalizedPayload = NormalizedEditRequest & {
 	readonly [normalizedEdit]: true;
 };
 
-type RawPayload = string | number | boolean | null | undefined | Record<string, unknown>;
+type RawPayload =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| Record<string, unknown>;
 
 export type NormReqResult = NormalizedPayload | RawPayload;
 
@@ -29,15 +32,12 @@ function isRec(value: unknown): value is Record<string, unknown> {
 	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
-function isNormalizedEdit(
-	input: unknown,
-): input is Record<string, unknown> {
+function isNormalizedEdit(input: unknown): input is Record<string, unknown> {
 	return (
 		isRec(input) &&
 		(input as Record<string | symbol, unknown>)[normalizedEdit] === true
 	);
 }
-
 
 export const replacementTextSchema = Type.String({
 	description: 'Complete replacement for the range; use "" to delete',
@@ -78,7 +78,6 @@ export const editToolSchema = Type.Object(
 	{ additionalProperties: false },
 );
 
-
 const EDIT_TUPLE_HINT =
 	"Edit must be called with exactly one payload. Use the canonical payload " +
 	'{"path": path, "edits": [[remove_from, remove_to, replacement_text], ...]}: ' +
@@ -94,11 +93,11 @@ export const EDIT_SNIPPET =
 
 export const EDIT_GUIDELINES: string[] = [
 	'edit: `HASH` vs `HASH│content` — `HASH` is the bare 3-char (e.g. "wUp"), `HASH│content` is the full line from `read`/`diff` (e.g. `wUp│    "site": {`); never mix them.',
-	'edit: get `remove_from`/`remove_to` by copying only the 3 chars before `│` from `read` output — never include `│` or content after it.',
+	"edit: get `remove_from`/`remove_to` by copying only the 3 chars before `│` from `read` output — never include `│` or content after it.",
 	'edit: `replacement_text` is plain file content without `HASH│` — e.g. "    "site": {\\n        "class": SiteScraper," — never prefix lines with `HASH│`.',
 	'edit: every `\\n` in `replacement_text` separates lines; mirror trailing blank lines explicitly (use "" to delete a range).',
-	'edit: after a successful edit the returned diff shows fresh anchors (`HASH│content`) — copy new `HASH` values from there for the next edit; no need to re-read.',
-	'edit: `remove_from`/`remove_to` are inclusive; batch multiple edits to the same file only when independent — they apply atomically (fail → nothing written).',
+	"edit: after a successful edit the returned diff shows fresh anchors (`HASH│content`) — copy new `HASH` values from there for the next edit; no need to re-read.",
+	"edit: `remove_from`/`remove_to` are inclusive; batch multiple edits to the same file only when independent — they apply atomically (fail → nothing written).",
 ];
 
 function _getPayloadPromptFragments(): {
@@ -115,36 +114,30 @@ function _getPayloadPromptFragments(): {
 	};
 }
 
-
 function emitFilePathDeprecationWarning(
 	filePathValue: unknown,
 	context: string = "payload",
 ): void {
-	 
 	console.warn(
 		`[DEPRECATED] "file_path" is deprecated, use "path" instead (${context}). Received file_path=${JSON.stringify(filePathValue)}. This alias will be removed in a future version.`,
 	);
 }
 
-
 function _normalizeFilePathRecord(
 	record: Record<string, unknown>,
 	context: string = "payload",
 ): boolean {
-	if (
-		typeof record.path !== "string" &&
-		typeof record.file_path === "string"
-	) {
+	if (typeof record.path !== "string" && typeof record.file_path === "string") {
 		const fp = record.file_path as string;
 		emitFilePathDeprecationWarning(fp, context);
 		record.path = fp;
-		 
+
 		delete record.file_path;
 		return true;
 	}
 	if (typeof record.file_path === "string") {
 		emitFilePathDeprecationWarning(record.file_path, context);
-		 
+
 		delete record.file_path;
 		return true;
 	}
@@ -152,13 +145,12 @@ function _normalizeFilePathRecord(
 		if (record.file_path !== undefined) {
 			emitFilePathDeprecationWarning(record.file_path, context);
 		}
-		 
+
 		delete record.file_path;
 		return true;
 	}
 	return false;
 }
-
 
 function itemFromTuple(value: unknown): EditItem | undefined {
 	if (!Array.isArray(value) || value.length !== 3) return undefined;
@@ -203,7 +195,10 @@ export function editRequestFrom(
 	if (!("edits" in rec)) return undefined;
 	const edits = rec.edits;
 
-	if (effectivePath !== null && (typeof effectivePath !== "string" || (effectivePath as string).length === 0)) {
+	if (
+		effectivePath !== null &&
+		(typeof effectivePath !== "string" || (effectivePath as string).length === 0)
+	) {
 		return undefined;
 	}
 	if (!Array.isArray(edits) || edits.length === 0) return undefined;
@@ -218,8 +213,8 @@ export function editRequestFrom(
 
 export function normReq(input: unknown): NormReqResult {
 	const valid = editRequestFrom(input);
-	// SAFETY: passthrough of unvalidated input as RawPayload preserves runtime value for caller validation; type is narrowed to string|number|boolean|null|undefined|Record<string, unknown> tested in replace-normalize.
-	if (!valid) return input as unknown as NormReqResult;
+	// SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
+	if (!valid) return input as NormReqResult; // SAFETY: input unvalidated at admission, preserves runtime value for caller validation
 	const record = { path: valid.path, edits: valid.edits };
 	Object.defineProperty(record, normalizedEdit, {
 		value: true,
@@ -250,7 +245,6 @@ export function prepareEditArguments(args: unknown): Record<string, unknown> {
 	throw new Error(`[E_BAD_SHAPE] ${EDIT_TUPLE_HINT} ${describeReceived(args)}`);
 }
 
-
 export function getPreviewInput(
 	args: unknown,
 ): { path: string | null; edits: EditItem[] } | null {
@@ -258,7 +252,6 @@ export function getPreviewInput(
 	if (!req) return null;
 	return req;
 }
-
 
 function rejectUnknownFields(
 	obj: Record<string, unknown>,
@@ -299,7 +292,7 @@ export function assertReq(
 
 	if (!Array.isArray(request.edits) || request.edits.length === 0) {
 		throw new Error(
-			"[E_BAD_SHAPE] Edit request requires a non-empty \"edits\" array.",
+			'[E_BAD_SHAPE] Edit request requires a non-empty "edits" array.',
 		);
 	}
 
