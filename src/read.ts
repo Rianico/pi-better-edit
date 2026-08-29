@@ -14,11 +14,7 @@ import { readNormFile } from "./file-reader.js";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "./hashline/index.js";
 import type { ServedRow } from "./hashline/served.js";
 import { toCwd } from "./paths.js";
-import {
-	recordServedTruncated,
-	clearDriftReported,
-	sessionKeyFor,
-} from "./served-state.js";
+import { sessionFromContext } from "./served-session/index.js";
 import { abortIf, isRec, normalizeFilePath } from "./utils.js";
 import { fileSnap } from "./file-reader.js";
 import { visLines } from "./utils.js";
@@ -253,13 +249,9 @@ export function regRead(pi: ExtensionAPI): void {
 				fileHashes,
 				absolutePath,
 			);
-			await recordServedTruncated(
-				sessionKeyFor(ctx),
-				resolvedPath,
-				preview.served,
-				visLines(normalized).length,
-			);
-			await clearDriftReported(sessionKeyFor(ctx), resolvedPath);
+			const session = sessionFromContext(ctx as { sessionManager?: { getSessionId(): string } }, resolvedPath);
+			await session.recordTruncated(preview.served, visLines(normalized).length);
+			await session.clearDrift();
 			let snapshotId: string | undefined;
 			try {
 				snapshotId = (await fileSnap(absolutePath)).snapshotId;

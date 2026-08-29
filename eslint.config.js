@@ -73,6 +73,8 @@ export default tseslint.config(
       "src/write-hook.ts",
       "src/hashline/served-verification.ts",
       "src/hashline/served.ts",
+      "src/served-state.ts",
+      "src/served-session/**",
     ],
     rules: {
       "custom/no-comments": "off",
