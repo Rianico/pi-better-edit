@@ -38,13 +38,9 @@ import { DebouncedPreview } from "./preview-controller.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { findSnapshotPathsByHashes } from "./snapshot-store.js";
 import { sessionKeyFor } from "./served-state.js";
-import {
-	apply as pipelineApply,
-	execEdits as pipelineExecEdits,
-	previewEdits as pipelinePreview,
-	type PipelineOptions,
-	type ProcessedEditFile,
-} from "./edit-pipeline.js";
+import { execEdits as pipelineExecEdits, type PipelineOptions, type ProcessedEditFile } from "./edit-pipeline.js";
+import { execute as engineExecute, preview as enginePreview } from "./mutation-engine/engine.js";
+import { isMutationSuccess } from "./mutation-engine/types.js";
 
 void EDIT_DESCRIPTION;
 export { assertReq };
@@ -155,16 +151,19 @@ export async function compPreview(
 			}
 		}
 		assertReq(normalized);
-		const file = await pipelinePreview(normalized, cwd, {
+		const result = await enginePreview(normalized, cwd, {
 			accessMode: constants.R_OK,
 		});
+		if (!isMutationSuccess(result)) {
+			return { error: result.message };
+		}
+		const file = result.raw;
 		if (pathWarning) file.warnings.unshift(pathWarning);
 		if (file.originalNormalized === file.result) {
 			return {
 				error: `No changes made to ${file.path}. The edit produced identical content.`,
 			};
 		}
-
 		return {
 			diff: genDiff(
 				file.originalNormalized,
@@ -178,7 +177,6 @@ export async function compPreview(
 		return { error: error instanceof Error ? error.message : String(error) };
 	}
 }
-
 type ToolDef = ToolDefinition<any, EditDetails, RRState> & {
 	renderShell?: "default" | "self";
 };
@@ -243,41 +241,45 @@ export function buildToolDef(): ToolDef {
 
 		renderResult: makeRenderResult(preview) as unknown as ToolDef["renderResult"],
 
-		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-			const canonical = normReq(params);
-			assertReq(canonical);
-			let pathWarning: string | undefined;
-			if (canonical.path === null) {
-				const resolution = await resolveMissingPath({
-					path: canonical.path,
-					remove_from: canonical.edits[0]!.remove_from,
-					remove_to: canonical.edits[0]!.remove_to,
-				});
-				if (resolution) {
-					canonical.path = resolution.path;
-					pathWarning = resolution.warning;
-				}
-			}
-			assertReq(canonical);
-			if (canonical.path === null) {
-				throw new Error(
-					"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
-				);
-			}
+    async execute(_toolCallId, params, signal, _onUpdate, ctx) {
+      const canonical = normReq(params);
+      assertReq(canonical);
+      let pathWarning: string | undefined;
+      if (canonical.path === null) {
+        const resolution = await resolveMissingPath({
+          path: canonical.path,
+          remove_from: canonical.edits[0]!.remove_from,
+          remove_to: canonical.edits[0]!.remove_to,
+        });
+        if (resolution) {
+          canonical.path = resolution.path;
+          pathWarning = resolution.warning;
+        }
+      }
+      assertReq(canonical);
+      if (canonical.path === null) {
+        throw new Error(
+          "[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
+        );
+      }
 
-			const sessionKey = sessionKeyFor(ctx);
-			const { toolResult, raw } = await pipelineApply(canonical, ctx.cwd, {
-				accessMode: constants.R_OK | constants.W_OK,
-				signal,
-				sessionKey,
-			});
-			if (pathWarning) {
-				raw.warnings.unshift(pathWarning);
-				const patched = buildBatchResult([toSection(raw)]);
-				return patched;
-			}
-			return toolResult;
-		},
+      const sessionKey = sessionKeyFor(ctx);
+      const result = await engineExecute(canonical, ctx.cwd, {
+        accessMode: constants.R_OK | constants.W_OK,
+        signal,
+        sessionKey,
+      });
+      // SAFETY: exhaustive switch on discriminated MutationResult — no isError flag checks, preserves model-facing signal.
+      if (isMutationSuccess(result)) {
+        if (pathWarning) {
+          result.raw.warnings.unshift(pathWarning);
+          const patched = buildBatchResult([toSection(result.raw)]);
+          return patched;
+        }
+        return result.toolResult;
+      }
+      throw new Error(result.message);
+    },
 	};
 }
 
