@@ -227,7 +227,7 @@ function makeRenderCall(preview: DebouncedPreview) {
 // SAFETY: pi TUI context isError is untyped at boundary — helper isolates cast validated by render error path
 function isErrorContext(ctx: unknown): boolean {
 	// SAFETY: isError is untyped at TUI boundary — cast validated by render error path
-	return (ctx as unknown as { isError: boolean }).isError;
+	return (ctx as unknown as { isError: boolean }).isError; // SAFETY: isError is untyped at TUI boundary
 }
 
 function makeRenderResult(preview: DebouncedPreview) {
