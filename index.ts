@@ -1,22 +1,17 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { initHasher } from "./src/hashline/index.js";
 import { regEdit } from "./src/edit.js";
 import { regEditUndo, clearUndo } from "./src/edit-undo.js";
-import { regRead, fmtReadPreview } from "./src/read.js";
+import { regRead } from "./src/read.js";
 import { regReadSkill } from "./src/read-skill.js";
 import { finalizeToolResult, type EditDetails } from "./src/edit-response.js";
-import { MAX_HASH_LINES } from "./src/hashline/index.js";
-import { AUTO_READ_MAX } from "./src/constants.js";
 import { pruneMissingAll } from "./src/snapshot-store.js";
 import { sessionFromContext } from "./src/served-session/index.js";
 import { registerWriteHook } from "./src/write-hook.js";
-import { readNormFile } from "./src/file-reader.js";
-import { loadFileKindAndText } from "./src/file-kind.js";
+import { prepareFile } from "./src/file-content/index.js";
+import { visLines } from "./src/utils.js";
 import { toCwd } from "./src/paths.js";
 import { resolveTarget } from "./src/fs-write.js";
-import { valAccess } from "./src/validation.js";
-import { visLines } from "./src/utils.js";
 
 export default function (pi: ExtensionAPI): void {
 	regRead(pi);
@@ -55,34 +50,21 @@ export default function (pi: ExtensionAPI): void {
 			}
 			if (typeof writtenPath !== "string") return;
 			try {
-				const resolvedPath = await resolveTarget(toCwd(writtenPath, ctx.cwd));
-				await valAccess(resolvedPath, writtenPath);
-				const file = await loadFileKindAndText(resolvedPath, {
-					maxLines: MAX_HASH_LINES,
-					displayPath: writtenPath,
+				const prepared = await prepareFile(writtenPath, ctx.cwd, {});
+				if (prepared.kind !== "text") return;
+				const session = sessionFromContext(
+					ctx as { sessionManager?: { getSessionId(): string } },
+					prepared.absolutePath,
+				);
+				await session.recordDiff(prepared.served, {
+					resultLineCount: visLines(prepared.normalized).length,
 				});
-				if (file.kind !== "text") return;
-				const { normalized, fileHashes, absolutePath } = await readNormFile(
-					writtenPath,
-					ctx.cwd,
-					{ maxLines: MAX_HASH_LINES, preloadedFile: file },
-				);
-				const preview = await fmtReadPreview(
-					normalized,
-					{},
-					fileHashes,
-					absolutePath,
-					DEFAULT_MAX_BYTES,
-					AUTO_READ_MAX,
-				);
-				const session = sessionFromContext(ctx as { sessionManager?: { getSessionId(): string } }, absolutePath);
-				await session.recordDiff(preview.served, { resultLineCount: visLines(normalized).length });
 				return {
 					content: [
 						...(event.content ?? []),
 						{
 							type: "text",
-							text: `\n\n--- Auto-read (hashline anchors) ---\n${preview.text}`,
+							text: `\n\n--- Auto-read (hashline anchors) ---\n${prepared.preview}`,
 						},
 					],
 				};
@@ -110,8 +92,14 @@ export default function (pi: ExtensionAPI): void {
 				if (entry.servedRows.length === 0) continue;
 				try {
 					const resolvedPath = await resolveTarget(toCwd(entry.path, ctx.cwd));
-					const session = sessionFromContext(ctx as { sessionManager?: { getSessionId(): string } }, resolvedPath);
-					await session.recordDiff(entry.servedRows, { resultLineCount: entry.resultLineCount, firstChangedLine: entry.firstChangedLine });
+					const session = sessionFromContext(
+						ctx as { sessionManager?: { getSessionId(): string } },
+						resolvedPath,
+					);
+					await session.recordDiff(entry.servedRows, {
+						resultLineCount: entry.resultLineCount,
+						firstChangedLine: entry.firstChangedLine,
+					});
 				} catch (error) {
 					// SAFETY: best-effort serve recording after edit — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.
 					console.error("Failed to record served rows from edit diff:", error);
@@ -122,8 +110,14 @@ export default function (pi: ExtensionAPI): void {
 				const rawPath = (event.input as Record<string, unknown> | undefined)?.path;
 				if (typeof rawPath === "string") {
 					const resolvedPath = await resolveTarget(toCwd(rawPath, ctx.cwd));
-					const session = sessionFromContext(ctx as { sessionManager?: { getSessionId(): string } }, resolvedPath);
-					await session.recordDiff(servedRows, { resultLineCount: details.resultLineCount, firstChangedLine: details.firstChangedLine });
+					const session = sessionFromContext(
+						ctx as { sessionManager?: { getSessionId(): string } },
+						resolvedPath,
+					);
+					await session.recordDiff(servedRows, {
+						resultLineCount: details.resultLineCount,
+						firstChangedLine: details.firstChangedLine,
+					});
 				}
 			} catch (error) {
 				// SAFETY: best-effort serve recording after edit — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.

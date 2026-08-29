@@ -75,6 +75,10 @@ export default tseslint.config(
       "src/hashline/served.ts",
       "src/served-state.ts",
       "src/served-session/**",
+      "src/file-content/**",
+      "src/file-kind.ts",
+      "src/file-reader.ts",
+      "src/read.ts",
     ],
     rules: {
       "custom/no-comments": "off",
