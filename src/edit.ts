@@ -224,6 +224,12 @@ function makeRenderCall(preview: DebouncedPreview) {
 		return text;
 	};
 }
+// SAFETY: pi TUI context isError is untyped at boundary — helper isolates cast validated by render error path
+function isErrorContext(ctx: unknown): boolean {
+	// SAFETY: isError is untyped at TUI boundary — cast validated by render error path
+	return (ctx as unknown as { isError: boolean }).isError;
+}
+
 function makeRenderResult(preview: DebouncedPreview) {
 	return (
 		result: unknown,
@@ -254,11 +260,7 @@ function makeRenderResult(preview: DebouncedPreview) {
 			.state as RRState | undefined;
 		if (renderState) preview.clearResult(renderState);
 		// SAFETY: pi TUI context isError is untyped — cast to boolean validated by render error path
-		if (
-			(
-				ctx as unknown as { isError: boolean }
-			) /* SAFETY: isError is untyped at TUI boundary */.isError // SAFETY: isError is untyped at TUI boundary // SAFETY: isError is untyped at TUI boundary
-		)
+		if (isErrorContext(ctx))
 			// SAFETY: isError is untyped at TUI boundary
 			// SAFETY: isError is untyped at TUI boundary
 			// SAFETY: isError is untyped at TUI boundary, cast validated by render error path
