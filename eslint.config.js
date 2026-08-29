@@ -68,10 +68,18 @@ export default tseslint.config(
   {
     files: [
       "src/edit-pipeline.ts",
+      "src/mutation-engine/**",
       "src/noop-guard.ts",
       "src/write-hook.ts",
       "src/hashline/served-verification.ts",
       "src/hashline/served.ts",
+      "src/served-state.ts",
+      "src/served-session/**",
+      "src/file-content/**",
+      "src/file-kind.ts",
+      "src/file-reader.ts",
+      "src/read.ts",
+      "src/hashline/healing/**",
     ],
     rules: {
       "custom/no-comments": "off",
