@@ -2,6 +2,13 @@
 
 All notable changes to this project will be documented in this file.
 
+## [1.4.0](https://github.com/Rianico/pi-better-edit/compare/v1.3.0...v1.4.0) (2026-08-29)
+
+### Code Refactoring
+
+* consolidate architecture deepening tranche (C1–C5) into `map/architecture-deepening` — `MutationEngine`, `ServedSession`, `FileContent`, `LifecycleHooks`, `HealingStrategy` ([#53](https://github.com/Rianico/pi-better-edit/pull/53))
+* add SAFETY for `x as unknown as` casts and fix unlisted/cache blockers for v1.4.0
+
 ## [1.3.0](https://github.com/Rianico/pi-better-edit/compare/v1.2.3...v1.3.0) (2026-08-28)
 
 ### Features
