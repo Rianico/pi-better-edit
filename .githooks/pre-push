@@ -1,6 +1,8 @@
 #!/usr/bin/env bash
 set -e
-# pre-push hook: warn if CHANGELOG.md Unreleased stale
+# skip in CI / when uv missing — semantic-release push must not fail on hook
+if [ "${HUSKY:-}" = "0" ]; then exit 0; fi
+if ! command -v uv >/dev/null 2>&1; then exit 0; fi
 while read -r local_ref local_sha remote_ref remote_sha; do
   [ "$local_sha" = "0000000000000000000000000000000000000000" ] && continue
   range="$remote_sha..$local_sha"
