@@ -1,4 +1,5 @@
 [post-start]
+setup-hooks = "git config core.hooksPath .githooks"
 copy = "wt step copy-ignored"
 
 [pre-merge]

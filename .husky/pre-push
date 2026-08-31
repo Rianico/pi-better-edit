@@ -1,6 +1,5 @@
-#!/usr/bin/env sh
-
-
-echo "→ Running local checks before push (typecheck + lint)…"
-npm run typecheck || exit 1
-npm run lint || exit 1
+#!/bin/sh
+# husky delegation — exec deterministic hook in .githooks
+# Keeps single source of truth in .githooks/pre-push; husky sets core.hooksPath=.husky
+# so this delegation ensures the changelog guard remains live under husky.
+exec .githooks/pre-push "$@"
