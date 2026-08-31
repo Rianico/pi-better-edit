@@ -1,14 +1,14 @@
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-## [Unreleased]
+## [1.4.1](https://github.com/Rianico/pi-better-edit/compare/v1.4.0...v1.4.1) (2026-08-31)
 
 ### Bug Fixes
 
-- **hashline:** remove boundary-dup auto-fix, keep pure edit
-- **ci:** lower statements coverage threshold to 89 to match actual
-- **ci:** repair lockfile and bump node to 22 for semantic-release
+* **ci:** lower statements coverage threshold to 89 to match actual ([f5b58a5](https://github.com/Rianico/pi-better-edit/commit/f5b58a59d78c8e1c243642f362f995904b12eb68))
+* **ci:** repair lockfile and bump node to 22 for semantic-release ([62ab62a](https://github.com/Rianico/pi-better-edit/commit/62ab62a78bf95a598671d3848aa59dec1f902fb7))
+* **hashline:** remove boundary-dup auto-fix, keep pure edit ([#54](https://github.com/Rianico/pi-better-edit/issues/54)) ([7c55b57](https://github.com/Rianico/pi-better-edit/commit/7c55b5713f43a73dc2f972e4b99050b036d2c625))
+
+# Changelog
+
+All notable changes to this project will be documented in this file.
 
 ## [1.4.0](https://github.com/Rianico/pi-better-edit/compare/v1.3.0...v1.4.0) (2026-08-29)
 
