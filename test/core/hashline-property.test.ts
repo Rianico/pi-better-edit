@@ -10,15 +10,7 @@ import { useTestHome, expectedEditContent } from "../support/fixtures";
 
 const home = useTestHome();
 
-function replayFixes(
-	repl: string[],
-	autoFixes: { removedLineIndex: number }[] | undefined,
-): string[] {
-	if (!autoFixes) return repl;
-	const corrected = [...repl];
-	for (const fix of autoFixes) corrected.splice(fix.removedLineIndex, 1);
-	return corrected;
-}
+
 
 function replToContent(repl: string[]): string {
   if (repl.length > 0 && repl.every((line) => line === "")) {
@@ -164,7 +156,7 @@ describe("property: single random edit per call", () => {
       });
       const result = applyEdit(content, edit, undefined, hashes, home.testPath);
       const correctedExpected = expectedEditContent(
-        lines, span.s, span.e, replayFixes(span.repl, result.autoFixes), content.endsWith("\n"),
+        lines, span.s, span.e, span.repl, content.endsWith("\n"),
       );
       expect(result.content).toBe(correctedExpected);
       const removedHashes = new Set(hashes.slice(span.s - 1, span.e));
@@ -207,7 +199,7 @@ describe("property: sequential random edits", () => {
           replacement_text: replToContent(span.repl),
         });
         const result = applyEdit(current, edit, undefined, currentHashes, home.testPath);
-        applied.push({ s: span.s, e: span.e, repl: replayFixes(span.repl, result.autoFixes) });
+        applied.push({ s: span.s, e: span.e, repl: span.repl });
         current = result.content;
       }
       let expectedLines = lines;
@@ -292,7 +284,7 @@ describe("property: chained stable mapping at every step", () => {
         }
         if (result.content === content) continue;
         const expected = expectedEditContent(
-          lines, span.s, span.e, replayFixes(span.repl, result.autoFixes), content.endsWith("\n"),
+          lines, span.s, span.e, span.repl, content.endsWith("\n"),
         );
         expect(result.content).toBe(expected);
         const removedHashes = new Set(hashes.slice(span.s - 1, span.e));

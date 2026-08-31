@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyEdit, lineHashes, resEdit, canon, findNewEdge } from "../../src/hashline";
+import { applyEdit, lineHashes, resEdit } from "../../src/hashline";
 import {
-  firstNonEmptyIndex,
-  lastNonEmptyIndex,
   splitLines,
 } from "../../src/utils";
 import { useTestHome, expectedEditContent } from "../support/fixtures";
@@ -67,109 +65,12 @@ function randRepl(rnd: () => number, lines: string[], s: number, e: number): str
   const repl = Array.from({ length: randInt(rnd, 0, 4) }, () => randLine(rnd));
   if (repl.length > 0 && prev !== undefined && rnd() < 0.5) repl[0] = prev;
   if (repl.length > 0 && next !== undefined && rnd() < 0.5) repl[repl.length - 1] = next;
-  const afterAvail = n - e;
-  if (afterAvail >= 2 && rnd() < 0.3) {
-    const runLen = randInt(rnd, 2, Math.min(4, afterAvail));
-    for (let k = runLen - 1; k >= 0; k--) repl.unshift(lines[e + k]!);
-  }
-  const beforeAvail = s - 1;
-  if (beforeAvail >= 2 && rnd() < 0.3) {
-    const runLen = randInt(rnd, 2, Math.min(4, beforeAvail));
-    for (let k = runLen - 1; k >= 0; k--) repl.push(lines[s - 2 - k]!);
-  }
   return repl;
-}
-
-function sectionCount(lines: string[], start: number, length: number): number {
-  const canonLines = lines.map((line) => canon(line));
-  let count = 0;
-  for (let i = 0; i + length <= canonLines.length; i++) {
-    let k = 0;
-    while (k < length && canonLines[i + k] === canonLines[start + k]) k++;
-    if (k === length) count++;
-  }
-  return count;
-}
-
-function applyAutoFix(
-  repl: string[],
-  fileLines: string[],
-  s: number,
-  e: number,
-): { fixed: string[]; fixes: { kind: string; removedLine: string; removedLineIndex: number }[] } {
-  const dups: { kind: string; index: number }[] = [];
-  const lastIdx = lastNonEmptyIndex(repl);
-  if (lastIdx >= 0) {
-    for (let k = 0; lastIdx - k >= 0 && e + k < fileLines.length; k++) {
-      if (repl[lastIdx - k] !== fileLines[e + k]) break;
-      dups.push({ kind: "trailing", index: lastIdx - k });
-    }
-  }
-  const firstIdx = firstNonEmptyIndex(repl);
-  if (firstIdx >= 0) {
-    for (let k = 0; firstIdx + k < repl.length && s - 2 - k >= 0; k++) {
-      if (repl[firstIdx + k] !== fileLines[s - 2 - k]) break;
-      dups.push({ kind: "leading", index: firstIdx + k });
-    }
-  }
-  const rangeLines = fileLines.slice(s - 1, e);
-  const firstNew = findNewEdge(repl, rangeLines, false);
-  if (firstNew) {
-    let runLen = 0;
-    while (
-      firstNew.index + runLen < repl.length &&
-      e + runLen < fileLines.length &&
-      canon(repl[firstNew.index + runLen]!) === canon(fileLines[e + runLen]!)
-    ) {
-      runLen++;
-    }
-    if (runLen > 0 && sectionCount(fileLines, e, runLen) === 1) {
-      for (let k = 0; k < runLen; k++) {
-        dups.push({ kind: "first-new-after", index: firstNew.index + k });
-      }
-    }
-  }
-  const lastNew = findNewEdge(repl, rangeLines, true);
-  if (lastNew) {
-    let runLen = 0;
-    while (
-      lastNew.index - runLen >= 0 &&
-      s - 2 - runLen >= 0 &&
-      canon(repl[lastNew.index - runLen]!) === canon(fileLines[s - 2 - runLen]!)
-    ) {
-      runLen++;
-    }
-    if (runLen > 0) {
-      const sectionStart = s - 1 - runLen;
-      if (sectionCount(fileLines, sectionStart, runLen) === 1) {
-        for (let k = 0; k < runLen; k++) {
-          dups.push({ kind: "last-new-before", index: lastNew.index - k });
-        }
-      }
-    }
-  }
-  const seen = new Set<number>();
-  const unique: { kind: string; index: number }[] = [];
-  for (const dup of dups) {
-    if (seen.has(dup.index)) continue;
-    seen.add(dup.index);
-    unique.push(dup);
-  }
-  unique.sort((a, b) => b.index - a.index);
-  const fixed = [...repl];
-  const fixes: { kind: string; removedLine: string; removedLineIndex: number }[] = [];
-  for (const dup of unique) {
-    if (dup.index < 0 || dup.index >= fixed.length) continue;
-    fixes.push({ kind: dup.kind, removedLine: fixed[dup.index]!, removedLineIndex: dup.index });
-    fixed.splice(dup.index, 1);
-  }
-  return { fixed, fixes };
 }
 
 type StepResult = {
   content: string;
   hashes: string[];
-  autofixed: boolean;
   noop: boolean;
 };
 
@@ -184,8 +85,7 @@ async function runStep(
   const s = randInt(rnd, 1, n);
   const e = randInt(rnd, s, n);
   const repl = randRepl(rnd, lines, s, e);
-  const { fixed, fixes } = applyAutoFix(repl, lines, s, e);
-  const expected = expectedEditContent(lines, s, e, fixed, content.endsWith("\n"));
+  const expected = expectedEditContent(lines, s, e, repl, content.endsWith("\n"));
   const edit = resEdit({
     remove_from: hashes[s - 1]!,
     remove_to: hashes[e - 1]!,
@@ -200,18 +100,9 @@ async function runStep(
   }
   expect(result.content).toBe(expected);
   if (expected === content) {
-    expect(result.autoFixes).toBeUndefined();
     const rehashed = await lineHashes(content, path, { content, hashes });
     expect(rehashed).toEqual(hashes);
-    return { content, hashes, autofixed: fixes.length > 0, noop: true };
-  }
-  if (fixes.length > 0) {
-    expect(result.autoFixes).toBeDefined();
-    expect(result.autoFixes!.map((f) => f.kind)).toEqual(fixes.map((f) => f.kind));
-    expect(result.autoFixes!.map((f) => f.removedLine)).toEqual(fixes.map((f) => f.removedLine));
-    expect(result.autoFixes!.map((f) => f.removedLineIndex)).toEqual(fixes.map((f) => f.removedLineIndex));
-  } else {
-    expect(result.autoFixes).toBeUndefined();
+    return { content, hashes, noop: true };
   }
   const removedHashes = new Set(hashes.slice(s - 1, e));
   const resultHashes = await lineHashes(expected, path, { content, hashes, removedHashes });
@@ -227,12 +118,11 @@ async function runStep(
   }
   const reloaded = await lineHashes(expected, path);
   expect(reloaded).toEqual(resultHashes);
-  return { content: expected, hashes: resultHashes, autofixed: fixes.length > 0, noop: false };
+  return { content: expected, hashes: resultHashes, noop: false };
 }
 
-describe("fuzz: boundary-dup autocorrection with hash stability", () => {
-  it("applies 1500 random edits with boundary dups and keeps mapping invariants", async () => {
-    let autofixed = 0;
+describe("fuzz: pure edit with hash stability (no boundary stripping)", () => {
+  it("applies 1500 random edits and keeps mapping invariants", async () => {
     let noop = 0;
     for (let iter = 0; iter < 1500; iter++) {
       const rnd = mulberry32(iter * 32452843 + 5);
@@ -241,15 +131,12 @@ describe("fuzz: boundary-dup autocorrection with hash stability", () => {
       const hashes = await lineHashes(content, path);
       const state = await runStep(content, hashes, path, rnd);
       if (!state) continue;
-      if (state.autofixed) autofixed++;
       if (state.noop) noop++;
     }
-    expect(autofixed).toBeGreaterThan(100);
     expect(noop).toBeGreaterThan(20);
   }, 120_000);
 
-  it("keeps mapping invariants across chained random edits with boundary dups", async () => {
-    let autofixed = 0;
+  it("keeps mapping invariants across chained random edits", async () => {
     for (let iter = 0; iter < 100; iter++) {
       const rnd = mulberry32(iter * 15485867 + 11);
       const path = `${home.testPath}-chain-${iter}`;
@@ -259,7 +146,6 @@ describe("fuzz: boundary-dup autocorrection with hash stability", () => {
       for (let step = 0; step < 8 && edited < 6; step++) {
         const state = await runStep(content, hashes, path, rnd);
         if (!state) continue;
-        if (state.autofixed) autofixed++;
         if (state.content !== content) edited++;
         content = state.content;
         hashes = state.hashes;
@@ -269,6 +155,5 @@ describe("fuzz: boundary-dup autocorrection with hash stability", () => {
         expect(reloaded).toEqual(hashes);
       }
     }
-    expect(autofixed).toBeGreaterThan(50);
   }, 120_000);
 });

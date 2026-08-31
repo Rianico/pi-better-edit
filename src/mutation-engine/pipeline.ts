@@ -88,7 +88,6 @@ import {
 	applyEdit,
 	MAX_HASH_LINES,
 	resEdit,
-	type AutoFix,
 	type HEdit,
 	type NEdit,
 } from "../hashline/index.js";
@@ -139,7 +138,6 @@ function countLineChanges(
 	edit: HEdit,
 	originalHashes: string[],
 	isNoop: boolean,
-	removedAutoFixes: number,
 ): { totalAddedLines: number; totalRemovedLines: number } {
 	if (isNoop) return { totalAddedLines: 0, totalRemovedLines: 0 };
 	let totalRemovedLines = 0;
@@ -149,7 +147,7 @@ function countLineChanges(
 		totalRemovedLines = Math.abs(endLine - startLine) + 1;
 	}
 	return {
-		totalAddedLines: Math.max(0, edit.content_lines.length - removedAutoFixes),
+		totalAddedLines: isNoop ? 0 : edit.content_lines.length,
 		totalRemovedLines,
 	};
 }
@@ -239,7 +237,6 @@ type ApplyOneEditOutcome =
 			range: ResolvedRange;
 			firstChangedLine: number | undefined;
 			lastChangedLine: number | undefined;
-			autoFixes: AutoFix[] | undefined;
 			anchorWarnings: string[] | undefined;
 	  }
 	| {
@@ -321,7 +318,6 @@ async function applyOneEdit(
 		range: anchorResult.range,
 		firstChangedLine: anchorResult.firstChangedLine,
 		lastChangedLine: anchorResult.lastChangedLine,
-		autoFixes: anchorResult.autoFixes,
 		anchorWarnings,
 	};
 }
@@ -489,15 +485,9 @@ async function runMutations(
 			}
 			continue;
 		}
-
 		appliedCount += 1;
 		const { totalAddedLines: added, totalRemovedLines: removed } =
-			countLineChanges(
-				edit,
-				originalHashes,
-				false,
-				outcome.autoFixes?.length ?? 0,
-			);
+			countLineChanges(edit, originalHashes, false);
 		totalAddedLines += added;
 		totalRemovedLines += removed;
 		lastApplied = {

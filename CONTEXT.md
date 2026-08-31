@@ -13,7 +13,7 @@ The tool's per-file, per-line record of the hash last delivered to the model for
 _Avoid_: expectation, last read, snapshot
 
 **model–tool boundary**:
-The separation of responsibilities: the tool owns verification of what the model submits; the model owns intent. The tool never relies on the model to supply verification data or to perform pre-edit rituals (re-reading) to keep its own checks honest.
+The separation of responsibilities: the tool owns verification of what the model submits; the model owns intent. The tool never relies on the model to supply verification data or to perform pre-edit rituals (re-reading) to keep its own checks honest, and never silently rewrites `replacement_text` to "fix" the model's intent (e.g. stripping lines that duplicate outside the range). `range = hash_bounds, replacement = replacement_text` is pure — no surprise rewrite.
 _Avoid_: —
 
 **anchor philosophy**:
@@ -116,3 +116,11 @@ _Avoid_: E_HASH_ECHO (ambiguous between write/edit)
 **E_EDIT_HASH_ECHO**:
 Refusal of an `edit` whose `replacement_text` contains a served hash echo at the range-relative position — `[E_EDIT_HASH_ECHO] Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and range-relative line. Remove the copied anchors and retry. Nothing was written.` Deny, not strip — fail-loud, compensable (AA: A).
 _Avoid_: E_WRITE_HASH_ECHO (write-only), generic strip
+
+**boundary duplication** (historical — removed):
+Former auto-fix that silently stripped replacement lines duplicating lines outside the range (`trailingDups`/`leadingDups` with byte `===`, and `firstNewAfterDups`/`lastNewBeforeDups` with `canon()`+`sectionIsUnique`). Removed as a fix: the tool is now pure `range = hash_bounds, replacement = replacement_text`. A true duplicate stays loud in the post-edit diff/drift signal for the model to fix next turn; silent removal is irreversible (brace-balance loss). No new error code — the duplicate is preserved verbatim.
+_Avoid_: dedup, autofix, trimming
+
+**pure edit**:
+The invariant that an edit is exactly the resolved range replaced by the exact `replacement_text` with no boundary-dedup rewrite. Verified by `valEdit → verifyServed → resToSpan` with no intermediate splice.
+_Avoid_: smart edit, autocorrection
