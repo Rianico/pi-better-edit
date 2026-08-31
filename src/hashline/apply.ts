@@ -16,8 +16,6 @@ import {
 	type RHEdit,
 	type NEdit,
 	type HEdit,
-	type AutoFix,
-	type BDup,
 } from "./resolve.js";
 
 type LIdx = {
@@ -197,7 +195,6 @@ export function applyEdit(
 	range: ResolvedRange;
 	warnings?: string[];
 	noopEdit?: NEdit;
-	autoFixes?: AutoFix[];
 } {
 	abortIf(signal);
 
@@ -209,12 +206,14 @@ export function applyEdit(
 
 	const { fixed: prefixFixed } = prepareEdit(fileHashes, edit, warnings);
 
-	const {
-		resolved: initialResolved,
-		mismatches,
-		boundaryDups,
-	} = valEdit(prefixFixed, lineIndex.fileLines, fileHashes, warnings, signal);
-	if (mismatches.length || !initialResolved) {
+	const { resolved, mismatches } = valEdit(
+		prefixFixed,
+		lineIndex.fileLines,
+		fileHashes,
+		warnings,
+		signal,
+	);
+	if (mismatches.length || !resolved) {
 		const { message, servedRows } = fmtMismatchWithServes(
 			mismatches,
 			lineIndex.fileLines,
@@ -225,53 +224,6 @@ export function applyEdit(
 	}
 
 	warnUnicodeEsc(prefixFixed, warnings);
-
-	let resolved = initialResolved;
-	let autoFixes: AutoFix[] | undefined;
-	if (boundaryDups.length > 0) {
-		autoFixes = [];
-		const correctedEdit: HEdit = {
-			...prefixFixed,
-			content_lines: [...prefixFixed.content_lines],
-		};
-		const seen = new Set<number>();
-		const uniqueDups: BDup[] = [];
-		for (const dup of boundaryDups) {
-			if (seen.has(dup.replacementLineIndex)) continue;
-			seen.add(dup.replacementLineIndex);
-			uniqueDups.push(dup);
-		}
-		const dupsByIndex = uniqueDups.sort(
-			(a, b) => b.replacementLineIndex - a.replacementLineIndex,
-		);
-		for (const dup of dupsByIndex) {
-			const idx = dup.replacementLineIndex;
-			if (idx < 0 || idx >= correctedEdit.content_lines.length) continue;
-			const removed = correctedEdit.content_lines.splice(idx, 1)[0];
-			autoFixes.push({
-				kind: dup.kind,
-				removedLine: removed,
-				removedLineIndex: idx,
-			});
-		}
-		const correctedResult = valEdit(
-			correctedEdit,
-			lineIndex.fileLines,
-			fileHashes,
-			warnings,
-			signal,
-		);
-		if (correctedResult.mismatches.length || !correctedResult.resolved) {
-			const { message, servedRows } = fmtMismatchWithServes(
-				correctedResult.mismatches,
-				lineIndex.fileLines,
-				fileHashes,
-				filePath,
-			);
-			throw new AnchorMismatchError(message, servedRows);
-		}
-		resolved = correctedResult.resolved;
-	}
 
 	if (served) {
 		const startLine = resolved.hash_bounds[0].line;
@@ -326,7 +278,6 @@ export function applyEdit(
 		lastChangedLine: changed?.lastChangedLine,
 		range: resolvedRange(resolved),
 		...(warnings.length ? { warnings } : {}),
-		...(autoFixes ? { autoFixes } : {}),
 	};
 }
 

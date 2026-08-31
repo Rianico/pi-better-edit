@@ -1,545 +1,139 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
-import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import {
+  withTempFile,
+  setupIntegrationTest,
+  getText,
+  extractHash,
+} from "../support/fixtures";
 
-describe("boundary duplication auto-fix", () => {
-  it("trailing }: auto-fix strips duplicate, file is correct after one edit", async () => {
+describe("boundary duplication — pure edit (no auto-fix)", () => {
+  it("trailing }: pure edit keeps duplicate brace", async () => {
     const file = "function foo() {\n  const x = 1;\n  return x;\n}\n";
     await withTempFile("sample.ts", file, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-      const text1 = getText(read1);
-      const lines1 = text1.split("\n");
-
-      const line2Hash = extractHash(lines1.find(l => l.includes("│  const x = 1;"))!);
-      const line3Hash = extractHash(lines1.find(l => l.includes("│  return x;"))!);
-
+      const read1 = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const lines1 = getText(read1).split("\n");
+      const line2Hash = extractHash(
+        lines1.find((l) => l.includes("│  const x = 1;"))!,
+      );
+      const line3Hash = extractHash(
+        lines1.find((l) => l.includes("│  return x;"))!,
+      );
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[line2Hash, line3Hash, `  const y = 2;\n  return y;\n}`]] },
+        {
+          path: "sample.ts",
+          edits: [[line2Hash, line3Hash, `  const y = 2;\n  return y;\n}`]],
+        },
         undefined,
         undefined,
         ctx,
       );
-
       const content = await readFile(path, "utf-8");
-      expect(content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n");
-    });
-  });
-
-  it("reports accurate added-line counts when the boundary-dup fix removes a line", async () => {
-    const file = "function foo() {\n  const x = 1;\n  return x;\n}\n";
-    await withTempFile("sample.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const line2Hash = extractHash(lines1.find(l => l.includes("│  const x = 1;"))!);
-      const line3Hash = extractHash(lines1.find(l => l.includes("│  return x;"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "sample.ts", edits: [[line2Hash, line3Hash, `  const y = 2;\n  return y;\n}`]] },
-        undefined,
-        undefined,
-        ctx,
+      // pure edit: trailing "}" duplicates the line after range → preserved verbatim
+      expect(content).toBe(
+        "function foo() {\n  const y = 2;\n  return y;\n}\n}\n",
       );
-
-      expect(editResult.content[0].text).toContain("Added 2 line(s), removed 2 line(s).");
-      expect(editResult.content[0].text).not.toContain("Added 3 line(s)");
-      expect(editResult.details?.metrics?.added_lines).toBe(2);
-      expect(editResult.details?.metrics?.removed_lines).toBe(2);
-
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("function foo() {\n  const y = 2;\n  return y;\n}\n");
     });
   });
 
-  it("trailing });: auto-fix strips duplicate, file is correct after one edit", async () => {
-    const file = 'app.get("/api", (req, res) => {\n  const data = fetchData();\n  res.json(data);\n});\n';
-    await withTempFile("server.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "server.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const line2Hash = extractHash(lines1.find(l => l.includes("│  const data"))!);
-      const line3Hash = extractHash(lines1.find(l => l.includes("│  res.json"))!);
-
-      await editTool.execute(
-        "e1",
-        { path: "server.ts", edits: [[line2Hash, line3Hash, `  const result = processData();\n  res.json(result);\n});`]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe('app.get("/api", (req, res) => {\n  const result = processData();\n  res.json(result);\n});\n');
-    });
-  });
-
-  it("leading: auto-fix strips duplicate, file is correct after one edit", async () => {
+  it("leading: pure edit keeps duplicate leading line", async () => {
     const file = "before();\nif (ok) {\n  run();\n}\nafter();\n";
     await withTempFile("logic.ts", file, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "logic.ts" }, undefined, undefined, ctx);
+      const read1 = await readTool.execute(
+        "r1",
+        { path: "logic.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const lines1 = getText(read1).split("\n");
-      const line2Hash = extractHash(lines1.find(l => l.includes("│if (ok)"))!);
-      const line3Hash = extractHash(lines1.find(l => l.includes("│  run();"))!);
-
+      const line2Hash = extractHash(
+        lines1.find((l) => l.includes("│if (ok)"))!,
+      );
+      const line3Hash = extractHash(
+        lines1.find((l) => l.includes("│  run();"))!,
+      );
       await editTool.execute(
         "e1",
-        { path: "logic.ts", edits: [[line2Hash, line3Hash, `before();\nif (ok) {\n  runSafe();`]] },
+        {
+          path: "logic.ts",
+          edits: [[line2Hash, line3Hash, `before();\nif (ok) {\n  runSafe();`]],
+        },
         undefined,
         undefined,
         ctx,
       );
-
       const content = await readFile(path, "utf-8");
-      expect(content).toBe("before();\nif (ok) {\n  runSafe();\n}\nafter();\n");
+      expect(content).toBe(
+        "before();\nbefore();\nif (ok) {\n  runSafe();\n}\nafter();\n",
+      );
     });
   });
 
-  it("trailing } with multiple identical lines: auto-fix preserves correct hash", async () => {
-    const file = "if (a) {\n  x();\n}\nif (b) {\n  y();\n}\nif (c) {\n  z();\n}\n";
-    await withTempFile("multi.ts", file, async ({ cwd }) => {
+  it("minimal a/b over a: keeps duplicate (3 lines)", async () => {
+    const file = "a\nb\n";
+    await withTempFile("mini.txt", file, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "multi.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-
-      const line4Hash = extractHash(lines1.find(l => l.includes("│if (b)"))!);
-      const line5Hash = extractHash(lines1.find(l => l.includes("│  y();"))!);
-
-      const braceLines1 = lines1.filter(l => l.endsWith("│}"));
-      expect(braceLines1.length).toBe(3);
-      const survivingBraceHash = extractHash(braceLines1[1]!);
-
-      await editTool.execute(
-        "e1",
-        { path: "multi.ts", edits: [[line4Hash, line5Hash, `if (b) {\n  yNew();\n}`]] },
+      const read1 = await readTool.execute(
+        "r1",
+        { path: "mini.txt" },
         undefined,
         undefined,
         ctx,
       );
-
-      const read2 = await readTool.execute("r2", { path: "multi.ts" }, undefined, undefined, ctx);
-      const lines2 = getText(read2).split("\n");
-      const braceLines2 = lines2.filter(l => l.endsWith("│}"));
-      expect(braceLines2.length).toBe(3);
-
-      const matchingBraces = braceLines2.filter(l => extractHash(l) === survivingBraceHash);
-      expect(matchingBraces.length).toBe(1);
-      const survivingIndex = braceLines2.findIndex(l => extractHash(l) === survivingBraceHash);
-      expect(survivingIndex).toBe(1);
-    });
-  });
-
-  it("4th } before edit range: auto-fix strips duplicate, edit becomes noop", async () => {
-    const file = [
-      "if (a) {", "  x();", "}",
-      "if (b) {", "  y();", "}",
-      "if (c) {", "  z();", "}",
-      "foo();",
-      "bar();",
-      "}",
-    ].join("\n") + "\n";
-    await withTempFile("fourth.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "fourth.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-
-      const fooHash = extractHash(lines1.find(l => l.includes("│foo();"))!);
-      const barHash = extractHash(lines1.find(l => l.includes("│bar();"))!);
-
-      const edit1 = await editTool.execute(
-        "e1",
-        { path: "fourth.ts", edits: [[fooHash, barHash, `foo();\nbar();\n}`]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      const edit1Text = getText(edit1);
-      expect(edit1Text).toContain("No changes made");
-      expect(edit1Text).toContain("noop");
-
-      const { readFile } = await import("fs/promises");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe(file);
-    });
-  });
-});
-
-describe("new-line boundary duplication (auto-fix)", () => {
-  it("strips a new line duplicating a unique line after the range", async () => {
-    const file = [
-      "export class WorkflowEditorOverlay {",
-      "  private activeTab = 0;",
-      "  private confirmingClose = false;",
-      "",
-      "  constructor() {",
-      "    this.activeTab = 0;",
-      "  }",
-      "}",
-    ].join("\n") + "\n";
-    await withTempFile("overlay.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "overlay.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const classHash = extractHash(lines1.find((l) => l.includes("│export class WorkflowEditorOverlay"))!);
-      const blankHash = extractHash(lines1.find((l) => l.endsWith("│"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-		{ path: "overlay.ts", edits: [[classHash, blankHash, [
-				"export class WorkflowEditorOverlay {",
-				"  private activeTab = 0;",
-				"  private confirmingClose = false;",
-				"",
-				"  constructor() {",
-				"  }",
-			].join("\n")]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      const text = getText(editResult);
-      expect(text).toContain("Successfully edited");
-      expect(text).not.toContain("[E_BOUNDARY_DUP]");
-
-      const content = await readFile(path, "utf-8");
-      const constructorCount = content.split("\n").filter((l) => l.includes("constructor()")).length;
-      expect(constructorCount).toBe(1);
-    });
-  });
-
-  it("strips a new line duplicating a unique line before the range (noop)", async () => {
-    const file = "foo();\nbar();\nbaz();\n";
-    await withTempFile("reorder.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "reorder.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const barHash = extractHash(lines1.find((l) => l.includes("│bar();"))!);
-      const bazHash = extractHash(lines1.find((l) => l.includes("│baz();"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "reorder.ts", edits: [[barHash, bazHash, "bar();\nbaz();\nfoo();"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      const text = getText(editResult);
-      expect(text).toContain("No changes made");
-
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("foo();\nbar();\nbaz();\n");
-    });
-  });
-
-  it("does not strip new-line duplicates when the adjacent line is not unique", async () => {
-    const file = [
-      "if (a) {",
-      "  x();",
-      "}",
-      "if (b) {",
-      "  y();",
-      "}",
-    ].join("\n") + "\n";
-    await withTempFile("multi.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "multi.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const bHash = extractHash(lines1.find((l) => l.includes("│if (b)"))!);
-      const yHash = extractHash(lines1.find((l) => l.includes("│  y();"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "multi.ts", edits: [[bHash, yHash, "if (b) {\n  yNew();\n}"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      const text = getText(editResult);
-      expect(text).toContain("Successfully edited");
-      expect(text).not.toContain("[E_BOUNDARY_DUP]");
-
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("if (a) {\n  x();\n}\nif (b) {\n  yNew();\n}\n");
-    });
-  });
-
-  it("does not strip when the first new line differs from the line after the range", async () => {
-    const file = "a\nb\nc\nd\n";
-    await withTempFile("plain.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "plain.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
       const aHash = extractHash(lines1.find((l) => l.includes("│a"))!);
-      const bHash = extractHash(lines1.find((l) => l.includes("│b"))!);
-
-      const editResult = await editTool.execute(
+      await editTool.execute(
         "e1",
-        { path: "plain.ts", edits: [[aHash, bHash, "a\nb\nX"]] },
+        { path: "mini.txt", edits: [[aHash, aHash, "a\nb"]] },
         undefined,
         undefined,
         ctx,
       );
-
-      const text = getText(editResult);
-      expect(text).not.toContain("[E_BOUNDARY_DUP]");
-
       const content = await readFile(path, "utf-8");
-      expect(content).toBe("a\nb\nX\nc\nd\n");
-    });
-  });
-});
-describe("multi-line boundary duplication runs (auto-fix)", () => {
-  it("strips a run of new lines duplicating unique lines after the range", async () => {
-    const file = [
-      `import { ExtensionAPI } from "@earendil-works/pi-coding-agent";`,
-      `import { ScrollableTabContent } from "./scrollable";`,
-      `import { StatsTabContent } from "./stats";`,
-      `import { TabbedOverlay } from "./overlay";`,
-      `import { formatTokens } from "./tokens";`,
-      `export function main() {}`,
-    ].join("\n") + "\n";
-    await withTempFile("imports.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "imports.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const piHash = extractHash(lines1.find((l) => l.includes("│import { ExtensionAPI }"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-		{ path: "imports.ts", edits: [[piHash, piHash, [
-				`import { ScrollableTabContent } from "./scrollable";`,
-				`import { StatsTabContent } from "./stats";`,
-				`import { TabbedOverlay } from "./overlay";`,
-				`import { formatTokens } from "./tokens";`,
-				`type SessionEntry = { id: string };`,
-			].join("\n")]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      const text = getText(editResult);
-      expect(text).toContain("Successfully edited");
-      expect(text).toContain("Added 1 line(s), removed 1 line(s).");
-      expect(editResult.details?.metrics?.added_lines).toBe(1);
-
-      const content = await readFile(path, "utf-8");
-      const scrollableCount = content.split("\n").filter((l) => l.includes("ScrollableTabContent")).length;
-      const statsCount = content.split("\n").filter((l) => l.includes("StatsTabContent")).length;
-      const overlayCount = content.split("\n").filter((l) => l.includes("TabbedOverlay")).length;
-      const tokensCount = content.split("\n").filter((l) => l.includes("formatTokens")).length;
-      expect(scrollableCount).toBe(1);
-      expect(statsCount).toBe(1);
-      expect(overlayCount).toBe(1);
-      expect(tokensCount).toBe(1);
-      expect(content).toContain("type SessionEntry = { id: string };");
+      expect(content).toBe("a\nb\nb\n");
     });
   });
 
-  it("strips a run of trailing closing braces matching consecutive lines after the range", async () => {
+  it("multi-line run: keeps all duplicated lines verbatim", async () => {
     const file = "function a() {\n  const x = 1;\n}\n}\nafter();\n";
     await withTempFile("nested.ts", file, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "nested.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const bodyHash = extractHash(lines1.find((l) => l.includes("│  const x = 1;"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "nested.ts", edits: [[bodyHash, bodyHash, "  const x = 2;\n}\n}"]] },
+      const read1 = await readTool.execute(
+        "r1",
+        { path: "nested.ts" },
         undefined,
         undefined,
         ctx,
       );
-
-      expect(getText(editResult)).toContain("Added 1 line(s), removed 1 line(s).");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("function a() {\n  const x = 2;\n}\n}\nafter();\n");
-    });
-  });
-
-  it("strips a run of new lines duplicating unique lines before the range", async () => {
-    const file = "before1();\nbefore2();\ntarget();\nafter();\n";
-    await withTempFile("before-run.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "before-run.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
-      const targetHash = extractHash(lines1.find((l) => l.includes("│target();"))!);
-
-      const editResult = await editTool.execute(
+      const bodyHash = extractHash(
+        lines1.find((l) => l.includes("│  const x = 1;"))!,
+      );
+      await editTool.execute(
         "e1",
-        { path: "before-run.ts", edits: [[targetHash, targetHash, "NEW();\nbefore1();\nbefore2();"]] },
+        {
+          path: "nested.ts",
+          edits: [[bodyHash, bodyHash, "  const x = 2;\n}\n}"]],
+        },
         undefined,
         undefined,
         ctx,
       );
-
-      expect(getText(editResult)).toContain("Added 1 line(s), removed 1 line(s).");
       const content = await readFile(path, "utf-8");
-      expect(content).toBe("before1();\nbefore2();\nNEW();\nafter();\n");
-    });
-  });
-
-  it("strips a run of leading lines duplicating consecutive lines before the range", async () => {
-    const file = "a\nb\nc\ntarget\nafter\n";
-    await withTempFile("leading-run.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "leading-run.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const targetHash = extractHash(lines1.find((l) => l.includes("│target"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "leading-run.ts", edits: [[targetHash, targetHash, "c\nb\na\nX"]] },
-        undefined,
-        undefined,
-        ctx,
+      // replacement 2 braces + original 2 braces = 4 braces
+      expect(content).toBe(
+        "function a() {\n  const x = 2;\n}\n}\n}\n}\nafter();\n",
       );
-
-      expect(getText(editResult)).toContain("Successfully edited");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("a\nb\nc\nX\nafter\n");
-    });
-  });
-
-  it("does not strip a file-order prefix copy from before the range", async () => {
-    const file = "a\nb\nc\ntarget\nafter\n";
-    await withTempFile("prefix-copy.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "prefix-copy.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const targetHash = extractHash(lines1.find((l) => l.includes("│target"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "prefix-copy.ts", edits: [[targetHash, targetHash, "a\nb\nc\nX"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      expect(getText(editResult)).toContain("Added 4 line(s), removed 1 line(s).");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("a\nb\nc\na\nb\nc\nX\nafter\n");
-    });
-  });
-
-  it("strips a single line flagged by both edge checks exactly once", async () => {
-    const file = "X\ntarget\nX\n";
-    await withTempFile("both-edges.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "both-edges.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const targetHash = extractHash(lines1.find((l) => l.includes("│target"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "both-edges.ts", edits: [[targetHash, targetHash, "X"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      expect(getText(editResult)).toContain("Successfully edited");
-      expect(getText(editResult)).toContain("Added 0 line(s), removed 1 line(s).");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("X\nX\n");
-    });
-  });
-});
-
-describe("section-unique boundary duplication (auto-fix)", () => {
-  it("strips a re-included block ending in a repeated brace after the range", async () => {
-    const file = "import a\n\nexport interface Foo {\n  x: number;\n}\nexport function main() {}\n";
-    await withTempFile("iface.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "iface.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const blankHash = extractHash(lines1.find((l) => l.endsWith("│"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "iface.ts", edits: [[blankHash, blankHash, "export interface Foo {\n  x: number;\n}\n\nexport function main2() {}"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      expect(getText(editResult)).toContain("Successfully edited");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("import a\n\nexport function main2() {}\nexport interface Foo {\n  x: number;\n}\nexport function main() {}\n");
-      expect(content.split("\n").filter((l) => l.includes("export interface Foo")).length).toBe(1);
-      expect(content).not.toContain("\n}\n}\n");
-    });
-  });
-
-  it("strips a re-included block ending in a repeated brace before the range", async () => {
-    const file = "if (a) {\n  x();\n}\nif (b) {\n  y();\n}\ntarget\n";
-    await withTempFile("pre-block.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "pre-block.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const targetHash = extractHash(lines1.find((l) => l.includes("│target"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "pre-block.ts", edits: [[targetHash, targetHash, "NEW\nif (b) {\n  y();\n}"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      expect(getText(editResult)).toContain("Successfully edited");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("if (a) {\n  x();\n}\nif (b) {\n  y();\n}\nNEW\n");
-    });
-  });
-
-  it("does not strip when the re-included section repeats elsewhere in the file", async () => {
-    const file = "Y\nZ\nX\nY\nZ\n";
-    await withTempFile("repeat.ts", file, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-
-      const read1 = await readTool.execute("r1", { path: "repeat.ts" }, undefined, undefined, ctx);
-      const lines1 = getText(read1).split("\n");
-      const xHash = extractHash(lines1.find((l) => l.includes("│X"))!);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "repeat.ts", edits: [[xHash, xHash, "X\nY\nZ"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      expect(getText(editResult)).toContain("Successfully edited");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("Y\nZ\nX\nY\nZ\nY\nZ\n");
     });
   });
 });

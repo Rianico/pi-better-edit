@@ -34,14 +34,11 @@ export {
 	type RHEdit,
 	type HTEdit,
 	type NEdit,
-	type BDup,
-	type AutoFix,
 	resEdit,
 	valEdit,
 	stripBarePrefixes,
 	stripDiffPrefixes,
 	swapReversedRanges,
-	findNewEdge,
 } from "./resolve.js";
 
 export {
