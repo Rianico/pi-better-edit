@@ -505,13 +505,14 @@ export function createSessionHandle(
       const store = await resolveStore();
       recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, undefined);
     },
-    async recordEpoch(input: { rows: ServedEntry[]; lineCount?: number; fullReadHashes?: readonly string[]; fullReadCanons?: readonly (string | null)[]; snapshotId?: string }): Promise<void> {
+    async recordEpoch(input: { rows: ServedEntry[]; lineCount?: number; fullReadHashes?: readonly string[]; fullReadCanons?: readonly (string | null)[]; snapshotId?: string; isFullRead?: boolean }): Promise<void> {
       if (input.rows.length === 0 && !input.fullReadHashes) return;
       const store = await resolveStore();
       const isFullRead =
-        input.fullReadHashes !== undefined &&
-        input.rows.length === input.fullReadHashes.length &&
-        input.rows.every((row, index) => row.position === index && row.hash === input.fullReadHashes![index]);
+                        input.isFullRead ??
+                        (input.fullReadHashes !== undefined &&
+                        input.rows.length === input.fullReadHashes.length &&
+                        input.rows.every((row, index) => row.position === index && row.hash === input.fullReadHashes![index]));
       withStore(() => {
         const current = getServedInner(store, sessionKey, path);
         const updated = [...current];
