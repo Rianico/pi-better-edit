@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+- **lint:** remove unused vars and comments for CI
 - **pipeline:** add SAFETY for typed-boundary casts
 - **read:** persist epoch on read for ADR-0013
 - **test:** adapt whitespace seam after tombstone

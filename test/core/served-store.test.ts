@@ -798,8 +798,8 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
 
   it("preserves served rows but invalidates snapshots/undo when adding retired column", async () => {
     await withTempHome(async (home) => {
-      const { contentChecksum } = await import("../../src/hashline/hasher.js");
-      const homePath = home;
+      const { contentChecksum: _contentChecksum } = await import("../../src/hashline/hasher.js");
+      const _homePath = home;
       // create initial DB without retired column via direct SQL, then reopen to trigger migration
       const { DatabaseSync } = await import("node:sqlite");
       const { hashStorePath } = await import("../../src/hash-store.js");
@@ -807,7 +807,7 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
       const { createSessionHandle: createH } = await import("../../src/served-session/session.js");
       const h1 = createH("sessionA", "/rebound.txt", store1);
       await h1.record([{ position: 0, hash: "AAA" }]);
-      const { snapshotIOFor } = await import("../../src/snapshot-store.js");
+      const { snapshotIOFor: _snapshotIOFor } = await import("../../src/snapshot-store.js");
       // need store path
       const dbPath = hashStorePath();
       // simulate old DB by dropping retired column
@@ -822,7 +822,7 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
       const h2 = createH("sessionA", "/rebound.txt", store2);
       expect(await h2.load()).toEqual(["AAA"]);
       // snapshots should be gone - check via snapshot store
-      const { getSnapshot } = await import("../../src/snapshot-store.js");
+      const { getSnapshot: _getSnapshot } = await import("../../src/snapshot-store.js");
       // we didn't create snapshot, but ensure no crash
       expect(await h2.loadTombstone()).toEqual(new Set());
     });

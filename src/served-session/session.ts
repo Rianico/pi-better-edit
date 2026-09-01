@@ -222,9 +222,6 @@ function isValidHashList(value: unknown): value is string[] {
   return true;
 }
 
-function isValidCanonsOrEmpty(value: unknown): boolean {
-  return isValidCanonsList(value);
-}
 
 function buildServedHashIndex(updated: (string | null)[]): Map<string, number> {
   const index = new Map<string, number>();

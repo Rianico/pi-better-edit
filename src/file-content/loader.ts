@@ -1,7 +1,6 @@
 import { constants } from "node:fs";
 import { stat } from "node:fs/promises";
 import { defaultHashIdentity } from "../hashline/hash-identity.js";
-import { contentChecksum } from "../hashline/hasher.js";
 import { loadFileKindAndText, type LFile } from "./detection.js";
 import { resolveTarget } from "../fs-write.js";
 import { toCwd } from "../paths.js";

@@ -252,9 +252,6 @@ function buildStore(db: DatabaseSync): void {
       "PRIMARY KEY (session_id, path)" +
       ")",
   );
-  // ADR-0013: migrate existing served table for tombstone/canons/epoch
-  // Check for missing columns and add them. Retired column addition also
-  // invalidates snapshots/undo that may contain rebound anchors.
   {
     const cols = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
     if (!cols.some((c) => c.name === "retired")) {
