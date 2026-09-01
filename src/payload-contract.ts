@@ -86,7 +86,7 @@ const EDIT_TUPLE_HINT =
 	"replacement (an empty string deletes the range).";
 
 export const EDIT_DESCRIPTION =
-	'Edit a range of lines in a text file with `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }`. `path` is the file path or `null`. `read` returns `HASH│content` (e.g. `wUp│    "site": {`) — for `edit`, `remove_from`/`remove_to` are HASH anchors (bare 3-char value before `│`, e.g. "wUp", "AU6"), never `HASH│content` or line content. `replacement_text` is bare content without `HASH│`, lines joined by \\n (e.g. "    "site": {\\n        "class": SiteScraper,"); use "" to delete. Example: read shows `wUp│    "site": {` + `AU6│        "name": "old",` → edit `{"path":"scrape.py","edits":[["wUp","AU6","    "site": {\\n        "class": SiteScraper,"]]}`. Edits in one call apply atomically; after success reuse `HASH│content` from the returned diff for the next edit (no re-read needed). On failure follow the error hint.';
+	'Edit a range of lines in a text file with { "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }. `path` is file path or null. `read` shows HASH│content (e.g. wUp│  "site": {) — use bare 3-char HASH anchors for remove_from/remove_to (e.g. "wUp"), never HASH│content. replacement_text is bare content, \\n joins lines, "" deletes. Example: {"path":"a.py","edits":[["wUp","AU6","new"]]}. Edits are atomic; reuse HASH│content from diff after success.';
 
 export const EDIT_SNIPPET =
 	'Edit with `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }` — `remove_from`/`remove_to` are bare 3-char `HASH` anchors (e.g. "aB3"), `replacement_text` is bare content (no `HASH│`). `read` → `wUp│    "site": {` vs `edit` → `{"path":"scrape.py","edits":[["wUp","AU6","    "site": {\\n        "class": SiteScraper,"]]}`. After success chain from diff `HASH│content` (no re-read); on error follow hint — `no read needed` → retry from echo, `re-read` → call `read`.';
@@ -165,6 +165,43 @@ function itemFromTuple(value: unknown): EditItem | undefined {
 	return { remove_from, remove_to, replacement_text };
 }
 
+
+function sanitizePath(value: unknown): string | null {
+	if (typeof value !== "string") return null;
+	let s = value.trim();
+	// Gemma 4 bleed: model may wrap path in <|>, │, |, quotes, or backticks due to │ confusion
+	// Strip leading/trailing wrappers iteratively
+	let changed = true;
+	while (changed) {
+		changed = false;
+		if (s.startsWith("<|>") && s.endsWith("<|>") && s.length > 6) {
+			s = s.slice(3, -3).trim();
+			changed = true;
+		}
+		if (s.startsWith("│") && s.endsWith("│") && s.length > 2) {
+			s = s.slice(1, -1).trim();
+			changed = true;
+		}
+		if (s.startsWith("|") && s.endsWith("|") && s.length > 2) {
+			s = s.slice(1, -1).trim();
+			changed = true;
+		}
+		if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")) || (s.startsWith("`") && s.endsWith("`"))) {
+			s = s.slice(1, -1).trim();
+			changed = true;
+		}
+		if (s.startsWith("<|>")) {
+			s = s.slice(3).trim();
+			changed = true;
+		}
+		if (s.endsWith("<|>")) {
+			s = s.slice(0, -3).trim();
+			changed = true;
+		}
+	}
+	return s.length > 0 ? s : null;
+}
+
 export function editRequestFrom(
 	input: unknown,
 ): NormalizedEditRequest | undefined {
@@ -194,6 +231,12 @@ export function editRequestFrom(
 
 	if (!("edits" in rec)) return undefined;
 	const edits = rec.edits;
+
+	if (typeof effectivePath === "string") {
+		const sanitized = sanitizePath(effectivePath);
+		if (sanitized === null) return undefined;
+		effectivePath = sanitized;
+	}
 
 	if (
 		effectivePath !== null &&
