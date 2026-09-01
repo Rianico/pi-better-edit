@@ -109,10 +109,11 @@ export function canon(line: string): string {
 export function _lineHashesPure(
 	content: string,
 	canonStore?: CanonStore,
+	tombstone?: ReadonlySet<string>,
 ): string[] {
 	if (canonStore && canonStore !== globalCanonStore) {
 		const lines = splitLines(content);
-		const tmp = _defaultHI.hashesForSync(content);
+		const tmp = _defaultHI.hashesForSync(content, tombstone);
 		for (let i = 0; i < tmp.length; i++) {
 			const h = tmp[i]!;
 			const c = canon(lines[i] ?? "");
@@ -120,7 +121,7 @@ export function _lineHashesPure(
 		}
 		return tmp;
 	}
-	return _defaultHI.hashesForSync(content);
+	return _defaultHI.hashesForSync(content, tombstone);
 }
 
 async function _lineHashes(
@@ -130,11 +131,13 @@ async function _lineHashes(
 	io?: HashSnapshotIO,
 	persist?: boolean,
 	_canonStore?: CanonStore,
+	tombstone?: ReadonlySet<string>,
 ): Promise<string[]> {
 	return _defaultHI.hashesFor(content, {
 		path,
 		prior: previous,
 		persist: persist ?? true,
 		snapshotIO: io as any,
+		tombstone,
 	});
 }

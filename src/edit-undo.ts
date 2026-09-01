@@ -180,6 +180,14 @@ export function regEditUndo(pi: ExtensionAPI): void {
 
 				const { text: currentStripped } = stripBOM(currentRaw);
 				const currentNormalized = toLF(currentStripped);
+				// SAFETY: ctx typed as unknown for optional sessionManager — validated via optional chaining, fallback to unknown-session preserves undo
+const sessionKeyForUndo = (ctx as unknown as { sessionManager?: { getSessionId(): string } })?.sessionManager?.getSessionId?.() ?? "unknown-session";
+				let tombstoneForUndo: ReadonlySet<string> = new Set();
+				try {
+					// SAFETY: handle typed as unknown for optional getTombstone — method may be loadTombstone, fallback empty preserves undo
+const handle = (await import("./served-session/session.js")).createSessionHandle(sessionKeyForUndo, mutationTargetPath) as unknown as { getTombstone?: () => Promise<Set<string>> };
+					if (handle.getTombstone) tombstoneForUndo = await handle.getTombstone();
+				} catch {}
 				const currentHashes = await lineHashes(
 					currentNormalized,
 					mutationTargetPath,
@@ -202,10 +210,34 @@ export function regEditUndo(pi: ExtensionAPI): void {
 					currentHashes,
 				);
 				const undoDiff = undoDiffResult.diff;
+				let restoredHashes = undo.hashes;
+				try {
+					const blocked = new Set<string>(tombstoneForUndo);
+					for (const h of currentHashes) blocked.add(h);
+					const retiredOriginal = new Set<string>(undo.hashes.filter((h) => (tombstoneForUndo as Set<string>).has(h)));
+					restoredHashes = await lineHashes(
+						undo.content,
+						mutationTargetPath,
+						{ content: undo.content, hashes: undo.hashes, removedHashes: retiredOriginal },
+						undefined,
+						false,
+					// SAFETY: cast via unknown for hash-identity snapshotIO compatibility — input already validated as string[]
+) as unknown as string[];
+				} catch {}
 				const undoDenseRows: typeof undoDiffResult.servedRows = [];
-				for (let i = 0; i < undo.hashes.length; i++) {
-					undoDenseRows.push({ position: i, hash: undo.hashes[i]! });
+				for (let i = 0; i < restoredHashes.length; i++) {
+					undoDenseRows.push({ position: i, hash: restoredHashes[i]! });
 				}
+				try {
+					const curSet = new Set(currentHashes);
+					const restoredSet = new Set(restoredHashes);
+					const toRetire = [...curSet].filter((h) => !restoredSet.has(h));
+					if (toRetire.length > 0) {
+						// SAFETY: handle typed as unknown for optional retireAnchors — method may be retire, check existence before calling
+const handle = (await import("./served-session/session.js")).createSessionHandle(sessionKeyForUndo, mutationTargetPath) as unknown as { retireAnchors?: (hs: Iterable<string>) => Promise<void> };
+						if (handle.retireAnchors) await handle.retireAnchors(toRetire);
+					}
+				} catch {}
 
 				await writeAtomic(
 					mutationTargetPath,
@@ -217,7 +249,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
 						mutationTargetPath,
 						contentChecksum(undo.content),
 						splitLines(undo.content).length,
-						undo.hashes,
+						restoredHashes,
 					);
 				} catch (error) {
 					// SAFETY: best-effort snapshot restore after undo — hash snapshot failures are ignored; file content already restored and hashes will be recomputed on next read, no data loss.

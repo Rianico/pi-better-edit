@@ -1,12 +1,24 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Bug Fixes
+
+- **lint:** remove unused vars and comments for CI
+- **pipeline:** add SAFETY for typed-boundary casts
+- **read:** persist epoch on read for ADR-0013
+- **test:** adapt whitespace seam after tombstone
+- **hashline:** prevent anchor reuse via tombstone
+- **served:** per-session tombstone epoch for ADR-0013
+- **hashline:** block reuse of removed hashes
+
 ## [1.4.2](https://github.com/Rianico/pi-better-edit/compare/v1.4.1...v1.4.2) (2026-09-01)
 
 ### Bug Fixes
 
 * **ci:** prevent pre-push from blocking release push ([daa3d18](https://github.com/Rianico/pi-better-edit/commit/daa3d186020df736c9724d46af3f6b16100b3ef9))
-
-# Changelog
-
-All notable changes to this project will be documented in this file.
 
 ## [1.4.1](https://github.com/Rianico/pi-better-edit/compare/v1.4.0...v1.4.1) (2026-08-31)
 

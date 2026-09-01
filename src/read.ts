@@ -4,6 +4,8 @@ import { Type } from "typebox";
 import { MAX_HASH_LINES } from "./hashline/index.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
+import { canon } from "./hashline/hash-identity.js";
+import { contentChecksum } from "./hashline/hasher.js";
 import { abortIf, isRec, normalizeFilePath } from "./utils.js";
 import { visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
@@ -91,21 +93,29 @@ export function regRead(pi: ExtensionAPI): void {
 			}
 
 			const session = sessionFromContext(
-				ctx as { sessionManager?: { getSessionId(): string } },
-				prepared.absolutePath,
-			);
-			await session.recordTruncated(
-				prepared.served,
-				visLines(prepared.normalized).length,
-			);
-			await session.clearDrift();
-			let snapshotId: string | undefined;
-			try {
-				snapshotId = (await fileSnap(prepared.absolutePath)).snapshotId;
-			} catch {
-				snapshotId = undefined;
-			}
-			return {
+                                ctx as { sessionManager?: { getSessionId(): string } },
+                                prepared.absolutePath,
+                        );
+                        const lineCount = visLines(prepared.normalized).length;
+                        const isFullRead = params.offset == null && params.limit == null && !prepared.truncation;
+                        const lines = visLines(prepared.normalized);
+                        const fileCanons: (string | null)[] = prepared.fileHashes.map((_, i) => canon(lines[i] ?? ""));
+                        let snapshotId: string | undefined;
+                        try {
+                                snapshotId = (await fileSnap(prepared.absolutePath, contentChecksum(prepared.normalized))).snapshotId;
+                        } catch {
+                                snapshotId = undefined;
+                        }
+                        await session.recordEpoch({
+                                rows: prepared.served,
+                                lineCount,
+                                fullReadHashes: prepared.fileHashes,
+                                fullReadCanons: fileCanons,
+                                snapshotId,
+                                isFullRead,
+                        });
+                        await session.clearDrift();
+                        return {
 				content: [{ type: "text", text: prepared.preview }],
 				details: {
 					truncation: prepared.truncation,

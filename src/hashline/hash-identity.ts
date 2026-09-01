@@ -29,6 +29,7 @@ export interface HashOptions {
 	prior?: HashPrior;
 	persist?: boolean;
 	snapshotIO?: HashSnapshotIO;
+	tombstone?: ReadonlySet<string>;
 }
 
 export const ANCHOR_LEN = HASH_LEN;
@@ -190,13 +191,15 @@ export class HashIdentity {
 		return this.hashAt(nextIdx);
 	}
 
-	private lineHashesPure(content: string): string[] {
+	private lineHashesPure(content: string, tombstone?: ReadonlySet<string>): string[] {
 		const lines = splitLines(content);
 		const hashes = new Array<string>(lines.length);
 		const used = new Uint32Array(BITSET_WORDS);
 		const hint = { value: 0 };
 		const canonCache = new Map<string, string>();
-
+		if (tombstone) {
+			for (const h of tombstone) this.markHashUsed(h, used, hint);
+		}
 		for (let i = 0; i < lines.length; i++) {
 			const c = getCanon(canonCache, lines[i]!);
 			const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
@@ -316,33 +319,7 @@ export class HashIdentity {
 			);
 		}
 	}
-	private reuseRemovedHashes(
-		removedEntries: { index: number; hash: string }[],
-		oldLines: string[],
-		newLines: string[],
-		newHashes: string[],
-		canonCache: Map<string, string>,
-	): void {
-		const removedByContent = new Map<string, { hashes: string[]; pos: number }>();
-		for (const entry of removedEntries) {
-			const key = getCanon(canonCache, oldLines[entry.index]!);
-			let queue = removedByContent.get(key);
-			if (!queue) {
-				queue = { hashes: [], pos: 0 };
-				removedByContent.set(key, queue);
-			}
-			queue.hashes.push(entry.hash);
-		}
-		for (let i = 0; i < newLines.length; i++) {
-			if (newHashes[i]) continue;
-			const queue = removedByContent.get(getCanon(canonCache, newLines[i]!));
-			if (!queue || queue.pos >= queue.hashes.length) continue;
-			const h = queue.hashes[queue.pos]!;
-			newHashes[i] = h;
-			queue.pos += 1;
-			this.rememberHashCanon(h, getCanon(canonCache, newLines[i]!));
-		}
-	}
+
 	private allocateFreshHashes(
 		newLines: string[],
 		newHashes: string[],
@@ -364,6 +341,7 @@ export class HashIdentity {
 		oldHashes: string[],
 		newContent: string,
 		removedHashes?: Set<string>,
+		tombstone?: ReadonlySet<string>,
 	): string[] {
 		const oldLines = splitLines(oldContent);
 		const newLines = splitLines(newContent);
@@ -373,13 +351,16 @@ export class HashIdentity {
 		const hint = { value: 0 };
 		const removed = removedHashes ?? new Set<string>();
 		const oldHashIndex = this.buildOldHashIndex(oldHashes, used);
+		if (tombstone) {
+			for (const h of tombstone) this.markHashUsed(h, used, hint);
+		}
 		const removedIndexes = this.collectRemovedIndexes(removed, oldHashIndex);
 		const { spanEnd, shiftAfterSpan } = this.computeSpan(
 			removedIndexes,
 			oldLines.length,
 			newLines.length,
 		);
-		const { survivors, removedEntries } = this.partitionEntries(
+		const { survivors } = this.partitionEntries(
 			oldHashes,
 			removedIndexes,
 		);
@@ -394,13 +375,6 @@ export class HashIdentity {
 			canonCache,
 			spanEnd,
 			shiftAfterSpan,
-		);
-		this.reuseRemovedHashes(
-			removedEntries,
-			oldLines,
-			newLines,
-			newHashes,
-			canonCache,
 		);
 		this.allocateFreshHashes(newLines, newHashes, canonCache, used, hint);
 		return newHashes;
@@ -420,9 +394,10 @@ export class HashIdentity {
 					prior.hashes,
 					content,
 					prior.removedHashes,
+					options?.tombstone,
 				);
 			}
-			return this.lineHashesPure(content);
+			return this.lineHashesPure(content, options?.tombstone);
 		}
 
 		if (prior) {
@@ -431,6 +406,7 @@ export class HashIdentity {
 				prior.hashes,
 				content,
 				prior.removedHashes,
+				options?.tombstone,
 			);
 			if (persist && snapshotIO) {
 				try {
@@ -461,7 +437,7 @@ export class HashIdentity {
 			return cached;
 		}
 
-		const newHashes = this.lineHashesPure(content);
+		const newHashes = this.lineHashesPure(content, options?.tombstone);
 		if (persist && snapshotIO) {
 			try {
 				await snapshotIO.upsert(
@@ -478,8 +454,8 @@ export class HashIdentity {
 		return newHashes;
 	}
 
-	hashesForSync(content: string): string[] {
-		return this.lineHashesPure(content);
+	hashesForSync(content: string, tombstone?: ReadonlySet<string>): string[] {
+		return this.lineHashesPure(content, tombstone);
 	}
 
 	static create(snapshotIO?: HashSnapshotIO): HashIdentity {
@@ -506,8 +482,8 @@ function getCanonForHash(hash: string): string | undefined {
 	return defaultHashIdentity.getCanonForHash(hash);
 }
 
-export function _lineHashesPure(content: string): string[] {
-	return defaultHashIdentity.hashesForSync(content);
+export function _lineHashesPure(content: string, tombstone?: ReadonlySet<string>): string[] {
+	return defaultHashIdentity.hashesForSync(content, tombstone);
 }
 
 export async function lineHashes(
@@ -516,11 +492,13 @@ export async function lineHashes(
 	previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
 	io?: HashSnapshotIO,
 	persist?: boolean,
+	tombstone?: ReadonlySet<string>,
 ): Promise<string[]> {
 	return defaultHashIdentity.hashesFor(content, {
 		path,
 		prior: previous,
 		persist: persist ?? true,
 		snapshotIO: io,
+		tombstone,
 	});
 }

@@ -25,15 +25,19 @@ export type SnapInfo = {
 function fmtSnapId(
 	canonicalPath: string,
 	info: { ino: number; mtimeMs: number; ctimeMs: number; size: number },
+	checksum?: string,
 ): string {
-	return `v2|${canonicalPath}|${info.ino}|${info.mtimeMs}|${info.ctimeMs}|${info.size}`;
+	return `v2|${canonicalPath}|${info.ino}|${info.mtimeMs}|${info.ctimeMs}|${info.size}${checksum ? `|${checksum}` : ""}`;
 }
 
-export async function fileSnap(absolutePath: string): Promise<SnapInfo> {
+export async function fileSnap(absolutePath: string, checksum?: string): Promise<SnapInfo> {
 	const canonicalPath = await resolveTarget(absolutePath);
 	const stats = await stat(canonicalPath);
+	// P1: include content checksum in snapshotId for stronger epoch (ADR-0013)
+	// Checksum is optional for backward compat; when provided, epoch distinguishes same-size whitespace changes.
+	const effectiveChecksum = checksum ?? undefined;
 	return {
-		snapshotId: fmtSnapId(canonicalPath, stats),
+		snapshotId: fmtSnapId(canonicalPath, stats, effectiveChecksum),
 		ino: stats.ino,
 		mtimeMs: stats.mtimeMs,
 		ctimeMs: stats.ctimeMs,
