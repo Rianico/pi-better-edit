@@ -124,3 +124,23 @@ _Avoid_: dedup, autofix, trimming
 **pure edit**:
 The invariant that an edit is exactly the resolved range replaced by the exact `replacement_text` with no boundary-dedup rewrite. Verified by `valEdit → verifyServed → resToSpan` with no intermediate splice.
 _Avoid_: smart edit, autocorrection
+
+**tombstone**:
+The per-session (`sessionKey`, `path`) set of hashes freed since the last full `read` — `served.retired` in `src/served-session/session.ts`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(tombstone)` so a freed anchor never re-binds within the same epoch. Cleared on `full read` (`isFullRead`), kept on `partial`/`truncated`, pruned with `served` via `SERVED_TTL_MS`. Prevents `S@3 reborn @3` whole-span stale success (`E_RANGE_STALE`).
+_Avoid_: retired (use tombstone; downstream `retired TEXT` is storage name, not domain term), blocked, reserved
+
+**epoch**:
+The per-session, per-path read snapshot `{snapshotId: ino|mtime|size|checksum via fileSnap, servedHashes, servedCanons}` stored in `served.snapshotId`/`canons`/`hashes`. `read full` stores epoch; `partial` merges without clearing. `edit` compares `curId=fileSnap(path)` vs `epoch.snapshotId` to decide `resist` (pos-free, `==`) vs `strict` (pos-restricted, `!=`). Exterior drift (`insert @0` before `served 1..5`) stays `resist` when `changed ∩ [L,R]==∅`.
+_Avoid_: version, snapshot (global last-writer-wins `snapshots` table is file-level, not per-session)
+
+**position-free** (pos-free):
+The single-thread verification mode where `verifyOrThrow` requires only `served[cFrom+k]==fileHashes[startLine-1+k] && tombstone∉ && canon==`, not `from==startLine-1`. Preserves `anchor philosophy` — exterior inserts do not abort unrelated ranges. Default when `epoch==curId`.
+_Avoid_: strict pos (concurrency fallback only)
+
+**strict** (pos-restricted concurrency):
+The fallback verification mode when `epoch!=curId` (concurrent write detected) — adds `from==startLine-1 && to==endLine-1` to the pos-free checks. Makes `shift==rebind` loud for `S@2->7` isolated `tombstone` case. Cost is one `reject-and-serve` retry with `E.servedRows`. Automatic, no config flag.
+_Avoid_: always-strict
+
+**canon** (canon_at_serve):
+The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`) captured at serve time and persisted parallel to `hashes` in `served.canons`. Used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_RANGE_STALE`. Alone not enough without `tombstone`.
+_Avoid_: content (byte-level, not canon)

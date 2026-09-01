@@ -107,6 +107,8 @@ import {
 	sessionKeyFor,
 } from "../served-state.js";
 import { scanDrift } from "../drift.js";
+import { createSessionHandle } from "../served-session/session.js";
+import { fileSnap } from "../file-reader.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { saveUndo } from "../edit-undo.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
@@ -182,6 +184,10 @@ interface LoadedEditFile {
 	hadUtf8DecodeErrors: boolean;
 	absolutePath: string;
 	served: (string | null)[];
+	tombstone: ReadonlySet<string>;
+	servedCanons: (string | null)[];
+	epochSnapshotId: string | undefined;
+	curSnapshotId: string | undefined;
 }
 
 async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
@@ -200,6 +206,20 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
 		noPersist: source.noPersist,
 	});
 	const served = await loadServed(source.sessionKey, absolutePath);
+	let tombstone: ReadonlySet<string> = new Set();
+	let servedCanons: (string | null)[] = [];
+	let epochSnapshotId: string | undefined;
+	let curSnapshotId: string | undefined;
+	try {
+		const handle = createSessionHandle(source.sessionKey, absolutePath, source.store);
+		const anyHandle = handle as unknown as { getTombstone?: () => Promise<Set<string>>; getCanons?: () => Promise<(string | null)[]>; getEpochSnapshotId?: () => Promise<string | undefined> };
+		if (anyHandle.getTombstone) tombstone = await anyHandle.getTombstone();
+		if (anyHandle.getCanons) servedCanons = await anyHandle.getCanons();
+		if (anyHandle.getEpochSnapshotId) epochSnapshotId = await anyHandle.getEpochSnapshotId();
+	} catch {}
+	try {
+		curSnapshotId = (await fileSnap(absolutePath)).snapshotId;
+	} catch {}
 	return {
 		normalized,
 		bom,
@@ -208,6 +228,10 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
 		hadUtf8DecodeErrors,
 		absolutePath,
 		served,
+		tombstone,
+		servedCanons,
+		epochSnapshotId,
+		curSnapshotId,
 	};
 }
 
@@ -218,6 +242,10 @@ interface ApplyOneEditInput {
 	signal?: AbortSignal;
 	filePath: string;
 	served: (string | null)[];
+	tombstone?: ReadonlySet<string>;
+	servedCanons?: (string | null)[];
+	epochSnapshotId?: string;
+	curSnapshotId?: string;
 	sessionKey: string;
 	absolutePath: string;
 	store: HashStore;
@@ -260,6 +288,10 @@ async function applyOneEdit(
 			input.hashes,
 			input.filePath,
 			input.served,
+			input.tombstone,
+			input.servedCanons,
+			input.epochSnapshotId,
+			input.curSnapshotId,
 		);
 	} catch (error) {
 		if (
@@ -309,7 +341,8 @@ async function applyOneEdit(
 		prior: { content: input.content, hashes: input.hashes, removedHashes },
 		persist: input.persistHashes,
 		snapshotIO: snapshotIOFor(input.store),
-	});
+		tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
+	} as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
 	return {
 		kind: "applied",
 		content: nextContent,
@@ -420,6 +453,10 @@ async function runMutations(
 			signal: options?.signal,
 			filePath: path,
 			served,
+			tombstone: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getTombstone?: () => Promise<Set<string>> }; return h.getTombstone ? await h.getTombstone() : new Set<string>(); } catch { return new Set<string>(); } })()) as ReadonlySet<string>,
+			servedCanons: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getCanons?: () => Promise<(string|null)[]> }; return h.getCanons ? await h.getCanons() : []; } catch { return []; } })()),
+			epochSnapshotId: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getEpochSnapshotId?: () => Promise<string|undefined> }; return h.getEpochSnapshotId ? await h.getEpochSnapshotId() : undefined; } catch { return undefined; } })()),
+			curSnapshotId: (await (async () => { try { return (await fileSnap(absolutePath)).snapshotId; } catch { return undefined; } })()),
 			sessionKey,
 			absolutePath,
 			store: hashStore,
@@ -490,6 +527,12 @@ async function runMutations(
 			countLineChanges(edit, originalHashes, false);
 		totalAddedLines += added;
 		totalRemovedLines += removed;
+		if (!isPreview) {
+			try {
+				const handle = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { retireAnchors?: (hashes: Iterable<string>) => Promise<void> };
+				if (handle.retireAnchors) await handle.retireAnchors(outcome.removedHashes);
+			} catch {}
+		}
 		lastApplied = {
 			content: currentContent,
 			hashes: currentHashes,

@@ -1,12 +1,23 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Fixed
+
+- **hashline:** prevent freed anchor reuse via per-session tombstone and epoch-aware strict pos (#31)
+
+### Documentation
+
+- **adr:** add ADR-0013 pos-free roundtrip with concurrency fallback (#31)
+
 ## [1.4.2](https://github.com/Rianico/pi-better-edit/compare/v1.4.1...v1.4.2) (2026-09-01)
 
 ### Bug Fixes
 
 * **ci:** prevent pre-push from blocking release push ([daa3d18](https://github.com/Rianico/pi-better-edit/commit/daa3d186020df736c9724d46af3f6b16100b3ef9))
 
-# Changelog
-
-All notable changes to this project will be documented in this file.
 
 ## [1.4.1](https://github.com/Rianico/pi-better-edit/compare/v1.4.0...v1.4.1) (2026-08-31)
 

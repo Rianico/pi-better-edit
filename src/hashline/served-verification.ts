@@ -125,6 +125,10 @@ export interface VerificationInput {
 	fileHashes: string[];
 	fileLines: string[];
 	filePath?: string;
+	tombstone?: ReadonlySet<string>;
+	servedCanons?: (string | null)[];
+	epochSnapshotId?: string;
+	curSnapshotId?: string;
 }
 
 /** Result shape requested in the task: {ok} | {code, servedRows, echo}. */
@@ -179,7 +183,9 @@ export class ServedVerification {
 	// -- public: throwing variant (compat with verifyServedRange) ------------
 
 	verifyOrThrow(input: VerificationInput): void {
-		const { range, served, fileHashes, fileLines, filePath } = input;
+		const { range, served, fileHashes, fileLines, filePath, tombstone: inputTombstone, servedCanons: inputServedCanons, epochSnapshotId, curSnapshotId } = input;
+		const tombstone = inputTombstone ?? new Set<string>();
+		const servedCanons = inputServedCanons;
 		const where = filePath ? ` in ${filePath}` : "";
 		const { startHash, endHash, startLine, endLine } = range;
 
@@ -187,6 +193,25 @@ export class ServedVerification {
 
 		const { echoRows, echo } = this.buildEchoBlock(startLine, endLine, fileHashes, fileLines);
 		const currentLen = endLine - startLine + 1;
+
+		// Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read
+		if ((tombstone.has(startHash) || tombstone.has(endHash)) && servedCanons) {
+			const tombstonedHash = tombstone.has(startHash) ? startHash : endHash;
+			const pos = fileHashes.indexOf(tombstonedHash);
+			if (pos >= 0) {
+				const servedIdx = served.indexOf(tombstonedHash);
+				const expected = servedIdx >= 0 ? servedCanons[servedIdx] : undefined;
+				const actual = canon(fileLines[pos] ?? "");
+				if (expected !== undefined && expected !== null && expected !== actual) {
+					this.throwStale({
+						message: `[E_RANGE_STALE] anchor "${tombstonedHash}" was freed since last full read (tombstoned, canon changed from "${expected}" to "${actual}"). Re-read.\nCurrent range:\n${echo}`,
+						firstOffendingLine: pos + 1,
+						echoRows,
+						echo,
+					});
+				}
+			}
+		}
 
 		const span = this.resolveServedSpan({
 			served,
@@ -230,6 +255,57 @@ export class ServedVerification {
 					startPositions: servedPositionsOf(served, startHash),
 					endPositions: servedPositionsOf(served, endHash),
 				});
+			}
+		}
+
+		// Derived strictPos: automatic fallback via epoch snapshotId (pos-free when epoch==cur, strict when concurrent write detected)
+		const strictPos = epochSnapshotId !== undefined && curSnapshotId !== undefined && epochSnapshotId !== curSnapshotId;
+
+		// Strict pos check for concurrency (pos-free vs strict) — after span resolution but before canon checks
+		if (strictPos && from !== undefined && from !== startLine - 1) {
+			this.throwStale({
+				message: `[E_RANGE_STALE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (pos-restricted concurrency). Re-read.\nCurrent range:\n${echo}`,
+				firstOffendingLine: startLine,
+				echoRows,
+				echo,
+			});
+		}
+
+		// Canon check for same-pos different content (collision) — before healed branch to cover healed spans? keep for non-healed; healed has own canon check
+		if (servedCanons && from !== undefined && to !== undefined) {
+			const servedLen = to - from + 1;
+			// Only run here for non-healed; healed path returns early via validateHealedSpan which already does canon check via store, but we also need epoch-canon check for strict correctness
+			if (!isHealed) {
+				for (let k = 0; k < servedLen; k++) {
+					const expected = servedCanons[from + k];
+					if (expected !== null && expected !== undefined) {
+						const actual = canon(fileLines[startLine - 1 + k] ?? "");
+						if (expected !== actual) {
+							this.throwStale({
+								message: `[E_RANGE_STALE] line ${startLine + k}${where} canon differs from served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${echo}`,
+								firstOffendingLine: startLine + k,
+								echoRows,
+								echo,
+							});
+						}
+					}
+				}
+				// Tombstone interior check (whole-span) — gated on canon inequality (fail-closed only for different canon)
+				for (let k = 0; k < servedLen; k++) {
+					const h = fileHashes[startLine - 1 + k];
+					if (h && tombstone.has(h)) {
+						const expectedCanon = servedCanons?.[from + k] ?? undefined;
+						const actualCanon = canon(fileLines[startLine - 1 + k] ?? "");
+						if (expectedCanon !== undefined && expectedCanon !== null && expectedCanon !== actualCanon) {
+							this.throwStale({
+								message: `[E_RANGE_STALE] line ${startLine + k}${where} uses tombstoned anchor "${h}" (freed since last full read, canon changed). Re-read.\nCurrent range:\n${echo}`,
+								firstOffendingLine: startLine + k,
+								echoRows,
+								echo,
+							});
+						}
+					}
+				}
 			}
 		}
 
@@ -617,6 +693,10 @@ export function verifyServedRange(args: {
 	fileLines: string[];
 	filePath?: string;
 	canonStore?: CanonStore;
+	tombstone?: ReadonlySet<string>;
+	servedCanons?: (string | null)[];
+	epochSnapshotId?: string;
+	curSnapshotId?: string;
 }): void {
 	const verifier = args.canonStore ? new ServedVerification(args.canonStore) : defaultVerifier;
 	verifier.verifyOrThrow({
@@ -630,6 +710,10 @@ export function verifyServedRange(args: {
 		fileHashes: args.fileHashes,
 		fileLines: args.fileLines,
 		filePath: args.filePath,
+		tombstone: args.tombstone,
+		servedCanons: args.servedCanons,
+		epochSnapshotId: args.epochSnapshotId,
+		curSnapshotId: args.curSnapshotId,
 	});
 }
 

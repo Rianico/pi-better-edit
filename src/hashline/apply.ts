@@ -188,6 +188,10 @@ export function applyEdit(
 	precomputedHashes?: string[],
 	filePath?: string,
 	served?: (string | null)[],
+	tombstone?: ReadonlySet<string>,
+	servedCanons?: (string | null)[],
+	epochSnapshotId?: string,
+	curSnapshotId?: string,
 ): {
 	content: string;
 	firstChangedLine: number | undefined;
@@ -250,6 +254,10 @@ export function applyEdit(
 			fileHashes,
 			fileLines: lineIndex.fileLines,
 			filePath,
+			tombstone,
+			servedCanons,
+			epochSnapshotId,
+			curSnapshotId,
 		});
 	}
 
