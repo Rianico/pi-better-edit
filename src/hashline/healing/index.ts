@@ -3,3 +3,4 @@ export { SingleCanonHeal, healSingleCanon } from "./single-canon.js";
 export { BoundaryHeal, healBoundaryCanon } from "./boundary.js";
 export { OrphanHeal, healOrphanedSpan } from "./orphan.js";
 export { findCanonMatches, isUniqueSection, isLengthHealedViaCanon } from "./helpers.js";
+export { healingPolicy, healWithPolicy, type HealingPolicy } from "./policy.js";

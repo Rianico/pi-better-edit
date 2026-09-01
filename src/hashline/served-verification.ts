@@ -17,9 +17,7 @@
  */
 import { HASH_SEP, canon, globalCanonStore, type CanonStore } from "./hash.js";
 import { SERVED_ECHO_CAP } from "../constants.js";
-import { healSingleCanon } from "./healing/single-canon.js";
-import { healBoundaryCanon } from "./healing/boundary.js";
-import { healOrphanedSpan } from "./healing/orphan.js";
+import { healingPolicy } from "./healing/policy.js";
 import { isLengthHealedViaCanon as isLengthHealedViaCanonHelper } from "./healing/helpers.js";
 
 // ---------------------------------------------------------------------------
@@ -456,6 +454,8 @@ export class ServedVerification {
 
 	// -- private: healing — delegated to internal HealingStrategy adapters -----
 
+// -- private: healing — delegated to HealingPolicy deep module -----
+
 	private tryHealOrphanedSpan(args: {
 		served: (string | null)[];
 		startHash: string;
@@ -467,47 +467,7 @@ export class ServedVerification {
 		startPositions: number[];
 		endPositions: number[];
 	}): { from: number; to: number } | undefined {
-		return healOrphanedSpan({ ...args, store: this.store });
-	}
-
-	private trySingleCandidateCanonHeal(args: {
-		served: (string | null)[];
-		startHash: string;
-		endHash: string;
-		currentLen: number;
-		fileLines: string[];
-		startPositions: number[];
-		endPositions: number[];
-	}): { from: number; to: number } | undefined {
-		return healSingleCanon({
-			served: args.served,
-			currentLen: args.currentLen,
-			fileLines: args.fileLines,
-			startPositions: args.startPositions,
-			endPositions: args.endPositions,
-			store: this.store,
-		});
-	}
-
-	private tryBoundaryCanonHeal(args: {
-		served: (string | null)[];
-		startHash: string;
-		endHash: string;
-		currentLen: number;
-		fileLines: string[];
-		fileHashes: string[];
-		startPositions: number[];
-		endPositions: number[];
-	}): { from: number; to: number } | undefined {
-		return healBoundaryCanon({
-			served: args.served,
-			startHash: args.startHash,
-			endHash: args.endHash,
-			currentLen: args.currentLen,
-			fileLines: args.fileLines,
-			fileHashes: args.fileHashes,
-			store: this.store,
-		});
+		return healingPolicy.tryHeal({ ...args, store: this.store });
 	}
 
 	// -- private: validation via decision table -------------------------------
