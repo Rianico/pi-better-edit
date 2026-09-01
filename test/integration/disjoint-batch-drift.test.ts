@@ -9,7 +9,7 @@ import {
 } from "../support/fixtures";
 
 describe("disjoint batch drift gap", () => {
-  it("warns for disjoint batch and does not report gap drift as outside (single-edit norm)", async () => {
+  it("interval-aware drift surfaces gap drift and no longer warns (C4)", async () => {
     await withTempFile(
       "sample.ts",
       "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n",
@@ -47,11 +47,10 @@ describe("disjoint batch drift gap", () => {
           ctx,
         );
         const resultText = getText(result);
-        // Batch drift note is now user-facing (details.warnings), not model content (ADR-0010)
-        expect((result as any).details?.warnings?.join("\n") ?? "").toContain("Batch drift note");
+        // C4: interval-aware drift — no Batch drift note, gap drift is now surfaced
+        expect((result as any).details?.warnings?.join("\n") ?? "").not.toContain("Batch drift note");
         expect(resultText).not.toContain("Batch drift note");
-        // Gap drift (E) should NOT be reported as drift because union treats gap as edited (documented norm)
-        // Outside drift (J) should be reported if not already reported? Let's check drift notice
+        // Gap drift (E) is now reported as drift because per-interval scan excludes only edited spans
         // Since J is at line10 outside union 2..8, it should be considered drift if served and changed.
         // But note file after edits: a,B,c,d,E,f,g,H,i,J -> J is still at 10, outside.
         // Compute expected: drift should include J if outside.
@@ -59,7 +58,9 @@ describe("disjoint batch drift gap", () => {
         expect(await readFile(path, "utf-8")).toBe(
           "a\nB\nc\nd\nE\nf\ng\nH\ni\nJ\n",
         );
-        // The disjoint warning documents the gap bug; per-edit drift would report E, but union does not.
+        // Verify gap drift (E) and outside drift (J) are surfaced in driftNotice
+        const gapDrift = (result as any).details?.driftNotice ?? "";
+        expect(gapDrift).toContain("│E");
         // Verify file hashes for B and H are correctly applied.
         const _hashes = await lineHashes(
           "a\nB\nc\nd\nE\nf\ng\nH\ni\nJ\n",

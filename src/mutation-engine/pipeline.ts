@@ -60,17 +60,11 @@
  * locally — not passed by ref across modules. servePolicy string is
  * internal (live vs preview) and not exposed.
  *
- * Drift union gap bug: previously unionStartLine/unionEndLine
- * synthesized in edit.ts as [minStart, maxEnd] and fed as a single
- * ResolvedRange to drift. For disjoint batch edits this hides the
- * gap (e.g., edits at lines 2 and 10 → union 2..10 excludes lines
- * 3..9 from drift). Fix: pipeline tracks per-edit ResolvedRange[]
- * (editedIntervals). Drift is documented as single-edit norm —
- * batch drift uses union and gaps are not reported as drift; a
- * warning is emitted when disjoint intervals are detected. A
- * per-interval drift (drift per-edit) would require mapping each
- * drifted line against any interval served span and per-position
- * delta (not just total delta); that is left as future work.
+ * Drift is interval-aware: pipeline tracks per-edit ResolvedRange[]
+ * (editedIntervals) and Drift scans per-interval (not union). Gaps
+ * between disjoint edits are correctly reported as drift; no
+ * Batch drift note warning is emitted. Per-interval deltaBefore
+ * maps served positions to current positions.
  *
  * Vocabulary (CONTEXT.md): range, span, served span, drift, drift
  * notice, reject-and-serve, payload contract — preserved.
@@ -574,35 +568,14 @@ const handle = (await import("../served-session/session.js")).createSessionHandl
 
 	let driftNotice: string | undefined;
 	if (!isPreview && unionStartLine !== Infinity) {
-		const sorted = [...editedIntervals].sort((a, b) => a.startLine - b.startLine);
-		let hasGap = false;
-		for (let i = 1; i < sorted.length; i++) {
-			if (sorted[i]!.startLine > sorted[i - 1]!.endLine + 1) {
-				hasGap = true;
-				break;
-			}
-		}
-		if (hasGap && editedIntervals.length > 1) {
-			// User-facing signal: Batch drift note stays in details.warnings, filtered from model content (see ADR-0010).
-			warnings.push(
-				`Batch drift note: edits are disjoint — drift inside the gap between edited intervals is not reported. For accurate gap drift, use sequential single-edit calls.`,
-			);
-		}
 		const resultLines = splitLines(result);
-		const originalLines = splitLines(originalNormalized);
 		try {
 			driftNotice = await scanDrift({
 				sessionKey,
 				served,
 				resultHashes,
 				resultLines,
-				range: {
-					startLine: unionStartLine,
-					endLine: unionEndLine,
-					startHash: unionStartHash,
-					endHash: unionEndHash,
-					delta: resultLines.length - originalLines.length,
-				},
+				intervals: editedIntervals,
 				path: absolutePath,
 			});
 		} catch (error) {
