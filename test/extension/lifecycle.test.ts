@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadHashStore } from "../../src/hash-store";
-import { upsertServed, getServed } from "../../src/served-state";
+import { upsertServed, getServed } from "../../src/served-session/index.js";
 import { upsertSnapshot, getSnapshot } from "../../src/snapshot-store";
 import { contentChecksum } from "../../src/hashline/hasher";
 import { withTempDir } from "../support/fixtures";

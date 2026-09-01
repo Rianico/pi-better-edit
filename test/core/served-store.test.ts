@@ -14,7 +14,7 @@ import {
 	clearReported,
 	deleteServed,
 	wipeServed,
-} from "../../src/served-state";
+} from "../../src/served-session/index.js";
 import {
 	pruneMissing,
 	upsertSnapshot,

@@ -11,6 +11,7 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "../hashline/alphabet.js";
+import { globalCanonStore, canon } from "../hashline/hash.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import {
   loadHashStore,
@@ -26,7 +27,9 @@ import type { ServeRecordPolicy, ServedEntry } from "./types.js";
 // --- sessionKey authority (kept here; served-state re-exports for compat) ---
 let fallbackSessionKey: string | undefined;
 
-export function sessionKeyFor(ctx?: { sessionManager?: { getSessionId(): string } }): string {
+export function sessionKeyFor(ctx?: {
+  sessionManager?: { getSessionId(): string };
+}): string {
   const fromSession = ctx?.sessionManager?.getSessionId();
   if (fromSession) return fromSession;
   fallbackSessionKey ??= randomUUID();
@@ -35,16 +38,60 @@ export function sessionKeyFor(ctx?: { sessionManager?: { getSessionId(): string 
 
 // --- SQLite stmts (private to deep module) ---
 interface ServedStmts {
-  servedGet: (sessionKey: string, path: string) => Record<string, unknown> | undefined;
-  servedUpsert: (sessionKey: string, path: string, hashes: string, updatedAt: number) => void;
-  servedReportedUpsert: (sessionKey: string, path: string, reported: string, updatedAt: number) => void;
-  servedReportedClear: (sessionKey: string, updatedAt: number, path: string) => void;
-  servedRetiredUpsert: (sessionKey: string, path: string, retired: string, updatedAt: number) => void;
-  servedRetiredClear: (sessionKey: string, updatedAt: number, path: string) => void;
-  servedCanonsUpsert: (sessionKey: string, path: string, canons: string, updatedAt: number) => void;
-  servedCanonsClear: (sessionKey: string, updatedAt: number, path: string) => void;
-  servedSnapshotUpsert: (sessionKey: string, path: string, snapshotId: string, updatedAt: number) => void;
-  servedSnapshotClear: (sessionKey: string, updatedAt: number, path: string) => void;
+  servedGet: (
+    sessionKey: string,
+    path: string,
+  ) => Record<string, unknown> | undefined;
+  servedUpsert: (
+    sessionKey: string,
+    path: string,
+    hashes: string,
+    updatedAt: number,
+  ) => void;
+  servedReportedUpsert: (
+    sessionKey: string,
+    path: string,
+    reported: string,
+    updatedAt: number,
+  ) => void;
+  servedReportedClear: (
+    sessionKey: string,
+    updatedAt: number,
+    path: string,
+  ) => void;
+  servedRetiredUpsert: (
+    sessionKey: string,
+    path: string,
+    retired: string,
+    updatedAt: number,
+  ) => void;
+  servedRetiredClear: (
+    sessionKey: string,
+    updatedAt: number,
+    path: string,
+  ) => void;
+  servedCanonsUpsert: (
+    sessionKey: string,
+    path: string,
+    canons: string,
+    updatedAt: number,
+  ) => void;
+  servedCanonsClear: (
+    sessionKey: string,
+    updatedAt: number,
+    path: string,
+  ) => void;
+  servedSnapshotUpsert: (
+    sessionKey: string,
+    path: string,
+    snapshotId: string,
+    updatedAt: number,
+  ) => void;
+  servedSnapshotClear: (
+    sessionKey: string,
+    updatedAt: number,
+    path: string,
+  ) => void;
   servedDelete: (sessionKey: string, path: string) => void;
   servedDeletePath: (path: string) => void;
   servedWipe: (sessionKey: string) => void;
@@ -58,7 +105,9 @@ function servedStmts(db: DatabaseSync): ServedStmts {
 }
 
 function buildStmts(db: DatabaseSync): ServedStmts {
-  const servedGetStmt = db.prepare("SELECT hashes, reported, retired, canons, snapshotId FROM served WHERE session_id = ? AND path = ?");
+  const servedGetStmt = db.prepare(
+    "SELECT hashes, reported, retired, canons, snapshotId FROM served WHERE session_id = ? AND path = ?",
+  );
   const servedUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
       "ON CONFLICT(session_id, path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
@@ -67,28 +116,41 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     "INSERT INTO served (session_id, path, hashes, reported, updated_at) VALUES (?, ?, '[]', ?, ?) " +
       "ON CONFLICT(session_id, path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at",
   );
-  const servedReportedClearStmt = db.prepare("UPDATE served SET reported = NULL, updated_at = ? WHERE session_id = ? AND path = ?");
+  const servedReportedClearStmt = db.prepare(
+    "UPDATE served SET reported = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
+  );
   const servedRetiredUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, retired, updated_at) VALUES (?, ?, '[]', ?, ?) " +
       "ON CONFLICT(session_id, path) DO UPDATE SET retired = excluded.retired, updated_at = excluded.updated_at",
   );
-  const servedRetiredClearStmt = db.prepare("UPDATE served SET retired = NULL, updated_at = ? WHERE session_id = ? AND path = ?");
+  const servedRetiredClearStmt = db.prepare(
+    "UPDATE served SET retired = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
+  );
   const servedCanonsUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, canons, updated_at) VALUES (?, ?, '[]', ?, ?) " +
       "ON CONFLICT(session_id, path) DO UPDATE SET canons = excluded.canons, updated_at = excluded.updated_at",
   );
-  const servedCanonsClearStmt = db.prepare("UPDATE served SET canons = NULL, updated_at = ? WHERE session_id = ? AND path = ?");
+  const servedCanonsClearStmt = db.prepare(
+    "UPDATE served SET canons = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
+  );
   const servedSnapshotUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, snapshotId, updated_at) VALUES (?, ?, '[]', ?, ?) " +
       "ON CONFLICT(session_id, path) DO UPDATE SET snapshotId = excluded.snapshotId, updated_at = excluded.updated_at",
   );
-  const servedSnapshotClearStmt = db.prepare("UPDATE served SET snapshotId = NULL, updated_at = ? WHERE session_id = ? AND path = ?");
-  const servedDeleteStmt = db.prepare("DELETE FROM served WHERE session_id = ? AND path = ?");
+  const servedSnapshotClearStmt = db.prepare(
+    "UPDATE served SET snapshotId = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
+  );
+  const servedDeleteStmt = db.prepare(
+    "DELETE FROM served WHERE session_id = ? AND path = ?",
+  );
   const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
   const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
-  const servedPruneOlderThanStmt = db.prepare("DELETE FROM served WHERE updated_at < ?");
+  const servedPruneOlderThanStmt = db.prepare(
+    "DELETE FROM served WHERE updated_at < ?",
+  );
   return {
-    servedGet: (...params) => servedGetStmt.get(...params) as Record<string, unknown> | undefined,
+    servedGet: (...params) =>
+      servedGetStmt.get(...params) as Record<string, unknown> | undefined,
     servedUpsert: (sessionKey, path, hashes, updatedAt) => {
       withBusyRetry(() => {
         servedUpsertStmt.run(sessionKey, path, hashes, updatedAt);
@@ -173,17 +235,27 @@ export function ensureServedSchema(db: DatabaseSync): void {
   );
   // Migration for existing DBs that were created before retired/canons/snapshotId
   try {
-    const cols = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    const cols = db.prepare("PRAGMA table_info(served)").all() as {
+      name: string;
+    }[];
     if (!cols.some((c) => c.name === "retired")) {
       db.exec("ALTER TABLE served ADD COLUMN retired TEXT");
-      try { db.exec("DELETE FROM snapshots"); } catch {}
-      try { db.exec("DELETE FROM undo"); } catch {}
+      try {
+        db.exec("DELETE FROM snapshots");
+      } catch {}
+      try {
+        db.exec("DELETE FROM undo");
+      } catch {}
     }
-    const cols2 = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    const cols2 = db.prepare("PRAGMA table_info(served)").all() as {
+      name: string;
+    }[];
     if (!cols2.some((c) => c.name === "canons")) {
       db.exec("ALTER TABLE served ADD COLUMN canons TEXT");
     }
-    const cols3 = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    const cols3 = db.prepare("PRAGMA table_info(served)").all() as {
+      name: string;
+    }[];
     if (!cols3.some((c) => c.name === "snapshotId")) {
       db.exec("ALTER TABLE served ADD COLUMN snapshotId TEXT");
     }
@@ -222,7 +294,6 @@ function isValidHashList(value: unknown): value is string[] {
   return true;
 }
 
-
 function buildServedHashIndex(updated: (string | null)[]): Map<string, number> {
   const index = new Map<string, number>();
   for (let i = 0; i < updated.length; i++) {
@@ -235,13 +306,24 @@ function buildServedHashIndex(updated: (string | null)[]): Map<string, number> {
   return index;
 }
 
-function validateServedEntry(entry: { position: number; hash: string | null }): void {
-  if (!Number.isInteger(entry.position) || entry.position < 0) throw new TypeError(`Invalid served position: ${entry.position}`);
-  if (entry.hash !== null && (typeof entry.hash !== "string" || !HASH_RE.test(entry.hash)))
+function validateServedEntry(entry: {
+  position: number;
+  hash: string | null;
+}): void {
+  if (!Number.isInteger(entry.position) || entry.position < 0)
+    throw new TypeError(`Invalid served position: ${entry.position}`);
+  if (
+    entry.hash !== null &&
+    (typeof entry.hash !== "string" || !HASH_RE.test(entry.hash))
+  )
     throw new TypeError(`Invalid served hash: ${String(entry.hash)}`);
 }
 
-function applySingleServedEntry(updated: (string | null)[], entry: { position: number; hash: string | null }, index: Map<string, number>): void {
+function applySingleServedEntry(
+  updated: (string | null)[],
+  entry: { position: number; hash: string | null },
+  index: Map<string, number>,
+): void {
   while (updated.length <= entry.position) updated.push(null);
   if (entry.hash !== null) {
     const existing = index.get(entry.hash);
@@ -259,7 +341,10 @@ function applySingleServedEntry(updated: (string | null)[], entry: { position: n
   updated[entry.position] = entry.hash;
 }
 
-function patchServed(updated: (string | null)[], entries: Array<{ position: number; hash: string | null }>): void {
+function patchServed(
+  updated: (string | null)[],
+  entries: Array<{ position: number; hash: string | null }>,
+): void {
   const index = buildServedHashIndex(updated);
   for (const entry of entries) {
     validateServedEntry(entry);
@@ -269,7 +354,11 @@ function patchServed(updated: (string | null)[], entries: Array<{ position: numb
 }
 
 // sync store-level ops (require open store — caller ensures via loadHashStore/withStore)
-function getServedInner(store: HashStore, sessionKey: string, path: string): (string | null)[] {
+function getServedInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): (string | null)[] {
   const row = servedStmts(store.db).servedGet(sessionKey, path);
   if (!row) return [];
   try {
@@ -283,31 +372,74 @@ function getServedInner(store: HashStore, sessionKey: string, path: string): (st
   }
 }
 
-function upsertServedInner(store: HashStore, sessionKey: string, path: string, entries: Array<{ position: number; hash: string | null }>): void {
+function upsertServedInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  entries: Array<{ position: number; hash: string | null }>,
+): void {
   if (entries.length === 0) return;
   withStore(() => {
     const updated = [...getServedInner(store, sessionKey, path)];
     patchServed(updated, entries);
-    servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+    servedStmts(store.db).servedUpsert(
+      sessionKey,
+      path,
+      JSON.stringify(updated),
+      Date.now(),
+    );
   });
 }
 
-function recordServesInner(store: HashStore, sessionKey: string, path: string, rows: Array<{ position: number; hash: string | null }>): void {
+function recordServesInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  rows: Array<{ position: number; hash: string | null }>,
+): void {
   if (rows.length === 0) return;
   try {
     withStore(() => {
       const before = getServedInner(store, sessionKey, path);
       const updated = [...before];
       patchServed(updated, rows);
-      const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
+      const isNoOp =
+        before.length === updated.length &&
+        before.every((v, i) => v === updated[i]);
       if (!isNoOp) {
-        servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+        servedStmts(store.db).servedUpsert(
+          sessionKey,
+          path,
+          JSON.stringify(updated),
+          Date.now(),
+        );
       } else {
         // still need to handle tombstone if displaced due to hash move? No-op means no displaced.
         return;
       }
       const disp = displacedHashes(before, updated);
       if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
+      // Keep canons in sync with hashes for edited rows — needed for canon verification (ADR-0005).
+      try {
+        const currentCanons = getCanonsInner(store, sessionKey, path);
+        const updatedCanons = currentCanons.slice();
+        for (const row of rows) {
+          while (updatedCanons.length <= row.position) updatedCanons.push(null);
+          const cv = row.hash ? (globalCanonStore.get(row.hash) ?? null) : null;
+          updatedCanons[row.position] = cv;
+        }
+        while (
+          updatedCanons.length > 0 &&
+          updatedCanons[updatedCanons.length - 1] === null
+        )
+          updatedCanons.pop();
+        servedStmts(store.db).servedCanonsUpsert(
+          sessionKey,
+          path,
+          JSON.stringify(updatedCanons),
+          Date.now(),
+        );
+      } catch {}
     });
   } catch (error) {
     console.error("Failed to record served rows:", error);
@@ -329,14 +461,47 @@ function recordServesTruncatedInner(
       const before = getServedInner(store, sessionKey, path);
       const updated = [...before];
       if (updated.length > lineCount) updated.length = lineCount;
-      if (clearFrom !== undefined) for (let i = clearFrom; i < updated.length; i++) updated[i] = null;
+      if (clearFrom !== undefined)
+        for (let i = clearFrom; i < updated.length; i++) updated[i] = null;
       patchServed(updated, rows);
-      const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
+      const isNoOp =
+        before.length === updated.length &&
+        before.every((v, i) => v === updated[i]);
       if (!isNoOp) {
-        servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+        servedStmts(store.db).servedUpsert(
+          sessionKey,
+          path,
+          JSON.stringify(updated),
+          Date.now(),
+        );
       }
       const disp = displacedHashes(before, updated);
       if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
+      // Keep canons in sync (truncated) — mirrors hash update
+      try {
+        const currentCanons = getCanonsInner(store, sessionKey, path);
+        const updatedCanons = currentCanons.slice();
+        if (updatedCanons.length > lineCount) updatedCanons.length = lineCount;
+        if (clearFrom !== undefined)
+          for (let i = clearFrom; i < updatedCanons.length; i++)
+            updatedCanons[i] = null;
+        for (const row of rows) {
+          while (updatedCanons.length <= row.position) updatedCanons.push(null);
+          const cv = row.hash ? (globalCanonStore.get(row.hash) ?? null) : null;
+          updatedCanons[row.position] = cv;
+        }
+        while (
+          updatedCanons.length > 0 &&
+          updatedCanons[updatedCanons.length - 1] === null
+        )
+          updatedCanons.pop();
+        servedStmts(store.db).servedCanonsUpsert(
+          sessionKey,
+          path,
+          JSON.stringify(updatedCanons),
+          Date.now(),
+        );
+      } catch {}
     });
   } catch (error) {
     console.error("Failed to record truncated served rows:", error);
@@ -344,7 +509,11 @@ function recordServesTruncatedInner(
   }
 }
 
-function getReportedInner(store: HashStore, sessionKey: string, path: string): Set<string> {
+function getReportedInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): Set<string> {
   const row = servedStmts(store.db).servedGet(sessionKey, path);
   if (!row) return new Set();
   const raw = row.reported;
@@ -352,29 +521,51 @@ function getReportedInner(store: HashStore, sessionKey: string, path: string): S
   try {
     const parsed = JSON.parse(raw) as unknown;
     if (!Array.isArray(parsed)) return new Set();
-    return new Set(parsed.filter((h): h is string => typeof h === "string" && HASH_RE.test(h)));
+    return new Set(
+      parsed.filter(
+        (h): h is string => typeof h === "string" && HASH_RE.test(h),
+      ),
+    );
   } catch {
     return new Set();
   }
 }
 
-function addReportedInner(store: HashStore, sessionKey: string, path: string, hashes: string[]): void {
+function addReportedInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  hashes: string[],
+): void {
   const valid = hashes.filter((hash) => HASH_RE.test(hash));
   if (valid.length === 0) return;
   withStore(() => {
     const current = getReportedInner(store, sessionKey, path);
     for (const hash of valid) current.add(hash);
-    servedStmts(store.db).servedReportedUpsert(sessionKey, path, JSON.stringify([...current]), Date.now());
+    servedStmts(store.db).servedReportedUpsert(
+      sessionKey,
+      path,
+      JSON.stringify([...current]),
+      Date.now(),
+    );
   });
 }
 
-function clearReportedInner(store: HashStore, sessionKey: string, path: string): void {
+function clearReportedInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): void {
   withStore(() => {
     servedStmts(store.db).servedReportedClear(sessionKey, Date.now(), path);
   });
 }
 
-function getCanonsInner(store: HashStore, sessionKey: string, path: string): (string | null)[] {
+function getCanonsInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): (string | null)[] {
   const row = servedStmts(store.db).servedGet(sessionKey, path);
   if (!row || row.canons === null || row.canons === undefined) return [];
   try {
@@ -387,9 +578,14 @@ function getCanonsInner(store: HashStore, sessionKey: string, path: string): (st
   }
 }
 
-function getTombstoneInner(store: HashStore, sessionKey: string, path: string): Set<string> {
+function getTombstoneInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): Set<string> {
   const row = servedStmts(store.db).servedGet(sessionKey, path);
-  if (!row || row.retired === null || row.retired === undefined) return new Set();
+  if (!row || row.retired === null || row.retired === undefined)
+    return new Set();
   try {
     const parsed = JSON.parse(row.retired as string) as unknown;
     if (!isValidHashList(parsed)) throw new TypeError("invalid retired");
@@ -400,29 +596,55 @@ function getTombstoneInner(store: HashStore, sessionKey: string, path: string): 
   }
 }
 
-function getEpochIdInner(store: HashStore, sessionKey: string, path: string): string | undefined {
+function getEpochIdInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): string | undefined {
   const row = servedStmts(store.db).servedGet(sessionKey, path);
-  if (!row || row.snapshotId === null || row.snapshotId === undefined) return undefined;
+  if (!row || row.snapshotId === null || row.snapshotId === undefined)
+    return undefined;
   return row.snapshotId as string;
 }
 
-function addRetiredAnchors(store: HashStore, sessionKey: string, path: string, hashes: Iterable<string>): void {
+function addRetiredAnchors(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  hashes: Iterable<string>,
+): void {
   const additions = [...hashes];
   if (additions.length === 0) return;
   const retired = getTombstoneInner(store, sessionKey, path);
   for (const hash of additions) {
-    if (!HASH_RE.test(hash)) throw new TypeError(`Invalid retired hash: ${hash}`);
+    if (!HASH_RE.test(hash))
+      throw new TypeError(`Invalid retired hash: ${hash}`);
     retired.add(hash);
   }
-  servedStmts(store.db).servedRetiredUpsert(sessionKey, path, JSON.stringify([...retired]), Date.now());
+  servedStmts(store.db).servedRetiredUpsert(
+    sessionKey,
+    path,
+    JSON.stringify([...retired]),
+    Date.now(),
+  );
 }
 
-function displacedHashes(current: readonly (string | null)[], updated: readonly (string | null)[]): Set<string> {
+function displacedHashes(
+  current: readonly (string | null)[],
+  updated: readonly (string | null)[],
+): Set<string> {
   const remaining = new Set(updated.filter((h): h is string => h !== null));
-  return new Set(current.filter((h): h is string => h !== null && !remaining.has(h)));
+  return new Set(
+    current.filter((h): h is string => h !== null && !remaining.has(h)),
+  );
 }
 
-async function retireAnchorsInner(store: HashStore, sessionKey: string, path: string, hashes: Iterable<string>): Promise<void> {
+async function retireAnchorsInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  hashes: Iterable<string>,
+): Promise<void> {
   const additions = [...hashes];
   if (additions.length === 0) return;
   withStore(() => {
@@ -431,9 +653,19 @@ async function retireAnchorsInner(store: HashStore, sessionKey: string, path: st
 }
 
 // helpers for handle
-function planServeRecording(input: { resultLineCount?: number; firstChangedLine?: number }): { mode: "plain" } | { mode: "truncated"; lineCount: number; clearFrom: number } {
+function planServeRecording(input: {
+  resultLineCount?: number;
+  firstChangedLine?: number;
+}):
+  | { mode: "plain" }
+  | { mode: "truncated"; lineCount: number; clearFrom: number } {
   if (typeof input.resultLineCount !== "number") return { mode: "plain" };
-  return { mode: "truncated", lineCount: input.resultLineCount, clearFrom: input.firstChangedLine !== undefined ? input.firstChangedLine - 1 : 0 };
+  return {
+    mode: "truncated",
+    lineCount: input.resultLineCount,
+    clearFrom:
+      input.firstChangedLine !== undefined ? input.firstChangedLine - 1 : 0,
+  };
 }
 
 // --- SessionHandle factory ---
@@ -477,12 +709,26 @@ export function createSessionHandle(
       const store = await resolveStore();
       recordServesInner(store, sessionKey, path, rows);
     },
-    async recordTruncated(rows: ServedEntry[], lineCount: number, clearFrom?: number): Promise<void> {
+    async recordTruncated(
+      rows: ServedEntry[],
+      lineCount: number,
+      clearFrom?: number,
+    ): Promise<void> {
       if (rows.length === 0) return;
       const store = await resolveStore();
-      recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, clearFrom);
+      recordServesTruncatedInner(
+        store,
+        sessionKey,
+        path,
+        rows,
+        lineCount,
+        clearFrom,
+      );
     },
-    async recordDiff(servedRows: ServedRow[], opts?: { resultLineCount?: number; firstChangedLine?: number }): Promise<void> {
+    async recordDiff(
+      servedRows: ServedRow[],
+      opts?: { resultLineCount?: number; firstChangedLine?: number },
+    ): Promise<void> {
       if (servedRows.length === 0) return;
       const store = await resolveStore();
       const plan = planServeRecording(opts ?? {});
@@ -490,9 +736,20 @@ export function createSessionHandle(
         recordServesInner(store, sessionKey, path, servedRows);
         return;
       }
-      recordServesTruncatedInner(store, sessionKey, path, servedRows, plan.lineCount, plan.clearFrom);
+      recordServesTruncatedInner(
+        store,
+        sessionKey,
+        path,
+        servedRows,
+        plan.lineCount,
+        plan.clearFrom,
+      );
     },
-    async recordEcho(rows: ServedRow[], policy: ServeRecordPolicy, lineCount?: number): Promise<void> {
+    async recordEcho(
+      rows: ServedRow[],
+      policy: ServeRecordPolicy,
+      lineCount?: number,
+    ): Promise<void> {
       if (policy !== "live") return;
       if (lineCount === undefined) {
         const store = await resolveStore();
@@ -500,38 +757,81 @@ export function createSessionHandle(
         return;
       }
       const store = await resolveStore();
-      recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, undefined);
+      recordServesTruncatedInner(
+        store,
+        sessionKey,
+        path,
+        rows,
+        lineCount,
+        undefined,
+      );
     },
-    async recordEpoch(input: { rows: ServedEntry[]; lineCount?: number; fullReadHashes?: readonly string[]; fullReadCanons?: readonly (string | null)[]; snapshotId?: string; isFullRead?: boolean }): Promise<void> {
+    async recordEpoch(input: {
+      rows: ServedEntry[];
+      lineCount?: number;
+      fullReadHashes?: readonly string[];
+      fullReadCanons?: readonly (string | null)[];
+      snapshotId?: string;
+      isFullRead?: boolean;
+    }): Promise<void> {
       if (input.rows.length === 0 && !input.fullReadHashes) return;
       const store = await resolveStore();
       const isFullRead =
-                        input.isFullRead ??
-                        (input.fullReadHashes !== undefined &&
-                        input.rows.length === input.fullReadHashes.length &&
-                        input.rows.every((row, index) => row.position === index && row.hash === input.fullReadHashes![index]));
+        input.isFullRead ??
+        (input.fullReadHashes !== undefined &&
+          input.rows.length === input.fullReadHashes.length &&
+          input.rows.every(
+            (row, index) =>
+              row.position === index &&
+              row.hash === input.fullReadHashes![index],
+          ));
       withStore(() => {
         const current = getServedInner(store, sessionKey, path);
         const updated = [...current];
         // merge rows via patchServed
         if (input.rows.length > 0) {
-          if (input.lineCount !== undefined && updated.length > input.lineCount) updated.length = input.lineCount;
+          if (input.lineCount !== undefined && updated.length > input.lineCount)
+            updated.length = input.lineCount;
           patchServed(updated, input.rows);
         } else if (input.lineCount !== undefined) {
-          if (updated.length > input.lineCount) updated.length = input.lineCount;
+          if (updated.length > input.lineCount)
+            updated.length = input.lineCount;
         }
-        const changed = current.length !== updated.length || current.some((v, i) => v !== updated[i]);
+        const changed =
+          current.length !== updated.length ||
+          current.some((v, i) => v !== updated[i]);
         if (changed || input.rows.length > 0) {
           if (updated.length === 0 && input.rows.length === 0) {
             // no-op
           } else {
-            servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+            servedStmts(store.db).servedUpsert(
+              sessionKey,
+              path,
+              JSON.stringify(updated),
+              Date.now(),
+            );
           }
         }
         if (isFullRead) {
-          servedStmts(store.db).servedRetiredClear(sessionKey, Date.now(), path);
-          if (input.fullReadCanons) servedStmts(store.db).servedCanonsUpsert(sessionKey, path, JSON.stringify(input.fullReadCanons), Date.now());
-          if (input.snapshotId) servedStmts(store.db).servedSnapshotUpsert(sessionKey, path, input.snapshotId, Date.now());
+          servedStmts(store.db).servedRetiredClear(
+            sessionKey,
+            Date.now(),
+            path,
+          );
+          if (input.fullReadCanons)
+            servedStmts(store.db).servedCanonsUpsert(
+              sessionKey,
+              path,
+              JSON.stringify(input.fullReadCanons),
+              Date.now(),
+            );
+          if (input.snapshotId)
+            servedStmts(store.db).servedSnapshotUpsert(
+              sessionKey,
+              path,
+              input.snapshotId,
+              Date.now(),
+            );
         } else {
           if (input.fullReadCanons && input.fullReadHashes) {
             const canonByHash = new Map<string, string | null>();
@@ -542,16 +842,33 @@ export function createSessionHandle(
             }
             const currentCanons = getCanonsInner(store, sessionKey, path);
             const updatedCanons = currentCanons.slice();
-            while (updatedCanons.length < (input.lineCount ?? 0)) updatedCanons.push(null);
+            while (updatedCanons.length < (input.lineCount ?? 0))
+              updatedCanons.push(null);
             for (const row of input.rows) {
-              while (updatedCanons.length <= row.position) updatedCanons.push(null);
+              while (updatedCanons.length <= row.position)
+                updatedCanons.push(null);
               const cv = row.hash ? (canonByHash.get(row.hash) ?? null) : null;
               updatedCanons[row.position] = cv;
             }
-            while (updatedCanons.length > 0 && updatedCanons[updatedCanons.length - 1] === null) updatedCanons.pop();
-            servedStmts(store.db).servedCanonsUpsert(sessionKey, path, JSON.stringify(updatedCanons), Date.now());
+            while (
+              updatedCanons.length > 0 &&
+              updatedCanons[updatedCanons.length - 1] === null
+            )
+              updatedCanons.pop();
+            servedStmts(store.db).servedCanonsUpsert(
+              sessionKey,
+              path,
+              JSON.stringify(updatedCanons),
+              Date.now(),
+            );
           }
-          if (input.snapshotId) servedStmts(store.db).servedSnapshotUpsert(sessionKey, path, input.snapshotId, Date.now());
+          if (input.snapshotId)
+            servedStmts(store.db).servedSnapshotUpsert(
+              sessionKey,
+              path,
+              input.snapshotId,
+              Date.now(),
+            );
           const disp = displacedHashes(current, updated);
           if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
         }
@@ -573,7 +890,10 @@ export function createSessionHandle(
 }
 
 // convenience: create from ctx directly
-export function sessionFromContext(ctx: { sessionManager?: { getSessionId(): string } }, path: string): import("./types.js").SessionHandle {
+export function sessionFromContext(
+  ctx: { sessionManager?: { getSessionId(): string } },
+  path: string,
+): import("./types.js").SessionHandle {
   return createSessionHandle(sessionKeyFor(ctx), path);
 }
 
@@ -583,22 +903,35 @@ export async function wipeSession(sessionKey: string): Promise<void> {
   servedStmts(store.db).servedWipe(sessionKey);
 }
 
-export async function loadTombstone(sessionKey: string, path: string): Promise<Set<string>> {
+export async function loadTombstone(
+  sessionKey: string,
+  path: string,
+): Promise<Set<string>> {
   const store = await loadHashStore();
   return getTombstoneInner(store, sessionKey, path);
 }
 
-export async function loadCanons(sessionKey: string, path: string): Promise<(string | null)[]> {
+export async function loadCanons(
+  sessionKey: string,
+  path: string,
+): Promise<(string | null)[]> {
   const store = await loadHashStore();
   return getCanonsInner(store, sessionKey, path);
 }
 
-export async function loadEpochId(sessionKey: string, path: string): Promise<string | undefined> {
+export async function loadEpochId(
+  sessionKey: string,
+  path: string,
+): Promise<string | undefined> {
   const store = await loadHashStore();
   return getEpochIdInner(store, sessionKey, path);
 }
 
-export async function retireAnchors(sessionKey: string, path: string, hashes: Iterable<string>): Promise<void> {
+export async function retireAnchors(
+  sessionKey: string,
+  path: string,
+  hashes: Iterable<string>,
+): Promise<void> {
   const store = await loadHashStore();
   await retireAnchorsInner(store, sessionKey, path, hashes);
 }
@@ -613,36 +946,66 @@ export function deleteServedByPath(store: HashStore, path: string): void {
 }
 
 // --- Legacy low-level exports for facade compat (keep import surface stable) ---
-export function getServed(store: HashStore, sessionKey: string, path: string): (string | null)[] {
+export function getServed(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): (string | null)[] {
   return getServedInner(store, sessionKey, path);
 }
 
-export function upsertServed(store: HashStore, sessionKey: string, path: string, entries: Array<{ position: number; hash: string | null }>): void {
+export function upsertServed(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  entries: Array<{ position: number; hash: string | null }>,
+): void {
   upsertServedInner(store, sessionKey, path, entries);
 }
 
-export function getReported(store: HashStore, sessionKey: string, path: string): Set<string> {
+export function getReported(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): Set<string> {
   return getReportedInner(store, sessionKey, path);
 }
 
-export function addReported(store: HashStore, sessionKey: string, path: string, hashes: string[]): void {
+export function addReported(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  hashes: string[],
+): void {
   addReportedInner(store, sessionKey, path, hashes);
 }
 
-export function clearReported(store: HashStore, sessionKey: string, path: string): void {
+export function clearReported(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): void {
   clearReportedInner(store, sessionKey, path);
 }
 
-export function deleteServed(store: HashStore, sessionKey: string, path: string): void {
+export function deleteServed(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): void {
   servedStmts(store.db).servedDelete(sessionKey, path);
 }
-
 
 export function wipeServed(store: HashStore, sessionKey: string): void {
   servedStmts(store.db).servedWipe(sessionKey);
 }
 
-export function recordServes(store: HashStore, sessionKey: string, path: string, rows: Array<{ position: number; hash: string | null }>): void {
+export function recordServes(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  rows: Array<{ position: number; hash: string | null }>,
+): void {
   recordServesInner(store, sessionKey, path, rows);
 }
 
@@ -654,5 +1017,12 @@ export function recordServesTruncated(
   lineCount: number,
   clearFrom?: number,
 ): void {
-  recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, clearFrom);
+  recordServesTruncatedInner(
+    store,
+    sessionKey,
+    path,
+    rows,
+    lineCount,
+    clearFrom,
+  );
 }

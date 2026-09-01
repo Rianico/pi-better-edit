@@ -37,7 +37,7 @@ import {
 import { DebouncedPreview } from "./preview-controller.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { findSnapshotPathsByHashes } from "./snapshot-store.js";
-import { sessionKeyFor } from "./served-state.js";
+import { sessionKeyFor } from "./served-session/session.js";
 import {
 	execEdits as pipelineExecEdits,
 	type PipelineOptions,

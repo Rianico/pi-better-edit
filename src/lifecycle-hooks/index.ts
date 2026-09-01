@@ -3,10 +3,11 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { initHasher as defaultInitHasher } from "../hashline/index.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store.js";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
-import {
-  recordDiffServes as defaultRecordDiffServes,
-  sessionKeyFor as defaultSessionKeyFor,
-} from "../served-state.js";
+import { createSessionHandle, sessionKeyFor as defaultSessionKeyFor } from "../served-session/session.js";
+
+async function defaultRecordDiffServes(input: { sessionKey: string; path: string; servedRows: import("../hashline/served.js").ServedRow[]; resultLineCount?: number; firstChangedLine?: number }): Promise<void> {
+  await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, { resultLineCount: input.resultLineCount, firstChangedLine: input.firstChangedLine });
+}
 import { readNormFile as defaultReadNormFile } from "../file-reader.js";
 import { loadFileKindAndText as defaultLoadFileKindAndText } from "../file-kind.js";
 import { toCwd as defaultToCwd } from "../paths.js";
