@@ -6,13 +6,8 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-- **lint:** remove unused vars and comments for CI
-- **pipeline:** add SAFETY for typed-boundary casts
-- **read:** persist epoch on read for ADR-0013
-- **test:** adapt whitespace seam after tombstone
-- **hashline:** prevent anchor reuse via tombstone
-- **served:** per-session tombstone epoch for ADR-0013
-- **hashline:** block reuse of removed hashes
+- **edit:** prevent tool calling bleed on Gemma 4
+- **hashline:** prevent freed anchor reuse via per-session tombstone and epoch (ADR-0013) (#56)
 
 ## [1.4.2](https://github.com/Rianico/pi-better-edit/compare/v1.4.1...v1.4.2) (2026-09-01)
 
