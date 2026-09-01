@@ -77,8 +77,6 @@
  */
 
 import { constants } from "node:fs";
-import type { LineEnding } from "../edit-diff.js";
-import { genDiff, restoreEndings } from "../edit-diff.js";
 import { readNormFile } from "../file-reader.js";
 import { abortIf, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
@@ -106,15 +104,23 @@ import {
 	recordDiffServes,
 	sessionKeyFor,
 } from "../served-state.js";
-import { scanDrift } from "../drift.js";
 import { createSessionHandle } from "../served-session/session.js";
 import { fileSnap } from "../file-reader.js";
-import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { saveUndo } from "../edit-undo.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
 import { toCwd } from "../paths.js";
 import type { NormalizedEditRequest } from "../edit-normalize.js";
-import { buildBatchResult, type BatchSection } from "../edit-response.js";
+// Presentation seam — single import for Result Presentation cluster
+import {
+	type LineEnding,
+	genDiff,
+	restoreEndings,
+	scanDrift,
+	clearNoopLoop,
+	runNoopPolicy,
+	buildBatchResult,
+	type BatchSection,
+} from "../edit-presentation.js";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 function collectRemovedHashes(
