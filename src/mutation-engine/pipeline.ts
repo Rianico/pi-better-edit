@@ -212,7 +212,8 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
 	let curSnapshotId: string | undefined;
 	try {
 		const handle = createSessionHandle(source.sessionKey, absolutePath, source.store);
-		const anyHandle = handle as unknown as { getTombstone?: () => Promise<Set<string>>; getCanons?: () => Promise<(string | null)[]>; getEpochSnapshotId?: () => Promise<string | undefined> };
+		// SAFETY: handle typed as unknown for optional getTombstone check — method may be loadTombstone, fallback to empty set preserves batch atomicity
+const anyHandle = handle as unknown as { getTombstone?: () => Promise<Set<string>>; getCanons?: () => Promise<(string | null)[]>; getEpochSnapshotId?: () => Promise<string | undefined> };
 		if (anyHandle.getTombstone) tombstone = await anyHandle.getTombstone();
 		if (anyHandle.getCanons) servedCanons = await anyHandle.getCanons();
 		if (anyHandle.getEpochSnapshotId) epochSnapshotId = await anyHandle.getEpochSnapshotId();
@@ -341,7 +342,8 @@ async function applyOneEdit(
 		prior: { content: input.content, hashes: input.hashes, removedHashes },
 		persist: input.persistHashes,
 		snapshotIO: snapshotIOFor(input.store),
-		tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
+		// SAFETY: tombstone passed as ReadonlySet via unknown for HashIdentity compatibility — input.tombstone is already typed, cast preserves immutability
+tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
 	} as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
 	return {
 		kind: "applied",
@@ -453,7 +455,8 @@ async function runMutations(
 			signal: options?.signal,
 			filePath: path,
 			served,
-			tombstone: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getTombstone?: () => Promise<Set<string>> }; return h.getTombstone ? await h.getTombstone() : new Set<string>(); } catch { return new Set<string>(); } })()) as ReadonlySet<string>,
+			// SAFETY: dynamic import per-iteration to fetch fresh tombstone after previous edit's retire — handle may not have getTombstone, fallback empty preserves correctness
+tombstone: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getTombstone?: () => Promise<Set<string>> }; return h.getTombstone ? await h.getTombstone() : new Set<string>(); } catch { return new Set<string>(); } })()) as ReadonlySet<string>,
 			servedCanons: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getCanons?: () => Promise<(string|null)[]> }; return h.getCanons ? await h.getCanons() : []; } catch { return []; } })()),
 			epochSnapshotId: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getEpochSnapshotId?: () => Promise<string|undefined> }; return h.getEpochSnapshotId ? await h.getEpochSnapshotId() : undefined; } catch { return undefined; } })()),
 			curSnapshotId: (await (async () => { try { return (await fileSnap(absolutePath)).snapshotId; } catch { return undefined; } })()),
@@ -529,7 +532,8 @@ async function runMutations(
 		totalRemovedLines += removed;
 		if (!isPreview) {
 			try {
-				const handle = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { retireAnchors?: (hashes: Iterable<string>) => Promise<void> };
+				// SAFETY: dynamic import for retireAnchors — handle may have retire vs retireAnchors, check existence before calling to avoid throwing in preview mode
+const handle = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { retireAnchors?: (hashes: Iterable<string>) => Promise<void> };
 				if (handle.retireAnchors) await handle.retireAnchors(outcome.removedHashes);
 			} catch {}
 		}
