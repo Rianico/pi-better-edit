@@ -50,7 +50,9 @@ import {
 import { isMutationSuccess } from "./mutation-engine/types.js";
 
 void EDIT_DESCRIPTION;
+/** @deprecated Import from "./payload-contract.js" — single source per ADR-0007 */
 export { assertReq };
+/** @deprecated Import from "./payload-contract.js" — single source per ADR-0007. Re-exports retained for compatibility until next MAJOR. */
 export {
 	editToolSchema,
 	editTupleSchema,
