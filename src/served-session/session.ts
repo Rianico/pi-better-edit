@@ -39,6 +39,12 @@ interface ServedStmts {
   servedUpsert: (sessionKey: string, path: string, hashes: string, updatedAt: number) => void;
   servedReportedUpsert: (sessionKey: string, path: string, reported: string, updatedAt: number) => void;
   servedReportedClear: (sessionKey: string, updatedAt: number, path: string) => void;
+  servedRetiredUpsert: (sessionKey: string, path: string, retired: string, updatedAt: number) => void;
+  servedRetiredClear: (sessionKey: string, updatedAt: number, path: string) => void;
+  servedCanonsUpsert: (sessionKey: string, path: string, canons: string, updatedAt: number) => void;
+  servedCanonsClear: (sessionKey: string, updatedAt: number, path: string) => void;
+  servedSnapshotUpsert: (sessionKey: string, path: string, snapshotId: string, updatedAt: number) => void;
+  servedSnapshotClear: (sessionKey: string, updatedAt: number, path: string) => void;
   servedDelete: (sessionKey: string, path: string) => void;
   servedDeletePath: (path: string) => void;
   servedWipe: (sessionKey: string) => void;
@@ -52,7 +58,7 @@ function servedStmts(db: DatabaseSync): ServedStmts {
 }
 
 function buildStmts(db: DatabaseSync): ServedStmts {
-  const servedGetStmt = db.prepare("SELECT hashes, reported FROM served WHERE session_id = ? AND path = ?");
+  const servedGetStmt = db.prepare("SELECT hashes, reported, retired, canons, snapshotId FROM served WHERE session_id = ? AND path = ?");
   const servedUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
       "ON CONFLICT(session_id, path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
@@ -62,6 +68,21 @@ function buildStmts(db: DatabaseSync): ServedStmts {
       "ON CONFLICT(session_id, path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at",
   );
   const servedReportedClearStmt = db.prepare("UPDATE served SET reported = NULL, updated_at = ? WHERE session_id = ? AND path = ?");
+  const servedRetiredUpsertStmt = db.prepare(
+    "INSERT INTO served (session_id, path, hashes, retired, updated_at) VALUES (?, ?, '[]', ?, ?) " +
+      "ON CONFLICT(session_id, path) DO UPDATE SET retired = excluded.retired, updated_at = excluded.updated_at",
+  );
+  const servedRetiredClearStmt = db.prepare("UPDATE served SET retired = NULL, updated_at = ? WHERE session_id = ? AND path = ?");
+  const servedCanonsUpsertStmt = db.prepare(
+    "INSERT INTO served (session_id, path, hashes, canons, updated_at) VALUES (?, ?, '[]', ?, ?) " +
+      "ON CONFLICT(session_id, path) DO UPDATE SET canons = excluded.canons, updated_at = excluded.updated_at",
+  );
+  const servedCanonsClearStmt = db.prepare("UPDATE served SET canons = NULL, updated_at = ? WHERE session_id = ? AND path = ?");
+  const servedSnapshotUpsertStmt = db.prepare(
+    "INSERT INTO served (session_id, path, hashes, snapshotId, updated_at) VALUES (?, ?, '[]', ?, ?) " +
+      "ON CONFLICT(session_id, path) DO UPDATE SET snapshotId = excluded.snapshotId, updated_at = excluded.updated_at",
+  );
+  const servedSnapshotClearStmt = db.prepare("UPDATE served SET snapshotId = NULL, updated_at = ? WHERE session_id = ? AND path = ?");
   const servedDeleteStmt = db.prepare("DELETE FROM served WHERE session_id = ? AND path = ?");
   const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
   const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
@@ -81,6 +102,36 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     servedReportedClear: (sessionKey, updatedAt, path) => {
       withBusyRetry(() => {
         servedReportedClearStmt.run(updatedAt, sessionKey, path);
+      });
+    },
+    servedRetiredUpsert: (sessionKey, path, retired, updatedAt) => {
+      withBusyRetry(() => {
+        servedRetiredUpsertStmt.run(sessionKey, path, retired, updatedAt);
+      });
+    },
+    servedRetiredClear: (sessionKey, updatedAt, path) => {
+      withBusyRetry(() => {
+        servedRetiredClearStmt.run(updatedAt, sessionKey, path);
+      });
+    },
+    servedCanonsUpsert: (sessionKey, path, canons, updatedAt) => {
+      withBusyRetry(() => {
+        servedCanonsUpsertStmt.run(sessionKey, path, canons, updatedAt);
+      });
+    },
+    servedCanonsClear: (sessionKey, updatedAt, path) => {
+      withBusyRetry(() => {
+        servedCanonsClearStmt.run(updatedAt, sessionKey, path);
+      });
+    },
+    servedSnapshotUpsert: (sessionKey, path, snapshotId, updatedAt) => {
+      withBusyRetry(() => {
+        servedSnapshotUpsertStmt.run(sessionKey, path, snapshotId, updatedAt);
+      });
+    },
+    servedSnapshotClear: (sessionKey, updatedAt, path) => {
+      withBusyRetry(() => {
+        servedSnapshotClearStmt.run(updatedAt, sessionKey, path);
       });
     },
     servedDelete: (sessionKey, path) => {
@@ -113,10 +164,30 @@ export function ensureServedSchema(db: DatabaseSync): void {
       "path TEXT NOT NULL, " +
       "hashes TEXT NOT NULL, " +
       "reported TEXT, " +
+      "retired TEXT, " +
+      "canons TEXT, " +
+      "snapshotId TEXT, " +
       "updated_at INTEGER NOT NULL, " +
       "PRIMARY KEY (session_id, path)" +
       ")",
   );
+  // Migration for existing DBs that were created before retired/canons/snapshotId
+  try {
+    const cols = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "retired")) {
+      db.exec("ALTER TABLE served ADD COLUMN retired TEXT");
+      try { db.exec("DELETE FROM snapshots"); } catch {}
+      try { db.exec("DELETE FROM undo"); } catch {}
+    }
+    const cols2 = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    if (!cols2.some((c) => c.name === "canons")) {
+      db.exec("ALTER TABLE served ADD COLUMN canons TEXT");
+    }
+    const cols3 = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    if (!cols3.some((c) => c.name === "snapshotId")) {
+      db.exec("ALTER TABLE served ADD COLUMN snapshotId TEXT");
+    }
+  } catch {}
 }
 
 onStoreOpen((db) => {
@@ -132,6 +203,27 @@ function isValidServedList(value: unknown): value is (string | null)[] {
     if (typeof entry !== "string" || !HASH_RE.test(entry)) return false;
   }
   return true;
+}
+
+function isValidCanonsList(value: unknown): value is (string | null)[] {
+  if (!Array.isArray(value)) return false;
+  for (const entry of value) {
+    if (entry === null) continue;
+    if (typeof entry !== "string") return false;
+  }
+  return true;
+}
+
+function isValidHashList(value: unknown): value is string[] {
+  if (!Array.isArray(value)) return false;
+  for (const h of value) {
+    if (typeof h !== "string" || !HASH_RE.test(h)) return false;
+  }
+  return true;
+}
+
+function isValidCanonsOrEmpty(value: unknown): boolean {
+  return isValidCanonsList(value);
 }
 
 function buildServedHashIndex(updated: (string | null)[]): Map<string, number> {
@@ -206,7 +298,20 @@ function upsertServedInner(store: HashStore, sessionKey: string, path: string, e
 function recordServesInner(store: HashStore, sessionKey: string, path: string, rows: Array<{ position: number; hash: string | null }>): void {
   if (rows.length === 0) return;
   try {
-    upsertServedInner(store, sessionKey, path, rows);
+    withStore(() => {
+      const before = getServedInner(store, sessionKey, path);
+      const updated = [...before];
+      patchServed(updated, rows);
+      const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
+      if (!isNoOp) {
+        servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+      } else {
+        // still need to handle tombstone if displaced due to hash move? No-op means no displaced.
+        return;
+      }
+      const disp = displacedHashes(before, updated);
+      if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
+    });
   } catch (error) {
     console.error("Failed to record served rows:", error);
     throw error;
@@ -229,8 +334,12 @@ function recordServesTruncatedInner(
       if (updated.length > lineCount) updated.length = lineCount;
       if (clearFrom !== undefined) for (let i = clearFrom; i < updated.length; i++) updated[i] = null;
       patchServed(updated, rows);
-      if (before.length === updated.length && before.every((v, i) => v === updated[i])) return;
-      servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+      const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
+      if (!isNoOp) {
+        servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+      }
+      const disp = displacedHashes(before, updated);
+      if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
     });
   } catch (error) {
     console.error("Failed to record truncated served rows:", error);
@@ -268,6 +377,62 @@ function clearReportedInner(store: HashStore, sessionKey: string, path: string):
   });
 }
 
+function getCanonsInner(store: HashStore, sessionKey: string, path: string): (string | null)[] {
+  const row = servedStmts(store.db).servedGet(sessionKey, path);
+  if (!row || row.canons === null || row.canons === undefined) return [];
+  try {
+    const parsed = JSON.parse(row.canons as string) as unknown;
+    if (!isValidCanonsList(parsed)) throw new TypeError("invalid canons");
+    return parsed;
+  } catch {
+    servedStmts(store.db).servedDelete(sessionKey, path);
+    return [];
+  }
+}
+
+function getTombstoneInner(store: HashStore, sessionKey: string, path: string): Set<string> {
+  const row = servedStmts(store.db).servedGet(sessionKey, path);
+  if (!row || row.retired === null || row.retired === undefined) return new Set();
+  try {
+    const parsed = JSON.parse(row.retired as string) as unknown;
+    if (!isValidHashList(parsed)) throw new TypeError("invalid retired");
+    return new Set(parsed);
+  } catch {
+    servedStmts(store.db).servedDelete(sessionKey, path);
+    return new Set();
+  }
+}
+
+function getEpochIdInner(store: HashStore, sessionKey: string, path: string): string | undefined {
+  const row = servedStmts(store.db).servedGet(sessionKey, path);
+  if (!row || row.snapshotId === null || row.snapshotId === undefined) return undefined;
+  return row.snapshotId as string;
+}
+
+function addRetiredAnchors(store: HashStore, sessionKey: string, path: string, hashes: Iterable<string>): void {
+  const additions = [...hashes];
+  if (additions.length === 0) return;
+  const retired = getTombstoneInner(store, sessionKey, path);
+  for (const hash of additions) {
+    if (!HASH_RE.test(hash)) throw new TypeError(`Invalid retired hash: ${hash}`);
+    retired.add(hash);
+  }
+  servedStmts(store.db).servedRetiredUpsert(sessionKey, path, JSON.stringify([...retired]), Date.now());
+}
+
+function displacedHashes(current: readonly (string | null)[], updated: readonly (string | null)[]): Set<string> {
+  const remaining = new Set(updated.filter((h): h is string => h !== null));
+  return new Set(current.filter((h): h is string => h !== null && !remaining.has(h)));
+}
+
+async function retireAnchorsInner(store: HashStore, sessionKey: string, path: string, hashes: Iterable<string>): Promise<void> {
+  const additions = [...hashes];
+  if (additions.length === 0) return;
+  withStore(() => {
+    addRetiredAnchors(store, sessionKey, path, additions);
+  });
+}
+
 // helpers for handle
 function planServeRecording(input: { resultLineCount?: number; firstChangedLine?: number }): { mode: "plain" } | { mode: "truncated"; lineCount: number; clearFrom: number } {
   if (typeof input.resultLineCount !== "number") return { mode: "plain" };
@@ -293,6 +458,22 @@ export function createSessionHandle(
     async load(): Promise<(string | null)[]> {
       const store = await resolveStore();
       return getServedInner(store, sessionKey, path);
+    },
+    async loadCanons(): Promise<(string | null)[]> {
+      const store = await resolveStore();
+      return getCanonsInner(store, sessionKey, path);
+    },
+    async loadEpochId(): Promise<string | undefined> {
+      const store = await resolveStore();
+      return getEpochIdInner(store, sessionKey, path);
+    },
+    async loadTombstone(): Promise<Set<string>> {
+      const store = await resolveStore();
+      return getTombstoneInner(store, sessionKey, path);
+    },
+    async retire(hashes: Iterable<string>): Promise<void> {
+      const store = await resolveStore();
+      await retireAnchorsInner(store, sessionKey, path, hashes);
     },
     async record(rows: ServedEntry[]): Promise<void> {
       if (rows.length === 0) return;
@@ -324,6 +505,60 @@ export function createSessionHandle(
       const store = await resolveStore();
       recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, undefined);
     },
+    async recordEpoch(input: { rows: ServedEntry[]; lineCount?: number; fullReadHashes?: readonly string[]; fullReadCanons?: readonly (string | null)[]; snapshotId?: string }): Promise<void> {
+      if (input.rows.length === 0 && !input.fullReadHashes) return;
+      const store = await resolveStore();
+      const isFullRead =
+        input.fullReadHashes !== undefined &&
+        input.rows.length === input.fullReadHashes.length &&
+        input.rows.every((row, index) => row.position === index && row.hash === input.fullReadHashes![index]);
+      withStore(() => {
+        const current = getServedInner(store, sessionKey, path);
+        const updated = [...current];
+        // merge rows via patchServed
+        if (input.rows.length > 0) {
+          if (input.lineCount !== undefined && updated.length > input.lineCount) updated.length = input.lineCount;
+          patchServed(updated, input.rows);
+        } else if (input.lineCount !== undefined) {
+          if (updated.length > input.lineCount) updated.length = input.lineCount;
+        }
+        const changed = current.length !== updated.length || current.some((v, i) => v !== updated[i]);
+        if (changed || input.rows.length > 0) {
+          if (updated.length === 0 && input.rows.length === 0) {
+            // no-op
+          } else {
+            servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+          }
+        }
+        if (isFullRead) {
+          servedStmts(store.db).servedRetiredClear(sessionKey, Date.now(), path);
+          if (input.fullReadCanons) servedStmts(store.db).servedCanonsUpsert(sessionKey, path, JSON.stringify(input.fullReadCanons), Date.now());
+          if (input.snapshotId) servedStmts(store.db).servedSnapshotUpsert(sessionKey, path, input.snapshotId, Date.now());
+        } else {
+          if (input.fullReadCanons && input.fullReadHashes) {
+            const canonByHash = new Map<string, string | null>();
+            for (let i = 0; i < input.fullReadHashes.length; i++) {
+              const h = input.fullReadHashes[i]!;
+              const c = input.fullReadCanons[i] ?? null;
+              if (h) canonByHash.set(h, c);
+            }
+            const currentCanons = getCanonsInner(store, sessionKey, path);
+            const updatedCanons = currentCanons.slice();
+            while (updatedCanons.length < (input.lineCount ?? 0)) updatedCanons.push(null);
+            for (const row of input.rows) {
+              while (updatedCanons.length <= row.position) updatedCanons.push(null);
+              const cv = row.hash ? (canonByHash.get(row.hash) ?? null) : null;
+              updatedCanons[row.position] = cv;
+            }
+            while (updatedCanons.length > 0 && updatedCanons[updatedCanons.length - 1] === null) updatedCanons.pop();
+            servedStmts(store.db).servedCanonsUpsert(sessionKey, path, JSON.stringify(updatedCanons), Date.now());
+          }
+          if (input.snapshotId) servedStmts(store.db).servedSnapshotUpsert(sessionKey, path, input.snapshotId, Date.now());
+          const disp = displacedHashes(current, updated);
+          if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
+        }
+      });
+    },
     async clearDrift(): Promise<void> {
       const store = await resolveStore();
       clearReportedInner(store, sessionKey, path);
@@ -348,6 +583,26 @@ export function sessionFromContext(ctx: { sessionManager?: { getSessionId(): str
 export async function wipeSession(sessionKey: string): Promise<void> {
   const store = await loadHashStore();
   servedStmts(store.db).servedWipe(sessionKey);
+}
+
+export async function loadTombstone(sessionKey: string, path: string): Promise<Set<string>> {
+  const store = await loadHashStore();
+  return getTombstoneInner(store, sessionKey, path);
+}
+
+export async function loadCanons(sessionKey: string, path: string): Promise<(string | null)[]> {
+  const store = await loadHashStore();
+  return getCanonsInner(store, sessionKey, path);
+}
+
+export async function loadEpochId(sessionKey: string, path: string): Promise<string | undefined> {
+  const store = await loadHashStore();
+  return getEpochIdInner(store, sessionKey, path);
+}
+
+export async function retireAnchors(sessionKey: string, path: string, hashes: Iterable<string>): Promise<void> {
+  const store = await loadHashStore();
+  await retireAnchorsInner(store, sessionKey, path, hashes);
 }
 
 export async function deleteServedByPathAsync(path: string): Promise<void> {

@@ -245,10 +245,47 @@ function buildStore(db: DatabaseSync): void {
       "path TEXT NOT NULL, " +
       "hashes TEXT NOT NULL, " +
       "reported TEXT, " +
+      "retired TEXT, " +
+      "canons TEXT, " +
+      "snapshotId TEXT, " +
       "updated_at INTEGER NOT NULL, " +
       "PRIMARY KEY (session_id, path)" +
       ")",
   );
+  // ADR-0013: migrate existing served table for tombstone/canons/epoch
+  // Check for missing columns and add them. Retired column addition also
+  // invalidates snapshots/undo that may contain rebound anchors.
+  {
+    const cols = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    if (!cols.some((c) => c.name === "retired")) {
+      let migrationOpen = false;
+      try {
+        db.exec("BEGIN IMMEDIATE");
+        migrationOpen = true;
+        const mcols = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+        if (!mcols.some((c) => c.name === "retired")) {
+          db.exec("ALTER TABLE served ADD COLUMN retired TEXT");
+          db.exec("DELETE FROM snapshots");
+          db.exec("DELETE FROM undo");
+        }
+        db.exec("COMMIT");
+        migrationOpen = false;
+      } catch (e) {
+        if (migrationOpen) {
+          try { db.exec("ROLLBACK"); } catch {}
+        }
+        throw e;
+      }
+    }
+    const cols2 = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    if (!cols2.some((c) => c.name === "canons")) {
+      db.exec("ALTER TABLE served ADD COLUMN canons TEXT");
+    }
+    const cols3 = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
+    if (!cols3.some((c) => c.name === "snapshotId")) {
+      db.exec("ALTER TABLE served ADD COLUMN snapshotId TEXT");
+    }
+  }
   db.prepare(
     "INSERT INTO meta (key, value) VALUES ('version', ?) " +
       "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

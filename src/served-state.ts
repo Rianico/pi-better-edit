@@ -28,6 +28,10 @@ export {
   wipeServed,
   recordServes,
   recordServesTruncated,
+  loadTombstone,
+  loadCanons,
+  loadEpochId,
+  retireAnchors,
 } from "./served-session/session.js";
 
 export { createSessionHandle as createServedSession } from "./served-session/session.js";
