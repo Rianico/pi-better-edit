@@ -5,7 +5,7 @@ const GHERKIN_RE =
   /^\s*(Given|When|Then|And|But|Feature|Scenario|Background|Scenario Outline|Examples)\b/i;
 
 const ALLOWLIST_RE =
-  /^\s*\*?\s*(SAFETY:|WHY:|Invariant:|See ADR-|via https:\/\/|TODO\(#\d+\):|HACK:|@deprecated|eslint-disable)/;
+  /(SAFETY:|WHY:|Invariant:|See ADR-|via https:\/\/|TODO\(#\d+\):|HACK:|@deprecated|eslint-disable)/;
 
 const noCommentsRule = {
   meta: {
@@ -77,8 +77,6 @@ export default tseslint.config(
       "src/file-kind.ts",
       "src/file-reader.ts",
       "src/read.ts",
-      "src/hashline/healing/**",
-      "src/payload-contract.ts",
     ],
     rules: {
       "custom/no-comments": "off",

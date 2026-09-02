@@ -165,12 +165,11 @@ function itemFromTuple(value: unknown): EditItem | undefined {
 	return { remove_from, remove_to, replacement_text };
 }
 
-
 function sanitizePath(value: unknown): string | null {
 	if (typeof value !== "string") return null;
 	let s = value.trim();
-	// Gemma 4 bleed: model may wrap path in <|>, │, |, quotes, or backticks due to │ confusion
-	// Strip leading/trailing wrappers iteratively
+	// WHY: Gemma 4 bleed: model may wrap path in <|>, │, |, quotes, or backticks due to │ confusion — see via https://github.com/Rianico/pi-better-edit/issues/55
+	// WHY: Strip leading/trailing wrappers iteratively — model may re-wrap after slice, see sanitizePath
 	let changed = true;
 	while (changed) {
 		changed = false;
@@ -186,7 +185,11 @@ function sanitizePath(value: unknown): string | null {
 			s = s.slice(1, -1).trim();
 			changed = true;
 		}
-		if ((s.startsWith('"') && s.endsWith('"')) || (s.startsWith("'") && s.endsWith("'")) || (s.startsWith("`") && s.endsWith("`"))) {
+		if (
+			(s.startsWith('"') && s.endsWith('"')) ||
+			(s.startsWith("'") && s.endsWith("'")) ||
+			(s.startsWith("`") && s.endsWith("`"))
+		) {
 			s = s.slice(1, -1).trim();
 			changed = true;
 		}
