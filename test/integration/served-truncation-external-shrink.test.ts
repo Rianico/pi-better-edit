@@ -4,7 +4,7 @@ import { join } from "path";
 import register from "../../index";
 import { withTempFile, getText, extractHash } from "../support/fixtures";
 import { loadHashStore } from "../../src/hash-store";
-import { getServed, sessionKeyFor } from "../../src/served-state";
+import { getServed, sessionKeyFor } from "../../src/served-session/index.js";
 
 type ToolResultCtx = { cwd: string };
 

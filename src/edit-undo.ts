@@ -2,7 +2,12 @@ import { readFile } from "node:fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readUndo, writeUndo, removeUndo, type UndoRecord } from "./undo-store.js";
+import {
+	readUndo,
+	writeUndo,
+	removeUndo,
+	type UndoRecord,
+} from "./undo-store.js";
 import { upsertSnapshotFor } from "./snapshot-store.js";
 import { contentChecksum } from "./hashline/hasher.js";
 import { resolveTarget, writeAtomic } from "./fs-write.js";
@@ -181,12 +186,19 @@ export function regEditUndo(pi: ExtensionAPI): void {
 				const { text: currentStripped } = stripBOM(currentRaw);
 				const currentNormalized = toLF(currentStripped);
 				// SAFETY: ctx typed as unknown for optional sessionManager — validated via optional chaining, fallback to unknown-session preserves undo
-const sessionKeyForUndo = (ctx as unknown as { sessionManager?: { getSessionId(): string } })?.sessionManager?.getSessionId?.() ?? "unknown-session";
+				const sessionKeyForUndo =
+					(
+						ctx as unknown as { sessionManager?: { getSessionId(): string } }
+					)?.sessionManager?.getSessionId?.() ?? "unknown-session";
 				let tombstoneForUndo: ReadonlySet<string> = new Set();
 				try {
-					// SAFETY: handle typed as unknown for optional getTombstone — method may be loadTombstone, fallback empty preserves undo
-const handle = (await import("./served-session/session.js")).createSessionHandle(sessionKeyForUndo, mutationTargetPath) as unknown as { getTombstone?: () => Promise<Set<string>> };
-					if (handle.getTombstone) tombstoneForUndo = await handle.getTombstone();
+					const { createSessionHandle } = await import(
+						"./served-session/session.js"
+					);
+					const handle = createSessionHandle(sessionKeyForUndo, mutationTargetPath);
+					tombstoneForUndo = await handle
+						.loadTombstone()
+						.catch(() => new Set<string>());
 				} catch {}
 				const currentHashes = await lineHashes(
 					currentNormalized,
@@ -214,15 +226,21 @@ const handle = (await import("./served-session/session.js")).createSessionHandle
 				try {
 					const blocked = new Set<string>(tombstoneForUndo);
 					for (const h of currentHashes) blocked.add(h);
-					const retiredOriginal = new Set<string>(undo.hashes.filter((h) => (tombstoneForUndo as Set<string>).has(h)));
-					restoredHashes = await lineHashes(
+					const retiredOriginal = new Set<string>(
+						undo.hashes.filter((h) => (tombstoneForUndo as Set<string>).has(h)),
+					);
+					restoredHashes = (await lineHashes(
 						undo.content,
 						mutationTargetPath,
-						{ content: undo.content, hashes: undo.hashes, removedHashes: retiredOriginal },
+						{
+							content: undo.content,
+							hashes: undo.hashes,
+							removedHashes: retiredOriginal,
+						},
 						undefined,
 						false,
-					// SAFETY: cast via unknown for hash-identity snapshotIO compatibility — input already validated as string[]
-) as unknown as string[];
+						// SAFETY: cast via unknown for hash-identity snapshotIO compatibility — input already validated as string[]
+					)) as unknown as string[];
 				} catch {}
 				const undoDenseRows: typeof undoDiffResult.servedRows = [];
 				for (let i = 0; i < restoredHashes.length; i++) {
@@ -233,9 +251,16 @@ const handle = (await import("./served-session/session.js")).createSessionHandle
 					const restoredSet = new Set(restoredHashes);
 					const toRetire = [...curSet].filter((h) => !restoredSet.has(h));
 					if (toRetire.length > 0) {
-						// SAFETY: handle typed as unknown for optional retireAnchors — method may be retire, check existence before calling
-const handle = (await import("./served-session/session.js")).createSessionHandle(sessionKeyForUndo, mutationTargetPath) as unknown as { retireAnchors?: (hs: Iterable<string>) => Promise<void> };
-						if (handle.retireAnchors) await handle.retireAnchors(toRetire);
+						try {
+							const { createSessionHandle } = await import(
+								"./served-session/session.js"
+							);
+							const handle = createSessionHandle(
+								sessionKeyForUndo,
+								mutationTargetPath,
+							);
+							await handle.retire(toRetire);
+						} catch {}
 					}
 				} catch {}
 

@@ -6,7 +6,7 @@ import {
 	getText,
 } from "../support/fixtures";
 import { lineHashes } from "../../src/hashline";
-import { recordDiffServes, sessionKeyFor } from "../../src/served-state";
+import { recordDiffServes, sessionKeyFor } from "../../src/served-session/index.js";
 
 const CLEAN = "function hello() {\n  const x = 1;\n  return x;\n}\n";
 

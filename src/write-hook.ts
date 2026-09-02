@@ -10,7 +10,7 @@ import { HASH_SEP } from "./hashline/hash-identity.js";
 import { abortIf, splitLines } from "./utils.js";
 import { resolveTarget } from "./fs-write.js";
 import { toCwd } from "./paths.js";
-import { loadServed, sessionKeyFor } from "./served-state.js";
+import { createSessionHandle, sessionKeyFor } from "./served-session/session.js";
 
 export interface ServedHashEcho {
 	/** One-based candidate line carrying the copied anchor. */
@@ -64,7 +64,8 @@ export async function servedHashEchoDenial(
 		absolutePath = await resolveTarget(toCwd(rawPath, cwd));
 	}
 	abortIf(signal);
-	const served = await loadServed(sessionKey, absolutePath);
+	const handle = createSessionHandle(sessionKey, absolutePath);
+	const served = await handle.load();
 	const match = findServedHashEcho(content, served);
 	if (!match) return undefined;
 	return (

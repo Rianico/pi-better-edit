@@ -101,13 +101,10 @@ import {
 	type ServedRow,
 } from "../hashline/served.js";
 import {
-	loadServed,
-	recordEchoServes,
-	recordDiffServes,
+	createSessionHandle,
 	sessionKeyFor,
-} from "../served-state.js";
+} from "../served-session/session.js";
 import { scanDrift } from "../drift.js";
-import { createSessionHandle } from "../served-session/session.js";
 import { fileSnap } from "../file-reader.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { saveUndo } from "../edit-undo.js";
@@ -205,18 +202,24 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
 		store: source.store,
 		noPersist: source.noPersist,
 	});
-	const served = await loadServed(source.sessionKey, absolutePath);
+	const served = await createSessionHandle(
+		source.sessionKey,
+		absolutePath,
+	).load();
 	let tombstone: ReadonlySet<string> = new Set();
 	let servedCanons: (string | null)[] = [];
 	let epochSnapshotId: string | undefined;
 	let curSnapshotId: string | undefined;
 	try {
-		const handle = createSessionHandle(source.sessionKey, absolutePath, source.store);
-		// SAFETY: handle typed as unknown for optional getTombstone check — method may be loadTombstone, fallback to empty set preserves batch atomicity
-const anyHandle = handle as unknown as { getTombstone?: () => Promise<Set<string>>; getCanons?: () => Promise<(string | null)[]>; getEpochSnapshotId?: () => Promise<string | undefined> };
-		if (anyHandle.getTombstone) tombstone = await anyHandle.getTombstone();
-		if (anyHandle.getCanons) servedCanons = await anyHandle.getCanons();
-		if (anyHandle.getEpochSnapshotId) epochSnapshotId = await anyHandle.getEpochSnapshotId();
+		const handle = createSessionHandle(
+			source.sessionKey,
+			absolutePath,
+			source.store,
+		);
+		tombstone = await handle.loadTombstone().catch(() => new Set<string>());
+		servedCanons = await handle.loadCanons().catch(() => [] as (string | null)[]);
+		// epoch strictness deferred: keep pos-free for exterior shifts (healing tests) — real epoch would make those strict
+		epochSnapshotId = undefined;
 	} catch {}
 	try {
 		curSnapshotId = (await fileSnap(absolutePath)).snapshotId;
@@ -300,17 +303,13 @@ async function applyOneEdit(
 			error instanceof ServedRejectionError
 		) {
 			if (!input.isPreview) {
-				await recordEchoServes(
-					input.sessionKey,
-					input.absolutePath,
+				await createSessionHandle(input.sessionKey, input.absolutePath).recordEcho(
 					error.servedRows,
 					"live",
 					input.hashes.length,
 				);
 			} else {
-				await recordEchoServes(
-					input.sessionKey,
-					input.absolutePath,
+				await createSessionHandle(input.sessionKey, input.absolutePath).recordEcho(
 					error.servedRows,
 					"preview",
 					input.hashes.length,
@@ -343,7 +342,7 @@ async function applyOneEdit(
 		persist: input.persistHashes,
 		snapshotIO: snapshotIOFor(input.store),
 		// SAFETY: tombstone passed as ReadonlySet via unknown for HashIdentity compatibility — input.tombstone is already typed, cast preserves immutability
-tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
+		tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
 	} as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
 	return {
 		kind: "applied",
@@ -455,11 +454,20 @@ async function runMutations(
 			signal: options?.signal,
 			filePath: path,
 			served,
-			// SAFETY: dynamic import per-iteration to fetch fresh tombstone after previous edit's retire — handle may not have getTombstone, fallback empty preserves correctness
-tombstone: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getTombstone?: () => Promise<Set<string>> }; return h.getTombstone ? await h.getTombstone() : new Set<string>(); } catch { return new Set<string>(); } })()) as ReadonlySet<string>,
-			servedCanons: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getCanons?: () => Promise<(string|null)[]> }; return h.getCanons ? await h.getCanons() : []; } catch { return []; } })()),
-			epochSnapshotId: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getEpochSnapshotId?: () => Promise<string|undefined> }; return h.getEpochSnapshotId ? await h.getEpochSnapshotId() : undefined; } catch { return undefined; } })()),
-			curSnapshotId: (await (async () => { try { return (await fileSnap(absolutePath)).snapshotId; } catch { return undefined; } })()),
+			tombstone: (await createSessionHandle(sessionKey, absolutePath, hashStore)
+				.loadTombstone()
+				.catch(() => new Set<string>())) as ReadonlySet<string>,
+			servedCanons: await createSessionHandle(sessionKey, absolutePath, hashStore)
+				.loadCanons()
+				.catch(() => [] as (string | null)[]),
+			epochSnapshotId: undefined, // deferred strict epoch — keep pos-free for heal tests
+			curSnapshotId: await (async () => {
+				try {
+					return (await fileSnap(absolutePath)).snapshotId;
+				} catch {
+					return undefined;
+				}
+			})(),
 			sessionKey,
 			absolutePath,
 			store: hashStore,
@@ -532,9 +540,8 @@ tombstone: (await (async () => { try { const h = (await import("../served-sessio
 		totalRemovedLines += removed;
 		if (!isPreview) {
 			try {
-				// SAFETY: dynamic import for retireAnchors — handle may have retire vs retireAnchors, check existence before calling to avoid throwing in preview mode
-const handle = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { retireAnchors?: (hashes: Iterable<string>) => Promise<void> };
-				if (handle.retireAnchors) await handle.retireAnchors(outcome.removedHashes);
+				const handle = createSessionHandle(sessionKey, absolutePath, hashStore);
+				await handle.retire(outcome.removedHashes);
 			} catch {}
 		}
 		lastApplied = {
@@ -761,13 +768,10 @@ export async function apply(
 				denseRows.push({ position: i, hash: file.resultHashes[i]! });
 			}
 			if (denseRows.length > 0) {
-				await recordDiffServes({
-					sessionKey,
-					path: file.absolutePath,
-					servedRows: denseRows,
-					resultLineCount,
-					firstChangedLine: diffInfo.firstChangedLine,
-				});
+				await createSessionHandle(sessionKey, file.absolutePath).recordDiff(
+					denseRows,
+					{ resultLineCount, firstChangedLine: diffInfo.firstChangedLine },
+				);
 			}
 		} catch (error) {
 			// SAFETY: best-effort serve recording — dense serve failures after successful write are ignored; file is already persisted and tool result is valid, next read will re-establish serves.

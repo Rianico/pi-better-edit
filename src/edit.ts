@@ -5,7 +5,10 @@
  * Framework (pi TUI) lives in TuiPresenter.
  */
 
-import type { ExtensionAPI, ToolDefinition } from "@earendil-works/pi-coding-agent";
+import type {
+	ExtensionAPI,
+	ToolDefinition,
+} from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
 import {
 	prepareEditArguments,
@@ -21,13 +24,23 @@ import {
 import { createEditTool } from "./edit-tool.js";
 import { createTuiPresenter } from "./tui-presenter.js";
 import { loadP, loadGuide } from "./prompts.js";
-import { execEdits as pipelineExecEdits, type PipelineOptions, type ProcessedEditFile } from "./edit-pipeline.js";
+import {
+	execEdits as pipelineExecEdits,
+	type PipelineOptions,
+	type ProcessedEditFile,
+} from "./edit-pipeline.js";
 import type { EditDetails } from "./edit-response.js";
 import type { RPreview, RRState } from "./edit-render.js";
 
 void EDIT_DESCRIPTION;
 export { assertReq };
-export { editToolSchema, editTupleSchema, replacementTextSchema, removeFromSchema, removeToSchema };
+export {
+	editToolSchema,
+	editTupleSchema,
+	replacementTextSchema,
+	removeFromSchema,
+	removeToSchema,
+};
 export { resolveMissingPath } from "./edit-tool.js";
 export { reuseText, reuseMarkdown } from "./tui-presenter.js";
 
@@ -49,7 +62,10 @@ export function execEdits(
 	return pipelineExecEdits(request, cwd, options);
 }
 
-export async function compPreview(request: unknown, cwd: string): Promise<RPreview> {
+export async function compPreview(
+	request: unknown,
+	cwd: string,
+): Promise<RPreview> {
 	const tool = createEditTool();
 	return tool.preview(request, cwd);
 }
@@ -78,9 +94,20 @@ export function buildToolDef(): ToolDef {
 		...presenter.asToolDef(),
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			// SAFETY: pi execute boundary is untyped — ctx narrowed via sessionKeyFor, signal is AbortSignal validated by engine
-			const res = await tool.execute(params, signal as AbortSignal | undefined, ctx as unknown as { cwd: string; sessionManager?: { getSessionId(): string } });
+			const res = await tool.execute(
+				params,
+				signal as AbortSignal | undefined,
+				ctx as unknown as {
+					cwd: string;
+					sessionManager?: { getSessionId(): string };
+				},
+			);
 			// SAFETY: res is validated tool result after tool.execute — cast to pi ToolDef return type for registration
-			return res as unknown as ReturnType<ToolDef["execute"]> extends Promise<infer R> ? R : never;
+			return res as unknown as ReturnType<ToolDef["execute"]> extends Promise<
+				infer R
+			>
+				? R
+				: never;
 		},
 	};
 }

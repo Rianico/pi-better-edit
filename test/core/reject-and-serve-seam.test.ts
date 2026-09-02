@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { ServedRejectionError } from "../../src/hashline/served";
 import { finalizeToolResult } from "../../src/edit-response";
-import { loadServed, recordEchoServes } from "../../src/served-state";
+import { loadServed, recordEchoServes } from "../../src/served-session/index.js";
 import { applyEdit, _lineHashesPure, type HEdit } from "../../src/hashline";
 import { shutdownHashStore } from "../../src/hash-store";
 import { initHasher } from "../../src/hashline/hasher";

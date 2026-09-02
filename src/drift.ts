@@ -4,13 +4,9 @@ import {
   fmtServedRows,
   type ResolvedRange,
 } from "./hashline/served.js";
-import {
-  currentPositionOfDrifted,
-  driftReported,
-  markDriftReported,
-  recordServedTruncated,
-  servedPositionsOf,
-} from "./served-state.js";
+import { servedPositionsOf } from "./hashline/served.js";
+import { currentPositionOfDrifted } from "./served-session/drift-helpers.js";
+import { createSessionHandle } from "./served-session/session.js";
 
 const DRIFT_NOTICE_HEADING = "drift:";
 
@@ -163,19 +159,11 @@ export async function scanDrift(input: {
   range: ResolvedRange;
   path: string;
 }): Promise<string | undefined> {
-  const reported = await driftReported(input.sessionKey, input.path);
+  const handle = createSessionHandle(input.sessionKey, input.path);
+  const reported = await handle.driftReported();
   const result = computeDrift({ ...input, reported });
   if (!result || result.allAlreadyReported) return result?.text;
-  await recordServedTruncated(
-    input.sessionKey,
-    input.path,
-    result.rows.map((row) => ({ position: row.position, hash: row.hash })),
-    input.resultLines.length,
-  );
-  await markDriftReported(
-    input.sessionKey,
-    input.path,
-    result.rows.filter((row) => row.drifted).map((row) => row.hash),
-  );
+  await handle.recordTruncated(result.rows.map((row) => ({ position: row.position, hash: row.hash })), input.resultLines.length);
+  await handle.markDriftReported(result.rows.filter((row) => row.drifted).map((row) => row.hash));
   return result.text;
 }

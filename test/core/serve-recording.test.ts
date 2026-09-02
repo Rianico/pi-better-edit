@@ -3,12 +3,12 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
-import { getServed, upsertServed } from "../../src/served-state";
+import { getServed, upsertServed } from "../../src/served-session/index.js";
 import {
 	planServeRecording,
 	recordDiffServes,
 	recordEchoServes,
-} from "../../src/served-state";
+} from "../../src/served-session/index.js";
 import { scanDrift } from "../../src/drift";
 import { initHasher } from "../../src/hashline";
 import { getWritableTempRoot } from "../support/fixtures";
