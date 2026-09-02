@@ -74,7 +74,7 @@ describe("hash heal TDD", () => {
             undefined,
             ctx,
           );
-        } catch (e) {
+        } catch {
           // With correct canons sync, pos-free healing may require fresh read — retry after re-serve
           const fresh = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
           const freshText = getText(fresh);

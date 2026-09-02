@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
+import { buildChanged } from "../../src/edit-response.js";
 import * as Presentation from "../../src/edit-presentation.js";
-import { buildChanged, buildNoop } from "../../src/edit-response.js";
 import { genDiff } from "../../src/edit-diff.js";
 import { scanDrift } from "../../src/drift.js";
 import { runNoopPolicy } from "../../src/noop-guard.js";

@@ -9,7 +9,7 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
   });
 
   it("no src file imports from served-state", () => {
-    const srcFiles = readdirSync("src", { recursive: true } as unknown as { recursive: boolean }) as unknown as string[];
+    const _srcFiles = readdirSync("src", { recursive: true } as unknown as { recursive: boolean }) as unknown as string[];
     // fallback: use manual walk if recursive not supported
     const walk = (dir: string, out: string[] = []): string[] => {
       for (const entry of readdirSync(dir, { withFileTypes: true } as unknown as never) as unknown as { name: string; isDirectory(): boolean; isFile(): boolean }[]) {

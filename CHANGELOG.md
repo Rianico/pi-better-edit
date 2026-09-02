@@ -11,6 +11,7 @@
 
 ### Bug Fixes
 
+- **lint:** address GH Action lint errors — unused vars per no-unused-vars
 - **lint:** retrofit comments to high-signal allowlist per ADR-0014
 
 ## [1.4.3](https://github.com/Rianico/pi-better-edit/compare/v1.4.2...v1.4.3) (2026-09-01)
