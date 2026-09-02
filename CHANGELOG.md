@@ -6,6 +6,7 @@
 - **served-session:** deepen ServedSession, delete shallow served-state facade
 - **drift:** deepen Drift seam to interval-aware scan
 - **payload:** consolidate Payload Contract seam — single source
+- **healing:** deepen Healing as Strategy chain behind ServedVerification
 
 ## [1.4.3](https://github.com/Rianico/pi-better-edit/compare/v1.4.2...v1.4.3) (2026-09-01)
 
