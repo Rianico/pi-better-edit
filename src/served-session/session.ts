@@ -1,5 +1,5 @@
 /**
- * ServedSession handle — deep implementation hiding HashStore, sessionKey, and healing.
+ * SAFETY: ServedSession handle — deep implementation hiding HashStore, sessionKey, and healing.
  *
  * Keeps fact authority (what this session saw) inside the module. Callers get a
  * handle bound to (sessionKey, path); all storage details (sessionKey threading,
@@ -24,7 +24,7 @@ import {
 import type { ServedRow } from "../hashline/served.js";
 import type { ServeRecordPolicy, ServedEntry } from "./types.js";
 
-// --- sessionKey authority (kept here; served-state re-exports for compat) ---
+// WHY: --- sessionKey authority (kept here; served-state re-exports for compat) ---
 let fallbackSessionKey: string | undefined;
 
 export function sessionKeyFor(ctx?: {
@@ -36,7 +36,7 @@ export function sessionKeyFor(ctx?: {
   return fallbackSessionKey;
 }
 
-// --- SQLite stmts (private to deep module) ---
+// WHY: --- SQLite stmts (private to deep module) ---
 interface ServedStmts {
   servedGet: (
     sessionKey: string,
@@ -233,7 +233,7 @@ export function ensureServedSchema(db: DatabaseSync): void {
       "PRIMARY KEY (session_id, path)" +
       ")",
   );
-  // Migration for existing DBs that were created before retired/canons/snapshotId
+  // WHY: Migration for existing DBs that were created before retired/canons/snapshotId
   try {
     const cols = db.prepare("PRAGMA table_info(served)").all() as {
       name: string;
@@ -267,7 +267,7 @@ onStoreOpen((db) => {
   servedStmts(db).servedPruneOlderThan(Date.now() - SERVED_TTL_MS);
 });
 
-// --- internal helpers — private to deep module (not exported) ---
+// WHY: --- internal helpers — private to deep module (not exported) ---
 function isValidServedList(value: unknown): value is (string | null)[] {
   if (!Array.isArray(value)) return false;
   for (const entry of value) {
@@ -353,7 +353,7 @@ function patchServed(
   while (updated.length > 0 && updated.at(-1) === null) updated.pop();
 }
 
-// sync store-level ops (require open store — caller ensures via loadHashStore/withStore)
+// WHY: sync store-level ops (require open store — caller ensures via loadHashStore/withStore)
 function getServedInner(
   store: HashStore,
   sessionKey: string,
@@ -414,12 +414,12 @@ function recordServesInner(
           Date.now(),
         );
       } else {
-        // still need to handle tombstone if displaced due to hash move? No-op means no displaced.
+        // WHY: still need to handle tombstone if displaced due to hash move? No-op means no displaced.
         return;
       }
       const disp = displacedHashes(before, updated);
       if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
-      // Keep canons in sync with hashes for edited rows — needed for canon verification (ADR-0005).
+      // WHY: Keep canons in sync with hashes for edited rows — needed for canon verification (ADR-0005).
       try {
         const currentCanons = getCanonsInner(store, sessionKey, path);
         const updatedCanons = currentCanons.slice();
@@ -477,7 +477,7 @@ function recordServesTruncatedInner(
       }
       const disp = displacedHashes(before, updated);
       if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
-      // Keep canons in sync (truncated) — mirrors hash update
+      // WHY: Keep canons in sync (truncated) — mirrors hash update
       try {
         const currentCanons = getCanonsInner(store, sessionKey, path);
         const updatedCanons = currentCanons.slice();
@@ -652,7 +652,7 @@ async function retireAnchorsInner(
   });
 }
 
-// helpers for handle
+// WHY: helpers for handle
 function planServeRecording(input: {
   resultLineCount?: number;
   firstChangedLine?: number;
@@ -668,14 +668,14 @@ function planServeRecording(input: {
   };
 }
 
-// --- SessionHandle factory ---
+// WHY: --- SessionHandle factory ---
 export function createSessionHandle(
   sessionKey: string,
   path: string,
   storeOverride?: HashStore,
 ): import("./types.js").SessionHandle {
-  // storeOverride allows injecting MemoryStore in tests via custom HashStore wrapping Memory DB
-  // For prod, we load the shared SQLite store lazily.
+  // WHY: storeOverride allows injecting MemoryStore in tests via custom HashStore wrapping Memory DB
+  // WHY: For prod, we load the shared SQLite store lazily.
   async function resolveStore(): Promise<HashStore> {
     if (storeOverride) return storeOverride;
     return loadHashStore();
@@ -788,7 +788,7 @@ export function createSessionHandle(
       withStore(() => {
         const current = getServedInner(store, sessionKey, path);
         const updated = [...current];
-        // merge rows via patchServed
+        // WHY: merge rows via patchServed
         if (input.rows.length > 0) {
           if (input.lineCount !== undefined && updated.length > input.lineCount)
             updated.length = input.lineCount;
@@ -802,7 +802,7 @@ export function createSessionHandle(
           current.some((v, i) => v !== updated[i]);
         if (changed || input.rows.length > 0) {
           if (updated.length === 0 && input.rows.length === 0) {
-            // no-op
+            // WHY: no-op
           } else {
             servedStmts(store.db).servedUpsert(
               sessionKey,
@@ -889,7 +889,7 @@ export function createSessionHandle(
   };
 }
 
-// convenience: create from ctx directly
+// WHY: convenience: create from ctx directly
 export function sessionFromContext(
   ctx: { sessionManager?: { getSessionId(): string } },
   path: string,
@@ -897,7 +897,7 @@ export function sessionFromContext(
   return createSessionHandle(sessionKeyFor(ctx), path);
 }
 
-// re-export TTL-aware wipe helpers for extension lifecycle (still via handle path, but keep as util)
+// WHY: re-export TTL-aware wipe helpers for extension lifecycle (still via handle path, but keep as util)
 export async function wipeSession(sessionKey: string): Promise<void> {
   const store = await loadHashStore();
   servedStmts(store.db).servedWipe(sessionKey);
@@ -945,7 +945,7 @@ export function deleteServedByPath(store: HashStore, path: string): void {
   servedStmts(store.db).servedDeletePath(path);
 }
 
-// --- Legacy low-level exports for facade compat (keep import surface stable) ---
+// WHY: --- Legacy low-level exports for facade compat (keep import surface stable) ---
 export function getServed(
   store: HashStore,
   sessionKey: string,

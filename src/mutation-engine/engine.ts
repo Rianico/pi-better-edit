@@ -1,5 +1,5 @@
 /**
- * MutationEngine — deep module behind the mutation seam.
+ * SAFETY: MutationEngine — deep module behind the mutation seam.
  *
  * Small interface: `execute` + `preview`. Deep implementation: load → parse
  * → mutate → finalize → drift → persist → serve hidden inside the pipeline.
@@ -24,9 +24,9 @@ function extractCode(message: string): string {
 function toFailure(error: unknown): MutationResult {
   const message = error instanceof Error ? error.message : String(error);
   const code = error instanceof Error ? errCode(message) ?? extractCode(message) : "E_UNKNOWN";
-  // Try to preserve servedRows/echo if error carries them (ServedRejectionError, AnchorMismatchError)
+  // WHY: Try to preserve servedRows/echo if error carries them (ServedRejectionError, AnchorMismatchError)
   const servedRows = (error as { servedRows?: import("../hashline/served.js").ServedRow[] })?.servedRows;
-  // Echo is embedded in message for batch abort; keep message as echo source.
+  // WHY: Echo is embedded in message for batch abort; keep message as echo source.
   return {
     ok: false,
     code,
@@ -36,7 +36,7 @@ function toFailure(error: unknown): MutationResult {
 }
 
 /**
- * Execute a mutation against the file system (persist + undo + serve).
+ * SAFETY: Execute a mutation against the file system (persist + undo + serve).
  * Returns discriminated `MutationResult` — callers must switch on `ok`.
  *
  * No `any` threading: input is `NormalizedEditRequest` (validated at
@@ -66,7 +66,7 @@ export async function execute(
 }
 
 /**
- * Preview a mutation without persisting (noPersist). Same seam as `execute`,
+ * SAFETY: Preview a mutation without persisting (noPersist). Same seam as `execute`,
  * same `MutationResult` — one interface, N call sites (preview + apply share
  * the internal path via `runMutations` with `noPersist:true`).
  */
@@ -76,18 +76,18 @@ export async function preview(
   options?: Omit<PipelineOptions, "noPersist">,
 ): Promise<MutationResult> {
   try {
-    // pipelinePreview does not persist and does not write undo — but still
-    // runs the full mutate→finalize→drift path.
+    // WHY: pipelinePreview does not persist and does not write undo — but still
+    // WHY: runs the full mutate→finalize→drift path.
     const file = await pipelinePreview(request, cwd, options);
-    // Build a success shape matching execute's contract without persist.
-    // `file` is ProcessedEditFile; synthesize diff/metrics via the same
-    // helpers the pipeline's `apply` would use — but for preview we can
-    // return minimal success (raw is the file, diff is empty if noop).
-    // To avoid duplicating buildBatchResult logic, delegate to a thin
-    // conversion: if applied, callers can diff via raw; otherwise noop.
-    // Here we surface raw + a synthetic success — callers that need diff
-    // should use `execute` or rely on `raw.result` vs `raw.originalNormalized`.
-    const diff = ""; // preview diff is available via file.result vs file.originalNormalized; kept empty to avoid duplicating genDiff here
+    // WHY: Build a success shape matching execute's contract without persist.
+    // WHY: `file` is ProcessedEditFile; synthesize diff/metrics via the same
+    // WHY: helpers the pipeline's `apply` would use — but for preview we can
+    // WHY: return minimal success (raw is the file, diff is empty if noop).
+    // WHY: To avoid duplicating buildBatchResult logic, delegate to a thin
+    // WHY: conversion: if applied, callers can diff via raw; otherwise noop.
+    // WHY: Here we surface raw + a synthetic success — callers that need diff
+    // WHY: should use `execute` or rely on `raw.result` vs `raw.originalNormalized`.
+    const diff = ""; // WHY: preview diff is available via file.result vs file.originalNormalized; kept empty to avoid duplicating genDiff here
     const metrics: import("../edit-response.js").RMetrics = {
       classification: (file.appliedCount > 0 ? "applied" : "noop") as "applied" | "noop",
       edits_attempted: file.appliedCount + file.noopCount,
@@ -117,5 +117,5 @@ export async function preview(
   }
 }
 
-// Re-export for callers that need the throw-based legacy path.
+// WHY: Re-export for callers that need the throw-based legacy path.
 export { toFailure };

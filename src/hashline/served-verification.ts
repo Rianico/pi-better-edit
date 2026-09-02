@@ -1,5 +1,5 @@
 /**
- * ServedVerification — deep module owning all served-range verification.
+ * SAFETY: ServedVerification — deep module owning all served-range verification.
  *
  * This module absorbs the 280-line healing sprawl previously in served.ts:
  *  - served span resolve (servedPositionsOf + candidate enumeration)
@@ -20,9 +20,9 @@ import { SERVED_ECHO_CAP } from "../constants.js";
 import { healingPolicy } from "./healing/policy.js";
 import { isLengthHealedViaCanon as isLengthHealedViaCanonHelper } from "./healing/helpers.js";
 
-// ---------------------------------------------------------------------------
-// Public contracts — mirrors served.ts so it can re-export without identity split
-// ---------------------------------------------------------------------------
+// WHY: ---------------------------------------------------------------------------
+// WHY: Public contracts — mirrors served.ts so it can re-export without identity split
+// WHY: ---------------------------------------------------------------------------
 
 export type ServedCode = "E_RANGE_STALE" | "E_RANGE_UNSERVED" | "E_RANGE_UNVERIFIED";
 
@@ -68,9 +68,9 @@ function _isAnchorMismatch(error: unknown): error is AnchorMismatchError {
 	return error instanceof AnchorMismatchError;
 }
 
-// ---------------------------------------------------------------------------
-// Shared formatting helpers — owned by verification (reject-and-serve contract)
-// ---------------------------------------------------------------------------
+// WHY: ---------------------------------------------------------------------------
+// WHY: Shared formatting helpers — owned by verification (reject-and-serve contract)
+// WHY: ---------------------------------------------------------------------------
 
 export function buildRangeEcho(
 	startLine: number,
@@ -106,9 +106,9 @@ export function servedPositionsOf(served: (string | null)[], hash: string): numb
 	return out;
 }
 
-// ---------------------------------------------------------------------------
-// Decision-table types
-// ---------------------------------------------------------------------------
+// WHY: ---------------------------------------------------------------------------
+// WHY: Decision-table types
+// WHY: ---------------------------------------------------------------------------
 
 interface VerificationRange {
 	startHash: string;
@@ -129,7 +129,7 @@ export interface VerificationInput {
 	curSnapshotId?: string;
 }
 
-/** Result shape requested in the task: {ok} | {code, servedRows, echo}. */
+/** SAFETY: Result shape requested in the task: {ok} | {code, servedRows, echo}. */
 export type VerificationResult =
 	| { ok: true }
 	| {
@@ -141,9 +141,9 @@ export type VerificationResult =
 			firstOffendingLine?: number;
 	  };
 
-// ---------------------------------------------------------------------------
-// ServedVerification — the deep module
-// ---------------------------------------------------------------------------
+// WHY: ---------------------------------------------------------------------------
+// WHY: ServedVerification — the deep module
+// WHY: ---------------------------------------------------------------------------
 
 export class ServedVerification {
 	private readonly store: CanonStore;
@@ -152,7 +152,7 @@ export class ServedVerification {
 		this.store = canonStore ?? globalCanonStore;
 	}
 
-	// -- public: pure result -------------------------------------------------
+	// WHY: -- public: pure result -------------------------------------------------
 
 	verify(input: VerificationInput): VerificationResult {
 		try {
@@ -160,10 +160,10 @@ export class ServedVerification {
 			return { ok: true };
 		} catch (error) {
 			if (isServedRejection(error)) {
-				// reconstruct echo from servedRows + fileLines (captured in throw site)
+				// WHY: reconstruct echo from servedRows + fileLines (captured in throw site)
 				// SAFETY: ServedRejectionError carries __echo as ad-hoc string attached at throw site; cast reads internal echo validated via rebuild fallback.
 				const echo = (error as unknown as { __echo?: string }).__echo as string | undefined;
-				// fallback rebuild if __echo not attached (legacy path)
+				// WHY: fallback rebuild if __echo not attached (legacy path)
 				const fallbackEcho = this.rebuildEchoForError(input, error);
 				return {
 					ok: false,
@@ -178,7 +178,7 @@ export class ServedVerification {
 		}
 	}
 
-	// -- public: throwing variant (compat with verifyServedRange) ------------
+	// WHY: -- public: throwing variant (compat with verifyServedRange) ------------
 
 	verifyOrThrow(input: VerificationInput): void {
 		const { range, served, fileHashes, fileLines, filePath, tombstone: inputTombstone, servedCanons: inputServedCanons, epochSnapshotId, curSnapshotId } = input;
@@ -192,7 +192,7 @@ export class ServedVerification {
 		const { echoRows, echo } = this.buildEchoBlock(startLine, endLine, fileHashes, fileLines);
 		const currentLen = endLine - startLine + 1;
 
-		// Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read
+		// WHY: Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read
 		if ((tombstone.has(startHash) || tombstone.has(endHash)) && servedCanons) {
 			const tombstonedHash = tombstone.has(startHash) ? startHash : endHash;
 			const pos = fileHashes.indexOf(tombstonedHash);
@@ -220,7 +220,7 @@ export class ServedVerification {
 			fileHashes,
 		});
 
-		// --- decision table entry 1: no span could be resolved -> E_RANGE_UNVERIFIED (or healed) ---
+		// WHY: --- decision table entry 1: no span could be resolved -> E_RANGE_UNVERIFIED (or healed) ---
 		let from: number | undefined = span.from;
 		let to: number | undefined = span.to;
 		let isHealed = false;
@@ -256,10 +256,10 @@ export class ServedVerification {
 			}
 		}
 
-		// Derived strictPos: automatic fallback via epoch snapshotId (pos-free when epoch==cur, strict when concurrent write detected)
+		// WHY: Derived strictPos: automatic fallback via epoch snapshotId (pos-free when epoch==cur, strict when concurrent write detected)
 		const strictPos = epochSnapshotId !== undefined && curSnapshotId !== undefined && epochSnapshotId !== curSnapshotId;
 
-		// Strict pos check for concurrency (pos-free vs strict) — after span resolution but before canon checks
+		// WHY: Strict pos check for concurrency (pos-free vs strict) — after span resolution but before canon checks
 		if (strictPos && from !== undefined && from !== startLine - 1) {
 			this.throwStale({
 				message: `[E_RANGE_STALE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (pos-restricted concurrency). Re-read.\nCurrent range:\n${echo}`,
@@ -269,10 +269,10 @@ export class ServedVerification {
 			});
 		}
 
-		// Canon check for same-pos different content (collision) — before healed branch to cover healed spans? keep for non-healed; healed has own canon check
+		// WHY: Canon check for same-pos different content (collision) — before healed branch to cover healed spans? keep for non-healed; healed has own canon check
 		if (servedCanons && from !== undefined && to !== undefined) {
 			const servedLen = to - from + 1;
-			// Only run here for non-healed; healed path returns early via validateHealedSpan which already does canon check via store, but we also need epoch-canon check for strict correctness
+			// WHY: Only run here for non-healed; healed path returns early via validateHealedSpan which already does canon check via store, but we also need epoch-canon check for strict correctness
 			if (!isHealed) {
 				for (let k = 0; k < servedLen; k++) {
 					const expected = servedCanons[from + k];
@@ -288,7 +288,7 @@ export class ServedVerification {
 						}
 					}
 				}
-				// Tombstone interior check (whole-span) — gated on canon inequality (fail-closed only for different canon)
+				// WHY: Tombstone interior check (whole-span) — gated on canon inequality (fail-closed only for different canon)
 				for (let k = 0; k < servedLen; k++) {
 					const h = fileHashes[startLine - 1 + k];
 					if (h && tombstone.has(h)) {
@@ -307,7 +307,7 @@ export class ServedVerification {
 			}
 		}
 
-		// --- decision table entries 2..5: validate resolved span ---
+		// WHY: --- decision table entries 2..5: validate resolved span ---
 		if (isHealed) {
 			this.validateHealedSpan({
 				served,
@@ -335,7 +335,7 @@ export class ServedVerification {
 		});
 	}
 
-	// -- private: canon population -------------------------------------------
+	// WHY: -- private: canon population -------------------------------------------
 
 	private ensureCanonsPopulated(
 		fileHashes: string[],
@@ -355,7 +355,7 @@ export class ServedVerification {
 		}
 	}
 
-	// -- private: echo --------------------------------------------------------
+	// WHY: -- private: echo --------------------------------------------------------
 
 	private buildEchoBlock(
 		startLine: number,
@@ -383,7 +383,7 @@ export class ServedVerification {
 		return echo + (error.message.includes(paginationHint(0, 0)) ? "" : "");
 	}
 
-	// -- private: span resolve ------------------------------------------------
+	// WHY: -- private: span resolve ------------------------------------------------
 
 	private resolveServedSpan(args: {
 		served: (string | null)[];
@@ -452,9 +452,9 @@ export class ServedVerification {
 		return out;
 	}
 
-	// -- private: healing — delegated to internal HealingStrategy adapters -----
+	// WHY: -- private: healing — delegated to internal HealingStrategy adapters -----
 
-// -- private: healing — delegated to HealingPolicy deep module -----
+// WHY: -- private: healing — delegated to HealingPolicy deep module -----
 
 	private tryHealOrphanedSpan(args: {
 		served: (string | null)[];
@@ -470,7 +470,7 @@ export class ServedVerification {
 		return healingPolicy.tryHeal({ ...args, store: this.store });
 	}
 
-	// -- private: validation via decision table -------------------------------
+	// WHY: -- private: validation via decision table -------------------------------
 
 	private validateHealedSpan(args: {
 		served: (string | null)[];
@@ -513,7 +513,7 @@ export class ServedVerification {
 	}): void {
 		const { served, from, to, startLine, currentLen, fileHashes, fileLines, echo, echoRows, where } = args;
 
-		// Decision: never-served gap inside served span
+		// WHY: Decision: never-served gap inside served span
 		for (let i = from; i <= to; i++) {
 			if (served[i] === null) {
 				this.throwUnserved({
@@ -525,7 +525,7 @@ export class ServedVerification {
 			}
 		}
 
-		// Decision: length mismatch (served span vs current range)
+		// WHY: Decision: length mismatch (served span vs current range)
 		const servedLen = to - from + 1;
 		if (servedLen !== currentLen) {
 			if (!this.isLengthHealedViaCanon({ served, from, servedLen, fileLines })) {
@@ -538,7 +538,7 @@ export class ServedVerification {
 			}
 		}
 
-		// Decision: hash mismatch (stale interior)
+		// WHY: Decision: hash mismatch (stale interior)
 		for (let k = 0; k < servedLen; k++) {
 			if (served[from + k] !== fileHashes[startLine - 1 + k]) {
 				const offendingLine = startLine + k;
@@ -561,7 +561,7 @@ export class ServedVerification {
 		return isLengthHealedViaCanonHelper(args.served, args.from, args.servedLen, args.fileLines, this.store);
 	}
 
-	// -- private: throws with decision-table mapping -------------------------
+	// WHY: -- private: throws with decision-table mapping -------------------------
 
 	private throwUnverified(args: {
 		served: (string | null)[];
@@ -637,9 +637,9 @@ export class ServedVerification {
 	}
 }
 
-// ---------------------------------------------------------------------------
-// Convenience top-level functions (stateless, global store)
-// ---------------------------------------------------------------------------
+// WHY: ---------------------------------------------------------------------------
+// WHY: Convenience top-level functions (stateless, global store)
+// WHY: ---------------------------------------------------------------------------
 
 const defaultVerifier = new ServedVerification();
 
@@ -677,7 +677,7 @@ export function verifyServedRange(args: {
 	});
 }
 
-/** Pure result variant — does not throw for expected rejections. */
+/** SAFETY: Pure result variant — does not throw for expected rejections. */
 export function verifyServedRangeResult(input: VerificationInput, canonStore?: CanonStore): VerificationResult {
 	const verifier = canonStore ? new ServedVerification(canonStore) : defaultVerifier;
 	return verifier.verify(input);

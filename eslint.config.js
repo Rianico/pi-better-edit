@@ -63,25 +63,6 @@ export default tseslint.config(
       ],
     },
   },
-  // SAFETY: deprecated `files:off` — invariant-heavy, migrate to allowlist per ADR-0014, shrink-only (harness ADR-0014, owner: harness, review: quarterly)
-  {
-    files: [
-      "src/edit-pipeline.ts",
-      "src/mutation-engine/**",
-      "src/noop-guard.ts",
-      "src/write-hook.ts",
-      "src/hashline/served-verification.ts",
-      "src/hashline/served.ts",
-      "src/served-session/**",
-      "src/file-content/**",
-      "src/file-kind.ts",
-      "src/file-reader.ts",
-      "src/read.ts",
-    ],
-    rules: {
-      "custom/no-comments": "off",
-    },
-  },
   {
     files: ["test/**/*.ts", "**/*.test.ts"],
     rules: {

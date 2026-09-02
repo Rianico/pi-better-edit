@@ -11,7 +11,7 @@ import { visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { prepareFile } from "./file-content/index.js";
 import { fileSnap } from "./file-reader.js";
-// Facade re-export for callers still importing preview directly
+// WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
 
 const R_DESC = loadP("../prompts/read.md");
@@ -55,7 +55,7 @@ export function regRead(pi: ExtensionAPI): void {
 		async execute(_toolCallId, params, signal, _onUpdate, ctx) {
 			const rawPath = params.path;
 			abortIf(signal);
-			// Deep seam: one call handles kind detection, decode, normalize, hash, preview
+			// WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview
 			const prepared = await prepareFile(rawPath, ctx.cwd, {
 				signal,
 				offset: params.offset,

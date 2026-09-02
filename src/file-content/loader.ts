@@ -33,8 +33,8 @@ function fmtSnapId(
 export async function fileSnap(absolutePath: string, checksum?: string): Promise<SnapInfo> {
 	const canonicalPath = await resolveTarget(absolutePath);
 	const stats = await stat(canonicalPath);
-	// P1: include content checksum in snapshotId for stronger epoch (ADR-0013)
-	// Checksum is optional for backward compat; when provided, epoch distinguishes same-size whitespace changes.
+	// WHY: P1: include content checksum in snapshotId for stronger epoch (ADR-0013)
+	// WHY: Checksum is optional for backward compat; when provided, epoch distinguishes same-size whitespace changes.
 	const effectiveChecksum = checksum ?? undefined;
 	return {
 		snapshotId: fmtSnapId(canonicalPath, stats, effectiveChecksum),

@@ -1,5 +1,5 @@
 /**
- * served — thin facade over ServedVerification deep module.
+ * SAFETY: served — thin facade over ServedVerification deep module.
  *
  * All verification logic lives in served-verification.ts (instance-scoped CanonStore,
  * decision-table branching, orphan healing, echo building). This file re-exports the

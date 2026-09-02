@@ -38,7 +38,7 @@ export function clearNoopLoop(absolutePath: string): void {
 	noopLoopTracker.delete(absolutePath);
 }
 
-// NOOP_LOOP_THRESHOLD re-export removed
+// WHY: NOOP_LOOP_THRESHOLD re-export removed
 
 export interface NoopPolicyInput {
 	absolutePath: string;

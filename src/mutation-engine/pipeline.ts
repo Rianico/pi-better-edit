@@ -1,5 +1,5 @@
 /**
- * EditPipeline — Strong, in-process atomic mutation seam.
+ * SAFETY: EditPipeline — Strong, in-process atomic mutation seam.
  *
  * Deepened pipeline that hoists the whole edit mutation behind one
  * seam: load → parse → mutate loop → finalize hashes → drift → persist.
@@ -212,7 +212,7 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
 		);
 		tombstone = await handle.loadTombstone().catch(() => new Set<string>());
 		servedCanons = await handle.loadCanons().catch(() => [] as (string | null)[]);
-		// epoch strictness deferred: keep pos-free for exterior shifts (healing tests) — real epoch would make those strict
+		// WHY: epoch strictness deferred: keep pos-free for exterior shifts (healing tests) — real epoch would make those strict
 		epochSnapshotId = undefined;
 	} catch {}
 	try {
@@ -454,7 +454,7 @@ async function runMutations(
 			servedCanons: await createSessionHandle(sessionKey, absolutePath, hashStore)
 				.loadCanons()
 				.catch(() => [] as (string | null)[]),
-			epochSnapshotId: undefined, // deferred strict epoch — keep pos-free for heal tests
+			epochSnapshotId: undefined, // WHY: deferred strict epoch — keep pos-free for heal tests
 			curSnapshotId: await (async () => {
 				try {
 					return (await fileSnap(absolutePath)).snapshotId;
@@ -771,5 +771,5 @@ export async function execEdits(
 	return runMutations(request, cwd, options);
 }
 
-// _collectRemovedHashesInternal removed
-// _countLineChangesInternal removed
+// WHY: _collectRemovedHashesInternal removed
+// WHY: _countLineChangesInternal removed

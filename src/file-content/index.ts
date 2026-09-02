@@ -1,5 +1,5 @@
 /**
- * FileContent — deep module owning "prepare file content" seam.
+ * SAFETY: FileContent — deep module owning "prepare file content" seam.
  *
  * One concept scattered across file-kind + file-reader + read preview:
  * kind detection (magic+ext, BOM/UTF-32/16), decode (UTF-8, hadUtf8DecodeErrors,

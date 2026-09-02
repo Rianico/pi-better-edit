@@ -1,5 +1,5 @@
 /**
- * ServedSession — deep module, small interface over session-scoped served state.
+ * SAFETY: ServedSession — deep module, small interface over session-scoped served state.
  *
  * External seam: SessionHandle bound to (sessionKey, path). All storage
  * (HashStore, SQLite, patchServed healing, truncation, reported-set, TTL)
@@ -37,12 +37,12 @@ export { currentPositionOfDrifted } from "./drift-helpers.js";
 
 import { createSessionHandle, wipeSession } from "./session.js";
 
-// Compatibility wrappers (sessionKey-based, store lifecycle hidden)
+// WHY: Compatibility wrappers (sessionKey-based, store lifecycle hidden)
 export async function recordServedTruncated(sessionKey: string, path: string, rows: import("./types.js").ServedEntry[], lineCount: number, clearFrom?: number): Promise<void> {
   await createSessionHandle(sessionKey, path).recordTruncated(rows, lineCount, clearFrom);
 }
 
-// Store lifecycle stays inside handle; these wrappers do not leak withStore.
+// WHY: Store lifecycle stays inside handle; these wrappers do not leak withStore.
 export async function loadServed(sessionKey: string, path: string): Promise<(string | null)[]> {
   return createSessionHandle(sessionKey, path).load();
 }
