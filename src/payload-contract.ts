@@ -257,7 +257,7 @@ export function editRequestFrom(
 export function normReq(input: unknown): NormReqResult {
 	const valid = editRequestFrom(input);
 	// SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
-	if (!valid) return input as NormReqResult; // SAFETY: input unvalidated at admission, preserves runtime value for caller validation
+	if (!valid) return input as NormReqResult;
 	const record = { path: valid.path, edits: valid.edits };
 	Object.defineProperty(record, normalizedEdit, {
 		value: true,
