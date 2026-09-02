@@ -11,7 +11,7 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "../hashline/alphabet.js";
-import { globalCanonStore, canon } from "../hashline/hash.js";
+import { globalCanonStore } from "../hashline/hash.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import {
   loadHashStore,

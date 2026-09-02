@@ -4,27 +4,25 @@ import tseslint from "typescript-eslint";
 const GHERKIN_RE =
   /^\s*(Given|When|Then|And|But|Feature|Scenario|Background|Scenario Outline|Examples)\b/i;
 
+const ALLOWLIST_RE =
+  /^\s*\*?\s*(SAFETY:|WHY:|Invariant:|See ADR-|via https:\/\/|TODO\(#\d+\):|HACK:|@deprecated|eslint-disable)/;
+
 const noCommentsRule = {
   meta: {
     type: "suggestion",
     docs: {
-      description: "Forbid all comments. Code must be self-documenting.",
+      description:
+        "Allow only high-signal comments (SAFETY/WHY/Invariant/See ADR/via URL/TODO/HACK/Gherkin); see ADR-0014.",
     },
     schema: [],
   },
   create(context) {
     return {
       Program() {
-        const filename =
-          context.filename ||
-          (typeof context.getFilename === "function"
-            ? context.getFilename()
-            : "");
-        if (filename && filename.includes("edit-pipeline")) return;
         const sourceCode = context.sourceCode ?? context.getSourceCode();
         const comments = sourceCode.getAllComments();
         for (const comment of comments) {
-          if (comment.value.includes("SAFETY:")) continue;
+          if (ALLOWLIST_RE.test(comment.value)) continue;
           if (GHERKIN_RE.test(comment.value)) continue;
           context.report({
             node: comment,
@@ -65,6 +63,7 @@ export default tseslint.config(
       ],
     },
   },
+  // SAFETY: deprecated `files:off` — invariant-heavy, migrate to allowlist per ADR-0014, shrink-only (harness ADR-0014, owner: harness, review: quarterly)
   {
     files: [
       "src/edit-pipeline.ts",
