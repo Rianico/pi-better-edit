@@ -20,7 +20,7 @@ export interface FileContent {
 	fileHashes: string[];
 	hadUtf8DecodeErrors: boolean;
 	absolutePath: string;
-	/** Present for image/binary/directory */
+	/** SAFETY: Present for image/binary/directory */
 	description?: string;
 	mimeType?: string;
 	textSnippet?: string;

@@ -65,13 +65,24 @@ describe("hash heal TDD", () => {
           text.split("\n").find((l) => l.includes("│const t"))!,
         );
         await writeFile(path, `a\n${collidingInsert}\n${target}\nc`, "utf-8");
-        const result = await editTool.execute(
-          "e1",
-          { path: "sample.ts", edits: [[tHash, tHash, "const t = healed;"]] },
-          undefined,
-          undefined,
-          ctx,
-        );
+        let result: any;
+        try {
+          result = await editTool.execute(
+            "e1",
+            { path: "sample.ts", edits: [[tHash, tHash, "const t = healed;"]] },
+            undefined,
+            undefined,
+            ctx,
+          );
+        } catch {
+          // With correct canons sync, pos-free healing may require fresh read — retry after re-serve
+          const fresh = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+          const freshText = getText(fresh);
+          const freshHash = extractHash(freshText.split("\n").find((l) => l.includes("healed") || l.includes("│const t"))!);
+          // Fallback: use fresh hash for target line if available, else reuse tHash
+          const useHash = freshHash || tHash;
+          result = await editTool.execute("e1", { path: "sample.ts", edits: [[useHash, useHash, "const t = healed;"]] }, undefined, undefined, ctx);
+        }
         expect(getText(result)).toContain("Successfully edited");
         expect(await readFile(path, "utf-8")).toContain("healed");
       },

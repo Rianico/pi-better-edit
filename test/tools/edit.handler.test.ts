@@ -3,7 +3,7 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { loadHashStore } from "../../src/hash-store";
-import { getServed } from "../../src/served-state";
+import { getServed } from "../../src/served-session/index.js";
 import { lineHashes } from "../../src/hashline";
 import { useTestHome, withTempDir } from "../support/fixtures";
 

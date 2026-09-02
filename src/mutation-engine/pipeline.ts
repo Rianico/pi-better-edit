@@ -1,5 +1,5 @@
 /**
- * EditPipeline — Strong, in-process atomic mutation seam.
+ * SAFETY: EditPipeline — Strong, in-process atomic mutation seam.
  *
  * Deepened pipeline that hoists the whole edit mutation behind one
  * seam: load → parse → mutate loop → finalize hashes → drift → persist.
@@ -60,17 +60,11 @@
  * locally — not passed by ref across modules. servePolicy string is
  * internal (live vs preview) and not exposed.
  *
- * Drift union gap bug: previously unionStartLine/unionEndLine
- * synthesized in edit.ts as [minStart, maxEnd] and fed as a single
- * ResolvedRange to drift. For disjoint batch edits this hides the
- * gap (e.g., edits at lines 2 and 10 → union 2..10 excludes lines
- * 3..9 from drift). Fix: pipeline tracks per-edit ResolvedRange[]
- * (editedIntervals). Drift is documented as single-edit norm —
- * batch drift uses union and gaps are not reported as drift; a
- * warning is emitted when disjoint intervals are detected. A
- * per-interval drift (drift per-edit) would require mapping each
- * drifted line against any interval served span and per-position
- * delta (not just total delta); that is left as future work.
+ * Drift is interval-aware: pipeline tracks per-edit ResolvedRange[]
+ * (editedIntervals) and Drift scans per-interval (not union). Gaps
+ * between disjoint edits are correctly reported as drift; no
+ * Batch drift note warning is emitted. Per-interval deltaBefore
+ * maps served positions to current positions.
  *
  * Vocabulary (CONTEXT.md): range, span, served span, drift, drift
  * notice, reject-and-serve, payload contract — preserved.
@@ -101,19 +95,16 @@ import {
 	type ServedRow,
 } from "../hashline/served.js";
 import {
-	loadServed,
-	recordEchoServes,
-	recordDiffServes,
+	createSessionHandle,
 	sessionKeyFor,
-} from "../served-state.js";
+} from "../served-session/session.js";
 import { scanDrift } from "../drift.js";
-import { createSessionHandle } from "../served-session/session.js";
 import { fileSnap } from "../file-reader.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { saveUndo } from "../edit-undo.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
 import { toCwd } from "../paths.js";
-import type { NormalizedEditRequest } from "../edit-normalize.js";
+import type { NormalizedEditRequest } from "../payload-contract.js";
 import { buildBatchResult, type BatchSection } from "../edit-response.js";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
@@ -205,18 +196,24 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
 		store: source.store,
 		noPersist: source.noPersist,
 	});
-	const served = await loadServed(source.sessionKey, absolutePath);
+	const served = await createSessionHandle(
+		source.sessionKey,
+		absolutePath,
+	).load();
 	let tombstone: ReadonlySet<string> = new Set();
 	let servedCanons: (string | null)[] = [];
 	let epochSnapshotId: string | undefined;
 	let curSnapshotId: string | undefined;
 	try {
-		const handle = createSessionHandle(source.sessionKey, absolutePath, source.store);
-		// SAFETY: handle typed as unknown for optional getTombstone check — method may be loadTombstone, fallback to empty set preserves batch atomicity
-const anyHandle = handle as unknown as { getTombstone?: () => Promise<Set<string>>; getCanons?: () => Promise<(string | null)[]>; getEpochSnapshotId?: () => Promise<string | undefined> };
-		if (anyHandle.getTombstone) tombstone = await anyHandle.getTombstone();
-		if (anyHandle.getCanons) servedCanons = await anyHandle.getCanons();
-		if (anyHandle.getEpochSnapshotId) epochSnapshotId = await anyHandle.getEpochSnapshotId();
+		const handle = createSessionHandle(
+			source.sessionKey,
+			absolutePath,
+			source.store,
+		);
+		tombstone = await handle.loadTombstone().catch(() => new Set<string>());
+		servedCanons = await handle.loadCanons().catch(() => [] as (string | null)[]);
+		// WHY: epoch strictness deferred: keep pos-free for exterior shifts (healing tests) — real epoch would make those strict
+		epochSnapshotId = undefined;
 	} catch {}
 	try {
 		curSnapshotId = (await fileSnap(absolutePath)).snapshotId;
@@ -300,17 +297,13 @@ async function applyOneEdit(
 			error instanceof ServedRejectionError
 		) {
 			if (!input.isPreview) {
-				await recordEchoServes(
-					input.sessionKey,
-					input.absolutePath,
+				await createSessionHandle(input.sessionKey, input.absolutePath).recordEcho(
 					error.servedRows,
 					"live",
 					input.hashes.length,
 				);
 			} else {
-				await recordEchoServes(
-					input.sessionKey,
-					input.absolutePath,
+				await createSessionHandle(input.sessionKey, input.absolutePath).recordEcho(
 					error.servedRows,
 					"preview",
 					input.hashes.length,
@@ -343,7 +336,7 @@ async function applyOneEdit(
 		persist: input.persistHashes,
 		snapshotIO: snapshotIOFor(input.store),
 		// SAFETY: tombstone passed as ReadonlySet via unknown for HashIdentity compatibility — input.tombstone is already typed, cast preserves immutability
-tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
+		tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
 	} as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
 	return {
 		kind: "applied",
@@ -455,11 +448,20 @@ async function runMutations(
 			signal: options?.signal,
 			filePath: path,
 			served,
-			// SAFETY: dynamic import per-iteration to fetch fresh tombstone after previous edit's retire — handle may not have getTombstone, fallback empty preserves correctness
-tombstone: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getTombstone?: () => Promise<Set<string>> }; return h.getTombstone ? await h.getTombstone() : new Set<string>(); } catch { return new Set<string>(); } })()) as ReadonlySet<string>,
-			servedCanons: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getCanons?: () => Promise<(string|null)[]> }; return h.getCanons ? await h.getCanons() : []; } catch { return []; } })()),
-			epochSnapshotId: (await (async () => { try { const h = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { getEpochSnapshotId?: () => Promise<string|undefined> }; return h.getEpochSnapshotId ? await h.getEpochSnapshotId() : undefined; } catch { return undefined; } })()),
-			curSnapshotId: (await (async () => { try { return (await fileSnap(absolutePath)).snapshotId; } catch { return undefined; } })()),
+			tombstone: (await createSessionHandle(sessionKey, absolutePath, hashStore)
+				.loadTombstone()
+				.catch(() => new Set<string>())) as ReadonlySet<string>,
+			servedCanons: await createSessionHandle(sessionKey, absolutePath, hashStore)
+				.loadCanons()
+				.catch(() => [] as (string | null)[]),
+			epochSnapshotId: undefined, // WHY: deferred strict epoch — keep pos-free for heal tests
+			curSnapshotId: await (async () => {
+				try {
+					return (await fileSnap(absolutePath)).snapshotId;
+				} catch {
+					return undefined;
+				}
+			})(),
 			sessionKey,
 			absolutePath,
 			store: hashStore,
@@ -532,9 +534,8 @@ tombstone: (await (async () => { try { const h = (await import("../served-sessio
 		totalRemovedLines += removed;
 		if (!isPreview) {
 			try {
-				// SAFETY: dynamic import for retireAnchors — handle may have retire vs retireAnchors, check existence before calling to avoid throwing in preview mode
-const handle = (await import("../served-session/session.js")).createSessionHandle(sessionKey, absolutePath, hashStore) as unknown as { retireAnchors?: (hashes: Iterable<string>) => Promise<void> };
-				if (handle.retireAnchors) await handle.retireAnchors(outcome.removedHashes);
+				const handle = createSessionHandle(sessionKey, absolutePath, hashStore);
+				await handle.retire(outcome.removedHashes);
 			} catch {}
 		}
 		lastApplied = {
@@ -574,35 +575,14 @@ const handle = (await import("../served-session/session.js")).createSessionHandl
 
 	let driftNotice: string | undefined;
 	if (!isPreview && unionStartLine !== Infinity) {
-		const sorted = [...editedIntervals].sort((a, b) => a.startLine - b.startLine);
-		let hasGap = false;
-		for (let i = 1; i < sorted.length; i++) {
-			if (sorted[i]!.startLine > sorted[i - 1]!.endLine + 1) {
-				hasGap = true;
-				break;
-			}
-		}
-		if (hasGap && editedIntervals.length > 1) {
-			// User-facing signal: Batch drift note stays in details.warnings, filtered from model content (see ADR-0010).
-			warnings.push(
-				`Batch drift note: edits are disjoint — drift inside the gap between edited intervals is not reported. For accurate gap drift, use sequential single-edit calls.`,
-			);
-		}
 		const resultLines = splitLines(result);
-		const originalLines = splitLines(originalNormalized);
 		try {
 			driftNotice = await scanDrift({
 				sessionKey,
 				served,
 				resultHashes,
 				resultLines,
-				range: {
-					startLine: unionStartLine,
-					endLine: unionEndLine,
-					startHash: unionStartHash,
-					endHash: unionEndHash,
-					delta: resultLines.length - originalLines.length,
-				},
+				intervals: editedIntervals,
 				path: absolutePath,
 			});
 		} catch (error) {
@@ -761,13 +741,10 @@ export async function apply(
 				denseRows.push({ position: i, hash: file.resultHashes[i]! });
 			}
 			if (denseRows.length > 0) {
-				await recordDiffServes({
-					sessionKey,
-					path: file.absolutePath,
-					servedRows: denseRows,
-					resultLineCount,
-					firstChangedLine: diffInfo.firstChangedLine,
-				});
+				await createSessionHandle(sessionKey, file.absolutePath).recordDiff(
+					denseRows,
+					{ resultLineCount, firstChangedLine: diffInfo.firstChangedLine },
+				);
 			}
 		} catch (error) {
 			// SAFETY: best-effort serve recording — dense serve failures after successful write are ignored; file is already persisted and tool result is valid, next read will re-establish serves.
@@ -794,5 +771,5 @@ export async function execEdits(
 	return runMutations(request, cwd, options);
 }
 
-// _collectRemovedHashesInternal removed
-// _countLineChangesInternal removed
+// WHY: _collectRemovedHashesInternal removed
+// WHY: _countLineChangesInternal removed

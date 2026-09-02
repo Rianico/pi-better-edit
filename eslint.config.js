@@ -4,27 +4,25 @@ import tseslint from "typescript-eslint";
 const GHERKIN_RE =
   /^\s*(Given|When|Then|And|But|Feature|Scenario|Background|Scenario Outline|Examples)\b/i;
 
+const ALLOWLIST_RE =
+  /(SAFETY:|WHY:|Invariant:|See ADR-|via https:\/\/|TODO\(#\d+\):|HACK:|@deprecated|eslint-disable)/;
+
 const noCommentsRule = {
   meta: {
     type: "suggestion",
     docs: {
-      description: "Forbid all comments. Code must be self-documenting.",
+      description:
+        "Allow only high-signal comments (SAFETY/WHY/Invariant/See ADR/via URL/TODO/HACK/Gherkin); see ADR-0014.",
     },
     schema: [],
   },
   create(context) {
     return {
       Program() {
-        const filename =
-          context.filename ||
-          (typeof context.getFilename === "function"
-            ? context.getFilename()
-            : "");
-        if (filename && filename.includes("edit-pipeline")) return;
         const sourceCode = context.sourceCode ?? context.getSourceCode();
         const comments = sourceCode.getAllComments();
         for (const comment of comments) {
-          if (comment.value.includes("SAFETY:")) continue;
+          if (ALLOWLIST_RE.test(comment.value)) continue;
           if (GHERKIN_RE.test(comment.value)) continue;
           context.report({
             node: comment,
@@ -63,27 +61,6 @@ export default tseslint.config(
         "error",
         { argsIgnorePattern: "^_", varsIgnorePattern: "^_" },
       ],
-    },
-  },
-  {
-    files: [
-      "src/edit-pipeline.ts",
-      "src/mutation-engine/**",
-      "src/noop-guard.ts",
-      "src/write-hook.ts",
-      "src/hashline/served-verification.ts",
-      "src/hashline/served.ts",
-      "src/served-state.ts",
-      "src/served-session/**",
-      "src/file-content/**",
-      "src/file-kind.ts",
-      "src/file-reader.ts",
-      "src/read.ts",
-      "src/hashline/healing/**",
-      "src/payload-contract.ts",
-    ],
-    rules: {
-      "custom/no-comments": "off",
     },
   },
   {

@@ -18,7 +18,7 @@ import {
 } from "./hash-store.js";
 import { legacyHashStorePath } from "./hash-store.js";
 import { deleteUndo } from "./undo-store.js";
-import { deleteServedByPath } from "./served-state.js";
+import { deleteServedByPath } from "./served-session/session.js";
 
 interface LegacySnapshot {
   content: string;

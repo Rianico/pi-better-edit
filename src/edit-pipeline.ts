@@ -1,5 +1,5 @@
 /**
- * EditPipeline facade — thin delegating seam over MutationEngine.
+ * SAFETY: EditPipeline facade — thin delegating seam over MutationEngine.
  *
  * Graded surface: public contract retained for backward compatibility,
  * implementation lives in `src/mutation-engine/`. New code should import

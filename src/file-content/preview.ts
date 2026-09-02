@@ -214,5 +214,5 @@ export async function fmtReadPreview(
 	};
 }
 
-// Re-export constants for callers that need them
+// WHY: Re-export constants for callers that need them
 export { MAX_HASH_LINES, HASH_SEP };

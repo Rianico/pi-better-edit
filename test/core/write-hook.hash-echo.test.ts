@@ -7,7 +7,7 @@ import {
 	registerWriteHook,
 } from "../../src/write-hook";
 import { initHasher, lineHashes } from "../../src/hashline";
-import { recordServed } from "../../src/served-state";
+import { recordServed } from "../../src/served-session/index.js";
 import { withTempDir } from "../support/fixtures";
 import { resolveTarget } from "../../src/fs-write";
 import { toCwd } from "../../src/paths";

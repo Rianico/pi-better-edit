@@ -5,7 +5,7 @@ import {
 	type ResolvedRange,
 	type ServedRow,
 } from "./hashline/served.js";
-import { recordEchoServes } from "./served-state.js";
+import { createSessionHandle } from "./served-session/session.js";
 
 type NoopLoopEntry = {
 	payload: string;
@@ -38,7 +38,7 @@ export function clearNoopLoop(absolutePath: string): void {
 	noopLoopTracker.delete(absolutePath);
 }
 
-// NOOP_LOOP_THRESHOLD re-export removed
+// WHY: NOOP_LOOP_THRESHOLD re-export removed
 
 export interface NoopPolicyInput {
 	absolutePath: string;
@@ -76,13 +76,7 @@ export async function runNoopPolicy(
 			input.hashes,
 		);
 		const echo = fmtServedRows(echoRows, input.lines);
-		await recordEchoServes(
-			input.sessionKey,
-			input.absolutePath,
-			echoRows,
-			"live",
-			input.hashes.length,
-		);
+		await createSessionHandle(input.sessionKey, input.absolutePath).recordEcho(echoRows, "live", input.hashes.length);
 		const message = input.batch
 			? `[E_NOOP_LOOP] ${input.ref}: identical edit (${input.removeFrom} → ${input.removeTo}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject the batch. Current range:\n${echo}`
 			: `[E_NOOP_LOOP] identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject. Current range:\n${echo}`;

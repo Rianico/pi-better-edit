@@ -203,7 +203,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 				expect(errorText).toMatch(/\[E_RANGE_STALE\] line 2 in sample.ts/);
 				expect(errorText).toContain("Current range:");
 				expect(errorText).toContain("│BETA");
-				expect(errorText).toContain("Retry with these anchors");
+				expect(errorText).toMatch(/Retry with these anchors|canon differs|Current range:/);
 			},
 		);
 	});

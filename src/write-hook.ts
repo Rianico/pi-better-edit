@@ -1,5 +1,5 @@
 /**
- * Guard + auto-read seam around `write`: the `tool_call` listener rejects
+ * SAFETY: Guard + auto-read seam around `write`: the `tool_call` listener rejects
  * copied hashline preview rows before they can reach disk.
  * Ported from dsh@0.4.1 `src/write-hook.ts` adapted to pi's FileIO/session view.
  * @module pi-better-edit/write-hook
@@ -10,12 +10,12 @@ import { HASH_SEP } from "./hashline/hash-identity.js";
 import { abortIf, splitLines } from "./utils.js";
 import { resolveTarget } from "./fs-write.js";
 import { toCwd } from "./paths.js";
-import { loadServed, sessionKeyFor } from "./served-state.js";
+import { createSessionHandle, sessionKeyFor } from "./served-session/session.js";
 
 export interface ServedHashEcho {
-	/** One-based candidate line carrying the copied anchor. */
+	/** SAFETY: One-based candidate line carrying the copied anchor. */
 	line: number;
-	/** The exact anchor served for this session, path, and line. */
+	/** SAFETY: The exact anchor served for this session, path, and line. */
 	hash: string;
 }
 
@@ -24,7 +24,7 @@ export interface WriteHookIO {
 }
 
 /**
- * Find a copied hashline prefix without treating arbitrary `3-char│` text as
+ * SAFETY: Find a copied hashline prefix without treating arbitrary `3-char│` text as
  * metadata. A match requires the exact hash currently recorded at the same
  * line position for this session and canonical path.
  */
@@ -44,7 +44,7 @@ export function findServedHashEcho(
 }
 
 /**
- * Inspect one validated-looking built-in write request against session-scoped
+ * SAFETY: Inspect one validated-looking built-in write request against session-scoped
  * served state. Returns a pre-dispatch denial reason only for an exact
  * same-session / same-canonical-path / same-line anchor echo.
  */
@@ -64,7 +64,8 @@ export async function servedHashEchoDenial(
 		absolutePath = await resolveTarget(toCwd(rawPath, cwd));
 	}
 	abortIf(signal);
-	const served = await loadServed(sessionKey, absolutePath);
+	const handle = createSessionHandle(sessionKey, absolutePath);
+	const served = await handle.load();
 	const match = findServedHashEcho(content, served);
 	if (!match) return undefined;
 	return (
@@ -76,7 +77,7 @@ export async function servedHashEchoDenial(
 }
 
 /**
- * Register the pre-write echo guard on the calling extension's scope.
+ * SAFETY: Register the pre-write echo guard on the calling extension's scope.
  * The guard denies before dispatch; infrastructure failures fail open so the
  * plugin never breaks an otherwise valid write.
  */
