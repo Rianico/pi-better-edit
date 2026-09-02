@@ -11,6 +11,7 @@
 
 ### Bug Fixes
 
+- **ci:** include lint in pre-merge gate — respect tool feedback per ADR-0014
 - **lint:** address GH Action lint errors — unused vars per no-unused-vars
 - **lint:** retrofit comments to high-signal allowlist per ADR-0014
 
