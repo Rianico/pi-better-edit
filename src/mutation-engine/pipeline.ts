@@ -104,7 +104,7 @@ import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { saveUndo } from "../edit-undo.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
 import { toCwd } from "../paths.js";
-import type { NormalizedEditRequest } from "../edit-normalize.js";
+import type { NormalizedEditRequest } from "../payload-contract.js";
 import { buildBatchResult, type BatchSection } from "../edit-response.js";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
