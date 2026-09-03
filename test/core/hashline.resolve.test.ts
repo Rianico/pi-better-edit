@@ -24,9 +24,9 @@ describe("resEdit", () => {
 		expect(r.hash_bounds[1].hash).toBe("MQX");
 	});
 
-	it("throws on replace with no remove_from/remove_to (E_BAD_SHAPE)", () => {
+	it("throws on replace with no remove_from/remove_to (E_BAD_PAYLOAD)", () => {
     const edit = { replacement_text: "new" } as any;
-		expect(() => resEdit(edit)).toThrow(/^\[E_BAD_SHAPE\]/);
+		expect(() => resEdit(edit)).toThrow(/\[E_BAD_PAYLOAD\]/);
 	});
 
 	it("throws on malformed remove_from/remove_to", () => {
@@ -88,26 +88,12 @@ describe("resEdit", () => {
 
 	it("strips a HASH│content row pasted into remove_from/remove_to with a warning", () => {
 		const edit: HTEdit = { remove_from: "MQX│const x = 1;", remove_to: "MQX│const x = 1;", replacement_text: "new" };
-		const warnings: string[] = [];
-		const resolved = resEdit(edit, warnings);
-		expect(resolved.hash_bounds[0].hash).toBe("MQX");
-		expect(resolved.hash_bounds[1].hash).toBe("MQX");
-		expect(warnings).toHaveLength(2);
-		expect(warnings[0]).toMatch(/^\[E_BAD_REF\]/);
-		expect(warnings[0]).toContain('stripped "HASH│" prefix');
-		expect(warnings[0]).toContain("from remove_from/remove_to");
+		expect(() => resEdit(edit)).toThrow(/\[E_BAD_ANCHOR\]/);
 	});
 
 	it("strips diff-preview rows pasted into remove_from/remove_to with a warning", () => {
 		const edit: HTEdit = { remove_from: "+MQX│const x = 1;", remove_to: "-MQX│const x = 1;", replacement_text: "new" };
-		const warnings: string[] = [];
-		const resolved = resEdit(edit, warnings);
-		expect(resolved.hash_bounds[0].hash).toBe("MQX");
-		expect(resolved.hash_bounds[1].hash).toBe("MQX");
-		expect(warnings).toHaveLength(2);
-		expect(warnings[0]).toContain("diff-preview marker");
-		expect(warnings[0]).toContain("stripped diff-preview marker");
-		expect(warnings[1]).toContain('leading "-" marker');
+		expect(() => resEdit(edit)).toThrow(/\[E_BAD_ANCHOR\]/);
 	});
 
 	it("leaves bare anchors untouched and emits no warning", () => {
@@ -120,6 +106,6 @@ describe("resEdit", () => {
 
 	it("still rejects rows without a leading hash", () => {
 		const edit: HTEdit = { remove_from: "│const x = 1;", remove_to: "MQX", replacement_text: "new" };
-		expect(() => resEdit(edit)).toThrow(/^\[E_BAD_REF\]/);
+		expect(() => resEdit(edit)).toThrow(/\[E_BAD_ANCHOR\]/);
 	});
 });

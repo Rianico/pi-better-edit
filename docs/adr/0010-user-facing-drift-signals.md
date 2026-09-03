@@ -10,7 +10,7 @@ accepted
 
 After `edit` the tool appended three informational signals to **model content** (`content.text`) via `edit-response.ts:finalizeResult` (`diff + warnBlock + driftBlock`): `driftNotice` (windowed rows, capped by `SERVED_ECHO_CAP`), `drift: already reported` (one-liner dedup), and `Batch drift note` (warning when `editedIntervals` are disjoint, `edit-pipeline.ts:559`). All three are not needed for the model to retry — they describe changes outside the edited range that the next `edit` can ignore. In traces they dominated attention: a successful batch edit concatenated `diff + warnings + driftBlock` (4 sections repeating "re-read to see"), and the already-reported one-liner fired on every subsequent edit until re-read. Grill `Q1–Q9` agreed: `level` means audience — `model-facing signal` vs `user-facing signal` — and all three drift signals should be human-only.
 
-`CONTEXT.md` already defined `drift notice` but had no umbrella for audience. `model–tool boundary` says the tool owns verification; the model owns intent. Drift is informational drift, not a staleness rejection (`E_RANGE_*`, `E_EDIT_HASH_ECHO`).
+`CONTEXT.md` already defined `drift notice` but had no umbrella for audience. `model–tool boundary` says the tool owns verification; the model owns intent. Drift is informational drift, not a staleness rejection (`E_RANGE_*`, `E_SERVED_ECHO`).
 
 ## Decision
 

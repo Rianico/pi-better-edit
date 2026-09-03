@@ -35,7 +35,7 @@ describe("resAnchor (via applyEdit)", () => {
       applyEdit(content, resEdit(
         { remove_from: hashes[0]!, remove_to: hashes[0]!, replacement_text: "X" },
       ), undefined, forgedHashes)
-    ).toThrow(/E_AMBIGUOUS_ANCHOR/);
+    ).toThrow(/E_STALE_ANCHOR/);
   });
 });
 
@@ -130,7 +130,7 @@ describe("resToSpan (via applyEdit)", () => {
       applyEdit(content, resEdit(
         { remove_from: hashes[0]!, remove_to: hashes[2]!, replacement_text: "" },
       ))
-    ).toThrow(/E_WOULD_EMPTY/);
+    ).toThrow(/E_EMPTY_RANGE/);
   });
 
   it("branch: empty replacement ending at last line (not full file)", async () => {

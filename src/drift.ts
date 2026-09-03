@@ -8,7 +8,7 @@ import { servedPositionsOf } from "./hashline/served.js";
 import { currentPositionOfDrifted } from "./served-session/drift-helpers.js";
 import { createSessionHandle } from "./served-session/session.js";
 
-const DRIFT_NOTICE_HEADING = "drift:";
+const DRIFT_NOTICE_HEADING = "[USER] drift:";
 
 interface DriftRow extends ServedRow {
   content: string;
@@ -43,7 +43,7 @@ function resolveServedRange(input: ComputeDriftInput): {
 } {
   const range = input.range;
   if (!range)
-    throw new Error("[E_BAD_SHAPE] computeDrift requires range or intervals");
+    throw new Error("[MODEL] [E_BAD_PAYLOAD] computeDrift requires range or intervals");
   const startPositions = servedPositionsOf(input.served, range.startHash);
   const endPositions = servedPositionsOf(input.served, range.endHash);
   let servedStartIdx: number;

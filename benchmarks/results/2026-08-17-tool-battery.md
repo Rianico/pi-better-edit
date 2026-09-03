@@ -12,19 +12,19 @@ scenario's expected verdict (outcome + preserved content) did not hold.
 | --- | :--: | :--: | :--: |
 | B1 single-line replace | success | success | success |
 | B2 range replace | success | success | success |
-| B3 interior drift must-not-silently-overwrite | rejected `E_RANGE_STALE` | **WRONG** | rejected `E_RANGE_STALE` |
+| B3 interior drift must-not-silently-overwrite | rejected `E_STALE_RANGE` | **WRONG** | rejected `E_STALE_RANGE` |
 | B4 out-of-range in-place change | success | success | success |
 | B5 deletion-above-range positional-shift | success | success | success |
 | B6 change-then-revert interior | success | success | success |
-| B7 never-served interior paged-read-gap | rejected `E_RANGE_UNSERVED` | **WRONG** | rejected `E_RANGE_STALE` |
-| B8 blind-edit no-read never-served-boundary | rejected `E_RANGE_UNVERIFIED` | **WRONG** | **WRONG** |
+| B7 never-served interior paged-read-gap | rejected `E_UNSERVED_RANGE` | **WRONG** | rejected `E_STALE_RANGE` |
+| B8 blind-edit no-read never-served-boundary | rejected `E_UNSERVED_RANGE` | **WRONG** | **WRONG** |
 | B9 boundary-changed stale-anchor | rejected `E_STALE_ANCHOR` | rejected | rejected |
-| B10 duplicate-content drift must-still-reject | rejected `E_RANGE_STALE` | **WRONG** | rejected `E_RANGE_STALE` |
+| B10 duplicate-content drift must-still-reject | rejected `E_STALE_RANGE` | **WRONG** | rejected `E_STALE_RANGE` |
 | B11 noop replace | success | success | success |
 | B12 noop-with-out-of-range-drift | success | success | success |
 | B13 chained-edit-from-diff-rows-no-reread | success | success | success |
 | B14 empty-file insert | success | success | success |
-| B15 large-range drift capped-feedback | rejected `E_RANGE_STALE` | **WRONG** | rejected `E_RANGE_STALE` |
+| B15 large-range drift capped-feedback | rejected `E_STALE_RANGE` | **WRONG** | rejected `E_STALE_RANGE` |
 | B16a undo after replace | success | success | success |
 | B16b undo after external change | rejected `E_UNDO_STALE` | rejected | rejected |
 | B17 reversed-range autocorrect | success | success | success |
@@ -32,7 +32,7 @@ scenario's expected verdict (outcome + preserved content) did not hold.
 | B19 sub-agent-session-does-not-wipe-main | success | success | success |
 | B20 main-and-sub-agent-both-edit | success | success | success |
 | B21 same-session-restart-keeps-served-state | success | success | success |
-| B22 sub-agent-serves-not-visible-to-main | rejected `E_RANGE_UNVERIFIED` | **WRONG** | **WRONG** |
+| B22 sub-agent-serves-not-visible-to-main | rejected `E_UNSERVED_RANGE` | **WRONG** | **WRONG** |
 | **correct** | **23/23** | **17/23** | **21/23** |
 
 ## What the WRONG cells are

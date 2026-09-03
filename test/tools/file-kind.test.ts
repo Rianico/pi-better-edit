@@ -96,7 +96,7 @@ describe("file kind guards in tools", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_WOULD_EMPTY/);
+      ).rejects.toThrow(/E_EMPTY_RANGE/);
     });
   });
 });

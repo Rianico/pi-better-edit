@@ -2,7 +2,7 @@
 
 ## Problem Statement
 
-The served-state store is a **global single namespace** (one row per path) with a **full-table wipe at every session start**. Every pi process that loads the extension — the main session, every sub-agent (`context: fresh` or `fork`), every nested `pi -p` run, every test harness — fires `session_start` → `wipeServedState()` (`DELETE FROM served`), destroying every other process's served record. Empirically verified: after any pi process starts, the store holds only that process's reads; the main session's serves are gone. Symptom: the main model edits with anchors it was served and gets `[E_RANGE_UNVERIFIED]` / `[E_RANGE_UNSERVED]` because a sub-agent's `session_start` wiped the record mid-work.
+The served-state store is a **global single namespace** (one row per path) with a **full-table wipe at every session start**. Every pi process that loads the extension — the main session, every sub-agent (`context: fresh` or `fork`), every nested `pi -p` run, every test harness — fires `session_start` → `wipeServedState()` (`DELETE FROM served`), destroying every other process's served record. Empirically verified: after any pi process starts, the store holds only that process's reads; the main session's serves are gone. Symptom: the main model edits with anchors it was served and gets `[E_UNSERVED_RANGE]` / `[E_UNSERVED_RANGE]` because a sub-agent's `session_start` wiped the record mid-work.
 
 Separately, `pi -c` (continue) reuses the **same session id** and the same session file (verified), but the new process wipes the table at start — so the continued model cannot verify edits against content it read before the restart.
 
@@ -17,7 +17,7 @@ Session identity comes from `ctx.sessionManager.getSessionId()` — the same sou
 ## User Stories
 
 1. As the main model with sub-agents running, I want a sub-agent's session start to never wipe the served rows my edits verify against, so that my anchors keep working after a sub-agent ran.
-2. As a model continuing a session with `pi -c`, I want the served rows from the previous process to survive the restart, so that I can edit ranges I read before the restart without an `[E_RANGE_UNVERIFIED]` roundtrip.
+2. As a model continuing a session with `pi -c`, I want the served rows from the previous process to survive the restart, so that I can edit ranges I read before the restart without an `[E_UNSERVED_RANGE]` roundtrip.
 3. As a model in a fresh session, I want my served state to start empty and never include another session's serves, so that I never edit blind on lines shown to a different session's context.
 4. As a model, I want the drift-notice "once per episode" rule to be per-session, so that a new session's context receives its own notice for a drift it has not been told about.
 5. As a model using `undo_last_edit`, I want undo to keep its file-global semantics and its `[E_UNDO_STALE]` guard unchanged, so that "revert the last edit to this file" still works and refuses when the file moved on.

@@ -57,12 +57,12 @@ export async function resolveMissingPath(
 	if (matches.length === 1) {
 		return {
 			path: matches[0]!,
-			warning: `[E_BAD_SHAPE] Autocorrected: missing "path" resolved to ${matches[0]} — the only file whose stored hashes contain both anchors.`,
+			warning: `[MODEL] [E_BAD_PAYLOAD] Autocorrected: missing "path" resolved to ${matches[0]} — the only file whose stored hashes contain both anchors.`,
 		};
 	}
 	if (matches.length > 1) {
 		throw new Error(
-			`[E_BAD_SHAPE] Edit request requires a non-empty "path" string; the anchors match multiple known files: ${matches.join(", ")}. Include the intended path.`,
+			`[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "path" string; the anchors match multiple known files: ${matches.join(", ")}. Include the intended path.`,
 		);
 	}
 	return undefined;
@@ -142,7 +142,7 @@ export function createEditTool(): EditTool {
 			assertReq(effectiveCanonical);
 			if (effectiveCanonical.path === null) {
 				throw new Error(
-					"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
+					"[MODEL] [E_BAD_PAYLOAD] Edit request path could not be inferred from anchors.",
 				);
 			}
 			// SAFETY: ctx is untyped at pi boundary — cast validated by pi's runtime context shape (cwd + sessionManager)

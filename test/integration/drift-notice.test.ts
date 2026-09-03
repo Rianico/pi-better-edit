@@ -270,7 +270,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 					rejected = error as Error;
 				}
 				expect(rejected).toBeDefined();
-				expect(rejected!.message).toMatch(/E_RANGE_STALE/);
+				expect(rejected!.message).toMatch(/E_STALE_RANGE/);
 				expect(rejected!.message).not.toContain("Drift notice");
 				expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 			},

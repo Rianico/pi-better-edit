@@ -1,3 +1,13 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Features
+
+- **edit:** user/model audience split and glossary-aligned error codes (BREAKING CHANGE)
+
 ## [1.5.0](https://github.com/Rianico/pi-better-edit/compare/v1.4.3...v1.5.0) (2026-09-03)
 
 ### Features
@@ -10,10 +20,6 @@
 
 - **edit:** prevent tool calling bleed on Gemma 4 ([#57](https://github.com/Rianico/pi-better-edit/issues/57)) ([e67f493](https://github.com/Rianico/pi-better-edit/commit/e67f493ab6858d26a36329fbeb08a7a3779574e8)), closes [#55](https://github.com/Rianico/pi-better-edit/issues/55)
 - **hashline:** prevent freed anchor reuse via per-session tombstone and epoch (ADR-0013) ([#56](https://github.com/Rianico/pi-better-edit/issues/56)) ([79b4931](https://github.com/Rianico/pi-better-edit/commit/79b49318df992d09e2d613dbb5ebc3c39d435de1))
-
-# Changelog
-
-All notable changes to this project will be documented in this file.
 
 ## [1.4.2](https://github.com/Rianico/pi-better-edit/compare/v1.4.1...v1.4.2) (2026-09-01)
 

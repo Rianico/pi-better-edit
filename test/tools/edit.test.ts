@@ -88,7 +88,7 @@ describe("regEdit", () => {
 		});
 	});
 
-	it("refuses served hash echo in replacement_text with E_EDIT_HASH_ECHO (deny, not strip)", async () => {
+	it("refuses served hash echo in replacement_text with E_SERVED_ECHO (deny, not strip)", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -108,7 +108,7 @@ describe("regEdit", () => {
 					undefined,
 					ctx,
 				),
-			).rejects.toThrow(/E_EDIT_HASH_ECHO/);
+			).rejects.toThrow(/E_SERVED_ECHO/);
 			const after = await readFile(path, "utf-8");
 			expect(after).toBe(before);
 		});
@@ -125,17 +125,15 @@ describe("regEdit", () => {
 				undefined,
 				ctx,
 			);
-			// Zz9 is not served at line 2 (served[1] is hashes[1]), so E_BARE_HASH_PREFIX heal applies, not E_EDIT_HASH_ECHO
-			const result = await editTool.execute(
-				"e1",
-				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `Zz9│BBB`]] },
-				undefined,
-				undefined,
-				ctx,
-			);
-			expect(result.content[0].text).toContain("Successfully edited");
-			expect(result.content[0].text).toContain("E_BARE_HASH_PREFIX");
-			expect(result.details?.diff).toContain("BBB");
+			await expect(
+				editTool.execute(
+					"e1",
+					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `Zz9│BBB`]] },
+					undefined,
+					undefined,
+					ctx,
+				),
+			).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
 		});
 	});
 
@@ -151,18 +149,15 @@ describe("regEdit", () => {
 				ctx,
 			);
 
-			const result = await editTool.execute(
-				"e1",
-				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `+${hashes[1]!}│BBB`]] },
-				undefined,
-				undefined,
-				ctx,
-			);
-			expect(result.content[0].text).toContain("Successfully edited");
-			expect(result.content[0].text).toContain("[E_INVALID_PATCH]");
-			expect(result.content[0].text).toContain(`stripped diff-preview marker`);
-			expect(result.details?.diff).toContain("BBB");
-			expect(result.details?.diff).not.toContain(`+${hashes[1]}│BBB`);
+			await expect(
+				editTool.execute(
+					"e1",
+					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `+${hashes[1]!}│BBB`]] },
+					undefined,
+					undefined,
+					ctx,
+				),
+			).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
 		});
 	});
 
@@ -189,7 +184,7 @@ describe("regEdit", () => {
 			expect(result.content[0].text).toContain(
 				"Added 1 line(s), removed 2 line(s).",
 			);
-			expect(result.content[0].text).toContain("[E_BAD_OP]");
+			expect(result.content[0].text).toContain("[E_REVERSED_ANCHORS]");
 			expect(result.content[0].text).toContain(
 				"reversed remove_from/remove_to",
 			);
@@ -201,7 +196,7 @@ describe("regEdit", () => {
 		await withTempFile(
 			"sample.ts",
 			"aaa\nbbb\nccc\n",
-			async ({ cwd, path }) => {
+			async ({ cwd }) => {
 				const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 				const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 				await readTool.execute(
@@ -212,19 +207,15 @@ describe("regEdit", () => {
 					ctx,
 				);
 
-				const result = await editTool.execute(
-					"e1",
-					{ path: "sample.ts", edits: [[`${hashes[1]!}│bbb`, `${hashes[1]!}│bbb`, "BBB"]] },
-					undefined,
-					undefined,
-					ctx,
-				);
-				expect(result.content[0].text).toContain("Successfully edited");
-				expect(result.content[0].text).toContain("[E_BAD_REF]");
-				expect(result.content[0].text).toContain(`stripped "HASH│" prefix`);
-				expect(result.details?.diff).toContain("BBB");
-				const content = await readFile(path, "utf-8");
-				expect(content).toBe("aaa\nBBB\nccc\n");
+				await expect(
+					editTool.execute(
+						"e1",
+						{ path: "sample.ts", edits: [[`${hashes[1]!}│bbb`, `${hashes[1]!}│bbb`, "BBB"]] },
+						undefined,
+						undefined,
+						ctx,
+					),
+				).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
 			},
 		);
 	});

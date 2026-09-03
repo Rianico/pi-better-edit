@@ -79,16 +79,16 @@ export function regRead(pi: ExtensionAPI): void {
 			if (prepared.kind !== "text") {
 				if (prepared.kind === "directory") {
 					throw new Error(
-						`[E_NOT_TEXT] Path is a directory: ${rawPath}. Use ls to inspect directories.`,
+						`[E_UNSUPPORTED_FILE] Path is a directory: ${rawPath}.`,
 					);
 				}
 				if (prepared.kind === "binary") {
 					throw new Error(
-						`[E_NOT_TEXT] Path is a binary file: ${rawPath} (${prepared.description}). Hashline edit only supports text files.`,
+						`[E_UNSUPPORTED_FILE] Path is a binary file: ${rawPath} (${prepared.description}). Hashline edit only supports text files.`,
 					);
 				}
 				throw new Error(
-					`[E_NOT_TEXT] Path is an image file: ${rawPath}. Hashline edit only supports text files.`,
+					`[E_UNSUPPORTED_FILE] Path is an image file: ${rawPath}. Hashline edit only supports text files.`,
 				);
 			}
 

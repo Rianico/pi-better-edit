@@ -17,7 +17,7 @@ describe("applyEdit — recovery scenarios", () => {
       remove_to: hashes[1]!, replacement_text: "X" },
     ));
     expect(result.content).toBe("a\nX\ne");
-    expect(result.warnings?.[0]).toMatch(/reversed remove_from\/remove_to/);
+    expect(result.warnings?.[0]).toMatch(/\[E_REVERSED_ANCHORS\].*reversed remove_from\/remove_to/);
   });
 
   it("rejects stale anchor", async () => {
@@ -28,7 +28,7 @@ describe("applyEdit — recovery scenarios", () => {
         { remove_from: hashes[0]!,
         remove_to: hashes[1]!, replacement_text: "X\nY" },
       ), undefined, ["STALE", "STALE", "STALE", "STALE", "STALE"])
-    ).toThrow(/E_STALE_ANCHOR/);
+    ).toThrow(/\[E_STALE_ANCHOR\]/);
   });
 
   it("shows current context around the resolved anchor when only one anchor of a range is stale", async () => {
@@ -45,7 +45,7 @@ describe("applyEdit — recovery scenarios", () => {
       caught = error as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/E_STALE_ANCHOR/);
+    expect(caught!.message).toMatch(/\[E_STALE_ANCHOR\]/);
     expect(caught!.message).toMatch(/Current context around resolved anchor/);
     expect(caught!.message).toContain(` 3: ${hashes[2]}│c`);
   });
@@ -92,7 +92,7 @@ describe("applyEdit — recovery scenarios", () => {
         { remove_from: hashes[0]!,
         remove_to: hashes[0]!, replacement_text: "X" },
       ), undefined, forgedHashes)
-    ).toThrow(/E_AMBIGUOUS_ANCHOR/);
+    ).toThrow(/\[E_STALE_ANCHOR\]/);
   });
 
   it("rejects unknown fields in edit items", () => {
@@ -134,23 +134,19 @@ describe("applyEdit — recovery scenarios", () => {
   it("strips bare hash prefix in content_lines", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
-    const result = applyEdit(content, resEdit(
+    expect(() => applyEdit(content, resEdit(
       { remove_from: hashes[1]!,
       remove_to: hashes[2]!, replacement_text: `${hashes[1]!}│b\nX` },
-    ));
-    expect(result.content).toBe("a\nb\nX\nd\ne");
-    expect(result.warnings?.[0]).toMatch(/stripped "HASH│" prefix/);
+    ))).toThrow(/\[E_BAD_ANCHOR\]/);
   });
 
   it("strips diff preview rows in content_lines", async () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
-    const result = applyEdit(content, resEdit(
+    expect(() => applyEdit(content, resEdit(
       { remove_from: hashes[1]!,
       remove_to: hashes[1]!, replacement_text: `+${hashes[1]!}│B` },
-    ));
-    expect(result.content).toBe("a\nB\nc");
-    expect(result.warnings?.[0]).toMatch(/stripped diff-preview marker/);
+    ))).toThrow(/\[E_BAD_ANCHOR\]/);
   });
 
   it("warns on unicode escape sequences in content", async () => {

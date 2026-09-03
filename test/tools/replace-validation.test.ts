@@ -4,9 +4,9 @@ import { normReq } from "../../src/edit-normalize";
 
 describe("assertReq", () => {
 	it("throws for non-object payloads", () => {
-		expect(() => assertReq("string")).toThrow("E_BAD_SHAPE");
-		expect(() => assertReq(null)).toThrow("E_BAD_SHAPE");
-		expect(() => assertReq({ path: "test.txt" })).toThrow("E_BAD_SHAPE");
+		expect(() => assertReq("string")).toThrow("E_BAD_PAYLOAD");
+		expect(() => assertReq(null)).toThrow("E_BAD_PAYLOAD");
+		expect(() => assertReq({ path: "test.txt" })).toThrow("E_BAD_PAYLOAD");
 	});
 
 	it("rejects the old named-object payload", () => {
@@ -32,19 +32,19 @@ describe("assertReq", () => {
 	});
 
 	it("rejects malformed shapes and member types", () => {
-		expect(() => assertReq("string")).toThrow("E_BAD_SHAPE");
+		expect(() => assertReq("string")).toThrow("E_BAD_PAYLOAD");
 		expect(() =>
 			assertReq({ path: "test.txt", edits: [["AAA"]] }),
-		).toThrow("E_BAD_SHAPE");
+		).toThrow("E_BAD_PAYLOAD");
 		expect(() =>
 			assertReq({ path: "test.txt", edits: [["AAA", "BBB", null]] }),
-		).toThrow("E_BAD_SHAPE");
+		).toThrow("E_BAD_PAYLOAD");
 		expect(() =>
 			assertReq({ path: "", edits: [["AAA", "BBB", "new"]] }),
-		).toThrow("E_BAD_SHAPE");
+		).toThrow("E_BAD_PAYLOAD");
 		expect(() =>
 			assertReq({ path: "test.txt", edits: [["AAA", 42, "new"]] }),
-		).toThrow("E_BAD_SHAPE");
+		).toThrow("E_BAD_PAYLOAD");
 	});
 });
 
@@ -61,7 +61,7 @@ describe("anchor validation order", () => {
 				undefined,
 				{ cwd: "/tmp" } as any,
 			),
-		).rejects.toThrow(/^\[E_BAD_REF\]/);
+		).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
 	});
 });
 describe("prepareArguments normalization", () => {
@@ -78,7 +78,7 @@ describe("prepareArguments normalization", () => {
 		).toEqual({ path: null, edits: [["AAA", "BBB", "x"]] });
 	});
 
-	it("rejects malformed shapes with an actionable E_BAD_SHAPE hint", () => {
+	it("rejects malformed shapes with an actionable E_BAD_PAYLOAD hint", () => {
 		const tool = buildToolDef();
 		const bad = [
 			undefined,
@@ -90,7 +90,7 @@ describe("prepareArguments normalization", () => {
 			{ path: "test.txt", edits: [] },
 		];
 		for (const args of bad) {
-			expect(() => tool.prepareArguments!(args)).toThrow(/^\[E_BAD_SHAPE\]/);
+			expect(() => tool.prepareArguments!(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
 			expect(() => tool.prepareArguments!(args)).toThrow(/canonical payload/);
 		}
 	});

@@ -175,7 +175,7 @@ describe("regEdit", () => {
 					undefined,
 					{ cwd } as any,
 				),
-			).rejects.toThrow(/E_WOULD_EMPTY/);
+			).rejects.toThrow(/E_EMPTY_RANGE/);
 		});
 	});
 
@@ -205,7 +205,7 @@ describe("regEdit", () => {
 					undefined,
 					{ cwd } as any,
 				),
-			).rejects.toThrow(/E_BAD_SHAPE/);
+			).rejects.toThrow(/E_BAD_PAYLOAD/);
 		});
 	});
 

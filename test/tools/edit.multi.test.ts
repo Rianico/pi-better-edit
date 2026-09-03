@@ -242,7 +242,7 @@ describe("edit multi-item tool", () => {
 		);
 	});
 
-	it("rejects malformed envelopes with [E_BAD_SHAPE] without touching files", async () => {
+	it("rejects malformed envelopes with [E_BAD_PAYLOAD] without touching files", async () => {
 		await withTempFile(
 			"sample.ts",
 			"aaa\nbbb\nccc\n",
@@ -290,7 +290,7 @@ describe("edit multi-item tool", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/E_BAD_SHAPE/);
+				).rejects.toThrow(/E_BAD_PAYLOAD/);
 				await expect(
 					editTool.execute(
 						"e1",
@@ -299,11 +299,11 @@ describe("edit multi-item tool", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/E_BAD_SHAPE/);
+				).rejects.toThrow(/E_BAD_PAYLOAD/);
 
 				await expect(
 					editTool.execute("e1", "nope", undefined, undefined, ctx),
-				).rejects.toThrow(/E_BAD_SHAPE/);
+				).rejects.toThrow(/E_BAD_PAYLOAD/);
 
 				await expect(
 					editTool.execute(
@@ -316,7 +316,7 @@ describe("edit multi-item tool", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/E_BAD_SHAPE/);
+				).rejects.toThrow(/E_BAD_PAYLOAD/);
 
 				const validItem = [hashes[0]!, hashes[0]!, "AAA"];
 				const tooMany = Array.from({ length: 33 }, () => validItem);
@@ -328,7 +328,7 @@ describe("edit multi-item tool", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/E_BAD_SHAPE/);
+				).rejects.toThrow(/E_BAD_PAYLOAD/);
 
 				expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
 			},
@@ -383,7 +383,7 @@ describe("edit multi-item tool", () => {
 				expect(getText(result)).toContain("Successfully edited");
 				expect(
 					result.details.warnings?.some((w: string) =>
-						w.includes("[E_BAD_OP]"),
+						w.includes("[E_REVERSED_ANCHORS]"),
 					),
 				).toBe(true);
 				expect(await readFile(path, "utf-8")).toBe("XX\n");
@@ -530,7 +530,7 @@ describe("prepareEditArguments normalization", () => {
 		});
 	});
 
-	it("rejects malformed shapes with an actionable E_BAD_SHAPE hint", () => {
+	it("rejects malformed shapes with an actionable E_BAD_PAYLOAD hint", () => {
 		for (const args of [
 			undefined,
 			{},
@@ -542,7 +542,7 @@ describe("prepareEditArguments normalization", () => {
 			{ edit: ["a.ts", ["AAA", "BBB"], "x"] },
 			["a.ts", ["AAA", "BBB"], "x"],
 		]) {
-			expect(() => prepareEditArguments(args)).toThrow(/^\[E_BAD_SHAPE\]/);
+			expect(() => prepareEditArguments(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
 			expect(() => prepareEditArguments(args)).toThrow(/canonical payload/);
 		}
 	});
