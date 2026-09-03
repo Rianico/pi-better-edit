@@ -24,7 +24,7 @@ import { isLengthHealedViaCanon as isLengthHealedViaCanonHelper } from "./healin
 // WHY: Public contracts — mirrors served.ts so it can re-export without identity split
 // WHY: ---------------------------------------------------------------------------
 
-export type ServedCode = "E_RANGE_STALE" | "E_RANGE_UNSERVED" | "E_RANGE_UNVERIFIED";
+export type ServedCode = "E_STALE_RANGE" | "E_UNSERVED_RANGE";
 
 export interface ServedRow {
 	position: number;
@@ -202,7 +202,7 @@ export class ServedVerification {
 				const actual = canon(fileLines[pos] ?? "");
 				if (expected !== undefined && expected !== null && expected !== actual) {
 					this.throwStale({
-						message: `[E_RANGE_STALE] anchor "${tombstonedHash}" was freed since last full read (tombstoned, canon changed from "${expected}" to "${actual}"). Re-read.\nCurrent range:\n${echo}`,
+						message: `[MODEL] [E_STALE_RANGE] anchor "${tombstonedHash}" was freed since last full read (tombstoned, canon changed from "${expected}" to "${actual}"). Re-read.\nCurrent range:\n${echo}`,
 						firstOffendingLine: pos + 1,
 						echoRows,
 						echo,
@@ -220,7 +220,7 @@ export class ServedVerification {
 			fileHashes,
 		});
 
-		// WHY: --- decision table entry 1: no span could be resolved -> E_RANGE_UNVERIFIED (or healed) ---
+		// WHY: --- decision table entry 1: no span could be resolved -> E_UNSERVED_RANGE (or healed) ---
 		let from: number | undefined = span.from;
 		let to: number | undefined = span.to;
 		let isHealed = false;
@@ -262,7 +262,7 @@ export class ServedVerification {
 		// WHY: Strict pos check for concurrency (pos-free vs strict) — after span resolution but before canon checks
 		if (strictPos && from !== undefined && from !== startLine - 1) {
 			this.throwStale({
-				message: `[E_RANGE_STALE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (pos-restricted concurrency). Re-read.\nCurrent range:\n${echo}`,
+				message: `[MODEL] [E_STALE_RANGE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (pos-restricted concurrency). Re-read.\nCurrent range:\n${echo}`,
 				firstOffendingLine: startLine,
 				echoRows,
 				echo,
@@ -280,7 +280,7 @@ export class ServedVerification {
 						const actual = canon(fileLines[startLine - 1 + k] ?? "");
 						if (expected !== actual) {
 							this.throwStale({
-								message: `[E_RANGE_STALE] line ${startLine + k}${where} canon differs from served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${echo}`,
+								message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} canon differs from served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${echo}`,
 								firstOffendingLine: startLine + k,
 								echoRows,
 								echo,
@@ -296,7 +296,7 @@ export class ServedVerification {
 						const actualCanon = canon(fileLines[startLine - 1 + k] ?? "");
 						if (expectedCanon !== undefined && expectedCanon !== null && expectedCanon !== actualCanon) {
 							this.throwStale({
-								message: `[E_RANGE_STALE] line ${startLine + k}${where} uses tombstoned anchor "${h}" (freed since last full read, canon changed). Re-read.\nCurrent range:\n${echo}`,
+								message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} uses tombstoned anchor "${h}" (freed since last full read, canon changed). Re-read.\nCurrent range:\n${echo}`,
 								firstOffendingLine: startLine + k,
 								echoRows,
 								echo,
@@ -490,7 +490,7 @@ export class ServedVerification {
 			if (expectedCanon !== undefined && expectedCanon !== actualCanon) {
 				const offendingLine = from + k + 1;
 				this.throwStale({
-					message: `[E_RANGE_STALE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
+					message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
 					firstOffendingLine: offendingLine,
 					echoRows,
 					echo,
@@ -517,7 +517,7 @@ export class ServedVerification {
 		for (let i = from; i <= to; i++) {
 			if (served[i] === null) {
 				this.throwUnserved({
-					message: `[E_RANGE_UNSERVED] line ${i + 1}${where} was never served.\nCurrent range:\n${echo}\n${retryHint()}`,
+					message: `[MODEL] [E_UNSERVED_RANGE] line ${i + 1}${where} was never served.\nCurrent range:\n${echo}\n${retryHint()}`,
 					firstOffendingLine: i + 1,
 					echoRows,
 					echo,
@@ -530,7 +530,7 @@ export class ServedVerification {
 		if (servedLen !== currentLen) {
 			if (!this.isLengthHealedViaCanon({ served, from, servedLen, fileLines })) {
 				this.throwStale({
-					message: `[E_RANGE_STALE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${echo}\n${retryHint()}`,
+					message: `[MODEL] [E_STALE_RANGE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${echo}\n${retryHint()}`,
 					firstOffendingLine: startLine,
 					echoRows,
 					echo,
@@ -543,7 +543,7 @@ export class ServedVerification {
 			if (served[from + k] !== fileHashes[startLine - 1 + k]) {
 				const offendingLine = startLine + k;
 				this.throwStale({
-					message: `[E_RANGE_STALE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
+					message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
 					firstOffendingLine: offendingLine,
 					echoRows,
 					echo,
@@ -588,9 +588,9 @@ export class ServedVerification {
 		}
 		// SAFETY: augmenting ServedRejectionError with __echo for reject-and-serve; property is string set here and read only via guarded cast in verify().
 		const err = new ServedRejectionError({
-			code: "E_RANGE_UNVERIFIED",
+			code: "E_UNSERVED_RANGE",
 			message:
-				`[E_RANGE_UNVERIFIED] cannot verify range against served state${where}: ${problems.join("; ")}. ` +
+				`[MODEL] [E_UNSERVED_RANGE] cannot verify range against served state${where}: ${problems.join("; ")}. ` +
 				`No served span matched the current range (${currentLen} lines). ` +
 				`A full read will re-sync the served mirror — the echoed range below is current content, ` +
 				`but retrying without re-reading cannot clear a stale duplicate outside the echoed window.\n` +
@@ -609,7 +609,7 @@ export class ServedVerification {
 		echo: string;
 	}): never {
 		const err = new ServedRejectionError({
-			code: "E_RANGE_STALE",
+			code: "E_STALE_RANGE",
 			message: args.message,
 			firstOffendingLine: args.firstOffendingLine,
 			servedRows: args.echoRows,
@@ -626,7 +626,7 @@ export class ServedVerification {
 		echo: string;
 	}): never {
 		const err = new ServedRejectionError({
-			code: "E_RANGE_UNSERVED",
+			code: "E_UNSERVED_RANGE",
 			message: args.message,
 			firstOffendingLine: args.firstOffendingLine,
 			servedRows: args.echoRows,

@@ -171,7 +171,7 @@ export class HashIdentity {
 			if (idx >= totalBits) idx -= totalBits;
 		}
 		throw new Error(
-			`[E_FILE_TOO_LARGE] Cannot allocate a unique hash anchor: the file exceeds the ${HASH_SPACE}-line limit for ${HASH_LEN}-char hashline anchors. For very large files use write or a non-line-based approach.`,
+			`[MODEL] [E_LARGE_FILE] Cannot allocate a unique hash anchor: the file exceeds the ${HASH_SPACE}-line limit for ${HASH_LEN}-char hashline anchors. For very large files use write or a non-line-based approach.`,
 		);
 	}
 

@@ -119,7 +119,7 @@ export function buildAppliedText(
 	}
 	const warnings = details?.warnings;
 	if (warnings?.length) {
-		sections.push(warnings.join("\n"));
+		sections.push(theme.fg("dim", warnings.join("\n")));
 	}
 	const driftNotice = details?.driftNotice;
 	if (driftNotice) {

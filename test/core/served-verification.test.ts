@@ -42,7 +42,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		expect(result.ok).toBe(true);
 	});
 
-	it("duplicate candidate → E_RANGE_UNVERIFIED with duplicate position hint", () => {
+	it("duplicate candidate → E_UNSERVED_RANGE with duplicate position hint", () => {
 		const store = createCanonStore();
 		const oldContent = "a\nb\nc";
 		const oldHashes = _lineHashesPure(oldContent, store);
@@ -70,7 +70,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		});
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.code).toBe("E_RANGE_UNVERIFIED");
+			expect(result.code).toBe("E_UNSERVED_RANGE");
 			expect(result.message).toMatch(/remove_from.*was served at 2 positions/);
 			expect(result.servedRows.length).toBeGreaterThan(0);
 		}
@@ -116,7 +116,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		).not.toThrow();
 	});
 
-	it("never-served gap → E_RANGE_UNSERVED (first offending line)", () => {
+	it("never-served gap → E_UNSERVED_RANGE (first offending line)", () => {
 		const store = createCanonStore();
 		const content = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9";
 		const hashes = _lineHashesPure(content, store);
@@ -138,13 +138,13 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		});
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.code).toBe("E_RANGE_UNSERVED");
+			expect(result.code).toBe("E_UNSERVED_RANGE");
 			expect(result.firstOffendingLine).toBe(4);
-			expect(result.message).toMatch(/E_RANGE_UNSERVED.*line 4/);
+			expect(result.message).toMatch(/E_UNSERVED_RANGE.*line 4/);
 		}
 	});
 
-	it("length mismatch without unique heal → E_RANGE_STALE", () => {
+	it("length mismatch without unique heal → E_STALE_RANGE", () => {
 		const store = createCanonStore();
 		// Use duplicate canon lines so length-heal via canon is ambiguous (matches >1) → not healed
 		const fileLinesDup = ["a", "b", "a", "b"];
@@ -152,7 +152,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		const servedDup: (string | null)[] = [hashesDup[0]!, hashesDup[1]!]; // "a","b" at 0,1
 		const verifier = new ServedVerification(store);
 		// Request range 1..3 ("a","b","a") length 3 vs servedLen 2 — served span 0..1 (len 2) vs current 3
-		// Fast-path gives from 0 to1; length mismatch 2 vs 3; canon heal looks for ["a","b"] which appears twice (at 0 and 2) → matches 2 → not healed → E_RANGE_STALE
+		// Fast-path gives from 0 to1; length mismatch 2 vs 3; canon heal looks for ["a","b"] which appears twice (at 0 and 2) → matches 2 → not healed → E_STALE_RANGE
 		const result = verifier.verify({
 			range: {
 				startHash: hashesDup[0]!,
@@ -166,7 +166,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		});
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.code).toBe("E_RANGE_STALE");
+			expect(result.code).toBe("E_STALE_RANGE");
 			expect(result.message).toMatch(/served span.*no longer matches/);
 		}
 		// Also ensure simple hash mismatch case still gives stale
@@ -188,11 +188,11 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		});
 		expect(result2.ok).toBe(false);
 		if (!result2.ok) {
-			expect(["E_RANGE_STALE", "E_RANGE_UNVERIFIED"]).toContain(result2.code);
+			expect(["E_STALE_RANGE", "E_UNSERVED_RANGE"]).toContain(result2.code);
 		}
 	});
 
-	it("E_RANGE_STALE after healed canon mismatch (interior drift)", () => {
+	it("E_STALE_RANGE after healed canon mismatch (interior drift)", () => {
 		const store = createCanonStore();
 		const oldContent = "alpha\nbeta\ngamma";
 		const oldHashes = _lineHashesPure(oldContent, store);
@@ -219,7 +219,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		});
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.code).toBe("E_RANGE_STALE");
+			expect(result.code).toBe("E_STALE_RANGE");
 			expect(result.firstOffendingLine).toBe(2);
 		}
 	});
@@ -256,7 +256,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		});
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
-			expect(result.code).toBe("E_RANGE_STALE");
+			expect(result.code).toBe("E_STALE_RANGE");
 			// Echo should be capped at SERVED_ECHO_CAP
 			expect(result.servedRows.length).toBe(SERVED_ECHO_CAP);
 			expect(result.echo).toContain("more — read offset=");
@@ -344,7 +344,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 				fileLines: content.split("\n"),
 				canonStore: store,
 			}),
-		).toThrow(/E_RANGE_UNSERVED/);
+		).toThrow(/E_UNSERVED_RANGE/);
 	});
 
 	it("servedPositionsOf / buildRangeEcho / fmtServedRows remain accessible", () => {

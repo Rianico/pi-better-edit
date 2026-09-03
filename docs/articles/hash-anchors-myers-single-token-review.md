@@ -65,8 +65,8 @@ This is where the repo is strongest relative to the article. The article's valid
 
 Here the validator is two layers:
 
-1. **Anchor resolution** — `remove_from`/`remove_to` must resolve to exactly one current line (`[E_STALE_ANCHOR]` / `[E_AMBIGUOUS_ANCHOR]` otherwise). An anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated — the project's stated anchor philosophy.
-2. **Served-state range verification** — every line of the resolved range must match what the tool actually delivered into the model's context (`verifyServedRange` in `src/hashline/served.ts`). A line inside the range that changed on disk since it was served is hard-rejected with `[E_RANGE_STALE]`; a line the model was never shown is `[E_RANGE_UNSERVED]`; a boundary anchor with no served position is `[E_RANGE_UNVERIFIED]`.
+1. **Anchor resolution** — `remove_from`/`remove_to` must resolve to exactly one current line (`[E_STALE_ANCHOR]` / `[E_STALE_ANCHOR]` otherwise). An anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated — the project's stated anchor philosophy.
+2. **Served-state range verification** — every line of the resolved range must match what the tool actually delivered into the model's context (`verifyServedRange` in `src/hashline/served.ts`). A line inside the range that changed on disk since it was served is hard-rejected with `[E_STALE_RANGE]`; a line the model was never shown is `[E_UNSERVED_RANGE]`; a boundary anchor with no served position is `[E_UNSERVED_RANGE]`.
 
 The served-state check is the article's validation concept taken to its logical end: if the point of validation is "the model is editing what it actually saw," then verifying only the two boundary lines is a two-line hole. An interior line could be changed on disk — a human edit, a formatter-on-save — while the boundaries sit untouched, and a boundary-only validator would silently destroy it. The range-span comparison closes that hole.
 

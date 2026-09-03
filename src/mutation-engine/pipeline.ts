@@ -327,7 +327,7 @@ async function applyOneEdit(
 
 	if (!input.hashes || input.hashes.length === 0)
 		throw new Error(
-			"[E_STALE_ANCHOR] missing previous hashes for stable anchoring",
+			"[MODEL] [E_STALE_ANCHOR] missing previous hashes for stable anchoring",
 		);
 	const removedHashes = collectRemovedHashes(input.edit, input.hashes);
 	const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
@@ -389,7 +389,7 @@ async function runMutations(
 ): Promise<ProcessedEditFile> {
 	if (request.path === null) {
 		throw new Error(
-			"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
+			"[MODEL] [E_BAD_PAYLOAD] Edit request path could not be inferred from anchors.",
 		);
 	}
 	const path = request.path;
@@ -674,7 +674,7 @@ export async function apply(
 	const path = request.path;
 	if (path === null) {
 		throw new Error(
-			"[E_BAD_SHAPE] Edit request path could not be inferred from anchors.",
+			"[MODEL] [E_BAD_PAYLOAD] Edit request path could not be inferred from anchors.",
 		);
 	}
 	const absolutePath = toCwd(path, cwd);

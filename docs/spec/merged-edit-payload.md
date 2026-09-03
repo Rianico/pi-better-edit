@@ -27,7 +27,7 @@ One mutation tool (`edit`) with one compact payload contract, expressed as an ob
 
 Arity is expressed by `edits.length`: a length-1 array is the single-edit case; longer arrays are batched edits to one file, applied atomically (preflight all items, write once, roll back on failure).
 
-The root object must contain only `path` and `edits`. Missing/extra fields, empty `edits`, malformed tuples, empty or malformed paths, malformed anchors, and ambiguous path resolution are rejected with the existing `[E_BAD_SHAPE]`/anchor error conventions.
+The root object must contain only `path` and `edits`. Missing/extra fields, empty `edits`, malformed tuples, empty or malformed paths, malformed anchors, and ambiguous path resolution are rejected with the existing `[E_BAD_PAYLOAD]`/anchor error conventions.
 
 ## Normalization and safety
 

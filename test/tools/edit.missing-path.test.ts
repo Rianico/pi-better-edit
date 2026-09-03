@@ -20,7 +20,7 @@ describe("edit — missing path resolution", () => {
       );
 
       expect(result.content[0].text).toContain("Successfully edited");
-      expect(result.content[0].text).toContain("[E_BAD_SHAPE]");
+      expect(result.content[0].text).toContain("[E_BAD_PAYLOAD]");
       expect(result.content[0].text).toContain('missing "path" resolved to');
       expect(await readFile(path, "utf-8")).toBe("AAA\nbbb\n");
     });

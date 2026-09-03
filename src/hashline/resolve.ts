@@ -121,7 +121,7 @@ function formatAmbiguous(
 	if (ambiguous.length === 0) return;
 	if (out.length > 0) out.push("");
 	out.push(
-		`[E_AMBIGUOUS_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read for fresh anchors.`,
+		`[E_STALE_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read for fresh anchors.`,
 	);
 	for (const m of ambiguous) {
 		const sample = (m.candidates ?? []).slice(0, 5);
@@ -189,17 +189,17 @@ function assertItem(edit: Record<string, unknown>): void {
 
 	if ("remove_from" in edit && typeof edit.remove_from !== "string") {
 		throw new Error(
-			`[E_BAD_SHAPE] Field "remove_from" must be an anchor string (3-char hash).`,
+			`[E_BAD_PAYLOAD] Field "remove_from" must be an anchor string (3-char hash).`,
 		);
 	}
 	if ("remove_to" in edit && typeof edit.remove_to !== "string") {
 		throw new Error(
-			`[E_BAD_SHAPE] Field "remove_to" must be an anchor string (3-char hash).`,
+			`[E_BAD_PAYLOAD] Field "remove_to" must be an anchor string (3-char hash).`,
 		);
 	}
 	if (!("replacement_text" in edit)) {
 		throw new Error(
-			`[E_BAD_SHAPE] The edit requires a "replacement_text" field. Provide the replacement text (use "" to delete).`,
+			`[E_BAD_PAYLOAD] The edit requires a "replacement_text" field. Provide the replacement text (use "" to delete).`,
 		);
 	}
 	if (typeof edit.replacement_text !== "string") {
@@ -210,7 +210,7 @@ function assertItem(edit: Record<string, unknown>): void {
 		typeof edit.remove_to !== "string"
 	) {
 		throw new Error(
-			`[E_BAD_SHAPE] The edit requires "remove_from" and "remove_to" anchor strings (3-char hashes from read output).`,
+			`[E_BAD_PAYLOAD] The edit requires "remove_from" and "remove_to" anchor strings (3-char hashes from read output).`,
 		);
 	}
 }
@@ -228,7 +228,7 @@ function firstHashFromBlock(block: string): string | undefined {
 	return undefined;
 }
 
-export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
+export function resEdit(edit: HTEdit, _warnings?: string[]): HEdit {
 	assertItem(edit as Record<string, unknown>);
 
 	const editLines = parseText(edit.replacement_text);
@@ -238,24 +238,20 @@ export function resEdit(edit: HTEdit, warnings?: string[]): HEdit {
 			const hash = firstHashFromBlock(trimmed);
 			if (hash) {
 				const lines = trimmed.split("\n").length;
-				warnings?.push(
-					`[E_BAD_REF] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`,
-				);
-				return hash;
+				throw new Error(`[MODEL] [E_BAD_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`);
 			}
 		}
 		const match = trimmed.match(ANCHOR_ROW_RE);
 		if (match) {
 			let message: string;
 			if (match[1] === "+") {
-				message = `[E_BAD_REF] stripped diff-preview marker from remove_from/remove_to "${trimmed}".`;
+				message = `[E_BAD_ANCHOR] stripped diff-preview marker from remove_from/remove_to "${trimmed}".`;
 			} else if (match[1] === "-") {
-				message = `[E_BAD_REF] stripped leading "-" marker from remove_from/remove_to "${trimmed}".`;
+				message = `[E_BAD_ANCHOR] stripped leading "-" marker from remove_from/remove_to "${trimmed}".`;
 			} else {
-				message = `[E_BAD_REF] stripped "HASH│" prefix from remove_from/remove_to "${trimmed}".`;
+				message = `[E_BAD_ANCHOR] stripped "HASH│" prefix from remove_from/remove_to "${trimmed}".`;
 			}
-			warnings?.push(message);
-			return match[2]!;
+			throw new Error(message);
 		}
 		return ref;
 	}) as [string, string];
@@ -276,7 +272,7 @@ function warnUnicodeEsc(edit: HEdit, warnings: string[]): void {
 export function stripBarePrefixes(
 	edit: HEdit,
 	fileHashes: string[],
-	warnings: string[],
+	_warnings: string[],
 ): HEdit {
 	const fileHashSet = new Set(fileHashes);
 	const stripped: { lineIndex: number; matched: boolean }[] = [];
@@ -296,18 +292,14 @@ export function stripBarePrefixes(
 			? "0 matched — verify literal 'HASH│' content"
 			: `${matchedCount}/${stripped.length} matched`;
 	if (matchedCount === stripped.length) {
-		warnings.push(
-			`[info E_BARE_HASH_PREFIX] stripped "HASH│" prefix from ${locations} (${evidence}) — use bare content without HASH│ next time.`,
-		);
+		throw new Error(`[MODEL] [E_BAD_ANCHOR] stripped "HASH│" prefix from ${locations} (${evidence}) — use bare content without HASH│ next time.`);
 	} else {
-		warnings.push(
-			`[E_BARE_HASH_PREFIX] stripped "HASH│" prefix from ${locations} (${evidence}).`,
-		);
+		throw new Error(`[MODEL] [E_BAD_ANCHOR] stripped "HASH│" prefix from ${locations} (${evidence}).`);
 	}
 	return { ...edit, content_lines: contentLines };
 }
 
-export function stripDiffPrefixes(edit: HEdit, warnings: string[]): HEdit {
+export function stripDiffPrefixes(edit: HEdit, _warnings: string[]): HEdit {
 	const stripped: number[] = [];
 	const contentLines = edit.content_lines.map((line, lineIndex) => {
 		const plus = line.match(HL_PREFIX_PLUS_RE);
@@ -326,9 +318,7 @@ export function stripDiffPrefixes(edit: HEdit, warnings: string[]): HEdit {
 	const locations = stripped
 		.map((i) => `replacement_text line ${i + 1}`)
 		.join(", ");
-	warnings.push(
-		`[E_INVALID_PATCH] stripped diff-preview marker from ${locations}.`,
-	);
+	throw new Error(`[MODEL] [E_BAD_ANCHOR] stripped diff-preview marker from ${locations}.`);
 	return { ...edit, content_lines: contentLines };
 }
 
@@ -348,7 +338,7 @@ export function swapReversedRanges(
 		return edit;
 	}
 	warnings.push(
-		`[E_BAD_OP] reversed remove_from/remove_to (${startRef.hash} after ${endRef.hash}); swapped.`,
+		`[USER] [E_REVERSED_ANCHORS] reversed remove_from/remove_to (${startRef.hash} after ${endRef.hash}); swapped (healed).`,
 	);
 	return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
@@ -398,7 +388,7 @@ export function valEdit(
 	}
 	if (startResolved.line > endResolved.line) {
 		throw new Error(
-			`[E_BAD_OP] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}).`,
+			`[E_REVERSED_ANCHORS] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}).`,
 		);
 	}
 

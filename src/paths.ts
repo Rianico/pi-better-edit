@@ -22,13 +22,13 @@ function expand(filePath: string): string {
 
 export function toCwd(filePath: string, cwd: string): string {
   if (filePath.includes("\0"))
-    throw new Error("[E_BAD_SHAPE] Path contains null byte");
+    throw new Error("[MODEL] [E_BAD_PAYLOAD] Path contains null byte");
   const expanded = expand(filePath);
   if (expanded.includes("\0"))
-    throw new Error("[E_BAD_SHAPE] Path contains null byte");
+    throw new Error("[MODEL] [E_BAD_PAYLOAD] Path contains null byte");
   // SAFETY: cwd is trusted (ctx.cwd), expand resolves "~" via homedir/XDG and resolvePath normalizes ".."; editing scope intentionally allows any absolute path — OS permissions enforced by valAccess downstream; guard ensures null-byte free and absolute result.
   const resolved = isAbsolute(expanded) ? expanded : resolvePath(cwd, expanded);
   if (!isAbsolute(resolved))
-    throw new Error("[E_BAD_SHAPE] Resolved path must be absolute");
+    throw new Error("[MODEL] [E_BAD_PAYLOAD] Resolved path must be absolute");
   return resolved;
 }

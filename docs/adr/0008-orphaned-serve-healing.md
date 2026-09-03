@@ -8,7 +8,7 @@ accepted
 
 ## Context
 
-Orphaned serves accumulated when an external write relocated a line that kept its hash and a subsequent partial re-serve (paged read, echo) wrote the same hash at the new position without nulling the old one. The next `edit` saw `servedPositionsOf(hash) === 2` and failed closed with `E_RANGE_UNVERIFIED`, and the promise of `reject-and-serve` ("retry with these anchors, no read needed") re-served the current range without healing the stale slot — a self-reinforcing loop. Widening the range could not target the stale position blindly.
+Orphaned serves accumulated when an external write relocated a line that kept its hash and a subsequent partial re-serve (paged read, echo) wrote the same hash at the new position without nulling the old one. The next `edit` saw `servedPositionsOf(hash) === 2` and failed closed with `E_UNSERVED_RANGE`, and the promise of `reject-and-serve` ("retry with these anchors, no read needed") re-served the current range without healing the stale slot — a self-reinforcing loop. Widening the range could not target the stale position blindly.
 
 ## Decision
 
@@ -27,8 +27,8 @@ We decided to heal eagerly at the served-state layer and disambiguate lazily at 
 
 - `hash.ts` stays pure; no DB access from the hashing layer. The file's perfect-hashing invariant (same content at two positions → two different hashes) is unchanged; "relocated line keeps its hash" remains the file condition, "orphaning re-serve" (re-serving the same hash at newPos without clearing oldPos) the mirror event.
 - `patchServed` now scans `updated` for `hash` at `i != newPos` and nulls it before writing. The next partial re-read that would have created `Wot@0, Wot@2` leaves `[X, Y, Wot]`. No extra I/O; the existing `updated` array is already in memory.
-- `verifyServedRange` no longer fails closed on `length !== 1`. It builds `currentLen`, enumerates `(s,e)` pairs with matching length and content equality against `fileHashes`, and picks the span closest to `startLine-1` when multiple survive. Zero candidates → original `E_RANGE_UNVERIFIED`; single → use it (stale-vs-valid disambiguation); multiple → closest. Exterior shifts (both endpoints move together) keep `currentLen` invariant and pass via content match; interior inserts/deletes still fail on length/content mismatch. The healed-orphan case is silent — no drift row, no warning — because the mirror was repaired and the edit's intent is unambiguous.
-- Tests: `served-edge-cases` "fail-safes with E_RANGE_UNVERIFIED when duplicate" renamed to "recovers from a stale duplicate by disambiguating" expecting `Successfully edited`; `served-store` truncation test now expects `[null,"ddd","eee","bbb","fff"]` (eager heal nulls the earlier duplicate on the same patch). All 1006 tests pass.
+- `verifyServedRange` no longer fails closed on `length !== 1`. It builds `currentLen`, enumerates `(s,e)` pairs with matching length and content equality against `fileHashes`, and picks the span closest to `startLine-1` when multiple survive. Zero candidates → original `E_UNSERVED_RANGE`; single → use it (stale-vs-valid disambiguation); multiple → closest. Exterior shifts (both endpoints move together) keep `currentLen` invariant and pass via content match; interior inserts/deletes still fail on length/content mismatch. The healed-orphan case is silent — no drift row, no warning — because the mirror was repaired and the edit's intent is unambiguous.
+- Tests: `served-edge-cases` "fail-safes with E_UNSERVED_RANGE when duplicate" renamed to "recovers from a stale duplicate by disambiguating" expecting `Successfully edited`; `served-store` truncation test now expects `[null,"ddd","eee","bbb","fff"]` (eager heal nulls the earlier duplicate on the same patch). All 1006 tests pass.
 - Glossary: `orphaned serve`, `orphaning re-serve`, and `relocated line keeps its hash` added to `CONTEXT.md` to distinguish duplicated content (two hashes) from duplicated mirror entries (one hash, two positions).
 
 ## Amendment 2026-08-26 — Deepen served verification into ServedVerification (C1)
@@ -47,7 +47,7 @@ We decided to heal eagerly at the served-state layer and disambiguate lazily at 
 
 - **CONTEXT.md terms unchanged** — serve, served state, served span, range staleness, never-served, reject-and-serve, drift, orphaned serve, orphaning re-serve, relocated line keeps its hash all preserved.
 
-- **Tests.** New `test/core/served-verification.test.ts` exercises the deep module directly with injected stores: unique fast-path, duplicate positions → `E_RANGE_UNVERIFIED` (with duplicate hint), single-candidate canon heal `a b c → a 1 b c`, never-served gap → `E_RANGE_UNSERVED`, `E_RANGE_STALE` length mismatch without unique heal, interior drift → `E_RANGE_STALE` line number, pagination cap (`SERVED_ECHO_CAP=150` with `[... more — read offset=…]`), store isolation (no cross-pollution), and facade `verifyServedRange` throwing path. Existing integration suites (`served-range-verification`, `hash-heal-tdd`, `served-edge-cases`) continue to pass (1019 tests).
+- **Tests.** New `test/core/served-verification.test.ts` exercises the deep module directly with injected stores: unique fast-path, duplicate positions → `E_UNSERVED_RANGE` (with duplicate hint), single-candidate canon heal `a b c → a 1 b c`, never-served gap → `E_UNSERVED_RANGE`, `E_STALE_RANGE` length mismatch without unique heal, interior drift → `E_STALE_RANGE` line number, pagination cap (`SERVED_ECHO_CAP=150` with `[... more — read offset=…]`), store isolation (no cross-pollution), and facade `verifyServedRange` throwing path. Existing integration suites (`served-range-verification`, `hash-heal-tdd`, `served-edge-cases`) continue to pass (1019 tests).
 
 ### Consequences
 

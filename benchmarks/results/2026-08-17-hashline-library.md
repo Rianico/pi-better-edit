@@ -47,7 +47,7 @@ claim.
 - **H7** is the blind-edit guard: an edit anchoring lines the snapshot never
   recorded as seen is rejected with the actual content revealed, and the
   reveal itself makes the retry pass — the same reject-and-serve loop this
-  project's tools implement (`[E_RANGE_UNSERVED]` / `[E_RANGE_UNVERIFIED]`).
+  project's tools implement (`[E_UNSERVED_RANGE]` / `[E_UNSERVED_RANGE]`).
 - **H8** gates batch atomicity: multi-section patches preflight every section
   before any write, so a stale section anywhere aborts the whole patch.
 - **H10** gates the provenance requirement: every anchored section must carry

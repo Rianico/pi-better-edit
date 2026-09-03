@@ -12,7 +12,7 @@ import {
 const home = useTestHome();
 
 describe("served-state range verification for edit", () => {
-	it("rejects with [E_RANGE_STALE] naming the first offending line and leaves the file unchanged", async () => {
+	it("rejects with [E_STALE_RANGE] naming the first offending line and leaves the file unchanged", async () => {
 		await withTempFile(
 			"sample.ts",
 			"alpha\nbeta\ngamma\n",
@@ -44,7 +44,7 @@ describe("served-state range verification for edit", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/E_RANGE_STALE.*line 2/);
+				).rejects.toThrow(/E_STALE_RANGE.*line 2/);
 
 				expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 			},
@@ -88,7 +88,7 @@ describe("served-state range verification for edit", () => {
 					rejected = error as Error;
 				}
 				expect(rejected).toBeDefined();
-				expect(rejected!.message).toMatch(/E_RANGE_STALE/);
+				expect(rejected!.message).toMatch(/E_STALE_RANGE/);
 
 				const echoLines = rejected!.message
 					.split("\n")
@@ -127,7 +127,7 @@ describe("served-state range verification for edit", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/E_RANGE_UNVERIFIED|E_RANGE_STALE/);
+				).rejects.toThrow(/E_UNSERVED_RANGE|E_STALE_RANGE/);
 				expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 				// Fresh read re-serves and then edit succeeds
 				const freshRead = await readTool.execute("r3", { path: "sample.ts" }, undefined, undefined, ctx);
