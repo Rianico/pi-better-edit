@@ -1,19 +1,8 @@
-## [Unreleased]
+## [1.5.0](https://github.com/Rianico/pi-better-edit/compare/v1.4.3...v1.5.0) (2026-09-03)
 
 ### Features
 
-- **healing:** deepen Healing as Strategy chain behind ServedVerification
-- **payload:** consolidate Payload Contract seam — single source
-- **presentation:** collapse Result Presentation cluster into EditPresentation
-- **drift:** deepen Drift seam to interval-aware scan
-- **served-session:** deepen ServedSession, delete shallow served-state facade
-- **edit:** deepen Edit Tool seam with TuiPresenter adapter
-
-### Bug Fixes
-
-- **ci:** include lint in pre-merge gate — respect tool feedback per ADR-0014
-- **lint:** address GH Action lint errors — unused vars per no-unused-vars
-- **lint:** retrofit comments to high-signal allowlist per ADR-0014
+* consolidate architecture deepening — 6 deep modules ([#64](https://github.com/Rianico/pi-better-edit/issues/64)) ([6cbf5da](https://github.com/Rianico/pi-better-edit/commit/6cbf5da3fed20588d33c87fb05b3307c23501404))
 
 ## [1.4.3](https://github.com/Rianico/pi-better-edit/compare/v1.4.2...v1.4.3) (2026-09-01)
 
