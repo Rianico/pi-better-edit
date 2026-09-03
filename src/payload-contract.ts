@@ -86,18 +86,18 @@ const EDIT_TUPLE_HINT =
 	"replacement (an empty string deletes the range).";
 
 export const EDIT_DESCRIPTION =
-	'Edit a range of lines in a text file with { "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }. `path` is file path or null. `read` shows HASH│content (e.g. wUp│  "site": {) — use bare 3-char HASH anchors for remove_from/remove_to (e.g. "wUp"), never HASH│content. replacement_text is bare content, \\n joins lines, "" deletes. Example: {"path":"a.py","edits":[["wUp","AU6","new"]]}. Edits are atomic; reuse HASH│content from diff after success.';
-
+	'Edit a range of lines in a text file via payload contract { "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] } (arity = edits.length, atomic; path null infers). Use bare 3-char HASH anchors (e.g. "wUp") from served HASH│content (e.g. wUp│  "site": {) — never HASH│content. replacement_text is bare content (\n joins lines, "" deletes the inclusive anchor range). On success chain from diff HASH│content (no re-read). Staleness tombstone∉ && canon== + epoch (position-free, strict on snapshotId mismatch): E_STALE_ANCHOR → re-read; E_STALE_RANGE/E_UNSERVED_RANGE → reject-and-serve with fresh HASH│content (retry from echo). Channel: [MODEL] retry, [USER] drift notice dimmed.';
 export const EDIT_SNIPPET =
-	'Edit with `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }` — `remove_from`/`remove_to` are bare 3-char `HASH` anchors (e.g. "aB3"), `replacement_text` is bare content (no `HASH│`). `read` → `wUp│    "site": {` vs `edit` → `{"path":"scrape.py","edits":[["wUp","AU6","    "site": {\\n        "class": SiteScraper,"]]}`. After success chain from diff `HASH│content` (no re-read); on error follow hint — `no read needed` → retry from echo, `re-read` → call `read`.';
-
+	'Edit via payload contract `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }` — `remove_from`/`remove_to` are bare 3-char anchors (e.g. "aB3") for inclusive anchor range, `replacement_text` is bare content (no `HASH│`). `read` serves `wUp│    "site": {` → `edit` `{"path":"scrape.py","edits":[["wUp","AU6","    "site": {\\n        "class": SiteScraper,"]]}`. After success chain from diff `HASH│content` (no re-read); on `[MODEL] [E_STALE_RANGE]`/`[E_UNSERVED_RANGE]` retry from echo (`reject-and-serve`, no read), on `[MODEL] [E_STALE_ANCHOR]` re-read for fresh anchors; `[USER]` dimmed is human `drift notice`.';
 export const EDIT_GUIDELINES: string[] = [
-	'edit: `HASH` vs `HASH│content` — `HASH` is the bare 3-char (e.g. "wUp"), `HASH│content` is the full line from `read`/`diff` (e.g. `wUp│    "site": {`); never mix them.',
-	"edit: get `remove_from`/`remove_to` by copying only the 3 chars before `│` from `read` output — never include `│` or content after it.",
-	'edit: `replacement_text` is plain file content without `HASH│` — e.g. "    "site": {\\n        "class": SiteScraper," — never prefix lines with `HASH│`.',
-	'edit: every `\\n` in `replacement_text` separates lines; mirror trailing blank lines explicitly (use "" to delete a range).',
-	"edit: after a successful edit the returned diff shows fresh anchors (`HASH│content`) — copy new `HASH` values from there for the next edit; no need to re-read.",
-	"edit: `remove_from`/`remove_to` are inclusive; batch multiple edits to the same file only when independent — they apply atomically (fail → nothing written).",
+	'edit: `anchor` (`HASH`) vs `HASH│content` — `anchor` is bare 3-char hash (e.g. "wUp"), `HASH│content` is served line (e.g. `wUp│    "site": {`); never mix them — `remove_from`/`remove_to` are bare `anchor`s, `replacement_text` never has `HASH│`.',
+	'edit: payload contract `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }` — `path` hoisted, `edits` arity = number of edits (1 = single, >1 = batched atomically to one file; `batch_edit` removed).',
+	"edit: `remove_from`/`remove_to` are inclusive anchor range (both boundaries included); copy only 3 chars before `│` from served `HASH│content` — never include `│` or content.",
+	'edit: `replacement_text` is plain file content without `HASH│` — e.g. "    "site": {\\n        "class": SiteScraper,"; every `\\n` separates lines, mirror trailing blank lines, `""` deletes inclusive range; never prefix lines with `HASH│` (would be `E_SERVED_ECHO` → `[MODEL] [E_SERVED_ECHO]` fail-loud).',
+	"edit: after success diff serves fresh `HASH│content` (fresh anchors) — copy new `anchor`s from there for next edit; no re-read.",
+	"edit: staleness is `tombstone∉ && canon==` + `epoch` (`position-free`, `strict` on `snapshotId` mismatch): `E_STALE_ANCHOR` (anchor changed/tombstoned) → re-read; `E_STALE_RANGE` (served-range interior changed) / `E_UNSERVED_RANGE` (never-served span) → `reject-and-serve` with fresh `HASH│content` (retry from echo, no read).",
+	"edit: channel — `[MODEL]` in `content` = you retry (e.g. `E_STALE_*`, `E_BAD_PAYLOAD`, `E_BAD_ANCHOR`, `E_SERVED_ECHO`), `[USER]` dimmed in `details` = human `drift notice` (outside served range, capped).",
+	"edit: batch via `edits` arity atomically (fail → nothing written); independent ranges only.",
 ];
 
 function _getPayloadPromptFragments(): {
@@ -288,7 +288,9 @@ export function prepareEditArguments(args: unknown): Record<string, unknown> {
 		const original = args as Record<string, unknown>;
 		return { path: valid.path, edits: original.edits as unknown };
 	}
-	throw new Error(`[MODEL] [E_BAD_PAYLOAD] ${EDIT_TUPLE_HINT} ${describeReceived(args)}`);
+	throw new Error(
+		`[MODEL] [E_BAD_PAYLOAD] ${EDIT_TUPLE_HINT} ${describeReceived(args)}`,
+	);
 }
 
 export function getPreviewInput(
