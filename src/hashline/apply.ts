@@ -82,7 +82,7 @@ export class EditHashEchoError extends AnchorMismatchError {
 function assertNotEmpty(originalContent: string, result: string): void {
 	if (originalContent.length > 0 && result.length === 0) {
 		throw new Error(
-			"[E_WOULD_EMPTY] Cannot empty a non-empty file via edit. Use `write` if you need to clear the file.",
+			"[MODEL] [E_EMPTY_RANGE] Cannot empty a non-empty file via edit. Use `write` if you need to clear the file.",
 		);
 	}
 }
@@ -208,7 +208,31 @@ export function applyEdit(
 	const warnings: string[] = [];
 	const rawReplacementLines = [...edit.content_lines];
 
-	const { fixed: prefixFixed } = prepareEdit(fileHashes, edit, warnings);
+	let prefixFixed: typeof edit = edit;
+	try {
+		const res = prepareEdit(fileHashes, edit, warnings);
+		prefixFixed = res.fixed;
+	} catch (e) {
+		const msg = (e as Error).message;
+		if (msg.includes("[E_BAD_ANCHOR]") && served) {
+			let isServedEcho = false;
+			for (const line of rawReplacementLines) {
+				const m = line.match(/^([A-Za-z0-9]{3})│/);
+				if (m && served.includes(m[1]!)) {
+					isServedEcho = true;
+					break;
+				}
+			}
+			if (isServedEcho) {
+				prefixFixed = edit;
+				warnings.length = 0;
+			} else {
+				throw e;
+			}
+		} else {
+			throw e;
+		}
+	}
 
 	const { resolved, mismatches } = valEdit(
 		prefixFixed,
@@ -240,7 +264,7 @@ export function applyEdit(
 			echo = findEditHashEcho(prefixFixed.content_lines, served, startLine);
 		}
 		if (echo) {
-			const msg = `[E_EDIT_HASH_ECHO] Refused edit to ${filePath ?? "(unknown file)"}: replacement line ${echo.k} begins with the exact ${echo.hash}${HASH_SEP} anchor served for this session, path, and range-relative line. Remove the copied anchors and retry. Nothing was written.`;
+			const msg = `[MODEL] [E_SERVED_ECHO] Refused edit to ${filePath ?? "(unknown file)"}: replacement line ${echo.k} begins with the exact ${echo.hash}${HASH_SEP} anchor served for this session, path, and range-relative line. Remove the copied anchors and retry. Nothing was written.`;
 			throw new EditHashEchoError(msg, []);
 		}
 		const startAnchor = resolved.hash_bounds[0];

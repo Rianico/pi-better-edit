@@ -288,7 +288,7 @@ export function prepareEditArguments(args: unknown): Record<string, unknown> {
 		const original = args as Record<string, unknown>;
 		return { path: valid.path, edits: original.edits as unknown };
 	}
-	throw new Error(`[E_BAD_SHAPE] ${EDIT_TUPLE_HINT} ${describeReceived(args)}`);
+	throw new Error(`[MODEL] [E_BAD_PAYLOAD] ${EDIT_TUPLE_HINT} ${describeReceived(args)}`);
 }
 
 export function getPreviewInput(
@@ -309,7 +309,7 @@ function rejectUnknownFields(
 	if (unknown.length > 0) {
 		const suffix = hint ? ` ${hint}` : "";
 		throw new Error(
-			`[E_BAD_SHAPE] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
+			`[MODEL] [E_BAD_PAYLOAD] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
 		);
 	}
 }
@@ -321,7 +321,7 @@ export function assertReq(
 ): asserts request is NormalizedEditRequest {
 	if (!isNormalizedEdit(request)) {
 		throw new Error(
-			"[E_BAD_SHAPE] Edit request must be exactly { path, edits: [[remove_from, remove_to, replacement_text], ...] }.",
+			"[MODEL] [E_BAD_PAYLOAD] Edit request must be exactly { path, edits: [[remove_from, remove_to, replacement_text], ...] }.",
 		);
 	}
 
@@ -332,13 +332,13 @@ export function assertReq(
 		(typeof request.path !== "string" || request.path.length === 0)
 	) {
 		throw new Error(
-			"[E_BAD_SHAPE] Edit request path must be a non-empty string or null.",
+			"[MODEL] [E_BAD_PAYLOAD] Edit request path must be a non-empty string or null.",
 		);
 	}
 
 	if (!Array.isArray(request.edits) || request.edits.length === 0) {
 		throw new Error(
-			'[E_BAD_SHAPE] Edit request requires a non-empty "edits" array.',
+			'[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "edits" array.',
 		);
 	}
 
@@ -350,7 +350,7 @@ export function assertReq(
 			typeof item.replacement_text !== "string"
 		) {
 			throw new Error(
-				`[E_BAD_SHAPE] Edit request edits[${index}] must be a three-position array [remove_from, remove_to, replacement_text].`,
+				`[MODEL] [E_BAD_PAYLOAD] Edit request edits[${index}] must be a three-position array [remove_from, remove_to, replacement_text].`,
 			);
 		}
 	}

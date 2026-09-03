@@ -161,7 +161,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
       expect(editResult.content[0].text).toContain("Successfully edited");
-      expect(editResult.content[0].text).toContain("[E_BAD_OP]");
+      expect(editResult.content[0].text).toContain("[E_REVERSED_ANCHORS]");
 
       const alphaEdit = await editTool.execute(
         "e2",

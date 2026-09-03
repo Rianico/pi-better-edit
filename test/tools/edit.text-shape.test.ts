@@ -83,7 +83,7 @@ describe("edit tool text shape (token budget)", () => {
 					undefined,
 					ctx,
 				),
-			).rejects.toThrow(/E_WOULD_EMPTY/);
+			).rejects.toThrow(/E_EMPTY_RANGE/);
 		});
 	});
 

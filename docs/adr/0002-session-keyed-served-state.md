@@ -24,7 +24,7 @@ We decided to **key the served table by session id** (`(session_id, path)`), sco
 ## Consequences
 
 - Any pi process loading the extension no longer wipes other sessions' served rows; the main model's anchors survive sub-agents and nested runs.
-- `pi -c` keeps the same session id (verified), so the continued model can verify edits against rows served before the restart — the previous `[E_RANGE_UNVERIFIED]`-after-continue failure mode is gone.
+- `pi -c` keeps the same session id (verified), so the continued model can verify edits against rows served before the restart — the previous `[E_UNSERVED_RANGE]`-after-continue failure mode is gone.
 - Drift-notice "once per episode" is per-session: each session's context receives its own notice for a drift it has not been told about.
 - Dead sessions' served rows linger until the TTL sweep (7 days); rows are small and bounded by files read.
 - Undo and snapshots keep their file-global semantics and their existing safety guards; no behavior change for single-session use.

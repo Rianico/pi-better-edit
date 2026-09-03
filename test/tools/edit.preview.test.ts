@@ -144,7 +144,7 @@ describe("compPreview", () => {
 				cwd,
 			);
 			expect(preview).toHaveProperty("error");
-			expect((preview as { error: string }).error).toMatch(/^\[E_BAD_SHAPE\]/);
+			expect((preview as { error: string }).error).toMatch(/\[E_BAD_PAYLOAD\]/);
 		});
 	});
 
@@ -170,7 +170,7 @@ describe("compPreview", () => {
 });
 
 describe("compPreview — served-state staleness surfacing", () => {
-	it("returns [E_RANGE_STALE] with the current range for a drifted interior", async () => {
+	it("returns [E_STALE_RANGE] with the current range for a drifted interior", async () => {
 		await withTempFile(
 			"sample.ts",
 			"alpha\nbeta\ngamma\n",
@@ -200,7 +200,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 				);
 				expect(preview).toHaveProperty("error");
 				const errorText = (preview as { error: string }).error;
-				expect(errorText).toMatch(/\[E_RANGE_STALE\] line 2 in sample.ts/);
+				expect(errorText).toMatch(/\[E_STALE_RANGE\] line 2 in sample.ts/);
 				expect(errorText).toContain("Current range:");
 				expect(errorText).toContain("│BETA");
 				expect(errorText).toMatch(/Retry with these anchors|canon differs|Current range:/);
@@ -208,7 +208,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 		);
 	});
 
-	it("returns [E_RANGE_UNSERVED] for a never-served interior after a paged read", async () => {
+	it("returns [E_UNSERVED_RANGE] for a never-served interior after a paged read", async () => {
 		await withTempFile(
 			"sample.ts",
 			"alpha\nbeta\ngamma\ndelta\n",
@@ -239,13 +239,13 @@ describe("compPreview — served-state staleness surfacing", () => {
 				);
 				expect(preview).toHaveProperty("error");
 				const errorText = (preview as { error: string }).error;
-				expect(errorText).toMatch(/\[E_RANGE_UNSERVED\] line 2 in sample.ts/);
+				expect(errorText).toMatch(/\[E_UNSERVED_RANGE\] line 2 in sample.ts/);
 				expect(errorText).toContain("Current range:");
 			},
 		);
 	});
 
-	it("returns [E_RANGE_UNVERIFIED] for never-served boundary anchors", async () => {
+	it("returns [E_UNSERVED_RANGE] for never-served boundary anchors", async () => {
 		await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
 			const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 			const preview = await compPreview(
@@ -254,7 +254,7 @@ describe("compPreview — served-state staleness surfacing", () => {
 			);
 			expect(preview).toHaveProperty("error");
 			const errorText = (preview as { error: string }).error;
-			expect(errorText).toMatch(/\[E_RANGE_UNVERIFIED\]/);
+			expect(errorText).toMatch(/\[E_UNSERVED_RANGE\]/);
 			expect(errorText).toContain("no served position");
 		});
 	});
@@ -375,7 +375,7 @@ describe("renderCall preview", () => {
 				await awaitPreview(harness);
 				expect(harness.state.preview).toHaveProperty("error");
 				expect((harness.state.preview as { error: string }).error).toMatch(
-					/\[E_RANGE_STALE\]/,
+					/\[E_STALE_RANGE\]/,
 				);
 			},
 		);
@@ -627,12 +627,12 @@ describe("renderResult", () => {
 			content: [
 				{
 					type: "text",
-					text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_BAD_OP] reversed remove_from/remove_to; swapped.",
+					text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_REVERSED_ANCHORS] reversed remove_from/remove_to; swapped.",
 				},
 			],
 			details: {
 				diff: "+aB3│BBB",
-				warnings: ["[E_BAD_OP] reversed remove_from/remove_to; swapped."],
+				warnings: ["[E_REVERSED_ANCHORS] reversed remove_from/remove_to; swapped."],
 				metrics: {
 					classification: "applied",
 					added_lines: 1,
@@ -648,7 +648,7 @@ describe("renderResult", () => {
 		) as Text;
 		const text = (component as any).text as string;
 		expect(text).toContain("+aB3│BBB");
-		expect(text).toContain("[E_BAD_OP] reversed remove_from/remove_to; swapped.");
+		expect(text).toContain("[E_REVERSED_ANCHORS] reversed remove_from/remove_to; swapped.");
 	});
 
 	it("returns an empty component when there is nothing to render", () => {

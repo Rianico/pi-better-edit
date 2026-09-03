@@ -77,7 +77,7 @@ describe("edit payload contract", () => {
 					undefined,
 					{ cwd } as any,
 				),
-			).rejects.toThrow("E_BAD_SHAPE");
+			).rejects.toThrow("E_BAD_PAYLOAD");
 			expect(await readFile(path, "utf8")).toBe("aaa\nbbb\n");
 		});
 	});

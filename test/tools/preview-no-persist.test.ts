@@ -184,7 +184,7 @@ describe("compPreview no-persist guarantee", () => {
 					undefined,
 					ctx,
 				),
-			).rejects.toThrow(/\[E_RANGE_STALE\]/);
+			).rejects.toThrow(/\[E_STALE_RANGE\]/);
 			expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 		});
 	});
@@ -220,7 +220,7 @@ describe("compPreview no-persist guarantee", () => {
 			);
 			expect(preview).toHaveProperty("error");
 			expect((preview as { error: string }).error).toMatch(
-				/\[E_RANGE_UNSERVED\]/,
+				/\[E_UNSERVED_RANGE\]/,
 			);
 
 			await expect(
@@ -231,7 +231,7 @@ describe("compPreview no-persist guarantee", () => {
 					undefined,
 					ctx,
 				),
-			).rejects.toThrow(/\[E_RANGE_UNSERVED\]/);
+			).rejects.toThrow(/\[E_UNSERVED_RANGE\]/);
 		});
 	});
 });

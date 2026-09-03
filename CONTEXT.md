@@ -19,9 +19,9 @@ _Avoid_: —
 **anchor philosophy**:
 The project's core contract: per-line anchors are content-derived with ASCII whitespace (`[ \t\r\n]`) stripped, stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005).
 
-**boundary staleness**:
-An anchor that no longer resolves against the current file because the line's content changed since it was served.
-_Avoid_: stale anchor (ambiguous between boundary and range staleness)
+**anchor staleness**:
+An anchor (one line, `remove_from` or `remove_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon`/`tombstone` miss). The model must re-`read` for fresh anchors.
+_Avoid_: boundary staleness (use `anchor` for one line, `served range` for span)
 
 **interior**:
 The lines of a resolved range strictly between `remove_from` and `remove_to`.
@@ -37,11 +37,16 @@ _Avoid_: hunk
 **served span**:
 The contiguous run of served hashes between the two boundary anchors' served positions — the served-state reconstruction of the model's view of a range.
 
-**range staleness**:
-The condition where a resolved range's interior cannot be reconciled with served state: a served line's content changed since it was served, or the line was never served.
+**served range**:
+The model-facing word for the `served span` — the span between `remove_from` and `remove_to` as the model saw it. Alias to `served span` for glossary search.
+_Avoid_: range (use `served range` for verified span, `range` for current file run)
+
+**served-range staleness**:
+The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`). Reported as `[E_STALE_RANGE]` (changed) or `[E_UNSERVED_RANGE]` (never-served). Both do `reject-and-serve`.
+_Avoid_: range staleness (use `served range` for span)
 
 **never-served**:
-An interior line with no entry in the served record — the model was never shown that line. Reported as `[E_RANGE_UNSERVED]`; the response serves the current range so the model can retry.
+An interior line with no entry in the served record — the model was never shown that line. Reported as `[E_UNSERVED_RANGE]`; the response serves the current range so the model can retry.
 
 **reject-and-serve**:
 The staleness policy: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the retry needs no read.
@@ -56,7 +61,7 @@ The informational section appended to a replace result (applied or noop, not und
 _Avoid_: warning (the operation succeeded; it is information, not a warning)
 
 **model-facing signal**:
-A model-visible signal the tool must include in `content` for correctness (e.g. boundary staleness, range staleness, E_RANGE_*, E_EDIT_HASH_ECHO). The model needs it to retry correctly.
+A model-visible signal the tool must include in `content` for correctness (e.g. `anchor staleness`, `served-range staleness`, `E_STALE_*`/`E_UNSERVED_*`, `E_SERVED_ECHO`). The model needs it to retry correctly.
 
 **user-facing signal**:
 A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice, Batch drift note). Not in model content.
@@ -109,13 +114,9 @@ _Avoid_: patch language, array shorthand
 A candidate line that begins with the exact `HASH│` anchor served for the same session, canonical path, and line — tool output mistaken for file content. For `write` the check is absolute line `i` vs `served[i]`; for `edit` it is range-relative line `k` vs `served[startLine + k]` (AA: E1). Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
 _Avoid_: hash echo (without served qualification), anchor echo
 
-**E_WRITE_HASH_ECHO**:
-Refusal of a built-in `write` that copied a served hash echo — `[E_WRITE_HASH_ECHO] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line. Remove the entire copied anchor chain and retry. Nothing was written.`
-_Avoid_: E_HASH_ECHO (ambiguous between write/edit)
-
-**E_EDIT_HASH_ECHO**:
-Refusal of an `edit` whose `replacement_text` contains a served hash echo at the range-relative position — `[E_EDIT_HASH_ECHO] Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and range-relative line. Remove the copied anchors and retry. Nothing was written.` Deny, not strip — fail-loud, compensable (AA: A).
-_Avoid_: E_WRITE_HASH_ECHO (write-only), generic strip
+**E_SERVED_ECHO**:
+Refusal that `content` (for `write`) or `replacement_text` (for `edit`) copied a `served hash echo` — `[E_SERVED_ECHO] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and range-relative line`. Remove the copied anchors and retry. Nothing was written. Deny, not strip — fail-loud, compensable.
+_Avoid_: E_HASH_ECHO (ambiguous)
 
 **boundary duplication** (historical — removed):
 Former auto-fix that silently stripped replacement lines duplicating lines outside the range (`trailingDups`/`leadingDups` with byte `===`, and `firstNewAfterDups`/`lastNewBeforeDups` with `canon()`+`sectionIsUnique`). Removed as a fix: the tool is now pure `range = hash_bounds, replacement = replacement_text`. A true duplicate stays loud in the post-edit diff/drift signal for the model to fix next turn; silent removal is irreversible (brace-balance loss). No new error code — the duplicate is preserved verbatim.
@@ -126,7 +127,7 @@ The invariant that an edit is exactly the resolved range replaced by the exact `
 _Avoid_: smart edit, autocorrection
 
 **tombstone**:
-The per-session (`sessionKey`, `path`) set of hashes freed since the last full `read` — `served.retired` in `src/served-session/session.ts`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(tombstone)` so a freed anchor never re-binds within the same epoch. Cleared on `full read` (`isFullRead`), kept on `partial`/`truncated`, pruned with `served` via `SERVED_TTL_MS`. Prevents `S@3 reborn @3` whole-span stale success (`E_RANGE_STALE`).
+The per-session (`sessionKey`, `path`) set of hashes freed since the last full `read` — `served.retired` in `src/served-session/session.ts`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(tombstone)` so a freed anchor never re-binds within the same epoch. Cleared on `full read` (`isFullRead`), kept on `partial`/`truncated`, pruned with `served` via `SERVED_TTL_MS`. Prevents `S@3 reborn @3` whole-span stale success (`E_STALE_RANGE`).
 _Avoid_: retired (use tombstone; downstream `retired TEXT` is storage name, not domain term), blocked, reserved
 
 **epoch**:
@@ -142,5 +143,5 @@ The fallback verification mode when `epoch!=curId` (concurrent write detected) �
 _Avoid_: always-strict
 
 **canon** (canon_at_serve):
-The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`) captured at serve time and persisted parallel to `hashes` in `served.canons`. Used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_RANGE_STALE`. Alone not enough without `tombstone`.
+The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`) captured at serve time and persisted parallel to `hashes` in `served.canons`. Used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without `tombstone`.
 _Avoid_: content (byte-level, not canon)

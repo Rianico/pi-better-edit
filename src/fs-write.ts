@@ -15,7 +15,7 @@ import { errCode } from "./utils.js";
 
 export async function resolveTarget(path: string): Promise<string> {
 	if (path.includes("\0"))
-		throw new Error("[E_BAD_SHAPE] Path contains null byte");
+		throw new Error("[MODEL] [E_BAD_PAYLOAD] Path contains null byte");
 	// SAFETY: resolve normalizes ".." and sep; result is absolute and null-byte validated — editing scope intentionally allows any absolute path, OS permissions enforced by valAccess.
 	const absolutePath = resolve(path);
 	const { root } = parse(absolutePath);
@@ -126,7 +126,7 @@ export async function writeAtomic(
 	content: string,
 ): Promise<void> {
 	if (path.includes("\0"))
-		throw new Error("[E_BAD_SHAPE] Path contains null byte");
+		throw new Error("[MODEL] [E_BAD_PAYLOAD] Path contains null byte");
 	const targetPath = await resolveTarget(path);
 
 	let existingStats: Awaited<ReturnType<typeof stat>> | null = null;

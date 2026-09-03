@@ -12,7 +12,7 @@ accepted
 
 ## Decision
 
-We decided `replace` must verify every line of the resolved range against the served state — the tool's session-scoped, per-line record of the hashes it delivered to the model — rejecting with `[E_RANGE_STALE]` / `[E_RANGE_UNSERVED]` plus fresh range content when the interior no longer matches what the model was shown. The check is boundary-anchored span comparison: the served span between the two anchors' served positions must equal the current resolved span line-for-line. The model is never asked to supply verification data or to re-read; the tool owns verification, the model owns intent.
+We decided `replace` must verify every line of the resolved range against the served state — the tool's session-scoped, per-line record of the hashes it delivered to the model — rejecting with `[E_STALE_RANGE]` / `[E_UNSERVED_RANGE]` plus fresh range content when the interior no longer matches what the model was shown. The check is boundary-anchored span comparison: the served span between the two anchors' served positions must equal the current resolved span line-for-line. The model is never asked to supply verification data or to re-read; the tool owns verification, the model owns intent.
 
 ### Considered Options
 

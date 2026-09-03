@@ -3,7 +3,7 @@ import { readFile, writeFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 describe("snapshotId surface (details-only after W2)", () => {
-	it("rejects with [E_RANGE_STALE] when an interior line changed on disk between read and edit", async () => {
+	it("rejects with [E_STALE_RANGE] when an interior line changed on disk between read and edit", async () => {
 		await withTempFile(
 			"sample.ts",
 			"alpha\nbeta\ngamma\n",
@@ -36,7 +36,7 @@ describe("snapshotId surface (details-only after W2)", () => {
 						undefined,
 						ctx,
 					),
-				).rejects.toThrow(/E_RANGE_STALE/);
+				).rejects.toThrow(/E_STALE_RANGE/);
 
 				expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 			},

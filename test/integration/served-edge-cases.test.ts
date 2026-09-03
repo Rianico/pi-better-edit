@@ -12,7 +12,7 @@ import {
 const home = useTestHome();
 
 describe("served-state edge cases for edit", () => {
-	it("rejects [E_RANGE_UNSERVED] for a range spanning paged-read gaps, then applies on retry", async () => {
+	it("rejects [E_UNSERVED_RANGE] for a range spanning paged-read gaps, then applies on retry", async () => {
 		const content =
 			["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
 		await withTempFile("sample.ts", content, async ({ cwd, path }) => {
@@ -55,7 +55,7 @@ describe("served-state edge cases for edit", () => {
 				rejected = error as Error;
 			}
 			expect(rejected).toBeDefined();
-			expect(rejected!.message).toMatch(/E_RANGE_UNSERVED.*line 4/);
+			expect(rejected!.message).toMatch(/E_UNSERVED_RANGE.*line 4/);
 			expect(await readFile(path, "utf-8")).toBe(content);
 
 			const echoLines = rejected!.message
@@ -77,7 +77,7 @@ describe("served-state edge cases for edit", () => {
 		});
 	});
 
-	it("rejects an interior line changed to content served elsewhere ([E_RANGE_STALE], never a false accept)", async () => {
+	it("rejects an interior line changed to content served elsewhere ([E_STALE_RANGE], never a false accept)", async () => {
 		await withTempFile("sample.ts", "a\nb\nc\nd\n", async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -102,7 +102,7 @@ describe("served-state edge cases for edit", () => {
 					undefined,
 					ctx,
 				),
-			).rejects.toThrow(/E_RANGE_STALE.*line 3/);
+			).rejects.toThrow(/E_STALE_RANGE.*line 3/);
 
 			expect(await readFile(path, "utf-8")).toBe("a\nb\nb\nd\n");
 		});
@@ -146,7 +146,7 @@ describe("served-state edge cases for edit", () => {
 		});
 	});
 
-	it("fail-safes with [E_RANGE_UNVERIFIED] when a boundary was never served (paged read)", async () => {
+	it("fail-safes with [E_UNSERVED_RANGE] when a boundary was never served (paged read)", async () => {
 		const content = "l1\nl2\nl3\nl4\nl5\n";
 		await withTempFile("sample.ts", content, async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -169,7 +169,7 @@ describe("served-state edge cases for edit", () => {
 					undefined,
 					ctx,
 				),
-			).rejects.toThrow(/E_RANGE_UNVERIFIED.*has no served position/);
+			).rejects.toThrow(/E_UNSERVED_RANGE.*has no served position/);
 
 			expect(await readFile(path, "utf-8")).toBe(content);
 		});
@@ -218,7 +218,7 @@ describe("served-state edge cases for edit", () => {
 				rejected = error as Error;
 			}
 			expect(rejected).toBeDefined();
-			expect(rejected!.message).toMatch(/E_RANGE_STALE.*line 100/);
+			expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 100/);
 
 			const echoLines = rejected!.message
 				.split("\n")

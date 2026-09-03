@@ -27,7 +27,7 @@ At `read` full (`src/file-reader.ts:readNormFile` without `offset/limit` and not
 At `edit` (`src/mutation-engine/pipeline.ts:applyOneEdit` -> `src/hashline/served-verification.ts:verifyOrThrow`):
 
 - `curId=fileSnap(path)` vs `epoch.snapshotId`: if `==` skip pos.
-- else candidates `{ [cFrom,cTo] | len==currentLen && ∀k servedHashes[cFrom+k]==fileHashes[startLine-1+k] }` (existing lazy disambiguation, ADR-0008), filtered by `tombstone`, then `∀k servedCanons[from+k]==canon(fileLines[startLine-1+k])` else `E_RANGE_STALE`. No `from==pos`.
+- else candidates `{ [cFrom,cTo] | len==currentLen && ∀k servedHashes[cFrom+k]==fileHashes[startLine-1+k] }` (existing lazy disambiguation, ADR-0008), filtered by `tombstone`, then `∀k servedCanons[from+k]==canon(fileLines[startLine-1+k])` else `E_STALE_RANGE`. No `from==pos`.
 
 ### 2. Tombstone (allocation invariant)
 
@@ -53,7 +53,7 @@ else
   if changed ∩ [L,R] == ∅ && changed ∩ servedRanges == ∅
     -> resist (exterior drift, e.g. insert @0 before served 1..5) -> pass
   else
-    -> strict: from==startLine-1 && to==endLine-1 && tombstone∉ && canon== else E_RANGE_STALE
+    -> strict: from==startLine-1 && to==endLine-1 && tombstone∉ && canon== else E_STALE_RANGE
 ```
 
 Makes `shift==rebind` loud only when `changed` overlaps target, not when exterior. Cost is one `edit` retry via `reject-and-serve` (no `read`), rare.
@@ -70,7 +70,7 @@ Implementation simplification: `strictPos = epochSnapshotId !== undefined && cur
 |---|---|---|
 | Read-set | `epoch==curId` → no concurrent writer | `epoch!=curId` → concurrent `changed` detected |
 | Non-overlapping `A:10..12+1` shifts `B:20..30→21..31` | `pass` — candidates `hash==` still `1`, `tombstone∉` | `changed ∩ [L,R]==∅` → `resist` → `pass` (drift notice, not abort) |
-| Overlapping `S@3 reborn @3` whole-span | `tombstone` blocks allocation → `E_STALE_ANCHOR` | `changed ∩ [L,R]!=∅` → `strict from==pos` → `E_RANGE_STALE` |
+| Overlapping `S@3 reborn @3` whole-span | `tombstone` blocks allocation → `E_STALE_ANCHOR` | `changed ∩ [L,R]!=∅` → `strict from==pos` → `E_STALE_RANGE` |
 | Cost | `pos-free` — zero extra round trips | May incur one `edit` retry via `reject-and-serve` (`E.servedRows` already re-serves, no `read` needed) |
 
 We keep `pos-free` by default because line non-overlap ≈ semantic non-overlap for hash-anchored edits; strict would make every exterior `insert @0` abort `B`'s unrelated range, violating `CONTEXT.md:anchor philosophy` and `ADR-0008` healing. Concurrency fallback is automatic, no flag — exterior drift stays `resist`, only overlapping concurrent goes `strict`.

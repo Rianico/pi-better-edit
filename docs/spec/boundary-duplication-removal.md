@@ -33,7 +33,7 @@ Delete the auto-fix entirely. `valEdit → verifyServed → resToSpan` with no s
 ## Testing Decisions
 
 - **Remove/update auto-fix tests**: `test/integration/boundary-dup-correction.test.ts` — rewrite expectations to *keep* duplicates (`a → a\nb` over `a` in `a\nb\n` now yields `a\nb\nb\n`; `FIRST-NEW-AFTER` block no longer stripped). Or delete and keep one regression for the pure case.
-- **Keep hash-echo/bare-prefix only**: `test/core/hashline-apply-internals.test.ts`, `test/core/hashline.apply.test.ts` — drop `autoFixes` assertions, keep `E_BARE_HASH_PREFIX`/`E_EDIT_HASH_ECHO` paths.
+- **Keep hash-echo/bare-prefix only**: `test/core/hashline-apply-internals.test.ts`, `test/core/hashline.apply.test.ts` — drop `autoFixes` assertions, keep `E_BAD_ANCHOR`/`E_SERVED_ECHO` paths.
 - **Rewrite fuzz**: `test/core/hashline-fuzz-autofix.test.ts` — delete `applyAutoFix` mirror and `findNewEdge` import; fuzz now asserts `expectedEditContent(lines,s,e,repl,…)` verbatim, no `fixed`/`fixes` delta. Retain hash-stability invariants.
 - **Regression**: minimal `a/b` over `a` (3 lines) and brace case; multi-line runs all preserved. `npm run typecheck && npm test` green.
 

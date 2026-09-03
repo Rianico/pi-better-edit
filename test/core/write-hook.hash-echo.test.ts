@@ -119,7 +119,7 @@ describe("write hash-echo guard", () => {
 
 			expect(result).toMatchObject({ block: true });
 			expect((result as { reason?: string }).reason).toContain(
-				"[E_WRITE_HASH_ECHO]",
+				"[E_SERVED_ECHO]",
 			);
 			expect((result as { reason?: string }).reason).toContain(
 				"HASH│ anchors are tool output",
@@ -177,11 +177,11 @@ describe("write hash-echo guard", () => {
 			// Ab3 at line 1 should be blocked
 			await expect(
 				servedHashEchoDenial(io, path, "Ab3│hello\n", cwd, "s1"),
-			).resolves.toMatch(/\[E_WRITE_HASH_ECHO\]/);
+			).resolves.toMatch(/\[E_SERVED_ECHO\]/);
 		});
 	});
 
-	it("formats the E_WRITE_HASH_ECHO message exactly per ADR-0009", async () => {
+	it("formats the E_SERVED_ECHO message exactly per ADR-0009", async () => {
 		await withTempDir("write-hash-echo-msg-", async (cwd) => {
 			await initHasher();
 			const io = localIO();
@@ -197,7 +197,7 @@ describe("write hash-echo guard", () => {
 				"sess",
 			);
 			expect(reason).toBe(
-				`[E_WRITE_HASH_ECHO] Refused write to ${path}: line 1 begins with the exact Ab3│ anchor served for this session, path, and line. HASH│ anchors are tool output, not file content. Retry with file content only (remove the entire copied anchor chain). Nothing was written.`,
+				`[E_SERVED_ECHO] Refused write to ${path}: line 1 begins with the exact Ab3│ anchor served for this session, path, and line. HASH│ anchors are tool output, not file content. Retry with file content only (remove the entire copied anchor chain). Nothing was written.`,
 			);
 		});
 	});

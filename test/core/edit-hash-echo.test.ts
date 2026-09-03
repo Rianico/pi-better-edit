@@ -70,7 +70,7 @@ describe("findEditHashEcho — E1 range-relative exact", () => {
 	});
 });
 
-describe("applyEdit — E_EDIT_HASH_ECHO guard", () => {
+describe("applyEdit — E_SERVED_ECHO guard", () => {
 	it("S1: Ab3│ at s+k → deny", () => {
 		const content = "alpha\nbeta\ngamma\ndelta";
 		const hashes = _lineHashesPure(content);
@@ -80,7 +80,7 @@ describe("applyEdit — E_EDIT_HASH_ECHO guard", () => {
 			content_lines: [`${hashes[1]}${HASH_SEP}NEW-beta`],
 		};
 		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(EditHashEchoError);
-		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(/\[E_EDIT_HASH_ECHO\]/);
+		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(/\[E_SERVED_ECHO\]/);
 	});
 
 	it("S1 clean retry → allow", () => {
@@ -91,7 +91,7 @@ describe("applyEdit — E_EDIT_HASH_ECHO guard", () => {
 			hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
 			content_lines: [`${hashes[1]}${HASH_SEP}NEW-beta`],
 		};
-		expect(() => applyEdit(content, editDenied, undefined, hashes, "a.txt", served)).toThrow(/E_EDIT_HASH_ECHO/);
+		expect(() => applyEdit(content, editDenied, undefined, hashes, "a.txt", served)).toThrow(/E_SERVED_ECHO/);
 		const editClean = {
 			hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
 			content_lines: ["NEW-beta"],
@@ -105,16 +105,12 @@ describe("applyEdit — E_EDIT_HASH_ECHO guard", () => {
 		const hashes = _lineHashesPure(content);
 		const served: (string | null)[] = [...hashes];
 		const fake = "Zz9";
-		// ensure fake not in served[1]
 		expect(served[1]).not.toBe(fake);
 		const edit = {
 			hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
 			content_lines: [`${fake}${HASH_SEP}literal`],
 		};
-		const result = applyEdit(content, edit, undefined, hashes, "a.txt", served);
-		// Should not throw, and content should contain literal hash prefix (maybe stripped? but guard allows)
-		// If stripBarePrefixes strips Zz9, it would be removed, but guard allows — we check not throwing
-		expect(result.content).toContain("literal");
+		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(/\[E_BAD_ANCHOR\]/);
 	});
 
 	it("denied edit leaves file byte-identical (pure)", () => {
@@ -129,7 +125,7 @@ describe("applyEdit — E_EDIT_HASH_ECHO guard", () => {
 		try {
 			applyEdit(content, edit, undefined, hashes, "a.txt", served);
 		} catch (e) {
-			expect((e as Error).message).toMatch(/E_EDIT_HASH_ECHO/);
+			expect((e as Error).message).toMatch(/E_SERVED_ECHO/);
 		}
 		// Original string untouched
 		expect(content).toBe(original);
@@ -144,7 +140,7 @@ describe("applyEdit — E_EDIT_HASH_ECHO guard", () => {
 			hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[2]! }] as any,
 			content_lines: ["ok", `${hashes[2]}${HASH_SEP}echo`],
 		};
-		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(/E_EDIT_HASH_ECHO.*line 2/);
+		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(/E_SERVED_ECHO.*line 2/);
 	});
 
 	it("raw echo before stripBare is still denied", () => {
@@ -156,7 +152,7 @@ describe("applyEdit — E_EDIT_HASH_ECHO guard", () => {
 			hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
 			content_lines: [`${hashes[1]}${HASH_SEP}beta`],
 		};
-		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(/E_EDIT_HASH_ECHO/);
+		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(/E_SERVED_ECHO/);
 	});
 
 	it("no served → no deny", () => {
@@ -166,9 +162,6 @@ describe("applyEdit — E_EDIT_HASH_ECHO guard", () => {
 			hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
 			content_lines: [`${hashes[1]}${HASH_SEP}beta`],
 		};
-		// no served provided — guard skipped
-		const result = applyEdit(content, edit, undefined, hashes, "a.txt", undefined);
-		// stripBare will heal, so result may be noop
-		expect(result.content).toBeDefined();
+		expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", undefined)).toThrow(/\[E_BAD_ANCHOR\]/);
 	});
 });

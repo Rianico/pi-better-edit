@@ -26,4 +26,4 @@ We decided that line anchors are computed from the line with ASCII whitespace (`
 - Drift is two-tier: anchor differs = token-tier notice (always fires); anchor same but fingerprint differs = whitespace-only drift (quieter tier, never a rejection, never suppresses the token tier).
 - Stripping is ASCII-only: NBSP and all Unicode whitespace remain significant in both signals.
 - The whole-file `contentChecksum` (snapshot cache key) stays raw — only per-line anchor computation strips.
-- `E_RANGE_STALE`/`E_RANGE_UNSERVED` rejection logic is unchanged: it keys on anchors. Whitespace-only changes do not reject.
+- `E_STALE_RANGE`/`E_UNSERVED_RANGE` rejection logic is unchanged: it keys on anchors. Whitespace-only changes do not reject.

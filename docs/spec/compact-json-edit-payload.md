@@ -25,7 +25,7 @@ Positions inside `edit` are:
 2. `range`: a two-element array `[remove_from, remove_to]` of 3-character anchor strings, inclusive at both ends;
 3. `replacement_text`: the complete replacement text. An empty string deletes the range.
 
-The root object must contain only `edit`, and the tuple must have exactly three positions. Missing positions, extra positions, wrong JSON types, empty paths, malformed anchors, and ambiguous path resolution are rejected with the existing `[E_BAD_SHAPE]`/anchor error conventions.
+The root object must contain only `edit`, and the tuple must have exactly three positions. Missing positions, extra positions, wrong JSON types, empty paths, malformed anchors, and ambiguous path resolution are rejected with the existing `[E_BAD_PAYLOAD]`/anchor error conventions.
 
 ### `batch_edit`
 

@@ -23,5 +23,5 @@ We decided **no: the anchor canon stays as-is** (`canon()` = strip `\r` + trim t
 ## Consequences
 
 - The code (`src/hashline/hash.ts`, `src/hashline/served.ts`, `src/served-state.ts`) stays on the trailing-trim canon; no schema or serve-path change. ADR-0003 is superseded and must not be implemented as written.
-- Formatting staleness continues to surface as `E_RANGE_STALE` rejections with fresh served rows — the designed, working mechanism.
+- Formatting staleness continues to surface as `E_STALE_RANGE` rejections with fresh served rows — the designed, working mechanism.
 - If the fingerprint-only signal is later adopted, it is informational only: it never changes verification meaning, never rejects, and never suppresses an anchor-based notice.

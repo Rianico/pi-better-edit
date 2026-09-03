@@ -7,11 +7,11 @@ function diagRef(ref: string): string {
 	const trimmed = ref.trim();
 
 	if (!trimmed.length) {
-		return `[E_BAD_REF] Invalid anchor. Expected a 3-char alphanumeric anchor (e.g. "aB3").`;
+		return `[MODEL] [E_BAD_ANCHOR] Invalid anchor. Expected a 3-char alphanumeric anchor (e.g. "aB3").`;
 	}
 
 	if (/^\d+/.test(trimmed)) {
-		return `[E_BAD_REF] Invalid anchor. Use the hash alone (e.g. "aB3") — no line numbers or trailing content.`;
+		return `[MODEL] [E_BAD_ANCHOR] Invalid anchor. Use the hash alone (e.g. "aB3") — no line numbers or trailing content.`;
 	}
 
 	if (trimmed.includes("│") && trimmed.includes("\n")) {
@@ -25,13 +25,13 @@ function diagRef(ref: string): string {
 		const firstHash = firstMatch?.[0] ?? "wUp";
 		const lastHash = lastMatch?.[0] ?? "AU6";
 		const preview = first.slice(0, 60);
-		return `[E_BAD_REF] Invalid anchor — remove_from must be a single bare 3-char hash (e.g. "wUp"), not a block with HASH│. Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as remove_from and "${lastHash}" as remove_to, and put the new content (without HASH│) in replacement_text.`;
+		return `[MODEL] [E_BAD_ANCHOR] Invalid anchor — remove_from must be a single bare 3-char hash (e.g. "wUp"), not a block with HASH│. Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as remove_from and "${lastHash}" as remove_to, and put the new content (without HASH│) in replacement_text.`;
 	}
 	if (trimmed.includes("│")) {
-		return `[E_BAD_REF] Invalid anchor "${trimmed}". remove_from and remove_to must contain the 3-char hash only — remove everything from "│" onward.`;
+		return `[MODEL] [E_BAD_ANCHOR] Invalid anchor "${trimmed}". remove_from and remove_to must contain the 3-char hash only — remove everything from "│" onward.`;
 	}
 
-	return `[E_BAD_REF] Invalid anchor "${trimmed}". Expected a 3-char alphanumeric anchor (e.g. "aB3").`;
+	return `[MODEL] [E_BAD_ANCHOR] Invalid anchor "${trimmed}". Expected a 3-char alphanumeric anchor (e.g. "aB3").`;
 }
 
 function parseRef(ref: string): Anchor {

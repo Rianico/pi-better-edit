@@ -164,7 +164,7 @@ export function makeFakePiRegistry() {
 							.map((e: any) => `  - ${e.message}`)
 							.join("\n");
 						const msg =
-							'[E_BAD_SHAPE] Schema validation failed for tool "' +
+							'[E_BAD_PAYLOAD] Schema validation failed for tool "' +
 							tool.name +
 							'" after prepareArguments. The prepareArguments return value does not match the registered schema.\n' +
 							errors;
