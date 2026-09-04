@@ -781,6 +781,7 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
         fullReadHashes: ["aaa", "bbb"],
         fullReadCanons: ["a", "b"],
         snapshotId: "snap-1",
+        isFullRead: true,
       });
       // partial that overwrites position 0
       await h.recordEpoch({
@@ -789,10 +790,11 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
         fullReadHashes: ["ccc", "bbb"],
         fullReadCanons: ["c", "b"],
         snapshotId: "snap-2",
+        isFullRead: false,
       });
       const tomb = await h.loadTombstone();
       expect(tomb.has("aaa")).toBe(true);
-      expect(await h.loadEpochId()).toBe("snap-2");
+      expect(await h.loadEpochId()).toBe("snap-1");
     });
   });
 

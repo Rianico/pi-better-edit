@@ -111,10 +111,10 @@ export function regRead(pi: ExtensionAPI): void {
                                 lineCount,
                                 fullReadHashes: prepared.fileHashes,
                                 fullReadCanons: fileCanons,
-                                snapshotId,
+                                snapshotId: isFullRead ? snapshotId : undefined,
                                 isFullRead,
                         });
-                        await session.clearDrift();
+                        if (isFullRead) await session.clearDrift();
                         return {
 				content: [{ type: "text", text: prepared.preview }],
 				details: {
