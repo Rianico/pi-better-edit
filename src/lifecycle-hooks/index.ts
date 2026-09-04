@@ -94,7 +94,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     event: ToolResultEvent,
     ctx: ToolContext,
   ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
-    const writtenPath = (event.input as Record<string, unknown>)?.path;
+    const rawInput = event.input as Record<string, unknown> | undefined;
+    const writtenPath = rawInput?.path ?? rawInput?.file_path;
     if (typeof writtenPath === "string") {
       try {
         await deps.clearUndo(
@@ -135,8 +136,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       await recordServesBestEffort({
         sessionKey: deps.sessionKeyFor(ctx),
         path: absolutePath,
-        servedRows: preview.served,
+        servedRows: fileHashes.map((hash, position) => ({ position, hash })),
         resultLineCount: deps.visLines(normalized).length,
+        firstChangedLine: 1,
       });
       return {
         content: [

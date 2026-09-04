@@ -19,6 +19,7 @@ import { getWritableTempRoot } from "../support/fixtures";
 import { execEdits } from "../../src/mutation-engine/pipeline.js";
 import { canon } from "../../src/hashline/hash-identity.js";
 import { readNormFile } from "../../src/file-reader.js";
+import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
 
 beforeAll(async () => {
 	await initHasher();
@@ -252,8 +253,52 @@ describe("scanDrift — truncation after an external shrink (issue #27)", () => 
 				.filter((i) => i >= 0);
 			expect(fffPositions.length).toBeLessThanOrEqual(1);
 			expect(gggPositions.length).toBeLessThanOrEqual(1);
-		});
-	});
+    });
+  });
+});
+
+describe("write then edit — same-session drift-free (#70)", () => {
+  it("dense write-serve clears stale rows so the next edit reports no drift", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      const absPath = join(home, "w.txt");
+      await writeFile(absPath, "a\nb\nc\n");
+      upsertServed(store, "s1", absPath, [
+        { position: 0, hash: "zz0" },
+        { position: 1, hash: "zz1" },
+        { position: 5, hash: "zz5" },
+      ]);
+      const hooks = createLifecycleHooks({ sessionKeyFor: () => "s1" });
+      await hooks.onWrite(
+        {
+          toolName: "write",
+          isError: false,
+          input: { path: "w.txt" },
+          content: [{ type: "text", text: "ok" }],
+        },
+        {
+          cwd: home,
+          sessionManager: { getSessionId: () => "s1" },
+          ui: { notify: vi.fn() },
+        },
+      );
+      const served = getServed(store, "s1", absPath);
+      expect(served).toHaveLength(3);
+      expect(served).not.toContain("zz0");
+      expect(served).not.toContain("zz1");
+      expect(served).not.toContain("zz5");
+      const file = await execEdits(
+        {
+          path: "w.txt",
+          edits: [{ remove_from: served[0]!, remove_to: served[0]!, replacement_text: "A\n" }],
+        },
+        home,
+        { store, sessionKey: "s1" },
+      );
+      expect(file.appliedCount).toBe(1);
+      expect(file.driftNotice).toBeUndefined();
+    });
+  });
 });
 
 describe("sequential edits — rotated serves with surviving canons stay silent (#68)", () => {
