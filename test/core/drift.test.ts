@@ -227,16 +227,7 @@ describe("computeDrift", () => {
 			"h08",
 			"h09",
 		];
-		const resultHashes = [
-			"h00",
-			"h01",
-			"X04",
-			"h05",
-			"h06",
-			"h07",
-			"h08",
-			"h09",
-		];
+		const resultHashes = ["h00", "h01", "X04", "h05", "h06", "h07", "h08", "h09"];
 		const resultLines = ["a", "b", "R", "e", "f", "g", "h", "i"];
 		const result = computeDrift({
 			served,
@@ -348,5 +339,60 @@ describe("computeDrift", () => {
 			{ position: 2, hash: "h02", content: "c", drifted: false },
 			{ position: 3, hash: "X03", content: "changed", drifted: true },
 		]);
+	});
+
+	it("suppresses hash-rotated duplicates whose canon survives (#68)", () => {
+		const result = computeDrift({
+			served: ["h00", "h01", "h02", "h03"],
+			servedCanons: ["a", "b", "c", "c"],
+			resultHashes: ["h00", "X01", "X02", "X03"],
+			resultLines: ["a", "b", "c", "c"],
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h00",
+				endHash: "h00",
+				delta: 0,
+			},
+			reported: new Set(),
+		});
+		expect(result).toBeUndefined();
+	});
+
+	it("still drifts on true canon deficit (#68)", () => {
+		const result = computeDrift({
+			served: ["h00", "h01", "h02", "h03"],
+			servedCanons: ["a", "b", "c", "c"],
+			resultHashes: ["h00", "X01", "X02"],
+			resultLines: ["a", "b", "c"],
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h00",
+				endHash: "h00",
+				delta: 0,
+			},
+			reported: new Set(),
+		});
+		expect(result).toBeDefined();
+		expect(result!.total).toBe(1);
+	});
+
+	it("stays silent on whitespace-only reformat (ADR-0005, #68)", () => {
+		const result = computeDrift({
+			served: ["h00", "h01"],
+			servedCanons: ["a", "b"],
+			resultHashes: ["h00", "X01"],
+			resultLines: ["a", "b  "],
+			range: {
+				startLine: 1,
+				endLine: 1,
+				startHash: "h00",
+				endHash: "h00",
+				delta: 0,
+			},
+			reported: new Set(),
+		});
+		expect(result).toBeUndefined();
 	});
 });
