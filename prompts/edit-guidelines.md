@@ -5,4 +5,5 @@
 - edit: after success diff serves fresh `HASH│content` (fresh anchors) — copy new `anchor`s from there for next edit; no re-read.
 - edit: staleness is `tombstone∉ && canon==` + `epoch` (`position-free`, `strict` on `snapshotId` mismatch): `E_STALE_ANCHOR` (anchor changed/tombstoned) → re-read; `E_STALE_RANGE` (served-range interior changed) / `E_UNSERVED_RANGE` (never-served span) → `reject-and-serve` with fresh `HASH│content` (retry from echo, no read).
 - edit: channel — `[MODEL]` in `content` = you retry (e.g. `E_STALE_*`, `E_BAD_PAYLOAD`, `E_BAD_ANCHOR`, `E_SERVED_ECHO`), `[USER]` dimmed in `details` = human `drift notice` (outside served range, capped).
+- edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — next `edit` correctly reports their lines as drift; `write` re-serves dense.
 - edit: batch via `edits` arity atomically (fail → nothing written); independent ranges only.
