@@ -174,4 +174,72 @@ describe("lifecycle-hooks", () => {
     expect(await hooks.onToolResult({ toolName: "write", isError: true, input: { path: "/x" } }, ctx())).toBeUndefined();
     expect(await hooks.onToolResult({ toolName: "read", isError: false } as never, ctx())).toBeUndefined();
   });
+
+  it("onWrite records dense serves with firstChangedLine 1 even when preview is partial (#70)", async () => {
+    const recordDiffServes = vi.fn(async () => {});
+    const hooks = createLifecycleHooks({
+      resolveTarget: async (p: string) => p,
+      toCwd: (p: string) => p,
+      valAccess: async () => {},
+      loadFileKindAndText: async () => ({ kind: "text", text: "a\nb\nc\n" }),
+      readNormFile: async () => ({
+        normalized: "a\nb\nc\n",
+        fileHashes: ["AA1", "BB2", "CC3"],
+        absolutePath: "/tmp/w.txt",
+        bom: "",
+        originalEnding: "\n",
+        hadUtf8DecodeErrors: false,
+      }),
+      fmtReadPreview: async () => ({ text: "AA1│a", served: [{ position: 0, hash: "AA1" }] }),
+      recordDiffServes,
+      sessionKeyFor: () => "sk",
+      visLines: (s: string) => s.split("\n"),
+      clearUndo: async () => {},
+    });
+    await hooks.onWrite(
+      { toolName: "write", isError: false, input: { path: "/tmp/w.txt" }, content: [] },
+      ctx(),
+    );
+    expect(recordDiffServes).toHaveBeenCalledOnce();
+    expect(recordDiffServes).toHaveBeenCalledWith({
+      sessionKey: "sk",
+      path: "/tmp/w.txt",
+      servedRows: [
+        { position: 0, hash: "AA1" },
+        { position: 1, hash: "BB2" },
+        { position: 2, hash: "CC3" },
+      ],
+      resultLineCount: 4,
+      firstChangedLine: 1,
+    });
+  });
+
+  it("onWrite accepts file_path input (#70)", async () => {
+    const recordDiffServes = vi.fn(async () => {});
+    const hooks = createLifecycleHooks({
+      resolveTarget: async (p: string) => p,
+      toCwd: (p: string) => p,
+      valAccess: async () => {},
+      loadFileKindAndText: async () => ({ kind: "text", text: "hi\n" }),
+      readNormFile: async () => ({
+        normalized: "hi\n",
+        fileHashes: ["HH1"],
+        absolutePath: "/tmp/fp.txt",
+        bom: "",
+        originalEnding: "\n",
+        hadUtf8DecodeErrors: false,
+      }),
+      fmtReadPreview: async () => ({ text: "HH1│hi", served: [{ position: 0, hash: "HH1" }] }),
+      recordDiffServes,
+      sessionKeyFor: () => "sk",
+      visLines: (s: string) => s.split("\n"),
+      clearUndo: async () => {},
+    });
+    const result = await hooks.onWrite(
+      { toolName: "write", isError: false, input: { file_path: "/tmp/fp.txt" }, content: [{ type: "text", text: "ok" }] },
+      ctx(),
+    );
+    expect(result?.content[1]?.text).toContain("Auto-read");
+    expect(recordDiffServes).toHaveBeenCalledOnce();
+  });
 });
