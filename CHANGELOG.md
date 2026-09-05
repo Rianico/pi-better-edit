@@ -1,23 +1,23 @@
-# Changelog
-
-All notable changes to this project will be documented in this file.
-
-## [Unreleased]
+## [1.6.0](https://github.com/Rianico/pi-better-edit/compare/v1.5.0...v1.6.0) (2026-09-05)
 
 ### Features
 
-- **edit:** user/model audience split and glossary-aligned error codes
+* **edit:** user/model audience split and glossary-aligned error codes ([dd1a779](https://github.com/Rianico/pi-better-edit/commit/dd1a779b5a5c2ecddd486a49eff9eeed1014aa48)), closes [#65](https://github.com/Rianico/pi-better-edit/issues/65)
 
 ### Bug Fixes
 
-- make prepare tolerant when husky not installed
-- **write:** dense re-serve after write clears stale rows
-- **served:** epoch lifecycle belongs to full reads
-- **drift:** report canon deficit instead of hash rotation
+* **drift:** report canon deficit instead of hash rotation ([95c4703](https://github.com/Rianico/pi-better-edit/commit/95c4703f7470d651d7b2309921a125959fdf463f)), closes [#68](https://github.com/Rianico/pi-better-edit/issues/68)
+* make prepare tolerant when husky not installed ([cca29d3](https://github.com/Rianico/pi-better-edit/commit/cca29d3076068b1bab832eae99da79547d5d4939))
+* **served:** epoch lifecycle belongs to full reads ([3918292](https://github.com/Rianico/pi-better-edit/commit/3918292a85ad3a230b6705cf03a12e67ff04717b)), closes [#69](https://github.com/Rianico/pi-better-edit/issues/69)
+* **write:** dense re-serve after write clears stale rows ([44c7664](https://github.com/Rianico/pi-better-edit/commit/44c7664e708b0aba3277754b7e80b9fff62371bf)), closes [#70](https://github.com/Rianico/pi-better-edit/issues/70)
 
 ### Documentation
 
-- **prompts:** align tool desc and prompts with glossary (fresh anchors)
+* **prompts:** align tool desc and prompts with glossary (fresh anchors) ([b0bcf0b](https://github.com/Rianico/pi-better-edit/commit/b0bcf0b26cdd6a6806f85654247663a474703149))
+
+# Changelog
+
+All notable changes to this project will be documented in this file.
 
 ## [1.5.0](https://github.com/Rianico/pi-better-edit/compare/v1.4.3...v1.5.0) (2026-09-03)
 
