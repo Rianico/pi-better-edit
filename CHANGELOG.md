@@ -8,6 +8,14 @@ All notable changes to this project will be documented in this file.
 
 - **edit:** user/model audience split and glossary-aligned error codes (BREAKING CHANGE)
 
+### Bug Fixes
+
+- **served:** epoch lifecycle belongs to full reads
+
+### Documentation
+
+- **prompts:** align tool desc and prompts with glossary (fresh anchors)
+
 ## [1.5.0](https://github.com/Rianico/pi-better-edit/compare/v1.4.3...v1.5.0) (2026-09-03)
 
 ### Features
