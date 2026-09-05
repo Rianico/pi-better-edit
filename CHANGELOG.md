@@ -6,14 +6,14 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-- **edit:** user/model audience split and glossary-aligned error codes (BREAKING CHANGE)
+- **edit:** user/model audience split and glossary-aligned error codes
 
 ### Bug Fixes
 
+- make prepare tolerant when husky not installed
 - **write:** dense re-serve after write clears stale rows
 - **served:** epoch lifecycle belongs to full reads
 - **drift:** report canon deficit instead of hash rotation
-- make prepare tolerant when husky not installed
 
 ### Documentation
 
