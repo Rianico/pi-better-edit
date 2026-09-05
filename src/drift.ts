@@ -163,6 +163,7 @@ function buildRotatedSurvivorCheck(
     return true;
   };
 }
+
 function collectDrifted(
   input: ComputeDriftInput,
   resultHashSet: Set<string>,
