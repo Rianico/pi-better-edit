@@ -202,7 +202,7 @@ export class ServedVerification {
 				const actual = canon(fileLines[pos] ?? "");
 				if (expected !== undefined && expected !== null && expected !== actual) {
 					this.throwStale({
-						message: `[MODEL] [E_STALE_RANGE] anchor "${tombstonedHash}" was freed since last full read (tombstoned, canon changed from "${expected}" to "${actual}"). Re-read.\nCurrent range:\n${echo}`,
+						message: `[MODEL] [E_STALE_RANGE] anchor "${tombstonedHash}" no longer matches the current file (its line changed since you saw it).\nCurrent range:\n${echo}\n${retryHint()}`,
 						firstOffendingLine: pos + 1,
 						echoRows,
 						echo,
@@ -262,7 +262,7 @@ export class ServedVerification {
 		// WHY: Strict pos check for concurrency (pos-free vs strict) — after span resolution but before canon checks
 		if (strictPos && from !== undefined && from !== startLine - 1) {
 			this.throwStale({
-				message: `[MODEL] [E_STALE_RANGE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (pos-restricted concurrency). Re-read.\nCurrent range:\n${echo}`,
+				message: `[MODEL] [E_STALE_RANGE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (the file changed under concurrent writes).\nCurrent range:\n${echo}\n${retryHint()}`,
 				firstOffendingLine: startLine,
 				echoRows,
 				echo,
@@ -280,7 +280,7 @@ export class ServedVerification {
 						const actual = canon(fileLines[startLine - 1 + k] ?? "");
 						if (expected !== actual) {
 							this.throwStale({
-								message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} canon differs from served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${echo}`,
+								message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${echo}\n${retryHint()}`,
 								firstOffendingLine: startLine + k,
 								echoRows,
 								echo,
@@ -296,7 +296,7 @@ export class ServedVerification {
 						const actualCanon = canon(fileLines[startLine - 1 + k] ?? "");
 						if (expectedCanon !== undefined && expectedCanon !== null && expectedCanon !== actualCanon) {
 							this.throwStale({
-								message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} uses tombstoned anchor "${h}" (freed since last full read, canon changed). Re-read.\nCurrent range:\n${echo}`,
+								message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} no longer matches what was served (its anchor "${h}" changed since you saw it).\nCurrent range:\n${echo}\n${retryHint()}`,
 								firstOffendingLine: startLine + k,
 								echoRows,
 								echo,
@@ -577,14 +577,14 @@ export class ServedVerification {
 		const { startHash, endHash, currentLen, echo, echoRows, where, startPositions, endPositions } = args;
 		const problems: string[] = [];
 		if (startPositions.length === 0) {
-			problems.push(`remove_from "${startHash}" has no served position`);
+			problems.push(`anchor_from "${startHash}" has no served position`);
 		} else if (startPositions.length > 1) {
-			problems.push(`remove_from "${startHash}" was served at ${startPositions.length} positions`);
+			problems.push(`anchor_from "${startHash}" was served at ${startPositions.length} positions`);
 		}
 		if (endPositions.length === 0) {
-			problems.push(`remove_to "${endHash}" has no served position`);
+			problems.push(`anchor_to "${endHash}" has no served position`);
 		} else if (endPositions.length > 1) {
-			problems.push(`remove_to "${endHash}" was served at ${endPositions.length} positions`);
+			problems.push(`anchor_to "${endHash}" was served at ${endPositions.length} positions`);
 		}
 		// SAFETY: augmenting ServedRejectionError with __echo for reject-and-serve; property is string set here and read only via guarded cast in verify().
 		const err = new ServedRejectionError({

@@ -1,9 +1,8 @@
-- edit: `anchor` (`HASH`) vs `HASH│content` — `anchor` is bare 3-char hash (e.g. "wUp"), `HASH│content` is served line (e.g. `wUp│    "site": {`); never mix them — `remove_from`/`remove_to` are bare `anchor`s, `replacement_text` never has `HASH│`.
-- edit: payload contract `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }` — `path` hoisted, `edits` arity = number of edits (1 = single, >1 = batched atomically to one file; `batch_edit` removed).
-- edit: `remove_from`/`remove_to` are inclusive anchor range (both boundaries included); copy only 3 chars before `│` from served `HASH│content` — never include `│` or content.
-- edit: `replacement_text` is plain file content without `HASH│` — e.g. "    "site": {\n        "class": SiteScraper,"; every `\n` separates lines, mirror trailing blank lines, `""` deletes inclusive range; never prefix lines with `HASH│` (would be `E_SERVED_ECHO` → `[MODEL] [E_SERVED_ECHO]` fail-loud).
-- edit: after success diff serves fresh `HASH│content` (fresh anchors) — copy new `anchor`s from there for next edit; no re-read.
-- edit: staleness is `tombstone∉ && canon==` + `epoch` (`position-free`, `strict` on `snapshotId` mismatch): `E_STALE_ANCHOR` (anchor changed/tombstoned) → re-read; `E_STALE_RANGE` (served-range interior changed) / `E_UNSERVED_RANGE` (never-served span) → `reject-and-serve` with fresh `HASH│content` (retry from echo, no read).
-- edit: channel — `[MODEL]` in `content` = you retry (e.g. `E_STALE_*`, `E_BAD_PAYLOAD`, `E_BAD_ANCHOR`, `E_SERVED_ECHO`), `[USER]` dimmed in `details` = human `drift notice` (outside served range, capped).
-- edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — next `edit` correctly reports their lines as drift; `write` re-serves dense.
-- edit: batch via `edits` arity atomically (fail → nothing written); independent ranges only.
+- edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`, and never emit `│` anywhere in your call.
+- edit: payload shape `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` — `file` is the text file (never a directory); `edits` length is the arity (1 = single, >1 = batched atomically to the one file).
+- edit: `anchor_from`/`anchor_to` bound the inclusive range (both lines replaced); when an anchor no longer matches, re-read the file and copy fresh anchors.
+- edit: `replace_with` is plain file content — join lines with `\n`, mirror trailing blank lines, use `""` to delete the range; write no `HASH│` prefixes (the call is refused when a line echoes a served anchor).
+- edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.
+- edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone; a dimmed `[USER]` line in `details` is human info, never your error.
+- edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).
+- edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.

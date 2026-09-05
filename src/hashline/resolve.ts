@@ -34,9 +34,9 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-	replacement_text: string;
-	remove_from: string;
-	remove_to: string;
+	replace_with: string;
+	anchor_from: string;
+	anchor_to: string;
 };
 
 function resAnchorFromMap(
@@ -90,7 +90,7 @@ function formatNotFound(
 	if (notFound.length === 0) return;
 	const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
 	out.push(
-		`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read for fresh anchors.`,
+		`[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
 	);
 	for (const m of notFound) {
 		const ctx = m.context;
@@ -121,7 +121,7 @@ function formatAmbiguous(
 	if (ambiguous.length === 0) return;
 	if (out.length > 0) out.push("");
 	out.push(
-		`[E_STALE_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read for fresh anchors.`,
+		`[E_STALE_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
 	);
 	for (const m of ambiguous) {
 		const sample = (m.candidates ?? []).slice(0, 5);
@@ -177,40 +177,40 @@ export function fmtMismatchWithServes(
 	return { message: out.join("\n"), servedRows };
 }
 
-const ITEM_KS = new Set(["replacement_text", "remove_from", "remove_to"]);
+const ITEM_KS = new Set(["replace_with", "anchor_from", "anchor_to"]);
 
 function assertItem(edit: Record<string, unknown>): void {
 	rejectUnknownFields(
 		edit,
 		ITEM_KS,
 		"Edit",
-		"The edit takes only { replacement_text, remove_from, remove_to }.",
+		"The edit takes only { replace_with, anchor_from, anchor_to }.",
 	);
 
-	if ("remove_from" in edit && typeof edit.remove_from !== "string") {
+	if ("anchor_from" in edit && typeof edit.anchor_from !== "string") {
 		throw new Error(
-			`[E_BAD_PAYLOAD] Field "remove_from" must be an anchor string (3-char hash).`,
+			`[MODEL] [E_BAD_PAYLOAD] Field "anchor_from" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
 		);
 	}
-	if ("remove_to" in edit && typeof edit.remove_to !== "string") {
+	if ("anchor_to" in edit && typeof edit.anchor_to !== "string") {
 		throw new Error(
-			`[E_BAD_PAYLOAD] Field "remove_to" must be an anchor string (3-char hash).`,
+			`[MODEL] [E_BAD_PAYLOAD] Field "anchor_to" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
 		);
 	}
-	if (!("replacement_text" in edit)) {
+	if (!("replace_with" in edit)) {
 		throw new Error(
-			`[E_BAD_PAYLOAD] The edit requires a "replacement_text" field. Provide the replacement text (use "" to delete).`,
+			`[MODEL] [E_BAD_PAYLOAD] The edit requires a "replace_with" field. Provide the replacement text (use "" to delete). Nothing was written.`,
 		);
 	}
-	if (typeof edit.replacement_text !== "string") {
+	if (typeof edit.replace_with !== "string") {
 		throw new Error(NEW_CONTENT_NOT_STRING_MSG);
 	}
 	if (
-		typeof edit.remove_from !== "string" ||
-		typeof edit.remove_to !== "string"
+		typeof edit.anchor_from !== "string" ||
+		typeof edit.anchor_to !== "string"
 	) {
 		throw new Error(
-			`[E_BAD_PAYLOAD] The edit requires "remove_from" and "remove_to" anchor strings (3-char hashes from read output).`,
+			`[MODEL] [E_BAD_PAYLOAD] The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.`,
 		);
 	}
 }
@@ -231,8 +231,8 @@ function firstHashFromBlock(block: string): string | undefined {
 export function resEdit(edit: HTEdit, _warnings?: string[]): HEdit {
 	assertItem(edit as Record<string, unknown>);
 
-	const editLines = parseText(edit.replacement_text);
-	const bounds = [edit.remove_from, edit.remove_to].map((ref) => {
+	const editLines = parseText(edit.replace_with);
+	const bounds = [edit.anchor_from, edit.anchor_to].map((ref) => {
 		const trimmed = ref.trim();
 		if (trimmed.includes("\n")) {
 			const hash = firstHashFromBlock(trimmed);
@@ -245,11 +245,11 @@ export function resEdit(edit: HTEdit, _warnings?: string[]): HEdit {
 		if (match) {
 			let message: string;
 			if (match[1] === "+") {
-				message = `[E_BAD_ANCHOR] stripped diff-preview marker from remove_from/remove_to "${trimmed}".`;
+				message = `[MODEL] [E_BAD_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
 			} else if (match[1] === "-") {
-				message = `[E_BAD_ANCHOR] stripped leading "-" marker from remove_from/remove_to "${trimmed}".`;
+				message = `[MODEL] [E_BAD_ANCHOR] stripped leading "-" marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
 			} else {
-				message = `[E_BAD_ANCHOR] stripped "HASH│" prefix from remove_from/remove_to "${trimmed}".`;
+				message = `[MODEL] [E_BAD_ANCHOR] stripped "HASH│" prefix from anchor_from/anchor_to "${trimmed}". Nothing was written; copy only the 3 chars before │ and retry.`;
 			}
 			throw new Error(message);
 		}
@@ -284,7 +284,7 @@ export function stripBarePrefixes(
 	});
 	if (stripped.length === 0) return edit;
 	const locations = stripped
-		.map((s) => `replacement_text line ${s.lineIndex + 1}`)
+		.map((s) => `replace_with line ${s.lineIndex + 1}`)
 		.join(", ");
 	const matchedCount = stripped.filter((s) => s.matched).length;
 	const evidence =
@@ -292,9 +292,9 @@ export function stripBarePrefixes(
 			? "0 matched — verify literal 'HASH│' content"
 			: `${matchedCount}/${stripped.length} matched`;
 	if (matchedCount === stripped.length) {
-		throw new Error(`[MODEL] [E_BAD_ANCHOR] stripped "HASH│" prefix from ${locations} (${evidence}) — use bare content without HASH│ next time.`);
+		throw new Error(`[MODEL] [E_BAD_ANCHOR] Refused: stripped "HASH│" prefix from ${locations} (${evidence}). Nothing was written; pass bare content without HASH│ and retry.`);
 	} else {
-		throw new Error(`[MODEL] [E_BAD_ANCHOR] stripped "HASH│" prefix from ${locations} (${evidence}).`);
+		throw new Error(`[MODEL] [E_BAD_ANCHOR] Refused: stripped "HASH│" prefix from ${locations} (${evidence}). Nothing was written; pass bare content and retry.`);
 	}
 	return { ...edit, content_lines: contentLines };
 }
@@ -316,9 +316,9 @@ export function stripDiffPrefixes(edit: HEdit, _warnings: string[]): HEdit {
 	});
 	if (stripped.length === 0) return edit;
 	const locations = stripped
-		.map((i) => `replacement_text line ${i + 1}`)
+		.map((i) => `replace_with line ${i + 1}`)
 		.join(", ");
-	throw new Error(`[MODEL] [E_BAD_ANCHOR] stripped diff-preview marker from ${locations}.`);
+	throw new Error(`[MODEL] [E_BAD_ANCHOR] Refused: stripped diff-preview marker from ${locations}. Nothing was written; pass bare content without +/- prefixes and retry.`);
 	return { ...edit, content_lines: contentLines };
 }
 
@@ -338,7 +338,7 @@ export function swapReversedRanges(
 		return edit;
 	}
 	warnings.push(
-		`[USER] [E_REVERSED_ANCHORS] reversed remove_from/remove_to (${startRef.hash} after ${endRef.hash}); swapped (healed).`,
+		`[USER] [E_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (${startRef.hash} after ${endRef.hash}); healed and applied with the range swapped.`,
 	);
 	return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
@@ -388,7 +388,7 @@ export function valEdit(
 	}
 	if (startResolved.line > endResolved.line) {
 		throw new Error(
-			`[E_REVERSED_ANCHORS] Range start line ${startResolved.line} must be <= end line ${endResolved.line} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}).`,
+			`[MODEL] [E_REVERSED_ANCHORS] Refused: range start line ${startResolved.line} is after end line ${endResolved.line} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}). Nothing was written; swap anchor_from/anchor_to and retry.`,
 		);
 	}
 

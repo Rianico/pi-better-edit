@@ -35,10 +35,10 @@ export type EditToolContext = {
 
 export async function resolveMissingPath(
 	request: Record<string, unknown>,
-): Promise<{ path: string; warning: string } | undefined> {
-	if (typeof request.path === "string") return undefined;
-	const from = request.remove_from;
-	const to = request.remove_to;
+): Promise<{ file: string; warning: string } | undefined> {
+	if (typeof request.file === "string") return undefined;
+	const from = request.anchor_from;
+	const to = request.anchor_to;
 	if (typeof from !== "string" || typeof to !== "string") return undefined;
 	const hashes: string[] = [];
 	for (const ref of [from, to]) {
@@ -56,13 +56,13 @@ export async function resolveMissingPath(
 	}
 	if (matches.length === 1) {
 		return {
-			path: matches[0]!,
-			warning: `[MODEL] [E_BAD_PAYLOAD] Autocorrected: missing "path" resolved to ${matches[0]} — the only file whose stored hashes contain both anchors.`,
+			file: matches[0]!,
+			warning: `[MODEL] [E_BAD_PAYLOAD] Autocorrected: missing "file" resolved to ${matches[0]} — the only file whose stored hashes contain both anchors.`,
 		};
 	}
 	if (matches.length > 1) {
 		throw new Error(
-			`[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "path" string; the anchors match multiple known files: ${matches.join(", ")}. Include the intended path.`,
+			`[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "file" string; the anchors match multiple known files: ${matches.join(", ")}. Include the intended file.`,
 		);
 	}
 	return undefined;
@@ -107,21 +107,21 @@ export function createEditTool(): EditTool {
 			assertReq(canonical);
 			let effectiveCanonical = canonical;
 			let pathWarning: string | undefined;
-			if (canonical.path === null) {
-				// SAFETY: canonical validated by assertReq — accessing edits for path inference is trusted inside boundary
+			if (canonical.file === null) {
+				// SAFETY: canonical validated by assertReq — accessing edits for legacy file inference is trusted inside boundary
 				const editsForProbe = (
 					canonical as unknown as {
-						edits: Array<{ remove_from: string; remove_to: string }>;
+						edits: Array<{ anchor_from: string; anchor_to: string }>;
 					}
 				).edits;
 				const resolution = await resolveMissingPath({
-					path: canonical.path,
-					remove_from: editsForProbe[0]?.remove_from,
-					remove_to: editsForProbe[0]?.remove_to,
+					path: canonical.file,
+					anchor_from: editsForProbe[0]?.anchor_from,
+					anchor_to: editsForProbe[0]?.anchor_to,
 				});
 				if (resolution) {
 					// SAFETY: Immutable evolve: never mutate caller-owned canonical
-					// SAFETY: preserve normalizedEdit brand — re-brand via symbol copy, not normReq (which expects tuple form)
+					// SAFETY: preserve normalizedEdit brand — re-brand via symbol copy, not normReq (which expects object form)
 					// SAFETY: symbol brand is untyped at runtime — cast to symbol | undefined validated by getOwnPropertySymbols
 					const _sym = Object.getOwnPropertySymbols(canonical)[0] as
 						| symbol
@@ -129,7 +129,7 @@ export function createEditTool(): EditTool {
 					// SAFETY: spread preserves NormalizedEditRequest shape — cast to typeof canonical trusted after brand copy
 					effectiveCanonical = {
 						...canonical,
-						path: resolution.path,
+						file: resolution.file,
 					} as typeof canonical;
 					if (_sym)
 						Object.defineProperty(effectiveCanonical, _sym, {
@@ -140,9 +140,9 @@ export function createEditTool(): EditTool {
 				}
 			}
 			assertReq(effectiveCanonical);
-			if (effectiveCanonical.path === null) {
+			if (effectiveCanonical.file === null) {
 				throw new Error(
-					"[MODEL] [E_BAD_PAYLOAD] Edit request path could not be inferred from anchors.",
+					"[MODEL] [E_BAD_PAYLOAD] Edit request file could not be inferred from anchors. Pass the text file to edit.",
 				);
 			}
 			// SAFETY: ctx is untyped at pi boundary — cast validated by pi's runtime context shape (cwd + sessionManager)
@@ -188,21 +188,21 @@ export function createEditTool(): EditTool {
 				assertReq(normalized);
 				let effectiveNormalized = normalized;
 				let pathWarning: string | undefined;
-				// SAFETY: normalized validated by assertReq — path check trusted inside boundary
-				if ((normalized as NormalizedEditRequest).path === null) {
-					// SAFETY: normalized is validated NormalizedEditRequest — accessing edits for path inference trusted
+				// SAFETY: normalized validated by assertReq — legacy file check trusted inside boundary
+				if ((normalized as NormalizedEditRequest).file === null) {
+					// SAFETY: normalized is validated NormalizedEditRequest — accessing edits for legacy file inference trusted
 					const req = normalized as unknown as {
-						edits: Array<{ remove_from: string; remove_to: string }>;
+						edits: Array<{ anchor_from: string; anchor_to: string }>;
 					};
 					const resolution = await resolveMissingPath({
-						// SAFETY: same validated normalized — path is null here, cast preserves narrowing
-						path: (normalized as NormalizedEditRequest).path,
-						remove_from: req.edits[0]?.remove_from,
-						remove_to: req.edits[0]?.remove_to,
+						// SAFETY: same validated normalized — file is null here, cast preserves narrowing
+						file: (normalized as NormalizedEditRequest).file,
+						anchor_from: req.edits[0]?.anchor_from,
+						anchor_to: req.edits[0]?.anchor_to,
 					});
 					if (resolution) {
 						// SAFETY: Immutable evolve: never mutate caller-owned normalized — re-brand via normReq to preserve normalizedEdit symbol
-						// SAFETY: preserve normalizedEdit brand — copy symbol from validated normalized (tuple vs object mismatch prevents normReq)
+						// SAFETY: preserve normalizedEdit brand — copy symbol from validated normalized (legacy vs modern mismatch prevents normReq)
 						// SAFETY: symbol brand is untyped at runtime — cast to symbol | undefined validated by getOwnPropertySymbols
 						const _sym2 = Object.getOwnPropertySymbols(normalized)[0] as
 							| symbol
@@ -210,7 +210,7 @@ export function createEditTool(): EditTool {
 						// SAFETY: spread preserves NormalizedEditRequest shape — cast to typeof normalized trusted after brand copy
 						effectiveNormalized = {
 							...normalized,
-							path: resolution.path,
+							file: resolution.file,
 						} as typeof normalized;
 						if (_sym2)
 							Object.defineProperty(effectiveNormalized, _sym2, {

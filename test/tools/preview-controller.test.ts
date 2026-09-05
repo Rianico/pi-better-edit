@@ -57,12 +57,12 @@ describe("DebouncedPreview", () => {
 			expect(state.previewTimer).toBeUndefined();
 			expect(state.argsKey).toBe(
 				JSON.stringify({
-					path: "sample.ts",
+					file: "sample.ts",
 					edits: [
 						{
-							remove_from: "AAA",
-							remove_to: "BBB",
-							replacement_text: "y",
+							anchor_from: "AAA",
+							anchor_to: "BBB",
+							replace_with: "y",
 						},
 					],
 				}),

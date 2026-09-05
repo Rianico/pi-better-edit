@@ -52,14 +52,15 @@ describe("prompts/edit-snippet.md (single source)", () => {
 	});
 
 	it("snippet and description share canonical payload shape (single source)", () => {
-		const canonical = '{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }';
-		expect(editPrompt).toContain(canonical);
-		expect(editSnippet).toContain(canonical);
+		const canonicalDesc = '{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }';
+		const canonicalSnippet = '{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"replace_with":text}]}';
+		expect(editPrompt).toContain(canonicalDesc);
+		expect(editSnippet).toContain(canonicalSnippet);
 		const tool = buildToolDef();
 		expect(tool.description).toBe(EDIT_DESCRIPTION);
 		expect(tool.promptSnippet).toBe(EDIT_SNIPPET);
-		expect(tool.promptSnippet).toContain(canonical);
-		expect(tool.description).toContain(canonical);
+		expect(tool.promptSnippet).toContain(canonicalSnippet);
+		expect(tool.description).toContain(canonicalDesc);
 	});
 });
 
@@ -96,9 +97,9 @@ describe("prompt guidelines", () => {
 			new URL("../../prompts/edit-guidelines.md", import.meta.url),
 			"utf-8",
 		);
-		expect(content).toContain("remove_from");
-		expect(content).toContain("remove_to");
-		expect(content).toContain("replacement_text");
+		expect(content).toContain("anchor_from");
+		expect(content).toContain("anchor_to");
+		expect(content).toContain("replace_with");
 		expect(content).toContain("fresh anchors");
 		expect(content).not.toContain("hash_bounds");
 		expect(content).not.toContain("new_content");

@@ -5,49 +5,49 @@ describe("normReq", () => {
 	it("returns non-objects as-is for runtime validation", () => {
 		expect(normReq("string")).toBe("string");
 		expect(normReq(null)).toBe(null);
-		expect(normReq({ path: "test.txt" })).toEqual({ path: "test.txt" });
+		expect(normReq({ file: "test.txt" })).toEqual({ file: "test.txt" });
 	});
 
-	it("normalizes the exact { path, edits } shape", () => {
+	it("normalizes the exact { file, edits } shape", () => {
 		expect(
-			normReq({ path: "src/main.ts", edits: [["aB3", "cD4", "new"]] }),
+			normReq({ file: "src/main.ts", edits: [["aB3", "cD4", "new"]] }),
 		).toMatchObject({
-			path: "src/main.ts",
+			file: "src/main.ts",
 			edits: [
 				{
-					remove_from: "aB3",
-					remove_to: "cD4",
-					replacement_text: "new",
+					anchor_from: "aB3",
+					anchor_to: "cD4",
+					replace_with: "new",
 				},
 			],
 		});
 	});
 
-	it("preserves null path for anchor-based inference", () => {
-		expect(normReq({ path: null, edits: [["aB3", "cD4", "new"]] })).toMatchObject({
-			path: null,
+	it("preserves null file for anchor-based inference", () => {
+		expect(normReq({ file: null, edits: [["aB3", "cD4", "new"]] })).toMatchObject({
+			file: null,
 			edits: [
 				{
-					remove_from: "aB3",
-					remove_to: "cD4",
-					replacement_text: "new",
+					anchor_from: "aB3",
+					anchor_to: "cD4",
+					replace_with: "new",
 				},
 			],
 		});
 	});
 
 	it("does not normalize malformed payloads", () => {
-		const malformed = { path: "test.txt", edits: [["aB3"], "new"] };
+		const malformed = { file: "test.txt", edits: [["aB3"], "new"] };
 		expect(normReq(malformed)).toBe(malformed);
-		expect(normReq({ path: "test.txt", edits: [] })).toEqual({
-			path: "test.txt",
+		expect(normReq({ file: "test.txt", edits: [] })).toEqual({
+			file: "test.txt",
 			edits: [],
 		});
 	});
 
 	it("does not mutate input", () => {
-		const input = { path: "test.txt", edits: [["aB3", "cD4", "new"]] };
+		const input = { file: "test.txt", edits: [["aB3", "cD4", "new"]] };
 		normReq(input);
-		expect(input).toEqual({ path: "test.txt", edits: [["aB3", "cD4", "new"]] });
+		expect(input).toEqual({ file: "test.txt", edits: [["aB3", "cD4", "new"]] });
 	});
 });

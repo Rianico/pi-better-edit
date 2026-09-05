@@ -27,37 +27,37 @@ describe("getPreviewInput", () => {
 		expect(getPreviewInput(42)).toBeNull();
 	});
 
-	it("accepts null path for anchor-based inference", () => {
+	it("accepts null file for anchor-based inference", () => {
 		const result = getPreviewInput({
-			path: null,
+			file: null,
 			edits: [["AAA", "BBB", "new"]],
 		});
-		expect(result?.path).toBeNull();
+		expect(result?.file).toBeNull();
 		expect(result?.edits.length).toBe(1);
 	});
 
-	it("returns null for record with non-string path", () => {
-		expect(getPreviewInput({ path: 42 })).toBeNull();
+	it("returns null for record with non-string file", () => {
+		expect(getPreviewInput({ file: 42 })).toBeNull();
 	});
 
 	it("returns null for record without edits", () => {
-		expect(getPreviewInput({ path: "test.txt" })).toBeNull();
-		expect(getPreviewInput({ path: "test.txt", edits: [] })).toBeNull();
+		expect(getPreviewInput({ file: "test.txt" })).toBeNull();
+		expect(getPreviewInput({ file: "test.txt", edits: [] })).toBeNull();
 	});
 
 	it("normalizes valid payload input", () => {
 		const result = getPreviewInput({
-			path: "test.txt",
+			file: "test.txt",
 			edits: [
 				["AAA", "BBB", "new"],
 				["CCC", "DDD", ""],
 			],
 		});
 		expect(result).toEqual({
-			path: "test.txt",
+			file: "test.txt",
 			edits: [
-				{ remove_from: "AAA", remove_to: "BBB", replacement_text: "new" },
-				{ remove_from: "CCC", remove_to: "DDD", replacement_text: "" },
+				{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "new" },
+				{ anchor_from: "CCC", anchor_to: "DDD", replace_with: "" },
 			],
 		});
 	});
@@ -117,22 +117,22 @@ describe("fmtResult", () => {
 });
 
 describe("fmtCall", () => {
-	it("formats call with path", () => {
-		const args = { path: "test.txt", edits: [{ remove_from: "AAA", remove_to: "BBB", replacement_text: "new" }] };
+	it("formats call with file", () => {
+		const args = { file: "test.txt", edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "new" }] };
 		const state = { preview: undefined };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("test.txt");
 	});
 
 	it("formats call with error preview", () => {
-		const args = { path: "test.txt", edits: [{ remove_from: "AAA", remove_to: "BBB", replacement_text: "new" }] };
+		const args = { file: "test.txt", edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "new" }] };
 		const state = { preview: { error: "test error" } };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("test error");
 	});
 
 	it("formats call with diff preview", () => {
-		const args = { path: "test.txt", edits: [{ remove_from: "AAA", remove_to: "BBB", replacement_text: "new" }] };
+		const args = { file: "test.txt", edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "new" }] };
 		const state = { preview: { diff: "+added\n-removed" } };
 		const result = fmtCall(args, state, false, mockTheme);
 		expect(result).toContain("+added");

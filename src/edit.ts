@@ -15,10 +15,11 @@ import {
 	EDIT_DESCRIPTION,
 	type NormalizedEditRequest,
 	editToolSchema,
-	editTupleSchema,
-	replacementTextSchema,
-	removeFromSchema,
-	removeToSchema,
+	editItemSchema,
+	replaceWithSchema,
+	anchorFromSchema,
+	anchorToSchema,
+	editFileSchema,
 	assertReq,
 } from "./payload-contract.js";
 import { createEditTool } from "./edit-tool.js";
@@ -38,18 +39,19 @@ export { assertReq };
 /** SAFETY: @deprecated Import from "./payload-contract.js" — single source per ADR-0007. Re-exports retained for compatibility until next MAJOR. */
 export {
 	editToolSchema,
-	editTupleSchema,
-	replacementTextSchema,
-	removeFromSchema,
-	removeToSchema,
+	editItemSchema,
+	replaceWithSchema,
+	anchorFromSchema,
+	anchorToSchema,
+	editFileSchema,
 };
 export { resolveMissingPath } from "./edit-tool.js";
 export { reuseText, reuseMarkdown } from "./tui-presenter.js";
 
 export type EditParams = {
-	remove_from: string;
-	remove_to: string;
-	replacement_text: string;
+	anchor_from: string;
+	anchor_to: string;
+	replace_with: string;
 };
 
 export type EditRequest = NormalizedEditRequest;

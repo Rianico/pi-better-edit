@@ -71,7 +71,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
 		expect(result.ok).toBe(false);
 		if (!result.ok) {
 			expect(result.code).toBe("E_UNSERVED_RANGE");
-			expect(result.message).toMatch(/remove_from.*was served at 2 positions/);
+			expect(result.message).toMatch(/anchor_from.*was served at 2 positions/);
 			expect(result.servedRows.length).toBeGreaterThan(0);
 		}
 	});

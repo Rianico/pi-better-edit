@@ -9,7 +9,7 @@ describe("indentation: pure edit preserves duplicates verbatim", () => {
 		const file = "  foo\nbar\n  baz";
 		const hashes = await lineHashes(file, home.testPath);
 		const result = applyEdit(file, resEdit(
-			{ remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "  foo\n  bar" },
+			{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "  foo\n  bar" },
 		));
 		expect(result.content).toBe("  foo\n  foo\n  bar\n  baz");
 	});
@@ -18,7 +18,7 @@ describe("indentation: pure edit preserves duplicates verbatim", () => {
 		const file = "  foo\n  bar\n  baz";
 		const hashes = await lineHashes(file, home.testPath);
 		const result = applyEdit(file, resEdit(
-			{ remove_from: hashes[1]!, remove_to: hashes[1]!, replacement_text: "  foo\n  new" },
+			{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "  foo\n  new" },
 		));
 		expect(result.content).toBe("  foo\n  foo\n  new\n  baz");
 	});

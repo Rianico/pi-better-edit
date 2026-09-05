@@ -399,9 +399,9 @@ describe("auto-read after write", () => {
 					toolCallId: "edit-1",
 					input: {
 						path: "edit.txt",
-						remove_from: "abc",
-						remove_to: "abc",
-						replacement_text: "BETA",
+						anchor_from: "abc",
+						anchor_to: "abc",
+						replace_with: "BETA",
 					},
 					content: [
 						{

@@ -2,33 +2,39 @@ import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, withTempDir, setupIntegrationTest } from "../support/fixtures";
+import { resolveMissingPath } from "../../src/edit";
+import {
+  withTempFile,
+  withTempDir,
+  setupIntegrationTest,
+} from "../support/fixtures";
 
-describe("edit — missing path resolution", () => {
-  it("resolves a missing path when the anchors uniquely identify a file", async () => {
+describe("edit — legacy file inference (resolveMissingPath)", () => {
+  it("resolves a missing file when the anchors uniquely identify a file", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", path);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-
-      const result = await editTool.execute(
-        "e1",
-        { path: null, edits: [[hashes[0]!, hashes[0]!, "AAA"]] },
+      await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
         undefined,
         undefined,
         ctx,
       );
 
-      expect(result.content[0].text).toContain("Successfully edited");
-      expect(result.content[0].text).toContain("[E_BAD_PAYLOAD]");
-      expect(result.content[0].text).toContain('missing "path" resolved to');
-      expect(await readFile(path, "utf-8")).toBe("AAA\nbbb\n");
+      const resolution = await resolveMissingPath({
+        anchor_from: hashes[0]!,
+        anchor_to: hashes[0]!,
+      });
+
+      expect(resolution?.file.endsWith("sample.ts")).toBe(true);
+      expect(resolution?.warning).toContain('missing "file" resolved to');
     });
   });
 
-  it("rejects a missing path when the anchors match multiple files", async () => {
+  it("rejects a missing file when the anchors match multiple files", async () => {
     await withTempDir("ambig-", async (dir) => {
-      const { ctx, editTool } = setupIntegrationTest(dir);
+      setupIntegrationTest(dir);
       const first = join(dir, "a.txt");
       const second = join(dir, "b.txt");
       await writeFile(first, "same\n", "utf-8");
@@ -37,49 +43,60 @@ describe("edit — missing path resolution", () => {
       await lineHashes("same\n", second);
 
       await expect(
-        editTool.execute(
-          "e1",
-          { path: null, edits: [[hashes[0]!, hashes[0]!, "X"]] },
-          undefined,
-          undefined,
-          ctx,
-        ),
+        resolveMissingPath({
+          anchor_from: hashes[0]!,
+          anchor_to: hashes[0]!,
+        }),
       ).rejects.toThrow(/match multiple known files/);
     });
   });
 
-  it("rejects a missing path when the anchors match no file", async () => {
+  it("returns undefined when the anchors match no file", async () => {
     await withTempFile("sample.ts", "aaa\n", async ({ cwd }) => {
-      const { ctx, editTool } = setupIntegrationTest(cwd);
+      setupIntegrationTest(cwd);
 
-      await expect(
-        editTool.execute(
-          "e1",
-          { path: null, edits: [["AAA", "AAA", "X"]] },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      ).rejects.toThrow(/path could not be inferred/);
+      const resolution = await resolveMissingPath({
+        anchor_from: "AAA",
+        anchor_to: "AAA",
+      });
+      expect(resolution).toBeUndefined();
     });
   });
 
-  it("keeps the resolved path in the post-edit diff", async () => {
-    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+  it("requires file on the tool surface", async () => {
+    await withTempFile(
+      "sample.ts",
+      "aaa\nbbb\nccc\n",
+      async ({ cwd, path }) => {
+        const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+        const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
+        await readTool.execute(
+          "r1",
+          { path: "sample.ts" },
+          undefined,
+          undefined,
+          ctx,
+        );
 
-      const result = await editTool.execute(
-        "e1",
-        { path: null, edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      expect(result.details?.diff).toContain("BBB");
-      expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\n");
-    });
+        await expect(
+          editTool.execute(
+            "e1",
+            {
+              edits: [
+                {
+                  anchor_from: hashes[1]!,
+                  anchor_to: hashes[1]!,
+                  replace_with: "BBB",
+                },
+              ],
+            },
+            undefined,
+            undefined,
+            ctx,
+          ),
+        ).rejects.toThrow(/E_BAD_PAYLOAD/);
+        expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
+      },
+    );
   });
 });

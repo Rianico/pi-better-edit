@@ -130,34 +130,34 @@ describe("edit tool noop-loop guard", () => {
 		});
 	});
 
-	it("treats a missing-path resend as identical to the explicit-path form", async () => {
+	it("treats a legacy-tuple resend as identical to the object form", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await readSample(ctx, readTool);
 
 			await editTool.execute(
 				"e1",
-				{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
+				{ file: "sample.ts", edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: NOOP_LINE_1 }] },
 				undefined,
 				undefined,
 				ctx,
 			);
 
-			const missingPath = await editTool.execute(
+			const legacyResend = await editTool.execute(
 				"e2",
-				{ path: null, edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
+				{ file: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
 				undefined,
 				undefined,
 				ctx,
 			);
-			expect(missingPath.details.classification).toBe("noop");
-			expect(getText(missingPath)).toContain("[E_NOOP_LOOP] Notice:");
-			expect(getText(missingPath)).toContain("no-op'd twice");
+			expect(legacyResend.details.classification).toBe("noop");
+			expect(getText(legacyResend)).toContain("[E_NOOP_LOOP] Notice:");
+			expect(getText(legacyResend)).toContain("no-op'd twice");
 
 			const err = (await editTool
 				.execute(
 					"e3",
-					{ path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
+					{ file: "sample.ts", edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: NOOP_LINE_1 }] },
 					undefined,
 					undefined,
 					ctx,

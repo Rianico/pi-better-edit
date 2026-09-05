@@ -131,7 +131,7 @@ describe("rejectUnknownFields", () => {
     const obj = { path: "test.txt", extra: "value" };
     const allowed = new Set(["path"]);
     expect(() =>
-      rejectUnknownFields(obj, allowed, "Edit 0", "Each edit takes only { replacement_text, remove_from, remove_to }."),
+      rejectUnknownFields(obj, allowed, "Edit 0", "Each edit takes only { replace_with, anchor_from, anchor_to }."),
     ).toThrow(/Each edit takes only/);
   });
 

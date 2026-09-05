@@ -254,19 +254,25 @@ describe("edit multi-item tool", () => {
 				const validator = Compile(editToolSchema);
 				expect(
 					validator.Check({
-						path: "sample.ts",
-						edits: [[hashes[0]!, hashes[0]!, "AAA"]],
+						file: "sample.ts",
+						edits: [
+							{
+								anchor_from: hashes[0]!,
+								anchor_to: hashes[0]!,
+								replace_with: "AAA",
+							},
+						],
 					}),
 				).toBe(true);
 				expect(
 					validator.Check({
-						path: "sample.ts",
+						file: "sample.ts",
 						edits: [
 							{
-								path: "sample.ts",
-								remove_from: hashes[0]!,
-								remove_to: hashes[0]!,
-								replacement_text: "AAA",
+								file: "sample.ts",
+								anchor_from: hashes[0]!,
+								anchor_to: hashes[0]!,
+								replace_with: "AAA",
 							},
 						],
 					}),
@@ -276,13 +282,13 @@ describe("edit multi-item tool", () => {
 					editTool.execute(
 						"e1",
 						{
-							path: "sample.ts",
+							file: "sample.ts",
 							edits: [
 								{
-									path: "sample.ts",
-									remove_from: hashes[0]!,
-									remove_to: hashes[0]!,
-									replacement_text: "AAA",
+									file: "sample.ts",
+									anchor_from: hashes[0]!,
+									anchor_to: hashes[0]!,
+									replace_with: "AAA",
 								},
 							],
 						} as any,
@@ -294,7 +300,7 @@ describe("edit multi-item tool", () => {
 				await expect(
 					editTool.execute(
 						"e1",
-						{ path: "sample.ts", edits: [] },
+						{ file: "sample.ts", edits: [] },
 						undefined,
 						undefined,
 						ctx,
@@ -335,7 +341,7 @@ describe("edit multi-item tool", () => {
 		);
 	});
 
-	it("resolves a missing path from the hash store with a warning", async () => {
+	it("edits with an explicit file and carries no inference warning", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await lineHashes("aaa\nbbb\n", path);
@@ -344,8 +350,8 @@ describe("edit multi-item tool", () => {
 			const result = await editTool.execute(
 				"e1",
 				{
-					path: null,
-					edits: [[hashes[0]!, hashes[0]!, "AAA"]],
+					file: "sample.ts",
+					edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
 				},
 				undefined,
 				undefined,
@@ -354,9 +360,9 @@ describe("edit multi-item tool", () => {
 			expect(getText(result)).toContain("Successfully edited");
 			expect(
 				result.details.warnings?.some((w: string) =>
-					w.includes('missing "path" resolved to'),
-				),
-			).toBe(true);
+					w.includes('missing "file" resolved to'),
+				) ?? false,
+			).toBe(false);
 			expect(await readFile(path, "utf-8")).toBe("AAA\nbbb\n");
 		});
 	});
@@ -504,15 +510,14 @@ describe("edit multi-item tool", () => {
 
 describe("prepareEditArguments normalization", () => {
 	it("keeps the canonical object-root payload unchanged", () => {
-		expect(
-			prepareEditArguments({
-				path: "a.ts",
-				edits: [["AAA", "BBB", "x"]],
-			}),
-		).toEqual({ path: "a.ts", edits: [["AAA", "BBB", "x"]] });
+		const args = {
+			file: "a.ts",
+			edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
+		};
+		expect(prepareEditArguments(args)).toEqual(args);
 	});
 
-	it("accepts null path and multi-item edits", () => {
+	it("folds legacy tuples and null file to multi-item edits", () => {
 		expect(
 			prepareEditArguments({
 				path: null,
@@ -522,10 +527,10 @@ describe("prepareEditArguments normalization", () => {
 				],
 			}),
 		).toEqual({
-			path: null,
+			file: null,
 			edits: [
-				["AAA", "BBB", "x"],
-				["CCC", "DDD", ""],
+				{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" },
+				{ anchor_from: "CCC", anchor_to: "DDD", replace_with: "" },
 			],
 		});
 	});
@@ -535,10 +540,10 @@ describe("prepareEditArguments normalization", () => {
 			undefined,
 			{},
 			"a.ts",
-			{ path: "a.ts" },
-			{ path: "a.ts", edits: [] },
-			{ path: "a.ts", edits: "nope" },
-			{ path: "a.ts", edits: [["AAA"]] },
+			{ file: "a.ts" },
+			{ file: "a.ts", edits: [] },
+			{ file: "a.ts", edits: "nope" },
+			{ file: "a.ts", edits: [["AAA"]] },
 			{ edit: ["a.ts", ["AAA", "BBB"], "x"] },
 			["a.ts", ["AAA", "BBB"], "x"],
 		]) {

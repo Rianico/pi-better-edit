@@ -9,18 +9,18 @@ describe("assertReq", () => {
 		expect(() => assertReq({ path: "test.txt" })).toThrow("E_BAD_PAYLOAD");
 	});
 
-	it("rejects the old named-object payload", () => {
+	it("rejects flat named fields without the edits wrapper", () => {
 		expect(() =>
 			assertReq({
-				path: "test.txt",
-				remove_from: "AAA",
-				remove_to: "BBB",
-				replacement_text: "new",
+				file: "test.txt",
+				anchor_from: "AAA",
+				anchor_to: "BBB",
+				replace_with: "new",
 			}),
 		).toThrow("exactly");
 	});
 
-	it("accepts a path and null-path payload", () => {
+	it("accepts legacy path and null-path payloads via folding", () => {
 		expect(() =>
 			assertReq(
 				normReq({ path: "test.txt", edits: [["AAA", "BBB", "new"]] }),
@@ -67,15 +67,27 @@ describe("anchor validation order", () => {
 describe("prepareArguments normalization", () => {
 	it("keeps the canonical object-root payload unchanged", () => {
 		const tool = buildToolDef();
-		const args = { path: "test.txt", edits: [["AAA", "BBB", "line1\nline2"]] };
+		const args = {
+			file: "test.txt",
+			edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "line1\nline2" }],
+		};
 		expect(tool.prepareArguments!(args)).toEqual(args);
 	});
 
-	it("accepts a null-path payload for anchor inference", () => {
+	it("folds legacy tuples and path keys to the canonical shape", () => {
 		const tool = buildToolDef();
 		expect(
+			tool.prepareArguments!({ path: "test.txt", edits: [["AAA", "BBB", "x"]] }),
+		).toEqual({
+			file: "test.txt",
+			edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
+		});
+		expect(
 			tool.prepareArguments!({ path: null, edits: [["AAA", "BBB", "x"]] }),
-		).toEqual({ path: null, edits: [["AAA", "BBB", "x"]] });
+		).toEqual({
+			file: null,
+			edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
+		});
 	});
 
 	it("rejects malformed shapes with an actionable E_BAD_PAYLOAD hint", () => {
@@ -86,8 +98,8 @@ describe("prepareArguments normalization", () => {
 			"test.txt",
 			["test.txt", ["AAA", "BBB"], "x"],
 			{ edit: ["test.txt", ["AAA", "BBB"], "x"] },
-			{ path: "test.txt" },
-			{ path: "test.txt", edits: [] },
+			{ file: "test.txt" },
+			{ file: "test.txt", edits: [] },
 		];
 		for (const args of bad) {
 			expect(() => tool.prepareArguments!(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
@@ -95,14 +107,14 @@ describe("prepareArguments normalization", () => {
 		}
 	});
 
-	it("rejects the old named-object payload with the canonical-shape hint", () => {
+	it("rejects flat named fields with the canonical-shape hint", () => {
 		const tool = buildToolDef();
 		expect(() =>
 			tool.prepareArguments!({
-				path: "test.txt",
-				remove_from: "AAA",
-				remove_to: "BBB",
-				replacement_text: "new",
+				file: "test.txt",
+				anchor_from: "AAA",
+				anchor_to: "BBB",
+				replace_with: "new",
 			}),
 		).toThrow(/canonical payload/);
 	});

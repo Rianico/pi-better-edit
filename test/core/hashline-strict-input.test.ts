@@ -14,18 +14,18 @@ describe("edit input validation", () => {
 		const file = "foo\nbar";
 		const hashes = await lineHashes(file, home.testPath);
 		const toolEdit: HTEdit = {
-			remove_from: hashes[0]!,
-			remove_to: hashes[0]!,
-			replacement_text: `${hashes[0]!}│FOO`,
+			anchor_from: hashes[0]!,
+			anchor_to: hashes[0]!,
+			replace_with: `${hashes[0]!}│FOO`,
 		};
 		expect(() => applyEdit(file, resEdit(toolEdit))).toThrow(/\[E_BAD_ANCHOR\]/);
 	});
 
-	it("rejects array replacement_text before patch-prefix validation", () => {
+	it("rejects array replace_with before patch-prefix validation", () => {
 		const toolEdit: HTEdit = {
-			remove_from: "ZZZ",
-			remove_to: "ZZZ",
-			replacement_text: ["+ZZZ:foo"],
+			anchor_from: "ZZZ",
+			anchor_to: "ZZZ",
+			replace_with: ["+ZZZ:foo"],
 		} as unknown as HTEdit;
 		expect(() => resEdit(toolEdit)).toThrow(
 			/must be a string with \\n line separators, not an array/i,
@@ -34,9 +34,9 @@ describe("edit input validation", () => {
 
 	it("passes through numbered deletion rows as literal content", () => {
 		const toolEdit: HTEdit = {
-			remove_from: "ZZZ",
-			remove_to: "ZZZ",
-			replacement_text: "-1    foo",
+			anchor_from: "ZZZ",
+			anchor_to: "ZZZ",
+			replace_with: "-1    foo",
 		};
 		const resolved = resEdit(toolEdit);
 		expect(resolved.content_lines).toEqual(["-1    foo"]);
@@ -44,9 +44,9 @@ describe("edit input validation", () => {
 
 	it("accepts plain literal content unchanged", () => {
 		const toolEdit: HTEdit = {
-			remove_from: "ZZZ",
-			remove_to: "ZZZ",
-			replacement_text: "bar",
+			anchor_from: "ZZZ",
+			anchor_to: "ZZZ",
+			replace_with: "bar",
 		};
 		const resolved = resEdit(toolEdit);
 		expect(resolved.content_lines).toEqual(["bar"]);
@@ -54,9 +54,9 @@ describe("edit input validation", () => {
 
 	it("preserves '#' comment lines that do not match the strict prefix", () => {
 		const toolEdit: HTEdit = {
-			remove_from: "ZZZ",
-			remove_to: "ZZZ",
-			replacement_text: "# keep me",
+			anchor_from: "ZZZ",
+			anchor_to: "ZZZ",
+			replace_with: "# keep me",
 		};
 		const resolved = resEdit(toolEdit);
 		expect(resolved.content_lines).toEqual(["# keep me"]);
@@ -76,9 +76,9 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 		const betaHash = hashes[1]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `${betaHash}│### heading\nreal content`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `${betaHash}│### heading\nreal content`,
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
@@ -90,9 +90,9 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 		const gammaHash = hashes[2]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `${gammaHash}│text`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `${gammaHash}│text`,
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
@@ -103,22 +103,22 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 		const anchor = hashes[0]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: "ZZZ│one\nZZP│two",
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: "ZZZ│one\nZZP│two",
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
 	});
 
-	it("reports the replacement_text line for each stripped line", async () => {
+	it("reports the replace_with line for each stripped line", async () => {
 		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: "ZZZ│one\nreal\nZZP│two",
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: "ZZZ│one\nreal\nZZP│two",
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
@@ -129,9 +129,9 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 		const anchor = hashes[0]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `  ${hashes[1]!}│  indented`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `  ${hashes[1]!}│  indented`,
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
@@ -142,9 +142,9 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 		const anchor = hashes[0]!;
 		const result = applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: "TS: TypeScript",
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: "TS: TypeScript",
 			},
 			hashes,
 		);
@@ -156,7 +156,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		const result = applyTool(
-			{ remove_from: anchor, remove_to: anchor, replacement_text: "# heading" },
+			{ anchor_from: anchor, anchor_to: anchor, replace_with: "# heading" },
 			hashes,
 		);
 		expect(result.warnings ?? []).toEqual([]);
@@ -168,7 +168,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
 		const betaHash = hashes[1]!;
 		const longLine = `${betaHash}│${"y".repeat(500)}`;
 		expect(() => applyTool(
-			{ remove_from: anchor, remove_to: anchor, replacement_text: longLine },
+			{ anchor_from: anchor, anchor_to: anchor, replace_with: longLine },
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
 	});
@@ -186,9 +186,9 @@ describe("diff preview rows copied into content", () => {
 		const anchor = hashes[0]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `+${hashes[1]!}│### heading\nreal content`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `+${hashes[1]!}│### heading\nreal content`,
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
@@ -199,9 +199,9 @@ describe("diff preview rows copied into content", () => {
 		const anchor = hashes[0]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `-${hashes[1]!}│one\n-   │two`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `-${hashes[1]!}│one\n-   │two`,
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
@@ -211,7 +211,7 @@ describe("diff preview rows copied into content", () => {
 		const hashes = await lineHashes(file, home.testPath);
 		const anchor = hashes[0]!;
 		const result = applyTool(
-			{ remove_from: anchor, remove_to: anchor, replacement_text: "-1    foo" },
+			{ anchor_from: anchor, anchor_to: anchor, replace_with: "-1    foo" },
 			hashes,
 		);
 		expect(result.content).toBe("-1    foo\nbeta\ngamma\ndelta");
@@ -223,9 +223,9 @@ describe("diff preview rows copied into content", () => {
 		const anchor = hashes[0]!;
 		const result = applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: "+added\n-removed",
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: "+added\n-removed",
 			},
 			hashes,
 		);
@@ -246,9 +246,9 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
 		const anchor = hashes[0]!;
 		const result = applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `+ ${hashes[1]!}│one`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `+ ${hashes[1]!}│one`,
 			},
 			hashes,
 		);
@@ -261,9 +261,9 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
 		const anchor = hashes[0]!;
 		const result = applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `- ${hashes[1]!}│one`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `- ${hashes[1]!}│one`,
 			},
 			hashes,
 		);
@@ -276,9 +276,9 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
 		const anchor = hashes[0]!;
 		const result = applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: "+ abc│def\n- xyz│uvw",
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: "+ abc│def\n- xyz│uvw",
 			},
 			hashes,
 		);
@@ -291,9 +291,9 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
 		const anchor = hashes[0]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `+${hashes[1]!}│one`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `+${hashes[1]!}│one`,
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);
@@ -304,9 +304,9 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
 		const anchor = hashes[0]!;
 		expect(() => applyTool(
 			{
-				remove_from: anchor,
-				remove_to: anchor,
-				replacement_text: `-${hashes[1]!}│one\n-   │two`,
+				anchor_from: anchor,
+				anchor_to: anchor,
+				replace_with: `-${hashes[1]!}│one\n-   │two`,
 			},
 			hashes,
 		)).toThrow(/\[E_BAD_ANCHOR\]/);

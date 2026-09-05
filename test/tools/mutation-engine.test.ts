@@ -21,7 +21,7 @@ describe("MutationEngine — deep seam", () => {
       const from = hashes[0]!;
       const to = hashes[1]!;
       const result = await execute(
-        { path: "sample.txt", edits: [{ remove_from: from, remove_to: to, replacement_text: "x\ny" }] },
+        { file: "sample.txt", edits: [{ anchor_from: from, anchor_to: to, replace_with: "x\ny" }] },
         cwd,
       );
       expect(isMutationSuccess(result)).toBe(true);
@@ -41,7 +41,7 @@ describe("MutationEngine — deep seam", () => {
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const result = await preview(
-        { path: "sample.txt", edits: [{ remove_from: from, remove_to: from, replacement_text: "replaced" }] },
+        { file: "sample.txt", edits: [{ anchor_from: from, anchor_to: from, replace_with: "replaced" }] },
         cwd,
       );
       expect(isMutationSuccess(result)).toBe(true);
@@ -58,7 +58,7 @@ describe("MutationEngine — deep seam", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
-        { path: "sample.txt", edits: [{ remove_from: "AAA", remove_to: "BBB", replacement_text: "x" }] },
+        { file: "sample.txt", edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }] },
         cwd,
       );
       expect(isMutationFailure(result)).toBe(true);
@@ -79,10 +79,10 @@ describe("MutationEngine — deep seam", () => {
       const h3 = hashes[3]!;
       const result = await execute(
         {
-          path: "sample.txt",
+          file: "sample.txt",
           edits: [
-            { remove_from: h0, remove_to: h0, replacement_text: "A" },
-            { remove_from: h2, remove_to: h3, replacement_text: "C" },
+            { anchor_from: h0, anchor_to: h0, replace_with: "A" },
+            { anchor_from: h2, anchor_to: h3, replace_with: "C" },
           ],
         },
         cwd,

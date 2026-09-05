@@ -13,21 +13,21 @@ The tool's per-file, per-line record of the hash last delivered to the model for
 _Avoid_: expectation, last read, snapshot
 
 **model–tool boundary**:
-The separation of responsibilities: the tool owns verification of what the model submits; the model owns intent. The tool never relies on the model to supply verification data or to perform pre-edit rituals (re-reading) to keep its own checks honest, and never silently rewrites `replacement_text` to "fix" the model's intent (e.g. stripping lines that duplicate outside the range). `range = hash_bounds, replacement = replacement_text` is pure — no surprise rewrite.
+The separation of responsibilities: the tool owns verification of what the model submits; the model owns intent. The tool never relies on the model to supply verification data or to perform pre-edit rituals (re-reading) to keep its own checks honest, and never silently rewrites `replace_with` to "fix" the model's intent (e.g. stripping lines that duplicate outside the range). `range = hash_bounds, replacement = replace_with` is pure — no surprise rewrite.
 _Avoid_: —
 
 **anchor philosophy**:
 The project's core contract: per-line anchors are content-derived with ASCII whitespace (`[ \t\r\n]`) stripped, stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005).
 
 **anchor staleness**:
-An anchor (one line, `remove_from` or `remove_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon`/`tombstone` miss). The model must re-`read` for fresh anchors.
+An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon`/`tombstone` miss). The model must re-`read` for fresh anchors.
 _Avoid_: boundary staleness (use `anchor` for one line, `served range` for span)
 
 **interior**:
-The lines of a resolved range strictly between `remove_from` and `remove_to`.
+The lines of a resolved range strictly between `anchor_from` and `anchor_to`.
 
 **range**:
-The resolved contiguous run of lines between `remove_from` and `remove_to` in the current file — the model-facing word for what a replace touches.
+The resolved contiguous run of lines between `anchor_from` and `anchor_to` in the current file — the model-facing word for what a replace touches.
 _Avoid_: hunk, region
 
 **span**:
@@ -38,7 +38,7 @@ _Avoid_: hunk
 The contiguous run of served hashes between the two boundary anchors' served positions — the served-state reconstruction of the model's view of a range.
 
 **served range**:
-The model-facing word for the `served span` — the span between `remove_from` and `remove_to` as the model saw it. Alias to `served span` for glossary search.
+The model-facing word for the `served span` — the span between `anchor_from` and `anchor_to` as the model saw it. Alias to `served span` for glossary search.
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **served-range staleness**:
@@ -91,39 +91,43 @@ The principle that a tool's name encodes the model's intent — `read` (hashed, 
 _Avoid_: —
 
 **payload contract**:
-The model-facing JSON shape used to state one or more file edits in a single `edit` call: `{ "path": …, "edits": [[remove_from, remove_to, replacement_text], …] }`. The path is hoisted to the payload root (see nullable path), and the `edits` array expresses arity — length 1 is a single edit, longer is a batched edit applied atomically to one file. There is no separate batch tool.
+The model-facing JSON shape used to state one or more file edits in a single `edit` call: `{ "file": …, "edits": [{ "anchor_from": …, "anchor_to": …, "replace_with": … }, …] }`. The file is hoisted to the payload root (see file), and the `edits` array expresses arity — length 1 is a single edit, longer is a batched edit applied atomically to one file. There is no separate batch tool.
 _Avoid_: patch language, command language
 
 **edits**:
-The payload's array of compact JSON tuples; its length is the call's arity. The tool name `edit` covers single and batched edits — intent is expressed by arity, not by a separate tool.
+The payload's array of edit items; its length is the call's arity. The tool name `edit` covers single and batched edits — intent is expressed by arity, not by a separate tool.
 _Avoid_: batch_edit (removed tool)
 
 **inclusive anchor range**:
-A pair of boundary anchors identifying the first and last lines of a model-facing range; both boundaries are included.
+A pair of boundary anchors (`anchor_from`, `anchor_to`) identifying the first and last lines of a model-facing range; both boundaries are included.
 _Avoid_: hunk, region
 
-**nullable path**:
-A top-level `path` position that may be `null` when the tool can resolve a unique target from the anchor range. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file.
-_Avoid_: optional path
+**separator**:
+The `│` character dividing a served row into `HASH│content`. The model copies only the 3 chars before it into `anchor_from`/`anchor_to` and never emits it — in `replace_with`, in anchors, or anywhere in the call.
+_Avoid_: pipe, delimiter
 
-**compact JSON tuple**:
-A fixed three-position JSON array `[remove_from, remove_to, replacement_text]` — one edit item inside the payload's `edits` array, the model-facing unit of mutation. The path is not part of the item; it is hoisted to the payload root.
-_Avoid_: patch language, array shorthand
+**file**:
+The top-level payload field naming the text file to edit — a non-empty string, never a directory. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file. A legacy `null` (anchor-based inference) is still folded in code but untaught.
+_Avoid_: path, optional path
+
+**edit item**:
+A named object `{ "anchor_from": …, "anchor_to": …, "replace_with": … }` — one entry inside the payload's `edits` array, the model-facing unit of mutation. Named fields (not positional tuples) so every provider schema accepts them. The file is not part of the item; it is hoisted to the payload root.
+_Avoid_: patch language, tuple
 
 **served hash echo**:
 A candidate line that begins with the exact `HASH│` anchor served for the same session, canonical path, and line — tool output mistaken for file content. For `write` the check is absolute line `i` vs `served[i]`; for `edit` it is range-relative line `k` vs `served[startLine + k]` (AA: E1). Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
 _Avoid_: hash echo (without served qualification), anchor echo
 
 **E_SERVED_ECHO**:
-Refusal that `content` (for `write`) or `replacement_text` (for `edit`) copied a `served hash echo` — `[E_SERVED_ECHO] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and range-relative line`. Remove the copied anchors and retry. Nothing was written. Deny, not strip — fail-loud, compensable.
+Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_SERVED_ECHO] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and range-relative line`. Remove the copied anchors and retry. Nothing was written. Deny, not strip — fail-loud, compensable.
 _Avoid_: E_HASH_ECHO (ambiguous)
 
 **boundary duplication** (historical — removed):
-Former auto-fix that silently stripped replacement lines duplicating lines outside the range (`trailingDups`/`leadingDups` with byte `===`, and `firstNewAfterDups`/`lastNewBeforeDups` with `canon()`+`sectionIsUnique`). Removed as a fix: the tool is now pure `range = hash_bounds, replacement = replacement_text`. A true duplicate stays loud in the post-edit diff/drift signal for the model to fix next turn; silent removal is irreversible (brace-balance loss). No new error code — the duplicate is preserved verbatim.
+Former auto-fix that silently stripped replacement lines duplicating lines outside the range (`trailingDups`/`leadingDups` with byte `===`, and `firstNewAfterDups`/`lastNewBeforeDups` with `canon()`+`sectionIsUnique`). Removed as a fix: the tool is now pure `range = hash_bounds, replacement = replace_with`. A true duplicate stays loud in the post-edit diff/drift signal for the model to fix next turn; silent removal is irreversible (brace-balance loss). No new error code — the duplicate is preserved verbatim.
 _Avoid_: dedup, autofix, trimming
 
 **pure edit**:
-The invariant that an edit is exactly the resolved range replaced by the exact `replacement_text` with no boundary-dedup rewrite. Verified by `valEdit → verifyServed → resToSpan` with no intermediate splice.
+The invariant that an edit is exactly the resolved range replaced by the exact `replace_with` with no boundary-dedup rewrite. Verified by `valEdit → verifyServed → resToSpan` with no intermediate splice.
 _Avoid_: smart edit, autocorrection
 
 **tombstone**:

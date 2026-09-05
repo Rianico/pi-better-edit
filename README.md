@@ -104,7 +104,7 @@ and returns a diff with fresh anchors, so the next edit verifies cleanly with no
   kQm │ }
 ```
 
-Chained edits stay cheap — anchors for untouched lines remain valid, diff/echo rows count as serves, and `read` becomes on-demand recovery, not a ritual. Try batching: `{"path":"src/main.ts","edits":[["a1b","a1b","new line 1\n"],["c3d","c3d","new line 2"]]}` is atomic — one fails, none write.
+Chained edits stay cheap — anchors for untouched lines remain valid, diff/echo rows count as serves, and `read` becomes on-demand recovery, not a ritual. Try batching: `{"file":"src/main.ts","edits":[{"anchor_from":"a1b","anchor_to":"a1b","replace_with":"new line 1\n"},{"anchor_from":"c3d","anchor_to":"c3d","replace_with":"new line 2"}]}` is atomic — one fails, none write.
 
 > [!TIP]
 > **Want proof before you install?** Run `npm run eval` — 23/23 correctness, no LLM. Stale edits are rejected before they corrupt a file, on every run. Then `pi install npm:pi-better-edit` and watch the `read` → `edit` → diff loop stay verified.
@@ -168,11 +168,11 @@ Both engines preserved the external change and produced the expected final file 
 | ------ | -------------- |
 | `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
 | `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_UNSERVED_RANGE]` serve on the first edit. |
-| `edit` | An object-root payload `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], …] }`; the path may be `null` for anchor-based inference. A single item edits one range; several items batch same-file edits atomically (up to 32). Verifies every line of each inclusive range and reject-and-serve returns fresh anchors. |
+| `edit` | An object-root payload `{ "file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, …] }`; `file` names the text file (never a directory). A single item edits one range; several items batch same-file edits atomically (up to 32). Verifies every line of each inclusive range and reject-and-serve returns fresh anchors. |
 | `undo_last_edit` | `{ path }` restores the most recent successful edit with its original content, BOM, line endings, and anchors; persisted across restarts. |
 
-`edit` accepts `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], …] }`. The path
-position is a non-empty string or `null` for unique anchor-based inference. Each range is inclusive,
+`edit` accepts `{ "file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, …] }`. `file`
+is a non-empty string naming the text file to edit (never a directory). Each range is inclusive,
 and an empty replacement deletes the range. All items are checked before file I/O and applied
 atomically to that one file — one item per call is the norm, several same-file items batch in one call.
 
@@ -180,11 +180,11 @@ atomically to that one file — one item per call is the norm, several same-file
 
 | Code | Meaning |
 | --- | --- |
-| `[E_BAD_PAYLOAD]` | The payload is not the fixed tuple shape, or a tuple member has an unknown, missing, or wrongly-typed value. |
-| `[E_BAD_ANCHOR]` | An anchor is not a bare 3-char hash, or `replacement_text` contains a `HASH│` / diff-preview prefix (`+HASH│`, `-HASH│`). The edit is refused with `[E_BAD_ANCHOR]`; remove the prefix and retry. |
-| `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file (hash/tombstone/canon miss); call `read` for fresh anchors. |
-| `[E_SERVED_ECHO]` | A `replacement_text` or `write` `content` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; remove the copied anchors and retry. Nothing was written. |
-| `[E_REVERSED_ANCHORS]` | Range start line is after range end line. The `edit` is refused; if `remove_from`/`remove_to` were reversed, the healed warning `[USER] [E_REVERSED_ANCHORS] swapped (healed)` is returned dimmed on success, otherwise `[MODEL] [E_REVERSED_ANCHORS] Range start …` throws. |
+| `[E_BAD_PAYLOAD]` | The payload is not `{ "file": file, "edits": [{ "anchor_from", "anchor_to", "replace_with" }, …] }`, or a member has an unknown, missing, or wrongly-typed value. |
+| `[E_BAD_ANCHOR]` | An anchor is not a bare 3-char hash, or `replace_with` contains a `HASH│` / diff-preview prefix (`+HASH│`, `-HASH│`). The edit is refused with `[E_BAD_ANCHOR]`; remove the prefix and retry. |
+| `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; re-read the file and copy the fresh 3-char anchors (the 3 chars before `│`). |
+| `[E_SERVED_ECHO]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; remove the copied anchors and retry. Nothing was written. |
+| `[E_REVERSED_ANCHORS]` | Range start line is after range end line. The `edit` is refused (`[MODEL]`, nothing written — swap `anchor_from`/`anchor_to` and retry), unless the tool heals it: `[USER] [E_REVERSED_ANCHORS] … healed and applied with the range swapped` is returned dimmed on success. |
 | `[E_EMPTY_RANGE]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |
 | `[E_ACCESS]` | The path is not readable or writable. |

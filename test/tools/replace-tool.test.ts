@@ -10,15 +10,16 @@ import {
 const home = useTestHome();
 
 describe("editToolSchema", () => {
-	it("has the object-root { path, edits } shape", () => {
+	it("has the object-root { file, edits } shape", () => {
 		const schema = editToolSchema as any;
 		expect(schema.type).toBe("object");
-		expect(schema.properties.path.anyOf).toBeDefined();
+		expect(schema.properties.file.type).toBe("string");
+		expect(schema.properties.file.minLength).toBe(1);
 		expect(schema.properties.edits.type).toBe("array");
-		expect(schema.properties.edits.items.type).toBe("array");
-		expect(schema.properties.edits.items.items).toHaveLength(3);
-		expect(schema.properties.edits.items.items[0].type).toBe("string");
-		expect(schema.properties.edits.items.items[1].type).toBe("string");
+		expect(schema.properties.edits.items.type).toBe("object");
+		expect(schema.properties.edits.items.properties.anchor_from.type).toBe("string");
+		expect(schema.properties.edits.items.properties.anchor_to.type).toBe("string");
+		expect(schema.properties.edits.items.properties.replace_with.type).toBe("string");
 	});
 });
 
@@ -196,9 +197,9 @@ describe("regEdit", () => {
 					"e1",
 					{
 						path: "sample.txt",
-						remove_from: hashes[1]!,
-						remove_to: hashes[1]!,
-						replacement_text: "BBB",
+						anchor_from: hashes[1]!,
+						anchor_to: hashes[1]!,
+						replace_with: "BBB",
 						unknown_field: "bad",
 					} as any,
 					undefined,

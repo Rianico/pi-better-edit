@@ -23,7 +23,7 @@ export type RRState = {
 
 export function getPreviewInput(
 	args: unknown,
-): { path: string | null; edits: EditItem[] } | null {
+): { file: string | null; edits: EditItem[] } | null {
 	return contractPreviewInput(args);
 }
 
@@ -61,12 +61,12 @@ export function fmtResult(diff: string, theme: FgT): string {
 }
 
 export function fmtCall(
-	args: { path: string | null; edits: EditItem[] } | null,
+	args: { file: string | null; edits: EditItem[] } | null,
 	state: RRState,
 	expanded: boolean,
 	theme: CallT,
 ): string {
-	const path = args?.path;
+	const path = args?.file;
 	const pathDisplay =
 		typeof path === "string" && path.length > 0
 			? theme.fg("accent", path)

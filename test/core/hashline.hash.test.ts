@@ -91,7 +91,7 @@ describe("perfect hashing", () => {
 		}
 		expect(caught).toBeDefined();
 		expect(caught!.message).toMatch(/E_STALE_ANCHOR/);
-		expect(caught!.message).toContain("Re-read for fresh anchors");
+		expect(caught!.message).toContain("Re-read the full file and copy the fresh 3-char anchors");
 	});
 
 	it("rejects an ambiguous hash with [E_STALE_ANCHOR] (synthetic collision)", async () => {

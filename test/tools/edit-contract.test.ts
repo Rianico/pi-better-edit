@@ -1,67 +1,106 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { Compile } from "typebox/compile";
-import { editToolSchema, assertReq, buildToolDef } from "../../src/edit";
+import { editToolSchema, assertReq, buildToolDef, resolveMissingPath } from "../../src/edit";
 import { normReq } from "../../src/edit-normalize";
 import { lineHashes } from "../../src/hashline";
 import { setupIntegrationTest, withTempFile } from "../support/fixtures";
 
 describe("edit payload contract", () => {
-	it("registers the object-root { path, edits } payload", () => {
+	it("registers the object-root { file, edits } payload", () => {
 		const validator = Compile(editToolSchema);
 		expect(
-			validator.Check({ path: "sample.ts", edits: [["aB3", "cD4", "new"]] }),
-		).toBe(true);
-		expect(
-			validator.Check({ path: null, edits: [["aB3", "cD4", "new"]] }),
+			validator.Check({
+				file: "sample.ts",
+				edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+			}),
 		).toBe(true);
 		expect(
 			validator.Check({
-				path: "sample.ts",
+				file: "sample.ts",
 				edits: [
-					["aB3", "cD4", "x"],
-					["qWe", "rTy", ""],
+					{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" },
+					{ anchor_from: "qWe", anchor_to: "rTy", replace_with: "" },
 				],
 			}),
 		).toBe(true);
-		expect(validator.Check({ path: "sample.ts", remove_from: "aB3" })).toBe(
-			false,
-		);
+		expect(
+			validator.Check({
+				file: null,
+				edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+			}),
+		).toBe(false);
+		expect(
+			validator.Check({ file: "sample.ts", edits: [["aB3", "cD4", "new"]] }),
+		).toBe(false);
+		expect(
+			validator.Check({ file: "sample.ts", anchor_from: "aB3" }),
+		).toBe(false);
 		expect(validator.Check(["sample.ts", ["aB3", "cD4"], "new"])).toBe(false);
-		expect(validator.Check({ path: "", edits: [["aB3", "cD4", "new"]] })).toBe(
-			false,
-		);
-		expect(validator.Check({ path: "sample.ts", edits: [] })).toBe(false);
-		expect(validator.Check({ edit: ["sample.ts", ["aB3", "cD4"], "new"] })).toBe(
-			false,
-		);
+		expect(
+			validator.Check({
+				file: "",
+				edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+			}),
+		).toBe(false);
+		expect(
+			validator.Check({
+				file: "sample.ts",
+				edits: [],
+			}),
+		).toBe(false);
+		expect(
+			validator.Check({
+				file: "sample.ts",
+				edits: [
+					{ remove_from: "aB3", remove_to: "cD4", replacement_text: "new" },
+				],
+			}),
+		).toBe(false);
 	});
 
-	it("normalizes only valid { path, edits } structure and rejects old shapes", () => {
+	it("normalizes modern { file, edits } objects and folds legacy shapes", () => {
 		const normalized = normReq({
-			path: "sample.ts",
-			edits: [["aB3", "cD4", "new"]],
+			file: "sample.ts",
+			edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
 		});
 		expect(normalized).toMatchObject({
-			path: "sample.ts",
+			file: "sample.ts",
 			edits: [
 				{
-					remove_from: "aB3",
-					remove_to: "cD4",
-					replacement_text: "new",
+					anchor_from: "aB3",
+					anchor_to: "cD4",
+					replace_with: "new",
 				},
 			],
 		});
 		expect(() => assertReq(normalized)).not.toThrow();
+		// legacy tuple items fold to objects
+		expect(
+			normReq({ file: "sample.ts", edits: [["aB3", "cD4", "new"]] }),
+		).toMatchObject({
+			file: "sample.ts",
+			edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+		});
+		// legacy root key and legacy item keys fold
+		expect(
+			normReq({
+				path: "sample.ts",
+				edits: [{ remove_from: "aB3", remove_to: "cD4", replacement_text: "new" }],
+			}),
+		).toMatchObject({
+			file: "sample.ts",
+			edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+		});
 		expect(() => assertReq(["sample.ts", ["aB3", "cD4"], "new"])).toThrow(
 			"exactly",
 		);
 		expect(() =>
 			assertReq({
-				path: "sample.ts",
-				remove_from: "aB3",
-				remove_to: "cD4",
-				replacement_text: "new",
+				file: "sample.ts",
+				anchor_from: "aB3",
+				anchor_to: "cD4",
+				replace_with: "new",
 			}),
 		).toThrow("exactly");
 	});
@@ -72,7 +111,7 @@ describe("edit payload contract", () => {
 			await expect(
 				tool.execute(
 					"e1",
-					{ path: "sample.ts", edits: [["bad"]] } as any,
+					{ file: "sample.ts", edits: [{ anchor_from: "bad" }] } as any,
 					undefined,
 					undefined,
 					{ cwd } as any,
@@ -82,7 +121,7 @@ describe("edit payload contract", () => {
 		});
 	});
 
-	it("uses null path for existing anchor-based inference", async () => {
+	it("requires file on the tool surface; legacy inference lives in resolveMissingPath", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await lineHashes("aaa\nbbb\n", path);
@@ -93,18 +132,26 @@ describe("edit payload contract", () => {
 				undefined,
 				ctx,
 			);
-			const result = await editTool.execute(
-				"e1",
-				{
-					path: null,
-					edits: [[hashes[0]!, hashes[0]!, "AAA"]],
-				},
-				undefined,
-				undefined,
-				ctx,
-			);
-			expect(result.content[0].text).toContain("Successfully edited");
-			expect(await readFile(path, "utf8")).toBe("AAA\nbbb\n");
+			// null file is rejected by the public schema: pass the file
+			await expect(
+				editTool.execute(
+					"e1",
+					{
+						file: null,
+						edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
+					},
+					undefined,
+					undefined,
+					ctx,
+				),
+			).rejects.toThrow("E_BAD_PAYLOAD");
+			// legacy anchor inference still resolves internally when only one file matches
+			const resolution = await resolveMissingPath({
+				anchor_from: hashes[0]!,
+				anchor_to: hashes[0]!,
+			});
+			expect(resolution?.file.endsWith("sample.ts")).toBe(true);
+			expect(await readFile(path, "utf8")).toBe("aaa\nbbb\n");
 		});
 	});
 });

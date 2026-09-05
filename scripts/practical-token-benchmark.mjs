@@ -46,7 +46,7 @@ const expected = `export function buildConfig() {
 const prompt = (readTool, patchTool) => {
 	const application =
 		patchTool === "edit"
-			? `Call edit once with { "path": "scenario.ts", "edits": [...] }. Use one tuple for each requested line change.`
+			? `Call edit once with { "file": "scenario.ts", "edits": [...] }. Use one { anchor_from, anchor_to, replace_with } object for each requested line change.`
 			: `Call omp_patch once with one patch document for the requested changes.`;
 	return `You are running a practical file-edit benchmark using ${patchTool}.
 

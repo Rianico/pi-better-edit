@@ -10,7 +10,7 @@ describe("payload-contract file_path deprecation", () => {
 	it("editRequestFrom accepts file_path alias and warns", () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const result = editRequestFrom({ file_path: "sample.ts", edits: [["AAA", "BBB", "x"]] });
-		expect(result).toEqual({ path: "sample.ts", edits: [{ remove_from: "AAA", remove_to: "BBB", replacement_text: "x" }] });
+		expect(result).toEqual({ file: "sample.ts", edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }] });
 		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("file_path"));
 		expect(warnSpy).toHaveBeenCalledWith(expect.stringContaining("DEPRECATED"));
 		warnSpy.mockRestore();
@@ -18,8 +18,8 @@ describe("payload-contract file_path deprecation", () => {
 
 	it("editRequestFrom prefers path over file_path but still warns", () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
-		const result = editRequestFrom({ path: "real.ts", file_path: "alias.ts", edits: [["AAA", "BBB", "x"]] });
-		expect(result?.path).toBe("real.ts");
+		const result = editRequestFrom({ file: "real.ts", file_path: "alias.ts", edits: [["AAA", "BBB", "x"]] });
+		expect(result?.file).toBe("real.ts");
 		expect(warnSpy).toHaveBeenCalled();
 		warnSpy.mockRestore();
 	});
@@ -27,7 +27,7 @@ describe("payload-contract file_path deprecation", () => {
 	it("prepareEditArguments handles file_path alias and warns", () => {
 		const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 		const result = prepareEditArguments({ file_path: "sample.ts", edits: [["AAA", "BBB", "x"]] });
-		expect(result.path).toBe("sample.ts");
+		expect(result.file).toBe("sample.ts");
 		expect(warnSpy).toHaveBeenCalled();
 		warnSpy.mockRestore();
 	});
@@ -38,8 +38,8 @@ describe("payload-contract file_path deprecation", () => {
 		const previewViaRender = renderPreviewInput({ file_path: "sample.ts", edits: [["AAA", "BBB", "x"]] });
 		expect(previewViaContract).not.toBeNull();
 		expect(previewViaRender).not.toBeNull();
-		expect(previewViaContract?.path).toBe("sample.ts");
-		expect(previewViaRender?.path).toBe("sample.ts");
+		expect(previewViaContract?.file).toBe("sample.ts");
+		expect(previewViaRender?.file).toBe("sample.ts");
 		expect(previewViaContract).toEqual(previewViaRender);
 		expect(warnSpy).toHaveBeenCalled();
 		warnSpy.mockRestore();
@@ -101,7 +101,7 @@ describe("edit tool file_path integration", () => {
 			const warnSpy = vi.spyOn(console, "warn").mockImplementation(() => {});
 			const previewInput = getPreviewInput({ file_path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "AAA"]] } as any);
 			expect(previewInput).not.toBeNull();
-			expect(previewInput?.path).toBe("sample.ts");
+			expect(previewInput?.file).toBe("sample.ts");
 			expect(warnSpy).toHaveBeenCalled();
 			warnSpy.mockRestore();
 		});

@@ -294,12 +294,12 @@ describe("write then edit — same-session drift-free (#70)", () => {
 			expect(served).not.toContain("zz5");
 			const file = await execEdits(
 				{
-					path: "w.txt",
+					file: "w.txt",
 					edits: [
 						{
-							remove_from: served[0]!,
-							remove_to: served[0]!,
-							replacement_text: "A\n",
+							anchor_from: served[0]!,
+							anchor_to: served[0]!,
+							replace_with: "A\n",
 						},
 					],
 				},
@@ -375,12 +375,12 @@ describe("rejected edits — pre-load failures write zero serves (#69)", () => {
 			await expect(
 				execEdits(
 					{
-						path: "nope.txt",
+						file: "nope.txt",
 						edits: [
 							{
-								remove_from: "findActivatingFile,",
-								remove_to: "x",
-								replacement_text: "y",
+								anchor_from: "findActivatingFile,",
+								anchor_to: "x",
+								replace_with: "y",
 							},
 						],
 					} as unknown as NormalizedEditRequest,
@@ -434,12 +434,12 @@ describe("sequential edits — rotated serves with surviving canons stay silent 
 			});
 			const first = await execEdits(
 				{
-					path: "dup.ts",
+					file: "dup.ts",
 					edits: [
 						{
-							remove_from: seed.fileHashes[0]!,
-							remove_to: seed.fileHashes[0]!,
-							replacement_text: `${startLines[0]}\n${Array(10).fill(dup).join("\n")}`,
+							anchor_from: seed.fileHashes[0]!,
+							anchor_to: seed.fileHashes[0]!,
+							replace_with: `${startLines[0]}\n${Array(10).fill(dup).join("\n")}`,
 						},
 					],
 				},
@@ -451,12 +451,12 @@ describe("sequential edits — rotated serves with surviving canons stay silent 
 			await expect(
 				execEdits(
 					{
-						path: "dup.ts",
+						file: "dup.ts",
 						edits: [
 							{
-								remove_from: "findActivatingFile,",
-								remove_to: "x",
-								replacement_text: "y",
+								anchor_from: "findActivatingFile,",
+								anchor_to: "x",
+								replace_with: "y",
 							},
 						],
 					},
@@ -503,12 +503,12 @@ describe("sequential edits — rotated serves with surviving canons stay silent 
 			expect(rotated).not.toContain(targetPos);
 			const second = await execEdits(
 				{
-					path: "dup.ts",
+					file: "dup.ts",
 					edits: [
 						{
-							remove_from: afterFirst[targetPos]!,
-							remove_to: afterFirst[targetPos]!,
-							replacement_text: "const d = 40;",
+							anchor_from: afterFirst[targetPos]!,
+							anchor_to: afterFirst[targetPos]!,
+							replace_with: "const d = 40;",
 						},
 					],
 				},

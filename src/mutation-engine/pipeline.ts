@@ -327,7 +327,7 @@ async function applyOneEdit(
 
 	if (!input.hashes || input.hashes.length === 0)
 		throw new Error(
-			"[MODEL] [E_STALE_ANCHOR] missing previous hashes for stable anchoring",
+			"[MODEL] [E_STALE_ANCHOR] missing previous hashes for stable anchoring. Re-read the full file and copy fresh 3-char anchors (before │), then retry.",
 		);
 	const removedHashes = collectRemovedHashes(input.edit, input.hashes);
 	const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
@@ -365,9 +365,9 @@ function parseEdits(
 			parsed.push(
 				resEdit(
 					{
-						remove_from: item.remove_from,
-						remove_to: item.remove_to,
-						replacement_text: item.replacement_text,
+						anchor_from: item.anchor_from,
+						anchor_to: item.anchor_to,
+						replace_with: item.replace_with,
 					},
 					warnings,
 				),
@@ -387,12 +387,12 @@ async function runMutations(
 	cwd: string,
 	options?: PipelineOptions,
 ): Promise<ProcessedEditFile> {
-	if (request.path === null) {
+	if (request.file === null) {
 		throw new Error(
-			"[MODEL] [E_BAD_PAYLOAD] Edit request path could not be inferred from anchors.",
+			"[MODEL] [E_BAD_PAYLOAD] Edit request file could not be inferred from anchors.",
 		);
 	}
-	const path = request.path;
+	const path = request.file;
 	const items = request.edits;
 	const hashStore = options?.store ?? (await loadHashStore());
 	const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
@@ -505,9 +505,9 @@ async function runMutations(
 			}
 			const decision = await runNoopPolicy({
 				absolutePath,
-				removeFrom: item.remove_from,
-				removeTo: item.remove_to,
-				replacementText: item.replacement_text,
+				removeFrom: item.anchor_from,
+				removeTo: item.anchor_to,
+				replacementText: item.replace_with,
 				ref: `edit[${index}] (${path})`,
 				batch: true,
 				range,
@@ -671,10 +671,10 @@ export async function apply(
 		};
 	}
 
-	const path = request.path;
+	const path = request.file;
 	if (path === null) {
 		throw new Error(
-			"[MODEL] [E_BAD_PAYLOAD] Edit request path could not be inferred from anchors.",
+			"[MODEL] [E_BAD_PAYLOAD] Edit request file could not be inferred from anchors.",
 		);
 	}
 	const absolutePath = toCwd(path, cwd);

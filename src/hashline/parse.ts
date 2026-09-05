@@ -25,10 +25,10 @@ function diagRef(ref: string): string {
 		const firstHash = firstMatch?.[0] ?? "wUp";
 		const lastHash = lastMatch?.[0] ?? "AU6";
 		const preview = first.slice(0, 60);
-		return `[MODEL] [E_BAD_ANCHOR] Invalid anchor — remove_from must be a single bare 3-char hash (e.g. "wUp"), not a block with HASH│. Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as remove_from and "${lastHash}" as remove_to, and put the new content (without HASH│) in replacement_text.`;
+		return `[MODEL] [E_BAD_ANCHOR] Invalid anchor — anchor_from must be a single bare 3-char hash (e.g. "wUp"), not a block with HASH│. Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as anchor_from and "${lastHash}" as anchor_to, and put the new content (without HASH│) in replace_with. Nothing was written.`;
 	}
 	if (trimmed.includes("│")) {
-		return `[MODEL] [E_BAD_ANCHOR] Invalid anchor "${trimmed}". remove_from and remove_to must contain the 3-char hash only — remove everything from "│" onward.`;
+		return `[MODEL] [E_BAD_ANCHOR] Invalid anchor "${trimmed}". anchor_from and anchor_to must contain the 3-char hash only — remove everything from "│" onward. Nothing was written.`;
 	}
 
 	return `[MODEL] [E_BAD_ANCHOR] Invalid anchor "${trimmed}". Expected a 3-char alphanumeric anchor (e.g. "aB3").`;

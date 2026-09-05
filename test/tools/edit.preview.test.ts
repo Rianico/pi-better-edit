@@ -627,12 +627,12 @@ describe("renderResult", () => {
 			content: [
 				{
 					type: "text",
-					text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_REVERSED_ANCHORS] reversed remove_from/remove_to; swapped.",
+					text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped.",
 				},
 			],
 			details: {
 				diff: "+aB3│BBB",
-				warnings: ["[E_REVERSED_ANCHORS] reversed remove_from/remove_to; swapped."],
+				warnings: ["[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped."],
 				metrics: {
 					classification: "applied",
 					added_lines: 1,
@@ -648,7 +648,7 @@ describe("renderResult", () => {
 		) as Text;
 		const text = (component as any).text as string;
 		expect(text).toContain("+aB3│BBB");
-		expect(text).toContain("[E_REVERSED_ANCHORS] reversed remove_from/remove_to; swapped.");
+		expect(text).toContain("[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped.");
 	});
 
 	it("returns an empty component when there is nothing to render", () => {

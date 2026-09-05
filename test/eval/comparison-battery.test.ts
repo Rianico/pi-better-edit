@@ -145,9 +145,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b1.ts",
-					remove_from: anchor,
-					remove_to: anchor,
-					replacement_text: "BBB",
+					anchor_from: anchor,
+					anchor_to: anchor,
+					replace_with: "BBB",
 				},
 				ctx,
 			);
@@ -182,9 +182,9 @@ describeGate("EVAL comparison battery", () => {
 					target.toolNames.edit,
 					{
 						path: "b2.ts",
-						remove_from: a,
-						remove_to: b,
-						replacement_text: "X\nY",
+						anchor_from: a,
+						anchor_to: b,
+						replace_with: "X\nY",
 					},
 					ctx,
 				);
@@ -221,9 +221,9 @@ describeGate("EVAL comparison battery", () => {
 					target.toolNames.edit,
 					{
 						path: "b3.ts",
-						remove_from: a,
-						remove_to: b,
-						replacement_text: "X\nY\nZ",
+						anchor_from: a,
+						anchor_to: b,
+						replace_with: "X\nY\nZ",
 					},
 					ctx,
 				);
@@ -261,9 +261,9 @@ describeGate("EVAL comparison battery", () => {
 					target.toolNames.edit,
 					{
 						path: "b4.ts",
-						remove_from: a,
-						remove_to: b,
-						replacement_text: "X\nY",
+						anchor_from: a,
+						anchor_to: b,
+						replace_with: "X\nY",
 					},
 					ctx,
 				);
@@ -297,9 +297,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b5.ts",
-					remove_from: a,
-					remove_to: b,
-					replacement_text: "X\nY",
+					anchor_from: a,
+					anchor_to: b,
+					replace_with: "X\nY",
 				},
 				ctx,
 			);
@@ -334,9 +334,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b6.ts",
-					remove_from: a,
-					remove_to: b,
-					replacement_text: "X\nY",
+					anchor_from: a,
+					anchor_to: b,
+					replace_with: "X\nY",
 				},
 				ctx,
 			);
@@ -379,9 +379,9 @@ describeGate("EVAL comparison battery", () => {
 					target.toolNames.edit,
 					{
 						path: "b7.ts",
-						remove_from: a,
-						remove_to: b,
-						replacement_text: "X\nY\nZ\nW\nV",
+						anchor_from: a,
+						anchor_to: b,
+						replace_with: "X\nY\nZ\nW\nV",
 					},
 					ctx,
 				);
@@ -410,9 +410,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b8.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "BBB",
+					anchor_from: hashes[1]!,
+					anchor_to: hashes[1]!,
+					replace_with: "BBB",
 				},
 				ctx,
 			);
@@ -443,7 +443,7 @@ describeGate("EVAL comparison battery", () => {
 				rec,
 				getTool(target.toolNames.edit),
 				target.toolNames.edit,
-				{ path: "b9.ts", remove_from: a, remove_to: a, replacement_text: "X" },
+				{ path: "b9.ts", anchor_from: a, anchor_to: a, replace_with: "X" },
 				ctx,
 			);
 			rec.outcome = e1.ok ? "success" : "rejected";
@@ -476,9 +476,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b10.ts",
-					remove_from: a,
-					remove_to: b,
-					replacement_text: "X\nY\nZ\nW",
+					anchor_from: a,
+					anchor_to: b,
+					replace_with: "X\nY\nZ\nW",
 				},
 				ctx,
 			);
@@ -510,9 +510,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b11.ts",
-					remove_from: a,
-					remove_to: a,
-					replacement_text: "bbb",
+					anchor_from: a,
+					anchor_to: a,
+					replace_with: "bbb",
 				},
 				ctx,
 			);
@@ -546,7 +546,7 @@ describeGate("EVAL comparison battery", () => {
 				rec,
 				getTool(target.toolNames.edit),
 				target.toolNames.edit,
-				{ path: "b12.ts", remove_from: a, remove_to: a, replacement_text: "a" },
+				{ path: "b12.ts", anchor_from: a, anchor_to: a, replace_with: "a" },
 				ctx,
 			);
 			rec.outcome = e1.ok
@@ -578,7 +578,7 @@ describeGate("EVAL comparison battery", () => {
 				rec,
 				getTool(target.toolNames.edit),
 				target.toolNames.edit,
-				{ path: "b13.ts", remove_from: a, remove_to: a, replacement_text: "B" },
+				{ path: "b13.ts", anchor_from: a, anchor_to: a, replace_with: "B" },
 				ctx,
 			);
 			const diff = await deliverDiff(handlers, ctx, {
@@ -599,9 +599,9 @@ describeGate("EVAL comparison battery", () => {
 					target.toolNames.edit,
 					{
 						path: "b13.ts",
-						remove_from: plusHash,
-						remove_to: plusHash,
-						replacement_text: "B2",
+						anchor_from: plusHash,
+						anchor_to: plusHash,
+						replace_with: "B2",
 					},
 					ctx,
 				);
@@ -639,9 +639,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b14.ts",
-					remove_from: emptyHash,
-					remove_to: emptyHash,
-					replacement_text: "first\nsecond",
+					anchor_from: emptyHash,
+					anchor_to: emptyHash,
+					replace_with: "first\nsecond",
 				},
 				ctx,
 			);
@@ -684,9 +684,9 @@ describeGate("EVAL comparison battery", () => {
 					target.toolNames.edit,
 					{
 						path: "b15.ts",
-						remove_from: a,
-						remove_to: b,
-						replacement_text: "replacement",
+						anchor_from: a,
+						anchor_to: b,
+						replace_with: "replacement",
 					},
 					ctx,
 				);
@@ -719,9 +719,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b16.ts",
-					remove_from: a,
-					remove_to: a,
-					replacement_text: "BBB",
+					anchor_from: a,
+					anchor_to: a,
+					replace_with: "BBB",
 				},
 				ctx,
 			);
@@ -760,9 +760,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b16b.ts",
-					remove_from: a,
-					remove_to: a,
-					replacement_text: "BBB",
+					anchor_from: a,
+					anchor_to: a,
+					replace_with: "BBB",
 				},
 				ctx,
 			);
@@ -803,9 +803,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b17.ts",
-					remove_from: b,
-					remove_to: a,
-					replacement_text: "X\nY",
+					anchor_from: b,
+					anchor_to: a,
+					replace_with: "X\nY",
 				},
 				ctx,
 			);
@@ -837,9 +837,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b18.ts",
-					remove_from: a,
-					remove_to: a,
-					replacement_text: "a\nX",
+					anchor_from: a,
+					anchor_to: a,
+					replace_with: "a\nX",
 				},
 				ctx,
 			);
@@ -874,9 +874,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b19.ts",
-					remove_from: a,
-					remove_to: a,
-					replacement_text: "BBB",
+					anchor_from: a,
+					anchor_to: a,
+					replace_with: "BBB",
 				},
 				mainCtx,
 			);
@@ -919,9 +919,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b20.ts",
-					remove_from: sB,
-					remove_to: sB,
-					replacement_text: "B",
+					anchor_from: sB,
+					anchor_to: sB,
+					replace_with: "B",
 				},
 				subCtx,
 			);
@@ -940,9 +940,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b20.ts",
-					remove_from: aC,
-					remove_to: aC,
-					replacement_text: "C",
+					anchor_from: aC,
+					anchor_to: aC,
+					replace_with: "C",
 				},
 				mainCtx,
 			);
@@ -977,9 +977,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b21.ts",
-					remove_from: a,
-					remove_to: a,
-					replacement_text: "BBB",
+					anchor_from: a,
+					anchor_to: a,
+					replace_with: "BBB",
 				},
 				mainCtx,
 			);
@@ -1013,9 +1013,9 @@ describeGate("EVAL comparison battery", () => {
 				target.toolNames.edit,
 				{
 					path: "b22.ts",
-					remove_from: hashes[1]!,
-					remove_to: hashes[1]!,
-					replacement_text: "B",
+					anchor_from: hashes[1]!,
+					anchor_to: hashes[1]!,
+					replace_with: "B",
 				},
 				mainCtx,
 			);

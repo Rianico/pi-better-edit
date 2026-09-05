@@ -386,7 +386,7 @@ describe("edit diff in model-visible text", () => {
 			const handler = handlers.get("tool_result");
 			const diff = " aaa\n-   │bbb\n+XYZ│BBB\n ccc";
 			const summary =
-				'Successfully edited in warn.txt. Added 1 line(s), removed 1 line(s).\n\nWarnings:\n[E_BAD_ANCHOR] stripped "HASH│" prefix from replacement_text line 1.';
+				'Successfully edited in warn.txt. Added 1 line(s), removed 1 line(s).\n\nWarnings:\n[E_BAD_ANCHOR] stripped "HASH│" prefix from replace_with line 1.';
 
 			const result = await handler!(
 				{
@@ -397,7 +397,7 @@ describe("edit diff in model-visible text", () => {
 						diff,
 						metrics: { classification: "applied" },
 						warnings: [
-							'[E_BAD_ANCHOR] stripped "HASH│" prefix from replacement_text line 1.',
+							'[E_BAD_ANCHOR] stripped "HASH│" prefix from replace_with line 1.',
 						],
 					},
 					content: [{ type: "text", text: summary }],

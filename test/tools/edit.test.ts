@@ -34,7 +34,7 @@ describe("regEdit", () => {
 		});
 	});
 
-	it("accepts multi-line replacement_text with \\n separators", async () => {
+	it("accepts multi-line replace_with with \\n separators", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await lineHashes("aaa\nbbb\n", home.testPath);
@@ -88,7 +88,7 @@ describe("regEdit", () => {
 		});
 	});
 
-	it("refuses served hash echo in replacement_text with E_SERVED_ECHO (deny, not strip)", async () => {
+	it("refuses served hash echo in replace_with with E_SERVED_ECHO (deny, not strip)", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -161,7 +161,7 @@ describe("regEdit", () => {
 		});
 	});
 
-	it("autocorrects reversed remove_from/remove_to with correct line counts", async () => {
+	it("autocorrects reversed anchor_from/anchor_to with correct line counts", async () => {
 		await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
 			const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 			const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", home.testPath);
@@ -186,13 +186,13 @@ describe("regEdit", () => {
 			);
 			expect(result.content[0].text).toContain("[E_REVERSED_ANCHORS]");
 			expect(result.content[0].text).toContain(
-				"reversed remove_from/remove_to",
+				"were reversed",
 			);
 			expect(result.details?.diff).toContain("X");
 		});
 	});
 
-	it("autocorrects HASH│ rows in remove_from/remove_to with a warning", async () => {
+	it("autocorrects HASH│ rows in anchor_from/anchor_to with a warning", async () => {
 		await withTempFile(
 			"sample.ts",
 			"aaa\nbbb\nccc\n",
