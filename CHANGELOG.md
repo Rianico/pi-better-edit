@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 - **drift:** report canon deficit instead of hash rotation
+- **served:** epoch lifecycle belongs to full reads
 
 ### Documentation
 

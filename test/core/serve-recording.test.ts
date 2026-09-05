@@ -7,7 +7,13 @@ import {
 	createSessionHandle,
 	getServed,
 	upsertServed,
+	getReported,
+	addReported,
+	loadTombstone,
+	loadEpochId,
 } from "../../src/served-session/index.js";
+import { execEdits } from "../../src/mutation-engine/pipeline.js";
+import type { NormalizedEditRequest } from "../../src/payload-contract.js";
 import {
 	planServeRecording,
 	recordDiffServes,
@@ -16,7 +22,6 @@ import {
 import { computeDrift, scanDrift } from "../../src/drift";
 import { initHasher } from "../../src/hashline";
 import { getWritableTempRoot } from "../support/fixtures";
-import { execEdits } from "../../src/mutation-engine/pipeline.js";
 import { canon } from "../../src/hashline/hash-identity.js";
 import { readNormFile } from "../../src/file-reader.js";
 
@@ -252,6 +257,88 @@ describe("scanDrift — truncation after an external shrink (issue #27)", () => 
 				.filter((i) => i >= 0);
 			expect(fffPositions.length).toBeLessThanOrEqual(1);
 			expect(gggPositions.length).toBeLessThanOrEqual(1);
+		});
+	});
+});
+
+describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
+	it("partial merges window rows without touching snapshotId, tombstone, or reported", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			const path = join(home, "f.txt");
+			const handle = createSessionHandle("s1", path, store);
+			await handle.record([
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+				{ position: 2, hash: "ccc" },
+			]);
+			addReported(store, "s1", path, ["bbb"]);
+			await handle.retire(["zzz"]);
+			await handle.recordEpoch({
+				rows: [{ position: 1, hash: "BBB" }],
+				lineCount: 3,
+				fullReadHashes: ["aaa", "BBB", "ccc"],
+				fullReadCanons: ["a", "b", "c"],
+				snapshotId: "snap-partial",
+				isFullRead: false,
+			});
+			expect(getServed(store, "s1", path)).toEqual(["aaa", "BBB", "ccc"]);
+			expect(await loadEpochId("s1", path)).toBeUndefined();
+			expect(getReported(store, "s1", path)).toEqual(new Set(["bbb"]));
+			expect([...(await loadTombstone("s1", path))]).toContain("zzz");
+		});
+	});
+
+	it("full stores snapshotId and clears tombstone", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			const path = join(home, "f.txt");
+			const handle = createSessionHandle("s1", path, store);
+			await handle.record([
+				{ position: 0, hash: "aaa" },
+				{ position: 1, hash: "bbb" },
+			]);
+			await handle.retire(["zzz"]);
+			await handle.recordEpoch({
+				rows: [
+					{ position: 0, hash: "aaa" },
+					{ position: 1, hash: "bbb" },
+				],
+				lineCount: 2,
+				fullReadHashes: ["aaa", "bbb"],
+				fullReadCanons: ["a", "b"],
+				snapshotId: "snap-full",
+				isFullRead: true,
+			});
+			expect(await loadEpochId("s1", path)).toBe("snap-full");
+			expect([...(await loadTombstone("s1", path))]).toEqual([]);
+		});
+	});
+});
+
+describe("rejected edits — pre-load failures write zero serves (#69)", () => {
+	it("malformed anchors throw before any serve write", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			const absPath = join(home, "nope.txt");
+			await expect(
+				execEdits(
+					{
+						path: "nope.txt",
+						edits: [
+							{
+								remove_from: "findActivatingFile,",
+								remove_to: "x",
+								replacement_text: "y",
+							},
+						],
+					} as unknown as NormalizedEditRequest,
+					home,
+					{ store, sessionKey: "s1" },
+				),
+			).rejects.toThrow(/E_BAD_ANCHOR/);
+			expect(getServed(store, "s1", absPath)).toEqual([]);
+			expect(await loadEpochId("s1", absPath)).toBeUndefined();
 		});
 	});
 });
