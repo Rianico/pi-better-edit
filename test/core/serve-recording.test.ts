@@ -1,17 +1,24 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
-import { mkdtemp, rm } from "fs/promises";
+import { mkdtemp, rm, writeFile, readFile } from "fs/promises";
 import { join } from "path";
 
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
-import { getServed, upsertServed } from "../../src/served-session/index.js";
+import {
+	createSessionHandle,
+	getServed,
+	upsertServed,
+} from "../../src/served-session/index.js";
 import {
 	planServeRecording,
 	recordDiffServes,
 	recordEchoServes,
 } from "../../src/served-session/index.js";
-import { scanDrift } from "../../src/drift";
+import { computeDrift, scanDrift } from "../../src/drift";
 import { initHasher } from "../../src/hashline";
 import { getWritableTempRoot } from "../support/fixtures";
+import { execEdits } from "../../src/mutation-engine/pipeline.js";
+import { canon } from "../../src/hashline/hash-identity.js";
+import { readNormFile } from "../../src/file-reader.js";
 
 beforeAll(async () => {
 	await initHasher();
@@ -200,12 +207,7 @@ describe("recordEchoServes — truncation after an external shrink (issue #27)",
 			const store = await loadHashStore();
 			const path = join(home, "f.txt");
 			upsertServed(store, "s1", path, [{ position: 0, hash: "aaa" }]);
-			await recordEchoServes(
-				"s1",
-				path,
-				[{ position: 1, hash: "bbb" }],
-				"live",
-			);
+			await recordEchoServes("s1", path, [{ position: 1, hash: "bbb" }], "live");
 			expect(getServed(store, "s1", path)).toEqual(["aaa", "bbb"]);
 		});
 	});
@@ -250,6 +252,145 @@ describe("scanDrift — truncation after an external shrink (issue #27)", () => 
 				.filter((i) => i >= 0);
 			expect(fffPositions.length).toBeLessThanOrEqual(1);
 			expect(gggPositions.length).toBeLessThanOrEqual(1);
+		});
+	});
+});
+
+describe("sequential edits — rotated serves with surviving canons stay silent (#68)", () => {
+	it("edit, failed edit, partial read, then edit elsewhere reports no drift", async () => {
+		await withTempHome(async (home) => {
+			const store = await loadHashStore();
+			const absPath = join(home, "dup.ts");
+			const dup = "});";
+			const startLines = [
+				'import { x } from "y";',
+				"const a = 1;",
+				"const b = 2;",
+				"function f() {",
+				dup,
+				dup,
+				dup,
+				dup,
+				"const c = 3;",
+				dup,
+				dup,
+				dup,
+				dup,
+				"const d = 4;",
+				"export default f;",
+			];
+			await writeFile(absPath, startLines.join("\n") + "\n");
+			const seed = await readNormFile("dup.ts", home, { store });
+			const handle = createSessionHandle("s1", seed.absolutePath, store);
+			const seedCanons = seed.normalized.split("\n").map((line) => canon(line));
+			await handle.record(
+				seed.fileHashes.map((hash, position) => ({ position, hash })),
+			);
+			await handle.recordEpoch({
+				rows: seed.fileHashes.map((hash, position) => ({ position, hash })),
+				lineCount: seed.fileHashes.length,
+				fullReadHashes: [...seed.fileHashes],
+				fullReadCanons: [...seedCanons],
+				snapshotId: "snap-e2e-full",
+				isFullRead: true,
+			});
+			const first = await execEdits(
+				{
+					path: "dup.ts",
+					edits: [
+						{
+							remove_from: seed.fileHashes[0]!,
+							remove_to: seed.fileHashes[0]!,
+							replacement_text: `${startLines[0]}\n${Array(10).fill(dup).join("\n")}`,
+						},
+					],
+				},
+				home,
+				{ store, sessionKey: "s1" },
+			);
+			expect(first.appliedCount).toBe(1);
+			expect(first.driftNotice).toBeUndefined();
+			await expect(
+				execEdits(
+					{
+						path: "dup.ts",
+						edits: [
+							{
+								remove_from: "findActivatingFile,",
+								remove_to: "x",
+								replacement_text: "y",
+							},
+						],
+					},
+					home,
+					{ store, sessionKey: "s1" },
+				),
+			).rejects.toThrow();
+			const afterFirst = getServed(store, "s1", absPath);
+			const curText = await readFile(absPath, "utf8");
+			const curLines = curText.split("\n");
+			if (curLines.at(-1) === "") curLines.pop();
+			const curCanons = curLines.map((line) => canon(line));
+			const curHashes = afterFirst.filter((h): h is string => h !== null);
+			await handle.recordEpoch({
+				rows: [2, 3, 4, 5].map((position) => ({
+					position,
+					hash: afterFirst[position]!,
+				})),
+				lineCount: curLines.length,
+				fullReadHashes: [...curHashes],
+				fullReadCanons: [...curCanons],
+				snapshotId: "snap-e2e-partial",
+				isFullRead: false,
+			});
+			const dupPositions: number[] = [];
+			curLines.forEach((line, index) => {
+				if (line === dup) dupPositions.push(index);
+			});
+			const rotated = dupPositions.slice(-3);
+			const fresh = ["q01", "q02", "q03"];
+			rotated.forEach((position, i) => {
+				expect(curHashes).not.toContain(fresh[i]!);
+			});
+			upsertServed(
+				store,
+				"s1",
+				absPath,
+				rotated.map((position, i) => ({ position, hash: fresh[i]! })),
+			);
+			const driftedServed = getServed(store, "s1", absPath);
+			const targetLine = "const d = 4;";
+			const targetPos = curLines.indexOf(targetLine);
+			expect(targetPos).toBeGreaterThan(-1);
+			expect(rotated).not.toContain(targetPos);
+			const second = await execEdits(
+				{
+					path: "dup.ts",
+					edits: [
+						{
+							remove_from: afterFirst[targetPos]!,
+							remove_to: afterFirst[targetPos]!,
+							replacement_text: "const d = 40;",
+						},
+					],
+				},
+				home,
+				{ store, sessionKey: "s1" },
+			);
+			expect(second.appliedCount).toBe(1);
+			expect(second.result).toContain("const d = 40;");
+			expect(second.driftNotice).toBeUndefined();
+			const legacyLines = second.result.split("\n");
+			if (legacyLines.at(-1) === "") legacyLines.pop();
+			const legacy = computeDrift({
+				served: driftedServed,
+				resultHashes: second.resultHashes,
+				resultLines: legacyLines,
+				range: second.range,
+				reported: new Set(),
+			});
+			expect(legacy).toBeDefined();
+			expect(legacy!.total).toBe(3);
 		});
 	});
 });
