@@ -825,7 +825,7 @@ export function createSessionHandle(
               JSON.stringify(input.fullReadCanons),
               Date.now(),
             );
-          if (input.snapshotId)
+          if (isFullRead && input.snapshotId)
             servedStmts(store.db).servedSnapshotUpsert(
               sessionKey,
               path,
@@ -862,7 +862,7 @@ export function createSessionHandle(
               Date.now(),
             );
           }
-          if (input.snapshotId)
+          if (isFullRead && input.snapshotId)
             servedStmts(store.db).servedSnapshotUpsert(
               sessionKey,
               path,
