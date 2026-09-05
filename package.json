@@ -67,7 +67,7 @@
     "benchmark:tokens": "node benchmarks/token-economics.mjs",
     "benchmark:practical": "node scripts/practical-token-benchmark.mjs",
     "test:runtime": "node scripts/runtime-edge-test.mjs",
-    "prepare": "husky"
+    "prepare": "husky || true"
   },
   "devDependencies": {
     "@commitlint/cli": "^21.2.2",
