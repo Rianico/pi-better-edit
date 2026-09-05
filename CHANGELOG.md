@@ -13,6 +13,7 @@ All notable changes to this project will be documented in this file.
 - **drift:** report canon deficit instead of hash rotation
 - **served:** epoch lifecycle belongs to full reads
 - **write:** dense re-serve after write clears stale rows
+- make prepare tolerant when husky not installed
 
 ### Documentation
 
