@@ -52,6 +52,33 @@ def run(cmd: list[str]) -> str:
     return result.stdout.strip() if result.returncode == 0 else ""
 
 
+VISIBLE_SYNC_TYPES = frozenset({"feat", "fix", "perf", "revert", "docs"})
+
+
+def warn_if_visible_sync_head(commits: list[tuple[str, str]]) -> None:
+    """Warn when HEAD looks like a visible-type changelog sync commit.
+
+    A sync committed as `docs:` (or any visible type) re-triggers the guard:
+    the next `update` lists the sync commit itself, demanding another sync.
+    Sync commits must use a hidden type (e.g. `chore: sync changelog unreleased section`).
+    Stderr only; never changes file bytes.
+    """
+    if not commits:
+        return
+    subject = commits[0][0]
+    m = CONVENTIONAL_RE.match(subject)
+    if not m:
+        return
+    if m.group("type") in VISIBLE_SYNC_TYPES and "sync changelog" in subject.lower():
+        print(
+            "WARNING: HEAD looks like a visible-type changelog sync commit: "
+            f"{subject!r} — commit the sync as a hidden type "
+            "(e.g. `chore: sync changelog unreleased section`); "
+            "a visible type re-triggers the guard and loops forever.",
+            file=sys.stderr,
+        )
+
+
 def _is_ancestor(tag: str) -> bool:
     result = subprocess.run(
         ["git", "merge-base", "--is-ancestor", tag, "HEAD"], capture_output=True
@@ -163,6 +190,7 @@ def render_unreleased(sections: dict[str, list[str]]) -> str:
 def update_changelog(changelog: Path) -> bool:
     tag = get_last_tag()
     commits = get_commits_since(tag)
+    warn_if_visible_sync_head(commits)
     sections = commits_to_sections(commits)
     new_block = render_unreleased(sections)
 

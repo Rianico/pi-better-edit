@@ -38,7 +38,9 @@ jobs:
           echo ""
           echo "Fix locally:"
           echo "  uv run python scripts/changelog-unreleased.py update"
-          echo "  git add CHANGELOG.md && git commit --amend --no-edit --no-verify && git push --force-with-lease"
+          echo "  git add CHANGELOG.md && git commit -m 'chore: sync changelog unreleased section' --no-verify && git push"
+          echo "  # or amend on a feature branch: git add CHANGELOG.md && git commit --amend --no-edit --no-verify && git push --force-with-lease"
+          echo "  Sync commit must use a hidden type (chore:/style:/refactor:/test:/build:/ci:); a visible type (feat/fix/perf/revert/docs) re-triggers the guard and loops forever."
           echo ""
           echo "Hidden types (style/chore/refactor/test/build/ci) without BREAKING CHANGE don't need Unreleased."
           # restore committed file so subsequent steps see original
@@ -55,10 +57,12 @@ jobs:
             Fix:
             \`\`\`bash
             uv run python scripts/changelog-unreleased.py update
-            git add CHANGELOG.md && git commit --amend --no-edit
-            git push --force-with-lease
+            git add CHANGELOG.md && git commit -m 'chore: sync changelog unreleased section'
+            git push
+            # or amend on a feature branch: git commit --amend --no-edit && git push --force-with-lease
             \`\`\`
-            Hidden types \`style|chore|refactor|test|build|ci\` only need update when breaking.`;
+            Sync commit must use a hidden type (\`chore:\` etc.); a visible type (\`feat|fix|perf|revert|docs\`) re-triggers the guard and loops forever.
+            Hidden types \`style|chore|refactor|test|build|ci\` only need update when breaking.
             // avoid duplicate comments
             const {data: comments} = await github.rest.issues.listComments({
               owner: context.repo.owner, repo: context.repo.repo, issue_number: context.issue.number
