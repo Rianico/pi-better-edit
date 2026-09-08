@@ -13,7 +13,6 @@ async function makeTempDir(): Promise<string> {
 
 describe.skipIf(isWindows)("writeAtomic — new-file mode", () => {
   it("creates a new file with mode 0o600 (owner-only), independent of umask", async () => {
-
     const dir = await makeTempDir();
     try {
       const target = join(dir, "fresh.txt");

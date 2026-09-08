@@ -21,9 +21,9 @@ function collectCodes(dir: string): Set<string> {
   return codes;
 }
 
-const readmeCodes = new Set([
-  ...readFileSync(join(root, "README.md"), "utf-8").matchAll(codeRe),
-].map((match) => match[0]));
+const readmeCodes = new Set(
+  [...readFileSync(join(root, "README.md"), "utf-8").matchAll(codeRe)].map((match) => match[0]),
+);
 const srcCodes = collectCodes(join(root, "src"));
 
 describe("error code contract", () => {

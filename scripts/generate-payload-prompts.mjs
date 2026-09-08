@@ -9,6 +9,12 @@ import { EDIT_DESCRIPTION, EDIT_SNIPPET, EDIT_GUIDELINES } from "../src/payload-
 const promptsDir = join(dirname(fileURLToPath(import.meta.url)), "../prompts");
 writeFileSync(join(promptsDir, "edit.md"), EDIT_DESCRIPTION + "\n", "utf-8");
 writeFileSync(join(promptsDir, "edit-snippet.md"), EDIT_SNIPPET + "\n", "utf-8");
-writeFileSync(join(promptsDir, "edit-guidelines.md"), EDIT_GUIDELINES.map(l => `- ${l}`).join("\n") + "\n", "utf-8");
+writeFileSync(
+  join(promptsDir, "edit-guidelines.md"),
+  EDIT_GUIDELINES.map((l) => `- ${l}`).join("\n") + "\n",
+  "utf-8",
+);
 
-console.log("Generated prompts/edit.md, edit-snippet.md, edit-guidelines.md from src/payload-contract.ts");
+console.log(
+  "Generated prompts/edit.md, edit-snippet.md, edit-guidelines.md from src/payload-contract.ts",
+);

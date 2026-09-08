@@ -50,11 +50,12 @@
 
 > [!TIP]
 > **Shining points — honest and measured:**
+>
 > - **Self-healing, not silent.** External edits never get overwritten — stale ranges are rejected and re-served as fresh `HASH│content` to retry; orphaned serves heal without a full re-read (ADR-0008). Fail-closed, not auto-merge.
 > - **Formatter-tolerant.** ASCII-whitespace-insensitive anchors survive `prettier`/`black`/`eslint --fix` between edits (`formatOnSave`, watcher, CI). Linter-only assumption — whitespace inside string literals is not distinguished (ADR-0005).
 > - **Chained & batched, no re-read ritual.** Anchors for untouched lines stay valid; diff/echo/reject rows count as serves. `edit` batches up to 32 same-file edits atomically (`[E_BATCH_ABORT]`), ~-40% envelope vs `str_replace` on the pinned 12-edit corpus.
 > - **Read guard enforced.** Never edits what it hasn't seen — `[E_UNSERVED_RANGE]`/`[E_STALE_ANCHOR]` reject before any write, then `reject-and-serve`.
-> - **Fewer round-trips in practice.** Dated run: **3 calls vs 6** for the OMP wrapper on the same external-drift refactor, same correct file; envelope vs `str_replace` is the durable number — run `npm run benchmark:practical` to reproduce (stochastic, single sample). Correctness `23/23` deterministic.
+> - **Fewer round-trips in practice.** Dated run: **3 calls vs 6** for the OMP wrapper on the same external-drift refactor, same correct file; envelope vs `str_replace` is the durable number — run `pnpm run benchmark:practical` to reproduce (stochastic, single sample). Correctness `23/23` deterministic.
 
 Not for one-line touch-ups (near parity) or brand-new files (`write`). It pays off in long sessions and structural edits — anywhere an edit must not land on the wrong line.
 
@@ -107,7 +108,7 @@ and returns a diff with fresh anchors, so the next edit verifies cleanly with no
 Chained edits stay cheap — anchors for untouched lines remain valid, diff/echo rows count as serves, and `read` becomes on-demand recovery, not a ritual. Try batching: `{"path":"src/main.ts","edits":[["a1b","a1b","new line 1\n"],["c3d","c3d","new line 2"]]}` is atomic — one fails, none write.
 
 > [!TIP]
-> **Want proof before you install?** Run `npm run eval` — 23/23 correctness, no LLM. Stale edits are rejected before they corrupt a file, on every run. Then `pi install npm:pi-better-edit` and watch the `read` → `edit` → diff loop stay verified.
+> **Want proof before you install?** Run `pnpm run eval` — 23/23 correctness, no LLM. Stale edits are rejected before they corrupt a file, on every run. Then `pi install npm:pi-better-edit` and watch the `read` → `edit` → diff loop stay verified.
 
 ## Why Hashline
 
@@ -149,11 +150,11 @@ This benchmark counts only the serialized edit payloads, not model reasoning, to
 | external pinned 12-edit corpus, current-envelope recount | 1,015 | 609 (**-40.0%**) | 582 (**-42.7%**) | 590 (**-41.9%**) | 480 (**-52.7%**) |
 | local 12-edit configuration snapshot | 358 | 272 (**-24.0%**) | 241 (**-32.7%**) | 268 (**-25.1%**) | 180 (**-49.7%**) |
 
-All percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; the historical sibling record remains available in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproducible with `npm run benchmark:tokens`; correctness is measured separately with `npm run eval` and `npm run eval:hashline`.
+All percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; the historical sibling record remains available in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproducible with `pnpm run benchmark:tokens`; correctness is measured separately with `pnpm run eval` and `pnpm run eval:hashline`.
 
 #### Practical benchmark — coding-agent session
 
-This benchmark measures a real coding-agent loop rather than serialized envelopes. The practical advantage is round-trip efficiency: pi-better-edit completed the scenario in **3 tool calls**, versus **6 for OMP**. `npm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. OMP is the practical baseline below; usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
+This benchmark measures a real coding-agent loop rather than serialized envelopes. The practical advantage is round-trip efficiency: pi-better-edit completed the scenario in **3 tool calls**, versus **6 for OMP**. `pnpm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. OMP is the practical baseline below; usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
 
 | engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
 | --- | ---: | ---: | ---: | :---: |
@@ -237,8 +238,6 @@ hashline-the-library for a cross-backend patch format; pick hashline-the-tool fo
 content-addressed edits in your agent. Syntax-aware structural edits and file-lifecycle operations
 remain outside this verified line-range contract.
 
-
-
 ### What you get
 
 - **Verified before it writes** — every line of the resolved range is checked against served rows; stale or never-served interiors are hard-rejected (`[E_STALE_RANGE]`/`[E_UNSERVED_RANGE]`) and re-served as fresh anchors.
@@ -284,7 +283,7 @@ files, on every run.
 | --- | --: | --: |
 | **pi-better-edit (1.1.3)** | **23/23** | 0 |
 
-Separate library battery for `@oh-my-pi/hashline` (own seam) is 10/10 for 17.3.5 — stale tags are either recovered with `Recovered from a stale file hash…` or rejected with `MismatchError`, never silently applied. Reproduce with `npm run eval:hashline`; this is a library-layer reference, not an extra row in the tool table.
+Separate library battery for `@oh-my-pi/hashline` (own seam) is 10/10 for 17.3.5 — stale tags are either recovered with `Recovered from a stale file hash…` or rejected with `MismatchError`, never silently applied. Reproduce with `pnpm run eval:hashline`; this is a library-layer reference, not an extra row in the tool table.
 
 **Library battery — `@oh-my-pi/hashline` 17.3.5, 10/10 (2026-08-17):** the hashline patch
 engine is tested in its own model: stale tags are either recovered with an explicit
@@ -298,11 +297,11 @@ and [benchmarks/results/](benchmarks/results/).
 ### Reproduce
 
 ```bash
-npm run eval            # pi-better-edit, 23/23 — no LLM, deterministic
-npm run eval:hashline   # + @oh-my-pi/hashline library battery (installs bun temp)
+pnpm run eval            # pi-better-edit, 23/23 — no LLM, deterministic
+pnpm run eval:hashline   # + @oh-my-pi/hashline library battery (installs bun temp)
 ```
 
-`npm run eval` runs the 23-scenario tool battery; `eval:hashline` scratch-installs `@oh-my-pi/hashline` and bun — nothing lands in this repo.
+`pnpm run eval` runs the 23-scenario tool battery; `eval:hashline` scratch-installs `@oh-my-pi/hashline` and bun — nothing lands in this repo.
 
 > **Scope & honesty.** The batteries below are correctness gates, not throughput numbers:
 > they do not claim token, cost, or latency performance. The token table above is a separate,
@@ -411,25 +410,26 @@ from an older version, the previous `hash-store.json` is imported once and renam
 
 ## Development
 
-Requires [Node.js](https://nodejs.org) ≥ 22.19 and npm.
+Requires [Node.js](https://nodejs.org) ≥ 22.19 and pnpm.
 
 ```bash
-npm install
-npm test
-npm run lint
-npm run typecheck
+pnpm install
+pnpm test
+pnpm run lint
+pnpm run format
+pnpm run typecheck
 ```
 
 Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
 
-**Runtime edge-suite.** `npm run test:runtime` runs the served-state edge scenarios
+**Runtime edge-suite.** `pnpm run test:runtime` runs the served-state edge scenarios
 (stale-interior reject-and-serve, chained edits without re-read, undo, never-served
 interior, drift notice) as one `fabric_exec` program against real pi, using the
 temporary-extension form (`pi -e npm:pi-fabric`) so nothing is installed into your pi. It
 needs network access to install the temp extension and takes a few minutes; exit code 0
 means the suite passed.
 
-**Evaluation.** The [Comparison](#comparison) section's reproducible benchmark is produced by `npm run eval` and `npm run eval:hashline` — both `RUN_EVAL`-gated so neither runs in `npm test`.
+**Evaluation.** The [Comparison](#comparison) section's reproducible benchmark is produced by `pnpm run eval` and `pnpm run eval:hashline` — both `RUN_EVAL`-gated so neither runs in `pnpm test`.
 
 ## Contributing
 

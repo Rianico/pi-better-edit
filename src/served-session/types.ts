@@ -44,11 +44,21 @@ export interface SessionHandle {
   /** SAFETY: Record with truncation (lineCount + optional clearFrom). */
   recordTruncated(rows: ServedEntry[], lineCount: number, clearFrom?: number): Promise<void>;
   /** SAFETY: High-level diff recording: planServeRecording inside, no caller-side plan. */
-  recordDiff(servedRows: ServedRow[], opts?: { resultLineCount?: number; firstChangedLine?: number }): Promise<void>;
+  recordDiff(
+    servedRows: ServedRow[],
+    opts?: { resultLineCount?: number; firstChangedLine?: number },
+  ): Promise<void>;
   /** SAFETY: Echo recording — preview is no-op per policy (keel: recovery stays inside). */
   recordEcho(rows: ServedRow[], policy: ServeRecordPolicy, lineCount?: number): Promise<void>;
   /** SAFETY: Low-level full epoch record (used by read path for atomically persisting hashes+canons+snapshotId+tombstone). */
-  recordEpoch(input: { rows: ServedEntry[]; lineCount?: number; fullReadHashes?: readonly string[]; fullReadCanons?: readonly (string | null)[]; snapshotId?: string; isFullRead?: boolean }): Promise<void>;
+  recordEpoch(input: {
+    rows: ServedEntry[];
+    lineCount?: number;
+    fullReadHashes?: readonly string[];
+    fullReadCanons?: readonly (string | null)[];
+    snapshotId?: string;
+    isFullRead?: boolean;
+  }): Promise<void>;
   /** SAFETY: Drift: clear reported set (e.g. after a fresh read). */
   clearDrift(): Promise<void>;
   /** SAFETY: Drift: load already-reported hashes. */

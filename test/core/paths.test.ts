@@ -4,53 +4,50 @@ import { join, dirname } from "path";
 import { configDir, hashStorePath, hashStoreDir } from "../../src/paths";
 
 describe("configDir", () => {
-	it("returns the config directory under home when XDG_CONFIG_HOME is unset", () => {
-		const previousXdg = process.env.XDG_CONFIG_HOME;
-		delete process.env.XDG_CONFIG_HOME;
-		try {
-			expect(configDir()).toBe(join(homedir(), ".config", "pi-better-edit"));
-		} finally {
-			if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-			else process.env.XDG_CONFIG_HOME = previousXdg;
-		}
-	});
+  it("returns the config directory under home when XDG_CONFIG_HOME is unset", () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    delete process.env.XDG_CONFIG_HOME;
+    try {
+      expect(configDir()).toBe(join(homedir(), ".config", "pi-better-edit"));
+    } finally {
+      if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previousXdg;
+    }
+  });
 
-	it.skipIf(process.platform === "win32")(
-		"uses XDG_CONFIG_HOME when set",
-		() => {
-			const previousXdg = process.env.XDG_CONFIG_HOME;
-			process.env.XDG_CONFIG_HOME = "/custom/xdg";
-			try {
-				expect(configDir()).toBe(join("/custom/xdg", "pi-better-edit"));
-			} finally {
-				if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-				else process.env.XDG_CONFIG_HOME = previousXdg;
-			}
-		},
-	);
+  it.skipIf(process.platform === "win32")("uses XDG_CONFIG_HOME when set", () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = "/custom/xdg";
+    try {
+      expect(configDir()).toBe(join("/custom/xdg", "pi-better-edit"));
+    } finally {
+      if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previousXdg;
+    }
+  });
 
-	it("ignores an empty XDG_CONFIG_HOME", () => {
-		const previousXdg = process.env.XDG_CONFIG_HOME;
-		process.env.XDG_CONFIG_HOME = "";
-		try {
-			expect(configDir()).toBe(join(homedir(), ".config", "pi-better-edit"));
-		} finally {
-			if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
-			else process.env.XDG_CONFIG_HOME = previousXdg;
-		}
-	});
+  it("ignores an empty XDG_CONFIG_HOME", () => {
+    const previousXdg = process.env.XDG_CONFIG_HOME;
+    process.env.XDG_CONFIG_HOME = "";
+    try {
+      expect(configDir()).toBe(join(homedir(), ".config", "pi-better-edit"));
+    } finally {
+      if (previousXdg === undefined) delete process.env.XDG_CONFIG_HOME;
+      else process.env.XDG_CONFIG_HOME = previousXdg;
+    }
+  });
 });
 
 describe("hashStorePath", () => {
-	it("returns the hash store file path", () => {
-		const path = hashStorePath();
-		expect(path).toBe(join(configDir(), "hash-store.sqlite"));
-	});
+  it("returns the hash store file path", () => {
+    const path = hashStorePath();
+    expect(path).toBe(join(configDir(), "hash-store.sqlite"));
+  });
 });
 
 describe("hashStoreDir", () => {
-	it("returns the directory of the hash store path", () => {
-		const dir = hashStoreDir();
-		expect(dir).toBe(dirname(hashStorePath()));
-	});
+  it("returns the directory of the hash store path", () => {
+    const dir = hashStoreDir();
+    expect(dir).toBe(dirname(hashStorePath()));
+  });
 });

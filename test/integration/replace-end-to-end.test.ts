@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, withTempBytes, setupIntegrationTest, useTestHome, getText, extractHash } from "../support/fixtures";
+import {
+  withTempFile,
+  withTempBytes,
+  setupIntegrationTest,
+  useTestHome,
+  getText,
+  extractHash,
+} from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -10,7 +17,13 @@ describe("edit tool — end-to-end", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const lines = getText(readResult).split("\n");
       const betaHash = extractHash(lines.find((l: string) => l.includes("│bbb"))!);
 
@@ -34,7 +47,13 @@ describe("edit tool — end-to-end", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const lines = getText(readResult).split("\n");
       const bHash = extractHash(lines.find((l: string) => l.includes("│bbb"))!);
       const cHash = extractHash(lines.find((l: string) => l.includes("│ccc"))!);
@@ -59,7 +78,13 @@ describe("edit tool — end-to-end", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const lines = getText(readResult).split("\n");
       const bHash = extractHash(lines.find((l: string) => l.includes("│bbb"))!);
       const cHash = extractHash(lines.find((l: string) => l.includes("│ccc"))!);
@@ -84,7 +109,13 @@ describe("edit tool — end-to-end", () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const firstText = getText(firstRead);
       const betaRef = firstText
         .split("\n")
@@ -115,7 +146,13 @@ describe("edit tool — end-to-end", () => {
     await withTempFile("empty.ts", "", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "empty.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "empty.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const emptyHash = getText(readResult).split("\n")[0]!.split("│")[0]!;
       expect(emptyHash).toMatch(/^[A-Za-z0-9]{3}$/);
 
@@ -136,7 +173,13 @@ describe("edit tool — end-to-end", () => {
     await withTempFile("crlf.ts", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "crlf.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "crlf.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const betaRef = getText(readResult)
         .split("\n")
         .find((line: string) => line.includes("│beta"))!
@@ -205,7 +248,13 @@ describe("edit tool — end-to-end", () => {
       it(`${c.name}: delete middle line preserves the ending`, async () => {
         await withTempBytes(c.fileName, c.bytes, async ({ cwd, path }) => {
           const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-          const readResult = await readTool.execute("r1", { path: c.fileName }, undefined, undefined, ctx);
+          const readResult = await readTool.execute(
+            "r1",
+            { path: c.fileName },
+            undefined,
+            undefined,
+            ctx,
+          );
           const betaRef = getText(readResult)
             .split("\n")
             .find((line: string) => line.includes("│beta"))!
@@ -225,7 +274,13 @@ describe("edit tool — end-to-end", () => {
       it(`${c.name}: noop edit keeps the file byte-identical`, async () => {
         await withTempBytes(c.fileName, c.bytes, async ({ cwd, path }) => {
           const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-          const readResult = await readTool.execute("r1", { path: c.fileName }, undefined, undefined, ctx);
+          const readResult = await readTool.execute(
+            "r1",
+            { path: c.fileName },
+            undefined,
+            undefined,
+            ctx,
+          );
           const betaRef = getText(readResult)
             .split("\n")
             .find((line: string) => line.includes("│beta"))!

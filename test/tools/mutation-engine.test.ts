@@ -1,6 +1,11 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { readFile } from "node:fs/promises";
-import { execute, preview, isMutationSuccess, isMutationFailure } from "../../src/mutation-engine/index.js";
+import {
+  execute,
+  preview,
+  isMutationSuccess,
+  isMutationFailure,
+} from "../../src/mutation-engine/index.js";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures.js";
 import { lineHashes } from "../../src/hashline/index.js";
 import { initHasher } from "../../src/hashline/index.js";
@@ -21,7 +26,10 @@ describe("MutationEngine — deep seam", () => {
       const from = hashes[0]!;
       const to = hashes[1]!;
       const result = await execute(
-        { path: "sample.txt", edits: [{ remove_from: from, remove_to: to, replacement_text: "x\ny" }] },
+        {
+          path: "sample.txt",
+          edits: [{ remove_from: from, remove_to: to, replacement_text: "x\ny" }],
+        },
         cwd,
       );
       expect(isMutationSuccess(result)).toBe(true);
@@ -41,7 +49,10 @@ describe("MutationEngine — deep seam", () => {
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const result = await preview(
-        { path: "sample.txt", edits: [{ remove_from: from, remove_to: from, replacement_text: "replaced" }] },
+        {
+          path: "sample.txt",
+          edits: [{ remove_from: from, remove_to: from, replacement_text: "replaced" }],
+        },
         cwd,
       );
       expect(isMutationSuccess(result)).toBe(true);
@@ -58,7 +69,10 @@ describe("MutationEngine — deep seam", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
-        { path: "sample.txt", edits: [{ remove_from: "AAA", remove_to: "BBB", replacement_text: "x" }] },
+        {
+          path: "sample.txt",
+          edits: [{ remove_from: "AAA", remove_to: "BBB", replacement_text: "x" }],
+        },
         cwd,
       );
       expect(isMutationFailure(result)).toBe(true);

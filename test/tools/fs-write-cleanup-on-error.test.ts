@@ -1,6 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 
-
 const rmMock = vi.fn(async () => undefined);
 const handleCloseMock = vi.fn(async () => undefined);
 const handleWriteFileMock = vi.fn(async () => undefined);
@@ -49,14 +48,9 @@ describe("writeAtomic — temp file cleanup on write failure", () => {
 
     const { writeAtomic } = await import("../../src/fs-write");
 
-    await expect(writeAtomic("/tmp/target.txt", "content")).rejects.toThrow(
-      "write failed",
-    );
+    await expect(writeAtomic("/tmp/target.txt", "content")).rejects.toThrow("write failed");
 
-    expect(rmMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\.tmp-/),
-      { force: true },
-    );
+    expect(rmMock).toHaveBeenCalledWith(expect.stringMatching(/\.tmp-/), { force: true });
     expect(handleCloseMock).toHaveBeenCalled();
   });
 
@@ -65,14 +59,9 @@ describe("writeAtomic — temp file cleanup on write failure", () => {
 
     const { writeAtomic } = await import("../../src/fs-write");
 
-    await expect(writeAtomic("/tmp/target.txt", "content")).rejects.toThrow(
-      "chmod failed",
-    );
+    await expect(writeAtomic("/tmp/target.txt", "content")).rejects.toThrow("chmod failed");
 
-    expect(rmMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\.tmp-/),
-      { force: true },
-    );
+    expect(rmMock).toHaveBeenCalledWith(expect.stringMatching(/\.tmp-/), { force: true });
     expect(handleCloseMock).toHaveBeenCalled();
   });
 
@@ -92,14 +81,10 @@ describe("writeAtomic — open failure", () => {
   });
 
   it("propagates the error when open() fails (e.g. permissions)", async () => {
-    openMock.mockRejectedValue(
-      Object.assign(new Error("permission denied"), { code: "EACCES" }),
-    );
+    openMock.mockRejectedValue(Object.assign(new Error("permission denied"), { code: "EACCES" }));
 
     const { writeAtomic } = await import("../../src/fs-write");
 
-    await expect(writeAtomic("/tmp/target.txt", "content")).rejects.toThrow(
-      "permission denied",
-    );
+    await expect(writeAtomic("/tmp/target.txt", "content")).rejects.toThrow("permission denied");
   });
 });

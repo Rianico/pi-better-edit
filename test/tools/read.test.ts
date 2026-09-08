@@ -37,11 +37,15 @@ describe("fmtReadPreview", () => {
   });
 
   it("rejects fractional offsets", async () => {
-    await expect(fmtReadPreview("a\nb\n", { offset: 1.5 } as any, undefined, home.testPath)).rejects.toThrow("positive integer");
+    await expect(
+      fmtReadPreview("a\nb\n", { offset: 1.5 } as any, undefined, home.testPath),
+    ).rejects.toThrow("positive integer");
   });
 
   it("rejects non-positive limits", async () => {
-    await expect(fmtReadPreview("a\nb\n", { limit: 0 } as any, undefined, home.testPath)).rejects.toThrow("positive integer");
+    await expect(
+      fmtReadPreview("a\nb\n", { limit: 0 } as any, undefined, home.testPath),
+    ).rejects.toThrow("positive integer");
   });
 });
 
@@ -62,9 +66,7 @@ describe("read tool — snapshot failure", () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const fileReader = await import("../../src/file-reader");
-      const spy = vi
-        .spyOn(fileReader, "fileSnap")
-        .mockRejectedValue(new Error("stat failed"));
+      const spy = vi.spyOn(fileReader, "fileSnap").mockRejectedValue(new Error("stat failed"));
       try {
         const result = await readTool.execute(
           "r1",

@@ -39,9 +39,7 @@ describe("C4 drift interval-aware", () => {
     const served = ["h00", "h01", "h02", "h03", "h04"];
     const resultHashes = ["h00", "X01", "h02", "h03", "h04"];
     const resultLines = ["a", "changed", "c", "d", "e"];
-    const intervals = [
-      { startLine: 2, endLine: 2, startHash: "h01", endHash: "h01", delta: 0 },
-    ];
+    const intervals = [{ startLine: 2, endLine: 2, startHash: "h01", endHash: "h01", delta: 0 }];
     const drift = computeDrift({
       served,
       resultHashes,

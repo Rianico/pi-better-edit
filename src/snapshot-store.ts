@@ -26,11 +26,7 @@ interface LegacySnapshot {
 }
 
 export interface SnapshotStmts {
-  get: (
-    path: string,
-    checksum: string,
-    lineCount: number,
-  ) => Record<string, unknown> | undefined;
+  get: (path: string, checksum: string, lineCount: number) => Record<string, unknown> | undefined;
   allHashes: () => Record<string, unknown>[];
   allPaths: () => Record<string, unknown>[];
   deleteOne: (path: string) => void;
@@ -63,8 +59,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       "ON CONFLICT(path) DO UPDATE SET checksum = excluded.checksum, line_count = excluded.line_count, hashes = excluded.hashes, updated_at = excluded.updated_at",
   );
   return {
-    get: (...params) =>
-      getStmt.get(...params) as Record<string, unknown> | undefined,
+    get: (...params) => getStmt.get(...params) as Record<string, unknown> | undefined,
     allHashes: () => allHashesStmt.all() as Record<string, unknown>[],
     allPaths: () => allPathsStmt.all() as Record<string, unknown>[],
     deleteOne: (path) => {
@@ -179,9 +174,7 @@ onStoreOpen(() => {
   });
 });
 
-export async function findSnapshotPathsByHashes(
-  hashes: string[],
-): Promise<string[]> {
+export async function findSnapshotPathsByHashes(hashes: string[]): Promise<string[]> {
   const store = await loadHashStore();
   return findSnapshotPaths(store, hashes);
 }
@@ -201,10 +194,7 @@ export async function upsertSnapshotFor(
   upsertSnapshot(store, path, checksum, lineCount, hashes);
 }
 
-function findSnapshotPaths(
-  store: HashStore,
-  hashes: string[],
-): string[] {
+function findSnapshotPaths(store: HashStore, hashes: string[]): string[] {
   const rows = snapshotStmts(store.db).allHashes() as {
     path: string;
     hashes: string;
@@ -275,10 +265,7 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
     parsed = JSON.parse(content) as typeof parsed;
   } catch (error) {
     // SAFETY: best-effort legacy migration — parse failures are ignored; corrupted legacy file is skipped and fresh hashing will repopulate, no caller depends on legacy data.
-    console.error(
-      "Failed to parse legacy hash store, skipping migration:",
-      error,
-    );
+    console.error("Failed to parse legacy hash store, skipping migration:", error);
     return;
   }
 
@@ -289,7 +276,6 @@ async function migrateLegacy(db: DatabaseSync): Promise<void> {
   for (const [key, value] of Object.entries(raw)) {
     if (!isValidSnapshot(value)) continue;
     if (new Set(value.hashes).size !== value.hashes.length) {
-       
       console.warn(
         `Skipped legacy snapshot with duplicate hashes for ${key}; it will be re-hashed on next read.`,
       );

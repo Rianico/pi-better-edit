@@ -6,7 +6,13 @@ describe("chained edit anchors", () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const betaRef = firstRead.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│beta"))!
@@ -22,7 +28,13 @@ describe("chained edit anchors", () => {
 
       expect(editResult.content[0].text).toContain("Successfully edited");
       expect(editResult.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
-      const secondRead = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+      const secondRead = await readTool.execute(
+        "r2",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const freshRef = secondRead.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│BETA"))!
@@ -42,7 +54,6 @@ describe("chained edit anchors", () => {
   });
 
   it("omits anchors when post-edit affected span is too large", async () => {
-
     const fifteenLines = Array.from({ length: 15 }, (_, i) => `line ${i + 1}`).join("\n");
     await withTempFile("big.ts", fifteenLines, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -50,12 +61,12 @@ describe("chained edit anchors", () => {
       const firstRead = await readTool.execute("r1", { path: "big.ts" }, undefined, undefined, ctx);
       const line1Ref = firstRead.content[0].text
         .split("\n")
-	        .find((line: string) => line.includes("│line 1"))!
-	        .split("│")[0]!;
+        .find((line: string) => line.includes("│line 1"))!
+        .split("│")[0]!;
       const line15Ref = firstRead.content[0].text
         .split("\n")
-	        .find((line: string) => line.includes("│line 15"))!
-	        .split("│")[0]!;
+        .find((line: string) => line.includes("│line 15"))!
+        .split("│")[0]!;
 
       const newLines = Array.from({ length: 15 }, (_, i) => `NEW ${i + 1}`);
       const editResult = await editTool.execute(
@@ -70,15 +81,20 @@ describe("chained edit anchors", () => {
     });
   });
   it("omits anchors when single-line edit expands beyond budget", async () => {
-
     await withTempFile("expand.ts", "before\ntarget\nafter\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "expand.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "expand.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const targetRef = firstRead.content[0].text
         .split("\n")
-	        .find((line: string) => line.includes("│target"))!
-	        .split("│")[0]!;
+        .find((line: string) => line.includes("│target"))!
+        .split("│")[0]!;
 
       const newLines = Array.from({ length: 11 }, (_, i) => `EXPANDED ${i + 1}`);
       const editResult = await editTool.execute(
@@ -97,7 +113,13 @@ describe("chained edit anchors", () => {
     await withTempFile("stale.ts", "alpha\nbeta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "stale.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "stale.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const betaRef = firstRead.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│beta"))!
@@ -139,7 +161,13 @@ describe("chained edit anchors", () => {
     await withTempFile("stable.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "stable.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "stable.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const alphaRef = firstRead.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│alpha"))!

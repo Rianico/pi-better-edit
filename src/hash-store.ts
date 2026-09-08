@@ -49,11 +49,9 @@ function expand(filePath: string): string {
 }
 
 export function toCwd(filePath: string, cwd: string): string {
-  if (filePath.includes("\0"))
-    throw new Error("[MODEL] [E_BAD_PAYLOAD] Path contains null byte");
+  if (filePath.includes("\0")) throw new Error("[MODEL] [E_BAD_PAYLOAD] Path contains null byte");
   const expanded = expand(filePath);
-  if (expanded.includes("\0"))
-    throw new Error("[MODEL] [E_BAD_PAYLOAD] Path contains null byte");
+  if (expanded.includes("\0")) throw new Error("[MODEL] [E_BAD_PAYLOAD] Path contains null byte");
   // SAFETY: cwd is trusted (ctx.cwd), expand resolves "~" via homedir/XDG and resolvePath normalizes ".."; editing scope intentionally allows any absolute path — OS permissions enforced by valAccess downstream; guard ensures null-byte free and absolute result.
   const resolved = isAbsolute(expanded) ? expanded : resolvePath(cwd, expanded);
   if (!isAbsolute(resolved))
@@ -127,10 +125,7 @@ let cachedDb: { path: string; db: DatabaseSync } | null = null;
 let opening: { path: string; promise: Promise<HashStore> } | null = null;
 let exitHandlerRegistered = false;
 
-export type StoreOpenHook = (
-  db: DatabaseSync,
-  info: { existed: boolean },
-) => void | Promise<void>;
+export type StoreOpenHook = (db: DatabaseSync, info: { existed: boolean }) => void | Promise<void>;
 
 const openHooks: StoreOpenHook[] = [];
 
@@ -152,10 +147,7 @@ function openDb(storePath: string): DatabaseSync {
     try {
       db.close();
     } catch (closeError: unknown) {
-      console.error(
-        "[hash-store] failed to close DB after buildStore error:",
-        closeError,
-      );
+      console.error("[hash-store] failed to close DB after buildStore error:", closeError);
     }
     throw error;
   }
@@ -166,57 +158,39 @@ function buildStore(db: DatabaseSync): void {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
   db.exec(
-    "CREATE TABLE IF NOT EXISTS meta (" +
-      "key TEXT PRIMARY KEY, " +
-      "value TEXT NOT NULL" +
-      ")",
+    "CREATE TABLE IF NOT EXISTS meta (" + "key TEXT PRIMARY KEY, " + "value TEXT NOT NULL" + ")",
   );
-  const versionRow = db
-    .prepare("SELECT value FROM meta WHERE key = 'version'")
-    .get() as { value?: string } | undefined;
+  const versionRow = db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as
+    | { value?: string }
+    | undefined;
   const versionChanged =
     versionRow !== undefined && versionRow.value !== String(HASH_STORE_VERSION);
   if (versionChanged) {
     try {
       db.exec("DROP TABLE IF EXISTS snapshots");
     } catch (error: unknown) {
-      console.error(
-        "[hash-store] failed to drop snapshots table on version change:",
-        error,
-      );
+      console.error("[hash-store] failed to drop snapshots table on version change:", error);
     }
     try {
       db.exec("DROP TABLE IF EXISTS undo");
     } catch (error: unknown) {
-      console.error(
-        "[hash-store] failed to drop undo table on version change:",
-        error,
-      );
+      console.error("[hash-store] failed to drop undo table on version change:", error);
     }
     try {
       db.exec("DROP TABLE IF EXISTS served");
     } catch (error: unknown) {
-      console.error(
-        "[hash-store] failed to drop served table on version change:",
-        error,
-      );
+      console.error("[hash-store] failed to drop served table on version change:", error);
     }
   } else {
     try {
       const servedColumns = db.prepare("PRAGMA table_info(served)").all() as {
         name: string;
       }[];
-      if (
-        servedColumns.length > 0 &&
-        !servedColumns.some((c) => c.name === "session_id")
-      ) {
+      if (servedColumns.length > 0 && !servedColumns.some((c) => c.name === "session_id")) {
         db.exec("DROP TABLE IF EXISTS served");
       }
     } catch (error: unknown) {
-      console.error(
-        "[hash-store] failed to inspect served table schema:",
-        error,
-      );
+      console.error("[hash-store] failed to inspect served table schema:", error);
     }
   }
   db.exec(
@@ -269,7 +243,9 @@ function buildStore(db: DatabaseSync): void {
         migrationOpen = false;
       } catch (e) {
         if (migrationOpen) {
-          try { db.exec("ROLLBACK"); } catch {}
+          try {
+            db.exec("ROLLBACK");
+          } catch {}
         }
         throw e;
       }
@@ -291,9 +267,7 @@ function buildStore(db: DatabaseSync): void {
 
 function isHealthy(db: DatabaseSync): boolean {
   try {
-    const row = db.prepare("PRAGMA quick_check").get() as
-      | { quick_check?: string }
-      | undefined;
+    const row = db.prepare("PRAGMA quick_check").get() as { quick_check?: string } | undefined;
     return row?.quick_check === "ok";
   } catch (error) {
     if (isCorruptionError(error)) return false;
@@ -404,10 +378,7 @@ export function withStore(fn: () => void): void {
       try {
         cachedDb!.db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        console.error(
-          "[hash-store] failed to rollback transaction:",
-          rollbackError,
-        );
+        console.error("[hash-store] failed to rollback transaction:", rollbackError);
       }
       throw e;
     }

@@ -1,15 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  mkdir,
-  writeFile,
-  readFile,
-  stat,
-  symlink,
-} from "fs/promises";
+import { mkdir, writeFile, readFile, stat, symlink } from "fs/promises";
 import { join } from "path";
 import { resolveTarget, writeAtomic } from "../../src/fs-write";
 import { withTempDir } from "../support/fixtures";
-
 
 describe.skipIf(process.platform === "win32")("resolveTarget — file symlinks", () => {
   it("resolves a path where the final component is a symlink to a file", async () => {
@@ -24,44 +17,47 @@ describe.skipIf(process.platform === "win32")("resolveTarget — file symlinks",
   });
 });
 
-describe.skipIf(process.platform === "win32")("resolveTarget — relative and .. symlink targets", () => {
-  it("resolves a symlink with a relative target (same directory)", async () => {
-    await withTempDir("fs-write-edge-", async (dir) => {
-      const realFile = join(dir, "real.txt");
-      const link = join(dir, "link.txt");
-      await writeFile(realFile, "data");
-      await symlink(realFile, link);
-      const resolved = await resolveTarget(link);
-      expect(resolved).toBe(realFile);
+describe.skipIf(process.platform === "win32")(
+  "resolveTarget — relative and .. symlink targets",
+  () => {
+    it("resolves a symlink with a relative target (same directory)", async () => {
+      await withTempDir("fs-write-edge-", async (dir) => {
+        const realFile = join(dir, "real.txt");
+        const link = join(dir, "link.txt");
+        await writeFile(realFile, "data");
+        await symlink(realFile, link);
+        const resolved = await resolveTarget(link);
+        expect(resolved).toBe(realFile);
+      });
     });
-  });
 
-  it("resolves a symlink with a relative target (parent directory)", async () => {
-    await withTempDir("fs-write-edge-", async (dir) => {
-      const sub = join(dir, "sub");
-      const realFile = join(dir, "real.txt");
-      const link = join(sub, "link.txt");
-      await mkdir(sub);
-      await writeFile(realFile, "data");
-      await symlink(realFile, link);
-      const resolved = await resolveTarget(link);
-      expect(resolved).toBe(realFile);
+    it("resolves a symlink with a relative target (parent directory)", async () => {
+      await withTempDir("fs-write-edge-", async (dir) => {
+        const sub = join(dir, "sub");
+        const realFile = join(dir, "real.txt");
+        const link = join(sub, "link.txt");
+        await mkdir(sub);
+        await writeFile(realFile, "data");
+        await symlink(realFile, link);
+        const resolved = await resolveTarget(link);
+        expect(resolved).toBe(realFile);
+      });
     });
-  });
 
-  it("resolves a symlink with .. components in the target", async () => {
-    await withTempDir("fs-write-edge-", async (dir) => {
-      const deep = join(dir, "a", "b", "c");
-      const realFile = join(dir, "a", "target.txt");
-      const link = join(deep, "link.txt");
-      await mkdir(deep, { recursive: true });
-      await writeFile(realFile, "data");
-      await symlink("../../target.txt", link);
-      const resolved = await resolveTarget(link);
-      expect(resolved).toBe(realFile);
+    it("resolves a symlink with .. components in the target", async () => {
+      await withTempDir("fs-write-edge-", async (dir) => {
+        const deep = join(dir, "a", "b", "c");
+        const realFile = join(dir, "a", "target.txt");
+        const link = join(deep, "link.txt");
+        await mkdir(deep, { recursive: true });
+        await writeFile(realFile, "data");
+        await symlink("../../target.txt", link);
+        const resolved = await resolveTarget(link);
+        expect(resolved).toBe(realFile);
+      });
     });
-  });
-});
+  },
+);
 
 describe("resolveTarget — path edge cases", () => {
   it.skipIf(process.platform === "win32")("resolves root path /", async () => {
@@ -87,31 +83,37 @@ describe("resolveTarget — path edge cases", () => {
     });
   });
 
-  it.skipIf(process.platform === "win32")("resolves a dangling symlink (target does not exist)", async () => {
-    await withTempDir("fs-write-edge-", async (dir) => {
-      const link = join(dir, "dangling");
-      const missingTarget = join(dir, "nonexistent");
-      await symlink(missingTarget, link);
-      const resolved = await resolveTarget(link);
-      expect(resolved).toBe(missingTarget);
-    });
-  });
+  it.skipIf(process.platform === "win32")(
+    "resolves a dangling symlink (target does not exist)",
+    async () => {
+      await withTempDir("fs-write-edge-", async (dir) => {
+        const link = join(dir, "dangling");
+        const missingTarget = join(dir, "nonexistent");
+        await symlink(missingTarget, link);
+        const resolved = await resolveTarget(link);
+        expect(resolved).toBe(missingTarget);
+      });
+    },
+  );
 
-  it.skipIf(process.platform === "win32")("resolves a path with multiple consecutive symlinks in a chain", async () => {
-    await withTempDir("fs-write-edge-", async (dir) => {
-      const real = join(dir, "real");
-      const link1 = join(dir, "link1");
-      const link2 = join(dir, "link2");
-      const link3 = join(dir, "link3");
-      await mkdir(real);
-      await symlink(real, link1);
-      await symlink(link1, link2);
-      await symlink(link2, link3);
-      await writeFile(join(real, "x.txt"), "data");
-      const resolved = await resolveTarget(join(link3, "x.txt"));
-      expect(resolved).toBe(join(real, "x.txt"));
-    });
-  });
+  it.skipIf(process.platform === "win32")(
+    "resolves a path with multiple consecutive symlinks in a chain",
+    async () => {
+      await withTempDir("fs-write-edge-", async (dir) => {
+        const real = join(dir, "real");
+        const link1 = join(dir, "link1");
+        const link2 = join(dir, "link2");
+        const link3 = join(dir, "link3");
+        await mkdir(real);
+        await symlink(real, link1);
+        await symlink(link1, link2);
+        await symlink(link2, link3);
+        await writeFile(join(real, "x.txt"), "data");
+        const resolved = await resolveTarget(join(link3, "x.txt"));
+        expect(resolved).toBe(join(real, "x.txt"));
+      });
+    },
+  );
 
   it.skipIf(process.platform === "win32")("throws ELOOP on a 3-node circular symlink", async () => {
     await withTempDir("fs-write-edge-", async (dir) => {
@@ -121,13 +123,10 @@ describe("resolveTarget — path edge cases", () => {
       await symlink(b, a);
       await symlink(c, b);
       await symlink(a, c);
-      await expect(resolveTarget(join(a, "x.txt"))).rejects.toThrow(
-        /Too many symbolic links/,
-      );
+      await expect(resolveTarget(join(a, "x.txt"))).rejects.toThrow(/Too many symbolic links/);
     });
   });
 });
-
 
 describe.skipIf(process.platform === "win32")("writeAtomic — file symlink target", () => {
   it("writes through a file symlink (final component is a symlink)", async () => {
@@ -244,9 +243,7 @@ describe("writeAtomic — stale temp file sweep", () => {
       await expect(readFile(stale, "utf-8")).rejects.toThrow();
       await expect(readFile(fresh, "utf-8")).resolves.toBe("leftover");
       await expect(readFile(userFile, "utf-8")).resolves.toBe("precious");
-      await expect(readFile(join(dir, "target.txt"), "utf-8")).resolves.toBe(
-        "content",
-      );
+      await expect(readFile(join(dir, "target.txt"), "utf-8")).resolves.toBe("content");
     });
   });
 

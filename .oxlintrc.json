@@ -1,0 +1,15 @@
+{
+  "$schema": "./node_modules/oxlint/configuration_schema.json",
+  "jsPlugins": ["./scripts/oxlint-plugin-comment-gate.js"],
+  "rules": {
+    "harness/no-comments": "error"
+  },
+  "overrides": [
+    {
+      "files": ["test/**", "**/*.test.ts", "**/*.spec.ts", "benchmarks/**", "scripts/**"],
+      "rules": {
+        "harness/no-comments": "off"
+      }
+    }
+  ]
+}

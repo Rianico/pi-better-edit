@@ -1,11 +1,6 @@
 import { describe, it, expect } from "vitest";
 import { readFile, writeFile } from "fs/promises";
-import {
-  withTempFile,
-  setupIntegrationTest,
-  getText,
-  extractHash,
-} from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 import { _lineHashesPure } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 import { verifyServedRange } from "../../src/hashline/served";
@@ -24,12 +19,8 @@ describe("hash heal TDD", () => {
         ctx,
       );
       const text = getText(firstRead);
-      const bHash = extractHash(
-        text.split("\n").find((l) => l.includes("│b"))!,
-      );
-      const cHash = extractHash(
-        text.split("\n").find((l) => l.includes("│c"))!,
-      );
+      const bHash = extractHash(text.split("\n").find((l) => l.includes("│b"))!);
+      const cHash = extractHash(text.split("\n").find((l) => l.includes("│c"))!);
       await writeFile(path, `a\n${collidingInsert}\nb\nc`, "utf-8");
       const result = await editTool.execute(
         "e1",
@@ -48,45 +39,53 @@ describe("hash heal TDD", () => {
     await initHasher();
     const target = "const t = this.timer;";
     const collidingInsert = "private lastRenderMs21569 = 0;";
-    await withTempFile(
-      "sample.ts",
-      `a\n${target}\nc`,
-      async ({ cwd, path }) => {
-        const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-        const firstRead = await readTool.execute(
-          "r1",
+    await withTempFile("sample.ts", `a\n${target}\nc`, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const text = getText(firstRead);
+      const tHash = extractHash(text.split("\n").find((l) => l.includes("│const t"))!);
+      await writeFile(path, `a\n${collidingInsert}\n${target}\nc`, "utf-8");
+      let result: any;
+      try {
+        result = await editTool.execute(
+          "e1",
+          { path: "sample.ts", edits: [[tHash, tHash, "const t = healed;"]] },
+          undefined,
+          undefined,
+          ctx,
+        );
+      } catch {
+        // With correct canons sync, pos-free healing may require fresh read — retry after re-serve
+        const fresh = await readTool.execute(
+          "r2",
           { path: "sample.ts" },
           undefined,
           undefined,
           ctx,
         );
-        const text = getText(firstRead);
-        const tHash = extractHash(
-          text.split("\n").find((l) => l.includes("│const t"))!,
+        const freshText = getText(fresh);
+        const freshHash = extractHash(
+          freshText.split("\n").find((l) => l.includes("healed") || l.includes("│const t"))!,
         );
-        await writeFile(path, `a\n${collidingInsert}\n${target}\nc`, "utf-8");
-        let result: any;
-        try {
-          result = await editTool.execute(
-            "e1",
-            { path: "sample.ts", edits: [[tHash, tHash, "const t = healed;"]] },
-            undefined,
-            undefined,
-            ctx,
-          );
-        } catch {
-          // With correct canons sync, pos-free healing may require fresh read — retry after re-serve
-          const fresh = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
-          const freshText = getText(fresh);
-          const freshHash = extractHash(freshText.split("\n").find((l) => l.includes("healed") || l.includes("│const t"))!);
-          // Fallback: use fresh hash for target line if available, else reuse tHash
-          const useHash = freshHash || tHash;
-          result = await editTool.execute("e1", { path: "sample.ts", edits: [[useHash, useHash, "const t = healed;"]] }, undefined, undefined, ctx);
-        }
-        expect(getText(result)).toContain("Successfully edited");
-        expect(await readFile(path, "utf-8")).toContain("healed");
-      },
-    );
+        // Fallback: use fresh hash for target line if available, else reuse tHash
+        const useHash = freshHash || tHash;
+        result = await editTool.execute(
+          "e1",
+          { path: "sample.ts", edits: [[useHash, useHash, "const t = healed;"]] },
+          undefined,
+          undefined,
+          ctx,
+        );
+      }
+      expect(getText(result)).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toContain("healed");
+    });
   });
 
   it("verifyServedRange heals multi-line via canon when served shifted", async () => {
