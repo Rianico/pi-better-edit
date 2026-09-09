@@ -3,24 +3,14 @@ import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import { lineHashes } from "../../src/hashline";
 import { resolveMissingPath } from "../../src/edit";
-import {
-  withTempFile,
-  withTempDir,
-  setupIntegrationTest,
-} from "../support/fixtures";
+import { withTempFile, withTempDir, setupIntegrationTest } from "../support/fixtures";
 
 describe("edit — legacy file inference (resolveMissingPath)", () => {
   it("resolves a missing file when the anchors uniquely identify a file", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", path);
-      await readTool.execute(
-        "r1",
-        { path: "sample.ts" },
-        undefined,
-        undefined,
-        ctx,
-      );
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const resolution = await resolveMissingPath({
         anchor_from: hashes[0]!,
@@ -64,39 +54,29 @@ describe("edit — legacy file inference (resolveMissingPath)", () => {
   });
 
   it("requires file on the tool surface", async () => {
-    await withTempFile(
-      "sample.ts",
-      "aaa\nbbb\nccc\n",
-      async ({ cwd, path }) => {
-        const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-        const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
-        await readTool.execute(
-          "r1",
-          { path: "sample.ts" },
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            edits: [
+              {
+                anchor_from: hashes[1]!,
+                anchor_to: hashes[1]!,
+                replace_with: "BBB",
+              },
+            ],
+          },
           undefined,
           undefined,
           ctx,
-        );
-
-        await expect(
-          editTool.execute(
-            "e1",
-            {
-              edits: [
-                {
-                  anchor_from: hashes[1]!,
-                  anchor_to: hashes[1]!,
-                  replace_with: "BBB",
-                },
-              ],
-            },
-            undefined,
-            undefined,
-            ctx,
-          ),
-        ).rejects.toThrow(/E_BAD_PAYLOAD/);
-        expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
-      },
-    );
+        ),
+      ).rejects.toThrow(/E_BAD_PAYLOAD/);
+      expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
+    });
   });
 });
