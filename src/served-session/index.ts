@@ -38,7 +38,13 @@ export { currentPositionOfDrifted } from "./drift-helpers.js";
 import { createSessionHandle, wipeSession } from "./session.js";
 
 // WHY: Compatibility wrappers (sessionKey-based, store lifecycle hidden)
-export async function recordServedTruncated(sessionKey: string, path: string, rows: import("./types.js").ServedEntry[], lineCount: number, clearFrom?: number): Promise<void> {
+export async function recordServedTruncated(
+  sessionKey: string,
+  path: string,
+  rows: import("./types.js").ServedEntry[],
+  lineCount: number,
+  clearFrom?: number,
+): Promise<void> {
   await createSessionHandle(sessionKey, path).recordTruncated(rows, lineCount, clearFrom);
 }
 
@@ -46,23 +52,53 @@ export async function recordServedTruncated(sessionKey: string, path: string, ro
 export async function loadServed(sessionKey: string, path: string): Promise<(string | null)[]> {
   return createSessionHandle(sessionKey, path).load();
 }
-export async function recordServed(sessionKey: string, path: string, rows: import("./types.js").ServedEntry[]): Promise<void> {
+export async function recordServed(
+  sessionKey: string,
+  path: string,
+  rows: import("./types.js").ServedEntry[],
+): Promise<void> {
   await createSessionHandle(sessionKey, path).record(rows);
 }
-export async function recordEchoServes(sessionKey: string, path: string, rows: import("../hashline/served.js").ServedRow[], policy: import("./types.js").ServeRecordPolicy, lineCount?: number): Promise<void> {
+export async function recordEchoServes(
+  sessionKey: string,
+  path: string,
+  rows: import("../hashline/served.js").ServedRow[],
+  policy: import("./types.js").ServeRecordPolicy,
+  lineCount?: number,
+): Promise<void> {
   await createSessionHandle(sessionKey, path).recordEcho(rows, policy, lineCount);
 }
-export async function recordDiffServes(input: { sessionKey: string; path: string; servedRows: import("../hashline/served.js").ServedRow[]; resultLineCount?: number; firstChangedLine?: number }): Promise<void> {
-  await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, { resultLineCount: input.resultLineCount, firstChangedLine: input.firstChangedLine });
+export async function recordDiffServes(input: {
+  sessionKey: string;
+  path: string;
+  servedRows: import("../hashline/served.js").ServedRow[];
+  resultLineCount?: number;
+  firstChangedLine?: number;
+}): Promise<void> {
+  await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, {
+    resultLineCount: input.resultLineCount,
+    firstChangedLine: input.firstChangedLine,
+  });
 }
-export function planServeRecording(input: { resultLineCount?: number; firstChangedLine?: number }): import("./types.js").ServeRecordingPlan {
+export function planServeRecording(input: {
+  resultLineCount?: number;
+  firstChangedLine?: number;
+}): import("./types.js").ServeRecordingPlan {
   if (typeof input.resultLineCount !== "number") return { mode: "plain" };
-  return { mode: "truncated", lineCount: input.resultLineCount, clearFrom: input.firstChangedLine !== undefined ? input.firstChangedLine - 1 : 0 };
+  return {
+    mode: "truncated",
+    lineCount: input.resultLineCount,
+    clearFrom: input.firstChangedLine !== undefined ? input.firstChangedLine - 1 : 0,
+  };
 }
 export async function driftReported(sessionKey: string, path: string): Promise<Set<string>> {
   return createSessionHandle(sessionKey, path).driftReported();
 }
-export async function markDriftReported(sessionKey: string, path: string, hashes: string[]): Promise<void> {
+export async function markDriftReported(
+  sessionKey: string,
+  path: string,
+  hashes: string[],
+): Promise<void> {
   await createSessionHandle(sessionKey, path).markDriftReported(hashes);
 }
 export async function clearDriftReported(sessionKey: string, path: string): Promise<void> {

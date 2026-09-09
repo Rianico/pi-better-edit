@@ -2,35 +2,39 @@
 import xxhash from "xxhash-wasm";
 
 export type Hasher = {
-	h32(input: string, seed?: number): number;
-	h64ToString(input: string, seed?: bigint): string;
+  h32(input: string, seed?: number): number;
+  h64ToString(input: string, seed?: bigint): string;
 };
 
 let hasher: Hasher | null = null;
 
 // SAFETY: pass-through wrapper — getH centralizes hasher null check; retained over inlining for error message consistency.
 function getH(): Hasher {
-	if (hasher) return hasher;
-	throw new Error("xxhash-wasm hasher not initialized; await initHasher() before calling hashline APIs.");
+  if (hasher) return hasher;
+  throw new Error(
+    "xxhash-wasm hasher not initialized; await initHasher() before calling hashline APIs.",
+  );
 }
 
-const hasherP: Promise<Hasher> = xxhash().then((h) => {
-	// SAFETY: xxhash-wasm instance exposes h32/h64ToString matching Hasher shape; cast bridges untyped wasm binding and is validated at runtime via getH/initHasher.
-	hasher = h as unknown as Hasher;
-	return hasher;
-}).catch((err: unknown) => {
-	console.error("xxhash-wasm initialization failed:", err);
-	throw err;
-});
+const hasherP: Promise<Hasher> = xxhash()
+  .then((h) => {
+    // SAFETY: xxhash-wasm instance exposes h32/h64ToString matching Hasher shape; cast bridges untyped wasm binding and is validated at runtime via getH/initHasher.
+    hasher = h as unknown as Hasher;
+    return hasher;
+  })
+  .catch((err: unknown) => {
+    console.error("xxhash-wasm initialization failed:", err);
+    throw err;
+  });
 
 export function initHasher(): Promise<Hasher> {
-	return hasherP;
+  return hasherP;
 }
 
 export function xxh32(input: string, seed = 0): number {
-	return getH().h32(input, seed) >>> 0;
+  return getH().h32(input, seed) >>> 0;
 }
 
 export function contentChecksum(content: string): string {
-	return getH().h64ToString(content);
+  return getH().h64ToString(content);
 }

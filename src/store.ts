@@ -1,8 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
 import { withBusyRetry as hashWithBusyRetry } from "./hash-store.js";
 
-
-
 interface SnapshotStore {
   get(path: string, checksum: string, lineCount: number): string[] | undefined;
   put(
@@ -17,16 +15,13 @@ interface SnapshotStore {
   allPaths(): Array<{ path: string }>;
 }
 
-
 // SAFETY: large-class — cohesive store owns DB and cache as single owner; split would scatter invariants.
 export class SQLiteSnapshotStore implements SnapshotStore {
   constructor(private readonly db: DatabaseSync) {}
 
   get(path: string, checksum: string, lineCount: number): string[] | undefined {
     const row = this.db
-      .prepare(
-        "SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?",
-      )
+      .prepare("SELECT hashes FROM snapshots WHERE path = ? AND checksum = ? AND line_count = ?")
       .get(path, checksum, lineCount) as { hashes?: string } | undefined;
     if (!row?.hashes) return undefined;
     try {
@@ -69,12 +64,13 @@ export class SQLiteSnapshotStore implements SnapshotStore {
 
   allPaths(): Array<{ path: string }> {
     const rows = this.db
-      .prepare("SELECT path FROM snapshots UNION SELECT path FROM undo UNION SELECT path FROM served")
+      .prepare(
+        "SELECT path FROM snapshots UNION SELECT path FROM undo UNION SELECT path FROM served",
+      )
       .all() as Array<{ path: string }>;
     return rows;
   }
 }
-
 
 type SnapshotRow = {
   checksum: string;
@@ -156,4 +152,3 @@ export class MemorySnapshotStore implements SnapshotStore {
     this.extraPaths.clear();
   }
 }
-

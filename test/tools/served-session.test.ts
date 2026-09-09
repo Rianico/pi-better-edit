@@ -14,7 +14,10 @@ describe("ServedSession — handle deep interface", () => {
   it("hides sessionKey threading: record + load via handle", async () => {
     await withTempHome(async () => {
       const handleA = createSessionHandle("sessA", "/a.ts");
-      await handleA.record([{ position: 0, hash: "abc" }, { position: 1, hash: "def" }]);
+      await handleA.record([
+        { position: 0, hash: "abc" },
+        { position: 1, hash: "def" },
+      ]);
       expect(await handleA.load()).toEqual(["abc", "def"]);
       const handleB = createSessionHandle("sessB", "/a.ts");
       expect(await handleB.load()).toEqual([]);
@@ -24,7 +27,11 @@ describe("ServedSession — handle deep interface", () => {
   it("recordTruncated heals orphan and respects lineCount", async () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
-      await h.record([{ position: 0, hash: "abc" }, { position: 1, hash: "def" }, { position: 2, hash: "ghi" }]);
+      await h.record([
+        { position: 0, hash: "abc" },
+        { position: 1, hash: "def" },
+        { position: 2, hash: "ghi" },
+      ]);
       await h.recordTruncated([{ position: 0, hash: "xyz" }], 2);
       expect(await h.load()).toEqual(["xyz", "def"]);
     });
@@ -33,7 +40,10 @@ describe("ServedSession — handle deep interface", () => {
   it("recordDiff plans truncation internally (plain vs truncated)", async () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
-      await h.recordDiff([{ position: 0, hash: "abc" }], { resultLineCount: 1, firstChangedLine: 1 });
+      await h.recordDiff([{ position: 0, hash: "abc" }], {
+        resultLineCount: 1,
+        firstChangedLine: 1,
+      });
       expect(await h.load()).toEqual(["abc"]);
       await h.recordDiff([{ position: 5, hash: "zzz" }]);
       expect((await h.load())[5]).toBe("zzz");
@@ -75,7 +85,10 @@ describe("ServedSession — handle deep interface", () => {
   it("orphan healing via duplicate hash nulls old position", async () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
-      await h.record([{ position: 0, hash: "abc" }, { position: 1, hash: "def" }]);
+      await h.record([
+        { position: 0, hash: "abc" },
+        { position: 1, hash: "def" },
+      ]);
       await h.record([{ position: 2, hash: "abc" }]);
       expect(await h.load()).toEqual([null, "def", "abc"]);
     });
@@ -83,7 +96,9 @@ describe("ServedSession — handle deep interface", () => {
 });
 
 async function withTempHome(run: () => Promise<void>): Promise<void> {
-  const tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-served-session-test-"));
+  const tmpHome = await mkdtemp(
+    join(await getWritableTempRoot(), "pi-hashline-served-session-test-"),
+  );
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
   try {

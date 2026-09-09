@@ -36,15 +36,10 @@ describe("writeAtomic temp-file cleanup", () => {
 
     const { writeAtomic } = await import("../../src/fs-write");
 
-    await expect(writeAtomic("/tmp/target.txt", "content")).rejects.toThrow(
-      "rename failed",
-    );
+    await expect(writeAtomic("/tmp/target.txt", "content")).rejects.toThrow("rename failed");
 
     expect(rmMock).toHaveBeenCalledTimes(1);
-    expect(rmMock).toHaveBeenCalledWith(
-      expect.stringMatching(/\.tmp-/),
-      { force: true },
-    );
+    expect(rmMock).toHaveBeenCalledWith(expect.stringMatching(/\.tmp-/), { force: true });
   });
 
   it("does not call rm when rename succeeds", async () => {

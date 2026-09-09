@@ -122,7 +122,9 @@ describe("store — schema ownership", () => {
     try {
       const store = await loadHashStore();
       const db = store.db;
-      const tables = db.prepare("SELECT name FROM sqlite_master WHERE type='table'").all() as Array<{ name: string }>;
+      const tables = db
+        .prepare("SELECT name FROM sqlite_master WHERE type='table'")
+        .all() as Array<{ name: string }>;
       const names = tables.map((r) => r.name);
       expect(names).toEqual(expect.arrayContaining(["snapshots", "undo", "served", "meta"]));
     } finally {

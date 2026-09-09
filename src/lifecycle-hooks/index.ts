@@ -3,10 +3,22 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { initHasher as defaultInitHasher } from "../hashline/index.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store.js";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
-import { createSessionHandle, sessionKeyFor as defaultSessionKeyFor } from "../served-session/session.js";
+import {
+  createSessionHandle,
+  sessionKeyFor as defaultSessionKeyFor,
+} from "../served-session/session.js";
 
-async function defaultRecordDiffServes(input: { sessionKey: string; path: string; servedRows: import("../hashline/served.js").ServedRow[]; resultLineCount?: number; firstChangedLine?: number }): Promise<void> {
-  await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, { resultLineCount: input.resultLineCount, firstChangedLine: input.firstChangedLine });
+async function defaultRecordDiffServes(input: {
+  sessionKey: string;
+  path: string;
+  servedRows: import("../hashline/served.js").ServedRow[];
+  resultLineCount?: number;
+  firstChangedLine?: number;
+}): Promise<void> {
+  await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, {
+    resultLineCount: input.resultLineCount,
+    firstChangedLine: input.firstChangedLine,
+  });
 }
 import { readNormFile as defaultReadNormFile } from "../file-reader.js";
 import { loadFileKindAndText as defaultLoadFileKindAndText } from "../file-kind.js";
@@ -73,10 +85,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     }
   }
 
-  async function handleSessionStart(
-    _event: unknown,
-    ctx: ToolContext,
-  ): Promise<void> {
+  async function handleSessionStart(_event: unknown, ctx: ToolContext): Promise<void> {
     await deps.initHasher();
     try {
       await deps.pruneMissingAll();
@@ -98,9 +107,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     const writtenPath = rawInput?.path ?? rawInput?.file_path;
     if (typeof writtenPath === "string") {
       try {
-        await deps.clearUndo(
-          await deps.resolveTarget(deps.toCwd(writtenPath, ctx.cwd)),
-        );
+        await deps.clearUndo(await deps.resolveTarget(deps.toCwd(writtenPath, ctx.cwd)));
       } catch (error) {
         // SAFETY: best-effort undo cleanup after write — clearUndo failures are ignored; stale undo history will be overwritten on next edit or pruned, no data loss.
         console.error("Failed to clear undo after write:", error);
@@ -108,9 +115,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     }
     if (typeof writtenPath !== "string") return undefined;
     try {
-      const resolvedPath = await deps.resolveTarget(
-        deps.toCwd(writtenPath, ctx.cwd),
-      );
+      const resolvedPath = await deps.resolveTarget(deps.toCwd(writtenPath, ctx.cwd));
       await deps.valAccess(resolvedPath, writtenPath);
       const file = await deps.loadFileKindAndText(resolvedPath, {
         maxLines: MAX_HASH_LINES,
@@ -165,11 +170,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     event: ToolResultEvent,
     ctx: ToolContext,
   ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
-    if (event.toolName !== "edit" && event.toolName !== "undo_last_edit")
-      return undefined;
-    const details = event.details as
-      | import("../edit-response.js").EditDetails
-      | undefined;
+    if (event.toolName !== "edit" && event.toolName !== "undo_last_edit") return undefined;
+    const details = event.details as import("../edit-response.js").EditDetails | undefined;
     if (details?.metrics?.classification === "noop") return undefined;
     if (!details?.diff) return undefined;
 
@@ -177,9 +179,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     if (details.servedByPath && details.servedByPath.length > 0) {
       for (const entry of details.servedByPath) {
         if (entry.servedRows.length === 0) continue;
-        const resolvedPath = await deps.resolveTarget(
-          deps.toCwd(entry.path, ctx.cwd),
-        );
+        const resolvedPath = await deps.resolveTarget(deps.toCwd(entry.path, ctx.cwd));
         await recordServesBestEffort({
           sessionKey: deps.sessionKeyFor(ctx),
           path: resolvedPath,
@@ -189,12 +189,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         });
       }
     } else if (servedRows && servedRows.length > 0) {
-      const rawPath = (event.input as Record<string, unknown> | undefined)
-        ?.path;
+      const rawPath = (event.input as Record<string, unknown> | undefined)?.path;
       if (typeof rawPath === "string") {
-        const resolvedPath = await deps.resolveTarget(
-          deps.toCwd(rawPath, ctx.cwd),
-        );
+        const resolvedPath = await deps.resolveTarget(deps.toCwd(rawPath, ctx.cwd));
         await recordServesBestEffort({
           sessionKey: deps.sessionKeyFor(ctx),
           path: resolvedPath,

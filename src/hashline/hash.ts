@@ -4,21 +4,12 @@ import { defaultHashIdentity as _defaultHI } from "./hash-identity.js";
 import type { HashSnapshotIO as _HSIO } from "./hash-identity.js";
 
 export interface HashSnapshotIO {
-	get(
-		path: string,
-		content: string,
-		deleteCorrupt: boolean,
-	): Promise<string[] | undefined>;
-	upsert(
-		path: string,
-		checksum: string,
-		lineCount: number,
-		hashes: string[],
-	): Promise<void>;
+  get(path: string, content: string, deleteCorrupt: boolean): Promise<string[] | undefined>;
+  upsert(path: string, checksum: string, lineCount: number, hashes: string[]): Promise<void>;
 }
 
 export function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
-	(_defaultHI as any).setSnapshotIO(io as any);
+  (_defaultHI as any).setSnapshotIO(io as any);
 }
 
 const ANCHOR_LEN = HASH_LEN;
@@ -29,68 +20,66 @@ const HASH_SPACE = ALPHA.length ** HASH_LEN;
 const _MAX_HASH_LINES = HASH_SPACE;
 
 export function isValidHashList(value: unknown): value is string[] {
-	if (!Array.isArray(value)) return false;
-	for (const hash of value) {
-		if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
-	}
-	return true;
+  if (!Array.isArray(value)) return false;
+  for (const hash of value) {
+    if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
+  }
+  return true;
 }
 const _HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
 function rememberHashCanon(hash: string, canonText: string): void {
-	_defaultHI.rememberHashCanon(hash, canonText);
+  _defaultHI.rememberHashCanon(hash, canonText);
 }
 
 function getCanonForHash(hash: string): string | undefined {
-	return _defaultHI.getCanonForHash(hash);
+  return _defaultHI.getCanonForHash(hash);
 }
 
 export interface CanonStore {
-	get(hash: string): string | undefined;
-	set(hash: string, canonText: string): void;
+  get(hash: string): string | undefined;
+  set(hash: string, canonText: string): void;
 }
 
 export function createCanonStore(): CanonStore {
-	const m = new Map<string, string>();
-	return {
-		get(hash) {
-			return m.get(hash);
-		},
-		set(hash, canonText) {
-			if (!m.has(hash)) m.set(hash, canonText);
-		},
-	};
+  const m = new Map<string, string>();
+  return {
+    get(hash) {
+      return m.get(hash);
+    },
+    set(hash, canonText) {
+      if (!m.has(hash)) m.set(hash, canonText);
+    },
+  };
 }
 
-function _createCanonStoreFromEntries(
-	entries: Array<[string, string]>,
-): CanonStore {
-	const m = new Map<string, string>(entries);
-	return {
-		get(hash) {
-			return m.get(hash);
-		},
-		set(hash, canonText) {
-			if (!m.has(hash)) m.set(hash, canonText);
-		},
-	};
+function _createCanonStoreFromEntries(entries: Array<[string, string]>): CanonStore {
+  const m = new Map<string, string>(entries);
+  return {
+    get(hash) {
+      return m.get(hash);
+    },
+    set(hash, canonText) {
+      if (!m.has(hash)) m.set(hash, canonText);
+    },
+  };
 }
 
 export const globalCanonStore: CanonStore = {
-	get(hash) {
-		return getCanonForHash(hash);
-	},
-	set(hash, canonText) {
-		rememberHashCanon(hash, canonText);
-	},
+  get(hash) {
+    return getCanonForHash(hash);
+  },
+  set(hash, canonText) {
+    rememberHashCanon(hash, canonText);
+  },
 };
 
 function __clearGlobalCanonStoreForTest(): void {
-	_defaultHI.clearCanon();
+  _defaultHI.clearCanon();
 }
 
 function __globalCanonEntriesForTest(): Array<[string, string]> {
-	return [..._defaultHI.canonEntries()];
+  return [..._defaultHI.canonEntries()];
 }
 
 // SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char prefix — linear match, no user input, no ReDoS.
@@ -103,41 +92,41 @@ export const CANON_VERSION = 2;
 const CANON_RE = /[ \t\r\n]+/g;
 
 export function canon(line: string): string {
-	return line.replace(CANON_RE, "");
+  return line.replace(CANON_RE, "");
 }
 
 export function _lineHashesPure(
-	content: string,
-	canonStore?: CanonStore,
-	tombstone?: ReadonlySet<string>,
+  content: string,
+  canonStore?: CanonStore,
+  tombstone?: ReadonlySet<string>,
 ): string[] {
-	if (canonStore && canonStore !== globalCanonStore) {
-		const lines = splitLines(content);
-		const tmp = _defaultHI.hashesForSync(content, tombstone);
-		for (let i = 0; i < tmp.length; i++) {
-			const h = tmp[i]!;
-			const c = canon(lines[i] ?? "");
-			canonStore.set(h, c);
-		}
-		return tmp;
-	}
-	return _defaultHI.hashesForSync(content, tombstone);
+  if (canonStore && canonStore !== globalCanonStore) {
+    const lines = splitLines(content);
+    const tmp = _defaultHI.hashesForSync(content, tombstone);
+    for (let i = 0; i < tmp.length; i++) {
+      const h = tmp[i]!;
+      const c = canon(lines[i] ?? "");
+      canonStore.set(h, c);
+    }
+    return tmp;
+  }
+  return _defaultHI.hashesForSync(content, tombstone);
 }
 
 async function _lineHashes(
-	content: string,
-	path?: string,
-	previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
-	io?: HashSnapshotIO,
-	persist?: boolean,
-	_canonStore?: CanonStore,
-	tombstone?: ReadonlySet<string>,
+  content: string,
+  path?: string,
+  previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
+  io?: HashSnapshotIO,
+  persist?: boolean,
+  _canonStore?: CanonStore,
+  tombstone?: ReadonlySet<string>,
 ): Promise<string[]> {
-	return _defaultHI.hashesFor(content, {
-		path,
-		prior: previous,
-		persist: persist ?? true,
-		snapshotIO: io as any,
-		tombstone,
-	});
+  return _defaultHI.hashesFor(content, {
+    path,
+    prior: previous,
+    persist: persist ?? true,
+    snapshotIO: io as any,
+    tombstone,
+  });
 }

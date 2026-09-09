@@ -1,13 +1,13 @@
 import { spawnSync } from "node:child_process";
 import { randomUUID } from "node:crypto";
 import {
-	mkdirSync,
-	rmSync,
-	symlinkSync,
-	existsSync,
-	lstatSync,
-	writeFileSync,
-	readFileSync,
+  mkdirSync,
+  rmSync,
+  symlinkSync,
+  existsSync,
+  lstatSync,
+  writeFileSync,
+  readFileSync,
 } from "node:fs";
 import { dirname, join, resolve } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -74,177 +74,157 @@ Both edits must succeed; a rejection must NOT carry [E_RANGE_UNVERIFIED].
 Return { results: [{ scenario: "T6", pass, detail }], summary: "PASS" | "FAIL" }. In detail, quote any rejection message verbatim.`;
 
 function removeIfExists(path) {
-	if (existsSync(path) || lstatSync(path, { throwIfNoEntry: false })) {
-		rmSync(path, { recursive: true, force: true });
-	}
+  if (existsSync(path) || lstatSync(path, { throwIfNoEntry: false })) {
+    rmSync(path, { recursive: true, force: true });
+  }
 }
 
 function setup() {
-	removeIfExists(fixtureLink);
-	rmSync(fixtureReal, { recursive: true, force: true });
-	rmSync(isolatedStore, { recursive: true, force: true });
-	rmSync(continuationSessionDir, { recursive: true, force: true });
-	mkdirSync(fixtureReal, { recursive: true });
-	symlinkSync(fixtureReal, fixtureLink, "dir");
+  removeIfExists(fixtureLink);
+  rmSync(fixtureReal, { recursive: true, force: true });
+  rmSync(isolatedStore, { recursive: true, force: true });
+  rmSync(continuationSessionDir, { recursive: true, force: true });
+  mkdirSync(fixtureReal, { recursive: true });
+  symlinkSync(fixtureReal, fixtureLink, "dir");
 }
 
 function cleanup() {
-	try {
-		removeIfExists(fixtureLink);
-		rmSync(fixtureReal, { recursive: true, force: true });
-		rmSync(isolatedStore, { recursive: true, force: true });
-		rmSync(continuationSessionDir, { recursive: true, force: true });
-	} catch (error) {
-		void error;
-	}
+  try {
+    removeIfExists(fixtureLink);
+    rmSync(fixtureReal, { recursive: true, force: true });
+    rmSync(isolatedStore, { recursive: true, force: true });
+    rmSync(continuationSessionDir, { recursive: true, force: true });
+  } catch (error) {
+    void error;
+  }
 }
 
 function runPi(extraArgs, prompt) {
-	const res = spawnSync("pi", ["-p", ...extraArgs, prompt], {
-		cwd: root,
-		env: { ...process.env, XDG_CONFIG_HOME: isolatedStore },
-		encoding: "utf-8",
-		timeout: runTimeoutMs,
-		maxBuffer: 8 * 1024 * 1024,
-	});
-	return {
-		output: `${res.stdout ?? ""}${res.stderr ?? ""}`,
-		timedOut: res.error?.code === "ETIMEDOUT",
-	};
+  const res = spawnSync("pi", ["-p", ...extraArgs, prompt], {
+    cwd: root,
+    env: { ...process.env, XDG_CONFIG_HOME: isolatedStore },
+    encoding: "utf-8",
+    timeout: runTimeoutMs,
+    maxBuffer: 8 * 1024 * 1024,
+  });
+  return {
+    output: `${res.stdout ?? ""}${res.stderr ?? ""}`,
+    timedOut: res.error?.code === "ETIMEDOUT",
+  };
 }
 
 function readServedHashes() {
-	const storePath = join(isolatedStore, "pi-better-edit", "hash-store.sqlite");
-	if (!existsSync(storePath)) return null;
-	const db = new DatabaseSync(storePath, { timeout: 2000 });
-	try {
-		const served = db
-			.prepare("SELECT path, hashes FROM served WHERE session_id = ?")
-			.all(continuationSessionId);
-		const row = served.find((entry) => entry.path.endsWith("s6.txt"));
-		if (!row) return null;
-		const parsed = JSON.parse(row.hashes);
-		if (!Array.isArray(parsed) || parsed.length < 4) return null;
-		if (typeof parsed[1] !== "string" || typeof parsed[3] !== "string")
-			return null;
-		return parsed;
-	} finally {
-		db.close();
-	}
+  const storePath = join(isolatedStore, "pi-better-edit", "hash-store.sqlite");
+  if (!existsSync(storePath)) return null;
+  const db = new DatabaseSync(storePath, { timeout: 2000 });
+  try {
+    const served = db
+      .prepare("SELECT path, hashes FROM served WHERE session_id = ?")
+      .all(continuationSessionId);
+    const row = served.find((entry) => entry.path.endsWith("s6.txt"));
+    if (!row) return null;
+    const parsed = JSON.parse(row.hashes);
+    if (!Array.isArray(parsed) || parsed.length < 4) return null;
+    if (typeof parsed[1] !== "string" || typeof parsed[3] !== "string") return null;
+    return parsed;
+  } finally {
+    db.close();
+  }
 }
 
 function verdictFrom(output) {
-	const report = output.match(/summary["']?\s*:\s*["']?(PASS|FAIL)/i);
-	const summary = report ? report[1].toUpperCase() : null;
-	const codes = {
-		stale: output.includes("[E_RANGE_STALE]"),
-		unserved: output.includes("[E_RANGE_UNSERVED]"),
-		drift: output.includes("Drift notice"),
-	};
-	const pass =
-		summary === "PASS" && codes.stale && codes.unserved && codes.drift;
-	return { summary, codes, pass };
+  const report = output.match(/summary["']?\s*:\s*["']?(PASS|FAIL)/i);
+  const summary = report ? report[1].toUpperCase() : null;
+  const codes = {
+    stale: output.includes("[E_RANGE_STALE]"),
+    unserved: output.includes("[E_RANGE_UNSERVED]"),
+    drift: output.includes("Drift notice"),
+  };
+  const pass = summary === "PASS" && codes.stale && codes.unserved && codes.drift;
+  return { summary, codes, pass };
 }
 
 function continuityVerdictFrom(rows, output, fixtureContent) {
-	const report = output.match(/summary["']?\s*:\s*["']?(PASS|FAIL)/i);
-	const summary = report ? report[1].toUpperCase() : null;
-	const unverified = /\[E_RANGE_UNVERIFIED\]\s/.test(output);
-	const lines = fixtureContent.split("\n");
-	const fileOk = lines[1] === "BETA" && lines[3] === "DELTA";
-	const pass = rows !== null && summary === "PASS" && fileOk && !unverified;
-	return { pass, summary, unverified, fileOk };
+  const report = output.match(/summary["']?\s*:\s*["']?(PASS|FAIL)/i);
+  const summary = report ? report[1].toUpperCase() : null;
+  const unverified = /\[E_RANGE_UNVERIFIED\]\s/.test(output);
+  const lines = fixtureContent.split("\n");
+  const fileOk = lines[1] === "BETA" && lines[3] === "DELTA";
+  const pass = rows !== null && summary === "PASS" && fileOk && !unverified;
+  return { pass, summary, unverified, fileOk };
 }
 
 setup();
 const main = runPi([...EXTENSION_FLAGS, "--session-id", sessionId], PROMPT);
-writeFileSync(
-	join(fixtureReal, "s6.txt"),
-	"alpha\nbeta\ngamma\ndelta\nepsilon\n",
-	"utf-8",
-);
+writeFileSync(join(fixtureReal, "s6.txt"), "alpha\nbeta\ngamma\ndelta\nepsilon\n", "utf-8");
 const cont1 = runPi(
-	[
-		...EXTENSION_FLAGS,
-		"--session-dir",
-		continuationSessionDir,
-		"--session-id",
-		continuationSessionId,
-	],
-	P1_PROMPT,
+  [
+    ...EXTENSION_FLAGS,
+    "--session-dir",
+    continuationSessionDir,
+    "--session-id",
+    continuationSessionId,
+  ],
+  P1_PROMPT,
 );
 const servedHashes = readServedHashes();
 let cont2 = null;
 if (servedHashes) {
-	const readRows = servedHashes
-		.map((hash, index) => `${hash}│${S6_LINES[index] ?? ""}`)
-		.join("\n");
-	const p2Prompt = P2_PROMPT.replace("P1_READ_BLOCK", readRows)
-		.replace("P1_ANCHOR_LINE2", servedHashes[1])
-		.replace("P1_ANCHOR_LINE4", servedHashes[3]);
-	cont2 = runPi(
-		[...EXTENSION_FLAGS, "-c", "--session-dir", continuationSessionDir],
-		p2Prompt,
-	);
+  const readRows = servedHashes.map((hash, index) => `${hash}│${S6_LINES[index] ?? ""}`).join("\n");
+  const p2Prompt = P2_PROMPT.replace("P1_READ_BLOCK", readRows)
+    .replace("P1_ANCHOR_LINE2", servedHashes[1])
+    .replace("P1_ANCHOR_LINE4", servedHashes[3]);
+  cont2 = runPi([...EXTENSION_FLAGS, "-c", "--session-dir", continuationSessionDir], p2Prompt);
 }
 let fixtureAfter = "";
 if (cont2) {
-	try {
-		fixtureAfter = readFileSync(join(fixtureReal, "s6.txt"), "utf-8");
-	} catch {
-		fixtureAfter = "";
-	}
+  try {
+    fixtureAfter = readFileSync(join(fixtureReal, "s6.txt"), "utf-8");
+  } catch {
+    fixtureAfter = "";
+  }
 }
 cleanup();
 
 const { summary, codes, pass } = verdictFrom(main.output);
-const contVerdict = continuityVerdictFrom(
-	servedHashes,
-	cont2 ? cont2.output : "",
-	fixtureAfter,
-);
+const contVerdict = continuityVerdictFrom(servedHashes, cont2 ? cont2.output : "", fixtureAfter);
 
 console.log("=== runtime edge-suite (pi -e npm:pi-fabric, one session) ===");
 console.log(main.output.trim() || "(no output)");
 console.log("--- verdict ---");
 console.log(`fabric report summary: ${summary ?? "NOT FOUND"}`);
 console.log(
-	`codes seen: E_RANGE_STALE=${codes.stale} E_RANGE_UNSERVED=${codes.unserved} "Drift notice"=${codes.drift}`,
+  `codes seen: E_RANGE_STALE=${codes.stale} E_RANGE_UNSERVED=${codes.unserved} "Drift notice"=${codes.drift}`,
 );
 
 console.log(
-	"=== pi -c continuity (two sequential pi -p processes, shared isolated store + session dir) ===",
+  "=== pi -c continuity (two sequential pi -p processes, shared isolated store + session dir) ===",
 );
 console.log("--- process 1 (read) ---");
 console.log(cont1.output.trim() || "(no output)");
 console.log(
-	`process-1 served hashes found in shared store: ${servedHashes ? servedHashes.length : 0}`,
+  `process-1 served hashes found in shared store: ${servedHashes ? servedHashes.length : 0}`,
 );
 if (cont2) {
-	console.log("--- process 2 (pi -c) ---");
-	console.log(cont2.output.trim() || "(no output)");
+  console.log("--- process 2 (pi -c) ---");
+  console.log(cont2.output.trim() || "(no output)");
 }
 console.log("--- continuity verdict ---");
 console.log(
-	`process-1 served hashes found in shared store: ${servedHashes ? servedHashes.length : 0}`,
+  `process-1 served hashes found in shared store: ${servedHashes ? servedHashes.length : 0}`,
 );
-console.log(
-	`process-2 fabric report summary: ${contVerdict.summary ?? "NOT FOUND"}`,
-);
+console.log(`process-2 fabric report summary: ${contVerdict.summary ?? "NOT FOUND"}`);
 console.log(`process-2 saw E_RANGE_UNVERIFIED: ${contVerdict.unverified}`);
-console.log(
-	`process-2 edited fixture to BETA/DELTA on disk: ${contVerdict.fileOk}`,
-);
+console.log(`process-2 edited fixture to BETA/DELTA on disk: ${contVerdict.fileOk}`);
 
-const timedOut =
-	main.timedOut || cont1.timedOut || (cont2 ? cont2.timedOut : false);
+const timedOut = main.timedOut || cont1.timedOut || (cont2 ? cont2.timedOut : false);
 if (timedOut) {
-	console.log("RESULT: TIMED OUT (infrastructure)");
-	process.exitCode = 1;
+  console.log("RESULT: TIMED OUT (infrastructure)");
+  process.exitCode = 1;
 } else if (pass && contVerdict.pass) {
-	console.log("RESULT: PASS");
-	process.exitCode = 0;
+  console.log("RESULT: PASS");
+  process.exitCode = 0;
 } else {
-	console.log("RESULT: FAIL");
-	process.exitCode = 1;
+  console.log("RESULT: FAIL");
+  process.exitCode = 1;
 }

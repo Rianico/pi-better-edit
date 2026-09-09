@@ -1,38 +1,35 @@
 export function isRec(value: unknown): value is Record<string, unknown> {
-	return typeof value === "object" && value !== null && !Array.isArray(value);
+  return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 export function normalizeFilePath(record: Record<string, unknown>): void {
   const hasPath = typeof record.path === "string";
   const hasFilePath = typeof record.file_path === "string";
   if (!hasPath && hasFilePath) {
-     
     console.warn(
       `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(record.file_path)}. This alias will be removed in a future version.`,
     );
     record.path = record.file_path as string;
-     
+
     delete record.file_path;
     return;
   }
   if (hasFilePath) {
-     
     console.warn(
       `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(record.file_path)}. This alias will be removed in a future version.`,
     );
-     
+
     delete record.file_path;
     return;
   }
   if ("file_path" in record) {
     const fp = (record as Record<string, unknown>).file_path;
     if (fp !== undefined) {
-       
       console.warn(
         `[DEPRECATED] "file_path" is deprecated, use "path" instead (payload). Received file_path=${JSON.stringify(fp)}. This alias will be removed in a future version.`,
       );
     }
-     
+
     delete record.file_path;
   }
 }
@@ -48,7 +45,6 @@ export function visLines(text: string): string[] {
   const lines = text.split("\n");
   return text.endsWith("\n") ? lines.slice(0, -1) : lines;
 }
-
 
 export function rejectUnknownFields(
   obj: Record<string, unknown>,
@@ -69,10 +65,7 @@ export function cntDiff(diff: string, marker: "+" | "-"): number {
   if (!diff) return 0;
   let count = 0;
   for (const line of diff.split("\n")) {
-    if (
-      line.startsWith(marker) &&
-      !line.startsWith(`${marker}${marker}${marker}`)
-    ) {
+    if (line.startsWith(marker) && !line.startsWith(`${marker}${marker}${marker}`)) {
       count += 1;
     }
   }
@@ -84,37 +77,37 @@ export function abortIf(signal?: AbortSignal): void {
 }
 
 export function errCode(error: unknown): string | undefined {
-	if (error instanceof Error) {
-		return (error as NodeJS.ErrnoException).code;
-	}
-	return undefined;
+  if (error instanceof Error) {
+    return (error as NodeJS.ErrnoException).code;
+  }
+  return undefined;
 }
 
 export function lastNonEmptyIndex(lines: string[]): number {
-	for (let i = lines.length - 1; i >= 0; i--) {
-		if (lines[i]!.length > 0) return i;
-	}
-	return -1;
+  for (let i = lines.length - 1; i >= 0; i--) {
+    if (lines[i]!.length > 0) return i;
+  }
+  return -1;
 }
 
 export function firstNonEmptyIndex(lines: string[]): number {
-	for (let i = 0; i < lines.length; i++) {
-		if (lines[i]!.length > 0) return i;
-	}
-	return -1;
+  for (let i = 0; i < lines.length; i++) {
+    if (lines[i]!.length > 0) return i;
+  }
+  return -1;
 }
 
 export function lastNonEmpty(lines: string[]): string | undefined {
-	const idx = lastNonEmptyIndex(lines);
-	return idx >= 0 ? lines[idx] : undefined;
+  const idx = lastNonEmptyIndex(lines);
+  return idx >= 0 ? lines[idx] : undefined;
 }
 
 export function firstNonEmpty(lines: string[]): string | undefined {
-	const idx = firstNonEmptyIndex(lines);
-	return idx >= 0 ? lines[idx] : undefined;
+  const idx = firstNonEmptyIndex(lines);
+  return idx >= 0 ? lines[idx] : undefined;
 }
 
 export function clipLine(line: string, maxLen = 200): string {
-	const flat = line.replace(/\n/g, "\\n");
-	return flat.length > maxLen ? `${flat.slice(0, maxLen)}...` : flat;
+  const flat = line.replace(/\n/g, "\\n");
+  return flat.length > maxLen ? `${flat.slice(0, maxLen)}...` : flat;
 }

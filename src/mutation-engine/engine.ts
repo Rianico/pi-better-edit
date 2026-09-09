@@ -23,9 +23,10 @@ function extractCode(message: string): string {
 
 function toFailure(error: unknown): MutationResult {
   const message = error instanceof Error ? error.message : String(error);
-  const code = error instanceof Error ? errCode(message) ?? extractCode(message) : "E_UNKNOWN";
+  const code = error instanceof Error ? (errCode(message) ?? extractCode(message)) : "E_UNKNOWN";
   // WHY: Try to preserve servedRows/echo if error carries them (ServedRejectionError, AnchorMismatchError)
-  const servedRows = (error as { servedRows?: import("../hashline/served.js").ServedRow[] })?.servedRows;
+  const servedRows = (error as { servedRows?: import("../hashline/served.js").ServedRow[] })
+    ?.servedRows;
   // WHY: Echo is embedded in message for batch abort; keep message as echo source.
   return {
     ok: false,
@@ -49,7 +50,11 @@ export async function execute(
   options?: PipelineOptions,
 ): Promise<MutationResult> {
   try {
-    const { result, diff, drift, metrics, raw, toolResult } = await pipelineApply(request, cwd, options);
+    const { result, diff, drift, metrics, raw, toolResult } = await pipelineApply(
+      request,
+      cwd,
+      options,
+    );
     if (!metrics) throw new Error("missing metrics from pipeline — invariant violation");
     return {
       ok: true,

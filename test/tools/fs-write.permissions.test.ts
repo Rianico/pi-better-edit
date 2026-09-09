@@ -8,10 +8,10 @@ const handleChmodMock = vi.fn(async () => undefined);
 const handleCloseMock = vi.fn(async () => undefined);
 const handleSyncMock = vi.fn(async () => undefined);
 const openMock = vi.fn(async () => ({
-	writeFile: handleWriteFileMock,
-	chmod: handleChmodMock,
-	sync: handleSyncMock,
-	close: handleCloseMock,
+  writeFile: handleWriteFileMock,
+  chmod: handleChmodMock,
+  sync: handleSyncMock,
+  close: handleCloseMock,
 }));
 const renameMock = vi.fn(async () => undefined);
 const mkdirMock = vi.fn(async () => undefined);
@@ -20,41 +20,37 @@ const lstatMock = vi.fn(async () => ({ isSymbolicLink: () => false }));
 const readlinkMock = vi.fn(async () => "");
 
 vi.mock("fs/promises", () => ({
-	lstat: lstatMock,
-	open: openMock,
-	mkdir: mkdirMock,
-	readlink: readlinkMock,
-	rename: renameMock,
-	stat: statMock,
-	writeFile: writeFileMock,
+  lstat: lstatMock,
+  open: openMock,
+  mkdir: mkdirMock,
+  readlink: readlinkMock,
+  rename: renameMock,
+  stat: statMock,
+  writeFile: writeFileMock,
 }));
 
 describe.skipIf(isWindows)("writeAtomic permissions", () => {
-	beforeEach(() => {
-		vi.clearAllMocks();
-		openMock.mockResolvedValue({
-			writeFile: handleWriteFileMock,
-			chmod: handleChmodMock,
-			sync: handleSyncMock,
-			close: handleCloseMock,
-		});
-		statMock.mockResolvedValue({ mode: 0o100600, nlink: 1 });
-		lstatMock.mockResolvedValue({ isSymbolicLink: () => false });
-	});
+  beforeEach(() => {
+    vi.clearAllMocks();
+    openMock.mockResolvedValue({
+      writeFile: handleWriteFileMock,
+      chmod: handleChmodMock,
+      sync: handleSyncMock,
+      close: handleCloseMock,
+    });
+    statMock.mockResolvedValue({ mode: 0o100600, nlink: 1 });
+    lstatMock.mockResolvedValue({ isSymbolicLink: () => false });
+  });
 
-	it("creates the temporary file securely, writes content, then restores the target mode", async () => {
-		const { writeAtomic } = await import("../../src/fs-write");
+  it("creates the temporary file securely, writes content, then restores the target mode", async () => {
+    const { writeAtomic } = await import("../../src/fs-write");
 
-		await writeAtomic("/tmp/secret.txt", "secret\n");
+    await writeAtomic("/tmp/secret.txt", "secret\n");
 
-		expect(openMock).toHaveBeenCalledWith(
-			expect.stringMatching(/\/tmp\/.tmp-/),
-			"wx",
-			0o600,
-		);
-		expect(handleWriteFileMock).toHaveBeenCalledWith("secret\n", "utf-8");
-		expect(handleChmodMock).toHaveBeenCalledWith(0o600);
-		expect(handleCloseMock).toHaveBeenCalled();
-		expect(writeFileMock).not.toHaveBeenCalled();
-	});
+    expect(openMock).toHaveBeenCalledWith(expect.stringMatching(/\/tmp\/.tmp-/), "wx", 0o600);
+    expect(handleWriteFileMock).toHaveBeenCalledWith("secret\n", "utf-8");
+    expect(handleChmodMock).toHaveBeenCalledWith(0o600);
+    expect(handleCloseMock).toHaveBeenCalled();
+    expect(writeFileMock).not.toHaveBeenCalled();
+  });
 });

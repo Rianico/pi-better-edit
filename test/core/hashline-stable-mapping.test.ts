@@ -4,7 +4,6 @@ import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
 
-
 describe("mapStableHashes — identity and simple changes", () => {
   it("preserves all hashes when content is unchanged", async () => {
     const content = "a\nb\nc";
@@ -521,7 +520,8 @@ describe("mapStableHashes — nearest-candidate selection", () => {
       content: oldContent,
       hashes: oldHashes,
       removedHashes,
-    });  expect(result).toHaveLength(1);
+    });
+    expect(result).toHaveLength(1);
     expect(removedHashes.has(result[0]!)).toBe(false);
   });
 
@@ -530,13 +530,9 @@ describe("mapStableHashes — nearest-candidate selection", () => {
       i % 2 === 0 ? "dup" : `u${i}`,
     ).join("\n");
     const oldHashes = await lineHashes(oldContent, home.testPath);
-    const removedHashes = new Set(
-      oldHashes.filter((_, i) => i % 4 === 0),
-    );
+    const removedHashes = new Set(oldHashes.filter((_, i) => i % 4 === 0));
 
-    const newLines = Array.from({ length: 1_500 }, (_, i) =>
-      i % 2 === 0 ? "dup" : `n${i}`,
-    );
+    const newLines = Array.from({ length: 1_500 }, (_, i) => (i % 2 === 0 ? "dup" : `n${i}`));
     const result = await lineHashes(newLines.join("\n"), home.testPath, {
       content: oldContent,
       hashes: oldHashes,

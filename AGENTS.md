@@ -15,3 +15,7 @@ Single-context — one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs
 ### Contribution
 
 Conventional commits & changelog: see CONTRIBUTING.md
+
+### Runtime
+
+TypeScript: pnpm v12 + .nvmrc (24) + TS v7 (Go native) + Vite v8, verify via `pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage` (oxlint / oxfmt / tsc / vitest). Deps via `pnpm-lock.yaml` (frozen in CI); do not run npm against this repo.

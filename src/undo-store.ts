@@ -48,19 +48,10 @@ function buildStmts(db: DatabaseSync): UndoStmts {
   return {
     undoUpsert: (path, content, bom, ending, hashes, resultContent, updatedAt) => {
       withBusyRetry(() => {
-        undoUpsertStmt.run(
-          path,
-          content,
-          bom,
-          ending,
-          hashes,
-          resultContent,
-          updatedAt,
-        );
+        undoUpsertStmt.run(path, content, bom, ending, hashes, resultContent, updatedAt);
       });
     },
-    undoGet: (...params) =>
-      undoGetStmt.get(...params) as Record<string, unknown> | undefined,
+    undoGet: (...params) => undoGetStmt.get(...params) as Record<string, unknown> | undefined,
     undoDelete: (path) => {
       withBusyRetry(() => {
         undoDelStmt.run(path);
@@ -68,7 +59,6 @@ function buildStmts(db: DatabaseSync): UndoStmts {
     },
   };
 }
-
 
 export function ensureUndoSchema(db: DatabaseSync): void {
   db.exec(
@@ -88,11 +78,7 @@ onStoreOpen((db) => {
   ensureUndoSchema(db);
 });
 
-export function upsertUndo(
-  store: HashStore,
-  path: string,
-  entry: UndoRecord,
-): void {
+export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): void {
   undoStmts(store.db).undoUpsert(
     path,
     entry.content,
@@ -104,10 +90,7 @@ export function upsertUndo(
   );
 }
 
-export function getUndoEntry(
-  store: HashStore,
-  path: string,
-): UndoRecord | undefined {
+export function getUndoEntry(store: HashStore, path: string): UndoRecord | undefined {
   const row = undoStmts(store.db).undoGet(path);
   if (!row) return undefined;
   try {
@@ -138,10 +121,7 @@ export async function readUndo(path: string): Promise<UndoRecord | undefined> {
   return getUndoEntry(store, path);
 }
 
-export async function writeUndo(
-  path: string,
-  entry: UndoRecord,
-): Promise<void> {
+export async function writeUndo(path: string, entry: UndoRecord): Promise<void> {
   const store = await loadHashStore();
   upsertUndo(store, path, entry);
 }

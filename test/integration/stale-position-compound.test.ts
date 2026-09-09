@@ -9,7 +9,13 @@ describe("stale-position compound edits", () => {
     await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const firstText = firstRead.content[0].text as string;
       const line5Hash = firstText
         .split("\n")
@@ -41,7 +47,13 @@ describe("stale-position compound edits", () => {
     await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const firstText = firstRead.content[0].text as string;
       const lines = firstText.split("\n");
       const line2Hash = lines.find((l: string) => l.includes("│b"))!.split("│")[0]!;
@@ -63,7 +75,13 @@ describe("stale-position compound edits", () => {
     await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const firstText = firstRead.content[0].text as string;
       const lines = firstText.split("\n");
       const line2Hash = lines.find((l: string) => l.includes("│b"))!.split("│")[0]!;

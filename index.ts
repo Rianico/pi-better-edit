@@ -6,10 +6,7 @@ import { regReadSkill } from "./src/read-skill.js";
 import { registerWriteHook } from "./src/write-hook.js";
 import { createLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 
-export {
-  createLifecycleHooks,
-  registerLifecycleHooks,
-} from "./src/lifecycle-hooks/index.js";
+export { createLifecycleHooks, registerLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 
 export default function (pi: ExtensionAPI): void {
   regRead(pi);

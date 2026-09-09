@@ -1,19 +1,8 @@
 import { describe, expect, it } from "vitest";
-import {
-  mkdir,
-  writeFile,
-  readFile,
-  stat,
-  symlink,
-  link,
-  chmod,
-  utimes,
-  open,
-} from "fs/promises";
+import { mkdir, writeFile, readFile, stat, symlink, link, chmod, utimes, open } from "fs/promises";
 import { join } from "path";
 import { resolveTarget, writeAtomic } from "../../src/fs-write";
 import { withTempDir } from "../support/fixtures";
-
 
 describe("resolveTarget", () => {
   it("resolves a simple path", async () => {
@@ -58,9 +47,7 @@ describe("resolveTarget", () => {
       const b = join(dir, "b");
       await symlink(b, a);
       await symlink(a, b);
-      await expect(resolveTarget(join(a, "x.txt"))).rejects.toThrow(
-        /Too many symbolic links/,
-      );
+      await expect(resolveTarget(join(a, "x.txt"))).rejects.toThrow(/Too many symbolic links/);
     });
   });
 
