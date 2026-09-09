@@ -4,330 +4,371 @@ import { EDITS_MAX_ITEMS } from "./constants.js";
 const normalizedEdit = Symbol("normalizedEdit");
 
 export type EditItem = {
-  remove_from: string;
-  remove_to: string;
-  replacement_text: string;
+	anchor_from: string;
+	anchor_to: string;
+	replace_with: string;
 };
 
 export type NormalizedEditRequest = {
-  path: string | null;
-  edits: EditItem[];
+	file: string | null;
+	edits: EditItem[];
 };
-
 type NormalizedPayload = NormalizedEditRequest & {
-  readonly [normalizedEdit]: true;
+	readonly [normalizedEdit]: true;
 };
 
-type RawPayload = string | number | boolean | null | undefined | Record<string, unknown>;
+type RawPayload =
+	| string
+	| number
+	| boolean
+	| null
+	| undefined
+	| Record<string, unknown>;
 
 export type NormReqResult = NormalizedPayload | RawPayload;
 
 function isRec(value: unknown): value is Record<string, unknown> {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
+	return typeof value === "object" && value !== null && !Array.isArray(value);
 }
 
 function isNormalizedEdit(input: unknown): input is Record<string, unknown> {
-  return isRec(input) && (input as Record<string | symbol, unknown>)[normalizedEdit] === true;
+	return (
+		isRec(input) &&
+		(input as Record<string | symbol, unknown>)[normalizedEdit] === true
+	);
 }
 
-export const replacementTextSchema = Type.String({
-  description: 'Complete replacement for the range; use "" to delete',
+export const replaceWithSchema = Type.String({
+	description: 'Bare file content for the range; use "" to delete',
 });
 
-export const removeFromSchema = Type.String({
-  description: "First line to remove (inclusive)",
+export const anchorFromSchema = Type.String({
+	description: "Bare 3-char hash anchor of the first range line (inclusive)",
 });
 
-export const removeToSchema = Type.String({
-  description: "Last line to remove (inclusive)",
+export const anchorToSchema = Type.String({
+	description: "Bare 3-char hash anchor of the last range line (inclusive)",
 });
 
-const editPathSchema = Type.Union([
-  Type.String({
-    minLength: 1,
-    description: "File path; null infers it from anchors",
-  }),
-  Type.Null(),
-]);
+export const editFileSchema = Type.String({
+	minLength: 1,
+	description: "Path to the text file to edit (a file, never a directory)",
+});
 
-export const editTupleSchema = Type.Tuple(
-  [removeFromSchema, removeToSchema, replacementTextSchema],
-  {
-    description: "[remove_from, remove_to, replacement_text]",
-  },
+export const editItemSchema = Type.Object(
+	{
+		anchor_from: anchorFromSchema,
+		anchor_to: anchorToSchema,
+		replace_with: replaceWithSchema,
+	},
+	{ additionalProperties: false },
 );
 
 export const editToolSchema = Type.Object(
-  {
-    path: editPathSchema,
-    edits: Type.Array(editTupleSchema, {
-      description: "Ordered list of edit tuples",
-      minItems: 1,
-      maxItems: EDITS_MAX_ITEMS,
-    }),
-  },
-  { additionalProperties: false },
+	{
+		file: editFileSchema,
+		edits: Type.Array(editItemSchema, {
+			description: "Ordered list of edit items",
+			minItems: 1,
+			maxItems: EDITS_MAX_ITEMS,
+		}),
+	},
+	{ additionalProperties: false },
 );
 
-const EDIT_TUPLE_HINT =
-  "Edit must be called with exactly one payload. Use the canonical payload " +
-  '{"path": path, "edits": [[remove_from, remove_to, replacement_text], ...]}: ' +
-  "path is a non-empty string (or null to infer from anchors), each item is a " +
-  "fixed 3-position array of two inclusive bare-3-char anchors and the full " +
-  "replacement (an empty string deletes the range).";
-
+const EDIT_PAYLOAD_HINT =
+	"Edit must be called with exactly one payload. Use the canonical payload " +
+	'{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, ...]}: ' +
+	'"file" is the text file to edit (a non-empty string, never a directory); each item names ' +
+	"two inclusive bare-3-char anchors and the full replacement " +
+	"(an empty string deletes the range).";
 export const EDIT_DESCRIPTION =
-  'Edit a range of lines in a text file via payload contract { "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] } (arity = edits.length, atomic; path null infers). Use bare 3-char HASH anchors (e.g. "wUp") from served HASH│content (e.g. wUp│  "site": {) — never HASH│content. replacement_text is bare content (\n joins lines, "" deletes the inclusive anchor range). On success chain from diff HASH│content (no re-read). Staleness tombstone∉ && canon== + epoch (position-free, strict on snapshotId mismatch): E_STALE_ANCHOR → re-read; E_STALE_RANGE/E_UNSERVED_RANGE → reject-and-serve with fresh HASH│content (retry from echo). Channel: [MODEL] retry, [USER] drift notice dimmed.';
+	'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` (arity = edits.length, atomic, one file per call). Use `edit` for content seen via `read` or a diff; never for directories, binary files, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors (e.g. "wUp") — copy the 3 chars before `│` in served `HASH│content` lines, never `│` or content. `replace_with` is bare content (`\\n` joins lines, `""` deletes). Example: `{"file":"s.py","edits":[{"anchor_from":"wUp","anchor_to":"AU6","replace_with":"x:\\n    y"}]}`. Chain from diff anchors (no re-read). `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
 export const EDIT_SNIPPET =
-  'Edit via payload contract `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }` — `remove_from`/`remove_to` are bare 3-char anchors (e.g. "aB3") for inclusive anchor range, `replacement_text` is bare content (no `HASH│`). `read` serves `wUp│    "site": {` → `edit` `{"path":"scrape.py","edits":[["wUp","AU6","    "site": {\\n        "class": SiteScraper,"]]}`. After success chain from diff `HASH│content` (no re-read); on `[MODEL] [E_STALE_RANGE]`/`[E_UNSERVED_RANGE]` retry from echo (`reject-and-serve`, no read), on `[MODEL] [E_STALE_ANCHOR]` re-read for fresh anchors; `[USER]` dimmed is human `drift notice`.';
+	'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"replace_with":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), `replace_with` is bare content (`""` deletes). Chain from diff anchors with no re-read.';
 export const EDIT_GUIDELINES: string[] = [
-  'edit: `anchor` (`HASH`) vs `HASH│content` — `anchor` is bare 3-char hash (e.g. "wUp"), `HASH│content` is served line (e.g. `wUp│    "site": {`); never mix them — `remove_from`/`remove_to` are bare `anchor`s, `replacement_text` never has `HASH│`.',
-  'edit: payload contract `{ "path": path, "edits": [[remove_from, remove_to, replacement_text], ...] }` — `path` hoisted, `edits` arity = number of edits (1 = single, >1 = batched atomically to one file; `batch_edit` removed).',
-  "edit: `remove_from`/`remove_to` are inclusive anchor range (both boundaries included); copy only 3 chars before `│` from served `HASH│content` — never include `│` or content.",
-  'edit: `replacement_text` is plain file content without `HASH│` — e.g. "    "site": {\\n        "class": SiteScraper,"; every `\\n` separates lines, mirror trailing blank lines, `""` deletes inclusive range; never prefix lines with `HASH│` (would be `E_SERVED_ECHO` → `[MODEL] [E_SERVED_ECHO]` fail-loud).',
-  "edit: after success diff serves fresh `HASH│content` (fresh anchors) — copy new `anchor`s from there for next edit; no re-read.",
-  "edit: staleness is `tombstone∉ && canon==` + `epoch` (`position-free`, `strict` on `snapshotId` mismatch): `E_STALE_ANCHOR` (anchor changed/tombstoned) → re-read; `E_STALE_RANGE` (served-range interior changed) / `E_UNSERVED_RANGE` (never-served span) → `reject-and-serve` with fresh `HASH│content` (retry from echo, no read).",
-  "edit: channel — `[MODEL]` in `content` = you retry (e.g. `E_STALE_*`, `E_BAD_PAYLOAD`, `E_BAD_ANCHOR`, `E_SERVED_ECHO`), `[USER]` dimmed in `details` = human `drift notice` (outside served range, capped).",
-  "edit: batch via `edits` arity atomically (fail → nothing written); independent ranges only.",
+	'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`, and never emit `│` anywhere in your call.',
+	'edit: payload shape `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` — `file` is the text file (never a directory); `edits` length is the arity (1 = single, >1 = batched atomically to the one file).',
+	"edit: `anchor_from`/`anchor_to` bound the inclusive range (both lines replaced); when an anchor no longer matches, re-read the file and copy fresh anchors.",
+	'edit: `replace_with` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; write no `HASH│` prefixes (the call is refused when a line echoes a served anchor).',
+	"edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.",
+	"edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone; a dimmed `[USER]` line in `details` is human info, never your error.",
+	"edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).",
+	"edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.",
 ];
 
 function _getPayloadPromptFragments(): {
-  description: string;
-  snippet: string;
-  guidelines: string[];
-  hint: string;
+	description: string;
+	snippet: string;
+	guidelines: string[];
+	hint: string;
 } {
-  return {
-    description: EDIT_DESCRIPTION,
-    snippet: EDIT_SNIPPET,
-    guidelines: [...EDIT_GUIDELINES],
-    hint: EDIT_TUPLE_HINT,
-  };
+	return {
+		description: EDIT_DESCRIPTION,
+		snippet: EDIT_SNIPPET,
+		guidelines: [...EDIT_GUIDELINES],
+hint: EDIT_PAYLOAD_HINT,
+	};
 }
 
-function emitFilePathDeprecationWarning(filePathValue: unknown, context: string = "payload"): void {
-  console.warn(
-    `[DEPRECATED] "file_path" is deprecated, use "path" instead (${context}). Received file_path=${JSON.stringify(filePathValue)}. This alias will be removed in a future version.`,
-  );
-}
-
-function _normalizeFilePathRecord(
-  record: Record<string, unknown>,
-  context: string = "payload",
-): boolean {
-  if (typeof record.path !== "string" && typeof record.file_path === "string") {
-    const fp = record.file_path as string;
-    emitFilePathDeprecationWarning(fp, context);
-    record.path = fp;
-
-    delete record.file_path;
-    return true;
-  }
-  if (typeof record.file_path === "string") {
-    emitFilePathDeprecationWarning(record.file_path, context);
-
-    delete record.file_path;
-    return true;
-  }
-  if ("file_path" in record) {
-    if (record.file_path !== undefined) {
-      emitFilePathDeprecationWarning(record.file_path, context);
-    }
-
-    delete record.file_path;
-    return true;
-  }
-  return false;
+function emitFilePathDeprecationWarning(
+	filePathValue: unknown,
+	context: string = "payload",
+): void {
+	console.warn(
+	`[DEPRECATED] "file_path" is deprecated, use "file" instead (${context}). Received file_path=${JSON.stringify(filePathValue)}. This alias will be removed in a future version.`,
+	);
 }
 
 function itemFromTuple(value: unknown): EditItem | undefined {
-  if (!Array.isArray(value) || value.length !== 3) return undefined;
-  const [remove_from, remove_to, replacement_text] = value;
-  if (
-    typeof remove_from !== "string" ||
-    typeof remove_to !== "string" ||
-    typeof replacement_text !== "string"
-  ) {
-    return undefined;
-  }
-  return { remove_from, remove_to, replacement_text };
+	if (!Array.isArray(value) || value.length !== 3) return undefined;
+	const [anchor_from, anchor_to, replace_with] = value;
+	if (
+		typeof anchor_from !== "string" ||
+		typeof anchor_to !== "string" ||
+		typeof replace_with !== "string"
+	) {
+		return undefined;
+	}
+	return { anchor_from, anchor_to, replace_with };
+}
+
+const ITEM_KS = new Set(["anchor_from", "anchor_to", "replace_with"]);
+const LEGACY_ITEM_KS = new Set([
+	"remove_from",
+	"remove_to",
+	"replacement_text",
+]);
+
+function itemFrom(value: unknown): EditItem | undefined {
+	if (Array.isArray(value)) return itemFromTuple(value);
+	if (!isRec(value)) return undefined;
+	const keys = new Set(Object.keys(value));
+	if (keys.size === ITEM_KS.size && [...ITEM_KS].every((k) => keys.has(k))) {
+		const { anchor_from, anchor_to, replace_with } = value;
+		if (
+			typeof anchor_from !== "string" ||
+			typeof anchor_to !== "string" ||
+			typeof replace_with !== "string"
+		) {
+			return undefined;
+		}
+		return { anchor_from, anchor_to, replace_with };
+	}
+	if (keys.size === LEGACY_ITEM_KS.size && [...LEGACY_ITEM_KS].every((k) => keys.has(k))) {
+		const { remove_from, remove_to, replacement_text } = value as Record<
+			string,
+			unknown
+		>;
+		if (
+			typeof remove_from !== "string" ||
+			typeof remove_to !== "string" ||
+			typeof replacement_text !== "string"
+		) {
+			return undefined;
+		}
+		return {
+			anchor_from: remove_from,
+			anchor_to: remove_to,
+			replace_with: replacement_text,
+		};
+	}
+	return undefined;
 }
 
 function sanitizePath(value: unknown): string | null {
-  if (typeof value !== "string") return null;
-  let s = value.trim();
-  // WHY: Gemma 4 bleed: model may wrap path in <|>, │, |, quotes, or backticks due to │ confusion — see via https://github.com/Rianico/pi-better-edit/issues/55
-  // WHY: Strip leading/trailing wrappers iteratively — model may re-wrap after slice, see sanitizePath
-  let changed = true;
-  while (changed) {
-    changed = false;
-    if (s.startsWith("<|>") && s.endsWith("<|>") && s.length > 6) {
-      s = s.slice(3, -3).trim();
-      changed = true;
-    }
-    if (s.startsWith("│") && s.endsWith("│") && s.length > 2) {
-      s = s.slice(1, -1).trim();
-      changed = true;
-    }
-    if (s.startsWith("|") && s.endsWith("|") && s.length > 2) {
-      s = s.slice(1, -1).trim();
-      changed = true;
-    }
-    if (
-      (s.startsWith('"') && s.endsWith('"')) ||
-      (s.startsWith("'") && s.endsWith("'")) ||
-      (s.startsWith("`") && s.endsWith("`"))
-    ) {
-      s = s.slice(1, -1).trim();
-      changed = true;
-    }
-    if (s.startsWith("<|>")) {
-      s = s.slice(3).trim();
-      changed = true;
-    }
-    if (s.endsWith("<|>")) {
-      s = s.slice(0, -3).trim();
-      changed = true;
-    }
-  }
-  return s.length > 0 ? s : null;
+	if (typeof value !== "string") return null;
+	let s = value.trim();
+	// WHY: Gemma 4 bleed: model may wrap path in <|>, │, |, quotes, or backticks due to │ confusion — see via https://github.com/Rianico/pi-better-edit/issues/55
+	// WHY: Strip leading/trailing wrappers iteratively — model may re-wrap after slice, see sanitizePath
+	let changed = true;
+	while (changed) {
+		changed = false;
+		if (s.startsWith("<|>") && s.endsWith("<|>") && s.length > 6) {
+			s = s.slice(3, -3).trim();
+			changed = true;
+		}
+		if (s.startsWith("│") && s.endsWith("│") && s.length > 2) {
+			s = s.slice(1, -1).trim();
+			changed = true;
+		}
+		if (s.startsWith("|") && s.endsWith("|") && s.length > 2) {
+			s = s.slice(1, -1).trim();
+			changed = true;
+		}
+		if (
+			(s.startsWith('"') && s.endsWith('"')) ||
+			(s.startsWith("'") && s.endsWith("'")) ||
+			(s.startsWith("`") && s.endsWith("`"))
+		) {
+			s = s.slice(1, -1).trim();
+			changed = true;
+		}
+		if (s.startsWith("<|>")) {
+			s = s.slice(3).trim();
+			changed = true;
+		}
+		if (s.endsWith("<|>")) {
+			s = s.slice(0, -3).trim();
+			changed = true;
+		}
+	}
+	return s.length > 0 ? s : null;
 }
 
-export function editRequestFrom(input: unknown): NormalizedEditRequest | undefined {
-  if (!isRec(input)) return undefined;
-  const rec = input as Record<string, unknown>;
-  const hasFilePath = "file_path" in rec;
-  const hasPath = "path" in rec;
-  if (hasFilePath) {
-    emitFilePathDeprecationWarning(rec.file_path, "edit payload");
-  }
-  let effectivePath: unknown;
-  if (hasPath) {
-    effectivePath = rec.path;
-    if (
-      (typeof effectivePath !== "string" && effectivePath !== null) ||
-      (effectivePath === undefined && typeof rec.file_path === "string")
-    ) {
-      if (typeof rec.file_path === "string") {
-        effectivePath = rec.file_path;
-      }
-    }
-  } else if (hasFilePath) {
-    effectivePath = rec.file_path;
-  } else {
-    return undefined;
-  }
+export function editRequestFrom(
+	input: unknown,
+): NormalizedEditRequest | undefined {
+	if (!isRec(input)) return undefined;
+	const rec = input as Record<string, unknown>;
+	const hasFilePath = "file_path" in rec;
+	const hasPath = "path" in rec;
+	if (hasFilePath) {
+		emitFilePathDeprecationWarning(rec.file_path, "edit payload");
+	}
+	let effectivePath: unknown;
+	const hasFile = "file" in rec;
+	if (hasFile) {
+		effectivePath = rec.file;
+	} else if (hasPath) {
+		effectivePath = rec.path;
+		if (
+			(typeof effectivePath !== "string" && effectivePath !== null) ||
+			(effectivePath === undefined && typeof rec.file_path === "string")
+		) {
+			if (typeof rec.file_path === "string") {
+				effectivePath = rec.file_path;
+			}
+		}
+	} else if (hasFilePath) {
+		effectivePath = rec.file_path;
+	} else {
+		return undefined;
+	}
 
-  if (!("edits" in rec)) return undefined;
-  const edits = rec.edits;
+	if (!("edits" in rec)) return undefined;
+	const edits = rec.edits;
 
-  if (typeof effectivePath === "string") {
-    const sanitized = sanitizePath(effectivePath);
-    if (sanitized === null) return undefined;
-    effectivePath = sanitized;
-  }
+	if (typeof effectivePath === "string") {
+		const sanitized = sanitizePath(effectivePath);
+		if (sanitized === null) return undefined;
+		effectivePath = sanitized;
+	}
 
-  if (
-    effectivePath !== null &&
-    (typeof effectivePath !== "string" || (effectivePath as string).length === 0)
-  ) {
-    return undefined;
-  }
-  if (!Array.isArray(edits) || edits.length === 0) return undefined;
-  const items: EditItem[] = [];
-  for (const item of edits) {
-    const normalized = itemFromTuple(item);
-    if (!normalized) return undefined;
-    items.push(normalized);
-  }
-  return { path: effectivePath as string | null, edits: items };
+	if (
+		effectivePath !== null &&
+		(typeof effectivePath !== "string" || (effectivePath as string).length === 0)
+	) {
+		return undefined;
+	}
+	if (!Array.isArray(edits) || edits.length === 0) return undefined;
+	const items: EditItem[] = [];
+	for (const item of edits) {
+		const normalized = itemFrom(item);
+		if (!normalized) return undefined;
+		items.push(normalized);
+	}
+	return { file: effectivePath as string | null, edits: items };
 }
 
 export function normReq(input: unknown): NormReqResult {
-  const valid = editRequestFrom(input);
-  // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
-  if (!valid) return input as NormReqResult;
-  const record = { path: valid.path, edits: valid.edits };
-  Object.defineProperty(record, normalizedEdit, {
-    value: true,
-    enumerable: false,
-  });
-  return record;
+	const valid = editRequestFrom(input);
+	// SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
+	if (!valid) return input as NormReqResult;
+	const record = { file: valid.file, edits: valid.edits };
+	Object.defineProperty(record, normalizedEdit, {
+		value: true,
+		enumerable: false,
+	});
+	return record;
 }
 
 function describeReceived(input: unknown): string {
-  if (input === undefined) return "Received no arguments.";
-  if (input === null) return "Received null.";
-  if (typeof input === "string") return `Received a bare string (${JSON.stringify(input)}).`;
-  const json = JSON.stringify(input);
-  if (typeof json === "string" && json.length > 600) {
-    const truncated = json.slice(0, 600);
-    return `Received: ${truncated}… (+truncated, full path+edits in tool input)`;
-  }
-  return `Received: ${json}`;
+	if (input === undefined) return "Received no arguments.";
+	if (input === null) return "Received null.";
+	if (typeof input === "string")
+		return `Received a bare string (${JSON.stringify(input)}).`;
+	const json = JSON.stringify(input);
+	if (typeof json === "string" && json.length > 600) {
+		const truncated = json.slice(0, 600);
+		return `Received: ${truncated}… (+truncated, full file+edits in tool input)`;
+	}
+	return `Received: ${json}`;
 }
 
 export function prepareEditArguments(args: unknown): Record<string, unknown> {
-  const valid = editRequestFrom(args);
-  if (valid) {
-    const original = args as Record<string, unknown>;
-    return { path: valid.path, edits: original.edits as unknown };
-  }
-  throw new Error(`[MODEL] [E_BAD_PAYLOAD] ${EDIT_TUPLE_HINT} ${describeReceived(args)}`);
+	const valid = editRequestFrom(args);
+	if (valid) {
+		// SAFETY: valid.edits are folded to modern objects (tuples/legacy keys normalized) so the return matches the public schema
+		return { file: valid.file, edits: valid.edits as unknown };
+	}
+	throw new Error(
+		`[MODEL] [E_BAD_PAYLOAD] ${EDIT_PAYLOAD_HINT} ${describeReceived(args)}`,
+	);
 }
 
-export function getPreviewInput(args: unknown): { path: string | null; edits: EditItem[] } | null {
-  const req = editRequestFrom(args);
-  if (!req) return null;
-  return req;
+export function getPreviewInput(
+	args: unknown,
+): { file: string | null; edits: EditItem[] } | null {
+	const req = editRequestFrom(args);
+	if (!req) return null;
+	return req;
 }
 
 function rejectUnknownFields(
-  obj: Record<string, unknown>,
-  allowed: Set<string>,
-  label: string,
-  hint?: string,
+	obj: Record<string, unknown>,
+	allowed: Set<string>,
+	label: string,
+	hint?: string,
 ): void {
-  const unknown = Object.keys(obj).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) {
-    const suffix = hint ? ` ${hint}` : "";
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
-    );
-  }
+	const unknown = Object.keys(obj).filter((key) => !allowed.has(key));
+	if (unknown.length > 0) {
+		const suffix = hint ? ` ${hint}` : "";
+		throw new Error(
+			`[MODEL] [E_BAD_PAYLOAD] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
+		);
+	}
 }
 
-const ROOT_KS = new Set(["path", "edits"]);
+const ROOT_KS = new Set(["file", "edits"]);
 
-export function assertReq(request: unknown): asserts request is NormalizedEditRequest {
-  if (!isNormalizedEdit(request)) {
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Edit request must be exactly { path, edits: [[remove_from, remove_to, replacement_text], ...] }.",
-    );
-  }
+export function assertReq(
+	request: unknown,
+): asserts request is NormalizedEditRequest {
+	if (!isNormalizedEdit(request)) {
+		throw new Error(
+			"[MODEL] [E_BAD_PAYLOAD] Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...] }. " +
+			EDIT_PAYLOAD_HINT,
+		);
+	}
 
-  rejectUnknownFields(request, ROOT_KS, "Edit request");
+	rejectUnknownFields(request, ROOT_KS, "Edit request", "Pass \"file\" (the text file to edit) and \"edits\".");
 
-  if (request.path !== null && (typeof request.path !== "string" || request.path.length === 0)) {
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Edit request path must be a non-empty string or null.",
-    );
-  }
+	if (
+		request.file !== null &&
+		(typeof request.file !== "string" || request.file.length === 0)
+	) {
+		throw new Error(
+			'[MODEL] [E_BAD_PAYLOAD] Edit request "file" must be a non-empty string naming the text file to edit (never a directory).',
+		);
+	}
 
-  if (!Array.isArray(request.edits) || request.edits.length === 0) {
-    throw new Error('[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "edits" array.');
-  }
+	if (!Array.isArray(request.edits) || request.edits.length === 0) {
+		throw new Error(
+			'[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "edits" array.',
+		);
+	}
 
-  for (let index = 0; index < request.edits.length; index++) {
-    const item = request.edits[index]!;
-    if (
-      typeof item.remove_from !== "string" ||
-      typeof item.remove_to !== "string" ||
-      typeof item.replacement_text !== "string"
-    ) {
-      throw new Error(
-        `[MODEL] [E_BAD_PAYLOAD] Edit request edits[${index}] must be a three-position array [remove_from, remove_to, replacement_text].`,
-      );
-    }
-  }
+	for (let index = 0; index < request.edits.length; index++) {
+		const item = request.edits[index]!;
+		if (
+			typeof item.anchor_from !== "string" ||
+			typeof item.anchor_to !== "string" ||
+			typeof item.replace_with !== "string"
+		) {
+			throw new Error(
+				`[MODEL] [E_BAD_PAYLOAD] Edit request edits[${index}] must be { anchor_from, anchor_to, replace_with }: two bare 3-char anchors and the replacement text.`,
+			);
+		}
+	}
 }

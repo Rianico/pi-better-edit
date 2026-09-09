@@ -9,20 +9,20 @@ describe("Gemma 4 tool calling bleed", () => {
     expect(EDIT_DESCRIPTION).not.toContain("path:<|>");
   });
 
-  it("editRequestFrom should normalize path with <|> quoting (Gemma bleed)", () => {
-    const result = editRequestFrom({ path: "<|>Window.py<|>", edits: [["KZc", "jPR", ""]] });
+  it("editRequestFrom should normalize file with <|> quoting (Gemma bleed)", () => {
+    const result = editRequestFrom({ file: "<|>Window.py<|>", edits: [["KZc", "jPR", ""]] });
     expect(result).not.toBeUndefined();
-    expect(result?.path).toBe("Window.py");
+    expect(result?.file).toBe("Window.py");
   });
 
-  it("editRequestFrom should normalize path with │ quoting", () => {
-    const result = editRequestFrom({ path: "│Window.py│", edits: [["KZc", "jPR", ""]] });
-    expect(result?.path).toBe("Window.py");
+  it("editRequestFrom should normalize file with │ quoting", () => {
+    const result = editRequestFrom({ file: "│Window.py│", edits: [["KZc", "jPR", ""]] });
+    expect(result?.file).toBe("Window.py");
   });
 
-  it("editRequestFrom should handle normal path unchanged", () => {
-    const result = editRequestFrom({ path: "Window.py", edits: [["KZc", "jPR", ""]] });
-    expect(result?.path).toBe("Window.py");
+  it("editRequestFrom should handle normal file unchanged", () => {
+    const result = editRequestFrom({ file: "Window.py", edits: [["KZc", "jPR", ""]] });
+    expect(result?.file).toBe("Window.py");
   });
 
   it("EDIT_DESCRIPTION should be concise for small models (under 800 chars)", () => {

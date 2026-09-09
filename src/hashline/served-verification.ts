@@ -27,45 +27,45 @@ import { isLengthHealedViaCanon as isLengthHealedViaCanonHelper } from "./healin
 export type ServedCode = "E_STALE_RANGE" | "E_UNSERVED_RANGE";
 
 export interface ServedRow {
-  position: number;
-  hash: string;
+	position: number;
+	hash: string;
 }
 
 export class ServedRejectionError extends Error {
-  readonly code: ServedCode;
-  readonly firstOffendingLine: number | undefined;
-  readonly servedRows: ServedRow[];
+	readonly code: ServedCode;
+	readonly firstOffendingLine: number | undefined;
+	readonly servedRows: ServedRow[];
 
-  constructor(opts: {
-    code: ServedCode;
-    message: string;
-    firstOffendingLine?: number;
-    servedRows: ServedRow[];
-  }) {
-    super(opts.message);
-    this.name = "ServedRejectionError";
-    this.code = opts.code;
-    this.firstOffendingLine = opts.firstOffendingLine;
-    this.servedRows = opts.servedRows;
-  }
+	constructor(opts: {
+		code: ServedCode;
+		message: string;
+		firstOffendingLine?: number;
+		servedRows: ServedRow[];
+	}) {
+		super(opts.message);
+		this.name = "ServedRejectionError";
+		this.code = opts.code;
+		this.firstOffendingLine = opts.firstOffendingLine;
+		this.servedRows = opts.servedRows;
+	}
 }
 
 function isServedRejection(error: unknown): error is ServedRejectionError {
-  return error instanceof ServedRejectionError;
+	return error instanceof ServedRejectionError;
 }
 
 export class AnchorMismatchError extends Error {
-  readonly servedRows: ServedRow[];
+	readonly servedRows: ServedRow[];
 
-  constructor(message: string, servedRows: ServedRow[]) {
-    super(message);
-    this.name = "AnchorMismatchError";
-    this.servedRows = servedRows;
-  }
+	constructor(message: string, servedRows: ServedRow[]) {
+		super(message);
+		this.name = "AnchorMismatchError";
+		this.servedRows = servedRows;
+	}
 }
 
 function _isAnchorMismatch(error: unknown): error is AnchorMismatchError {
-  return error instanceof AnchorMismatchError;
+	return error instanceof AnchorMismatchError;
 }
 
 // WHY: ---------------------------------------------------------------------------
@@ -73,37 +73,37 @@ function _isAnchorMismatch(error: unknown): error is AnchorMismatchError {
 // WHY: ---------------------------------------------------------------------------
 
 export function buildRangeEcho(
-  startLine: number,
-  endLine: number,
-  fileHashes: string[],
+	startLine: number,
+	endLine: number,
+	fileHashes: string[],
 ): ServedRow[] {
-  const total = endLine - startLine + 1;
-  const shown = Math.min(total, SERVED_ECHO_CAP);
-  const rows: ServedRow[] = [];
-  for (let ln = startLine; ln < startLine + shown; ln++) {
-    rows.push({ position: ln - 1, hash: fileHashes[ln - 1]! });
-  }
-  return rows;
+	const total = endLine - startLine + 1;
+	const shown = Math.min(total, SERVED_ECHO_CAP);
+	const rows: ServedRow[] = [];
+	for (let ln = startLine; ln < startLine + shown; ln++) {
+		rows.push({ position: ln - 1, hash: fileHashes[ln - 1]! });
+	}
+	return rows;
 }
 
 export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
-  return rows.map((row) => `${row.hash}${HASH_SEP}${fileLines[row.position] ?? ""}`).join("\n");
+	return rows.map((row) => `${row.hash}${HASH_SEP}${fileLines[row.position] ?? ""}`).join("\n");
 }
 
 function retryHint(): string {
-  return "Retry with these anchors (no read needed).";
+	return "Retry with these anchors (no read needed).";
 }
 
 function paginationHint(nextOffset: number, more: number): string {
-  return `[... ${more} more — read offset=${nextOffset}]`;
+	return `[... ${more} more — read offset=${nextOffset}]`;
 }
 
 export function servedPositionsOf(served: (string | null)[], hash: string): number[] {
-  const out: number[] = [];
-  for (let i = 0; i < served.length; i++) {
-    if (served[i] === hash) out.push(i);
-  }
-  return out;
+	const out: number[] = [];
+	for (let i = 0; i < served.length; i++) {
+		if (served[i] === hash) out.push(i);
+	}
+	return out;
 }
 
 // WHY: ---------------------------------------------------------------------------
@@ -111,564 +111,530 @@ export function servedPositionsOf(served: (string | null)[], hash: string): numb
 // WHY: ---------------------------------------------------------------------------
 
 interface VerificationRange {
-  startHash: string;
-  endHash: string;
-  startLine: number;
-  endLine: number;
+	startHash: string;
+	endHash: string;
+	startLine: number;
+	endLine: number;
 }
 
 export interface VerificationInput {
-  range: VerificationRange;
-  served: (string | null)[];
-  fileHashes: string[];
-  fileLines: string[];
-  filePath?: string;
-  tombstone?: ReadonlySet<string>;
-  servedCanons?: (string | null)[];
-  epochSnapshotId?: string;
-  curSnapshotId?: string;
+	range: VerificationRange;
+	served: (string | null)[];
+	fileHashes: string[];
+	fileLines: string[];
+	filePath?: string;
+	tombstone?: ReadonlySet<string>;
+	servedCanons?: (string | null)[];
+	epochSnapshotId?: string;
+	curSnapshotId?: string;
 }
 
 /** SAFETY: Result shape requested in the task: {ok} | {code, servedRows, echo}. */
 export type VerificationResult =
-  | { ok: true }
-  | {
-      ok: false;
-      code: ServedCode;
-      servedRows: ServedRow[];
-      echo: string;
-      message: string;
-      firstOffendingLine?: number;
-    };
+	| { ok: true }
+	| {
+			ok: false;
+			code: ServedCode;
+			servedRows: ServedRow[];
+			echo: string;
+			message: string;
+			firstOffendingLine?: number;
+	  };
 
 // WHY: ---------------------------------------------------------------------------
 // WHY: ServedVerification — the deep module
 // WHY: ---------------------------------------------------------------------------
 
 export class ServedVerification {
-  private readonly store: CanonStore;
+	private readonly store: CanonStore;
 
-  constructor(canonStore?: CanonStore) {
-    this.store = canonStore ?? globalCanonStore;
-  }
+	constructor(canonStore?: CanonStore) {
+		this.store = canonStore ?? globalCanonStore;
+	}
 
-  // WHY: -- public: pure result -------------------------------------------------
+	// WHY: -- public: pure result -------------------------------------------------
 
-  verify(input: VerificationInput): VerificationResult {
-    try {
-      this.verifyOrThrow(input);
-      return { ok: true };
-    } catch (error) {
-      if (isServedRejection(error)) {
-        // WHY: reconstruct echo from servedRows + fileLines (captured in throw site)
-        // SAFETY: ServedRejectionError carries __echo as ad-hoc string attached at throw site; cast reads internal echo validated via rebuild fallback.
-        const echo = (error as unknown as { __echo?: string }).__echo as string | undefined;
-        // WHY: fallback rebuild if __echo not attached (legacy path)
-        const fallbackEcho = this.rebuildEchoForError(input, error);
-        return {
-          ok: false,
-          code: error.code,
-          servedRows: error.servedRows,
-          echo: echo ?? fallbackEcho,
-          message: error.message,
-          firstOffendingLine: error.firstOffendingLine,
-        };
-      }
-      throw error;
-    }
-  }
+	verify(input: VerificationInput): VerificationResult {
+		try {
+			this.verifyOrThrow(input);
+			return { ok: true };
+		} catch (error) {
+			if (isServedRejection(error)) {
+				// WHY: reconstruct echo from servedRows + fileLines (captured in throw site)
+				// SAFETY: ServedRejectionError carries __echo as ad-hoc string attached at throw site; cast reads internal echo validated via rebuild fallback.
+				const echo = (error as unknown as { __echo?: string }).__echo as string | undefined;
+				// WHY: fallback rebuild if __echo not attached (legacy path)
+				const fallbackEcho = this.rebuildEchoForError(input, error);
+				return {
+					ok: false,
+					code: error.code,
+					servedRows: error.servedRows,
+					echo: echo ?? fallbackEcho,
+					message: error.message,
+					firstOffendingLine: error.firstOffendingLine,
+				};
+			}
+			throw error;
+		}
+	}
 
-  // WHY: -- public: throwing variant (compat with verifyServedRange) ------------
+	// WHY: -- public: throwing variant (compat with verifyServedRange) ------------
 
-  verifyOrThrow(input: VerificationInput): void {
-    const {
-      range,
-      served,
-      fileHashes,
-      fileLines,
-      filePath,
-      tombstone: inputTombstone,
-      servedCanons: inputServedCanons,
-      epochSnapshotId,
-      curSnapshotId,
-    } = input;
-    const tombstone = inputTombstone ?? new Set<string>();
-    const servedCanons = inputServedCanons;
-    const where = filePath ? ` in ${filePath}` : "";
-    const { startHash, endHash, startLine, endLine } = range;
+	verifyOrThrow(input: VerificationInput): void {
+		const { range, served, fileHashes, fileLines, filePath, tombstone: inputTombstone, servedCanons: inputServedCanons, epochSnapshotId, curSnapshotId } = input;
+		const tombstone = inputTombstone ?? new Set<string>();
+		const servedCanons = inputServedCanons;
+		const where = filePath ? ` in ${filePath}` : "";
+		const { startHash, endHash, startLine, endLine } = range;
 
-    this.ensureCanonsPopulated(fileHashes, fileLines, served);
+		this.ensureCanonsPopulated(fileHashes, fileLines, served);
 
-    const { echoRows, echo } = this.buildEchoBlock(startLine, endLine, fileHashes, fileLines);
-    const currentLen = endLine - startLine + 1;
+		const { echoRows, echo } = this.buildEchoBlock(startLine, endLine, fileHashes, fileLines);
+		const currentLen = endLine - startLine + 1;
 
-    // WHY: Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read
-    if ((tombstone.has(startHash) || tombstone.has(endHash)) && servedCanons) {
-      const tombstonedHash = tombstone.has(startHash) ? startHash : endHash;
-      const pos = fileHashes.indexOf(tombstonedHash);
-      if (pos >= 0) {
-        const servedIdx = served.indexOf(tombstonedHash);
-        const expected = servedIdx >= 0 ? servedCanons[servedIdx] : undefined;
-        const actual = canon(fileLines[pos] ?? "");
-        if (expected !== undefined && expected !== null && expected !== actual) {
-          this.throwStale({
-            message: `[MODEL] [E_STALE_RANGE] anchor "${tombstonedHash}" was freed since last full read (tombstoned, canon changed from "${expected}" to "${actual}"). Re-read.\nCurrent range:\n${echo}`,
-            firstOffendingLine: pos + 1,
-            echoRows,
-            echo,
-          });
-        }
-      }
-    }
+		// WHY: Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read
+		if ((tombstone.has(startHash) || tombstone.has(endHash)) && servedCanons) {
+			const tombstonedHash = tombstone.has(startHash) ? startHash : endHash;
+			const pos = fileHashes.indexOf(tombstonedHash);
+			if (pos >= 0) {
+				const servedIdx = served.indexOf(tombstonedHash);
+				const expected = servedIdx >= 0 ? servedCanons[servedIdx] : undefined;
+				const actual = canon(fileLines[pos] ?? "");
+				if (expected !== undefined && expected !== null && expected !== actual) {
+					this.throwStale({
+						message: `[MODEL] [E_STALE_RANGE] anchor "${tombstonedHash}" no longer matches the current file (its line changed since you saw it).\nCurrent range:\n${echo}\n${retryHint()}`,
+						firstOffendingLine: pos + 1,
+						echoRows,
+						echo,
+					});
+				}
+			}
+		}
 
-    const span = this.resolveServedSpan({
-      served,
-      startHash,
-      endHash,
-      startLine,
-      currentLen,
-      fileHashes,
-    });
+		const span = this.resolveServedSpan({
+			served,
+			startHash,
+			endHash,
+			startLine,
+			currentLen,
+			fileHashes,
+		});
 
-    // WHY: --- decision table entry 1: no span could be resolved -> E_UNSERVED_RANGE (or healed) ---
-    let from: number | undefined = span.from;
-    let to: number | undefined = span.to;
-    let isHealed = false;
+		// WHY: --- decision table entry 1: no span could be resolved -> E_UNSERVED_RANGE (or healed) ---
+		let from: number | undefined = span.from;
+		let to: number | undefined = span.to;
+		let isHealed = false;
 
-    if (from === undefined || to === undefined) {
-      const healed = this.tryHealOrphanedSpan({
-        served,
-        startHash,
-        endHash,
-        currentLen,
-        fileLines,
-        fileHashes,
-        startLine,
-        startPositions: servedPositionsOf(served, startHash),
-        endPositions: servedPositionsOf(served, endHash),
-      });
-      if (healed) {
-        from = healed.from;
-        to = healed.to;
-        isHealed = true;
-      } else {
-        this.throwUnverified({
-          served,
-          startHash,
-          endHash,
-          currentLen,
-          echo,
-          echoRows,
-          where,
-          startPositions: servedPositionsOf(served, startHash),
-          endPositions: servedPositionsOf(served, endHash),
-        });
-      }
-    }
+		if (from === undefined || to === undefined) {
+			const healed = this.tryHealOrphanedSpan({
+				served,
+				startHash,
+				endHash,
+				currentLen,
+				fileLines,
+				fileHashes,
+				startLine,
+				startPositions: servedPositionsOf(served, startHash),
+				endPositions: servedPositionsOf(served, endHash),
+			});
+			if (healed) {
+				from = healed.from;
+				to = healed.to;
+				isHealed = true;
+			} else {
+				this.throwUnverified({
+					served,
+					startHash,
+					endHash,
+					currentLen,
+					echo,
+					echoRows,
+					where,
+					startPositions: servedPositionsOf(served, startHash),
+					endPositions: servedPositionsOf(served, endHash),
+				});
+			}
+		}
 
-    // WHY: Derived strictPos: automatic fallback via epoch snapshotId (pos-free when epoch==cur, strict when concurrent write detected)
-    const strictPos =
-      epochSnapshotId !== undefined &&
-      curSnapshotId !== undefined &&
-      epochSnapshotId !== curSnapshotId;
+		// WHY: Derived strictPos: automatic fallback via epoch snapshotId (pos-free when epoch==cur, strict when concurrent write detected)
+		const strictPos = epochSnapshotId !== undefined && curSnapshotId !== undefined && epochSnapshotId !== curSnapshotId;
 
-    // WHY: Strict pos check for concurrency (pos-free vs strict) — after span resolution but before canon checks
-    if (strictPos && from !== undefined && from !== startLine - 1) {
-      this.throwStale({
-        message: `[MODEL] [E_STALE_RANGE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (pos-restricted concurrency). Re-read.\nCurrent range:\n${echo}`,
-        firstOffendingLine: startLine,
-        echoRows,
-        echo,
-      });
-    }
+		// WHY: Strict pos check for concurrency (pos-free vs strict) — after span resolution but before canon checks
+		if (strictPos && from !== undefined && from !== startLine - 1) {
+			this.throwStale({
+				message: `[MODEL] [E_STALE_RANGE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (the file changed under concurrent writes).\nCurrent range:\n${echo}\n${retryHint()}`,
+				firstOffendingLine: startLine,
+				echoRows,
+				echo,
+			});
+		}
 
-    // WHY: Canon check for same-pos different content (collision) — before healed branch to cover healed spans? keep for non-healed; healed has own canon check
-    if (servedCanons && from !== undefined && to !== undefined) {
-      const servedLen = to - from + 1;
-      // WHY: Only run here for non-healed; healed path returns early via validateHealedSpan which already does canon check via store, but we also need epoch-canon check for strict correctness
-      if (!isHealed) {
-        for (let k = 0; k < servedLen; k++) {
-          const expected = servedCanons[from + k];
-          if (expected !== null && expected !== undefined) {
-            const actual = canon(fileLines[startLine - 1 + k] ?? "");
-            if (expected !== actual) {
-              this.throwStale({
-                message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} canon differs from served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${echo}`,
-                firstOffendingLine: startLine + k,
-                echoRows,
-                echo,
-              });
-            }
-          }
-        }
-        // WHY: Tombstone interior check (whole-span) — gated on canon inequality (fail-closed only for different canon)
-        for (let k = 0; k < servedLen; k++) {
-          const h = fileHashes[startLine - 1 + k];
-          if (h && tombstone.has(h)) {
-            const expectedCanon = servedCanons?.[from + k] ?? undefined;
-            const actualCanon = canon(fileLines[startLine - 1 + k] ?? "");
-            if (
-              expectedCanon !== undefined &&
-              expectedCanon !== null &&
-              expectedCanon !== actualCanon
-            ) {
-              this.throwStale({
-                message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} uses tombstoned anchor "${h}" (freed since last full read, canon changed). Re-read.\nCurrent range:\n${echo}`,
-                firstOffendingLine: startLine + k,
-                echoRows,
-                echo,
-              });
-            }
-          }
-        }
-      }
-    }
+		// WHY: Canon check for same-pos different content (collision) — before healed branch to cover healed spans? keep for non-healed; healed has own canon check
+		if (servedCanons && from !== undefined && to !== undefined) {
+			const servedLen = to - from + 1;
+			// WHY: Only run here for non-healed; healed path returns early via validateHealedSpan which already does canon check via store, but we also need epoch-canon check for strict correctness
+			if (!isHealed) {
+				for (let k = 0; k < servedLen; k++) {
+					const expected = servedCanons[from + k];
+					if (expected !== null && expected !== undefined) {
+						const actual = canon(fileLines[startLine - 1 + k] ?? "");
+						if (expected !== actual) {
+							this.throwStale({
+								message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${echo}\n${retryHint()}`,
+								firstOffendingLine: startLine + k,
+								echoRows,
+								echo,
+							});
+						}
+					}
+				}
+				// WHY: Tombstone interior check (whole-span) — gated on canon inequality (fail-closed only for different canon)
+				for (let k = 0; k < servedLen; k++) {
+					const h = fileHashes[startLine - 1 + k];
+					if (h && tombstone.has(h)) {
+						const expectedCanon = servedCanons?.[from + k] ?? undefined;
+						const actualCanon = canon(fileLines[startLine - 1 + k] ?? "");
+						if (expectedCanon !== undefined && expectedCanon !== null && expectedCanon !== actualCanon) {
+							this.throwStale({
+								message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} no longer matches what was served (its anchor "${h}" changed since you saw it).\nCurrent range:\n${echo}\n${retryHint()}`,
+								firstOffendingLine: startLine + k,
+								echoRows,
+								echo,
+							});
+						}
+					}
+				}
+			}
+		}
 
-    // WHY: --- decision table entries 2..5: validate resolved span ---
-    if (isHealed) {
-      this.validateHealedSpan({
-        served,
-        from: from!,
-        currentLen,
-        fileLines,
-        echo,
-        echoRows,
-        where,
-      });
-      return;
-    }
+		// WHY: --- decision table entries 2..5: validate resolved span ---
+		if (isHealed) {
+			this.validateHealedSpan({
+				served,
+				from: from!,
+				currentLen,
+				fileLines,
+				echo,
+				echoRows,
+				where,
+			});
+			return;
+		}
 
-    this.validateNonHealedSpan({
-      served,
-      from: from!,
-      to: to!,
-      startLine,
-      currentLen,
-      fileHashes,
-      fileLines,
-      echo,
-      echoRows,
-      where,
-    });
-  }
+		this.validateNonHealedSpan({
+			served,
+			from: from!,
+			to: to!,
+			startLine,
+			currentLen,
+			fileHashes,
+			fileLines,
+			echo,
+			echoRows,
+			where,
+		});
+	}
 
-  // WHY: -- private: canon population -------------------------------------------
+	// WHY: -- private: canon population -------------------------------------------
 
-  private ensureCanonsPopulated(
-    fileHashes: string[],
-    fileLines: string[],
-    served: (string | null)[],
-  ): void {
-    for (let i = 0; i < fileHashes.length; i++) {
-      const h = fileHashes[i]!;
-      if (this.store.get(h) === undefined) this.store.set(h, canon(fileLines[i] ?? ""));
-    }
-    for (let i = 0; i < served.length; i++) {
-      const h = served[i];
-      if (h !== null && this.store.get(h) === undefined) {
-        const pos = fileHashes.indexOf(h);
-        if (pos >= 0) this.store.set(h, canon(fileLines[pos] ?? ""));
-      }
-    }
-  }
+	private ensureCanonsPopulated(
+		fileHashes: string[],
+		fileLines: string[],
+		served: (string | null)[],
+	): void {
+		for (let i = 0; i < fileHashes.length; i++) {
+			const h = fileHashes[i]!;
+			if (this.store.get(h) === undefined) this.store.set(h, canon(fileLines[i] ?? ""));
+		}
+		for (let i = 0; i < served.length; i++) {
+			const h = served[i];
+			if (h !== null && this.store.get(h) === undefined) {
+				const pos = fileHashes.indexOf(h);
+				if (pos >= 0) this.store.set(h, canon(fileLines[pos] ?? ""));
+			}
+		}
+	}
 
-  // WHY: -- private: echo --------------------------------------------------------
+	// WHY: -- private: echo --------------------------------------------------------
 
-  private buildEchoBlock(
-    startLine: number,
-    endLine: number,
-    fileHashes: string[],
-    fileLines: string[],
-  ): { echoRows: ServedRow[]; echo: string } {
-    const echoRows = buildRangeEcho(startLine, endLine, fileHashes);
-    const totalLen = endLine - startLine + 1;
-    const tail =
-      echoRows.length < totalLen
-        ? `\n${paginationHint(startLine + echoRows.length, totalLen - echoRows.length)}`
-        : "";
-    const echo = fmtServedRows(echoRows, fileLines) + tail;
-    return { echoRows, echo };
-  }
+	private buildEchoBlock(
+		startLine: number,
+		endLine: number,
+		fileHashes: string[],
+		fileLines: string[],
+	): { echoRows: ServedRow[]; echo: string } {
+		const echoRows = buildRangeEcho(startLine, endLine, fileHashes);
+		const totalLen = endLine - startLine + 1;
+		const tail =
+			echoRows.length < totalLen
+				? `\n${paginationHint(startLine + echoRows.length, totalLen - echoRows.length)}`
+				: "";
+		const echo = fmtServedRows(echoRows, fileLines) + tail;
+		return { echoRows, echo };
+	}
 
-  private rebuildEchoForError(input: VerificationInput, error: ServedRejectionError): string {
-    const { echo } = this.buildEchoBlock(
-      input.range.startLine,
-      input.range.endLine,
-      input.fileHashes,
-      input.fileLines,
-    );
-    return echo + (error.message.includes(paginationHint(0, 0)) ? "" : "");
-  }
+	private rebuildEchoForError(input: VerificationInput, error: ServedRejectionError): string {
+		const { echo } = this.buildEchoBlock(
+			input.range.startLine,
+			input.range.endLine,
+			input.fileHashes,
+			input.fileLines,
+		);
+		return echo + (error.message.includes(paginationHint(0, 0)) ? "" : "");
+	}
 
-  // WHY: -- private: span resolve ------------------------------------------------
+	// WHY: -- private: span resolve ------------------------------------------------
 
-  private resolveServedSpan(args: {
-    served: (string | null)[];
-    startHash: string;
-    endHash: string;
-    startLine: number;
-    currentLen: number;
-    fileHashes: string[];
-  }): { from?: number; to?: number } {
-    const { served, startHash, endHash, startLine, currentLen, fileHashes } = args;
-    const startPositions = servedPositionsOf(served, startHash);
-    const endPositions = servedPositionsOf(served, endHash);
+	private resolveServedSpan(args: {
+		served: (string | null)[];
+		startHash: string;
+		endHash: string;
+		startLine: number;
+		currentLen: number;
+		fileHashes: string[];
+	}): { from?: number; to?: number } {
+		const { served, startHash, endHash, startLine, currentLen, fileHashes } = args;
+		const startPositions = servedPositionsOf(served, startHash);
+		const endPositions = servedPositionsOf(served, endHash);
 
-    if (startPositions.length === 1 && endPositions.length === 1) {
-      return {
-        from: Math.min(startPositions[0]!, endPositions[0]!),
-        to: Math.max(startPositions[0]!, endPositions[0]!),
-      };
-    }
+		if (startPositions.length === 1 && endPositions.length === 1) {
+			return {
+				from: Math.min(startPositions[0]!, endPositions[0]!),
+				to: Math.max(startPositions[0]!, endPositions[0]!),
+			};
+		}
 
-    const candidates = this.enumerateExactCandidates({
-      served,
-      startPositions,
-      endPositions,
-      currentLen,
-      fileHashes,
-      startLine,
-    });
+		const candidates = this.enumerateExactCandidates({
+			served,
+			startPositions,
+			endPositions,
+			currentLen,
+			fileHashes,
+			startLine,
+		});
 
-    if (candidates.length === 1) return candidates[0]!;
-    if (candidates.length > 1) {
-      candidates.sort(
-        (a, b) => Math.abs(a.from - (startLine - 1)) - Math.abs(b.from - (startLine - 1)),
-      );
-      return candidates[0]!;
-    }
-    return {};
-  }
+		if (candidates.length === 1) return candidates[0]!;
+		if (candidates.length > 1) {
+			candidates.sort(
+				(a, b) =>
+					Math.abs(a.from - (startLine - 1)) - Math.abs(b.from - (startLine - 1)),
+			);
+			return candidates[0]!;
+		}
+		return {};
+	}
 
-  private enumerateExactCandidates(args: {
-    served: (string | null)[];
-    startPositions: number[];
-    endPositions: number[];
-    currentLen: number;
-    fileHashes: string[];
-    startLine: number;
-  }): Array<{ from: number; to: number }> {
-    const { served, startPositions, endPositions, currentLen, fileHashes, startLine } = args;
-    const out: Array<{ from: number; to: number }> = [];
-    for (const s of startPositions) {
-      for (const e of endPositions) {
-        const candFrom = Math.min(s, e);
-        const candTo = Math.max(s, e);
-        if (candTo - candFrom + 1 !== currentLen) continue;
-        let ok = true;
-        for (let k = 0; k < currentLen; k++) {
-          if (served[candFrom + k] !== fileHashes[startLine - 1 + k]) {
-            ok = false;
-            break;
-          }
-        }
-        if (ok) out.push({ from: candFrom, to: candTo });
-      }
-    }
-    return out;
-  }
+	private enumerateExactCandidates(args: {
+		served: (string | null)[];
+		startPositions: number[];
+		endPositions: number[];
+		currentLen: number;
+		fileHashes: string[];
+		startLine: number;
+	}): Array<{ from: number; to: number }> {
+		const { served, startPositions, endPositions, currentLen, fileHashes, startLine } = args;
+		const out: Array<{ from: number; to: number }> = [];
+		for (const s of startPositions) {
+			for (const e of endPositions) {
+				const candFrom = Math.min(s, e);
+				const candTo = Math.max(s, e);
+				if (candTo - candFrom + 1 !== currentLen) continue;
+				let ok = true;
+				for (let k = 0; k < currentLen; k++) {
+					if (served[candFrom + k] !== fileHashes[startLine - 1 + k]) {
+						ok = false;
+						break;
+					}
+				}
+				if (ok) out.push({ from: candFrom, to: candTo });
+			}
+		}
+		return out;
+	}
 
-  // WHY: -- private: healing — delegated to internal HealingStrategy adapters -----
+	// WHY: -- private: healing — delegated to internal HealingStrategy adapters -----
 
-  // WHY: -- private: healing — delegated to HealingPolicy deep module -----
+// WHY: -- private: healing — delegated to HealingPolicy deep module -----
 
-  private tryHealOrphanedSpan(args: {
-    served: (string | null)[];
-    startHash: string;
-    endHash: string;
-    currentLen: number;
-    fileLines: string[];
-    fileHashes: string[];
-    startLine: number;
-    startPositions: number[];
-    endPositions: number[];
-  }): { from: number; to: number } | undefined {
-    return healingPolicy.tryHeal({ ...args, store: this.store });
-  }
+	private tryHealOrphanedSpan(args: {
+		served: (string | null)[];
+		startHash: string;
+		endHash: string;
+		currentLen: number;
+		fileLines: string[];
+		fileHashes: string[];
+		startLine: number;
+		startPositions: number[];
+		endPositions: number[];
+	}): { from: number; to: number } | undefined {
+		return healingPolicy.tryHeal({ ...args, store: this.store });
+	}
 
-  // WHY: -- private: validation via decision table -------------------------------
+	// WHY: -- private: validation via decision table -------------------------------
 
-  private validateHealedSpan(args: {
-    served: (string | null)[];
-    from: number;
-    currentLen: number;
-    fileLines: string[];
-    echo: string;
-    echoRows: ServedRow[];
-    where: string;
-  }): void {
-    const { served, from, currentLen, fileLines, echo, echoRows, where } = args;
-    for (let k = 0; k < currentLen; k++) {
-      const servedHash = served[from + k];
-      if (servedHash === null) continue;
-      const expectedCanon = this.store.get(servedHash);
-      const actualCanon = canon(fileLines[from + k] ?? "");
-      if (expectedCanon !== undefined && expectedCanon !== actualCanon) {
-        const offendingLine = from + k + 1;
-        this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
-          firstOffendingLine: offendingLine,
-          echoRows,
-          echo,
-        });
-      }
-    }
-  }
+	private validateHealedSpan(args: {
+		served: (string | null)[];
+		from: number;
+		currentLen: number;
+		fileLines: string[];
+		echo: string;
+		echoRows: ServedRow[];
+		where: string;
+	}): void {
+		const { served, from, currentLen, fileLines, echo, echoRows, where } = args;
+		for (let k = 0; k < currentLen; k++) {
+			const servedHash = served[from + k];
+			if (servedHash === null) continue;
+			const expectedCanon = this.store.get(servedHash);
+			const actualCanon = canon(fileLines[from + k] ?? "");
+			if (expectedCanon !== undefined && expectedCanon !== actualCanon) {
+				const offendingLine = from + k + 1;
+				this.throwStale({
+					message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
+					firstOffendingLine: offendingLine,
+					echoRows,
+					echo,
+				});
+			}
+		}
+	}
 
-  private validateNonHealedSpan(args: {
-    served: (string | null)[];
-    from: number;
-    to: number;
-    startLine: number;
-    currentLen: number;
-    fileHashes: string[];
-    fileLines: string[];
-    echo: string;
-    echoRows: ServedRow[];
-    where: string;
-  }): void {
-    const {
-      served,
-      from,
-      to,
-      startLine,
-      currentLen,
-      fileHashes,
-      fileLines,
-      echo,
-      echoRows,
-      where,
-    } = args;
+	private validateNonHealedSpan(args: {
+		served: (string | null)[];
+		from: number;
+		to: number;
+		startLine: number;
+		currentLen: number;
+		fileHashes: string[];
+		fileLines: string[];
+		echo: string;
+		echoRows: ServedRow[];
+		where: string;
+	}): void {
+		const { served, from, to, startLine, currentLen, fileHashes, fileLines, echo, echoRows, where } = args;
 
-    // WHY: Decision: never-served gap inside served span
-    for (let i = from; i <= to; i++) {
-      if (served[i] === null) {
-        this.throwUnserved({
-          message: `[MODEL] [E_UNSERVED_RANGE] line ${i + 1}${where} was never served.\nCurrent range:\n${echo}\n${retryHint()}`,
-          firstOffendingLine: i + 1,
-          echoRows,
-          echo,
-        });
-      }
-    }
+		// WHY: Decision: never-served gap inside served span
+		for (let i = from; i <= to; i++) {
+			if (served[i] === null) {
+				this.throwUnserved({
+					message: `[MODEL] [E_UNSERVED_RANGE] line ${i + 1}${where} was never served.\nCurrent range:\n${echo}\n${retryHint()}`,
+					firstOffendingLine: i + 1,
+					echoRows,
+					echo,
+				});
+			}
+		}
 
-    // WHY: Decision: length mismatch (served span vs current range)
-    const servedLen = to - from + 1;
-    if (servedLen !== currentLen) {
-      if (!this.isLengthHealedViaCanon({ served, from, servedLen, fileLines })) {
-        this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${echo}\n${retryHint()}`,
-          firstOffendingLine: startLine,
-          echoRows,
-          echo,
-        });
-      }
-    }
+		// WHY: Decision: length mismatch (served span vs current range)
+		const servedLen = to - from + 1;
+		if (servedLen !== currentLen) {
+			if (!this.isLengthHealedViaCanon({ served, from, servedLen, fileLines })) {
+				this.throwStale({
+					message: `[MODEL] [E_STALE_RANGE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${echo}\n${retryHint()}`,
+					firstOffendingLine: startLine,
+					echoRows,
+					echo,
+				});
+			}
+		}
 
-    // WHY: Decision: hash mismatch (stale interior)
-    for (let k = 0; k < servedLen; k++) {
-      if (served[from + k] !== fileHashes[startLine - 1 + k]) {
-        const offendingLine = startLine + k;
-        this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
-          firstOffendingLine: offendingLine,
-          echoRows,
-          echo,
-        });
-      }
-    }
-  }
+		// WHY: Decision: hash mismatch (stale interior)
+		for (let k = 0; k < servedLen; k++) {
+			if (served[from + k] !== fileHashes[startLine - 1 + k]) {
+				const offendingLine = startLine + k;
+				this.throwStale({
+					message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
+					firstOffendingLine: offendingLine,
+					echoRows,
+					echo,
+				});
+			}
+		}
+	}
 
-  private isLengthHealedViaCanon(args: {
-    served: (string | null)[];
-    from: number;
-    servedLen: number;
-    fileLines: string[];
-  }): boolean {
-    return isLengthHealedViaCanonHelper(
-      args.served,
-      args.from,
-      args.servedLen,
-      args.fileLines,
-      this.store,
-    );
-  }
+	private isLengthHealedViaCanon(args: {
+		served: (string | null)[];
+		from: number;
+		servedLen: number;
+		fileLines: string[];
+	}): boolean {
+		return isLengthHealedViaCanonHelper(args.served, args.from, args.servedLen, args.fileLines, this.store);
+	}
 
-  // WHY: -- private: throws with decision-table mapping -------------------------
+	// WHY: -- private: throws with decision-table mapping -------------------------
 
-  private throwUnverified(args: {
-    served: (string | null)[];
-    startHash: string;
-    endHash: string;
-    currentLen: number;
-    echo: string;
-    echoRows: ServedRow[];
-    where: string;
-    startPositions: number[];
-    endPositions: number[];
-  }): never {
-    const { startHash, endHash, currentLen, echo, echoRows, where, startPositions, endPositions } =
-      args;
-    const problems: string[] = [];
-    if (startPositions.length === 0) {
-      problems.push(`remove_from "${startHash}" has no served position`);
-    } else if (startPositions.length > 1) {
-      problems.push(`remove_from "${startHash}" was served at ${startPositions.length} positions`);
-    }
-    if (endPositions.length === 0) {
-      problems.push(`remove_to "${endHash}" has no served position`);
-    } else if (endPositions.length > 1) {
-      problems.push(`remove_to "${endHash}" was served at ${endPositions.length} positions`);
-    }
-    // SAFETY: augmenting ServedRejectionError with __echo for reject-and-serve; property is string set here and read only via guarded cast in verify().
-    const err = new ServedRejectionError({
-      code: "E_UNSERVED_RANGE",
-      message:
-        `[MODEL] [E_UNSERVED_RANGE] cannot verify range against served state${where}: ${problems.join("; ")}. ` +
-        `No served span matched the current range (${currentLen} lines). ` +
-        `A full read will re-sync the served mirror — the echoed range below is current content, ` +
-        `but retrying without re-reading cannot clear a stale duplicate outside the echoed window.\n` +
-        `Current range:\n${echo}`,
-      servedRows: echoRows,
-    });
-    // SAFETY: attaching __echo string to rejection for echo reconstruction; matches read cast in verify() and is string-typed.
-    (err as unknown as { __echo: string }).__echo = echo;
-    throw err;
-  }
+	private throwUnverified(args: {
+		served: (string | null)[];
+		startHash: string;
+		endHash: string;
+		currentLen: number;
+		echo: string;
+		echoRows: ServedRow[];
+		where: string;
+		startPositions: number[];
+		endPositions: number[];
+	}): never {
+		const { startHash, endHash, currentLen, echo, echoRows, where, startPositions, endPositions } = args;
+		const problems: string[] = [];
+		if (startPositions.length === 0) {
+			problems.push(`anchor_from "${startHash}" has no served position`);
+		} else if (startPositions.length > 1) {
+			problems.push(`anchor_from "${startHash}" was served at ${startPositions.length} positions`);
+		}
+		if (endPositions.length === 0) {
+			problems.push(`anchor_to "${endHash}" has no served position`);
+		} else if (endPositions.length > 1) {
+			problems.push(`anchor_to "${endHash}" was served at ${endPositions.length} positions`);
+		}
+		// SAFETY: augmenting ServedRejectionError with __echo for reject-and-serve; property is string set here and read only via guarded cast in verify().
+		const err = new ServedRejectionError({
+			code: "E_UNSERVED_RANGE",
+			message:
+				`[MODEL] [E_UNSERVED_RANGE] cannot verify range against served state${where}: ${problems.join("; ")}. ` +
+				`No served span matched the current range (${currentLen} lines). ` +
+				`A full read will re-sync the served mirror — the echoed range below is current content, ` +
+				`but retrying without re-reading cannot clear a stale duplicate outside the echoed window.\n` +
+				`Current range:\n${echo}`,
+			servedRows: echoRows,
+		});
+		// SAFETY: attaching __echo string to rejection for echo reconstruction; matches read cast in verify() and is string-typed.
+		(err as unknown as { __echo: string }).__echo = echo;
+		throw err;
+	}
 
-  private throwStale(args: {
-    message: string;
-    firstOffendingLine: number;
-    echoRows: ServedRow[];
-    echo: string;
-  }): never {
-    const err = new ServedRejectionError({
-      code: "E_STALE_RANGE",
-      message: args.message,
-      firstOffendingLine: args.firstOffendingLine,
-      servedRows: args.echoRows,
-    });
-    // SAFETY: attaching __echo string to stale rejection; mirrors guarded read in verify() and is validated via echo reconstruction.
-    (err as unknown as { __echo: string }).__echo = args.echo;
-    throw err;
-  }
+	private throwStale(args: {
+		message: string;
+		firstOffendingLine: number;
+		echoRows: ServedRow[];
+		echo: string;
+	}): never {
+		const err = new ServedRejectionError({
+			code: "E_STALE_RANGE",
+			message: args.message,
+			firstOffendingLine: args.firstOffendingLine,
+			servedRows: args.echoRows,
+		});
+		// SAFETY: attaching __echo string to stale rejection; mirrors guarded read in verify() and is validated via echo reconstruction.
+		(err as unknown as { __echo: string }).__echo = args.echo;
+		throw err;
+	}
 
-  private throwUnserved(args: {
-    message: string;
-    firstOffendingLine: number;
-    echoRows: ServedRow[];
-    echo: string;
-  }): never {
-    const err = new ServedRejectionError({
-      code: "E_UNSERVED_RANGE",
-      message: args.message,
-      firstOffendingLine: args.firstOffendingLine,
-      servedRows: args.echoRows,
-    });
-    // SAFETY: attaching __echo string to unserved rejection; paired with guarded cast and fallback rebuild in verify().
-    (err as unknown as { __echo: string }).__echo = args.echo;
-    throw err;
-  }
+	private throwUnserved(args: {
+		message: string;
+		firstOffendingLine: number;
+		echoRows: ServedRow[];
+		echo: string;
+	}): never {
+		const err = new ServedRejectionError({
+			code: "E_UNSERVED_RANGE",
+			message: args.message,
+			firstOffendingLine: args.firstOffendingLine,
+			servedRows: args.echoRows,
+		});
+		// SAFETY: attaching __echo string to unserved rejection; paired with guarded cast and fallback rebuild in verify().
+		(err as unknown as { __echo: string }).__echo = args.echo;
+		throw err;
+	}
 }
 
 // WHY: ---------------------------------------------------------------------------
@@ -678,52 +644,49 @@ export class ServedVerification {
 const defaultVerifier = new ServedVerification();
 
 export function verifyServedRange(args: {
-  served: (string | null)[];
-  startHash: string;
-  endHash: string;
-  startLine: number;
-  endLine: number;
-  fileHashes: string[];
-  fileLines: string[];
-  filePath?: string;
-  canonStore?: CanonStore;
-  tombstone?: ReadonlySet<string>;
-  servedCanons?: (string | null)[];
-  epochSnapshotId?: string;
-  curSnapshotId?: string;
+	served: (string | null)[];
+	startHash: string;
+	endHash: string;
+	startLine: number;
+	endLine: number;
+	fileHashes: string[];
+	fileLines: string[];
+	filePath?: string;
+	canonStore?: CanonStore;
+	tombstone?: ReadonlySet<string>;
+	servedCanons?: (string | null)[];
+	epochSnapshotId?: string;
+	curSnapshotId?: string;
 }): void {
-  const verifier = args.canonStore ? new ServedVerification(args.canonStore) : defaultVerifier;
-  verifier.verifyOrThrow({
-    range: {
-      startHash: args.startHash,
-      endHash: args.endHash,
-      startLine: args.startLine,
-      endLine: args.endLine,
-    },
-    served: args.served,
-    fileHashes: args.fileHashes,
-    fileLines: args.fileLines,
-    filePath: args.filePath,
-    tombstone: args.tombstone,
-    servedCanons: args.servedCanons,
-    epochSnapshotId: args.epochSnapshotId,
-    curSnapshotId: args.curSnapshotId,
-  });
+	const verifier = args.canonStore ? new ServedVerification(args.canonStore) : defaultVerifier;
+	verifier.verifyOrThrow({
+		range: {
+			startHash: args.startHash,
+			endHash: args.endHash,
+			startLine: args.startLine,
+			endLine: args.endLine,
+		},
+		served: args.served,
+		fileHashes: args.fileHashes,
+		fileLines: args.fileLines,
+		filePath: args.filePath,
+		tombstone: args.tombstone,
+		servedCanons: args.servedCanons,
+		epochSnapshotId: args.epochSnapshotId,
+		curSnapshotId: args.curSnapshotId,
+	});
 }
 
 /** SAFETY: Pure result variant — does not throw for expected rejections. */
-export function verifyServedRangeResult(
-  input: VerificationInput,
-  canonStore?: CanonStore,
-): VerificationResult {
-  const verifier = canonStore ? new ServedVerification(canonStore) : defaultVerifier;
-  return verifier.verify(input);
+export function verifyServedRangeResult(input: VerificationInput, canonStore?: CanonStore): VerificationResult {
+	const verifier = canonStore ? new ServedVerification(canonStore) : defaultVerifier;
+	return verifier.verify(input);
 }
 
 export interface ResolvedRange {
-  startLine: number;
-  endLine: number;
-  startHash: string;
-  endHash: string;
-  delta: number;
+	startLine: number;
+	endLine: number;
+	startHash: string;
+	endHash: string;
+	delta: number;
 }
