@@ -1,8 +1,8 @@
-## [Unreleased]
+## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 
 ### Features
 
-- **edit:** adopt named-object payload with file and anchor fields
+* **edit:** adopt named-object payload with file and anchor fields ([#77](https://github.com/Rianico/pi-better-edit/issues/77)) ([741be22](https://github.com/Rianico/pi-better-edit/commit/741be220571e9d5a249a5dd035fb59297c41fe0b))
 
 ## [1.6.0](https://github.com/Rianico/pi-better-edit/compare/v1.5.0...v1.6.0) (2026-09-05)
 
