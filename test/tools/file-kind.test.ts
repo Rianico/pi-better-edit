@@ -1,16 +1,27 @@
 import { describe, expect, it } from "vitest";
 import { lineHashes } from "../../src/hashline";
-import { withTempFile, withTempBytes, setupIntegrationTest, useTestHome } from "../support/fixtures";
+import {
+  withTempFile,
+  withTempBytes,
+  setupIntegrationTest,
+  useTestHome,
+} from "../support/fixtures";
 
 const home = useTestHome();
 
 describe("file kind guards in tools", () => {
   it("edit decodes invalid utf-8 as replacement chars and writes them back as utf-8", async () => {
-    const bytes = new Uint8Array([0xFF, 0x28, 0x0A, 0x69, 0x6E, 0x74, 0x0A]);
+    const bytes = new Uint8Array([0xff, 0x28, 0x0a, 0x69, 0x6e, 0x74, 0x0a]);
     await withTempBytes("bad-utf.ts", bytes, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "bad-utf.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "bad-utf.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       expect(readResult.content[0].text).toContain("Non-UTF-8 bytes shown as U+FFFD");
 
       const firstText = readResult.content[0].text as string;
@@ -32,7 +43,10 @@ describe("file kind guards in tools", () => {
   });
 
   it("edit rejects binary files with descriptive error", async () => {
-    const bytes = new Uint8Array([0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A, 0x00, 0x00, 0x00, 0x0D, 0x49, 0x48, 0x44, 0x52]);
+    const bytes = new Uint8Array([
+      0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
+      0x52,
+    ]);
     await withTempBytes("image.png", bytes, async ({ cwd }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
 

@@ -1,10 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  HASH_PROBE_STRIDE,
-  HASH_SPACE,
-  _lineHashesPure,
-  lineHashes,
-} from "../../src/hashline";
+import { HASH_PROBE_STRIDE, HASH_SPACE, _lineHashesPure, lineHashes } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
@@ -63,13 +58,7 @@ describe("hash probe stride", () => {
   });
 
   it("keeps blank-line hashes distinct from neighboring content lines", async () => {
-    const content = [
-      "const a = 1;",
-      "",
-      "const b = 2;",
-      "",
-      "const c = 3;",
-    ].join("\n");
+    const content = ["const a = 1;", "", "const b = 2;", "", "const c = 3;"].join("\n");
     const hashes = await lineHashes(content, home.testPath);
     expect(new Set(hashes).size).toBe(hashes.length);
   });

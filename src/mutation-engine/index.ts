@@ -12,7 +12,13 @@
  */
 
 // WHY: Public typed boundary — validated at admission, trusted inside.
-export type { PipelineOptions, ProcessedEditFile, MutationSuccess, MutationFailure, MutationResult } from "./types.js";
+export type {
+  PipelineOptions,
+  ProcessedEditFile,
+  MutationSuccess,
+  MutationFailure,
+  MutationResult,
+} from "./types.js";
 export { isMutationSuccess, isMutationFailure } from "./types.js";
 
 // WHY: Deep seam — small interface.

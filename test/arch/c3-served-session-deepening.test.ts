@@ -1,7 +1,11 @@
 import { existsSync, readFileSync, readdirSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
-import { createSessionHandle, sessionFromContext, sessionKeyFor } from "../../src/served-session/session.js";
+import {
+  createSessionHandle,
+  sessionFromContext,
+  sessionKeyFor,
+} from "../../src/served-session/session.js";
 
 describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () => {
   it("src/served-state.ts has been deleted", () => {
@@ -9,10 +13,18 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
   });
 
   it("no src file imports from served-state", () => {
-    const _srcFiles = readdirSync("src", { recursive: true } as unknown as { recursive: boolean }) as unknown as string[];
+    const _srcFiles = readdirSync("src", { recursive: true } as unknown as {
+      recursive: boolean;
+    }) as unknown as string[];
     // fallback: use manual walk if recursive not supported
     const walk = (dir: string, out: string[] = []): string[] => {
-      for (const entry of readdirSync(dir, { withFileTypes: true } as unknown as never) as unknown as { name: string; isDirectory(): boolean; isFile(): boolean }[]) {
+      for (const entry of readdirSync(dir, {
+        withFileTypes: true,
+      } as unknown as never) as unknown as {
+        name: string;
+        isDirectory(): boolean;
+        isFile(): boolean;
+      }[]) {
         const p = join(dir, entry.name);
         if (entry.isDirectory()) walk(p, out);
         else if (entry.isFile() && p.endsWith(".ts")) out.push(p);
@@ -23,9 +35,16 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
     const offenders: string[] = [];
     for (const file of files) {
       const content = readFileSync(file, "utf-8");
-      if (content.includes('from "./served-state') || content.includes("from '../served-state") || content.includes('from "../../src/served-state') || content.includes("served-state.js")) {
+      if (
+        content.includes('from "./served-state') ||
+        content.includes("from '../served-state") ||
+        content.includes('from "../../src/served-state') ||
+        content.includes("served-state.js")
+      ) {
         // allow comments that mention served-state
-        const lines = content.split("\n").filter((l) => l.includes("from") && l.includes("served-state"));
+        const lines = content
+          .split("\n")
+          .filter((l) => l.includes("from") && l.includes("served-state"));
         if (lines.length > 0) offenders.push(`${file}: ${lines.join("; ")}`);
       }
     }

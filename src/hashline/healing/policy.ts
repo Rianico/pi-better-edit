@@ -13,7 +13,7 @@ import type { OrphanContext, HealResult } from "./types.js";
 import { healOrphanedSpan } from "./orphan.js";
 
 export interface HealingPolicy {
- tryHeal(ctx: OrphanContext): HealResult;
+  tryHeal(ctx: OrphanContext): HealResult;
 }
 
 /**
@@ -24,14 +24,14 @@ export interface HealingPolicy {
  * healers stay internal.
  */
 export const healingPolicy: HealingPolicy = {
- tryHeal(ctx: OrphanContext): HealResult {
-  return healOrphanedSpan(ctx);
- },
+  tryHeal(ctx: OrphanContext): HealResult {
+    return healOrphanedSpan(ctx);
+  },
 };
 
 export function healWithPolicy(
- ctx: OrphanContext,
- policy: HealingPolicy = healingPolicy,
+  ctx: OrphanContext,
+  policy: HealingPolicy = healingPolicy,
 ): HealResult {
- return policy.tryHeal(ctx);
+  return policy.tryHeal(ctx);
 }

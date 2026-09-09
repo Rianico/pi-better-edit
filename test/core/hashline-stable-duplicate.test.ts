@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { lineHashes, applyEdit, type HEdit } from "../../src/hashline";
-import { useTestHome, withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import {
+  useTestHome,
+  withTempFile,
+  setupIntegrationTest,
+  getText,
+  extractHash,
+} from "../support/fixtures";
 
 const home = useTestHome();
 

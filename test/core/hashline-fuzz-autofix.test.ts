@@ -1,8 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { applyEdit, lineHashes, resEdit } from "../../src/hashline";
-import {
-  splitLines,
-} from "../../src/utils";
+import { splitLines } from "../../src/utils";
 import { useTestHome, expectedEditContent } from "../support/fixtures";
 
 const home = useTestHome();

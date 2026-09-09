@@ -6,7 +6,13 @@ describe("strict hashline tool loop", () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const firstRead = await readTool.execute(
+        "r1",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const firstText = firstRead.content[0].text as string;
       const betaRef = firstText
         .split("\n")
@@ -31,7 +37,13 @@ describe("strict hashline tool loop", () => {
         ),
       ).rejects.toThrow(/2 stale anchor.*sample\.ts/);
 
-      const secondRead = await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+      const secondRead = await readTool.execute(
+        "r2",
+        { path: "sample.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const secondText = secondRead.content[0].text as string;
       const freshRef = secondText
         .split("\n")
@@ -52,7 +64,13 @@ describe("strict hashline tool loop", () => {
     await withTempFile("empty.ts", "", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "empty.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "empty.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const emptyHash = readResult.content[0].text.split("\n")[0]!.split("│")[0]!;
       expect(emptyHash).toMatch(/^[A-Za-z0-9]{3}$/);
 
@@ -75,7 +93,13 @@ describe("CRLF line ending preservation", () => {
     await withTempFile("crlf.ts", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "crlf.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "crlf.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       const betaRef = readResult.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│beta"))!
@@ -131,7 +155,13 @@ describe("UTF-8 BOM handling", () => {
 
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "bom.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute(
+        "r1",
+        { path: "bom.ts" },
+        undefined,
+        undefined,
+        ctx,
+      );
       expect(readResult.content[0].text).not.toContain("\uFEFF");
       const betaRef = readResult.content[0].text
         .split("\n")

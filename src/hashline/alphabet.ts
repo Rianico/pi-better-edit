@@ -1,7 +1,6 @@
 export const HASH_LEN = 3;
 
-export const ALPHA =
-	"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
+export const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 
 const ALPHA_SAFE = ALPHA.replace(/-/g, "\\-");
 

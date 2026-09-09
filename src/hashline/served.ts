@@ -7,12 +7,12 @@
  * ServedRejectionError identity is singular (defined in served-verification).
  */
 export {
-	verifyServedRange,
-	buildRangeEcho,
-	fmtServedRows,
-	servedPositionsOf,
-	ServedRejectionError,
-	AnchorMismatchError,
-	type ServedRow,
-	type ResolvedRange,
+  verifyServedRange,
+  buildRangeEcho,
+  fmtServedRows,
+  servedPositionsOf,
+  ServedRejectionError,
+  AnchorMismatchError,
+  type ServedRow,
+  type ResolvedRange,
 } from "./served-verification.js";

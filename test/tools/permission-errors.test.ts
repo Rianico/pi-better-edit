@@ -39,13 +39,7 @@ describe.skipIf(isRoot || isWindows)("permission errors", () => {
         const readTool = getTool("read");
 
         await expect(
-          readTool.execute(
-            "r1",
-            { path: filePath },
-            undefined,
-            undefined,
-            { cwd: tempDir } as any,
-          ),
+          readTool.execute("r1", { path: filePath }, undefined, undefined, { cwd: tempDir } as any),
         ).rejects.toThrow("File is not readable");
       } finally {
         chmodSync(filePath, 0o644);

@@ -11,7 +11,7 @@ function ctx(overrides: Partial<{ cwd: string; sessionId: string }> = {}) {
 
 describe("lifecycle-hooks", () => {
   it("onSessionStart initializes hasher and prunes, notifies on debug", async () => {
-    const initHasher = vi.fn(async () => ({} as never));
+    const initHasher = vi.fn(async () => ({}) as never);
     const pruneMissingAll = vi.fn(async () => {});
     const hooks = createLifecycleHooks({ initHasher, pruneMissingAll });
     process.env.PI_HASHLINE_DEBUG = "1";
@@ -24,7 +24,7 @@ describe("lifecycle-hooks", () => {
   });
 
   it("onSessionStart swallows prune failure (best-effort)", async () => {
-    const initHasher = vi.fn(async () => ({} as never));
+    const initHasher = vi.fn(async () => ({}) as never);
     const pruneMissingAll = vi.fn(async () => {
       throw new Error("db boom");
     });
@@ -72,7 +72,12 @@ describe("lifecycle-hooks", () => {
       clearUndo: async () => {},
     });
     const result = await hooks.onWrite(
-      { toolName: "write", isError: false, input: { path: "/tmp/x.txt" }, content: [{ type: "text", text: "ok" }] },
+      {
+        toolName: "write",
+        isError: false,
+        input: { path: "/tmp/x.txt" },
+        content: [{ type: "text", text: "ok" }],
+      },
       ctx(),
     );
     expect(result?.content[1]?.text).toContain("Auto-read");
@@ -171,8 +176,12 @@ describe("lifecycle-hooks", () => {
 
   it("onToolResult returns undefined for isError or unknown tool", async () => {
     const hooks = createLifecycleHooks();
-    expect(await hooks.onToolResult({ toolName: "write", isError: true, input: { path: "/x" } }, ctx())).toBeUndefined();
-    expect(await hooks.onToolResult({ toolName: "read", isError: false } as never, ctx())).toBeUndefined();
+    expect(
+      await hooks.onToolResult({ toolName: "write", isError: true, input: { path: "/x" } }, ctx()),
+    ).toBeUndefined();
+    expect(
+      await hooks.onToolResult({ toolName: "read", isError: false } as never, ctx()),
+    ).toBeUndefined();
   });
 
   it("onWrite records dense serves with firstChangedLine 1 even when preview is partial (#70)", async () => {
@@ -236,7 +245,12 @@ describe("lifecycle-hooks", () => {
       clearUndo: async () => {},
     });
     const result = await hooks.onWrite(
-      { toolName: "write", isError: false, input: { file_path: "/tmp/fp.txt" }, content: [{ type: "text", text: "ok" }] },
+      {
+        toolName: "write",
+        isError: false,
+        input: { file_path: "/tmp/fp.txt" },
+        content: [{ type: "text", text: "ok" }],
+      },
       ctx(),
     );
     expect(result?.content[1]?.text).toContain("Auto-read");

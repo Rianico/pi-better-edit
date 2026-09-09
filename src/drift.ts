@@ -1,9 +1,5 @@
 import { SERVED_ECHO_CAP } from "./constants.js";
-import {
-  type ServedRow,
-  fmtServedRows,
-  type ResolvedRange,
-} from "./hashline/served.js";
+import { type ServedRow, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { servedPositionsOf } from "./hashline/served.js";
 import { canon } from "./hashline/hash-identity.js";
 import { globalCanonStore } from "./hashline/hash.js";
@@ -46,10 +42,7 @@ function resolveServedRange(input: ComputeDriftInput): {
   rangeTo: number;
 } {
   const range = input.range;
-  if (!range)
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] computeDrift requires range or intervals",
-    );
+  if (!range) throw new Error("[MODEL] [E_BAD_PAYLOAD] computeDrift requires range or intervals");
   const startPositions = servedPositionsOf(input.served, range.startHash);
   const endPositions = servedPositionsOf(input.served, range.endHash);
   let servedStartIdx: number;
@@ -91,10 +84,7 @@ function resolveIntervals(
   });
 }
 
-function isInIntervals(
-  p: number,
-  ranges: Array<{ from: number; to: number }>,
-): boolean {
+function isInIntervals(p: number, ranges: Array<{ from: number; to: number }>): boolean {
   for (const r of ranges) if (p >= r.from && p <= r.to) return true;
   return false;
 }
@@ -126,10 +116,7 @@ function currentEditedSpans(
   return spans;
 }
 
-function isInSpans(
-  p: number,
-  spans: Array<{ from: number; to: number }>,
-): boolean {
+function isInSpans(p: number, spans: Array<{ from: number; to: number }>): boolean {
   for (const s of spans) if (p >= s.from && p <= s.to) return true;
   return false;
 }
@@ -250,9 +237,7 @@ function collectDriftedIntervals(
   }
   return { total, unshown, anyNotReported, driftedPositions };
 }
-export function computeDrift(
-  input: ComputeDriftInput,
-): DriftNoticeResult | undefined {
+export function computeDrift(input: ComputeDriftInput): DriftNoticeResult | undefined {
   const cap = input.cap ?? SERVED_ECHO_CAP;
   const resultHashSet = new Set(input.resultHashes);
   const currentPosOfHash = buildCurrentPosMap(input.resultHashes);
@@ -318,8 +303,7 @@ export function computeDrift(
     drifted: driftedSet.has(position),
   }));
   const rowsText = fmtServedRows(rows, input.resultLines);
-  const moreText =
-    unshown > 0 ? `\n[... ${unshown} more — re-read to see]` : "";
+  const moreText = unshown > 0 ? `\n[... ${unshown} more — re-read to see]` : "";
   return {
     text: `${DRIFT_NOTICE_HEADING} ${countLabel} changed outside the range:\n${rowsText}${moreText}`,
     rows,
@@ -339,9 +323,7 @@ export async function scanDrift(input: {
 }): Promise<string | undefined> {
   const handle = createSessionHandle(input.sessionKey, input.path);
   const reported = await handle.driftReported();
-  const servedCanons = await handle
-    .loadCanons()
-    .catch(() => [] as (string | null)[]);
+  const servedCanons = await handle.loadCanons().catch(() => [] as (string | null)[]);
   const driftInput: ComputeDriftInput = {
     served: input.served,
     resultHashes: input.resultHashes,
@@ -357,8 +339,6 @@ export async function scanDrift(input: {
     result.rows.map((row) => ({ position: row.position, hash: row.hash })),
     input.resultLines.length,
   );
-  await handle.markDriftReported(
-    result.rows.filter((row) => row.drifted).map((row) => row.hash),
-  );
+  await handle.markDriftReported(result.rows.filter((row) => row.drifted).map((row) => row.hash));
   return result.text;
 }

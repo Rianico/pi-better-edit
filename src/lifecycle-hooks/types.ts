@@ -26,11 +26,7 @@ export type LifecycleDeps = {
   toCwd: (path: string, cwd: string) => string;
   valAccess: (resolved: string, display: string) => Promise<void>;
   loadFileKindAndText: (path: string, opts?: LoadFileOptions) => Promise<LFile>;
-  readNormFile: (
-    displayPath: string,
-    cwd: string,
-    opts?: ReadNormOptions,
-  ) => Promise<NormFile>;
+  readNormFile: (displayPath: string, cwd: string, opts?: ReadNormOptions) => Promise<NormFile>;
   fmtReadPreview: (
     normalized: string,
     opts: Record<string, never>,
