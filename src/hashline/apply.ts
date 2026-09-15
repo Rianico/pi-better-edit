@@ -3,8 +3,10 @@ import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
 import { AnchorMismatchError, verifyServedRange, type ResolvedRange } from "./served.js";
 import {
   findServedHashEcho,
+  findServedPrefixMismatches,
   ServedHashEchoError,
   buildServedEditMessage,
+  buildServedEditPrefixNote,
   trackServedEditRefusal,
   LITERAL_BYPASS_NOTICE,
 } from "./served-guard.js";
@@ -352,6 +354,25 @@ export function applyEdit(
   const result = assemble(content, spanResult, signal);
   assertNotEmpty(content, result);
   const changed = changedRange(content, result);
+
+  // WHY: middle tier beside the gate above: a replacement line opening with a
+  // WHY: served anchor whose remainder canon matches none of the canons served
+  // WHY: for that anchor. The bytes are already assembled as-is; the note only
+  // WHY: informs the model channel via the warnings seam (rendered by warnBlock),
+  // WHY: never alters bytes, never blocks, keeps no state, fires per line.
+  if (served) {
+    const canons = servedCanons ?? [];
+    const mismatches = findServedPrefixMismatches(resolved.content_lines, served, canons, 1);
+    for (const mismatch of mismatches) {
+      warnings.push(
+        buildServedEditPrefixNote({
+          k: mismatch.k,
+          anchor: mismatch.anchor,
+          servedLine: mismatch.servedLine,
+        }),
+      );
+    }
+  }
 
   return {
     content: result,

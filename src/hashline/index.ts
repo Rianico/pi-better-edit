@@ -47,12 +47,16 @@ export { applyEdit, fmtRegion, changedRange, type ApplyVerificationContext } fro
 
 export {
   findServedHashEcho,
+  findServedPrefixMismatches,
   ServedHashEchoError,
   buildServedEditMessage,
+  buildServedEditPrefixNote,
   buildServedWriteMessage,
+  buildServedWritePrefixNote,
   trackServedEditRefusal,
   trackServedWriteRefusal,
   clearServedRefusals,
   LITERAL_BYPASS_NOTICE,
   type ServedHashEchoMatch,
+  type ServedPrefixMismatch,
 } from "./served-guard.js";

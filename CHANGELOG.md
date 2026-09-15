@@ -6,12 +6,13 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **edit:** inform model of served prefix with differing content
 * **edit:** require literal mode for served rows
 * **edit:** adopt line-identity MVCC with leases
 
 ### Bug Fixes
 
-* **edit:** drop shape-based refusal from replace_with and write content
+* **edit:** drop shape-based refusal from content
 
 ### Documentation
 

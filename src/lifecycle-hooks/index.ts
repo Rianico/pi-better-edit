@@ -3,6 +3,8 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   initHasher as defaultInitHasher,
   findServedHashEcho,
+  findServedPrefixMismatches,
+  buildServedWritePrefixNote,
   LITERAL_BYPASS_NOTICE,
   clearServedRefusals,
 } from "../hashline/index.js";
@@ -153,10 +155,15 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: against the pre-auto-read served mirror (still the pre-write mirror here)
       // WHY: and append the dimmed human line when the bytes reproduce a served row.
       let literalBypass = false;
+      // WHY: middle tier for `write`: a written line opening with a served anchor
+      // WHY: whose remainder canon matches none of the canons served for that anchor.
+      // WHY: The bytes are already on disk; each note only informs the model channel,
+      // WHY: never alters bytes, never blocks, keeps no state, fires per line.
+      let prefixNotes: string[] = [];
       try {
         const rawContent = (event.input as Record<string, unknown> | undefined)?.content;
         const rawMode = (event.input as Record<string, unknown> | undefined)?.mode;
-        if (rawMode === "literal" && typeof rawContent === "string") {
+        if (typeof rawContent === "string") {
           const sessionKey = deps.sessionKeyFor(ctx);
           const handle = createSessionHandle(sessionKey, absolutePath);
           const served = await handle.load();
@@ -166,11 +173,22 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           } catch {
             canons = [];
           }
-          const reproduction = findServedHashEcho(splitLines(rawContent), served, canons, 1);
-          if (reproduction) literalBypass = true;
+          if (rawMode === "literal") {
+            const reproduction = findServedHashEcho(splitLines(rawContent), served, canons, 1);
+            if (reproduction) literalBypass = true;
+          }
+          const mismatches = findServedPrefixMismatches(splitLines(rawContent), served, canons, 1);
+          prefixNotes = mismatches.map((mismatch) =>
+            buildServedWritePrefixNote({
+              line: mismatch.line,
+              anchor: mismatch.anchor,
+              servedLine: mismatch.servedLine,
+            }),
+          );
         }
       } catch (error) {
-        console.error("Failed to evaluate literal declaration after write:", error);
+        console.error("Failed to evaluate served prefix notes after write:", error);
+        prefixNotes = [];
       }
       await recordServesBestEffort({
         sessionKey: deps.sessionKeyFor(ctx),
@@ -195,6 +213,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
             text: `\n\n--- Auto-read (hashline anchors) ---\n${preview.text}`,
           },
           ...(literalBypass ? [{ type: "text" as const, text: LITERAL_BYPASS_NOTICE }] : []),
+          ...prefixNotes.map((note) => ({ type: "text" as const, text: note })),
         ],
         ...(literalBypass
           ? {

@@ -85,6 +85,117 @@ export class ServedHashEchoError extends AnchorMismatchError {
   }
 }
 
+export interface ServedPrefixMismatch {
+  /** SAFETY: 1-based candidate index within the submitted lines. */
+  k: number;
+  /** SAFETY: absolute candidate line (`start + k - 1`); equals `k` when `start` is 1. */
+  line: number;
+  /** SAFETY: the anchor served for this session and file that opens the candidate. */
+  anchor: string;
+  /** SAFETY: 1-based served position the anchor was served for. */
+  servedLine: number;
+}
+
+/**
+ * SAFETY: Served prefix mismatch — the middle tier beside the served hash echo gate.
+ *
+ * A candidate reports here when it opens with an anchor served for this session
+ * and file, yet its remainder canon matches none of the canons served for that
+ * anchor. Position-agnostic like the gate: `start` only shifts the reported
+ * `line` and never narrows matching. Empty or all-null `canons` means no
+ * served content to compare against, so the result stays empty — never a
+ * shape-only report. Exact reproductions are excluded (the gate owns them),
+ * so callers scan for this tier only after the gate stays silent.
+ * Pure with no retained state: fires per occurrence, never suppressed.
+ */
+export function findServedPrefixMismatches(
+  lines: readonly string[],
+  served: readonly (string | null)[],
+  canons: readonly (string | null)[],
+  start = 1,
+): ServedPrefixMismatch[] {
+  const byAnchor = new Map<string, Array<{ servedLine: number; canonText: string }>>();
+  for (let pos = 0; pos < served.length; pos++) {
+    const anchor = served[pos];
+    if (anchor === null || anchor === undefined) continue;
+    const canonText = pos < canons.length ? (canons[pos] ?? null) : null;
+    if (canonText === null) continue;
+    const list = byAnchor.get(anchor);
+    const entry = { servedLine: pos + 1, canonText };
+    if (list) list.push(entry);
+    else byAnchor.set(anchor, [entry]);
+  }
+  if (byAnchor.size === 0) return [];
+  const out: ServedPrefixMismatch[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    let text = lines[index]!;
+    if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
+      text = text.slice(1);
+    }
+    if (text.length < 4) continue;
+    if (text[3] !== HASH_SEP) continue;
+    const anchor = text.slice(0, 3);
+    if (!/^[A-Za-z0-9]{3}$/.test(anchor)) continue;
+    const candidates = byAnchor.get(anchor);
+    if (!candidates) continue;
+    const candidateCanon = canon(text.slice(4));
+    let exact = false;
+    for (const entry of candidates) {
+      if (entry.canonText === candidateCanon) {
+        exact = true;
+        break;
+      }
+    }
+    if (exact) continue;
+    out.push({
+      k: index + 1,
+      line: start + index,
+      anchor,
+      servedLine: candidates[0]!.servedLine,
+    });
+  }
+  return out;
+}
+
+/**
+ * SAFETY: Model note for an applied edit carrying a served prefix mismatch.
+ * Applied-only, bytes untouched, never blocks: the post-edit diff already
+ * carries the written line, this note only tells the model the prefix
+ * reproduces a served anchor with differing content and names the remedy.
+ */
+export function buildServedEditPrefixNote(args: {
+  k: number;
+  anchor: string;
+  servedLine: number;
+}): string {
+  return (
+    `[MODEL] Edit applied with a served anchor prefix: replacement line ${args.k} begins with ` +
+    `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
+    `but its content differs from what was served. ` +
+    `The bytes were written as-is. ` +
+    `If the prefix was unintended, run undo_last_edit and retry without the anchor.`
+  );
+}
+
+/**
+ * SAFETY: Model note for an applied write carrying a served prefix mismatch.
+ * Same applied-only, bytes-untouched contract as the edit note, surfaced
+ * through the `tool_result` handler that owns the write auto-read.
+ */
+export function buildServedWritePrefixNote(args: {
+  line: number;
+  anchor: string;
+  servedLine: number;
+}): string {
+  return (
+    `[MODEL] Write applied with a served anchor prefix: line ${args.line} begins with ` +
+    `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
+    `but its content differs from what was served. ` +
+    `The bytes were written as-is. ` +
+    `If the prefix was unintended, run undo_last_edit and retry without the anchor.`
+  );
+}
+
 type RefusalEntry = {
   payload: string;
   count: number;
