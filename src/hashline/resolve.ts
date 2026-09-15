@@ -7,6 +7,7 @@ import {
 } from "./hash-identity.js";
 import { parseHashRef, parseText, type Anchor } from "./parse.js";
 import type { ServedRow } from "./served.js";
+import type { FileSnapshotContext } from "./served-verification.js";
 import { NEW_CONTENT_NOT_STRING_MSG } from "../constants.js";
 
 type RAnchor = {
@@ -14,6 +15,132 @@ type RAnchor = {
   hash: string;
   hashMatched: boolean;
 };
+
+// WHY: ---------------------------------------------------------------------------
+// WHY: Line-identity MVCC lease resolution (spec §3.1, §3.5)
+// WHY: ---------------------------------------------------------------------------
+
+/**
+ * The immutable identity a session holds for one served anchor (spec §3.1.1). It is a plain view
+ * over one `served_leases` row; the edit path only ever reads it.
+ */
+export interface LeaseIdentityView {
+  lineId: number;
+  canonHash: string;
+  servedSnapshotHash: string;
+  servedLineNumber: number;
+  retiredAt: number | null;
+}
+
+/**
+ * Read-only identity seam the edit path resolves anchors through (spec §3.1.1). Production wires it
+ * to `served_leases` + `line_lineage`; tests inject plain maps. Nothing here writes a lease: the
+ * authoritative `retired_at` writer is materialization, never resolution.
+ */
+export interface LeaseSpanSource {
+  /** `CANON_VERSION:xxh64(content)` of the buffer being edited — the `C` of the fast-path predicate. */
+  currentSnapshotHash: string;
+  /** The session's lease for one anchor, if any (spec §3.1.1 step 1). */
+  leaseFor(anchor: string): LeaseIdentityView | undefined;
+  /** Current line of a leased `line_id` in `line_lineage(C)`; undefined when deleted/retired (spec §3.1.1 steps 3-4). */
+  rebasedLineOf(lineId: number): number | undefined;
+}
+
+/**
+ * The O(1) fast path qualifies **iff** both anchors were leased from the content now on disk —
+ * `S_from === C ∧ S_to === C ∧ S_from === S_to` (spec §3.5). Any mixed-snapshot span, any drift
+ * (`S !== C`), takes the dynamic rebase path through `line_lineage`, so a stale lease can never be
+ * applied at its old coordinates.
+ */
+export function isUniformLeaseFastPath(
+  from: LeaseIdentityView,
+  to: LeaseIdentityView,
+  currentSnapshotHash: string,
+): boolean {
+  return (
+    from.servedSnapshotHash === currentSnapshotHash &&
+    to.servedSnapshotHash === currentSnapshotHash &&
+    from.servedSnapshotHash === to.servedSnapshotHash
+  );
+}
+
+/**
+ * Per-lease line-identity decision: where the leased line lives now, or that the leased identity is
+ * gone and the edit fails closed with `E_STALE_RANGE`.
+ */
+export type LineIdentityDecision = { kind: "line"; line: number } | { kind: "stale"; line: number };
+
+/**
+ * Resolves one leased anchor against the current content (spec §3.1.1 steps 2-4).
+ *
+ * A live lease is authoritative about *where* its line is; the answer is `stale` — fail-closed
+ * `E_STALE_RANGE` — when the lease is retired, when its `line_id` has no coordinate in
+ * `line_lineage(C)`, or when it no longer lives where it was served. Content is never consulted as a
+ * resolution: an anchor whose line identity is gone is a stale range, never `E_STALE_ANCHOR` (the
+ * code reserved for an anchor the session holds no lease for, spec §5.3).
+ */
+export function resolveLineIdentity(
+  lease: LeaseIdentityView,
+  contentLine: number | undefined,
+  source: LeaseSpanSource,
+): LineIdentityDecision {
+  // WHY: a dead lease can never be applied, and a live lease is authoritative about *where* its
+  // WHY: line is: content-derived anchors can be re-assigned to a colliding line in the new
+  // WHY: snapshot, but §7.1.5 forbids committing to any line whose `line_id` is not the leased one.
+  // WHY: `retired_at` is set -> `E_STALE_RANGE` even when the anchor string is gone from the content
+  // WHY: entirely (spec §3.1.1 line 89 / §5.3): the leased line was retired, so nothing has changed
+  // WHY: about *which* line identity is missing, only about whether it still has a coordinate.
+  if (lease.retiredAt !== null) {
+    return { kind: "stale", line: contentLine ?? lease.servedLineNumber };
+  }
+  const rebased = source.rebasedLineOf(lease.lineId);
+  if (rebased === undefined) {
+    return { kind: "stale", line: contentLine ?? lease.servedLineNumber };
+  }
+  return { kind: "line", line: rebased };
+}
+
+/**
+ * The single 1-based position of `item` in `items`, or `undefined` when it is absent or occurs
+ * more than once. A repeated anchor is ambiguous, so it is never resolved by guessing.
+ */
+function uniqueItemPosition<T>(items: readonly T[], item: T): number | undefined {
+  let found: number | undefined;
+  for (let i = 0; i < items.length; i++) {
+    if (items[i] !== item) continue;
+    if (found !== undefined) return undefined;
+    found = i + 1;
+  }
+  return found;
+}
+
+/**
+ * The unique 1-based positions of `first` and `second` in one column, each `undefined` when that
+ * value is absent or ambiguous. A span's two bounds are always asked for together, so the pair
+ * scan keeps both answers on the same "exactly once" rule.
+ */
+export function uniqueItemPositions<T>(
+  items: readonly T[],
+  first: T,
+  second: T,
+): [number | undefined, number | undefined] {
+  const firstPosition = uniqueItemPosition(items, first);
+  const secondPosition = uniqueItemPosition(items, second);
+  return [firstPosition, secondPosition];
+}
+
+/** The unique 1-based line an anchor resolves to, or undefined when absent/ambiguous. */
+export function uniqueAnchorLine(fileHashes: string[], anchor: string): number | undefined {
+  return uniqueItemPosition(fileHashes, anchor);
+}
+
+/** The unique 1-based position an anchor was served at, or undefined when absent/ambiguous. */
+export function uniqueServedPosition(
+  served: readonly (string | null)[],
+  anchor: string,
+): number | undefined {
+  return uniqueItemPosition(served, anchor);
+}
 
 export type HEdit = { content_lines: string[]; hash_bounds: [Anchor, Anchor] };
 export type RHEdit = {
@@ -62,13 +189,8 @@ function assertAligned(fileLines: string[], fileHashes: string[], ctx: string): 
   }
 }
 
-function _fmtMismatch(
-  mismatches: HMismatch[],
-  fileLines: string[],
-  fileHashes: string[],
-  filePath?: string,
-): string {
-  return fmtMismatchWithServes(mismatches, fileLines, fileHashes, filePath).message;
+function _fmtMismatch(mismatches: HMismatch[], snapshot: FileSnapshotContext): string {
+  return fmtMismatchWithServes(mismatches, snapshot).message;
 }
 
 function formatNotFound(
@@ -141,10 +263,9 @@ function buildHashIndex(fileHashes: string[]): Map<string, number[]> {
 }
 export function fmtMismatchWithServes(
   mismatches: HMismatch[],
-  fileLines: string[],
-  fileHashes: string[],
-  filePath?: string,
+  snapshot: FileSnapshotContext,
 ): { message: string; servedRows: ServedRow[] } {
+  const { fileLines, fileHashes, filePath } = snapshot;
   assertAligned(fileLines, fileHashes, "fmtMismatch");
 
   const out: string[] = [];
@@ -326,14 +447,14 @@ export function swapReversedRanges(edit: HEdit, fileHashes: string[], warnings: 
 
 export function valEdit(
   edit: HEdit,
-  fileLines: string[],
-  fileHashes: string[],
+  snapshot: FileSnapshotContext,
   _warnings: string[],
   signal: AbortSignal | undefined,
 ): {
   resolved: RHEdit | undefined;
   mismatches: HMismatch[];
 } {
+  const { fileLines, fileHashes } = snapshot;
   assertAligned(fileLines, fileHashes, "valEdit");
   const mismatches: HMismatch[] = [];
 
@@ -374,6 +495,23 @@ export function valEdit(
     },
     mismatches,
   };
+}
+
+/**
+ * Content-anchor resolution for a caller with NO served mirror and NO lease source — the
+ * library-level `applyEdit` seam (tools embedding the resolver, unit tests of the pure anchor
+ * algebra). A session edit never reaches this: `apply.ts` routes every edit that has a seam through
+ * `resolveLeasedEdit`, so an anchor with no lease fails closed (`[E_STALE_ANCHOR]`) instead of being
+ * satisfied by a colliding content anchor (spec §3.1.1, §5.3; ADR-0016 rejected "content equality as
+ * a fallback when the lease is missing").
+ */
+export function resolveEditByContent(
+  edit: HEdit,
+  snapshot: FileSnapshotContext,
+  signal: AbortSignal | undefined,
+): { resolved: RHEdit | undefined; mismatches: Parameters<typeof fmtMismatchWithServes>[0] } {
+  const { resolved, mismatches } = valEdit(edit, snapshot, [], signal);
+  return { resolved, mismatches };
 }
 
 export { warnUnicodeEsc };

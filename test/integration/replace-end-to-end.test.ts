@@ -105,7 +105,7 @@ describe("edit tool — end-to-end", () => {
     });
   });
 
-  it("stale anchor rejection after edit", async () => {
+  it("retired anchor rejection after edit", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -130,6 +130,8 @@ describe("edit tool — end-to-end", () => {
         ctx,
       );
 
+      // The edited line's identity is retired, so its old anchor is a stale range: [E_STALE_RANGE]
+      // with the current-range serve, never [E_STALE_ANCHOR] (spec §3.1.1 line 89 / §5.3).
       await expect(
         editTool.execute(
           "e2",
@@ -138,7 +140,7 @@ describe("edit tool — end-to-end", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/stale anchor/);
+      ).rejects.toThrow(/\[MODEL\] \[E_STALE_RANGE\]/);
     });
   });
 

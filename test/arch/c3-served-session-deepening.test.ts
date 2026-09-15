@@ -56,7 +56,7 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
     expect(typeof handle.load).toBe("function");
     expect(typeof handle.record).toBe("function");
     expect(typeof handle.recordDiff).toBe("function");
-    expect(typeof handle.recordEcho).toBe("function");
+    expect(typeof handle.recordServeFeedback).toBe("function");
     expect(typeof handle.recordTruncated).toBe("function");
     expect(typeof handle.driftReported).toBe("function");
     expect(typeof handle.markDriftReported).toBe("function");
@@ -89,6 +89,19 @@ describe("C3 — Deepen ServedSession: facade deleted, handle is sole seam", () 
     const handle = createSessionHandle("mem-test", "/mem.ts", customStore);
     expect(typeof handle.load).toBe("function");
     expect(typeof handle.record).toBe("function");
+  });
+
+  it("snapshot vacuum lives with the CAS snapshot store, not the session module", async () => {
+    const store = await import("../../src/snapshot-store");
+    expect(typeof store.vacuumSnapshots).toBe("function");
+    const sessionSource = readFileSync("src/served-session/session.ts", "utf-8");
+    // WHY: the sweep is pure `file_snapshots` / `line_lineage` retention (spec §3.6.1); its budget
+    // WHY: constants and its DELETE statements belong to the store that owns those tables, while
+    // WHY: the session module keeps only session/lease concerns.
+    expect(sessionSource).not.toContain("VACUUM_");
+    expect(sessionSource).not.toContain("export function vacuumSnapshots");
+    expect(sessionSource).not.toContain("DELETE FROM file_snapshots WHERE snapshot_id = ?");
+    expect(sessionSource).not.toContain("DELETE FROM line_lineage WHERE snapshot_id = ?");
   });
 
   it("re-exports servedPositionsOf and currentPositionOfDrifted remain co-located", async () => {

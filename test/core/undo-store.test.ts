@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { saveUndo, getUndo, clearUndo } from "../../src/edit-undo";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { upsertUndo, getUndoEntry, deleteUndo } from "../../src/undo-store";
+import { snapshotHashFor } from "../../src/snapshot-store";
 import * as hashStoreModule from "../../src/hash-store";
 import { hashStorePath } from "../../src/paths";
 import { useTestHome } from "../support/fixtures";
@@ -25,6 +26,18 @@ describe("undo-store", () => {
     expect(entry!.originalEnding).toBe("\n");
     expect(entry!.hashes).toEqual(["abc", "def"]);
     expect(entry!.resultContent).toBe("hello\nworld!");
+  });
+
+  it("pins the restored content's canonical snapshot hash (issue #82)", async () => {
+    await saveUndo(home.testPath, {
+      content: "hello\nworld",
+      bom: "",
+      originalEnding: "\n",
+      hashes: ["abc", "def"],
+      resultContent: "hello\nworld!",
+    });
+    const entry = await getUndo(home.testPath);
+    expect(entry!.snapshotHash).toBe(snapshotHashFor("hello\nworld"));
   });
 
   it("returns undefined for a path with no undo history", async () => {
@@ -133,14 +146,14 @@ describe("undo-store", () => {
       resultContent: "new",
     });
     const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
-    db.prepare("UPDATE undo SET ending = ? WHERE path = ?").run("bogus", home.testPath);
+    db.prepare("UPDATE file_undo SET ending = ? WHERE path = ?").run("bogus", home.testPath);
     db.close();
     expect(await getUndo(home.testPath)).toBeUndefined();
     const check = new DatabaseSync(hashStorePath(), {
       defensive: false,
     } as any);
     const remaining = check
-      .prepare("SELECT COUNT(*) AS n FROM undo WHERE path = ?")
+      .prepare("SELECT COUNT(*) AS n FROM file_undo WHERE path = ?")
       .get(home.testPath) as { n: number };
     check.close();
     expect(remaining.n).toBe(0);
@@ -164,6 +177,7 @@ describe("undo-store — raw entries", () => {
       ending: "\r\n",
       hashes: ["abc", "def"],
       resultContent: "new",
+      snapshotHash: null,
     });
   });
 
@@ -217,14 +231,14 @@ describe("undo-store — raw entries", () => {
       resultContent: "new",
     });
     const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
-    db.prepare("UPDATE undo SET hashes = ? WHERE path = ?").run("{not json", "/a.ts");
+    db.prepare("UPDATE file_undo SET hashes = ? WHERE path = ?").run("{not json", "/a.ts");
     db.close();
     expect(getUndoEntry(store, "/a.ts")).toBeUndefined();
     const check = new DatabaseSync(hashStorePath(), {
       defensive: false,
     } as any);
     const remaining = check
-      .prepare("SELECT COUNT(*) AS n FROM undo WHERE path = ?")
+      .prepare("SELECT COUNT(*) AS n FROM file_undo WHERE path = ?")
       .get("/a.ts") as { n: number };
     check.close();
     expect(remaining.n).toBe(0);
@@ -240,16 +254,64 @@ describe("undo-store — raw entries", () => {
       resultContent: "new",
     });
     const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
-    db.prepare("UPDATE undo SET hashes = ? WHERE path = ?").run('["ZZ", "ZZZZ"]', "/a.ts");
+    db.prepare("UPDATE file_undo SET hashes = ? WHERE path = ?").run('["ZZ", "ZZZZ"]', "/a.ts");
     db.close();
     expect(getUndoEntry(store, "/a.ts")).toBeUndefined();
     const check = new DatabaseSync(hashStorePath(), {
       defensive: false,
     } as any);
     const remaining = check
-      .prepare("SELECT COUNT(*) AS n FROM undo WHERE path = ?")
+      .prepare("SELECT COUNT(*) AS n FROM file_undo WHERE path = ?")
       .get("/a.ts") as { n: number };
     check.close();
     expect(remaining.n).toBe(0);
+  });
+});
+
+describe("undo-store — snapshot_hash pin (issue #79)", () => {
+  it("round-trips the snapshot_hash restored-target pin", async () => {
+    const store = await loadHashStore();
+    upsertUndo(store, "/pinned.ts", {
+      content: "old",
+      bom: "",
+      ending: "\n",
+      hashes: ["abc"],
+      resultContent: "new",
+      snapshotHash: "v1:deadbeef",
+    });
+    expect(getUndoEntry(store, "/pinned.ts")).toMatchObject({
+      content: "old",
+      snapshotHash: "v1:deadbeef",
+    });
+  });
+
+  it("persists undo rows in the file_undo table", async () => {
+    const store = await loadHashStore();
+    upsertUndo(store, "/isolated.ts", {
+      content: "old",
+      bom: "",
+      ending: "\n",
+      hashes: ["abc"],
+      resultContent: "new",
+    });
+    const row = store.db
+      .prepare("SELECT path FROM file_undo WHERE path = ?")
+      .get("/isolated.ts") as { path?: string } | undefined;
+    expect(row?.path).toBe("/isolated.ts");
+  });
+
+  it("never writes v7 undo state into the legacy v6 undo shell", async () => {
+    const store = await loadHashStore();
+    upsertUndo(store, "/shell-free.ts", {
+      content: "old",
+      bom: "",
+      ending: "\n",
+      hashes: ["abc"],
+      resultContent: "new",
+    });
+    const legacy = store.db.prepare("SELECT COUNT(*) AS n FROM undo").get() as { n: number };
+    const v7 = store.db.prepare("SELECT COUNT(*) AS n FROM file_undo").get() as { n: number };
+    expect(legacy.n).toBe(0);
+    expect(v7.n).toBeGreaterThan(0);
   });
 });

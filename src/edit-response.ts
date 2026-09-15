@@ -14,9 +14,13 @@ export type EditDetails = {
   servedByPath?: Array<{
     path: string;
     servedRows: ServedRow[];
+    /** Committed `file_snapshots.snapshot_hash` of this path's served content. */
+    contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;
   }>;
+  /** Committed `file_snapshots.snapshot_hash` of the single served file, when only one was served. */
+  contentHash?: string;
   warnings?: string[];
   driftNotice?: string;
 };
@@ -65,6 +69,8 @@ export interface SuccessInput {
   originalHashes: string[];
   result: string;
   resultHashes: string[];
+  /** Committed `file_snapshots.snapshot_hash` of `result`. */
+  contentHash: string;
   warnings: string[] | undefined;
   snapshotId?: string;
   editMeta: RMeta;
@@ -167,6 +173,7 @@ export function buildChanged(input: SuccessInput): TResult {
     result,
     warnings,
     snapshotId,
+    contentHash,
     originalNormalized,
     originalHashes,
     editMeta,
@@ -217,6 +224,7 @@ export function buildChanged(input: SuccessInput): TResult {
       metrics,
       ...(warnings !== undefined && warnings.length > 0 ? { warnings } : {}),
       servedRows: denseServedRows,
+      contentHash,
       ...(driftNotice !== undefined ? { driftNotice } : {}),
     },
   };
@@ -228,6 +236,8 @@ export type BatchSection = {
   result: string;
   originalHashes: string[];
   resultHashes: string[];
+  /** Committed `file_snapshots.snapshot_hash` of `result` — the served content's identity. */
+  resultHash: string;
   warnings: string[] | undefined;
   driftNotice: string | undefined;
   appliedCount: number;
@@ -275,6 +285,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
   const servedByPath: Array<{
     path: string;
     servedRows: ServedRow[];
+    contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;
   }> = [];
@@ -290,6 +301,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
       servedByPath.push({
         path: s.path,
         servedRows: denseRows,
+        contentHash: s.resultHash,
         resultLineCount: visLines(s.result).length,
         firstChangedLine: diffResult.firstChangedLine,
       });
@@ -320,6 +332,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
       ...(warnings.length > 0 ? { warnings } : {}),
       servedRows: servedByPath.flatMap((e) => e.servedRows),
       servedByPath,
+      ...(appliedFiles.length === 1 ? { contentHash: appliedFiles[0]!.resultHash } : {}),
       ...(driftNotice !== undefined ? { driftNotice } : {}),
     },
   };

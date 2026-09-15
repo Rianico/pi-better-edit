@@ -1,4 +1,4 @@
-import { SERVED_ECHO_CAP } from "./constants.js";
+import { SERVED_ROWS_CAP } from "./constants.js";
 import { type ServedRow, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { servedPositionsOf } from "./hashline/served.js";
 import { canon } from "./hashline/hash-identity.js";
@@ -238,7 +238,7 @@ function collectDriftedIntervals(
   return { total, unshown, anyNotReported, driftedPositions };
 }
 export function computeDrift(input: ComputeDriftInput): DriftNoticeResult | undefined {
-  const cap = input.cap ?? SERVED_ECHO_CAP;
+  const cap = input.cap ?? SERVED_ROWS_CAP;
   const resultHashSet = new Set(input.resultHashes);
   const currentPosOfHash = buildCurrentPosMap(input.resultHashes);
   const intervals = resolveIntervals(input);
@@ -317,6 +317,8 @@ export async function scanDrift(input: {
   served: (string | null)[];
   resultHashes: string[];
   resultLines: string[];
+  /** Committed `file_snapshots.snapshot_hash` of the served result; binds the re-served leases. */
+  contentHash: string;
   range?: ResolvedRange;
   intervals?: ResolvedRange[];
   path: string;
@@ -338,6 +340,8 @@ export async function scanDrift(input: {
   await handle.recordTruncated(
     result.rows.map((row) => ({ position: row.position, hash: row.hash })),
     input.resultLines.length,
+    undefined,
+    input.contentHash,
   );
   await handle.markDriftReported(result.rows.filter((row) => row.drifted).map((row) => row.hash));
   return result.text;

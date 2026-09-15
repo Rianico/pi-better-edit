@@ -45,7 +45,7 @@ async function servedPreviewForFile(
   return fmtRegion(hashes, lines);
 }
 
-describe("write hash-echo guard", () => {
+describe("write served hash echo guard", () => {
   it("allows clean content and unrelated literal hash-like text", () => {
     const served: (string | null)[] = ["Ab3", "Cd4", null];
     expect(findServedHashEcho("# Notes\nbody\n", served)).toBeUndefined();
@@ -70,7 +70,7 @@ describe("write hash-echo guard", () => {
   });
 
   it("rejects a copied current preview before the write body can change disk", async () => {
-    await withTempDir("write-hash-echo-red-", async (cwd) => {
+    await withTempDir("write-served-hash-echo-red-", async (cwd) => {
       await initHasher();
       const path = join(cwd, "notes.md");
       const original = "# Notes\nbody\n";
@@ -127,7 +127,7 @@ describe("write hash-echo guard", () => {
   });
 
   it("does not reuse served state across sessions or canonical paths", async () => {
-    await withTempDir("write-hash-echo-scope-", async (cwd) => {
+    await withTempDir("write-served-hash-echo-scope-", async (cwd) => {
       await initHasher();
       const io = localIO();
       const servedPath = join(cwd, "served.md");
@@ -146,7 +146,7 @@ describe("write hash-echo guard", () => {
   });
 
   it("uses exact served hash at absolute line — not generic 3-char prefix", async () => {
-    await withTempDir("write-hash-echo-generic-", async (cwd) => {
+    await withTempDir("write-served-hash-echo-generic-", async (cwd) => {
       await initHasher();
       const io = localIO();
       const path = join(cwd, "doc.md");
@@ -166,7 +166,7 @@ describe("write hash-echo guard", () => {
   });
 
   it("formats the E_SERVED_ECHO message exactly per ADR-0009", async () => {
-    await withTempDir("write-hash-echo-msg-", async (cwd) => {
+    await withTempDir("write-served-hash-echo-msg-", async (cwd) => {
       await initHasher();
       const io = localIO();
       const path = join(cwd, "notes.md");

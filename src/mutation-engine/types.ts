@@ -35,6 +35,18 @@ export interface ProcessedEditFile {
   warnings: string[];
   originalHashes: string[];
   resultHashes: string[];
+  /**
+   * The working buffer's line identity for `result`, indexed by line (entry `i` is line `i + 1`),
+   * `null` for a line this batch created. The post-write commit persists it verbatim (spec §3.2.4
+   * step 1) so surviving lines keep their exact `line_id` without re-pairing against S_latest.
+   */
+  resultLineIds: (number | null)[];
+  /**
+   * Legacy v6 tombstone payload for this batch: the union of every applied item's removed
+   * hashes. Applied once, after `writeAtomic` succeeds (spec §3.2.4 step 4), so a batch that
+   * writes nothing retires nothing. In-memory only until the post-write commit persists it.
+   */
+  removedHashes: ReadonlySet<string>;
   appliedCount: number;
   noopCount: number;
   totalAddedLines: number;
@@ -71,8 +83,8 @@ export interface MutationFailure {
   code: string;
   /** SAFETY: Human message — model-facing signal when applicable. */
   message: string;
-  /** SAFETY: Fresh anchor echo for retry when available (reject-and-serve). */
-  echo?: string;
+  /** SAFETY: Fresh served block for retry when available (reject-and-serve). */
+  servedBlock?: string;
   servedRows?: import("../hashline/served.js").ServedRow[];
 }
 

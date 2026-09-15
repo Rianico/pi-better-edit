@@ -65,7 +65,7 @@ export class SQLiteSnapshotStore implements SnapshotStore {
   allPaths(): Array<{ path: string }> {
     const rows = this.db
       .prepare(
-        "SELECT path FROM snapshots UNION SELECT path FROM undo UNION SELECT path FROM served",
+        "SELECT path FROM snapshots UNION SELECT path FROM undo UNION SELECT path FROM file_undo UNION SELECT path FROM served",
       )
       .all() as Array<{ path: string }>;
     return rows;

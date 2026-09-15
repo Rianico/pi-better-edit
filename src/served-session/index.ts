@@ -30,6 +30,10 @@ export {
   loadCanons,
   loadEpochId,
   retireAnchors,
+  loadLease,
+  loadLeases,
+  retireAbsentLeases,
+  type ServedLease,
 } from "./session.js";
 
 export { servedPositionsOf } from "../hashline/served.js";
@@ -44,8 +48,14 @@ export async function recordServedTruncated(
   rows: import("./types.js").ServedEntry[],
   lineCount: number,
   clearFrom?: number,
+  contentHash?: string,
 ): Promise<void> {
-  await createSessionHandle(sessionKey, path).recordTruncated(rows, lineCount, clearFrom);
+  await createSessionHandle(sessionKey, path).recordTruncated(
+    rows,
+    lineCount,
+    clearFrom,
+    contentHash,
+  );
 }
 
 // WHY: Store lifecycle stays inside handle; these wrappers do not leak withStore.
@@ -59,23 +69,32 @@ export async function recordServed(
 ): Promise<void> {
   await createSessionHandle(sessionKey, path).record(rows);
 }
-export async function recordEchoServes(
+export async function recordRejectionServes(
   sessionKey: string,
   path: string,
   rows: import("../hashline/served.js").ServedRow[],
   policy: import("./types.js").ServeRecordPolicy,
   lineCount?: number,
+  contentHash?: string,
 ): Promise<void> {
-  await createSessionHandle(sessionKey, path).recordEcho(rows, policy, lineCount);
+  await createSessionHandle(sessionKey, path).recordServeFeedback(
+    rows,
+    policy,
+    lineCount,
+    contentHash,
+  );
 }
 export async function recordDiffServes(input: {
   sessionKey: string;
   path: string;
   servedRows: import("../hashline/served.js").ServedRow[];
+  /** Committed `file_snapshots.snapshot_hash` of the content served; binds the leases granted. */
+  contentHash: string;
   resultLineCount?: number;
   firstChangedLine?: number;
 }): Promise<void> {
   await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, {
+    contentHash: input.contentHash,
     resultLineCount: input.resultLineCount,
     firstChangedLine: input.firstChangedLine,
   });

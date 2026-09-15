@@ -1,8 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { loadHashStore } from "../../src/hash-store";
 import { upsertServed, getServed } from "../../src/served-session/index.js";
-import { upsertSnapshot, getSnapshot } from "../../src/snapshot-store";
-import { contentChecksum } from "../../src/hashline/hasher";
+import { upsertSnapshot, getSnapshot, snapshotHashFor } from "../../src/snapshot-store";
 import { withTempDir } from "../support/fixtures";
 
 function makeLifecyclePi() {
@@ -83,7 +82,13 @@ describe("session_start lifecycle", () => {
 
       const store = await loadHashStore();
       upsertServed(store, "sessionA", keep, [{ position: 0, hash: "abc" }]);
-      upsertSnapshot(store, keep, contentChecksum("keep\n"), 1, ["abc"]);
+      upsertSnapshot(store, {
+        path: keep,
+        snapshotHash: snapshotHashFor("keep\n"),
+        lineCount: 1,
+        hashes: ["abc"],
+        content: "keep\n",
+      });
 
       const { pi, handlers } = makeLifecyclePi();
       await registerExtension(pi);

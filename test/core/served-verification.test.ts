@@ -5,11 +5,11 @@ import {
   ServedVerification,
   verifyServedRange,
   verifyServedRangeResult as _verifyServedRangeResult,
-  buildRangeEcho,
+  buildRangeServeRows,
   fmtServedRows,
   servedPositionsOf,
 } from "../../src/hashline/served-verification";
-import { SERVED_ECHO_CAP } from "../../src/constants";
+import { SERVED_ROWS_CAP } from "../../src/constants";
 
 beforeAll(async () => {
   await initHasher();
@@ -68,44 +68,52 @@ describe("ServedVerification deep module — isolated store & decision table", (
     }
   });
 
-  it("single-candidate canon heal: a b c -> a 1 b c (relocated line keeps hash)", () => {
+  it("un-rebased served array fails closed: a b c -> a 1 b c is never healed (ADR-0008 retired)", () => {
     const store = createCanonStore();
     const oldContent = "a\nb\nc";
     const oldHashes = _lineHashesPure(oldContent, store);
     const newContent = "a\n1\nb\nc";
     const newHashes = _lineHashesPure(newContent, store);
     const fileLines = newContent.split("\n");
-    const fileHashes = newHashes;
+    // The relocated line keeps its content-derived hash (b at 2 -> 3), which is exactly why an
+    // un-rebased served array used to be silently relocated by the canon scan.
+    expect(oldHashes[1]).toBe(newHashes[2]);
     const served: (string | null)[] = [...oldHashes];
 
-    // b was at line 2 in old, now at line 3 in new; c at 3 -> 4
-    const bHash = oldHashes[1]!;
-    const cHash = oldHashes[2]!;
-
     const verifier = new ServedVerification(store);
-    // Verify via canon healing — should succeed despite hash position shift
+    // MVCC owns coordinate realignment (`pairSnapshots` + `line_lineage`); a caller that did not
+    // rebase has no served position for the shifted line, so `verify` rejects instead of healing.
     const result = verifier.verify({
       range: {
-        startHash: bHash,
-        endHash: cHash,
-        startLine: 3,
-        endLine: 4,
+        startHash: newHashes[1]!,
+        endHash: oldHashes[2]!,
+        startLine: 2,
+        endLine: 3,
       },
       served,
-      fileHashes,
+      fileHashes: newHashes,
       fileLines,
     });
-    expect(result.ok).toBe(true);
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("E_UNSERVED_RANGE");
+      expect(result.message).toMatch(/has no served position/);
+    }
 
-    // Also test throwing variant does not throw
+    // The throwing variant rejects too — no silent canon relocation.
     expect(() =>
       verifier.verifyOrThrow({
-        range: { startHash: bHash, endHash: cHash, startLine: 3, endLine: 4 },
+        range: {
+          startHash: newHashes[1]!,
+          endHash: oldHashes[2]!,
+          startLine: 2,
+          endLine: 3,
+        },
         served,
-        fileHashes,
+        fileHashes: newHashes,
         fileLines,
       }),
-    ).not.toThrow();
+    ).toThrow(/E_UNSERVED_RANGE/);
   });
 
   it("never-served gap → E_UNSERVED_RANGE (first offending line)", () => {
@@ -194,8 +202,8 @@ describe("ServedVerification deep module — isolated store & decision table", (
     const served: (string | null)[] = [...oldHashes];
 
     const verifier = new ServedVerification(store);
-    // Range alpha..gamma includes interior beta which is now stale; but hash for beta changed, so hash mismatch -> stale
-    // However healing might trigger canon path; we need to ensure stale is reported
+    // WHY: interior drift still reports the offending line (healing is retired, so the mismatch is
+    // WHY: reported directly instead of being routed through a canon scan).
     const result = verifier.verify({
       range: {
         startHash: oldHashes[0]!,
@@ -214,7 +222,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
     }
   });
 
-  it("pagination: large range echo is capped and includes pagination hint", () => {
+  it("pagination: large range serve block is capped and includes pagination hint", () => {
     const store = createCanonStore();
     const lines = Array.from({ length: 200 }, (_, i) => `line_${String(i + 1).padStart(3, "0")}`);
     const content = lines.join("\n");
@@ -223,7 +231,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
     const _fileHashes = hashes;
     const served: (string | null)[] = [...hashes];
 
-    // Create a stale interior at line 100 to trigger rejection with large echo
+    // Create a stale interior at line 100 to trigger rejection with a large serve block
     const mutatedLines = [...lines];
     mutatedLines[99] = "MUTATED_100";
     const mutatedContent = mutatedLines.join("\n");
@@ -244,9 +252,9 @@ describe("ServedVerification deep module — isolated store & decision table", (
     expect(result.ok).toBe(false);
     if (!result.ok) {
       expect(result.code).toBe("E_STALE_RANGE");
-      // Echo should be capped at SERVED_ECHO_CAP
-      expect(result.servedRows.length).toBe(SERVED_ECHO_CAP);
-      expect(result.echo).toContain("more — read offset=");
+      // Serve block should be capped at SERVED_ROWS_CAP
+      expect(result.servedRows.length).toBe(SERVED_ROWS_CAP);
+      expect(result.servedBlock).toContain("more — read offset=");
       expect(result.message).toContain("more — read offset=");
     }
   });
@@ -329,16 +337,16 @@ describe("ServedVerification deep module — isolated store & decision table", (
     ).toThrow(/E_UNSERVED_RANGE/);
   });
 
-  it("servedPositionsOf / buildRangeEcho / fmtServedRows remain accessible", () => {
+  it("servedPositionsOf / buildRangeServeRows / fmtServedRows remain accessible", () => {
     const hashes = ["aaa", "bbb", "ccc"];
     const lines = ["a", "b", "c"];
     const served = ["aaa", null, "ccc"];
     expect(servedPositionsOf(served, "aaa")).toEqual([0]);
     expect(servedPositionsOf(served, "bbb")).toEqual([]);
-    const echo = buildRangeEcho(1, 2, hashes);
-    expect(echo).toHaveLength(2);
-    expect(echo[0]!.hash).toBe("aaa");
-    const formatted = fmtServedRows(echo, lines);
+    const rows = buildRangeServeRows(1, 2, hashes);
+    expect(rows).toHaveLength(2);
+    expect(rows[0]!.hash).toBe("aaa");
+    const formatted = fmtServedRows(rows, lines);
     expect(formatted).toContain("aaa│a");
   });
 });

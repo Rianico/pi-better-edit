@@ -4,9 +4,37 @@ import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
 
 export { initHasher, HASH_LEN, ALPHA_RE, HASH_CLASS };
 
+export interface HashSnapshotUpsertOptions {
+  /**
+   * WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4
+   * WHY: step 4): it must be `true` only when `content` is the file's committed truth (read-path
+   * WHY: materialization, post-write batch commit, undo revert). In-memory working-buffer hashing
+   * WHY: that never reaches disk must leave `retired_at` untouched, or a rejected batch would
+   * WHY: retire every anchor the session still validly holds and force a re-read.
+   */
+  retireLeases?: boolean;
+  /**
+   * The served rows to lease inside the materialization transaction (spec §3.1.2 step 5 /
+   * §3.2.4 step 4): granted with `retired_at = NULL` and `served_snapshot_hash` bound to the
+   * snapshot this transaction commits, so snapshot + lineage + leases commit or roll back as
+   * one `BEGIN IMMEDIATE` unit. Absent on hashing paths that serve nothing (working buffers).
+   */
+  leases?: {
+    sessionKey: string;
+    rows: ReadonlyArray<{ position: number; hash: string | null }>;
+  };
+}
+
 export interface HashSnapshotIO {
   get(path: string, content: string, deleteCorrupt: boolean): Promise<string[] | undefined>;
-  upsert(path: string, checksum: string, lineCount: number, hashes: string[]): Promise<void>;
+  upsert(
+    path: string,
+    checksum: string,
+    lineCount: number,
+    hashes: string[],
+    content: string,
+    options?: HashSnapshotUpsertOptions,
+  ): Promise<void>;
 }
 
 export type HashPrior = {
@@ -21,6 +49,8 @@ export interface HashOptions {
   persist?: boolean;
   snapshotIO?: HashSnapshotIO;
   tombstone?: ReadonlySet<string>;
+  /** Passed to `HashSnapshotIO.upsert`; see `HashSnapshotUpsertOptions`. Defaults to `false`. */
+  retireLeases?: boolean;
 }
 
 export const ANCHOR_LEN = HASH_LEN;
@@ -353,6 +383,9 @@ export class HashIdentity {
     const prior = options?.prior;
     const persist = options?.persist ?? true;
     const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
+    const upsertOptions: HashSnapshotUpsertOptions = {
+      retireLeases: options?.retireLeases === true,
+    };
 
     if (!path) {
       if (prior) {
@@ -382,6 +415,8 @@ export class HashIdentity {
             contentChecksum(content),
             splitLines(content).length,
             newHashes,
+            content,
+            upsertOptions,
           );
         } catch (error) {
           // SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
@@ -401,6 +436,25 @@ export class HashIdentity {
       }
     }
     if (cached) {
+      // WHY: a snapshot cache HIT is still a materialization (spec §3.1.3 / §3.2.4 step 3): the
+      // WHY: reversion / undo-revert flows re-adopt an OLDER canonical snapshot, so the
+      // WHY: authoritative `retired_at` writer must run for the adopted lineage too. Skipping the
+      // WHY: upsert here left leases from the newer version active forever (fail-closed loop).
+      if (persist && snapshotIO) {
+        try {
+          await snapshotIO.upsert(
+            path,
+            contentChecksum(content),
+            splitLines(content).length,
+            cached,
+            content,
+            upsertOptions,
+          );
+        } catch (error) {
+          // SAFETY: best-effort cache re-adopt — snapshot/lease update failures are ignored; the hashes are already authoritative and the next materialization retries.
+          console.error("Failed to re-adopt hash snapshot:", error);
+        }
+      }
       return cached;
     }
 
@@ -412,6 +466,8 @@ export class HashIdentity {
           contentChecksum(content),
           splitLines(content).length,
           newHashes,
+          content,
+          upsertOptions,
         );
       } catch (error) {
         // SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.

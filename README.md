@@ -53,7 +53,7 @@
 >
 > - **Self-healing, not silent.** External edits never get overwritten — stale ranges are rejected and re-served as fresh `HASH│content` to retry; orphaned serves heal without a full re-read (ADR-0008). Fail-closed, not auto-merge.
 > - **Formatter-tolerant.** ASCII-whitespace-insensitive anchors survive `prettier`/`black`/`eslint --fix` between edits (`formatOnSave`, watcher, CI). Linter-only assumption — whitespace inside string literals is not distinguished (ADR-0005).
-> - **Chained & batched, no re-read ritual.** Anchors for untouched lines stay valid; diff/echo/reject rows count as serves. `edit` batches up to 32 same-file edits atomically (`[E_BATCH_ABORT]`), ~-40% envelope vs `str_replace` on the pinned 12-edit corpus.
+> - **Chained & batched, no re-read ritual.** Anchors for untouched lines stay valid; diff/serve/reject rows count as serves. `edit` batches up to 32 same-file edits atomically — all-or-nothing, `[E_BATCH_ABORT]` only when two items overlap — ~-40% envelope vs `str_replace` on the pinned 12-edit corpus.
 > - **Read guard enforced.** Never edits what it hasn't seen — `[E_UNSERVED_RANGE]`/`[E_STALE_ANCHOR]` reject before any write, then `reject-and-serve`.
 > - **Fewer round-trips in practice.** Dated run: **3 calls vs 6** for the OMP wrapper on the same external-drift refactor, same correct file; envelope vs `str_replace` is the durable number — run `pnpm run benchmark:practical` to reproduce (stochastic, single sample). Correctness `23/23` deterministic.
 
@@ -105,7 +105,7 @@ and returns a diff with fresh anchors, so the next edit verifies cleanly with no
   kQm │ }
 ```
 
-Chained edits stay cheap — anchors for untouched lines remain valid, diff/echo rows count as serves, and `read` becomes on-demand recovery, not a ritual. Try batching: `{"file":"src/main.ts","edits":[{"anchor_from":"a1b","anchor_to":"a1b","replace_with":"new line 1\n"},{"anchor_from":"c3d","anchor_to":"c3d","replace_with":"new line 2"}]}` is atomic — one fails, none write.
+Chained edits stay cheap — anchors for untouched lines remain valid, diff/serve rows count as serves, and `read` becomes on-demand recovery, not a ritual. Try batching: `{"file":"src/main.ts","edits":[{"anchor_from":"a1b","anchor_to":"a1b","replace_with":"new line 1\n"},{"anchor_from":"c3d","anchor_to":"c3d","replace_with":"new line 2"}]}` is atomic — one fails, none write.
 
 > [!TIP]
 > **Want proof before you install?** Run `pnpm run eval` — 23/23 correctness, no LLM. Stale edits are rejected before they corrupt a file, on every run. Then `pi install npm:pi-better-edit` and watch the `read` → `edit` → diff loop stay verified.
@@ -113,10 +113,10 @@ Chained edits stay cheap — anchors for untouched lines remain valid, diff/echo
 ## Why Hashline
 
 **Correctness, not just brevity.** Every resolved edit range is verified against the
-served rows — what `read`, a post-edit diff, or a rejection echo actually showed the model.
+served rows — what `read`, a post-edit diff, or a rejection serve actually showed the model.
 A line inside the range that changed on disk since it was served, or was never served, is
 hard-rejected before any file I/O: `[E_STALE_RANGE]` / `[E_UNSERVED_RANGE]` /
-`[E_UNSERVED_RANGE]`, and the current range is echoed as fresh `HASH│content` rows. The
+`[E_UNSERVED_RANGE]`, and the current range is served as fresh `HASH│content` rows. The
 retry needs no `read`. Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
 never validate the main session's edits and vice versa.
 
@@ -127,11 +127,11 @@ X" doesn't rotate the anchor. Anchors are unique by construction — repeated `}
 `import` lines never share one.
 
 **Chained edits without re-reading.** Post-edit diff rows, auto-read rows, and rejection
-echoes all count as serves. `read` is on-demand recovery, not a per-edit ritual.
+serves all count as serves. `read` is on-demand recovery, not a per-edit ritual.
 
 **Stop the loop.** A no-op edit reports `No changes made` and leaves anchors alone; the
 same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `edit` applies up to 32
-edits atomically — any stale item aborts the whole batch with `[E_BATCH_ABORT]`.
+edits atomically — a failing item rejects the whole call and reports its own code (`[E_STALE_RANGE]`, `[E_BAD_ANCHOR]`, …) so the model fixes the actual cause, while `[E_BATCH_ABORT]` is reserved for items whose spans overlap.
 
 ### Token economics: envelope savings
 
@@ -193,10 +193,10 @@ atomically to that one file — one item per call is the norm, several same-file
 | `[E_UNDO_STALE]` | `undo_last_edit` refused: the file was modified or deleted after the last edit. |
 | `[E_UNDO_UNAVAILABLE]` | Undo history could not be persisted to the hash store; the `edit` was refused and the file was left unchanged. |
 | `[E_LARGE_FILE]` | The file exceeds the 238,328-line hashline limit. |
-| `[E_STALE_RANGE]` | A line inside the resolved edit range changed on disk since it was served (read output, diff, or rejection feedback). The edit is refused and the current range is echoed as fresh `HASH│content` rows; retry with those rows (no `read` needed). |
-| `[E_UNSERVED_RANGE]` | A line inside the resolved range or a boundary anchor was never served (paged reads, truncated output, never-read file). The edit is refused and the current range is echoed as fresh `HASH│content` rows; `details.unservedKind` is `interior` or `boundary`. |
-| `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is echoed as fresh `HASH│content` rows. |
-| `[E_BATCH_ABORT]` | A multi-item `edit` call was rejected as a whole: an item failed validation or served-state verification. Nothing was written; the failing item's current range is echoed as fresh `HASH│content` rows. |
+| `[E_STALE_RANGE]` | A line inside the resolved edit range changed on disk since it was served (read output, diff, or rejection feedback). The edit is refused and the current range is served as fresh `HASH│content` rows; retry with those rows (no `read` needed). |
+| `[E_UNSERVED_RANGE]` | A line inside the resolved range or a boundary anchor was never served (paged reads, truncated output, never-read file). The edit is refused and the current range is served as fresh `HASH│content` rows; `details.unservedKind` is `interior` or `boundary`. |
+| `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is served as fresh `HASH│content` rows. |
+| `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_BAD_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
 
 ## Comparison
 
@@ -211,7 +211,7 @@ atomically to that one file — one item per call is the norm, several same-file
 | Verified against what the model saw | ✅ every resolved line, per session — `[E_STALE_RANGE]`/`[E_UNSERVED_RANGE]` reject before write | ~ seen-lines provenance + file-version tag (H7) |
 | Stale interior | ✅ reject + fresh anchors (`[E_STALE_RANGE]`) | ~ recovery-with-warning, else `MismatchError` |
 | Blind edit — lines never shown | ✅ hard reject (`[E_UNSERVED_RANGE]`) | ~ reject when seen-lines recorded (H7) |
-| Batch atomicity | ✅ `edit` multi-item — all-or-nothing, `[E_BATCH_ABORT]` | ✅ multi-section preflight (H8) |
+| Batch atomicity | ✅ `edit` multi-item — all-or-nothing with the failing item's own code, `[E_BATCH_ABORT]` for overlap | ✅ multi-section preflight (H8) |
 | Undo (persisted) | ✅ survives restarts | ❌ none |
 | Sub-agent session isolation | ✅ session-keyed served state | ~ |
 | Deterministic battery | ✅ 23/23 | ✅ 10/10 library (own seam) |
@@ -244,7 +244,7 @@ remain outside this verified line-range contract.
 - **Session-keyed** — sub-agent serves never validate the main session's edits and vice versa (ADR-0002).
 - **Drift notices** — served territory outside the range that changed on disk is reported once per episode, not as a warning.
 - **Chained without re-reads** — diff, auto-read, and rejection rows all count as serves.
-- **Atomic batch** — up to 32 same-file edits in one `edit` call, all-or-nothing with `[E_BATCH_ABORT]`.
+- **Atomic batch** — up to 32 same-file edits in one `edit` call, all-or-nothing; a failing item keeps its own error code (`[E_BATCH_ABORT]` means overlapping spans).
 - **Formatter-tolerant** — ASCII-whitespace-insensitive anchors survive re-indents; unique by construction (bitset probing, ADR-0003/0005).
 
 ### Correctness in edge cases
@@ -256,11 +256,11 @@ each tool does when they hit:
 | Edge case | hashline `edit` (this extension) | @oh-my-pi/hashline patch |
 | --- | --- | --- |
 | Wrong address (off-by-one anchor / line number) | **Impossible** — anchors resolve to specific lines; every resolved line is verified against served state, rejected before anything is written | **Possible** — a wrong line number against a current tag applies silently at the wrong place; the tag proves the file version, never the lines |
-| File changed on disk after the model's view | Hard reject + fresh anchors echoed (reject-and-serve); retry needs no `read` | Tag mismatch → refuse **or** best-effort 3-way merge onto unknown current content, with an explicit recovery banner |
+| File changed on disk after the model's view | Hard reject + fresh anchors served (reject-and-serve); retry needs no `read` | Tag mismatch → refuse **or** best-effort 3-way merge onto unknown current content, with an explicit recovery banner |
 | An edit above shifts the file | Nothing shifts — anchors are content addresses; the diff serves fresh anchors | **Every edit renumbers** — the format's own #1 rule is "re-ground after every edit"; the model carries the bookkeeping |
 | Repeated / identical text | Per-line hashes are unique (collision-resolved); ambiguity → `[E_STALE_ANCHOR]` | Position-based, so repeats don't confuse it — but the position itself is unverified |
 | Lines never shown to the model | `[E_UNSERVED_RANGE]` — hard reject with fresh anchors | Undisplayed hunks rejected when seen-lines are recorded — same reliance on the model knowing what it saw |
-| Multi-edit batch fails mid-way | `edit` multi-item — atomic, all-or-nothing; the failing item is echoed as fresh serves | Multi-section patches preflighted up front — also atomic |
+| Multi-edit batch fails mid-way | `edit` multi-item — atomic, all-or-nothing; the failing item is served as fresh serves | Multi-section patches preflighted up front — also atomic |
 
 > The oh-my-pi payload saving is a lighter wire format; the table above is what that format
 > asks the model to hold in its head instead — renumbering, tag-chasing, node choice — the

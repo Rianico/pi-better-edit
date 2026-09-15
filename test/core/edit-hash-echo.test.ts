@@ -3,6 +3,7 @@ import { _lineHashesPure } from "../../src/hashline/hash";
 import { findEditHashEcho, applyEdit, EditHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
 import { HASH_SEP } from "../../src/hashline/hash-identity";
+import type { LeaseIdentityView, LeaseSpanSource, HEdit } from "../../src/hashline/resolve";
 
 beforeAll(async () => {
   await initHasher();
@@ -43,12 +44,12 @@ describe("findEditHashEcho — E1 range-relative exact", () => {
     expect(hit).toBeUndefined();
   });
 
-  it("detects echo on second replacement line (k=2)", () => {
+  it("detects served hash echo on second replacement line (k=2)", () => {
     const content = "a\nb\nc\nd";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
     const startLine = 2;
-    const replacement = ["ok", `${hashes[2]}${HASH_SEP}echo`];
+    const replacement = ["ok", `${hashes[2]}${HASH_SEP}copied`];
     const hit = findEditHashEcho(replacement, served, startLine);
     expect(hit).toEqual({ k: 2, hash: hashes[2] });
   });
@@ -79,12 +80,12 @@ describe("applyEdit — E_SERVED_ECHO guard", () => {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}NEW-beta`],
     };
-    expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(
-      EditHashEchoError,
-    );
-    expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(
-      /\[E_SERVED_ECHO\]/,
-    );
+    expect(() =>
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served }),
+    ).toThrow(EditHashEchoError);
+    expect(() =>
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served }),
+    ).toThrow(/\[E_SERVED_ECHO\]/);
   });
 
   it("S1 clean retry → allow", () => {
@@ -95,14 +96,14 @@ describe("applyEdit — E_SERVED_ECHO guard", () => {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}NEW-beta`],
     };
-    expect(() => applyEdit(content, editDenied, undefined, hashes, "a.txt", served)).toThrow(
-      /E_SERVED_ECHO/,
-    );
+    expect(() =>
+      applyEdit(content, editDenied, undefined, hashes, { filePath: "a.txt", served }),
+    ).toThrow(/E_SERVED_ECHO/);
     const editClean = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: ["NEW-beta"],
     };
-    const result = applyEdit(content, editClean, undefined, hashes, "a.txt", served);
+    const result = applyEdit(content, editClean, undefined, hashes, { filePath: "a.txt", served });
     expect(result.content).toBe("alpha\nNEW-beta\ngamma\ndelta");
   });
 
@@ -116,9 +117,9 @@ describe("applyEdit — E_SERVED_ECHO guard", () => {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${fake}${HASH_SEP}literal`],
     };
-    expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(
-      /\[E_BAD_ANCHOR\]/,
-    );
+    expect(() =>
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served }),
+    ).toThrow(/\[E_BAD_ANCHOR\]/);
   });
 
   it("denied edit leaves file byte-identical (pure)", () => {
@@ -131,7 +132,7 @@ describe("applyEdit — E_SERVED_ECHO guard", () => {
     };
     const original = content;
     try {
-      applyEdit(content, edit, undefined, hashes, "a.txt", served);
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served });
     } catch (e) {
       expect((e as Error).message).toMatch(/E_SERVED_ECHO/);
     }
@@ -140,31 +141,31 @@ describe("applyEdit — E_SERVED_ECHO guard", () => {
     // No mutation: applyEdit is pure, so ensure original === content
   });
 
-  it("denied edit is independent per batch item — second line echo", () => {
+  it("denied edit is independent per batch item — second line served hash echo", () => {
     const content = "a\nb\nc\nd";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[2]! }] as any,
-      content_lines: ["ok", `${hashes[2]}${HASH_SEP}echo`],
+      content_lines: ["ok", `${hashes[2]}${HASH_SEP}copied`],
     };
-    expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(
-      /E_SERVED_ECHO.*line 2/,
-    );
+    expect(() =>
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served }),
+    ).toThrow(/E_SERVED_ECHO.*line 2/);
   });
 
-  it("raw echo before stripBare is still denied", () => {
+  it("raw served hash echo before stripBare is still denied", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    // raw line with hash echo — even though stripBare would heal, guard denies
+    // raw line with served hash echo — even though stripBare would heal, guard denies
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
     };
-    expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", served)).toThrow(
-      /E_SERVED_ECHO/,
-    );
+    expect(() =>
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served }),
+    ).toThrow(/E_SERVED_ECHO/);
   });
 
   it("no served → no deny", () => {
@@ -174,8 +175,87 @@ describe("applyEdit — E_SERVED_ECHO guard", () => {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
     };
-    expect(() => applyEdit(content, edit, undefined, hashes, "a.txt", undefined)).toThrow(
+    expect(() => applyEdit(content, edit, undefined, hashes, { filePath: "a.txt" })).toThrow(
       /\[E_BAD_ANCHOR\]/,
+    );
+  });
+});
+
+describe("applyEdit — the rebased served hash echo check is line-relative", () => {
+  // Under `leaseRebased` the served mirror and the current coordinates disagree, so the check must
+  // compare replacement line `k` against the anchor served for the line it replaces
+  // (`served[servedStart + k]`) — never a free-floating scan for either boundary anchor.
+  const content = "z\nq\nw";
+  const hashes = _lineHashesPure(content);
+  const served: (string | null)[] = ["AAA", "BBB", null];
+  const leases: Record<string, LeaseIdentityView> = {
+    AAA: {
+      lineId: 1,
+      canonHash: "z",
+      servedSnapshotHash: "S",
+      servedLineNumber: 1,
+      retiredAt: null,
+    },
+    BBB: {
+      lineId: 2,
+      canonHash: "q",
+      servedSnapshotHash: "S",
+      servedLineNumber: 2,
+      retiredAt: null,
+    },
+  };
+  // `AAA`/`BBB` were served at lines 1-2 but their leased identities live at lines 2-3, so the edit
+  // is applied at the rebased coordinates while the served hash echo check reads the served ones.
+  const rebasedSource: LeaseSpanSource = {
+    currentSnapshotHash: "C",
+    leaseFor: (anchor) => leases[anchor],
+    rebasedLineOf: (lineId) => ({ 1: 2, 2: 3 })[lineId],
+  };
+  const rebasedEdit = (replaceWith: string): HEdit => ({
+    hash_bounds: [{ hash: "AAA" }, { hash: "BBB" }],
+    content_lines: replaceWith.split("\n"),
+  });
+  const applyRebased = (edit: HEdit, mirror: (string | null)[] = served) =>
+    applyEdit(content, edit, undefined, hashes, {
+      filePath: "a.txt",
+      served: mirror,
+      identity: rebasedSource,
+    });
+
+  it("fixture anchors cannot collide with the file's own anchors", () => {
+    expect(hashes).not.toContain("AAA");
+    expect(hashes).not.toContain("BBB");
+  });
+
+  it("accepts a boundary anchor repeated at a non-corresponding line", () => {
+    // `AAA` is served for line 1 and `BBB` for line 2; replacement line 2 replaces served line 2, so
+    // repeating `AAA` there is ordinary content — the old boundary scan rejected it as a served hash echo.
+    const result = applyRebased(rebasedEdit("plain\nAAA│BOOM"));
+    expect(result.content).toBe("z\nplain\nAAA│BOOM");
+  });
+
+  it("still rejects the anchor served for the line it replaces", () => {
+    expect(() => applyRebased(rebasedEdit("AAA│BOOM\nplain"))).toThrow(/\[E_SERVED_ECHO\]/);
+  });
+
+  it("accepts the other boundary anchor repeated at a non-corresponding line", () => {
+    // Mirror image of the case above: `BBB` is served for line 2, so repeating it at replacement line
+    // 1 (which replaces served line 1) is ordinary content. Scanning the mirror at the REBASED start
+    // line compares against `served[2]` instead and misreads it as a served hash echo.
+    const result = applyRebased(rebasedEdit("BBB│BOOM\nplain"));
+    expect(result.content).toBe("z\nBBB│BOOM\nplain");
+  });
+
+  it("accepts a non-corresponding repeat when the mirror holds a duplicate anchor row", () => {
+    // `AAA` appears twice in the accumulated mirror, so a rebased-coordinate scan can land on the
+    // trailing duplicate and reject the very repeat the case above accepts.
+    const result = applyRebased(rebasedEdit("plain\nAAA│BOOM"), ["AAA", "BBB", "AAA"]);
+    expect(result.content).toBe("z\nplain\nAAA│BOOM");
+  });
+
+  it("still rejects the corresponding served hash echo when the mirror holds a duplicate anchor row", () => {
+    expect(() => applyRebased(rebasedEdit("AAA│BOOM\nplain"), ["AAA", "BBB", "AAA"])).toThrow(
+      /\[E_SERVED_ECHO\]/,
     );
   });
 });

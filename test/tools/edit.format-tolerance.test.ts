@@ -52,6 +52,7 @@ describe("format-tolerance across edits (whitespace-only external reformat)", ()
         sessionKey: sessionKeyFor(ctx),
         path,
         servedRows: first.details?.servedRows as any,
+        contentHash: (first.details as { contentHash?: string } | undefined)?.contentHash ?? "",
         resultLineCount: first.details?.resultLineCount,
         firstChangedLine: first.details?.firstChangedLine,
       });

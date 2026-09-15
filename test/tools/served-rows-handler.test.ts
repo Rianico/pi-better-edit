@@ -3,8 +3,9 @@ import { writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { loadHashStore } from "../../src/hash-store";
-import { getServed } from "../../src/served-session/index.js";
+import { getServed, loadLeases } from "../../src/served-session/index.js";
 import { lineHashes } from "../../src/hashline";
+import { snapshotHashFor } from "../../src/snapshot-store";
 import { useTestHome, withTempDir } from "../support/fixtures";
 
 useTestHome();
@@ -125,6 +126,10 @@ describe("served-rows tool_result handler", () => {
 
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const originalHashes = await lineHashes("alpha\nbeta\ngamma\n", filePath);
+      const store = await loadHashStore();
+      const idsA = new Map(
+        loadLeases(store, "test-session", filePath).map((l) => [l.anchor, l.line_id]),
+      );
 
       await editTool.execute(
         "e1",
@@ -157,7 +162,6 @@ describe("served-rows tool_result handler", () => {
       );
       expect(result).toBeDefined();
 
-      const store = await loadHashStore();
       const served = getServed(store, "test-session", filePath);
       expect(served).toEqual(overlay(undoResult.details.servedRows));
       if (JSON.stringify(served) !== JSON.stringify(originalHashes)) {
@@ -165,6 +169,23 @@ describe("served-rows tool_result handler", () => {
       } else {
         expect(served).toEqual(originalHashes);
       }
+
+      // Re-served unchanged anchors must re-lease against the restored snapshot (a cache hit),
+      // not the newest materialization the pre-undo edit produced. The middle anchor is not
+      // asserted here: the undo tombstone rotates it (undo usability is #82's slice).
+      const unchanged = [originalHashes[0]!, originalHashes[2]!];
+      const restored = loadLeases(store, "test-session", filePath).filter((lease) =>
+        unchanged.includes(lease.anchor),
+      );
+      expect(restored.map((lease) => lease.line_id)).toEqual(
+        unchanged.map((hash) => idsA.get(hash)),
+      );
+      expect(restored.every((lease) => lease.retired_at === null)).toBe(true);
+      expect(
+        restored.every(
+          (lease) => lease.served_snapshot_hash === snapshotHashFor("alpha\nbeta\ngamma\n"),
+        ),
+      ).toBe(true);
     });
   });
 

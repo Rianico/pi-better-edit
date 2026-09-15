@@ -84,7 +84,7 @@ describe("regEdit", () => {
     });
   });
 
-  it("autocorrects bare HASH│ prefix in content_lines with a warning when not a served echo", async () => {
+  it("autocorrects bare HASH│ prefix in content_lines with a warning when not a served hash echo", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -226,6 +226,37 @@ describe("regEdit — robustness", () => {
           ctx,
         );
         expect(result.content[0].text).toContain("Successfully edited");
+      } finally {
+        spy.mockRestore();
+      }
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nBBB\nccc\n");
+    });
+  });
+
+  it("reports success with a deferred store-synchronization warning when the post-write snapshot fails", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const hashStore = await import("../../src/snapshot-store");
+      const spy = vi
+        .spyOn(hashStore, "upsertSnapshotFor")
+        .mockRejectedValue(new Error("store busy"));
+      try {
+        const result = await editTool.execute(
+          "e1",
+          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+          undefined,
+          undefined,
+          ctx,
+        );
+        // SPEC §3.6.2: the bytes are on disk, so the tool still reports success…
+        expect(result.content[0].text).toContain("Successfully edited");
+        // …along with the warning that store synchronization is deferred.
+        expect(result.content[0].text).toContain("Store synchronization deferred");
+        const warnings = (result.details as { warnings?: string[] } | undefined)?.warnings;
+        expect(warnings?.some((w) => w.includes("Store synchronization deferred"))).toBe(true);
       } finally {
         spy.mockRestore();
       }

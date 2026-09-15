@@ -147,7 +147,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
     });
   });
 
-  it("brace merged onto the signature line rejects with E_STALE_ANCHOR", async () => {
+  it("brace merged onto the signature line rejects with E_STALE_RANGE", async () => {
     await withTempFile("f.ts", "func hello()\n{\n    }\n", async ({ cwd }) => {
       const { getTool } = makeSeamPi();
       const readTool = getTool("read");
@@ -160,6 +160,8 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
       await writeFile(abs, "func hello() {\n    }\n", "utf-8");
 
+      // The merged line is a different line entity, so the served lease is retired: the refusal is
+      // [E_STALE_RANGE] with the current-range serve (spec §3.1.1 line 89 / §5.3).
       await expect(
         editTool.execute(
           "e1",
@@ -168,7 +170,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_STALE_ANCHOR|stale anchor/);
+      ).rejects.toThrow(/\[MODEL\] \[E_STALE_RANGE\]/);
     });
   });
 

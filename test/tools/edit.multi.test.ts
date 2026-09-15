@@ -6,6 +6,10 @@ import { editToolSchema } from "../../src/edit";
 import { prepareEditArguments } from "../../src/edit-normalize";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
+/** The atomicity trailer every item rejection of a multi-item call must carry (spec §3.2.3). */
+const ATOMICITY_TRAILER =
+  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
+
 async function doRead(ctx: any, readTool: any, path: string) {
   await readTool.execute("r1", { path }, undefined, undefined, ctx);
 }
@@ -68,8 +72,8 @@ describe("edit multi-item tool", () => {
 
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
-      await expect(
-        editTool.execute(
+      const rejection = (await editTool
+        .execute(
           "e1",
           {
             path: "sample.ts",
@@ -81,14 +85,21 @@ describe("edit multi-item tool", () => {
           undefined,
           undefined,
           ctx,
-        ),
-      ).rejects.toThrow(/\[E_BATCH_ABORT\] edit\[1\] \(sample\.ts\) failed/);
+        )
+        .catch((error: unknown) => error)) as Error;
+
+      // The failing item keeps its OWN code — the retired lease is what the model must fix — plus the
+      // atomicity trailer; `[E_BATCH_ABORT]` is reserved for overlapping/nested spans.
+      expect(rejection.message).toContain("[E_STALE_RANGE]");
+      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
+      expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
+      expect(rejection.message).toContain(ATOMICITY_TRAILER);
 
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
     });
   });
 
-  it("echoes the current range (reject-and-serve) when an item's boundary anchor went stale", async () => {
+  it("serves the current range (reject-and-serve) when an item's boundary anchor went stale", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", path);
@@ -111,18 +122,21 @@ describe("edit multi-item tool", () => {
           ctx,
         )
         .catch((e: unknown) => e)) as Error;
-      expect(err.message).toContain("[E_BATCH_ABORT] edit[1]");
+      expect(err.message).toContain("[E_STALE_RANGE]");
+      expect(err.message).toContain("edit[1] (sample.ts) failed");
+      expect(err.message).not.toContain("[E_BATCH_ABORT]");
+      expect(err.message).toContain(ATOMICITY_TRAILER);
 
-      const echoedBeta = err.message.split("\n").find((l) => /^[A-Za-z0-9]{3}│BETA$/.test(l));
-      expect(echoedBeta).toBeDefined();
+      const servedBeta = err.message.split("\n").find((l) => /^[A-Za-z0-9]{3}│BETA$/.test(l));
+      expect(servedBeta).toBeDefined();
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 
-      const echoedHash = extractHash(echoedBeta!);
+      const servedHash = extractHash(servedBeta!);
       const followUp = await editTool.execute(
         "e2",
         {
           path: "sample.ts",
-          edits: [[echoedHash, echoedHash, "beta"]],
+          edits: [[servedHash, servedHash, "beta"]],
         },
         undefined,
         undefined,
@@ -340,28 +354,32 @@ describe("edit multi-item tool", () => {
   });
 
   it("reports drift outside the edited range on a successful call", async () => {
-    await withTempFile("sample.ts", "alpha\nbeta\ngamma\ndelta\necho\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\ndelta\necho\n", path);
-      await doRead(ctx, readTool, "sample.ts");
+    await withTempFile(
+      "sample.ts",
+      "alpha\nbeta\ngamma\ndelta\nepsilon\n",
+      async ({ cwd, path }) => {
+        const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+        const hashes = await lineHashes("alpha\nbeta\ngamma\ndelta\nepsilon\n", path);
+        await doRead(ctx, readTool, "sample.ts");
 
-      await writeFile(path, "alpha\nbeta\ngamma\ndelta\nECHO\n", "utf-8");
+        await writeFile(path, "alpha\nbeta\ngamma\ndelta\nEPSILON\n", "utf-8");
 
-      const result = await editTool.execute(
-        "e1",
-        {
-          path: "sample.ts",
-          edits: [[hashes[1]!, hashes[1]!, "BETA"]],
-        },
-        undefined,
-        undefined,
-        ctx,
-      );
-      expect(getText(result)).toContain("Successfully edited");
-      expect(result.details.driftNotice).toContain("drift:");
-      expect(result.details.driftNotice).toContain("ECHO");
-      expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\ndelta\nECHO\n");
-    });
+        const result = await editTool.execute(
+          "e1",
+          {
+            path: "sample.ts",
+            edits: [[hashes[1]!, hashes[1]!, "BETA"]],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(getText(result)).toContain("Successfully edited");
+        expect(result.details.driftNotice).toContain("drift:");
+        expect(result.details.driftNotice).toContain("EPSILON");
+        expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\ndelta\nEPSILON\n");
+      },
+    );
   });
 
   it("applies the noop-loop guard to repeated all-noop calls", async () => {
@@ -389,7 +407,7 @@ describe("edit multi-item tool", () => {
     });
   });
 
-  it("echoes the failing item's current range as usable anchors after a rejection", async () => {
+  it("serves the failing item's current range as usable anchors after a rejection", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
@@ -412,14 +430,14 @@ describe("edit multi-item tool", () => {
         .catch((e: unknown) => e)) as Error;
       expect(err.message).toContain("[E_BATCH_ABORT]");
 
-      const echoedRow = err.message.split("\n").find((l) => l.includes(`│${"bbb"}`))!;
-      const echoedHash = extractHash(echoedRow);
+      const servedRow = err.message.split("\n").find((l) => l.includes(`│${"bbb"}`))!;
+      const servedHash = extractHash(servedRow);
 
       const followUp = await editTool.execute(
         "e2",
         {
           path: "sample.ts",
-          edits: [[echoedHash, echoedHash, "BBB"]],
+          edits: [[servedHash, servedHash, "BBB"]],
         },
         undefined,
         undefined,

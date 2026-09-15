@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { buildNoop, buildChanged, finalizeResult } from "../../src/edit-response";
 import { lineHashes } from "../../src/hashline";
+import { snapshotHashFor } from "../../src/snapshot-store";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
@@ -89,6 +90,7 @@ describe("buildChanged", () => {
       originalHashes,
       result,
       resultHashes,
+      contentHash: snapshotHashFor(result),
       warnings: undefined,
       snapshotId: "snap1",
       editMeta: {
@@ -121,6 +123,7 @@ describe("buildChanged", () => {
       originalHashes,
       result,
       resultHashes,
+      contentHash: snapshotHashFor(result),
       warnings: ["Boundary duplication (leading)"],
       snapshotId: "snap1",
       editMeta: {
@@ -147,6 +150,7 @@ describe("buildChanged", () => {
       originalHashes,
       result,
       resultHashes,
+      contentHash: snapshotHashFor(result),
       warnings: undefined,
       snapshotId: "snap1",
       editMeta: {
@@ -172,6 +176,7 @@ describe("buildChanged", () => {
       originalHashes,
       result,
       resultHashes,
+      contentHash: snapshotHashFor(result),
       warnings: undefined,
       snapshotId: "snap1",
       editMeta: {
@@ -199,6 +204,7 @@ describe("buildChanged", () => {
       originalHashes,
       result,
       resultHashes,
+      contentHash: snapshotHashFor(result),
       warnings: undefined,
       snapshotId: "snap1",
       editMeta: {
@@ -225,6 +231,7 @@ describe("buildChanged", () => {
       originalHashes,
       result,
       resultHashes,
+      contentHash: snapshotHashFor(result),
       warnings: undefined,
       snapshotId: "snap1",
       editMeta: {

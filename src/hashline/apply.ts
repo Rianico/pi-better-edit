@@ -7,7 +7,7 @@ import {
   type ServedRow,
 } from "./served.js";
 import {
-  valEdit,
+  resolveEditByContent,
   stripBarePrefixes,
   stripDiffPrefixes,
   swapReversedRanges,
@@ -16,7 +16,9 @@ import {
   type RHEdit,
   type NEdit,
   type HEdit,
+  type LeaseSpanSource,
 } from "./resolve.js";
+import { resolveLeasedEdit } from "./lease-resolve.js";
 
 type LIdx = {
   fileLines: string[];
@@ -78,6 +80,44 @@ export class EditHashEchoError extends AnchorMismatchError {
     super(message, servedRows);
     this.name = "EditHashEchoError";
   }
+}
+
+/**
+ * The verification cluster that travels with an edit from the session pipeline
+ * (issue #115): the file identity, the served mirror, and the read-only lease
+ * source. One descriptor instead of positional booleans/arrays, so an
+ * argument-order slip cannot silently rewire verification.
+ */
+export interface ApplyVerificationContext {
+  filePath?: string;
+  served?: (string | null)[];
+  tombstone?: ReadonlySet<string>;
+  servedCanons?: (string | null)[];
+  identity?: LeaseSpanSource;
+}
+
+type ServedAnchorScanEntry = {
+  lines: string[];
+  anchors: readonly (string | null)[];
+  start: number;
+};
+
+/**
+ * One implementation of the candidate × target scan for the served hash echo
+ * condition (CONTEXT.md served hash echo, ADR-0009): walks the ordered
+ * (candidate lines × anchor target) entries with early exit, delegating each
+ * step to the line-relative `findEditHashEcho` — never a free-floating scan
+ * for either boundary anchor, so legitimate content repeating an anchor's
+ * three characters at a non-corresponding line stays accepted.
+ */
+function findFirstServedAnchorCopy(
+  entries: readonly ServedAnchorScanEntry[],
+): { k: number; hash: string } | undefined {
+  for (const entry of entries) {
+    const hit = findEditHashEcho(entry.lines, entry.anchors, entry.start);
+    if (hit !== undefined) return hit;
+  }
+  return undefined;
 }
 function assertNotEmpty(originalContent: string, result: string): void {
   if (originalContent.length > 0 && result.length === 0) {
@@ -165,17 +205,61 @@ function prepareEdit(fileHashes: string[], edit: HEdit, warnings: string[]): { f
   );
   return { fixed: prefixFixed };
 }
+
+/**
+ * Anchor resolution seam: lease-first (MVCC, spec §3.1.1) for every edit the session has a lease
+ * source for — `served_leases` is looked up before anything else, so an anchor with no lease is
+ * `[E_STALE_ANCHOR]` and never re-anchored onto colliding content. The lease path is read-only on
+ * `served_leases`; `rebased` marks the returned coordinates as current-content coordinates, which
+ * means the served-mirror verification is replaced by the rebased-span gate.
+ *
+ * Content resolution is NOT a fallback here: `resolveEditByContent` is only for a caller that
+ * presents no seam at all (the library-level `applyEdit`), and a session edit always presents one.
+ */
+function resolveEdit(
+  edit: HEdit,
+  fileLines: string[],
+  fileHashes: string[],
+  filePath: string | undefined,
+  served: (string | null)[] | undefined,
+  identity: LeaseSpanSource | undefined,
+  signal: AbortSignal | undefined,
+): {
+  resolved: RHEdit | undefined;
+  mismatches: Parameters<typeof fmtMismatchWithServes>[0];
+  rebased: boolean;
+  /** First row of the served window when `rebased`; `undefined` on the fast/content paths. */
+  servedStart: number | undefined;
+} {
+  if (served && identity) {
+    const leased = resolveLeasedEdit({
+      edit,
+      snapshot: { fileHashes, fileLines, filePath },
+      served,
+      source: identity,
+    });
+    return {
+      resolved: leased.resolved,
+      mismatches: [],
+      rebased: leased.status === "rebased",
+      servedStart: leased.status === "rebased" ? leased.servedStart : undefined,
+    };
+  }
+  // WHY: no seam at all (no mirror, no lease source): the library-level `applyEdit` seam, where
+  // WHY: anchor algebra is the only authority. A session edit always carries both, so it can never
+  // WHY: reach this branch — lost identity fails closed in the lease seam above.
+  return {
+    ...resolveEditByContent(edit, { fileHashes, fileLines, filePath }, signal),
+    rebased: false,
+    servedStart: undefined,
+  };
+}
 export function applyEdit(
   content: string,
   edit: HEdit,
   signal?: AbortSignal,
   precomputedHashes?: string[],
-  filePath?: string,
-  served?: (string | null)[],
-  tombstone?: ReadonlySet<string>,
-  servedCanons?: (string | null)[],
-  epochSnapshotId?: string,
-  curSnapshotId?: string,
+  verification?: ApplyVerificationContext,
 ): {
   content: string;
   firstChangedLine: number | undefined;
@@ -185,6 +269,8 @@ export function applyEdit(
   noopEdit?: NEdit;
 } {
   abortIf(signal);
+
+  const { filePath, served, tombstone, servedCanons, identity } = verification ?? {};
 
   const lineIndex = buildIdx(content);
   const fileHashes = precomputedHashes ?? defaultHashIdentity.hashesForSync(content);
@@ -198,15 +284,15 @@ export function applyEdit(
   } catch (e) {
     const msg = (e as Error).message;
     if (msg.includes("[E_BAD_ANCHOR]") && served) {
-      let isServedEcho = false;
+      let hasServedCopy = false;
       for (const line of rawReplacementLines) {
         const m = line.match(/^([A-Za-z0-9]{3})│/);
         if (m && served.includes(m[1]!)) {
-          isServedEcho = true;
+          hasServedCopy = true;
           break;
         }
       }
-      if (isServedEcho) {
+      if (hasServedCopy) {
         prefixFixed = edit;
         warnings.length = 0;
       } else {
@@ -217,20 +303,18 @@ export function applyEdit(
     }
   }
 
-  const { resolved, mismatches } = valEdit(
-    prefixFixed,
-    lineIndex.fileLines,
-    fileHashes,
-    warnings,
-    signal,
-  );
+  const {
+    resolved,
+    mismatches,
+    rebased: leaseRebased,
+    servedStart,
+  } = resolveEdit(prefixFixed, lineIndex.fileLines, fileHashes, filePath, served, identity, signal);
   if (mismatches.length || !resolved) {
-    const { message, servedRows } = fmtMismatchWithServes(
-      mismatches,
-      lineIndex.fileLines,
+    const { message, servedRows } = fmtMismatchWithServes(mismatches, {
       fileHashes,
+      fileLines: lineIndex.fileLines,
       filePath,
-    );
+    });
     throw new AnchorMismatchError(message, servedRows);
   }
 
@@ -238,34 +322,51 @@ export function applyEdit(
 
   if (served) {
     const startLine = resolved.hash_bounds[0].line;
-    const rawEcho = findEditHashEcho(rawReplacementLines, served, startLine);
-    let echo = rawEcho;
-    if (!echo) {
-      echo = findEditHashEcho(resolved.content_lines, served, startLine);
+    // WHY: the served mirror is indexed by SERVED rows, so the range-relative check anchors on the
+    // WHY: served window. On a rebased span `startLine` is the REBASED coordinate and would compare
+    // WHY: replacement line `k` against the anchor served for a different line
+    // WHY: (CONTEXT.md served hash echo, ADR-0009).
+    const mirrorStart = leaseRebased && servedStart !== undefined ? servedStart : startLine;
+    // WHY: ordered candidate × target entries for the single scan below: the three
+    // WHY: replacement views against the served mirror at the served window, then — only
+    // WHY: under a rebase — the raw and prefix-fixed views against the current anchors
+    // WHY: at the rebased coordinate. Each step stays line-relative (`findEditHashEcho`);
+    // WHY: never a free-floating scan for either boundary anchor.
+    const scanEntries: ServedAnchorScanEntry[] = [
+      { lines: rawReplacementLines, anchors: served, start: mirrorStart },
+      { lines: resolved.content_lines, anchors: served, start: mirrorStart },
+      { lines: prefixFixed.content_lines, anchors: served, start: mirrorStart },
+    ];
+    if (leaseRebased && servedStart !== undefined) {
+      // WHY: under a rebase the replacement line may also carry an anchor the current coordinates
+      // WHY: hold for the line it replaces, so the current anchors are checked range-relative too.
+      const startPos = resolved.hash_bounds[0].line;
+      scanEntries.push(
+        { lines: rawReplacementLines, anchors: fileHashes, start: startPos },
+        { lines: prefixFixed.content_lines, anchors: fileHashes, start: startPos },
+      );
     }
-    if (!echo) {
-      echo = findEditHashEcho(prefixFixed.content_lines, served, startLine);
-    }
-    if (echo) {
-      const msg = `[MODEL] [E_SERVED_ECHO] Refused edit to ${filePath ?? "(unknown file)"}: replacement line ${echo.k} begins with the exact ${echo.hash}${HASH_SEP} anchor served for this session, path, and range-relative line. Remove the copied anchors and retry. Nothing was written.`;
+    const servedCopy = findFirstServedAnchorCopy(scanEntries);
+    if (servedCopy) {
+      const msg = `[MODEL] [E_SERVED_ECHO] Refused edit to ${filePath ?? "(unknown file)"}: replacement line ${servedCopy.k} begins with the exact ${servedCopy.hash}${HASH_SEP} anchor served for this session, path, and range-relative line. Remove the copied anchors and retry. Nothing was written.`;
       throw new EditHashEchoError(msg, []);
     }
-    const startAnchor = resolved.hash_bounds[0];
-    const endAnchor = resolved.hash_bounds[1];
-    verifyServedRange({
-      served,
-      startHash: startAnchor.hash,
-      endHash: endAnchor.hash,
-      startLine: startAnchor.line,
-      endLine: endAnchor.line,
-      fileHashes,
-      fileLines: lineIndex.fileLines,
-      filePath,
-      tombstone,
-      servedCanons,
-      epochSnapshotId,
-      curSnapshotId,
-    });
+    if (!leaseRebased) {
+      const startAnchor = resolved.hash_bounds[0];
+      const endAnchor = resolved.hash_bounds[1];
+      verifyServedRange({
+        served,
+        startHash: startAnchor.hash,
+        endHash: endAnchor.hash,
+        startLine: startAnchor.line,
+        endLine: endAnchor.line,
+        fileHashes,
+        fileLines: lineIndex.fileLines,
+        filePath,
+        tombstone,
+        servedCanons,
+      });
+    }
   }
 
   const spanResult = resToSpan(resolved, content, lineIndex);

@@ -4,6 +4,7 @@ import {
   onStoreOpen,
   withBusyRetry,
   getCached,
+  ensureFileUndoSchema,
   type HashStore,
 } from "./hash-store.js";
 import { isValidHashList } from "./hashline/hash.js";
@@ -14,6 +15,7 @@ export interface UndoRecord {
   ending: string;
   hashes: string[];
   resultContent: string;
+  snapshotHash?: string | null;
 }
 
 export interface UndoStmts {
@@ -24,6 +26,7 @@ export interface UndoStmts {
     ending: string,
     hashes: string,
     resultContent: string,
+    snapshotHash: string | null,
     updatedAt: number,
   ) => void;
   undoGet: (path: string) => Record<string, unknown> | undefined;
@@ -38,17 +41,26 @@ export function undoStmts(db: DatabaseSync): UndoStmts {
 
 function buildStmts(db: DatabaseSync): UndoStmts {
   const undoUpsertStmt = db.prepare(
-    "INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?) " +
-      "ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, updated_at = excluded.updated_at",
+    "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, snapshot_hash = excluded.snapshot_hash, updated_at = excluded.updated_at",
   );
   const undoGetStmt = db.prepare(
-    "SELECT content, bom, ending, hashes, result_content FROM undo WHERE path = ?",
+    "SELECT content, bom, ending, hashes, result_content, snapshot_hash FROM file_undo WHERE path = ?",
   );
-  const undoDelStmt = db.prepare("DELETE FROM undo WHERE path = ?");
+  const undoDelStmt = db.prepare("DELETE FROM file_undo WHERE path = ?");
   return {
-    undoUpsert: (path, content, bom, ending, hashes, resultContent, updatedAt) => {
+    undoUpsert: (path, content, bom, ending, hashes, resultContent, snapshotHash, updatedAt) => {
       withBusyRetry(() => {
-        undoUpsertStmt.run(path, content, bom, ending, hashes, resultContent, updatedAt);
+        undoUpsertStmt.run(
+          path,
+          content,
+          bom,
+          ending,
+          hashes,
+          resultContent,
+          snapshotHash,
+          updatedAt,
+        );
       });
     },
     undoGet: (...params) => undoGetStmt.get(...params) as Record<string, unknown> | undefined,
@@ -60,22 +72,9 @@ function buildStmts(db: DatabaseSync): UndoStmts {
   };
 }
 
-export function ensureUndoSchema(db: DatabaseSync): void {
-  db.exec(
-    "CREATE TABLE IF NOT EXISTS undo (" +
-      "path TEXT PRIMARY KEY, " +
-      "content TEXT NOT NULL, " +
-      "bom TEXT NOT NULL, " +
-      "ending TEXT NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
-      "result_content TEXT NOT NULL, " +
-      "updated_at INTEGER NOT NULL" +
-      ")",
-  );
-}
-
+// WHY: the undo domain owns no DDL of its own — hash-store is the schema owner (spec §5.1).
 onStoreOpen((db) => {
-  ensureUndoSchema(db);
+  ensureFileUndoSchema(db);
 });
 
 export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): void {
@@ -86,6 +85,7 @@ export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): v
     entry.ending,
     JSON.stringify(entry.hashes),
     entry.resultContent,
+    entry.snapshotHash ?? null,
     Date.now(),
   );
 }
@@ -105,6 +105,7 @@ export function getUndoEntry(store: HashStore, path: string): UndoRecord | undef
       ending: row.ending as string,
       hashes: parsed as string[],
       resultContent: row.result_content as string,
+      snapshotHash: (row.snapshot_hash as string | null) ?? null,
     };
   } catch {
     undoStmts(store.db).undoDelete(path);

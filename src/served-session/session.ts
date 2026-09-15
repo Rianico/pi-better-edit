@@ -21,6 +21,9 @@ import {
   getCached,
   type HashStore,
 } from "../hash-store.js";
+// WHY: snapshot retention is owned by the CAS store that owns `file_snapshots` (spec §3.6.1); the
+// WHY: session module only asks for a pass at its deterministic boundary — the store open.
+import { vacuumSnapshots } from "../snapshot-store";
 import type { ServedRow } from "../hashline/served.js";
 import type { ServeRecordPolicy, ServedEntry } from "./types.js";
 
@@ -38,13 +41,6 @@ export function sessionKeyFor(ctx?: { sessionManager?: { getSessionId(): string 
 interface ServedStmts {
   servedGet: (sessionKey: string, path: string) => Record<string, unknown> | undefined;
   servedUpsert: (sessionKey: string, path: string, hashes: string, updatedAt: number) => void;
-  servedReportedUpsert: (
-    sessionKey: string,
-    path: string,
-    reported: string,
-    updatedAt: number,
-  ) => void;
-  servedReportedClear: (sessionKey: string, updatedAt: number, path: string) => void;
   servedRetiredUpsert: (
     sessionKey: string,
     path: string,
@@ -65,6 +61,102 @@ interface ServedStmts {
   servedDeletePath: (path: string) => void;
   servedWipe: (sessionKey: string) => void;
   servedPruneOlderThan: (updatedBefore: number) => void;
+  snapshotByHash: (path: string, snapshotHash: string) => LeaseSnapshot | undefined;
+  lineageAnchorsOf: (snapshotId: number) => LeaseLineageRow[];
+  leaseUpsertMany: (
+    sessionKey: string,
+    path: string,
+    snapshotHash: string,
+    updatedAt: number,
+    grants: LeaseGrant[],
+  ) => void;
+  leaseGet: (sessionKey: string, path: string, anchor: string) => ServedLease | undefined;
+  leaseList: (sessionKey: string, path: string) => ServedLease[];
+  leaseRetireAbsent: (now: number, path: string, snapshotId: number) => void;
+  leaseDelete: (sessionKey: string, path: string) => void;
+  leaseDeletePath: (path: string) => void;
+  leaseWipe: (sessionKey: string) => void;
+  metaGetReported: (sessionKey: string, path: string) => { reported: string | null } | undefined;
+  metaUpsertReported: (
+    sessionKey: string,
+    path: string,
+    reported: string,
+    updatedAt: number,
+  ) => void;
+  metaClearReported: (sessionKey: string, path: string) => void;
+  metaDelete: (sessionKey: string, path: string) => void;
+  metaDeletePath: (path: string) => void;
+  metaWipe: (sessionKey: string) => void;
+}
+
+/** A served anchor's immutable line identity for one session and path (spec §3.1). */
+export interface ServedLease {
+  session_id: string;
+  file_path: string;
+  anchor: string;
+  line_id: number;
+  canon_hash: string;
+  served_snapshot_hash: string;
+  served_line_number: number;
+  updated_at: number;
+  retired_at: number | null;
+}
+
+interface LeaseGrant {
+  anchor: string;
+  lineId: number;
+  canonHash: string;
+  lineNumber: number;
+}
+
+interface LeaseSnapshot {
+  snapshot_id: number;
+  snapshot_hash: string;
+}
+
+interface LeaseLineageRow {
+  anchor: string;
+  line_id: number;
+  canon_hash: string;
+}
+
+// WHY: a dense post-edit serve covers every line of the file, so leases are written in one
+// WHY: multi-row upsert per chunk instead of one statement per line (Probe L: 30k lines).
+const LEASE_UPSERT_CHUNK = 400;
+const leaseUpsertStmts = new WeakMap<
+  DatabaseSync,
+  Map<number, ReturnType<DatabaseSync["prepare"]>>
+>();
+
+function leaseUpsertStatement(
+  db: DatabaseSync,
+  rowCount: number,
+): ReturnType<DatabaseSync["prepare"]> {
+  let perSize = leaseUpsertStmts.get(db);
+  if (!perSize) {
+    perSize = new Map();
+    leaseUpsertStmts.set(db, perSize);
+  }
+  let stmt = perSize.get(rowCount);
+  if (!stmt) {
+    const values = Array.from({ length: rowCount }, () => "(?, ?, ?, ?, ?, ?, ?, ?, NULL)").join(
+      ", ",
+    );
+    stmt = db.prepare(
+      "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, " +
+        "served_snapshot_hash, served_line_number, updated_at, retired_at) " +
+        `VALUES ${values} ` +
+        "ON CONFLICT (session_id, file_path, anchor) DO UPDATE SET " +
+        "line_id = excluded.line_id, " +
+        "canon_hash = excluded.canon_hash, " +
+        "served_snapshot_hash = excluded.served_snapshot_hash, " +
+        "served_line_number = excluded.served_line_number, " +
+        "updated_at = excluded.updated_at, " +
+        "retired_at = NULL",
+    );
+    perSize.set(rowCount, stmt);
+  }
+  return stmt;
 }
 
 const stmtsCache = new WeakMap<DatabaseSync, ServedStmts>();
@@ -80,13 +172,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   const servedUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
       "ON CONFLICT(session_id, path) DO UPDATE SET hashes = excluded.hashes, updated_at = excluded.updated_at",
-  );
-  const servedReportedUpsertStmt = db.prepare(
-    "INSERT INTO served (session_id, path, hashes, reported, updated_at) VALUES (?, ?, '[]', ?, ?) " +
-      "ON CONFLICT(session_id, path) DO UPDATE SET reported = excluded.reported, updated_at = excluded.updated_at",
-  );
-  const servedReportedClearStmt = db.prepare(
-    "UPDATE served SET reported = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
   );
   const servedRetiredUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, retired, updated_at) VALUES (?, ?, '[]', ?, ?) " +
@@ -113,21 +198,56 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   const servedDeletePathStmt = db.prepare("DELETE FROM served WHERE path = ?");
   const servedWipeStmt = db.prepare("DELETE FROM served WHERE session_id = ?");
   const servedPruneOlderThanStmt = db.prepare("DELETE FROM served WHERE updated_at < ?");
+  // WHY: served_leases is the v7 identity authority (spec §3.1). The upsert is the atomic
+  // WHY: re-serve contract: a re-served anchor adopts the fresh line_id and clears retired_at.
+  const lineageAnchorsStmt = db.prepare(
+    "SELECT anchor, line_id, canon_hash FROM line_lineage WHERE snapshot_id = ?",
+  );
+  const snapshotByHashStmt = db.prepare(
+    "SELECT snapshot_id, snapshot_hash FROM file_snapshots " +
+      "WHERE path = ? AND snapshot_hash = ? AND committed = 1",
+  );
+  const leaseGetStmt = db.prepare(
+    "SELECT session_id, file_path, anchor, line_id, canon_hash, served_snapshot_hash, " +
+      "served_line_number, updated_at, retired_at FROM served_leases " +
+      "WHERE session_id = ? AND file_path = ? AND anchor = ?",
+  );
+  const leaseListStmt = db.prepare(
+    "SELECT session_id, file_path, anchor, line_id, canon_hash, served_snapshot_hash, " +
+      "served_line_number, updated_at, retired_at FROM served_leases " +
+      "WHERE session_id = ? AND file_path = ? ORDER BY served_line_number ASC, anchor ASC",
+  );
+  const leaseRetireAbsentStmt = db.prepare(
+    "UPDATE served_leases SET retired_at = ? " +
+      "WHERE file_path = ? AND retired_at IS NULL " +
+      "AND line_id NOT IN (SELECT line_id FROM line_lineage WHERE snapshot_id = ?)",
+  );
+  const leaseDeleteStmt = db.prepare(
+    "DELETE FROM served_leases WHERE session_id = ? AND file_path = ?",
+  );
+  const leaseDeletePathStmt = db.prepare("DELETE FROM served_leases WHERE file_path = ?");
+  const leaseWipeStmt = db.prepare("DELETE FROM served_leases WHERE session_id = ?");
+  // WHY: drift-notice dedup lives in served_session_meta (spec §5.1 table 5), decoupled from
+  // WHY: the legacy served mirror that v6 shells keep alive.
+  const metaGetReportedStmt = db.prepare(
+    "SELECT reported FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+  );
+  const metaUpsertReportedStmt = db.prepare(
+    "INSERT INTO served_session_meta (session_id, file_path, reported, updated_at) " +
+      "VALUES (?, ?, ?, ?) " +
+      "ON CONFLICT(session_id, file_path) DO UPDATE SET " +
+      "reported = excluded.reported, updated_at = excluded.updated_at",
+  );
+  const metaClearReportedStmt = db.prepare(
+    "DELETE FROM served_session_meta WHERE session_id = ? AND file_path = ?",
+  );
+  const metaDeletePathStmt = db.prepare("DELETE FROM served_session_meta WHERE file_path = ?");
+  const metaWipeStmt = db.prepare("DELETE FROM served_session_meta WHERE session_id = ?");
   return {
     servedGet: (...params) => servedGetStmt.get(...params) as Record<string, unknown> | undefined,
     servedUpsert: (sessionKey, path, hashes, updatedAt) => {
       withBusyRetry(() => {
         servedUpsertStmt.run(sessionKey, path, hashes, updatedAt);
-      });
-    },
-    servedReportedUpsert: (sessionKey, path, reported, updatedAt) => {
-      withBusyRetry(() => {
-        servedReportedUpsertStmt.run(sessionKey, path, reported, updatedAt);
-      });
-    },
-    servedReportedClear: (sessionKey, updatedAt, path) => {
-      withBusyRetry(() => {
-        servedReportedClearStmt.run(updatedAt, sessionKey, path);
       });
     },
     servedRetiredUpsert: (sessionKey, path, retired, updatedAt) => {
@@ -180,6 +300,79 @@ function buildStmts(db: DatabaseSync): ServedStmts {
         servedPruneOlderThanStmt.run(updatedBefore);
       });
     },
+    snapshotByHash: (...params) => snapshotByHashStmt.get(...params) as LeaseSnapshot | undefined,
+    lineageAnchorsOf: (...params) =>
+      lineageAnchorsStmt.all(...params) as unknown as LeaseLineageRow[],
+    leaseUpsertMany: (sessionKey, path, snapshotHash, updatedAt, grants) => {
+      if (grants.length === 0) return;
+      withBusyRetry(() => {
+        for (let i = 0; i < grants.length; i += LEASE_UPSERT_CHUNK) {
+          const chunk = grants.slice(i, i + LEASE_UPSERT_CHUNK);
+          const params: (string | number)[] = [];
+          for (const grant of chunk) {
+            params.push(
+              sessionKey,
+              path,
+              grant.anchor,
+              grant.lineId,
+              grant.canonHash,
+              snapshotHash,
+              grant.lineNumber,
+              updatedAt,
+            );
+          }
+          leaseUpsertStatement(db, chunk.length).run(...params);
+        }
+      });
+    },
+    leaseGet: (...params) => leaseGetStmt.get(...params) as ServedLease | undefined,
+    leaseList: (...params) => leaseListStmt.all(...params) as unknown as ServedLease[],
+    leaseRetireAbsent: (now, path, snapshotId) => {
+      leaseRetireAbsentStmt.run(now, path, snapshotId);
+    },
+    leaseDelete: (sessionKey, path) => {
+      withBusyRetry(() => {
+        leaseDeleteStmt.run(sessionKey, path);
+      });
+    },
+    leaseDeletePath: (path) => {
+      withBusyRetry(() => {
+        leaseDeletePathStmt.run(path);
+      });
+    },
+    leaseWipe: (sessionKey) => {
+      withBusyRetry(() => {
+        leaseWipeStmt.run(sessionKey);
+      });
+    },
+    metaGetReported: (...params) =>
+      metaGetReportedStmt.get(...params) as { reported: string | null } | undefined,
+    metaUpsertReported: (sessionKey, path, reported, updatedAt) => {
+      withBusyRetry(() => {
+        metaUpsertReportedStmt.run(sessionKey, path, reported, updatedAt);
+      });
+    },
+    metaClearReported: (sessionKey, path) => {
+      withBusyRetry(() => {
+        metaClearReportedStmt.run(sessionKey, path);
+      });
+    },
+    metaDelete: (sessionKey, path) => {
+      withBusyRetry(() => {
+        // WHY: dropping the whole meta row is exactly what clearing the reported set means.
+        metaClearReportedStmt.run(sessionKey, path);
+      });
+    },
+    metaDeletePath: (path) => {
+      withBusyRetry(() => {
+        metaDeletePathStmt.run(path);
+      });
+    },
+    metaWipe: (sessionKey) => {
+      withBusyRetry(() => {
+        metaWipeStmt.run(sessionKey);
+      });
+    },
   };
 }
 
@@ -204,12 +397,6 @@ export function ensureServedSchema(db: DatabaseSync): void {
     }[];
     if (!cols.some((c) => c.name === "retired")) {
       db.exec("ALTER TABLE served ADD COLUMN retired TEXT");
-      try {
-        db.exec("DELETE FROM snapshots");
-      } catch {}
-      try {
-        db.exec("DELETE FROM undo");
-      } catch {}
     }
     const cols2 = db.prepare("PRAGMA table_info(served)").all() as {
       name: string;
@@ -223,12 +410,23 @@ export function ensureServedSchema(db: DatabaseSync): void {
     if (!cols3.some((c) => c.name === "snapshotId")) {
       db.exec("ALTER TABLE served ADD COLUMN snapshotId TEXT");
     }
-  } catch {}
+  } catch (error) {
+    // SAFETY: best-effort v6 migration — a failed ALTER leaves the legacy mirror unmigrated;
+    // SAFETY: the store open still succeeds and later reads re-attempt the additive migration.
+    console.error("Failed to migrate served schema:", error);
+  }
 }
 
 onStoreOpen((db) => {
   ensureServedSchema(db);
+  // WHY: retention of v7 leases and session meta belongs to the vacuum engine (#86) — opening the
+  // WHY: store stays strictly additive and idempotent (spec §5.1 item 8), so a version flap in a
+  // WHY: mixed-version environment can never drop v7 identity state.
   servedStmts(db).servedPruneOlderThan(Date.now() - SERVED_TTL_MS);
+  // WHY: the store open is the vacuum's deterministic boundary — retention is enforced across all
+  // WHY: paths before a new session accumulates snapshots, including after a crash left an
+  // WHY: over-budget store behind.
+  vacuumSnapshots(db);
 });
 
 // WHY: --- internal helpers — private to deep module (not exported) ---
@@ -312,16 +510,37 @@ function patchServed(
 }
 
 // WHY: sync store-level ops (require open store — caller ensures via loadHashStore/withStore)
+/**
+ * Drop every served fact for one (session, path): the legacy mirror, its identity leases and its
+ * drift-notice dedup set. They are one fact split across three tables, so they are dropped
+ * together — a surviving lease would let an anchor the session no longer validly holds resolve
+ * instead of failing E_STALE_ANCHOR (spec §3.1 fail-closed).
+ *
+ * WHY: corrupt-reset callers already run inside a `withStore` transaction and `BEGIN IMMEDIATE`
+ * cannot nest, so the drop only opens its own transaction when the caller is outside one.
+ */
+function dropServedState(store: HashStore, sessionKey: string, path: string): void {
+  const drop = () => {
+    const stmts = servedStmts(store.db);
+    stmts.servedDelete(sessionKey, path);
+    stmts.leaseDelete(sessionKey, path);
+    stmts.metaDelete(sessionKey, path);
+  };
+  const inTransaction = (store.db as unknown as { isTransaction?: boolean }).isTransaction === true;
+  if (inTransaction) drop();
+  else withStore(drop);
+}
+
 function getServedInner(store: HashStore, sessionKey: string, path: string): (string | null)[] {
   const row = servedStmts(store.db).servedGet(sessionKey, path);
   if (!row) return [];
   try {
     const parsed = JSON.parse(row.hashes as string);
     if (isValidServedList(parsed)) return parsed;
-    servedStmts(store.db).servedDelete(sessionKey, path);
+    dropServedState(store, sessionKey, path);
     return [];
   } catch {
-    servedStmts(store.db).servedDelete(sessionKey, path);
+    dropServedState(store, sessionKey, path);
     return [];
   }
 }
@@ -338,25 +557,52 @@ function upsertServedInner(
     patchServed(updated, entries);
     servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
   });
+  grantLeasesForRows(store, sessionKey, path, entries);
 }
 
-function recordServesInner(
+/** WHY: a truncated serve delivers a suffix of the file, so its mirror is clamped and cleared. */
+interface TruncatedServeShape {
+  lineCount: number;
+  clearFrom?: number;
+}
+
+/** Clamp (`lineCount`) and clear (`clearFrom`) a served mirror, leaving the caller's copy intact. */
+function shapeMirror(
+  mirror: readonly (string | null)[],
+  shape: TruncatedServeShape,
+): (string | null)[] {
+  const shaped = [...mirror];
+  if (shaped.length > shape.lineCount) shaped.length = shape.lineCount;
+  if (shape.clearFrom !== undefined)
+    for (let i = shape.clearFrom; i < shaped.length; i++) shaped[i] = null;
+  return shaped;
+}
+
+/**
+ * WHY: the single writer for a serve observation: served mirror, canon synchronization
+ * WHY: (ADR-0005), and the lease grant (spec §3.1.2). `shape` is the only difference between the
+ * WHY: truncated serve (a suffix was shown, so the mirror is clamped/cleared) and the plain one; a
+ * WHY: plain serve with an already-identical mirror leaves early, while a truncated serve still has
+ * WHY: its clamped canon mirror to re-align.
+ */
+function writeServeRecord(
   store: HashStore,
   sessionKey: string,
   path: string,
   rows: Array<{ position: number; hash: string | null }>,
+  contentHash: string | undefined,
+  shape?: TruncatedServeShape,
 ): void {
-  if (rows.length === 0) return;
   try {
     withStore(() => {
       const before = getServedInner(store, sessionKey, path);
-      const updated = [...before];
+      const updated = shape ? shapeMirror(before, shape) : [...before];
       patchServed(updated, rows);
       const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
       if (!isNoOp) {
         servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
-      } else {
-        // WHY: still need to handle tombstone if displaced due to hash move? No-op means no displaced.
+      } else if (!shape) {
+        // WHY: a no-op mirror displaces nothing and leaves no canon to re-sync.
         return;
       }
       const disp = displacedHashes(before, updated);
@@ -364,7 +610,7 @@ function recordServesInner(
       // WHY: Keep canons in sync with hashes for edited rows — needed for canon verification (ADR-0005).
       try {
         const currentCanons = getCanonsInner(store, sessionKey, path);
-        const updatedCanons = currentCanons.slice();
+        const updatedCanons = shape ? shapeMirror(currentCanons, shape) : currentCanons.slice();
         for (const row of rows) {
           while (updatedCanons.length <= row.position) updatedCanons.push(null);
           const cv = row.hash ? (globalCanonStore.get(row.hash) ?? null) : null;
@@ -378,12 +624,30 @@ function recordServesInner(
           JSON.stringify(updatedCanons),
           Date.now(),
         );
-      } catch {}
+      } catch (error) {
+        // SAFETY: best-effort canon sync — the served mirror is already upserted above; a missed
+        // SAFETY: canon degrades to the fail-closed path the next edit would take anyway.
+        console.error("Failed to sync served canons:", error);
+      }
     });
   } catch (error) {
-    console.error("Failed to record served rows:", error);
+    console.error(`Failed to record ${shape ? "truncated " : ""}served rows:`, error);
     throw error;
   }
+  // WHY: identity is granted independently of the legacy mirror: a no-op mirror re-serve still
+  // WHY: has to re-grant a lease that a materialization retired (spec §3.1.2 re-serve upsert).
+  grantLeasesForRows(store, sessionKey, path, rows, contentHash);
+}
+
+function recordServesInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  rows: Array<{ position: number; hash: string | null }>,
+  contentHash?: string,
+): void {
+  if (rows.length === 0) return;
+  writeServeRecord(store, sessionKey, path, rows, contentHash);
 }
 
 function recordServesTruncatedInner(
@@ -393,52 +657,99 @@ function recordServesTruncatedInner(
   rows: Array<{ position: number; hash: string | null }>,
   lineCount: number,
   clearFrom?: number,
+  contentHash?: string,
 ): void {
   if (rows.length === 0) return;
+  writeServeRecord(store, sessionKey, path, rows, contentHash, { lineCount, clearFrom });
+}
+
+/**
+ * Best-effort wrapper for callers that grant leases outside a transaction of their own: a missed
+ * lease degrades to the fail-closed path the next edit would take anyway.
+ */
+function grantLeasesForRows(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  rows: Array<{ position: number; hash: string | null }>,
+  contentHash?: string,
+): void {
+  if (!contentHash) return;
   try {
-    withStore(() => {
-      const before = getServedInner(store, sessionKey, path);
-      const updated = [...before];
-      if (updated.length > lineCount) updated.length = lineCount;
-      if (clearFrom !== undefined)
-        for (let i = clearFrom; i < updated.length; i++) updated[i] = null;
-      patchServed(updated, rows);
-      const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
-      if (!isNoOp) {
-        servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
-      }
-      const disp = displacedHashes(before, updated);
-      if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
-      // WHY: Keep canons in sync (truncated) — mirrors hash update
-      try {
-        const currentCanons = getCanonsInner(store, sessionKey, path);
-        const updatedCanons = currentCanons.slice();
-        if (updatedCanons.length > lineCount) updatedCanons.length = lineCount;
-        if (clearFrom !== undefined)
-          for (let i = clearFrom; i < updatedCanons.length; i++) updatedCanons[i] = null;
-        for (const row of rows) {
-          while (updatedCanons.length <= row.position) updatedCanons.push(null);
-          const cv = row.hash ? (globalCanonStore.get(row.hash) ?? null) : null;
-          updatedCanons[row.position] = cv;
-        }
-        while (updatedCanons.length > 0 && updatedCanons[updatedCanons.length - 1] === null)
-          updatedCanons.pop();
-        servedStmts(store.db).servedCanonsUpsert(
-          sessionKey,
-          path,
-          JSON.stringify(updatedCanons),
-          Date.now(),
-        );
-      } catch {}
-    });
+    grantLeasesInTransaction(store.db, sessionKey, path, rows, contentHash);
   } catch (error) {
-    console.error("Failed to record truncated served rows:", error);
-    throw error;
+    // SAFETY: best-effort lease grant — serves are already recorded and the tool result is valid;
+    // SAFETY: a missed lease degrades to the fail-closed path the next edit would take anyway.
+    console.error("Failed to grant served leases:", error);
   }
 }
 
+/**
+ * Atomically upserts a lease per served anchor (spec §3.1.2). The leased `line_id` is never
+ * invented here: it is read from the committed snapshot whose content was actually served, so the
+ * edit path can resolve the anchor's identity later. Anchors without committed lineage (e.g. a
+ * preview that persisted nothing, or content whose snapshot write failed) grant no lease and stay
+ * fail-closed.
+ *
+ * `contentHash` names that served snapshot and MUST be supplied by every caller that knows the
+ * served content (`recordEpoch` full reads, `recordDiff`, `recordServeFeedback`, `recordTruncated`,
+ * `recordLeases`). There is deliberately NO fallback to the newest materialization: after content
+ * reverts to an earlier committed snapshot a re-serve of the reverted content would bind anchors
+ * that both snapshots share to the OTHER version's `line_id` — the silent-miswrite class §3.1.2
+ * exists to prevent. An unknown hash therefore grants nothing and the next edit fails closed.
+ *
+ * This is the in-transaction half: it runs on the caller's already-open `BEGIN IMMEDIATE` and
+ * deliberately propagates instead of swallowing, so a failed re-serve rolls back the adoption and
+ * retirement it shares a transaction with (the undo restore is one transaction, not three).
+ */
+export function grantLeasesInTransaction(
+  db: DatabaseSync,
+  sessionKey: string,
+  path: string,
+  rows: ReadonlyArray<{ position: number; hash: string | null }>,
+  contentHash: string,
+): void {
+  const live = rows.filter((row) => row.hash !== null);
+  if (live.length === 0) return;
+  const stmts = servedStmts(db);
+  // WHY: the caller names the snapshot it actually served, so a file reverted to content from
+  // WHY: an older committed snapshot leases against that snapshot, not `S_latest`.
+  const snapshot = stmts.snapshotByHash(path, contentHash);
+  if (!snapshot) return;
+  const byAnchor = new Map(
+    stmts.lineageAnchorsOf(snapshot.snapshot_id).map((entry) => [entry.anchor, entry]),
+  );
+  // WHY: a lease is keyed by anchor, so a batch that repeats an anchor keeps only its last serve.
+  const grants = new Map<string, LeaseGrant>();
+  for (const row of live) {
+    const lineage = byAnchor.get(row.hash!);
+    if (!lineage) continue;
+    grants.set(row.hash!, {
+      anchor: row.hash!,
+      lineId: lineage.line_id,
+      canonHash: lineage.canon_hash,
+      lineNumber: row.position + 1,
+    });
+  }
+  stmts.leaseUpsertMany(sessionKey, path, snapshot.snapshot_hash, Date.now(), [...grants.values()]);
+}
+
+/**
+ * Authoritative writer for `retired_at` (spec §3.1.3). Called with the snapshot id that was just
+ * materialized: any active lease on the path whose `line_id` is absent from that lineage is
+ * retired. Runs inside the caller's `BEGIN IMMEDIATE` transaction.
+ */
+export function retireAbsentLeases(
+  db: DatabaseSync,
+  filePath: string,
+  snapshotId: number,
+  now: number = Date.now(),
+): void {
+  servedStmts(db).leaseRetireAbsent(now, filePath, snapshotId);
+}
+
 function getReportedInner(store: HashStore, sessionKey: string, path: string): Set<string> {
-  const row = servedStmts(store.db).servedGet(sessionKey, path);
+  const row = servedStmts(store.db).metaGetReported(sessionKey, path);
   if (!row) return new Set();
   const raw = row.reported;
   if (typeof raw !== "string" || raw.length === 0) return new Set();
@@ -462,7 +773,7 @@ function addReportedInner(
   withStore(() => {
     const current = getReportedInner(store, sessionKey, path);
     for (const hash of valid) current.add(hash);
-    servedStmts(store.db).servedReportedUpsert(
+    servedStmts(store.db).metaUpsertReported(
       sessionKey,
       path,
       JSON.stringify([...current]),
@@ -473,7 +784,7 @@ function addReportedInner(
 
 function clearReportedInner(store: HashStore, sessionKey: string, path: string): void {
   withStore(() => {
-    servedStmts(store.db).servedReportedClear(sessionKey, Date.now(), path);
+    servedStmts(store.db).metaClearReported(sessionKey, path);
   });
 }
 
@@ -485,7 +796,7 @@ function getCanonsInner(store: HashStore, sessionKey: string, path: string): (st
     if (!isValidCanonsList(parsed)) throw new TypeError("invalid canons");
     return parsed;
   } catch {
-    servedStmts(store.db).servedDelete(sessionKey, path);
+    dropServedState(store, sessionKey, path);
     return [];
   }
 }
@@ -498,7 +809,7 @@ function getTombstoneInner(store: HashStore, sessionKey: string, path: string): 
     if (!isValidHashList(parsed)) throw new TypeError("invalid retired");
     return new Set(parsed);
   } catch {
-    servedStmts(store.db).servedDelete(sessionKey, path);
+    dropServedState(store, sessionKey, path);
     return new Set();
   }
 }
@@ -609,20 +920,24 @@ export function createSessionHandle(
       rows: ServedEntry[],
       lineCount: number,
       clearFrom?: number,
+      contentHash?: string,
     ): Promise<void> {
       if (rows.length === 0) return;
       const store = await resolveStore();
-      recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, clearFrom);
+      recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, clearFrom, contentHash);
     },
     async recordDiff(
       servedRows: ServedRow[],
-      opts?: { resultLineCount?: number; firstChangedLine?: number },
+      opts: { contentHash?: string; resultLineCount?: number; firstChangedLine?: number },
     ): Promise<void> {
       if (servedRows.length === 0) return;
       const store = await resolveStore();
-      const plan = planServeRecording(opts ?? {});
+      // WHY: `contentHash` is absent when the leases were already granted inside the
+      // WHY: materialization transaction (spec §3.1.2 step 5) — the record is then mirror-only and
+      // WHY: grants nothing, so no third transaction remains on the read/edit path.
+      const plan = planServeRecording(opts);
       if (plan.mode === "plain") {
-        recordServesInner(store, sessionKey, path, servedRows);
+        recordServesInner(store, sessionKey, path, servedRows, opts.contentHash);
         return;
       }
       recordServesTruncatedInner(
@@ -632,21 +947,22 @@ export function createSessionHandle(
         servedRows,
         plan.lineCount,
         plan.clearFrom,
+        opts.contentHash,
       );
     },
-    async recordEcho(
+    async recordServeFeedback(
       rows: ServedRow[],
       policy: ServeRecordPolicy,
       lineCount?: number,
+      contentHash?: string,
     ): Promise<void> {
       if (policy !== "live") return;
+      const store = await resolveStore();
       if (lineCount === undefined) {
-        const store = await resolveStore();
-        recordServesInner(store, sessionKey, path, rows);
+        recordServesInner(store, sessionKey, path, rows, contentHash);
         return;
       }
-      const store = await resolveStore();
-      recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, undefined);
+      recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, undefined, contentHash);
     },
     async recordEpoch(input: {
       rows: ServedEntry[];
@@ -654,6 +970,7 @@ export function createSessionHandle(
       fullReadHashes?: readonly string[];
       fullReadCanons?: readonly (string | null)[];
       snapshotId?: string;
+      contentHash?: string;
       isFullRead?: boolean;
     }): Promise<void> {
       if (input.rows.length === 0 && !input.fullReadHashes) return;
@@ -742,6 +1059,13 @@ export function createSessionHandle(
           if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
         }
       });
+      if (input.rows.length > 0)
+        grantLeasesForRows(store, sessionKey, path, input.rows, input.contentHash);
+    },
+    async recordLeases(rows: ServedEntry[], contentHash: string): Promise<void> {
+      if (rows.length === 0) return;
+      const store = await resolveStore();
+      grantLeasesForRows(store, sessionKey, path, rows, contentHash);
     },
     async clearDrift(): Promise<void> {
       const store = await resolveStore();
@@ -769,7 +1093,7 @@ export function sessionFromContext(
 // WHY: re-export TTL-aware wipe helpers for extension lifecycle (still via handle path, but keep as util)
 export async function wipeSession(sessionKey: string): Promise<void> {
   const store = await loadHashStore();
-  servedStmts(store.db).servedWipe(sessionKey);
+  wipeServed(store, sessionKey);
 }
 
 export async function loadTombstone(sessionKey: string, path: string): Promise<Set<string>> {
@@ -798,11 +1122,29 @@ export async function retireAnchors(
 
 export async function deleteServedByPathAsync(path: string): Promise<void> {
   const store = await loadHashStore();
-  servedStmts(store.db).servedDeletePath(path);
+  deleteServedByPath(store, path);
 }
 
 export function deleteServedByPath(store: HashStore, path: string): void {
-  servedStmts(store.db).servedDeletePath(path);
+  const stmts = servedStmts(store.db);
+  stmts.servedDeletePath(path);
+  stmts.leaseDeletePath(path);
+  stmts.metaDeletePath(path);
+}
+
+/** Leases for one (session, path), ordered by served line. */
+export function loadLeases(store: HashStore, sessionKey: string, path: string): ServedLease[] {
+  return servedStmts(store.db).leaseList(sessionKey, path);
+}
+
+/** The lease for one served anchor, if this session holds one. */
+export function loadLease(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  anchor: string,
+): ServedLease | undefined {
+  return servedStmts(store.db).leaseGet(sessionKey, path, anchor);
 }
 
 // WHY: --- Legacy low-level exports for facade compat (keep import surface stable) ---
@@ -837,11 +1179,14 @@ export function clearReported(store: HashStore, sessionKey: string, path: string
 }
 
 export function deleteServed(store: HashStore, sessionKey: string, path: string): void {
-  servedStmts(store.db).servedDelete(sessionKey, path);
+  dropServedState(store, sessionKey, path);
 }
 
 export function wipeServed(store: HashStore, sessionKey: string): void {
-  servedStmts(store.db).servedWipe(sessionKey);
+  const stmts = servedStmts(store.db);
+  stmts.servedWipe(sessionKey);
+  stmts.leaseWipe(sessionKey);
+  stmts.metaWipe(sessionKey);
 }
 
 export function recordServes(
@@ -860,6 +1205,7 @@ export function recordServesTruncated(
   rows: Array<{ position: number; hash: string | null }>,
   lineCount: number,
   clearFrom?: number,
+  contentHash?: string,
 ): void {
-  recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, clearFrom);
+  recordServesTruncatedInner(store, sessionKey, path, rows, lineCount, clearFrom, contentHash);
 }

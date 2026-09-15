@@ -7,10 +7,11 @@ import { sessionFromContext } from "./served-session/index.js";
 import { canon } from "./hashline/hash-identity.js";
 import { contentChecksum } from "./hashline/hasher.js";
 import { abortIf, isRec, normalizeFilePath } from "./utils.js";
-import { visLines } from "./utils.js";
+import { splitLines, visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { prepareFile } from "./file-content/index.js";
 import { fileSnap } from "./file-reader.js";
+import { snapshotHashFor, upsertSnapshotFor } from "./snapshot-store";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
 
@@ -55,13 +56,18 @@ export function regRead(pi: ExtensionAPI): void {
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const rawPath = params.path;
       abortIf(signal);
-      // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview
+      // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
+      // WHY: `noPersist` defers the authoritative materialization until the served window is
+      // WHY: known, so the snapshot + lineage + retirement + lease grant below commit as the ONE
+      // WHY: transaction spec §3.1.2 mandates instead of materializing first and leasing a
+      // WHY: transaction later.
       const prepared = await prepareFile(rawPath, ctx.cwd, {
         signal,
         offset: params.offset,
         limit: params.limit,
         maxLines: MAX_HASH_LINES,
         store: await loadHashStore(),
+        noPersist: true,
       });
 
       if (prepared.kind === "image") {
@@ -101,12 +107,38 @@ export function regRead(pi: ExtensionAPI): void {
         canon(lines[i] ?? ""),
       );
       let snapshotId: string | undefined;
+      const contentHash = snapshotHashFor(prepared.normalized);
       try {
         snapshotId = (await fileSnap(prepared.absolutePath, contentChecksum(prepared.normalized)))
           .snapshotId;
       } catch {
         snapshotId = undefined;
       }
+      // WHY: the read-path materialization (spec §3.1.2 steps 4-6): snapshot + lineage +
+      // WHY: retirement + the served window's leases share one `BEGIN IMMEDIATE`. Best-effort —
+      // WHY: a store failure never fails the read; the next call re-materializes from disk.
+      try {
+        await upsertSnapshotFor(
+          {
+            path: prepared.absolutePath,
+            snapshotHash: contentHash,
+            lineCount: splitLines(prepared.normalized).length,
+            hashes: prepared.fileHashes,
+            content: prepared.normalized,
+          },
+          {
+            retireLeases: true,
+            leases: { sessionKey: session.sessionKey, rows: prepared.served },
+          },
+        );
+      } catch (error) {
+        // SAFETY: best-effort post-read materialization — the preview rows are already computed
+        // SAFETY: and the served mirror below still records them; a missed snapshot/lease degrades
+        // SAFETY: to the fail-closed path the next edit would take anyway.
+        console.error("Failed to commit read-path snapshot materialization:", error);
+      }
+      // WHY: mirror-only — the leases already committed in the transaction above, so no
+      // WHY: `contentHash` is passed and no third transaction remains on the read path.
       await session.recordEpoch({
         rows: prepared.served,
         lineCount,

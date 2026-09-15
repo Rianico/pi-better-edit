@@ -61,14 +61,14 @@ Pi tool contract shape — `pi.registerTool({ name, label, description, promptSn
 
 ## Application to this repo's edit tool
 
-This repo's edit tool embodies strict-contract design — hash-anchored addressing (`HASH│content`), content-derived stable anchors, fail-closed rejection (never fuzzy-match/relocate), `reject-and-serve` (rejection carries fresh anchors so retry needs no re-read), pure edit (no silent dedup rewrite), `E_SERVED_ECHO` denial (never strip echoed anchors), tombstone/epoch staleness detection, and a controlled glossary (`serve`, `anchor`, `range` vs `served range`). Source: `CONTEXT.md` at repo root.
+This repo's edit tool embodies strict-contract design — hash-anchored addressing (`HASH│content`), content-derived stable anchors, fail-closed rejection (never fuzzy-match/relocate), `reject-and-serve` (rejection carries fresh anchors so retry needs no re-read), pure edit (no silent dedup rewrite), `E_SERVED_ECHO` denial (never strip served hash echo anchors), tombstone/epoch staleness detection, and a controlled glossary (`serve`, `anchor`, `range` vs `served range`). Source: `CONTEXT.md` at repo root.
 
 Already exemplary: hash anchors make addressing verifiable; fail-closed + reject-and-serve turns errors into retries; pure-edit (no dedup rewrite) preserves intent; glossary pins the model–tool boundary. Gaps to close per the sources above:
 
 1. Check every `promptGuidelines` bullet names the tool explicitly (Pi flat-append rule). Done in ADR-0015.
 2. Document truncation/drift-notice caps in the tool description itself.
 3. ~~Add `input_examples` for the compact-tuple payload~~ — superseded by ADR-0015: tuples replaced with named objects (`{anchor_from, anchor_to, replace_with}`), which are self-describing and accepted by every provider schema.
-4. Keep an eval set of stale-anchor/echo/drift scenarios as regression protection (Anthropic eval-driven loop).
+4. Keep an eval set of stale-anchor/serve/drift scenarios as regression protection (Anthropic eval-driven loop).
 
 ## Sources
 

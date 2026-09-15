@@ -1,24 +1,27 @@
 /**
  * SAFETY: ServedVerification — deep module owning all served-range verification.
  *
- * This module absorbs the 280-line healing sprawl previously in served.ts:
+ * This module absorbs the served-range verification sprawl previously in served.ts:
  *  - served span resolve (servedPositionsOf + candidate enumeration)
- *  - single-candidate canon scan for orphan healing
  *  - length mismatch and never-served checks
- *  - echo building (buildRangeEcho/fmtServedRows/paginationHint/retryHint)
+ *  - rebased-span contiguity gate for the MVCC dynamic rebase path (spec §3.1.1 / Probe J)
+ *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint/retryHint)
  *  - E_RANGE_* branching via decision table
+ *
+ * ADR-0008 heuristic canon healing is retired (spec §3.3): un-rebased coordinates reject
+ * fail-closed with E_UNSERVED_RANGE. Coordinate realignment is owned exclusively by MVCC
+ * `pairSnapshots` + `line_lineage` upstream in the edit path.
  *
  * Canon resolution is instance-scoped via CanonStore (injected), not global.
  * Production uses globalCanonStore; tests inject createCanonStore() for isolation.
  *
- * CONTEXT.md terms preserved: serve, served state, served span, range staleness,
- * never-served, reject-and-serve, drift, orphaned serve, orphaning re-serve,
- * relocated line keeps its hash.
+ * CONTEXT.md terms preserved: serve, served state, served span, served-range
+ * staleness, never-served, reject-and-serve, drift, orphaned serve, orphaning
+ * re-serve, relocated line keeps its hash.
  */
 import { HASH_SEP, canon, globalCanonStore, type CanonStore } from "./hash.js";
-import { SERVED_ECHO_CAP } from "../constants.js";
-import { healingPolicy } from "./healing/policy.js";
-import { isLengthHealedViaCanon as isLengthHealedViaCanonHelper } from "./healing/helpers.js";
+import { SERVED_ROWS_CAP } from "../constants.js";
+import type { LeaseIdentityView } from "./resolve.js";
 
 // WHY: ---------------------------------------------------------------------------
 // WHY: Public contracts — mirrors served.ts so it can re-export without identity split
@@ -31,22 +34,31 @@ export interface ServedRow {
   hash: string;
 }
 
+export interface FileSnapshotContext {
+  fileHashes: string[];
+  fileLines: string[];
+  filePath?: string;
+}
+
 export class ServedRejectionError extends Error {
   readonly code: ServedCode;
   readonly firstOffendingLine: number | undefined;
   readonly servedRows: ServedRow[];
+  readonly servedBlock: string;
 
   constructor(opts: {
     code: ServedCode;
     message: string;
     firstOffendingLine?: number;
     servedRows: ServedRow[];
+    servedBlock: string;
   }) {
     super(opts.message);
     this.name = "ServedRejectionError";
     this.code = opts.code;
     this.firstOffendingLine = opts.firstOffendingLine;
     this.servedRows = opts.servedRows;
+    this.servedBlock = opts.servedBlock;
   }
 }
 
@@ -56,11 +68,13 @@ function isServedRejection(error: unknown): error is ServedRejectionError {
 
 export class AnchorMismatchError extends Error {
   readonly servedRows: ServedRow[];
+  readonly servedBlock?: string;
 
-  constructor(message: string, servedRows: ServedRow[]) {
+  constructor(message: string, servedRows: ServedRow[], servedBlock?: string) {
     super(message);
     this.name = "AnchorMismatchError";
     this.servedRows = servedRows;
+    this.servedBlock = servedBlock;
   }
 }
 
@@ -72,13 +86,13 @@ function _isAnchorMismatch(error: unknown): error is AnchorMismatchError {
 // WHY: Shared formatting helpers — owned by verification (reject-and-serve contract)
 // WHY: ---------------------------------------------------------------------------
 
-export function buildRangeEcho(
+export function buildRangeServeRows(
   startLine: number,
   endLine: number,
   fileHashes: string[],
 ): ServedRow[] {
   const total = endLine - startLine + 1;
-  const shown = Math.min(total, SERVED_ECHO_CAP);
+  const shown = Math.min(total, SERVED_ROWS_CAP);
   const rows: ServedRow[] = [];
   for (let ln = startLine; ln < startLine + shown; ln++) {
     rows.push({ position: ln - 1, hash: fileHashes[ln - 1]! });
@@ -107,6 +121,180 @@ export function servedPositionsOf(served: (string | null)[], hash: string): numb
 }
 
 // WHY: ---------------------------------------------------------------------------
+// WHY: Reject-and-serve builders + MVCC rebased-span contiguity gate (spec §3.1.1)
+// WHY: ---------------------------------------------------------------------------
+
+/** Builds the reject-and-serve served rows + rendered block for a current on-disk range. */
+function buildRangeServeBlock(
+  startLine: number,
+  endLine: number,
+  fileHashes: string[],
+  fileLines: string[],
+): { servedRows: ServedRow[]; rendered: string } {
+  const len = fileHashes.length;
+  const first = Math.max(1, Math.min(startLine, Math.max(len, 1)));
+  const last = Math.max(first, Math.min(endLine, Math.max(len, first)));
+  const servedRows = buildRangeServeRows(first, last, fileHashes);
+  const totalLen = endLine - startLine + 1;
+  const tail =
+    first === startLine && servedRows.length < totalLen
+      ? `\n${paginationHint(startLine + servedRows.length, totalLen - servedRows.length)}`
+      : "";
+  return { servedRows, rendered: fmtServedRows(servedRows, fileLines) + tail };
+}
+
+/**
+ * One reject-and-serve assembly shared by both rejection entry points: the block build and the
+ * payload assembly live here, so the `[MODEL] [CODE]` prefix, the `Current range:` contract, the
+ * retry hint, and the served rows cannot drift between codes.
+ */
+function assembleRejectAndServe(args: {
+  code: ServedCode | "E_STALE_ANCHOR";
+  headline: string;
+  startLine: number;
+  endLine: number;
+  snapshot: FileSnapshotContext;
+}): { message: string; servedRows: ServedRow[]; servedBlock: string } {
+  const { servedRows, rendered } = buildRangeServeBlock(
+    args.startLine,
+    args.endLine,
+    args.snapshot.fileHashes,
+    args.snapshot.fileLines,
+  );
+  return {
+    message: `[MODEL] [${args.code}] ${args.headline}\nCurrent range:\n${rendered}\n${retryHint()}`,
+    servedRows,
+    servedBlock: rendered,
+  };
+}
+
+/** Builds a reject-and-serve `ServedRejectionError` whose rows are the current on-disk range. */
+export function makeServedRejection(opts: {
+  code: ServedCode;
+  headline: string;
+  startLine: number;
+  endLine: number;
+  snapshot: FileSnapshotContext;
+  firstOffendingLine?: number;
+}): ServedRejectionError {
+  const { message, servedRows, servedBlock } = assembleRejectAndServe(opts);
+  return new ServedRejectionError({
+    code: opts.code,
+    message,
+    firstOffendingLine: opts.firstOffendingLine,
+    servedRows,
+    servedBlock,
+  });
+}
+
+/**
+ * Builds the `[E_STALE_ANCHOR]` reject-and-serve rejection for a boundary anchor the session holds
+ * no lease for. It emits the SAME `Current range:` serve contract as the other reject-and-serve
+ * rejections (spec §5.3): the served rows are themselves serves, so the retry needs no `read`.
+ */
+export function makeStaleAnchorRejection(opts: {
+  headline: string;
+  startLine: number;
+  endLine: number;
+  snapshot: FileSnapshotContext;
+}): AnchorMismatchError {
+  const { message, servedRows, servedBlock } = assembleRejectAndServe({
+    code: "E_STALE_ANCHOR",
+    headline: opts.headline,
+    startLine: opts.startLine,
+    endLine: opts.endLine,
+    snapshot: opts.snapshot,
+  });
+  return new AnchorMismatchError(message, servedRows, servedBlock);
+}
+
+/**
+ * Contiguity + identity gate for the dynamic rebase path (spec §3.1.1 / Probe J). The caller resolved
+ * each end anchor's leased `line_id` in `line_lineage(C)`; this verifies the whole served window
+ * remapped **rigidly** onto `rebasedStart..rebasedEnd`:
+ *
+ *  - a different window length means an external insert/delete landed strictly inside the range
+ *    (Probe J) -> `E_STALE_RANGE`;
+ *  - a served line with no mirror row or no lease -> `E_UNSERVED_RANGE`;
+ *  - a served line whose lease is retired, or whose `line_id` no longer lives at its expected
+ *    rebased coordinate, -> `E_STALE_RANGE` (Probes A/E/K: never apply at a coordinate whose
+ *    immutable `line_id` is not the one leased).
+ *
+ * Identity — not anchor spelling — is authoritative: a surviving line may legitimately present a
+ * different (content-derived) anchor in the new snapshot, so a string mismatch is not by itself a
+ * failure. Throwing happens before any write, so a rejection leaves the file byte-identical.
+ */
+export function verifyRebasedSpan(args: {
+  served: readonly (string | null)[];
+  servedStart: number;
+  servedEnd: number;
+  rebasedStart: number;
+  rebasedEnd: number;
+  snapshot: FileSnapshotContext;
+  leaseFor(anchor: string): LeaseIdentityView | undefined;
+  rebasedLineOf(lineId: number): number | undefined;
+}): void {
+  const {
+    served,
+    servedStart,
+    servedEnd,
+    rebasedStart,
+    rebasedEnd,
+    snapshot,
+    leaseFor,
+    rebasedLineOf,
+  } = args;
+  const where = snapshot.filePath ? ` in ${snapshot.filePath}` : "";
+  const servedLen = servedEnd - servedStart + 1;
+  const rebasedLen = rebasedEnd - rebasedStart + 1;
+  if (rebasedLen !== servedLen) {
+    throw makeServedRejection({
+      code: "E_STALE_RANGE",
+      headline: `served span (${servedLen} lines) no longer matches the rebased range (${rebasedLen} lines)${where}.`,
+      startLine: rebasedStart,
+      endLine: rebasedEnd,
+      snapshot,
+      firstOffendingLine: rebasedStart,
+    });
+  }
+  for (let k = 0; k < servedLen; k++) {
+    const servedAnchor = served[servedStart - 1 + k];
+    const currentLine = rebasedStart + k;
+    if (servedAnchor === null || servedAnchor === undefined) {
+      throw makeServedRejection({
+        code: "E_UNSERVED_RANGE",
+        headline: `line ${currentLine}${where} was never served.`,
+        startLine: rebasedStart,
+        endLine: rebasedEnd,
+        snapshot,
+        firstOffendingLine: currentLine,
+      });
+    }
+    const lease = leaseFor(servedAnchor);
+    if (lease === undefined) {
+      throw makeServedRejection({
+        code: "E_UNSERVED_RANGE",
+        headline: `line ${currentLine}${where} has no served line identity.`,
+        startLine: rebasedStart,
+        endLine: rebasedEnd,
+        snapshot,
+        firstOffendingLine: currentLine,
+      });
+    }
+    if (lease.retiredAt !== null || rebasedLineOf(lease.lineId) !== currentLine) {
+      throw makeServedRejection({
+        code: "E_STALE_RANGE",
+        headline: `line ${currentLine}${where} no longer resolves to the line identity it was served with.`,
+        startLine: rebasedStart,
+        endLine: rebasedEnd,
+        snapshot,
+        firstOffendingLine: currentLine,
+      });
+    }
+  }
+}
+
+// WHY: ---------------------------------------------------------------------------
 // WHY: Decision-table types
 // WHY: ---------------------------------------------------------------------------
 
@@ -125,18 +313,16 @@ export interface VerificationInput {
   filePath?: string;
   tombstone?: ReadonlySet<string>;
   servedCanons?: (string | null)[];
-  epochSnapshotId?: string;
-  curSnapshotId?: string;
 }
 
-/** SAFETY: Result shape requested in the task: {ok} | {code, servedRows, echo}. */
+/** SAFETY: Result shape requested in the task: {ok} | {code, servedRows, servedBlock}. */
 export type VerificationResult =
   | { ok: true }
   | {
       ok: false;
       code: ServedCode;
       servedRows: ServedRow[];
-      echo: string;
+      servedBlock: string;
       message: string;
       firstOffendingLine?: number;
     };
@@ -160,16 +346,13 @@ export class ServedVerification {
       return { ok: true };
     } catch (error) {
       if (isServedRejection(error)) {
-        // WHY: reconstruct echo from servedRows + fileLines (captured in throw site)
-        // SAFETY: ServedRejectionError carries __echo as ad-hoc string attached at throw site; cast reads internal echo validated via rebuild fallback.
-        const echo = (error as unknown as { __echo?: string }).__echo as string | undefined;
-        // WHY: fallback rebuild if __echo not attached (legacy path)
-        const fallbackEcho = this.rebuildEchoForError(input, error);
+        // WHY: the serve block travels as a typed readonly field populated at construction,
+        // WHY: so no rebuild is needed here.
         return {
           ok: false,
           code: error.code,
           servedRows: error.servedRows,
-          echo: echo ?? fallbackEcho,
+          servedBlock: error.servedBlock,
           message: error.message,
           firstOffendingLine: error.firstOffendingLine,
         };
@@ -189,8 +372,6 @@ export class ServedVerification {
       filePath,
       tombstone: inputTombstone,
       servedCanons: inputServedCanons,
-      epochSnapshotId,
-      curSnapshotId,
     } = input;
     const tombstone = inputTombstone ?? new Set<string>();
     const servedCanons = inputServedCanons;
@@ -199,7 +380,12 @@ export class ServedVerification {
 
     this.ensureCanonsPopulated(fileHashes, fileLines, served);
 
-    const { echoRows, echo } = this.buildEchoBlock(startLine, endLine, fileHashes, fileLines);
+    const { servedRows, rendered } = this.buildServeBlock(
+      startLine,
+      endLine,
+      fileHashes,
+      fileLines,
+    );
     const currentLen = endLine - startLine + 1;
 
     // WHY: Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read
@@ -212,10 +398,10 @@ export class ServedVerification {
         const actual = canon(fileLines[pos] ?? "");
         if (expected !== undefined && expected !== null && expected !== actual) {
           this.throwStale({
-            message: `[MODEL] [E_STALE_RANGE] anchor "${tombstonedHash}" no longer matches the current file (its line changed since you saw it).\nCurrent range:\n${echo}\n${retryHint()}`,
+            message: `[MODEL] [E_STALE_RANGE] anchor "${tombstonedHash}" no longer matches the current file (its line changed since you saw it).\nCurrent range:\n${rendered}\n${retryHint()}`,
             firstOffendingLine: pos + 1,
-            echoRows,
-            echo,
+            servedRows,
+            rendered,
           });
         }
       }
@@ -230,124 +416,76 @@ export class ServedVerification {
       fileHashes,
     });
 
-    // WHY: --- decision table entry 1: no span could be resolved -> E_UNSERVED_RANGE (or healed) ---
-    let from: number | undefined = span.from;
-    let to: number | undefined = span.to;
-    let isHealed = false;
+    // WHY: --- decision table entry 1: no span could be resolved -> E_UNSERVED_RANGE ---
+    // WHY: ADR-0008 canon healing is retired (spec §3.3): an unresolvable span is never relocated
+    // WHY: by scanning for matching canons. It fails closed; coordinate realignment is owned
+    // WHY: exclusively by MVCC `pairSnapshots` + `line_lineage` in the edit path.
+    const from: number | undefined = span.from;
+    const to: number | undefined = span.to;
 
     if (from === undefined || to === undefined) {
-      const healed = this.tryHealOrphanedSpan({
+      this.throwUnverified({
         served,
         startHash,
         endHash,
         currentLen,
-        fileLines,
-        fileHashes,
-        startLine,
+        rendered,
+        servedRows,
+        where,
         startPositions: servedPositionsOf(served, startHash),
         endPositions: servedPositionsOf(served, endHash),
       });
-      if (healed) {
-        from = healed.from;
-        to = healed.to;
-        isHealed = true;
-      } else {
-        this.throwUnverified({
-          served,
-          startHash,
-          endHash,
-          currentLen,
-          echo,
-          echoRows,
-          where,
-          startPositions: servedPositionsOf(served, startHash),
-          endPositions: servedPositionsOf(served, endHash),
-        });
-      }
     }
 
-    // WHY: Derived strictPos: automatic fallback via epoch snapshotId (pos-free when epoch==cur, strict when concurrent write detected)
-    const strictPos =
-      epochSnapshotId !== undefined &&
-      curSnapshotId !== undefined &&
-      epochSnapshotId !== curSnapshotId;
-
-    // WHY: Strict pos check for concurrency (pos-free vs strict) — after span resolution but before canon checks
-    if (strictPos && from !== undefined && from !== startLine - 1) {
-      this.throwStale({
-        message: `[MODEL] [E_STALE_RANGE] anchor was served at line ${from + 1} but now resolves to line ${startLine} (the file changed under concurrent writes).\nCurrent range:\n${echo}\n${retryHint()}`,
-        firstOffendingLine: startLine,
-        echoRows,
-        echo,
-      });
-    }
-
-    // WHY: Canon check for same-pos different content (collision) — before healed branch to cover healed spans? keep for non-healed; healed has own canon check
+    // WHY: Canon check for same-pos different content (collision)
     if (servedCanons && from !== undefined && to !== undefined) {
       const servedLen = to - from + 1;
-      // WHY: Only run here for non-healed; healed path returns early via validateHealedSpan which already does canon check via store, but we also need epoch-canon check for strict correctness
-      if (!isHealed) {
-        for (let k = 0; k < servedLen; k++) {
-          const expected = servedCanons[from + k];
-          if (expected !== null && expected !== undefined) {
-            const actual = canon(fileLines[startLine - 1 + k] ?? "");
-            if (expected !== actual) {
-              this.throwStale({
-                message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${echo}\n${retryHint()}`,
-                firstOffendingLine: startLine + k,
-                echoRows,
-                echo,
-              });
-            }
+      for (let k = 0; k < servedLen; k++) {
+        const expected = servedCanons[from + k];
+        if (expected !== null && expected !== undefined) {
+          const actual = canon(fileLines[startLine - 1 + k] ?? "");
+          if (expected !== actual) {
+            this.throwStale({
+              message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${rendered}\n${retryHint()}`,
+              firstOffendingLine: startLine + k,
+              servedRows,
+              rendered,
+            });
           }
         }
-        // WHY: Tombstone interior check (whole-span) — gated on canon inequality (fail-closed only for different canon)
-        for (let k = 0; k < servedLen; k++) {
-          const h = fileHashes[startLine - 1 + k];
-          if (h && tombstone.has(h)) {
-            const expectedCanon = servedCanons?.[from + k] ?? undefined;
-            const actualCanon = canon(fileLines[startLine - 1 + k] ?? "");
-            if (
-              expectedCanon !== undefined &&
-              expectedCanon !== null &&
-              expectedCanon !== actualCanon
-            ) {
-              this.throwStale({
-                message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} no longer matches what was served (its anchor "${h}" changed since you saw it).\nCurrent range:\n${echo}\n${retryHint()}`,
-                firstOffendingLine: startLine + k,
-                echoRows,
-                echo,
-              });
-            }
+      }
+      // WHY: Tombstone interior check (whole-span) — gated on canon inequality (fail-closed only for different canon)
+      for (let k = 0; k < servedLen; k++) {
+        const h = fileHashes[startLine - 1 + k];
+        if (h && tombstone.has(h)) {
+          const expectedCanon = servedCanons?.[from + k] ?? undefined;
+          const actualCanon = canon(fileLines[startLine - 1 + k] ?? "");
+          if (
+            expectedCanon !== undefined &&
+            expectedCanon !== null &&
+            expectedCanon !== actualCanon
+          ) {
+            this.throwStale({
+              message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} no longer matches what was served (its anchor "${h}" changed since you saw it).\nCurrent range:\n${rendered}\n${retryHint()}`,
+              firstOffendingLine: startLine + k,
+              servedRows,
+              rendered,
+            });
           }
         }
       }
     }
 
     // WHY: --- decision table entries 2..5: validate resolved span ---
-    if (isHealed) {
-      this.validateHealedSpan({
-        served,
-        from: from!,
-        currentLen,
-        fileLines,
-        echo,
-        echoRows,
-        where,
-      });
-      return;
-    }
-
-    this.validateNonHealedSpan({
+    this.validateResolvedSpan({
       served,
       from: from!,
       to: to!,
       startLine,
       currentLen,
       fileHashes,
-      fileLines,
-      echo,
-      echoRows,
+      rendered,
+      servedRows,
       where,
     });
   }
@@ -372,32 +510,22 @@ export class ServedVerification {
     }
   }
 
-  // WHY: -- private: echo --------------------------------------------------------
+  // WHY: -- private: serve block --------------------------------------------------------
 
-  private buildEchoBlock(
+  private buildServeBlock(
     startLine: number,
     endLine: number,
     fileHashes: string[],
     fileLines: string[],
-  ): { echoRows: ServedRow[]; echo: string } {
-    const echoRows = buildRangeEcho(startLine, endLine, fileHashes);
+  ): { servedRows: ServedRow[]; rendered: string } {
+    const servedRows = buildRangeServeRows(startLine, endLine, fileHashes);
     const totalLen = endLine - startLine + 1;
     const tail =
-      echoRows.length < totalLen
-        ? `\n${paginationHint(startLine + echoRows.length, totalLen - echoRows.length)}`
+      servedRows.length < totalLen
+        ? `\n${paginationHint(startLine + servedRows.length, totalLen - servedRows.length)}`
         : "";
-    const echo = fmtServedRows(echoRows, fileLines) + tail;
-    return { echoRows, echo };
-  }
-
-  private rebuildEchoForError(input: VerificationInput, error: ServedRejectionError): string {
-    const { echo } = this.buildEchoBlock(
-      input.range.startLine,
-      input.range.endLine,
-      input.fileHashes,
-      input.fileLines,
-    );
-    return echo + (error.message.includes(paginationHint(0, 0)) ? "" : "");
+    const rendered = fmtServedRows(servedRows, fileLines) + tail;
+    return { servedRows, rendered };
   }
 
   // WHY: -- private: span resolve ------------------------------------------------
@@ -468,101 +596,44 @@ export class ServedVerification {
     return out;
   }
 
-  // WHY: -- private: healing — delegated to internal HealingStrategy adapters -----
-
-  // WHY: -- private: healing — delegated to HealingPolicy deep module -----
-
-  private tryHealOrphanedSpan(args: {
-    served: (string | null)[];
-    startHash: string;
-    endHash: string;
-    currentLen: number;
-    fileLines: string[];
-    fileHashes: string[];
-    startLine: number;
-    startPositions: number[];
-    endPositions: number[];
-  }): { from: number; to: number } | undefined {
-    return healingPolicy.tryHeal({ ...args, store: this.store });
-  }
-
   // WHY: -- private: validation via decision table -------------------------------
 
-  private validateHealedSpan(args: {
-    served: (string | null)[];
-    from: number;
-    currentLen: number;
-    fileLines: string[];
-    echo: string;
-    echoRows: ServedRow[];
-    where: string;
-  }): void {
-    const { served, from, currentLen, fileLines, echo, echoRows, where } = args;
-    for (let k = 0; k < currentLen; k++) {
-      const servedHash = served[from + k];
-      if (servedHash === null) continue;
-      const expectedCanon = this.store.get(servedHash);
-      const actualCanon = canon(fileLines[from + k] ?? "");
-      if (expectedCanon !== undefined && expectedCanon !== actualCanon) {
-        const offendingLine = from + k + 1;
-        this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
-          firstOffendingLine: offendingLine,
-          echoRows,
-          echo,
-        });
-      }
-    }
-  }
-
-  private validateNonHealedSpan(args: {
+  private validateResolvedSpan(args: {
     served: (string | null)[];
     from: number;
     to: number;
     startLine: number;
     currentLen: number;
     fileHashes: string[];
-    fileLines: string[];
-    echo: string;
-    echoRows: ServedRow[];
+    rendered: string;
+    servedRows: ServedRow[];
     where: string;
   }): void {
-    const {
-      served,
-      from,
-      to,
-      startLine,
-      currentLen,
-      fileHashes,
-      fileLines,
-      echo,
-      echoRows,
-      where,
-    } = args;
+    const { served, from, to, startLine, currentLen, fileHashes, rendered, servedRows, where } =
+      args;
 
     // WHY: Decision: never-served gap inside served span
     for (let i = from; i <= to; i++) {
       if (served[i] === null) {
         this.throwUnserved({
-          message: `[MODEL] [E_UNSERVED_RANGE] line ${i + 1}${where} was never served.\nCurrent range:\n${echo}\n${retryHint()}`,
+          message: `[MODEL] [E_UNSERVED_RANGE] line ${i + 1}${where} was never served.\nCurrent range:\n${rendered}\n${retryHint()}`,
           firstOffendingLine: i + 1,
-          echoRows,
-          echo,
+          servedRows,
+          rendered,
         });
       }
     }
 
-    // WHY: Decision: length mismatch (served span vs current range)
+    // WHY: Decision: length mismatch (served span vs current range). Heuristic length healing is
+    // WHY: retired (spec §3.3): a mismatched span is fail-closed, never resized by a canon scan.
     const servedLen = to - from + 1;
     if (servedLen !== currentLen) {
-      if (!this.isLengthHealedViaCanon({ served, from, servedLen, fileLines })) {
-        this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${echo}\n${retryHint()}`,
-          firstOffendingLine: startLine,
-          echoRows,
-          echo,
-        });
-      }
+      this.throwStale({
+        message: `[MODEL] [E_STALE_RANGE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${rendered}\n${retryHint()}`,
+        firstOffendingLine: startLine,
+        servedRows,
+        rendered,
+      });
     }
 
     // WHY: Decision: hash mismatch (stale interior)
@@ -570,28 +641,13 @@ export class ServedVerification {
       if (served[from + k] !== fileHashes[startLine - 1 + k]) {
         const offendingLine = startLine + k;
         this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${echo}\n${retryHint()}`,
+          message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${rendered}\n${retryHint()}`,
           firstOffendingLine: offendingLine,
-          echoRows,
-          echo,
+          servedRows,
+          rendered,
         });
       }
     }
-  }
-
-  private isLengthHealedViaCanon(args: {
-    served: (string | null)[];
-    from: number;
-    servedLen: number;
-    fileLines: string[];
-  }): boolean {
-    return isLengthHealedViaCanonHelper(
-      args.served,
-      args.from,
-      args.servedLen,
-      args.fileLines,
-      this.store,
-    );
   }
 
   // WHY: -- private: throws with decision-table mapping -------------------------
@@ -601,14 +657,22 @@ export class ServedVerification {
     startHash: string;
     endHash: string;
     currentLen: number;
-    echo: string;
-    echoRows: ServedRow[];
+    rendered: string;
+    servedRows: ServedRow[];
     where: string;
     startPositions: number[];
     endPositions: number[];
   }): never {
-    const { startHash, endHash, currentLen, echo, echoRows, where, startPositions, endPositions } =
-      args;
+    const {
+      startHash,
+      endHash,
+      currentLen,
+      rendered,
+      servedRows,
+      where,
+      startPositions,
+      endPositions,
+    } = args;
     const problems: string[] = [];
     if (startPositions.length === 0) {
       problems.push(`anchor_from "${startHash}" has no served position`);
@@ -620,53 +684,49 @@ export class ServedVerification {
     } else if (endPositions.length > 1) {
       problems.push(`anchor_to "${endHash}" was served at ${endPositions.length} positions`);
     }
-    // SAFETY: augmenting ServedRejectionError with __echo for reject-and-serve; property is string set here and read only via guarded cast in verify().
     const err = new ServedRejectionError({
       code: "E_UNSERVED_RANGE",
       message:
         `[MODEL] [E_UNSERVED_RANGE] cannot verify range against served state${where}: ${problems.join("; ")}. ` +
         `No served span matched the current range (${currentLen} lines). ` +
-        `A full read will re-sync the served mirror — the echoed range below is current content, ` +
-        `but retrying without re-reading cannot clear a stale duplicate outside the echoed window.\n` +
-        `Current range:\n${echo}`,
-      servedRows: echoRows,
+        `A full read will re-sync the served mirror — the served range below is current content, ` +
+        `but retrying without re-reading cannot clear a stale duplicate outside the served window.\n` +
+        `Current range:\n${rendered}`,
+      servedRows: servedRows,
+      servedBlock: rendered,
     });
-    // SAFETY: attaching __echo string to rejection for echo reconstruction; matches read cast in verify() and is string-typed.
-    (err as unknown as { __echo: string }).__echo = echo;
     throw err;
   }
 
   private throwStale(args: {
     message: string;
     firstOffendingLine: number;
-    echoRows: ServedRow[];
-    echo: string;
+    servedRows: ServedRow[];
+    rendered: string;
   }): never {
     const err = new ServedRejectionError({
       code: "E_STALE_RANGE",
       message: args.message,
       firstOffendingLine: args.firstOffendingLine,
-      servedRows: args.echoRows,
+      servedRows: args.servedRows,
+      servedBlock: args.rendered,
     });
-    // SAFETY: attaching __echo string to stale rejection; mirrors guarded read in verify() and is validated via echo reconstruction.
-    (err as unknown as { __echo: string }).__echo = args.echo;
     throw err;
   }
 
   private throwUnserved(args: {
     message: string;
     firstOffendingLine: number;
-    echoRows: ServedRow[];
-    echo: string;
+    servedRows: ServedRow[];
+    rendered: string;
   }): never {
     const err = new ServedRejectionError({
       code: "E_UNSERVED_RANGE",
       message: args.message,
       firstOffendingLine: args.firstOffendingLine,
-      servedRows: args.echoRows,
+      servedRows: args.servedRows,
+      servedBlock: args.rendered,
     });
-    // SAFETY: attaching __echo string to unserved rejection; paired with guarded cast and fallback rebuild in verify().
-    (err as unknown as { __echo: string }).__echo = args.echo;
     throw err;
   }
 }
@@ -689,8 +749,6 @@ export function verifyServedRange(args: {
   canonStore?: CanonStore;
   tombstone?: ReadonlySet<string>;
   servedCanons?: (string | null)[];
-  epochSnapshotId?: string;
-  curSnapshotId?: string;
 }): void {
   const verifier = args.canonStore ? new ServedVerification(args.canonStore) : defaultVerifier;
   verifier.verifyOrThrow({
@@ -706,8 +764,6 @@ export function verifyServedRange(args: {
     filePath: args.filePath,
     tombstone: args.tombstone,
     servedCanons: args.servedCanons,
-    epochSnapshotId: args.epochSnapshotId,
-    curSnapshotId: args.curSnapshotId,
   });
 }
 

@@ -4,6 +4,7 @@ import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
+import { readNormFile } from "../../src/file-reader.js";
 import {
   getServed,
   upsertServed,
@@ -14,11 +15,21 @@ import {
   clearReported,
   deleteServed,
   wipeServed,
+  ensureServedSchema,
 } from "../../src/served-session/index.js";
-import { pruneMissing, upsertSnapshot, getSnapshot } from "../../src/snapshot-store";
+import { loadLease, loadLeases } from "../../src/served-session/session.js";
+import {
+  pruneMissing,
+  upsertSnapshot,
+  upsertSnapshotFor,
+  getSnapshot,
+  snapshotHashFor,
+} from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION, SERVED_TTL_MS } from "../../src/constants";
 import { initHasher, contentChecksum } from "../../src/hashline/hasher";
+import { lineHashes } from "../../src/hashline/index.js";
+import { CANON_VERSION } from "../../src/hashline/hash.js";
 import { getWritableTempRoot } from "../support/fixtures";
 
 let tmpHome: string;
@@ -127,12 +138,26 @@ describe("hash-store — served state (issue #2)", () => {
     });
   });
 
-  it("deletes the served record for a path", async () => {
+  it("deletes the served record, its leases and its drift meta for a path", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
+      const hashes = await lineHashes("alpha\n", "/p.ts");
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: hashes[0]! }]);
+      const { createSessionHandle: createHandle } =
+        await import("../../src/served-session/session.js");
+      await createHandle("sessionA", "/p.ts", store).recordLeases(
+        [{ position: 0, hash: hashes[0]! }],
+        snapshotHashFor("alpha\n"),
+      );
+      addReported(store, "sessionA", "/p.ts", [hashes[0]!]);
+      expect(loadLease(store, "sessionA", "/p.ts", hashes[0]!)).toBeDefined();
+
       deleteServed(store, "sessionA", "/p.ts");
+
       expect(getServed(store, "sessionA", "/p.ts")).toEqual([]);
+      expect(loadLeases(store, "sessionA", "/p.ts")).toEqual([]);
+      expect(loadLease(store, "sessionA", "/p.ts", hashes[0]!)).toBeUndefined();
+      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set());
     });
   });
 
@@ -212,7 +237,13 @@ describe("hash-store — served wipe", () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/a.ts", [{ position: 0, hash: "abc" }]);
       upsertServed(store, "sessionA", "/b.ts", [{ position: 1, hash: "def" }]);
-      upsertSnapshot(store, "/a.ts", contentChecksum("a\n"), 1, ["abc"]);
+      upsertSnapshot(store, {
+        path: "/a.ts",
+        snapshotHash: snapshotHashFor("a\n"),
+        lineCount: 1,
+        hashes: ["abc"],
+        content: "a\n",
+      });
       upsertUndo(store, "/u.ts", {
         content: "old",
         bom: "",
@@ -266,6 +297,30 @@ describe("hash-store — served corrupt row handling", () => {
     });
   });
 
+  it("drops leases and drift meta when a corrupt served row is reset", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      const hashes = await lineHashes("alpha\n", "/p.ts");
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: hashes[0]! }]);
+      const { createSessionHandle: createHandle } =
+        await import("../../src/served-session/session.js");
+      await createHandle("sessionA", "/p.ts", store).recordLeases(
+        [{ position: 0, hash: hashes[0]! }],
+        snapshotHashFor("alpha\n"),
+      );
+      addReported(store, "sessionA", "/p.ts", [hashes[0]!]);
+      expect(loadLease(store, "sessionA", "/p.ts", hashes[0]!)).toBeDefined();
+
+      await corruptServed(home, "sessionA", "/p.ts", "not json");
+      shutdownHashStore();
+      const reloaded = await loadHashStore();
+
+      expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
+      expect(loadLeases(reloaded, "sessionA", "/p.ts")).toEqual([]);
+      expect(getReported(reloaded, "sessionA", "/p.ts")).toEqual(new Set());
+    });
+  });
+
   it("treats a row with malformed hash strings as an empty record and deletes it", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
@@ -306,11 +361,17 @@ describe("hash-store — served corrupt row handling", () => {
 });
 
 describe("hash-store — served schema versioning", () => {
-  it("clears served state alongside snapshots and undo when the stored version differs", async () => {
+  it("preserves served state alongside snapshots and undo when the stored version differs", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "XYZ" }]);
-      upsertSnapshot(store, "/p.ts", contentChecksum("x\n"), 1, ["XYZ"]);
+      upsertSnapshot(store, {
+        path: "/p.ts",
+        snapshotHash: snapshotHashFor("x\n"),
+        lineCount: 1,
+        hashes: ["XYZ"],
+        content: "x\n",
+      });
       upsertUndo(store, "/u.ts", {
         content: "old",
         bom: "",
@@ -327,9 +388,9 @@ describe("hash-store — served schema versioning", () => {
       db.close();
 
       const reloaded = await loadHashStore();
-      expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
-      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toBeUndefined();
-      expect(getUndoEntry(reloaded, "/u.ts")).toBeUndefined();
+      expect(getServed(reloaded, "sessionA", "/p.ts")).not.toEqual([]);
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZ"]);
+      expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
 
       const check = new DatabaseSync(sqlitePath(home), {
         defensive: false,
@@ -339,6 +400,43 @@ describe("hash-store — served schema versioning", () => {
         | undefined;
       check.close();
       expect(row?.value).toBe(String(HASH_STORE_VERSION));
+    });
+  });
+
+  it("migrates a legacy served table without wiping snapshots or undo", async () => {
+    await withTempHome(async (home) => {
+      await mkdir(configHome(home), { recursive: true });
+      const db = new DatabaseSync(sqlitePath(home), {
+        defensive: false,
+      } as any);
+      db.exec(
+        "CREATE TABLE snapshots (path TEXT PRIMARY KEY, checksum TEXT NOT NULL, line_count INTEGER NOT NULL, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL)",
+      );
+      db.exec(
+        "CREATE TABLE undo (path TEXT PRIMARY KEY, content TEXT NOT NULL, bom TEXT NOT NULL, ending TEXT NOT NULL, hashes TEXT NOT NULL, result_content TEXT NOT NULL, updated_at INTEGER NOT NULL)",
+      );
+      db.exec(
+        "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
+      );
+      db.exec(
+        "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES ('/p.ts', 'v1:x', 1, '[\"XYZ\"]', 1)",
+      );
+      db.exec(
+        "INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) VALUES ('/u.ts', 'old', '', '\n', '[\"UVW\"]', 'new', 1)",
+      );
+
+      ensureServedSchema(db);
+
+      const columns = (db.prepare("PRAGMA table_info(served)").all() as { name: string }[]).map(
+        (row) => row.name,
+      );
+      const snapshots = db.prepare("SELECT COUNT(*) AS n FROM snapshots").get() as { n: number };
+      const undo = db.prepare("SELECT COUNT(*) AS n FROM undo").get() as { n: number };
+      db.close();
+
+      expect(columns).toEqual(expect.arrayContaining(["retired", "canons", "snapshotId"]));
+      expect(snapshots.n).toBe(1);
+      expect(undo.n).toBe(1);
     });
   });
 
@@ -398,8 +496,20 @@ describe("hash-store — served pruneMissing", () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", existing, [{ position: 0, hash: "KEP" }]);
       upsertServed(store, "sessionA", "/gone.ts", [{ position: 0, hash: "GON" }]);
-      upsertSnapshot(store, existing, contentChecksum("keep\n"), 1, ["KEP"]);
-      upsertSnapshot(store, "/gone.ts", contentChecksum("gone\n"), 1, ["GON"]);
+      upsertSnapshot(store, {
+        path: existing,
+        snapshotHash: snapshotHashFor("keep\n"),
+        lineCount: 1,
+        hashes: ["KEP"],
+        content: "keep\n",
+      });
+      upsertSnapshot(store, {
+        path: "/gone.ts",
+        snapshotHash: snapshotHashFor("gone\n"),
+        lineCount: 1,
+        hashes: ["GON"],
+        content: "gone\n",
+      });
       upsertUndo(store, existing, {
         content: "old",
         bom: "",
@@ -450,10 +560,9 @@ describe("hash-store — reported drift set (issue #6)", () => {
       const db = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
-      db.prepare("UPDATE served SET reported = 'not json' WHERE session_id = ? AND path = ?").run(
-        "sessionA",
-        "/p.ts",
-      );
+      db.prepare(
+        "UPDATE served_session_meta SET reported = 'not json' WHERE session_id = ? AND file_path = ?",
+      ).run("sessionA", "/p.ts");
       db.close();
       expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set());
     });
@@ -761,7 +870,7 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
       const { createSessionHandle: createH } = await import("../../src/served-session/session.js");
       const h1 = createH("sessionA", "/rebound.txt", store1);
       await h1.record([{ position: 0, hash: "AAA" }]);
-      const { snapshotIOFor: _snapshotIOFor } = await import("../../src/snapshot-store.js");
+      const { snapshotIOFor: _snapshotIOFor } = await import("../../src/snapshot-store");
       // need store path
       const dbPath = hashStorePath();
       // simulate old DB by dropping retired column
@@ -778,9 +887,311 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
       const h2 = createH("sessionA", "/rebound.txt", store2);
       expect(await h2.load()).toEqual(["AAA"]);
       // snapshots should be gone - check via snapshot store
-      const { getSnapshot: _getSnapshot } = await import("../../src/snapshot-store.js");
+      const { getSnapshot: _getSnapshot } = await import("../../src/snapshot-store");
       // we didn't create snapshot, but ensure no crash
       expect(await h2.loadTombstone()).toEqual(new Set());
+    });
+  });
+});
+
+describe("served_leases — universal lease granting (issue #81)", () => {
+  const LEASE_PATH = "/lease.ts";
+  const LEASE_CONTENT = "alpha\nbravo\ncharlie\n";
+
+  async function seedLeases(
+    store: Awaited<ReturnType<typeof loadHashStore>>,
+    sessionKey = "sessionA",
+  ): Promise<string[]> {
+    const hashes = await lineHashes(LEASE_CONTENT, LEASE_PATH);
+    const { createSessionHandle: createHandle } =
+      await import("../../src/served-session/session.js");
+    await createHandle(sessionKey, LEASE_PATH, store).recordLeases(
+      hashes.map((hash, position) => ({ position, hash })),
+      snapshotHashFor(LEASE_CONTENT),
+    );
+    return hashes;
+  }
+
+  it("grants one active lease per served anchor from the lineage line_id", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const hashes = await seedLeases(store);
+
+      const leases = loadLeases(store, "sessionA", LEASE_PATH);
+      expect(leases.map((lease) => lease.anchor)).toEqual(hashes);
+      expect(leases.map((lease) => lease.served_line_number)).toEqual([1, 2, 3]);
+      expect(leases.map((lease) => lease.retired_at)).toEqual([null, null, null]);
+      expect(new Set(leases.map((lease) => lease.line_id)).size).toBe(3);
+      expect(leases[0]!.served_snapshot_hash).toBe(
+        `${CANON_VERSION}:${contentChecksum(LEASE_CONTENT)}`,
+      );
+
+      const lineage = store.db
+        .prepare(
+          "SELECT ll.line_id, ll.canon_hash FROM line_lineage ll " +
+            "JOIN file_snapshots fs ON fs.snapshot_id = ll.snapshot_id " +
+            "WHERE fs.path = ? AND ll.anchor = ?",
+        )
+        .get(LEASE_PATH, hashes[0]!) as { line_id: number; canon_hash: string };
+      expect(leases[0]!.line_id).toBe(lineage.line_id);
+      expect(leases[0]!.canon_hash).toBe(lineage.canon_hash);
+    });
+  });
+
+  it("retires absent leases when re-adopting a cached snapshot (reversion/undo)", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const original = "alpha\nbravo\n";
+      const originalHashes = await lineHashes(original, LEASE_PATH);
+      const edited = "alpha\nbravo\ncharlie\n";
+      const editedHashes = await lineHashes(edited, LEASE_PATH);
+      const { createSessionHandle: createHandle } =
+        await import("../../src/served-session/session.js");
+      await createHandle("sessionA", LEASE_PATH, store).recordLeases(
+        editedHashes.map((hash, position) => ({ position, hash })),
+        snapshotHashFor(edited),
+      );
+      expect(loadLeases(store, "sessionA", LEASE_PATH).every((l) => l.retired_at === null)).toBe(
+        true,
+      );
+
+      // The undo/revert path re-adopts an OLDER canonical snapshot: a cache hit, not a miss. It is an
+      // authoritative materialization (the bytes are on disk), so it retires the absent leases.
+      await upsertSnapshotFor(
+        {
+          path: LEASE_PATH,
+          snapshotHash: snapshotHashFor(original),
+          lineCount: 2,
+          hashes: originalHashes,
+          content: original,
+        },
+        { retireLeases: true },
+      );
+
+      const leases = loadLeases(store, "sessionA", LEASE_PATH);
+      expect(leases).toHaveLength(3);
+      const adoptedLineage = new Set(
+        (
+          store.db
+            .prepare(
+              "SELECT ll.line_id AS line_id FROM line_lineage ll " +
+                "JOIN file_snapshots fs ON fs.snapshot_id = ll.snapshot_id " +
+                "WHERE fs.path = ? AND fs.snapshot_hash = ?",
+            )
+            .all(LEASE_PATH, `${CANON_VERSION}:${contentChecksum(original)}`) as {
+            line_id: number;
+          }[]
+        ).map((row) => row.line_id),
+      );
+      expect(adoptedLineage.size).toBe(2);
+      // Exactly the leases whose identity is absent from the adopted lineage are retired; the
+      // survivors (same `line_id`) stay active.
+      for (const lease of leases) {
+        expect(lease.retired_at === null).toBe(adoptedLineage.has(lease.line_id));
+      }
+      const removed = leases.find((lease) => !adoptedLineage.has(lease.line_id));
+      expect(removed!.retired_at).not.toBeNull();
+      expect(
+        leases
+          .filter((lease) => lease.retired_at === null)
+          .map((lease) => lease.line_id)
+          .sort((a, b) => a - b),
+      ).toEqual([...adoptedLineage].sort((a, b) => a - b));
+    });
+  });
+
+  it("retires leases whose line_id is absent from a newly materialized snapshot", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      const filePath = join(home, "lease.ts");
+      await writeFile(filePath, LEASE_CONTENT, "utf-8");
+      const seeded = await readNormFile("lease.ts", home, { store });
+      const { createSessionHandle: createHandle } =
+        await import("../../src/served-session/session.js");
+      await createHandle("sessionA", seeded.absolutePath, store).recordLeases(
+        seeded.fileHashes.map((hash, position) => ({ position, hash })),
+        snapshotHashFor(LEASE_CONTENT),
+      );
+      expect(
+        loadLeases(store, "sessionA", seeded.absolutePath).every((l) => l.retired_at === null),
+      ).toBe(true);
+
+      // the read path — the single authoritative materialization — sees the new on-disk content
+      const next = "alpha\ndelta\n";
+      await writeFile(filePath, next, "utf-8");
+      await readNormFile("lease.ts", home, { store });
+
+      const leases = loadLeases(store, "sessionA", seeded.absolutePath);
+      expect(leases).toHaveLength(3);
+      // `alpha` survives the external rewrite and keeps its identity; `bravo` and `charlie` are
+      // both absent from S_curr, so their leases are retired by the authoritative writer.
+      const alphaLease = leases.find((lease) => lease.anchor === seeded.fileHashes[0]!);
+      expect(alphaLease!.retired_at).toBeNull();
+      const retiredAnchors = leases
+        .filter((lease) => lease.retired_at !== null)
+        .map((lease) => lease.anchor)
+        .sort();
+      expect(retiredAnchors).toEqual([seeded.fileHashes[1]!, seeded.fileHashes[2]!].sort());
+    });
+  });
+
+  it("a working-buffer materialization with persist but no lease authority retires nothing", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      await seedLeases(store);
+
+      // Same content as the "newly materialized snapshot" case, but not declared authoritative:
+      // in-memory working-buffer hashing must leave every active lease alone (issue #81 §3.2.4).
+      await lineHashes("alpha\nbravo\ncharlie\ndelta\n", LEASE_PATH);
+
+      const leases = loadLeases(store, "sessionA", LEASE_PATH);
+      expect(leases).toHaveLength(3);
+      expect(leases.every((lease) => lease.retired_at === null)).toBe(true);
+    });
+  });
+
+  it("re-serving a relocated anchor upserts line_id + cleared retired_at", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      await seedLeases(store);
+      const before = loadLeases(store, "sessionA", LEASE_PATH).find(
+        (lease) => lease.served_line_number === 3,
+      )!;
+
+      // external insert moves charlie from line 3 to line 4 without changing its text
+      const drifted = "alpha\nbravo\ninserted\ncharlie\n";
+      const driftedHashes = await lineHashes(drifted, LEASE_PATH);
+      const movedAnchor = driftedHashes[3]!;
+      const { createSessionHandle: createHandle } =
+        await import("../../src/served-session/session.js");
+      await createHandle("sessionA", LEASE_PATH, store).recordLeases(
+        [{ position: 3, hash: movedAnchor }],
+        snapshotHashFor(drifted),
+      );
+
+      const rows = loadLeases(store, "sessionA", LEASE_PATH).filter(
+        (lease) => lease.anchor === movedAnchor,
+      );
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.retired_at).toBeNull();
+      expect(rows[0]!.served_line_number).toBe(4);
+      // The re-served lease keeps the line's identity: the insert shifted the coordinate, not the
+      // line, so `line_id` is inherited from S_latest (spec §3.1.3.2) while the served snapshot is
+      // restamped to the re-served version.
+      expect(rows[0]!.line_id).toBe(before.line_id);
+      expect(rows[0]!.served_snapshot_hash).not.toBe(before.served_snapshot_hash);
+    });
+  });
+
+  it("keeps leases isolated per session and path", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      await seedLeases(store, "sessionA");
+      expect(loadLeases(store, "sessionB", LEASE_PATH)).toEqual([]);
+      expect(loadLeases(store, "sessionA", "/other.ts")).toEqual([]);
+      expect(loadLease(store, "sessionA", LEASE_PATH, "zzz")).toBeUndefined();
+    });
+  });
+
+  it("writes no lease when the anchor has no committed lineage", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      upsertServed(store, "sessionA", "/unmaterialized.ts", [{ position: 0, hash: "abc" }]);
+      expect(loadLeases(store, "sessionA", "/unmaterialized.ts")).toEqual([]);
+    });
+  });
+});
+
+describe("served_session_meta — drift dedup storage (issue #81)", () => {
+  it("persists the reported set in served_session_meta, not the legacy mirror", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
+      addReported(store, "sessionA", "/p.ts", ["abc", "def"]);
+      addReported(store, "sessionB", "/p.ts", ["ghi"]);
+
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const rows = db
+        .prepare(
+          "SELECT session_id, reported FROM served_session_meta " +
+            "WHERE file_path = ? ORDER BY session_id ASC",
+        )
+        .all("/p.ts") as { session_id: string; reported: string }[];
+      const legacy = db
+        .prepare("SELECT COUNT(*) AS n FROM served WHERE reported IS NOT NULL AND path = ?")
+        .get("/p.ts") as { n: number };
+      db.close();
+
+      expect(rows).toEqual([
+        { session_id: "sessionA", reported: JSON.stringify(["abc", "def"]) },
+        { session_id: "sessionB", reported: JSON.stringify(["ghi"]) },
+      ]);
+      expect(legacy.n).toBe(0);
+      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set(["abc", "def"]));
+      expect(getReported(store, "sessionB", "/p.ts")).toEqual(new Set(["ghi"]));
+    });
+  });
+
+  it("drops the served_session_meta row on clear", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      addReported(store, "sessionA", "/p.ts", ["abc"]);
+
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const before = db
+        .prepare("SELECT COUNT(*) AS n FROM served_session_meta WHERE file_path = ?")
+        .get("/p.ts") as { n: number };
+      db.close();
+      expect(before.n).toBe(1);
+
+      clearReported(store, "sessionA", "/p.ts");
+
+      const reopened = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const remaining = reopened
+        .prepare("SELECT COUNT(*) AS n FROM served_session_meta WHERE file_path = ?")
+        .get("/p.ts") as { n: number };
+      reopened.close();
+
+      expect(remaining.n).toBe(0);
+      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set());
+    });
+  });
+
+  it("wipes leases and session meta for one session only", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const content = "alpha\nbravo\n";
+      const hashes = await lineHashes(content, "/w.ts");
+      const { createSessionHandle: createHandle } =
+        await import("../../src/served-session/session.js");
+      for (const session of ["sessionA", "sessionB"]) {
+        await createHandle(session, "/w.ts", store).recordLeases(
+          hashes.map((hash, position) => ({ position, hash })),
+          snapshotHashFor(content),
+        );
+        addReported(store, session, "/w.ts", [hashes[0]!]);
+      }
+
+      wipeServed(store, "sessionA");
+
+      expect(loadLeases(store, "sessionA", "/w.ts")).toEqual([]);
+      expect(getReported(store, "sessionA", "/w.ts")).toEqual(new Set());
+      expect(loadLeases(store, "sessionB", "/w.ts")).toHaveLength(2);
+      expect(getReported(store, "sessionB", "/w.ts")).toEqual(new Set([hashes[0]!]));
+    });
+  });
+
+  it("prunes leases and session meta for paths that no longer exist", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const hashes = await lineHashes("gone\n", "/gone.ts");
+      upsertServed(store, "sessionA", "/gone.ts", [{ position: 0, hash: hashes[0]! }]);
+      addReported(store, "sessionA", "/gone.ts", [hashes[0]!]);
+
+      await pruneMissing(store);
+
+      expect(loadLeases(store, "sessionA", "/gone.ts")).toEqual([]);
+      expect(getReported(store, "sessionA", "/gone.ts")).toEqual(new Set());
     });
   });
 });

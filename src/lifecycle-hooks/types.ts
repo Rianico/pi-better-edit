@@ -39,6 +39,8 @@ export type LifecycleDeps = {
     sessionKey: string;
     path: string;
     servedRows: ServedRow[];
+    /** Committed `file_snapshots.snapshot_hash` of the content served; binds the leases granted. */
+    contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;
   }) => Promise<void>;

@@ -43,7 +43,7 @@ function positionsOf(served: (string | null)[], hash: string): number[] {
 }
 
 describe("served-state truncation survives an external shrink (issue #27)", () => {
-  it("rejection echo after an external shrink leaves no hash at 2 served positions", async () => {
+  it("rejection serve after an external shrink leaves no hash at 2 served positions", async () => {
     await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\nh\n", async ({ cwd }) => {
       const { getTool } = makeSeamPi();
       const readTool = getTool("read");
@@ -67,7 +67,9 @@ describe("served-state truncation survives an external shrink (issue #27)", () =
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/stale anchor/);
+        // The shrink deleted the served "a" line, so its lease is retired: [E_STALE_RANGE] with the
+        // current-range serve (spec §3.1.1 line 89 / §5.3), not [E_STALE_ANCHOR].
+      ).rejects.toThrow(/\[MODEL\] \[E_STALE_RANGE\]/);
 
       const after = await servedArray(ctx, abs);
       const fPositions = positionsOf(after, fRef);

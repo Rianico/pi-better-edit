@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
+import { snapshotHashFor } from "../../src/snapshot-store";
 
 function ctx(overrides: Partial<{ cwd: string; sessionId: string }> = {}) {
   return {
@@ -218,6 +219,8 @@ describe("lifecycle-hooks", () => {
         { position: 1, hash: "BB2" },
         { position: 2, hash: "CC3" },
       ],
+      // WHY: the auto-read names the snapshot of the normalized content it just served.
+      contentHash: snapshotHashFor("a\nb\nc\n"),
       resultLineCount: 4,
       firstChangedLine: 1,
     });

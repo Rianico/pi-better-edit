@@ -24,7 +24,7 @@ describe("stable hashing with duplicate content lines", () => {
       content_lines: [],
     };
 
-    const result = applyEdit(content, edit, undefined, hashes, home.testPath);
+    const result = applyEdit(content, edit, undefined, hashes, { filePath: home.testPath });
     const newContent = result.content;
     expect(newContent).toBe("\nfunction b() {\n  return 2;\n}\n");
 
@@ -49,7 +49,7 @@ describe("stable hashing with duplicate content lines", () => {
       content_lines: [],
     };
 
-    const result = applyEdit(content, edit, undefined, hashes, home.testPath);
+    const result = applyEdit(content, edit, undefined, hashes, { filePath: home.testPath });
     const newContent = result.content;
     expect(newContent).toBe("function a() {\n  return 1;\n}\n\n");
 
@@ -76,7 +76,7 @@ describe("stable hashing with duplicate content lines", () => {
       content_lines: [],
     };
 
-    const result = applyEdit(content, edit, undefined, hashes, home.testPath);
+    const result = applyEdit(content, edit, undefined, hashes, { filePath: home.testPath });
     const newContent = result.content;
     expect(newContent).toBe("a\n}\n}\nc\n}\nd\n");
 

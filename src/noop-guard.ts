@@ -1,6 +1,6 @@
 import { NOOP_LOOP_THRESHOLD } from "./constants.js";
 import {
-  buildRangeEcho,
+  buildRangeServeRows,
   fmtServedRows,
   type ResolvedRange,
   type ServedRow,
@@ -47,12 +47,14 @@ export interface NoopPolicyInput {
   hashes: string[];
   lines: string[];
   sessionKey: string;
+  /** Committed `file_snapshots.snapshot_hash` of the served content; binds the served leases. */
+  contentHash: string;
 }
 
 export type NoopPolicyOutcome =
   | { action: "proceed"; count: number }
   | { action: "warn"; count: number; notice: string }
-  | { action: "reject"; count: number; message: string; echoRows: ServedRow[] };
+  | { action: "reject"; count: number; message: string; servedRows: ServedRow[] };
 
 export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyOutcome> {
   const payload = noopPayloadKey(
@@ -64,17 +66,22 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
   const count = trackNoopPayload(input.absolutePath, payload);
 
   if (count >= NOOP_LOOP_THRESHOLD) {
-    const echoRows = buildRangeEcho(input.range.startLine, input.range.endLine, input.hashes);
-    const echo = fmtServedRows(echoRows, input.lines);
-    await createSessionHandle(input.sessionKey, input.absolutePath).recordEcho(
-      echoRows,
+    const servedRows = buildRangeServeRows(
+      input.range.startLine,
+      input.range.endLine,
+      input.hashes,
+    );
+    const rendered = fmtServedRows(servedRows, input.lines);
+    await createSessionHandle(input.sessionKey, input.absolutePath).recordServeFeedback(
+      servedRows,
       "live",
       input.hashes.length,
+      input.contentHash,
     );
     const message = input.batch
-      ? `[E_NOOP_LOOP] ${input.ref}: identical edit (${input.removeFrom} → ${input.removeTo}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject the batch. Current range:\n${echo}`
-      : `[E_NOOP_LOOP] identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject. Current range:\n${echo}`;
-    return { action: "reject", count, message, echoRows };
+      ? `[E_NOOP_LOOP] ${input.ref}: identical edit (${input.removeFrom} → ${input.removeTo}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject the batch. Current range:\n${rendered}`
+      : `[E_NOOP_LOOP] identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject. Current range:\n${rendered}`;
+    return { action: "reject", count, message, servedRows };
   }
 
   if (count === 2) {

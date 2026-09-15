@@ -1,3 +1,13 @@
+# Changelog
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
+
+### Features
+
+- **edit:** adopt line-identity MVCC with leases
+
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 
 ### Features
@@ -20,10 +30,6 @@
 ### Documentation
 
 * **prompts:** align tool desc and prompts with glossary (fresh anchors) ([b0bcf0b](https://github.com/Rianico/pi-better-edit/commit/b0bcf0b26cdd6a6806f85654247663a474703149))
-
-# Changelog
-
-All notable changes to this project will be documented in this file.
 
 ## [1.5.0](https://github.com/Rianico/pi-better-edit/compare/v1.4.3...v1.5.0) (2026-09-03)
 

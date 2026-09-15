@@ -5,6 +5,7 @@ import { genDiff } from "../../src/edit-diff.js";
 import { scanDrift } from "../../src/drift.js";
 import { runNoopPolicy } from "../../src/noop-guard.js";
 import { lineHashes } from "../../src/hashline/index.js";
+import { snapshotHashFor } from "../../src/snapshot-store";
 import { useTestHome } from "../support/fixtures.js";
 
 const home = useTestHome();
@@ -34,6 +35,7 @@ describe("EditPresentation deep module", () => {
       originalHashes,
       result,
       resultHashes,
+      contentHash: snapshotHashFor(result),
       warnings: undefined as string[] | undefined,
       snapshotId: "snap1",
       editMeta: {

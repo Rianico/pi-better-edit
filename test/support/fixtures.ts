@@ -205,6 +205,7 @@ export function setupIntegrationTest(cwd: string) {
     ctx,
     readTool: getTool("read"),
     editTool: getTool("edit"),
+    undoTool: getTool("undo_last_edit"),
   };
 }
 

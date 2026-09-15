@@ -87,10 +87,14 @@ describe("compPreview no-persist guarantee", () => {
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
       const hashes = await lineHashes(content, absolutePath);
       const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
-      db.prepare("UPDATE snapshots SET hashes = ? WHERE path = ?").run(
-        '["ZZ", "ZZZZ"]',
-        absolutePath,
-      );
+      db.prepare(
+        "UPDATE line_lineage SET anchor = ? WHERE snapshot_id IN " +
+          "(SELECT snapshot_id FROM file_snapshots WHERE path = ?) AND line_number = ?",
+      ).run("ZZ", absolutePath, 1);
+      db.prepare(
+        "UPDATE line_lineage SET anchor = ? WHERE snapshot_id IN " +
+          "(SELECT snapshot_id FROM file_snapshots WHERE path = ?) AND line_number = ?",
+      ).run("ZZZZ", absolutePath, 2);
       db.close();
 
       const preview = await compPreview(
@@ -103,7 +107,7 @@ describe("compPreview no-persist guarantee", () => {
         defensive: false,
       } as any);
       const remaining = check
-        .prepare("SELECT COUNT(*) AS n FROM snapshots WHERE path = ?")
+        .prepare("SELECT COUNT(*) AS n FROM file_snapshots WHERE path = ?")
         .get(absolutePath) as { n: number };
       check.close();
       expect(remaining.n).toBe(1);

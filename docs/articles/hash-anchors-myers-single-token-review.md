@@ -98,7 +98,7 @@ The one place the reconciler is *less* aligned: external manual edits. The artic
 
 **Problem 2: line-number coupling invalidates the whole file on a top-of-file edit.** Solved: anchors are content-derived and position-independent, and the persistent snapshot store carries unchanged-line anchors across edits. An edit at line 5 leaves line 150's hash untouched, and the served state confirms the model still sees exactly what it was shown.
 
-And the headline economics hold: edit output is `O(R)` — `{path, remove_from, remove_to, replacement_text}`, no echoed old code, so deletions are nearly free. In fact the repo is slightly more economical than Dirac on this axis: Dirac's tool call still carries the full boundary lines verbatim (the backend string-matches them), while here the model sends six characters of hashes.
+And the headline economics hold: edit output is `O(R)` — `{path, remove_from, remove_to, replacement_text}`, no repeated old code, so deletions are nearly free. In fact the repo is slightly more economical than Dirac on this axis: Dirac's tool call still carries the full boundary lines verbatim (the backend string-matches them), while here the model sends six characters of hashes.
 
 ---
 

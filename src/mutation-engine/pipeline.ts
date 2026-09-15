@@ -18,7 +18,7 @@
  *                   │          Mutate Loop              │
  *                   │  for each HEdit:                  │
  *                   │   applyEdit → verifyServedRange   │
- *                   │   ├─ reject: recordEchoServes+    │
+ *                   │   ├─ reject: recordRejectionServes+    │
  *                   │   │         batch-abort           │
  *                   │   ├─ noop:  runNoopPolicy         │
  *                   │   └─ applied: lineHashes +        │
@@ -51,7 +51,7 @@
  *                   ┌───────────────▼───────────────────┐
  *                   │         Serve (live only)         │
  *                   │  recordDiffServes (dense)         │
- *                   │  echo serves already recorded on  │
+ *                   │  rejection serves already recorded on  │
  *                   │  reject path                      │
  *                   └───────────────────────────────────┘
  *
@@ -77,26 +77,42 @@ import { readNormFile } from "../file-reader.js";
 import { abortIf, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { loadHashStore } from "../hash-store.js";
-import { snapshotIOFor } from "../snapshot-store.js";
-import { applyEdit, MAX_HASH_LINES, resEdit, type HEdit, type NEdit } from "../hashline/index.js";
+import { snapshotIOFor, upsertSnapshotFor } from "../snapshot-store";
+import {
+  applyEdit,
+  MAX_HASH_LINES,
+  resEdit,
+  resolveLeasedEdit,
+  swapReversedRanges,
+  type HEdit,
+  type LeasedEditResolution,
+  type LeaseSpanSource,
+  type NEdit,
+} from "../hashline/index.js";
 import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import {
   AnchorMismatchError,
   ServedRejectionError,
-  buildRangeEcho,
+  buildRangeServeRows,
   fmtServedRows,
   type ResolvedRange,
   type ServedRow,
 } from "../hashline/served.js";
-import { createSessionHandle, sessionKeyFor } from "../served-session/session.js";
+import {
+  createSessionHandle,
+  sessionKeyFor,
+  loadLeases,
+  type ServedLease,
+} from "../served-session/session.js";
+import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
 import { scanDrift } from "../drift.js";
-import { fileSnap } from "../file-reader.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { saveUndo } from "../edit-undo.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
 import { toCwd } from "../paths.js";
 import type { NormalizedEditRequest } from "../payload-contract.js";
 import { buildBatchResult, type BatchSection } from "../edit-response.js";
+import { DEFERRED_STORE_SYNC_WARNING } from "../constants.js";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 
 function collectRemovedHashes(edit: HEdit, originalHashes: string[]): Set<string> {
@@ -133,13 +149,13 @@ function countLineChanges(
   };
 }
 
-function echoRowsForEdit(edit: HEdit, originalHashes: string[]): ServedRow[] | undefined {
+function serveRowsForEdit(edit: HEdit, originalHashes: string[]): ServedRow[] | undefined {
   const startHash = edit.hash_bounds[0].hash;
   const endHash = edit.hash_bounds[1].hash;
   const s = originalHashes.indexOf(startHash);
   const e = originalHashes.indexOf(endHash);
   if (s < 0 || e < 0) return undefined;
-  return buildRangeEcho(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes);
+  return buildRangeServeRows(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes);
 }
 
 interface EditFileSource {
@@ -162,8 +178,6 @@ interface LoadedEditFile {
   served: (string | null)[];
   tombstone: ReadonlySet<string>;
   servedCanons: (string | null)[];
-  epochSnapshotId: string | undefined;
-  curSnapshotId: string | undefined;
 }
 
 async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
@@ -178,18 +192,23 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
   const served = await createSessionHandle(source.sessionKey, absolutePath).load();
   let tombstone: ReadonlySet<string> = new Set();
   let servedCanons: (string | null)[] = [];
-  let epochSnapshotId: string | undefined;
-  let curSnapshotId: string | undefined;
   try {
     const handle = createSessionHandle(source.sessionKey, absolutePath, source.store);
-    tombstone = await handle.loadTombstone().catch(() => new Set<string>());
-    servedCanons = await handle.loadCanons().catch(() => [] as (string | null)[]);
-    // WHY: epoch strictness deferred: keep pos-free for exterior shifts (healing tests) — real epoch would make those strict
-    epochSnapshotId = undefined;
-  } catch {}
-  try {
-    curSnapshotId = (await fileSnap(absolutePath)).snapshotId;
-  } catch {}
+    try {
+      tombstone = await handle.loadTombstone();
+    } catch (error) {
+      console.error("Failed to load legacy tombstone for edit:", error);
+      tombstone = new Set<string>();
+    }
+    try {
+      servedCanons = await handle.loadCanons();
+    } catch (error) {
+      console.error("Failed to load served canons for edit:", error);
+      servedCanons = [];
+    }
+  } catch (error) {
+    console.error("Failed to load served state for edit:", error);
+  }
   return {
     normalized,
     bom,
@@ -200,8 +219,6 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
     served,
     tombstone,
     servedCanons,
-    epochSnapshotId,
-    curSnapshotId,
   };
 }
 
@@ -214,13 +231,17 @@ interface ApplyOneEditInput {
   served: (string | null)[];
   tombstone?: ReadonlySet<string>;
   servedCanons?: (string | null)[];
-  epochSnapshotId?: string;
-  curSnapshotId?: string;
   sessionKey: string;
   absolutePath: string;
   store: HashStore;
-  persistHashes: boolean;
   isPreview: boolean;
+  /**
+   * The working buffer's own `line_id` map (spec §3.2.4 step 1), entry `i` naming line `i + 1`.
+   * Present for a live batch: identity resolution reads it directly instead of re-deriving positions
+   * by pairing the intermediate buffer against `S_latest`, which cannot tell two byte-identical lines
+   * apart. Absent for preview, where no identity map is in flight.
+   */
+  currentIds?: (number | null)[];
   onRejected: (error: AnchorMismatchError | ServedRejectionError) => Promise<never>;
 }
 
@@ -242,38 +263,74 @@ type ApplyOneEditOutcome =
       anchorWarnings: string[] | undefined;
     };
 
+/**
+ * Builds the read-only lease identity source for one edit (spec §3.1.1). Leases come straight from
+ * `served_leases`; the `line_id` -> current-line map comes from the working buffer's own identity map
+ * when one is in flight (a chained batch edit), else from `line_lineage(C)` when the edit load path
+ * materialized C, else from an in-memory `pairSnapshots(S_latest, content)` for preview. Nothing is
+ * written: the edit path never re-stamps a lease.
+ */
+function leaseSpanSource(input: {
+  store: HashStore;
+  sessionKey: string;
+  absolutePath: string;
+  content: string;
+  currentIds?: (number | null)[];
+}): LeaseSpanSource {
+  const byAnchor = new Map<string, ServedLease>();
+  for (const lease of loadLeases(input.store, input.sessionKey, input.absolutePath)) {
+    byAnchor.set(lease.anchor, lease);
+  }
+  const positions = input.currentIds
+    ? identityPositions(input.currentIds)
+    : positionsByIdentity(input.store, input.absolutePath, input.content);
+  return {
+    currentSnapshotHash: snapshotHashFor(input.content),
+    leaseFor: (anchor) => {
+      const lease = byAnchor.get(anchor);
+      if (!lease) return undefined;
+      return {
+        lineId: lease.line_id,
+        canonHash: lease.canon_hash,
+        servedSnapshotHash: lease.served_snapshot_hash,
+        servedLineNumber: lease.served_line_number,
+        retiredAt: lease.retired_at,
+      };
+    },
+    rebasedLineOf: (lineId) => positions.get(lineId),
+  };
+}
+
 async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutcome> {
   abortIf(input.signal);
 
+  const identity = leaseSpanSource({
+    store: input.store,
+    sessionKey: input.sessionKey,
+    absolutePath: input.absolutePath,
+    content: input.content,
+    currentIds: input.currentIds,
+  });
+
   let anchorResult: ReturnType<typeof applyEdit>;
   try {
-    anchorResult = applyEdit(
-      input.content,
-      input.edit,
-      input.signal,
-      input.hashes,
-      input.filePath,
-      input.served,
-      input.tombstone,
-      input.servedCanons,
-      input.epochSnapshotId,
-      input.curSnapshotId,
-    );
+    anchorResult = applyEdit(input.content, input.edit, input.signal, input.hashes, {
+      filePath: input.filePath,
+      served: input.served,
+      ...(input.tombstone !== undefined ? { tombstone: input.tombstone } : {}),
+      ...(input.servedCanons !== undefined ? { servedCanons: input.servedCanons } : {}),
+      identity,
+    });
   } catch (error) {
     if (error instanceof AnchorMismatchError || error instanceof ServedRejectionError) {
-      if (!input.isPreview) {
-        await createSessionHandle(input.sessionKey, input.absolutePath).recordEcho(
-          error.servedRows,
-          "live",
-          input.hashes.length,
-        );
-      } else {
-        await createSessionHandle(input.sessionKey, input.absolutePath).recordEcho(
-          error.servedRows,
-          "preview",
-          input.hashes.length,
-        );
-      }
+      await recordRejectionServe({
+        error,
+        sessionKey: input.sessionKey,
+        absolutePath: input.absolutePath,
+        isPreview: input.isPreview,
+        lineCount: input.hashes.length,
+        contentHash: input.isPreview ? undefined : snapshotHashFor(input.content),
+      });
       return input.onRejected(error);
     }
     throw error;
@@ -298,7 +355,10 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
     path: input.absolutePath,
     prior: { content: input.content, hashes: input.hashes, removedHashes },
-    persist: input.persistHashes,
+    // WHY: the working buffer is strictly in-memory (spec §3.2.4): no snapshot is written and no
+    // WHY: lease is retired until the batch commits S_final to disk. Persisting here made a batch
+    // WHY: that wrote nothing retire every anchor the session still validly held.
+    persist: false,
     snapshotIO: snapshotIOFor(input.store),
     // SAFETY: tombstone passed as ReadonlySet via unknown for HashIdentity compatibility — input.tombstone is already typed, cast preserves immutability
     tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
@@ -317,6 +377,245 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
 
 import type { PipelineOptions, ProcessedEditFile } from "./types.js";
 export type { PipelineOptions, ProcessedEditFile };
+
+/**
+ * The in-memory working buffer's identity starting point: every line of the loaded content that
+ * `line_lineage(content)` already names keeps that `line_id`, and a line no committed snapshot names
+ * enters as `null` ("created by this batch"). Built through the same `positionsByIdentity` seam the
+ * edit resolution uses, so the identity an edit resolves through and the identity the commit persists
+ * can never disagree.
+ */
+function workingBufferIds(
+  store: HashStore,
+  absolutePath: string,
+  content: string,
+): (number | null)[] {
+  const byLine = new Map<number, number>();
+  for (const [lineId, lineNumber] of positionsByIdentity(store, absolutePath, content)) {
+    byLine.set(lineNumber, lineId);
+  }
+  const ids: (number | null)[] = Array.from<number | null>({
+    length: splitLines(content).length,
+  }).fill(null);
+  for (const [lineNumber, lineId] of byLine) {
+    if (lineNumber >= 1 && lineNumber <= ids.length) ids[lineNumber - 1] = lineId;
+  }
+  return ids;
+}
+
+/**
+ * Inverts a working buffer's `line_id` map into the `line_id` -> current-line lookup the lease seam
+ * consumes. `null` marks a line the batch created, which carries no identity to resolve yet.
+ */
+function identityPositions(currentIds: readonly (number | null)[]): Map<number, number> {
+  const positions = new Map<number, number>();
+  for (let index = 0; index < currentIds.length; index++) {
+    const lineId = currentIds[index];
+    if (typeof lineId === "number") positions.set(lineId, index + 1);
+  }
+  return positions;
+}
+
+/**
+ * Advances the working buffer's identity map by one edit (spec §3.2.2/§3.2.4): lines outside the
+ * resolved range keep the `line_id` the buffer already assigned them, they only shift; the range's
+ * replacement lines enter as `null` and are allocated by the commit's single counter upsert.
+ */
+function spliceWorkingBufferIds(
+  ids: (number | null)[],
+  startLine: number,
+  endLine: number,
+  resultLineCount: number,
+): (number | null)[] {
+  const replacedLineCount = endLine - startLine + 1;
+  const insertedLineCount = Math.max(0, resultLineCount - ids.length + replacedLineCount);
+  return [
+    ...ids.slice(0, startLine - 1),
+    ...Array.from<number | null>({ length: insertedLineCount }).fill(null),
+    ...ids.slice(endLine),
+  ];
+}
+
+interface BaselineSpan {
+  index: number;
+  startLine: number;
+  endLine: number;
+}
+
+/** The baseline (`S_curr`) state one batch's spans are resolved against, before anything mutates. */
+interface BaselineSpanContext {
+  served: (string | null)[];
+  identity: LeaseSpanSource;
+  sessionKey: string;
+  absolutePath: string;
+  isPreview: boolean;
+  path: string;
+  originalHashes: string[];
+  originalNormalized: string;
+}
+
+/**
+ * Records the reject-and-serve rows a rejected edit owes the model, so the anchors it serves are
+ * usable without a re-read (README reject-and-serve contract). The pre-mutation span gate and the
+ * sequential mutate loop share it, so a rejection records the same serves whichever one catches it.
+ */
+async function recordRejectionServe(args: {
+  error: AnchorMismatchError | ServedRejectionError;
+  sessionKey: string;
+  absolutePath: string;
+  isPreview: boolean;
+  lineCount: number;
+  contentHash: string | undefined;
+}): Promise<void> {
+  const handle = createSessionHandle(args.sessionKey, args.absolutePath);
+  if (args.isPreview) {
+    await handle.recordServeFeedback(args.error.servedRows, "preview", args.lineCount);
+    return;
+  }
+  await handle.recordServeFeedback(args.error.servedRows, "live", args.lineCount, args.contentHash);
+}
+
+/**
+ * The atomicity trailer every rejected item of a multi-item call carries (spec §3.2.3). The call is
+ * all-or-nothing, so the model must know that the items before the failing one were rolled back too.
+ */
+const BATCH_ATOMICITY_TRAILER =
+  "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
+
+/**
+ * The reject-and-serve block every batch-rejection path appends. One renderer means a rejected item
+ * reads identically whichever gate caught it: the item's own served rows when its rejection carried
+ * them, else the current on-disk range of the item the model retries from.
+ */
+function batchAbortServeBlock(args: {
+  rows: ServedRow[] | undefined;
+  index: number;
+  originalNormalized: string;
+}): string {
+  return args.rows
+    ? ` Current on-disk range for edit[${args.index}] (unchanged — nothing was written):\n${fmtServedRows(args.rows, splitLines(args.originalNormalized))}`
+    : " Call read() to get fresh anchors.";
+}
+
+/**
+ * Wraps a rejected item of a multi-item call for the model. Shared by the pre-mutation span gate and
+ * the sequential mutate loop, so an item that fails either way reads identically: the failing item,
+ * its own diagnostic, and the reject-and-serve rows of the range the model retries from.
+ *
+ * The item's OWN error code is propagated untouched — `[E_BATCH_ABORT]` is reserved for overlapping
+ * or nested spans, so a malformed anchor or a failed apply reads as the code the model can act on
+ * (`[E_BAD_ANCHOR]`, `[E_STALE_RANGE]`, …), with the atomicity trailer instead of a relabel.
+ */
+function batchAbortFor(args: {
+  error: Error;
+  index: number;
+  edit: HEdit;
+  path: string;
+  originalHashes: string[];
+  originalNormalized: string;
+}): Error {
+  const { error, index, edit, path } = args;
+  const ownRows =
+    error instanceof AnchorMismatchError || error instanceof ServedRejectionError
+      ? error.servedRows
+      : [];
+  const serveRows = ownRows.length > 0 ? ownRows : serveRowsForEdit(edit, args.originalHashes);
+  return new Error(
+    `[MODEL] edit[${index}] (${path}) failed: ${error.message}${batchAbortServeBlock({ rows: serveRows, index, originalNormalized: args.originalNormalized })}\n` +
+      `${BATCH_ATOMICITY_TRAILER} Fix the failing edit (and any later edit that depends on it), then resubmit.`,
+  );
+}
+
+/**
+ * Resolves one edit's baseline span (`s'_start .. s'_end`) in the pre-batch snapshot through the same
+ * seam the apply path resolves it with (spec §3.2.1): every edit goes through `resolveLeasedEdit`, so
+ * its span is the `line_lineage(S_curr)` window of its leased `line_id`s — a duplicate canon resolves
+ * through the leased identity, never through the first content occurrence. An anchor this seam cannot
+ * place has no comparable baseline coordinate, and the sequential apply rejects that edit anyway, so
+ * the batch aborts with that same diagnostic (`[E_STALE_ANCHOR]`, `[E_STALE_RANGE]`) instead of
+ * silently dropping the span (a dropped span blinds the overlap gate for every other item in the
+ * call).
+ */
+async function resolveBaselineSpan(
+  edit: HEdit,
+  index: number,
+  ctx: BaselineSpanContext,
+): Promise<BaselineSpan> {
+  const fileLines = splitLines(ctx.originalNormalized);
+  const fileHashes = ctx.originalHashes;
+  const abort = async (error: unknown): Promise<never> => {
+    if (error instanceof AnchorMismatchError || error instanceof ServedRejectionError) {
+      await recordRejectionServe({
+        error,
+        sessionKey: ctx.sessionKey,
+        absolutePath: ctx.absolutePath,
+        isPreview: ctx.isPreview,
+        lineCount: ctx.originalHashes.length,
+        contentHash: ctx.isPreview ? undefined : snapshotHashFor(ctx.originalNormalized),
+      });
+      throw batchAbortFor({
+        error,
+        index,
+        edit,
+        path: ctx.path,
+        originalHashes: ctx.originalHashes,
+        originalNormalized: ctx.originalNormalized,
+      });
+    }
+    throw error;
+  };
+  // WHY: `applyEdit` runs `swapReversedRanges` (its `prepareEdit`) before resolution, so a reversed
+  // WHY: pair is healed rather than tripping the lease seam's own `E_REVERSED_ANCHORS` guard here.
+  const fixed = swapReversedRanges(edit, fileHashes, []);
+  let leased: LeasedEditResolution;
+  try {
+    leased = resolveLeasedEdit({
+      edit: fixed,
+      snapshot: { fileHashes, fileLines, filePath: ctx.path },
+      served: ctx.served,
+      source: ctx.identity,
+    });
+  } catch (error) {
+    return abort(error);
+  }
+  const from = leased.resolved.hash_bounds[0].line;
+  const to = leased.resolved.hash_bounds[1].line;
+  return { index, startLine: Math.min(from, to), endLine: Math.max(from, to) };
+}
+
+/**
+ * Overlapping or nested spans in one `edits[]` array reject the entire batch before the first
+ * mutation (spec §3.2.3). The preceding-delta working buffer is only well-defined for spans that are
+ * strictly ordered, so a batch that would edit one line twice is a model error, not a merge.
+ */
+async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext): Promise<void> {
+  if (edits.length < 2) return;
+  const spans: BaselineSpan[] = [];
+  for (let index = 0; index < edits.length; index++) {
+    spans.push(await resolveBaselineSpan(edits[index]!, index, ctx));
+  }
+  for (let i = 0; i < spans.length; i++) {
+    for (let j = i + 1; j < spans.length; j++) {
+      const a = spans[i]!;
+      const b = spans[j]!;
+      if (a.startLine <= b.endLine && b.startLine <= a.endLine) {
+        // WHY: the rejected batch still owes the model usable anchors (README error-code contract):
+        // WHY: the later item's span is served exactly like the sequential anchor-mismatch abort,
+        // WHY: so the retry never needs a re-read.
+        const serveBlock = batchAbortServeBlock({
+          rows: serveRowsForEdit(edits[b.index]!, ctx.originalHashes),
+          index: b.index,
+          originalNormalized: ctx.originalNormalized,
+        });
+        throw new Error(
+          `[MODEL] [E_BATCH_ABORT] edit[${b.index}] (${ctx.path}) failed: overlapping spans — edit[${a.index}] targets lines ${a.startLine}-${a.endLine} and edit[${b.index}] targets lines ${b.startLine}-${b.endLine} of the same call. Spans in one edits[] call must be disjoint.\n` +
+            `The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.${serveBlock}\n` +
+            `Merge the overlapping ranges into a single edit (or split them into separate edit calls), then resubmit.`,
+        );
+      }
+    }
+  }
+}
 
 function parseEdits(
   items: NormalizedEditRequest["edits"],
@@ -339,9 +638,12 @@ function parseEdits(
       );
     } catch (error) {
       if (items.length === 1) throw error;
+      // WHY: a payload malformation keeps its own code (`[E_BAD_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
+      // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
+      // WHY: hunt for coordinate overlap.
       const message = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${message}\nThe whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.`,
+        `[MODEL] edit[${index}] (${path}) failed: ${message}\n${BATCH_ATOMICITY_TRAILER}`,
       );
     }
   }
@@ -386,8 +688,41 @@ async function runMutations(
     noPersist: options?.noPersist,
   });
 
+  if (parsed.length > 1) {
+    // WHY: the baseline identity seam is built from the pre-batch `S_curr`, so a span the gate
+    // WHY: compares is the `s'_k` the apply path would rewrite — one source for both (spec §3.2.1).
+    await assertBatchSpansDisjoint(parsed, {
+      served,
+      identity: leaseSpanSource({
+        store: hashStore,
+        sessionKey,
+        absolutePath,
+        content: originalNormalized,
+      }),
+      sessionKey,
+      absolutePath,
+      isPreview,
+      path,
+      originalHashes,
+      originalNormalized,
+    });
+  }
+
   let currentContent = originalNormalized;
   let currentHashes = originalHashes;
+  // WHY: the working buffer's line identity travels with its content (spec §3.2.4 step 1). It is the
+  // WHY: exact `line_id` of every line the batch has not touched, so the commit persists identities it
+  // WHY: already knows instead of re-deriving them by pairing S_final against S_latest. `null` marks a
+  // WHY: line a preceding edit in this batch created; the commit allocates those from the counter.
+  let currentIds: (number | null)[] = isPreview
+    ? []
+    : workingBufferIds(hashStore, absolutePath, originalNormalized);
+  // WHY: the working buffer applies each edit to the previous edit's output, which is exactly the
+  // WHY: preceding-delta rebase of spec §3.2.2: an anchor of edit k resolves in a buffer that only
+  // WHY: edits with `s'_end,j < s'_start,k` have shifted, so `p_buffer = s'_k + Δ_k` falls out of the
+  // WHY: sequential apply without ever materializing Δ_k as a coordinate. `assertBatchSpansDisjoint`
+  // WHY: is what keeps the shift well-defined: disjoint baseline spans mean no edit's coordinates are
+  // WHY: moved by an edit whose span contains them.
   let appliedCount = 0;
   let noopCount = 0;
   let totalAddedLines = 0;
@@ -398,6 +733,31 @@ async function runMutations(
   let unionEndHash = "";
   const editedIntervals: ResolvedRange[] = [];
   let lastApplied: { content: string; hashes: string[]; removedHashes: Set<string> } | undefined;
+  // WHY: (#117, spec §3.2.4 step 4) the legacy v6 `served.retired` mirror is read-only
+  // WHY: in-memory during the batch. `batchTombstone` starts from the store snapshot and grows
+  // WHY: with each applied item's removals, so later items still observe earlier removals for
+  // WHY: hash-allocation and verification without any store write before `writeAtomic`.
+  // WHY: `accumulatedRemoved` is the post-commit payload, retired once after the bytes are on disk.
+  let baseCanons: (string | null)[] = [];
+  try {
+    baseCanons = await createSessionHandle(sessionKey, absolutePath, hashStore).loadCanons();
+  } catch (error) {
+    console.error("Failed to load served canons for batch:", error);
+    baseCanons = [];
+  }
+  const batchTombstone = new Set<string>();
+  try {
+    for (const hash of await createSessionHandle(
+      sessionKey,
+      absolutePath,
+      hashStore,
+    ).loadTombstone()) {
+      batchTombstone.add(hash);
+    }
+  } catch (error) {
+    console.error("Failed to load legacy tombstone for batch:", error);
+  }
+  const accumulatedRemoved = new Set<string>();
 
   for (let index = 0; index < items.length; index++) {
     abortIf(options?.signal);
@@ -411,37 +771,19 @@ async function runMutations(
       signal: options?.signal,
       filePath: path,
       served,
-      tombstone: (await createSessionHandle(sessionKey, absolutePath, hashStore)
-        .loadTombstone()
-        .catch(() => new Set<string>())) as ReadonlySet<string>,
-      servedCanons: await createSessionHandle(sessionKey, absolutePath, hashStore)
-        .loadCanons()
-        .catch(() => [] as (string | null)[]),
-      epochSnapshotId: undefined, // WHY: deferred strict epoch — keep pos-free for heal tests
-      curSnapshotId: await (async () => {
-        try {
-          return (await fileSnap(absolutePath)).snapshotId;
-        } catch {
-          return undefined;
-        }
-      })(),
+      tombstone: batchTombstone,
+      servedCanons: baseCanons,
       sessionKey,
       absolutePath,
       store: hashStore,
-      persistHashes: !isPreview,
       isPreview,
+      // WHY: the intermediate buffer is in-memory only, so its identities come from the buffer map
+      // WHY: (`null` lines are the batch's own creations) — a re-diff of it against S_latest cannot
+      // WHY: tell which of two byte-identical lines carries a leased line_id.
+      currentIds: isPreview ? undefined : currentIds,
       onRejected: async (error) => {
         if (items.length === 1) throw error;
-        const originalLines = splitLines(originalNormalized);
-        const echoRows =
-          error.servedRows.length > 0 ? error.servedRows : echoRowsForEdit(edit, originalHashes);
-        const echoBlock = echoRows
-          ? ` Current on-disk range for edit[${index}] (unchanged — nothing was written):\n${fmtServedRows(echoRows, originalLines)}`
-          : " Call read() to get fresh anchors.";
-        throw new Error(
-          `[E_BATCH_ABORT] edit[${index}] (${path}) failed: ${error.message}${echoBlock}\n` +
-            `The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied. Fix the failing edit (and any later edit that depends on it), then resubmit.`,
-        );
+        throw batchAbortFor({ error, index, edit, path, originalHashes, originalNormalized });
       },
     });
 
@@ -475,6 +817,7 @@ async function runMutations(
         hashes: currentHashes,
         lines: splitLines(currentContent),
         sessionKey,
+        contentHash: snapshotHashFor(currentContent),
       });
       if (decision.action === "reject") throw new Error(decision.message);
       if (decision.action === "warn") warnings.push(decision.notice);
@@ -496,11 +839,13 @@ async function runMutations(
     );
     totalAddedLines += added;
     totalRemovedLines += removed;
-    if (!isPreview) {
-      try {
-        const handle = createSessionHandle(sessionKey, absolutePath, hashStore);
-        await handle.retire(outcome.removedHashes);
-      } catch {}
+    // WHY: (#117, spec §3.2.4 step 4) no store mutation before `writeAtomic`. The removed hashes
+    // WHY: accumulate in-memory for the post-commit legacy retire; `batchTombstone` keeps later
+    // WHY: items observing earlier removals without touching the store, so a failed batch retires
+    // WHY: nothing.
+    for (const hash of outcome.removedHashes) {
+      batchTombstone.add(hash);
+      accumulatedRemoved.add(hash);
     }
     lastApplied = {
       content: currentContent,
@@ -509,6 +854,14 @@ async function runMutations(
     };
     currentContent = outcome.content;
     currentHashes = outcome.hashes;
+    if (!isPreview) {
+      currentIds = spliceWorkingBufferIds(
+        currentIds,
+        range.startLine,
+        range.endLine,
+        splitLines(outcome.content).length,
+      );
+    }
     if (!isPreview) clearNoopLoop(absolutePath);
     if (outcome.anchorWarnings?.length) {
       warnings.push(...outcome.anchorWarnings);
@@ -518,6 +871,10 @@ async function runMutations(
   const result = currentContent;
   let resultHashes = currentHashes;
   if (appliedCount > 0 && lastApplied) {
+    // WHY: `persist: false` — S_final is still an in-memory working buffer here (spec §3.2.4): the
+    // WHY: batch has not committed to disk, so this call must neither write a snapshot nor be able to
+    // WHY: retire a lease. The single authoritative materialization runs after `writeAtomic` in
+    // WHY: `apply`, and only there.
     resultHashes = await lineHashes(
       result,
       absolutePath,
@@ -527,9 +884,10 @@ async function runMutations(
         removedHashes: lastApplied.removedHashes,
       },
       snapshotIOFor(hashStore),
-      !isPreview,
+      false,
     );
   }
+  const resultLineIds = isPreview ? [] : currentIds;
 
   if (hadUtf8DecodeErrors) {
     warnings.push("Non-UTF-8 bytes were shown as U+FFFD; this edit rewrote the file as UTF-8.");
@@ -544,6 +902,7 @@ async function runMutations(
         served,
         resultHashes,
         resultLines,
+        contentHash: snapshotHashFor(result),
         intervals: editedIntervals,
         path: absolutePath,
       });
@@ -572,6 +931,8 @@ async function runMutations(
     warnings,
     originalHashes,
     resultHashes,
+    resultLineIds,
+    removedHashes: accumulatedRemoved,
     appliedCount,
     noopCount,
     totalAddedLines,
@@ -589,6 +950,7 @@ function toSection(file: ProcessedEditFile): BatchSection {
     result: file.result,
     originalHashes: file.originalHashes,
     resultHashes: file.resultHashes,
+    resultHash: snapshotHashFor(file.result),
     warnings: file.warnings,
     driftNotice: file.driftNotice,
     appliedCount: file.appliedCount,
@@ -688,20 +1050,69 @@ export async function apply(
       throw error;
     }
 
-    try {
-      const resultLineCount = visLines(file.result).length;
-
-      const diffInfo = genDiff(
-        file.originalNormalized,
-        file.result,
-        1,
-        file.resultHashes,
-        file.originalHashes,
-      );
-      const denseRows: ServedRow[] = [];
-      for (let i = 0; i < file.resultHashes.length; i++) {
-        denseRows.push({ position: i, hash: file.resultHashes[i]! });
+    // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4): it is
+    // WHY: deliberately deferred to here, after the bytes are on disk, so an edit that writes nothing
+    // WHY: (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) can never retire a lease the
+    // WHY: session still validly holds. Retirement must not happen in runMutations, which materializes
+    // WHY: the working buffer while saveUndo/writeAtomic can still fail.
+    // WHY: (#117) the legacy v6 `served.retired` mirror retires once here, after the bytes are on
+    // WHY: disk, from the batch's in-memory accumulation. A failed batch never reaches this point,
+    // WHY: so it tombstones nothing. Best-effort with context on failure: the bytes already
+    // WHY: committed, so the edit succeeds with a deferred-sync warning, never a silent swallow.
+    if (file.removedHashes.size > 0) {
+      try {
+        const legacyHandle =
+          options?.store === undefined
+            ? createSessionHandle(sessionKey, file.absolutePath)
+            : createSessionHandle(sessionKey, file.absolutePath, options.store);
+        await legacyHandle.retire(file.removedHashes);
+      } catch (error) {
+        console.error("Failed to retire legacy tombstones after write:", error);
+        file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
       }
+    }
+    const resultLineCount = visLines(file.result).length;
+    const diffInfo = genDiff(
+      file.originalNormalized,
+      file.result,
+      1,
+      file.resultHashes,
+      file.originalHashes,
+    );
+    const denseRows: ServedRow[] = [];
+    for (let i = 0; i < file.resultHashes.length; i++) {
+      denseRows.push({ position: i, hash: file.resultHashes[i]! });
+    }
+    try {
+      // WHY: the served diff rows are step 5 of the commit transaction (spec §3.2.4 step 4):
+      // WHY: snapshot + lineage + retirement + leases share one `BEGIN IMMEDIATE`, so a lease
+      // WHY: failure rolls the snapshot back instead of leaving snapshot-without-leases behind.
+      await upsertSnapshotFor(
+        {
+          path: file.absolutePath,
+          snapshotHash: snapshotHashFor(file.result),
+          lineCount: splitLines(file.result).length,
+          hashes: file.resultHashes,
+          content: file.result,
+          lineIds: file.resultLineIds,
+        },
+        {
+          retireLeases: true,
+          leases: { sessionKey, rows: denseRows },
+        },
+      );
+    } catch (error) {
+      // SAFETY: best-effort post-write materialization — the edit already committed; a store failure
+      // SAFETY: leaves the in-memory hashes authoritative and the next read re-materializes and
+      // SAFETY: retires. SPEC §3.6.2: the bytes are on disk, so the tool reports success but must
+      // SAFETY: warn that store synchronization is deferred.
+      console.error("Failed to commit post-write snapshot materialization:", error);
+      file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
+    }
+
+    try {
+      // WHY: mirror-only — the diff leases already committed in the transaction above, so no
+      // WHY: `contentHash` is passed and no third transaction remains on the edit path.
       if (denseRows.length > 0) {
         await createSessionHandle(sessionKey, file.absolutePath).recordDiff(denseRows, {
           resultLineCount,

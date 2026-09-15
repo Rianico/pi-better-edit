@@ -1,4 +1,4 @@
-# Bounded hash-echo guard for write and edit
+# Bounded served hash echo guard for write and edit
 
 Date: 2026-08-27
 
@@ -29,5 +29,5 @@ We add a pre-dispatch/write guard for both surfaces, same bounded rule:
 
 - `CONTEXT.md` adds `[[served hash echo]]`, `[[E_SERVED_ECHO]]`, `[[E_SERVED_ECHO]]` — deny semantics, range-relative `E1`.
 - Prompt stays `replacement_text is bare content without HASH│`; error hint says `remove the entire copied anchor chain`.
-- Tests port `dsh/test/core/write-hook.hash-echo.test.ts` for `write` plus new `edit` cases (`S1` `Ab3│` at `s+k` → deny, clean retry → allow).
+- Tests port `dsh/test/core/write-hook` guard for `write` plus new `edit` cases (`S1` `Ab3│` at `s+k` → deny, clean retry → allow).
 - Separator stays `│` — strong delimiter, weak-space shootout irrelevant; guard is delimiter-agnostic (uses `HASH_SEP`).

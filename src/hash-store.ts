@@ -160,44 +160,136 @@ function openDb(storePath: string): DatabaseSync {
   return db;
 }
 
+function tableColumns(db: DatabaseSync, table: string): Set<string> {
+  try {
+    const rows = db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[];
+    return new Set(rows.map((row) => row.name));
+  } catch {
+    return new Set<string>();
+  }
+}
+
+function addColumnIfMissing(
+  db: DatabaseSync,
+  table: string,
+  column: string,
+  definition: string,
+): void {
+  if (!tableColumns(db, table).has(column)) {
+    db.exec(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+  }
+}
+
+// WHY: snapshot-store reads and writes these tables through HashSnapshotIO, so the DDL lives
+// WHY: in the schema owner (spec §5.1) and both modules share one definition.
+export function ensureSnapshotTables(db: DatabaseSync): void {
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS file_snapshots (" +
+      "snapshot_id INTEGER PRIMARY KEY AUTOINCREMENT, " +
+      "path TEXT NOT NULL, " +
+      "snapshot_hash TEXT NOT NULL, " +
+      "line_count INTEGER NOT NULL, " +
+      "created_at INTEGER NOT NULL, " +
+      "committed INTEGER NOT NULL DEFAULT 1, " +
+      "UNIQUE (path, snapshot_hash)" +
+      ")",
+  );
+  db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_created ON file_snapshots (created_at)");
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS line_id_counters (" +
+      "path TEXT PRIMARY KEY, " +
+      "next_id INTEGER NOT NULL" +
+      ")",
+  );
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS line_lineage (" +
+      "snapshot_id INTEGER NOT NULL, " +
+      "line_number INTEGER NOT NULL, " +
+      "line_id INTEGER NOT NULL, " +
+      "canon_hash TEXT NOT NULL, " +
+      "anchor TEXT NOT NULL, " +
+      "PRIMARY KEY (snapshot_id, line_number), " +
+      "FOREIGN KEY (snapshot_id) REFERENCES file_snapshots(snapshot_id) ON DELETE CASCADE" +
+      ")",
+  );
+  db.exec(
+    "CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_snapshot_line_id " +
+      "ON line_lineage (snapshot_id, line_id)",
+  );
+}
+
+// WHY: file_undo is the single source of truth for undo history in v7; the DDL lives here
+// WHY: (spec §5.1) so the store and the undo domain cannot drift apart.
+const FILE_UNDO_DDL =
+  "CREATE TABLE IF NOT EXISTS file_undo (" +
+  "path TEXT PRIMARY KEY, " +
+  "content TEXT NOT NULL, " +
+  "bom TEXT NOT NULL, " +
+  "ending TEXT NOT NULL, " +
+  "hashes TEXT NOT NULL, " +
+  "result_content TEXT NOT NULL, " +
+  "snapshot_hash TEXT, " +
+  "updated_at INTEGER NOT NULL" +
+  ")";
+
+export function ensureFileUndoSchema(db: DatabaseSync): void {
+  db.exec(FILE_UNDO_DDL);
+  addColumnIfMissing(db, "file_undo", "snapshot_hash", "TEXT");
+}
+
 function buildStore(db: DatabaseSync): void {
   db.exec("PRAGMA journal_mode = WAL");
   db.exec("PRAGMA synchronous = NORMAL");
+  db.exec("PRAGMA foreign_keys = ON");
   db.exec(
     "CREATE TABLE IF NOT EXISTS meta (" + "key TEXT PRIMARY KEY, " + "value TEXT NOT NULL" + ")",
   );
-  const versionRow = db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as
-    | { value?: string }
-    | undefined;
-  const versionChanged =
-    versionRow !== undefined && versionRow.value !== String(HASH_STORE_VERSION);
-  if (versionChanged) {
-    try {
-      db.exec("DROP TABLE IF EXISTS snapshots");
-    } catch (error: unknown) {
-      console.error("[hash-store] failed to drop snapshots table on version change:", error);
-    }
-    try {
-      db.exec("DROP TABLE IF EXISTS undo");
-    } catch (error: unknown) {
-      console.error("[hash-store] failed to drop undo table on version change:", error);
-    }
-    try {
-      db.exec("DROP TABLE IF EXISTS served");
-    } catch (error: unknown) {
-      console.error("[hash-store] failed to drop served table on version change:", error);
-    }
-  } else {
-    try {
-      const servedColumns = db.prepare("PRAGMA table_info(served)").all() as {
-        name: string;
-      }[];
-      if (servedColumns.length > 0 && !servedColumns.some((c) => c.name === "session_id")) {
-        db.exec("DROP TABLE IF EXISTS served");
-      }
-    } catch (error: unknown) {
-      console.error("[hash-store] failed to inspect served table schema:", error);
-    }
+  // WHY: v7 normalized CAS tables are strictly additive and idempotent — buildStore
+  // WHY: never drops them on meta.version mismatch, so a version flap in
+  // WHY: mixed-version / multi-worktree environments cannot destroy leases, lineage, or undo pins.
+  ensureSnapshotTables(db);
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS served_leases (" +
+      "session_id TEXT NOT NULL, " +
+      "file_path TEXT NOT NULL, " +
+      "anchor TEXT NOT NULL, " +
+      "line_id INTEGER NOT NULL, " +
+      "canon_hash TEXT NOT NULL, " +
+      "served_snapshot_hash TEXT NOT NULL, " +
+      "served_line_number INTEGER NOT NULL, " +
+      "updated_at INTEGER NOT NULL, " +
+      "retired_at INTEGER, " +
+      "PRIMARY KEY (session_id, file_path, anchor)" +
+      ")",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_leases_line " +
+      "ON served_leases (session_id, file_path, line_id)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_leases_line_num " +
+      "ON served_leases (session_id, file_path, served_line_number)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_leases_file_retired " +
+      "ON served_leases (file_path, retired_at)",
+  );
+  db.exec(
+    "CREATE TABLE IF NOT EXISTS served_session_meta (" +
+      "session_id TEXT NOT NULL, " +
+      "file_path TEXT NOT NULL, " +
+      "reported TEXT, " +
+      "updated_at INTEGER NOT NULL, " +
+      "PRIMARY KEY (session_id, file_path)" +
+      ")",
+  );
+  ensureFileUndoSchema(db);
+  // WHY: complete v6 compatibility shells keep un-restarted v6 sessions and concurrent
+  // WHY: worktrees free of missing-table errors and v6 drop-table wipes, while v7 state
+  // WHY: stays isolated in v7 tables. Only the ancient pre-session-keyed served shell is
+  // WHY: rebuilt — it is unusable by either version without session_id.
+  if (tableColumns(db, "served").size > 0 && !tableColumns(db, "served").has("session_id")) {
+    db.exec("DROP TABLE served");
   }
   db.exec(
     "CREATE TABLE IF NOT EXISTS snapshots (" +
@@ -223,48 +315,20 @@ function buildStore(db: DatabaseSync): void {
     "CREATE TABLE IF NOT EXISTS served (" +
       "session_id TEXT NOT NULL, " +
       "path TEXT NOT NULL, " +
-      "hashes TEXT NOT NULL, " +
+      "hashes TEXT NOT NULL DEFAULT '[]', " +
       "reported TEXT, " +
       "retired TEXT, " +
       "canons TEXT, " +
       "snapshotId TEXT, " +
-      "updated_at INTEGER NOT NULL, " +
+      "updated_at INTEGER NOT NULL DEFAULT 0, " +
       "PRIMARY KEY (session_id, path)" +
       ")",
   );
-  {
-    const cols = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
-    if (!cols.some((c) => c.name === "retired")) {
-      let migrationOpen = false;
-      try {
-        db.exec("BEGIN IMMEDIATE");
-        migrationOpen = true;
-        const mcols = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
-        if (!mcols.some((c) => c.name === "retired")) {
-          db.exec("ALTER TABLE served ADD COLUMN retired TEXT");
-          db.exec("DELETE FROM snapshots");
-          db.exec("DELETE FROM undo");
-        }
-        db.exec("COMMIT");
-        migrationOpen = false;
-      } catch (e) {
-        if (migrationOpen) {
-          try {
-            db.exec("ROLLBACK");
-          } catch {}
-        }
-        throw e;
-      }
-    }
-    const cols2 = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
-    if (!cols2.some((c) => c.name === "canons")) {
-      db.exec("ALTER TABLE served ADD COLUMN canons TEXT");
-    }
-    const cols3 = db.prepare("PRAGMA table_info(served)").all() as { name: string }[];
-    if (!cols3.some((c) => c.name === "snapshotId")) {
-      db.exec("ALTER TABLE served ADD COLUMN snapshotId TEXT");
-    }
-  }
+  // WHY: non-destructive column migrations keep pre-existing databases aligned without wipes.
+  addColumnIfMissing(db, "served", "retired", "TEXT");
+  addColumnIfMissing(db, "served", "canons", "TEXT");
+  addColumnIfMissing(db, "served", "snapshotId", "TEXT");
+  addColumnIfMissing(db, "undo", "result_content", "TEXT NOT NULL DEFAULT ''");
   db.prepare(
     "INSERT INTO meta (key, value) VALUES ('version', ?) " +
       "ON CONFLICT(key) DO UPDATE SET value = excluded.value",

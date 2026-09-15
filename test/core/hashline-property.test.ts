@@ -147,7 +147,7 @@ describe("property: single random edit per call", () => {
         anchor_to: hashes[span.e - 1]!,
         replace_with: replToContent(span.repl),
       });
-      const result = applyEdit(content, edit, undefined, hashes, home.testPath);
+      const result = applyEdit(content, edit, undefined, hashes, { filePath: home.testPath });
       const correctedExpected = expectedEditContent(
         lines,
         span.s,
@@ -189,7 +189,9 @@ describe("property: sequential random edits", () => {
           anchor_to: currentHashes[span.e - 1]!,
           replace_with: replToContent(span.repl),
         });
-        const result = applyEdit(current, edit, undefined, currentHashes, home.testPath);
+        const result = applyEdit(current, edit, undefined, currentHashes, {
+          filePath: home.testPath,
+        });
         applied.push({ s: span.s, e: span.e, repl: span.repl });
         current = result.content;
       }
@@ -260,7 +262,7 @@ describe("property: chained stable mapping at every step", () => {
         });
         let result;
         try {
-          result = applyEdit(content, edit, undefined, hashes, chainPath);
+          result = applyEdit(content, edit, undefined, hashes, { filePath: chainPath });
         } catch {
           continue;
         }

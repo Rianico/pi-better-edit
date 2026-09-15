@@ -5,8 +5,14 @@ import { _lineHashesPure } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 import { verifyServedRange } from "../../src/hashline/served";
 
-describe("hash heal TDD", () => {
-  it("multi-line b c should heal after a 1 b c without read (colliding insert)", async () => {
+/**
+ * ADR-0008 heuristic canon healing is retired (spec §3.3). Coordinate realignment across an
+ * external shift is owned exclusively by MVCC `pairSnapshots` + `line_lineage`, so these two cases
+ * assert the tool silently rebases through the lease identity, and that a direct un-rebased
+ * verification call fails closed instead of relocating by canon scan.
+ */
+describe("hash heal TDD — MVCC rebase / fail-closed semantics", () => {
+  it("multi-line b c silently rebases after an exterior insert above the range (no read)", async () => {
     await initHasher();
     const collidingInsert = "1";
     await withTempFile("sample.ts", "a\nb\nc", async ({ cwd, path }) => {
@@ -31,11 +37,11 @@ describe("hash heal TDD", () => {
       );
       expect(getText(result)).toContain("Successfully edited");
       const final = await readFile(path, "utf-8");
-      expect(final.includes("B") && final.includes("C2")).toBe(true);
+      expect(final).toBe("a\n1\nB\nC2");
     });
   });
 
-  it("single-line Epr orphan should heal via canon (colliding insert 21569)", async () => {
+  it("single-line anchor rebases via its leased line_id (exterior insert, no read)", async () => {
     await initHasher();
     const target = "const t = this.timer;";
     const collidingInsert = "private lastRenderMs21569 = 0;";
@@ -51,44 +57,20 @@ describe("hash heal TDD", () => {
       const text = getText(firstRead);
       const tHash = extractHash(text.split("\n").find((l) => l.includes("│const t"))!);
       await writeFile(path, `a\n${collidingInsert}\n${target}\nc`, "utf-8");
-      let result: any;
-      try {
-        result = await editTool.execute(
-          "e1",
-          { path: "sample.ts", edits: [[tHash, tHash, "const t = healed;"]] },
-          undefined,
-          undefined,
-          ctx,
-        );
-      } catch {
-        // With correct canons sync, pos-free healing may require fresh read — retry after re-serve
-        const fresh = await readTool.execute(
-          "r2",
-          { path: "sample.ts" },
-          undefined,
-          undefined,
-          ctx,
-        );
-        const freshText = getText(fresh);
-        const freshHash = extractHash(
-          freshText.split("\n").find((l) => l.includes("healed") || l.includes("│const t"))!,
-        );
-        // Fallback: use fresh hash for target line if available, else reuse tHash
-        const useHash = freshHash || tHash;
-        result = await editTool.execute(
-          "e1",
-          { path: "sample.ts", edits: [[useHash, useHash, "const t = healed;"]] },
-          undefined,
-          undefined,
-          ctx,
-        );
-      }
+      // No try/catch retry: the lease identity survives the shift, so this must apply first try.
+      const result = await editTool.execute(
+        "e1",
+        { path: "sample.ts", edits: [[tHash, tHash, "const t = healed;"]] },
+        undefined,
+        undefined,
+        ctx,
+      );
       expect(getText(result)).toContain("Successfully edited");
-      expect(await readFile(path, "utf-8")).toContain("healed");
+      expect(await readFile(path, "utf-8")).toBe(`a\n${collidingInsert}\nconst t = healed;\nc`);
     });
   });
 
-  it("verifyServedRange heals multi-line via canon when served shifted", async () => {
+  it("un-rebased served coordinates fail closed instead of healing via canon", async () => {
     await initHasher();
     const oldContent = "a\nb\nc";
     const collidingInsert = "1";
@@ -101,16 +83,18 @@ describe("hash heal TDD", () => {
     const fileHashes = newHashesPure;
     const bHash = oldHashes[1]!;
     const cHash = oldHashes[2]!;
+    // Old coordinates (2..3): the served array is not rebased, so the current line 2 holds the
+    // inserted `1` whose anchor was never served. ADR-0008 used to relocate this by canon scan.
     expect(() =>
       verifyServedRange({
         served,
         startHash: bHash,
         endHash: cHash,
-        startLine: 3,
-        endLine: 4,
+        startLine: 2,
+        endLine: 3,
         fileHashes,
         fileLines,
       }),
-    ).not.toThrow();
+    ).toThrow(/E_STALE_RANGE/);
   });
 });

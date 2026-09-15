@@ -93,7 +93,7 @@ describe("drift notices for changed served territory outside the edit range", ()
     });
   });
 
-  it("emits a one-line pointer for already-reported drift instead of re-echoing rows", async () => {
+  it("emits a one-line pointer for already-reported drift instead of re-serving rows", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 

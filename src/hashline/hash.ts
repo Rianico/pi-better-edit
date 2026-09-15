@@ -1,11 +1,23 @@
 import { splitLines } from "../utils.js";
 import { HASH_LEN, ALPHA, ALPHA_RE as _ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
 import { defaultHashIdentity as _defaultHI } from "./hash-identity.js";
-import type { HashSnapshotIO as _HSIO } from "./hash-identity.js";
+import type {
+  HashSnapshotIO as _HSIO,
+  HashSnapshotUpsertOptions as _HSUO,
+} from "./hash-identity.js";
+
+export type HashSnapshotUpsertOptions = _HSUO;
 
 export interface HashSnapshotIO {
   get(path: string, content: string, deleteCorrupt: boolean): Promise<string[] | undefined>;
-  upsert(path: string, checksum: string, lineCount: number, hashes: string[]): Promise<void>;
+  upsert(
+    path: string,
+    checksum: string,
+    lineCount: number,
+    hashes: string[],
+    content: string,
+    options?: HashSnapshotUpsertOptions,
+  ): Promise<void>;
 }
 
 export function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {

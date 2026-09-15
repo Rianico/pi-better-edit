@@ -30,12 +30,20 @@ export {
   type RHEdit,
   type HTEdit,
   type NEdit,
+  type LeaseIdentityView,
+  type LeaseSpanSource,
   resEdit,
   valEdit,
   stripBarePrefixes,
   stripDiffPrefixes,
   swapReversedRanges,
+  isUniformLeaseFastPath,
+  resolveLineIdentity,
+  uniqueAnchorLine,
+  uniqueServedPosition,
 } from "./resolve.js";
+
+export { resolveLeasedEdit, type LeasedEditResolution } from "./lease-resolve.js";
 
 export {
   applyEdit,
@@ -43,4 +51,5 @@ export {
   changedRange,
   findEditHashEcho,
   EditHashEchoError,
+  type ApplyVerificationContext,
 } from "./apply.js";

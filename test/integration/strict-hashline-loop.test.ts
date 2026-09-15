@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 describe("strict hashline tool loop", () => {
-  it("supports read -> fresh edit -> stale rejection -> retry with fresh anchor", async () => {
+  it("supports read -> fresh edit -> stale-range rejection -> retry with fresh anchor", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -27,6 +27,8 @@ describe("strict hashline tool loop", () => {
         ctx,
       );
 
+      // The replaced line's leased identity is retired, so the same anchor is a stale RANGE with the
+      // current-range serve (spec §3.1.1 line 89 / §5.3), not [E_STALE_ANCHOR].
       await expect(
         editTool.execute(
           "e2",
@@ -35,7 +37,7 @@ describe("strict hashline tool loop", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/2 stale anchor.*sample\.ts/);
+      ).rejects.toThrow(/\[MODEL\] \[E_STALE_RANGE\].*sample\.ts/);
 
       const secondRead = await readTool.execute(
         "r2",

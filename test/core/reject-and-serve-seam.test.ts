@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { ServedRejectionError } from "../../src/hashline/served";
 import { finalizeToolResult } from "../../src/edit-response";
-import { loadServed, recordEchoServes } from "../../src/served-session/index.js";
+import { loadServed, recordRejectionServes } from "../../src/served-session/index.js";
 import { applyEdit, _lineHashesPure, type HEdit } from "../../src/hashline";
 import { shutdownHashStore } from "../../src/hash-store";
 import { initHasher } from "../../src/hashline/hasher";
@@ -13,11 +13,11 @@ beforeAll(async () => {
   await initHasher();
 });
 
-describe("recordEchoServes — serve-record policy", () => {
-  it("records echo serves when the policy is live", async () => {
+describe("recordRejectionServes — serve-record policy", () => {
+  it("records rejection serves when the policy is live", async () => {
     await withTempHome(async () => {
       const path = "/a.ts";
-      await recordEchoServes(
+      await recordRejectionServes(
         "sessionA",
         path,
         [
@@ -33,7 +33,7 @@ describe("recordEchoServes — serve-record policy", () => {
   it("records nothing when the policy is preview", async () => {
     await withTempHome(async () => {
       const path = "/a.ts";
-      await recordEchoServes("sessionA", path, [{ position: 0, hash: "h00" }], "preview");
+      await recordRejectionServes("sessionA", path, [{ position: 0, hash: "h00" }], "preview");
       expect(await loadServed("sessionA", path)).toEqual([]);
     });
   });
@@ -54,8 +54,7 @@ describe("applyEdit — stale range beats would-empty", () => {
         },
         undefined,
         hashes,
-        "a.ts",
-        served,
+        { filePath: "a.ts", served },
       );
     } catch (caught) {
       error = caught;

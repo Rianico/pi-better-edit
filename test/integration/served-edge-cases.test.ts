@@ -53,11 +53,11 @@ describe("served-state edge cases for edit", () => {
       expect(rejected!.message).toMatch(/E_UNSERVED_RANGE.*line 4/);
       expect(await readFile(path, "utf-8")).toBe(content);
 
-      const echoLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
-      expect(echoLines).toHaveLength(5);
+      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      expect(servedLines).toHaveLength(5);
 
-      const retryFrom = echoLines[0]!.split("│")[0]!;
-      const retryTo = echoLines[4]!.split("│")[0]!;
+      const retryFrom = servedLines[0]!.split("│")[0]!;
+      const retryTo = servedLines[4]!.split("│")[0]!;
       const retry = await editTool.execute(
         "e2",
         { path: "sample.ts", edits: [[retryFrom, retryTo, "X\nY"]] },
@@ -79,17 +79,29 @@ describe("served-state edge cases for edit", () => {
       const aRef = extractHash(text.split("\n").find((l) => l.includes("│a"))!);
       const dRef = extractHash(text.split("\n").find((l) => l.includes("│d"))!);
 
+      // External rewrite: `c` (line 3) becomes content already served elsewhere (`b`).
       await writeFile(path, "a\nb\nb\nd\n", "utf-8");
 
-      await expect(
-        editTool.execute(
+      // MVCC rebase semantics: patience pairing retires BOTH contested lines (`b` at served line 2
+      // and `c` at served line 3), so the first served line whose immutable `line_id` is gone is
+      // line 2 — that is the line the edit is refused on. Anchor spelling is not authoritative.
+      let rejected: Error | undefined;
+      try {
+        await editTool.execute(
           "e1",
           { path: "sample.ts", edits: [[aRef, dRef, "X"]] },
           undefined,
           undefined,
           ctx,
-        ),
-      ).rejects.toThrow(/E_STALE_RANGE.*line 3/);
+        );
+      } catch (error) {
+        rejected = error as Error;
+      }
+      expect(rejected).toBeDefined();
+      expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 2/);
+      // Reject-and-serve: the served rows are the current on-disk range, so the retry needs no read.
+      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      expect(servedLines.map((l) => l.split("│")[1])).toEqual(["a", "b", "b", "d"]);
 
       expect(await readFile(path, "utf-8")).toBe("a\nb\nb\nd\n");
     });
@@ -121,7 +133,7 @@ describe("served-state edge cases for edit", () => {
     });
   });
 
-  it("fail-safes with [E_UNSERVED_RANGE] when a boundary was never served (paged read)", async () => {
+  it("fail-safes with [E_STALE_ANCHOR] when a boundary was never served (paged read)", async () => {
     const content = "l1\nl2\nl3\nl4\nl5\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -130,21 +142,45 @@ describe("served-state edge cases for edit", () => {
 
       const hashes = await lineHashes(content, home.testPath);
 
-      await expect(
-        editTool.execute(
+      // A boundary anchor absent from `served_leases` is [E_STALE_ANCHOR] with the fresh context
+      // serve — never content-resolved (spec §3.1.1 step 1 line 89 / §5.3, ADR-0016).
+      let rejected: Error | undefined;
+      try {
+        await editTool.execute(
           "e1",
           { path: "sample.ts", edits: [[hashes[3]!, hashes[4]!, "X"]] },
           undefined,
           undefined,
           ctx,
-        ),
-      ).rejects.toThrow(/E_UNSERVED_RANGE.*has no served position/);
-
+        );
+      } catch (error) {
+        rejected = error as Error;
+      }
+      expect(rejected?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
       expect(await readFile(path, "utf-8")).toBe(content);
+
+      // Reject-and-serve: the served rows are recorded as serves, so the retry needs no read.
+      const servedFor = (line: string): string =>
+        rejected!.message
+          .split("\n")
+          .find((row) => row.includes(`│${line}`))!
+          .trim()
+          .split("│")[0]!
+          .split(": ")
+          .at(-1)!;
+      const retry = await editTool.execute(
+        "e2",
+        { path: "sample.ts", edits: [[servedFor("l4"), servedFor("l5"), "X"]] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(getText(retry)).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toBe("l1\nl2\nl3\nX\n");
     });
   });
 
-  it("caps large-range rejection echoes with a pagination hint and leaves the file unchanged", async () => {
+  it("caps large-range rejection serves with a pagination hint and leaves the file unchanged", async () => {
     const lines = Array.from({ length: 200 }, (_, i) => `line_${String(i + 1).padStart(3, "0")}`);
     const content = lines.join("\n") + "\n";
     const mutated = lines.map((l) => (l === "line_100" ? "MUTATED_100" : l)).join("\n") + "\n";
@@ -174,8 +210,8 @@ describe("served-state edge cases for edit", () => {
       expect(rejected).toBeDefined();
       expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 100/);
 
-      const echoLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
-      expect(echoLines).toHaveLength(150);
+      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      expect(servedLines).toHaveLength(150);
       expect(rejected!.message).toMatch(/\[\s*\.\.\.\s*50 more — read offset=151\]/);
       expect(await readFile(path, "utf-8")).toBe(mutated);
     });

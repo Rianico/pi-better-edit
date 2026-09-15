@@ -4,7 +4,7 @@ Date: 2026-09-01
 
 ## Status
 
-accepted
+superseded by [ADR-0017](0017-lru-vacuum-supersedes-epoch-concurrency.md)
 
 ## Context
 

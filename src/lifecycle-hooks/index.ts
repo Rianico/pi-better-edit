@@ -1,21 +1,24 @@
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { initHasher as defaultInitHasher } from "../hashline/index.js";
-import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store.js";
+import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
 import {
   createSessionHandle,
   sessionKeyFor as defaultSessionKeyFor,
 } from "../served-session/session.js";
+import { snapshotHashFor } from "../snapshot-store";
 
 async function defaultRecordDiffServes(input: {
   sessionKey: string;
   path: string;
   servedRows: import("../hashline/served.js").ServedRow[];
+  contentHash: string;
   resultLineCount?: number;
   firstChangedLine?: number;
 }): Promise<void> {
   await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, {
+    contentHash: input.contentHash,
     resultLineCount: input.resultLineCount,
     firstChangedLine: input.firstChangedLine,
   });
@@ -73,6 +76,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     sessionKey: string;
     path: string;
     servedRows: import("../hashline/served.js").ServedRow[];
+    contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;
   }): Promise<void> {
@@ -142,6 +146,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         sessionKey: deps.sessionKeyFor(ctx),
         path: absolutePath,
         servedRows: fileHashes.map((hash, position) => ({ position, hash })),
+        contentHash: snapshotHashFor(normalized),
         resultLineCount: deps.visLines(normalized).length,
         firstChangedLine: 1,
       });
@@ -184,6 +189,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           sessionKey: deps.sessionKeyFor(ctx),
           path: resolvedPath,
           servedRows: entry.servedRows,
+          contentHash: entry.contentHash,
           resultLineCount: entry.resultLineCount,
           firstChangedLine: entry.firstChangedLine,
         });
@@ -196,6 +202,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           sessionKey: deps.sessionKeyFor(ctx),
           path: resolvedPath,
           servedRows,
+          // WHY: undo_last_edit names the restored snapshot on its details; legacy synthesized
+          // WHY: details may not, in which case "" names no snapshot and no lease is granted
+          // WHY: (fail-closed rather than binding to whatever was materialized most recently).
+          contentHash: details.contentHash ?? "",
           resultLineCount: details.resultLineCount,
           firstChangedLine: details.firstChangedLine,
         });

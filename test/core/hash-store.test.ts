@@ -4,8 +4,13 @@ import { existsSync } from "fs";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
-import { loadHashStore, shutdownHashStore, type HashStore } from "../../src/hash-store";
-import { getSnapshot, upsertSnapshot, snapshotStmts } from "../../src/snapshot-store";
+import {
+  loadHashStore,
+  shutdownHashStore,
+  ensureFileUndoSchema,
+  type HashStore,
+} from "../../src/hash-store";
+import { getSnapshot, upsertSnapshot, snapshotHashFor } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION } from "../../src/constants";
 import { CANON_VERSION } from "../../src/hashline";
@@ -49,7 +54,13 @@ async function put(
   content: string,
   hashes: string[],
 ): Promise<void> {
-  upsertSnapshot(store, path, contentChecksum(content), splitLines(content).length, hashes);
+  upsertSnapshot(store, {
+    path,
+    snapshotHash: snapshotHashFor(content),
+    lineCount: splitLines(content).length,
+    hashes,
+    content,
+  });
 }
 
 async function writeLegacyStore(home: string, snapshots: unknown): Promise<void> {
@@ -111,9 +122,9 @@ describe("hash-store — migration from legacy hash-store.json", () => {
       expect(getSnapshot(store, "/null-content.ts", "")).toBeUndefined();
       expect(getSnapshot(store, "/hashes-not-array.ts", "y\n")).toBeUndefined();
       expect(getSnapshot(store, "/hash-not-string.ts", "z\n")).toBeUndefined();
-      const paths = snapshotStmts(store.db)
-        .allPaths()
-        .map((row) => row.path as string);
+      const paths = (
+        store.db.prepare("SELECT path FROM snapshots").all() as { path: string }[]
+      ).map((row) => row.path);
       expect(paths).toEqual(expect.arrayContaining(["/valid.ts", "/also-valid.ts"]));
     });
   });
@@ -151,7 +162,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
       await writeLegacyStore(home, ["not-an-object"]);
 
       const store = await loadHashStore();
-      const paths = snapshotStmts(store.db).allPaths();
+      const paths = store.db.prepare("SELECT path FROM snapshots").all();
       expect(paths).toEqual([]);
     });
   });
@@ -159,7 +170,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
   it("does not run migration when no legacy file exists", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      expect(snapshotStmts(store.db).allPaths()).toEqual([]);
+      expect(store.db.prepare("SELECT path FROM snapshots").all()).toEqual([]);
       expect(existsSync(`${legacyPath(home)}.bak`)).toBe(false);
     });
   });
@@ -198,17 +209,29 @@ describe("hash-store — concurrency (issue #10)", () => {
       const second = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
-      const ins = second.prepare(
-        "INSERT INTO snapshots (path, checksum, line_count, hashes, updated_at) VALUES (?, ?, ?, ?, ?)",
-      );
+      second.exec("PRAGMA foreign_keys = ON");
       second.exec("BEGIN IMMEDIATE");
-      ins.run(
-        "/b.ts",
-        `${CANON_VERSION}:${contentChecksum("beta\n")}`,
-        splitLines("beta\n").length,
-        JSON.stringify(["BBC"]),
-        Date.now(),
-      );
+      second
+        .prepare(
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed) VALUES (?, ?, ?, ?, 1)",
+        )
+        .run(
+          "/b.ts",
+          `${CANON_VERSION}:${contentChecksum("beta\n")}`,
+          splitLines("beta\n").length,
+          Date.now(),
+        );
+      const snapshotId = (
+        second.prepare("SELECT snapshot_id FROM file_snapshots WHERE path = ?").get("/b.ts") as {
+          snapshot_id: number;
+        }
+      ).snapshot_id;
+      second
+        .prepare(
+          "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) VALUES (?, ?, ?, ?, ?)",
+        )
+        .run(snapshotId, 1, 1, "canon-beta", "BBC");
+      second.prepare("INSERT INTO line_id_counters (path, next_id) VALUES (?, ?)").run("/b.ts", 2);
       second.exec("COMMIT");
       second.close();
       shutdownHashStore();
@@ -276,7 +299,13 @@ describe("hash-store — corrupt database recovery", () => {
       const store = await loadHashStore();
       expect(getSnapshot(store, "/x.ts", "a\n")).toBeUndefined();
 
-      upsertSnapshot(store, "/x.ts", contentChecksum("a\n"), 1, ["AAA"]);
+      upsertSnapshot(store, {
+        path: "/x.ts",
+        snapshotHash: snapshotHashFor("a\n"),
+        lineCount: 1,
+        hashes: ["AAA"],
+        content: "a\n",
+      });
       expect(getSnapshot(store, "/x.ts", "a\n")).toEqual(["AAA"]);
     });
   });
@@ -297,7 +326,13 @@ describe("hash-store — corrupt database recovery", () => {
   it("keeps working when the store is healthy", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      upsertSnapshot(store, "/p.ts", contentChecksum("b\n"), 1, ["BBB"]);
+      upsertSnapshot(store, {
+        path: "/p.ts",
+        snapshotHash: snapshotHashFor("b\n"),
+        lineCount: 1,
+        hashes: ["BBB"],
+        content: "b\n",
+      });
       expect(getSnapshot(store, "/p.ts", "b\n")).toEqual(["BBB"]);
       const entries = await readdir(configHome(home));
       expect(entries.some((name) => name.includes(".corrupt-"))).toBe(false);
@@ -335,7 +370,7 @@ describe("hash-store — schema versioning", () => {
     });
   });
 
-  it("invalidates all snapshots when the stored version differs", async () => {
+  it("never drops v7 tables or compat shells when the stored version differs", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       await put(store, "/p.ts", "x\n", ["XYZ"]);
@@ -355,8 +390,8 @@ describe("hash-store — schema versioning", () => {
       db.close();
 
       const reloaded = await loadHashStore();
-      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toBeUndefined();
-      expect(getUndoEntry(reloaded, "/u.ts")).toBeUndefined();
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZ"]);
+      expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
 
       const check = new DatabaseSync(sqlitePath(home), {
         defensive: false,
@@ -364,8 +399,26 @@ describe("hash-store — schema versioning", () => {
       const row = check.prepare("SELECT value FROM meta WHERE key = 'version'").get() as
         | { value?: string }
         | undefined;
+      const tables = (
+        check.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+          name: string;
+        }[]
+      ).map((r) => r.name);
       check.close();
       expect(row?.value).toBe(String(HASH_STORE_VERSION));
+      for (const t of [
+        "file_snapshots",
+        "line_id_counters",
+        "line_lineage",
+        "served_leases",
+        "served_session_meta",
+        "file_undo",
+        "snapshots",
+        "served",
+        "undo",
+      ]) {
+        expect(tables).toContain(t);
+      }
     });
   });
 
@@ -392,6 +445,416 @@ describe("hash-store — schema versioning", () => {
         | undefined;
       check.close();
       expect(row?.value).toBe(String(HASH_STORE_VERSION));
+    });
+  });
+});
+
+describe("hash-store — v7 CAS schema (issue #79)", () => {
+  const V7_TABLES = [
+    "file_snapshots",
+    "line_id_counters",
+    "line_lineage",
+    "served_leases",
+    "served_session_meta",
+    "file_undo",
+  ] as const;
+
+  function tableNames(db: DatabaseSync): string[] {
+    return (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'table'").all() as {
+        name: string;
+      }[]
+    ).map((r) => r.name);
+  }
+
+  function columnNames(db: DatabaseSync, table: string): string[] {
+    return (db.prepare(`PRAGMA table_info(${table})`).all() as { name: string }[]).map(
+      (r) => r.name,
+    );
+  }
+
+  function indexNames(db: DatabaseSync): string[] {
+    return (
+      db.prepare("SELECT name FROM sqlite_master WHERE type = 'index'").all() as {
+        name: string;
+      }[]
+    ).map((r) => r.name);
+  }
+
+  it("creates all v7 normalized tables with the spec columns", async () => {
+    await withTempHome(async (home) => {
+      await loadHashStore();
+      shutdownHashStore();
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      try {
+        const tables = tableNames(db);
+        for (const t of [
+          "file_snapshots",
+          "line_id_counters",
+          "line_lineage",
+          "served_leases",
+          "served_session_meta",
+          "file_undo",
+        ]) {
+          expect(tables).toContain(t);
+        }
+        expect(columnNames(db, "file_snapshots")).toEqual(
+          expect.arrayContaining([
+            "snapshot_id",
+            "path",
+            "snapshot_hash",
+            "line_count",
+            "created_at",
+            "committed",
+          ]),
+        );
+        expect(columnNames(db, "line_id_counters")).toEqual(
+          expect.arrayContaining(["path", "next_id"]),
+        );
+        expect(columnNames(db, "line_lineage")).toEqual(
+          expect.arrayContaining(["snapshot_id", "line_number", "line_id", "canon_hash", "anchor"]),
+        );
+        expect(columnNames(db, "served_leases")).toEqual(
+          expect.arrayContaining([
+            "session_id",
+            "file_path",
+            "anchor",
+            "line_id",
+            "canon_hash",
+            "served_snapshot_hash",
+            "served_line_number",
+            "updated_at",
+            "retired_at",
+          ]),
+        );
+        expect(columnNames(db, "served_session_meta")).toEqual(
+          expect.arrayContaining(["session_id", "file_path", "reported", "updated_at"]),
+        );
+        expect(columnNames(db, "file_undo")).toEqual(
+          expect.arrayContaining([
+            "path",
+            "content",
+            "bom",
+            "ending",
+            "hashes",
+            "result_content",
+            "snapshot_hash",
+            "updated_at",
+          ]),
+        );
+      } finally {
+        db.close();
+      }
+    });
+  });
+
+  it("creates the v7 indexes and enforces foreign keys", async () => {
+    await withTempHome(async (home) => {
+      await loadHashStore();
+      shutdownHashStore();
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      try {
+        const indexes = indexNames(db);
+        for (const idx of [
+          "idx_snapshots_created",
+          "idx_lineage_snapshot_line_id",
+          "idx_leases_line",
+          "idx_leases_line_num",
+          "idx_leases_file_retired",
+        ]) {
+          expect(indexes).toContain(idx);
+        }
+        const fk = db.prepare("PRAGMA foreign_keys").get() as { foreign_keys?: number };
+        expect(fk.foreign_keys).toBe(1);
+      } finally {
+        db.close();
+      }
+    });
+  });
+
+  it("maintains complete v6 compatibility shells", async () => {
+    await withTempHome(async (home) => {
+      await loadHashStore();
+      shutdownHashStore();
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      try {
+        const tables = tableNames(db);
+        for (const t of ["snapshots", "served", "undo"]) {
+          expect(tables).toContain(t);
+        }
+        expect(columnNames(db, "undo")).toEqual(
+          expect.arrayContaining([
+            "path",
+            "content",
+            "bom",
+            "ending",
+            "hashes",
+            "result_content",
+            "updated_at",
+          ]),
+        );
+        expect(columnNames(db, "served")).toEqual(
+          expect.arrayContaining([
+            "session_id",
+            "path",
+            "hashes",
+            "reported",
+            "retired",
+            "canons",
+            "snapshotId",
+            "updated_at",
+          ]),
+        );
+      } finally {
+        db.close();
+      }
+    });
+  });
+
+  function seedV7Rows(db: DatabaseSync): void {
+    db.exec("PRAGMA foreign_keys = ON");
+    db.prepare(
+      "INSERT INTO file_snapshots (snapshot_id, path, snapshot_hash, line_count, created_at, committed) " +
+        "VALUES (1, '/a.ts', 'v1:aaaa', 3, 111, 1)",
+    ).run();
+    db.prepare("INSERT INTO line_id_counters (path, next_id) VALUES ('/a.ts', 42)").run();
+    db.prepare(
+      "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
+        "VALUES (1, 1, 42, 'canon42', 'abc|let x = 1;')",
+    ).run();
+    db.prepare(
+      "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, " +
+        "served_snapshot_hash, served_line_number, updated_at, retired_at) " +
+        "VALUES ('s1', '/a.ts', 'abc', 42, 'canon42', 'v1:aaaa', 1, 111, NULL)",
+    ).run();
+    db.prepare(
+      "INSERT INTO served_session_meta (session_id, file_path, reported, updated_at) " +
+        "VALUES ('s1', '/a.ts', '[\"v1:aaaa\"]', 111)",
+    ).run();
+    db.prepare(
+      "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, updated_at) " +
+        "VALUES ('/a.ts', 'old', '', '\n', '[\"abc\"]', 'new', 'v1:aaaa', 111)",
+    ).run();
+  }
+
+  function v7Rows(db: DatabaseSync): Record<string, unknown[]> {
+    const rows: Record<string, unknown[]> = {};
+    for (const table of V7_TABLES) {
+      rows[table] = db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all() as unknown[];
+    }
+    return rows;
+  }
+
+  /** Reproduces an un-restarted v6 process opening a v7 store: it drops and recreates the legacy shells and rewrites meta.version = '6'. */
+  function simulateV6VersionFlap(db: DatabaseSync): void {
+    db.exec("DROP TABLE IF EXISTS snapshots");
+    db.exec("DROP TABLE IF EXISTS undo");
+    db.exec("DROP TABLE IF EXISTS served");
+    db.exec(
+      "CREATE TABLE snapshots (path TEXT PRIMARY KEY, checksum TEXT NOT NULL, line_count INTEGER NOT NULL, hashes TEXT NOT NULL, updated_at INTEGER NOT NULL)",
+    );
+    db.exec(
+      "CREATE TABLE undo (path TEXT PRIMARY KEY, content TEXT NOT NULL, bom TEXT NOT NULL, ending TEXT NOT NULL, hashes TEXT NOT NULL, result_content TEXT NOT NULL, updated_at INTEGER NOT NULL)",
+    );
+    db.exec(
+      "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, retired TEXT, canons TEXT, snapshotId TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
+    );
+    db.prepare(
+      "INSERT INTO meta (key, value) VALUES ('version', '6') ON CONFLICT(key) DO UPDATE SET value = '6'",
+    ).run();
+  }
+
+  it("preserves every v7 row across a meta.version flap to '6'", async () => {
+    await withTempHome(async (home) => {
+      await loadHashStore();
+      shutdownHashStore();
+
+      let db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      seedV7Rows(db);
+      const seeded = v7Rows(db);
+      db.close();
+
+      db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      simulateV6VersionFlap(db);
+      db.close();
+
+      const reloaded = await loadHashStore();
+      expect(getUndoEntry(reloaded, "/a.ts")).toMatchObject({
+        content: "old",
+        snapshotHash: "v1:aaaa",
+      });
+      shutdownHashStore();
+
+      db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const version = db.prepare("SELECT value FROM meta WHERE key = 'version'").get() as {
+        value: string;
+      };
+      const counter = db
+        .prepare("SELECT next_id FROM line_id_counters WHERE path = '/a.ts'")
+        .get() as { next_id: number };
+      const survivors = v7Rows(db);
+      // A v6 process can keep writing to its compatibility shell after the flap.
+      db.prepare(
+        "INSERT INTO served (session_id, path, hashes, reported, retired, canons, snapshotId, updated_at) " +
+          "VALUES ('s2', '/b.ts', '[]', NULL, NULL, '[]', NULL, 5)",
+      ).run();
+      db.close();
+
+      expect(survivors).toEqual(seeded);
+      expect(counter.next_id).toBe(42);
+      expect(version.value).toBe(String(HASH_STORE_VERSION));
+    });
+  });
+
+  it("keeps initialization additive and idempotent across repeated opens", async () => {
+    await withTempHome(async (home) => {
+      await loadHashStore();
+      shutdownHashStore();
+
+      let db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      seedV7Rows(db);
+      const seeded = v7Rows(db);
+      db.close();
+
+      for (let i = 0; i < 3; i++) {
+        await loadHashStore();
+        shutdownHashStore();
+      }
+
+      db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const tables = tableNames(db);
+      const survivors = v7Rows(db);
+      db.close();
+
+      for (const table of V7_TABLES) {
+        expect(tables.filter((name) => name === table)).toEqual([table]);
+      }
+      expect(survivors).toEqual(seeded);
+    });
+  });
+
+  it("enforces the line_lineage foreign key and cascades snapshot deletes", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      expect(() =>
+        store.db
+          .prepare(
+            "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
+              "VALUES (999, 1, 1, 'orphan', 'zzz|orphan')",
+          )
+          .run(),
+      ).toThrow(/FOREIGN KEY/i);
+
+      store.db
+        .prepare(
+          "INSERT INTO file_snapshots (snapshot_id, path, snapshot_hash, line_count, created_at) " +
+            "VALUES (7, '/x.ts', 'v1:xxxx', 1, 1)",
+        )
+        .run();
+      store.db
+        .prepare(
+          "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
+            "VALUES (7, 1, 7, 'canon7', 'ddd|const x = 1;')",
+        )
+        .run();
+      store.db.prepare("DELETE FROM file_snapshots WHERE snapshot_id = 7").run();
+
+      const remaining = store.db
+        .prepare("SELECT COUNT(*) AS n FROM line_lineage WHERE snapshot_id = 7")
+        .get() as { n: number };
+      expect(remaining.n).toBe(0);
+    });
+  });
+
+  it("adds missing legacy served columns without wiping snapshots or undo", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/p.ts", "x\n", ["XYZ"]);
+      upsertUndo(store, "/u.ts", {
+        content: "old",
+        bom: "",
+        ending: "\n",
+        hashes: ["UVW"],
+        resultContent: "new",
+      });
+      shutdownHashStore();
+
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      // Legacy v6 undo history waiting to be migrated, plus a served table that
+      // predates the retired/canons/snapshotId columns.
+      db.prepare(
+        "INSERT INTO undo (path, content, bom, ending, hashes, result_content, updated_at) " +
+          "VALUES ('/legacy.ts', 'old', '', '\n', '[\"UVW\"]', 'new', 1)",
+      ).run();
+      db.exec("DROP TABLE served");
+      db.exec(
+        "CREATE TABLE served (session_id TEXT NOT NULL, path TEXT NOT NULL, hashes TEXT NOT NULL, reported TEXT, updated_at INTEGER NOT NULL, PRIMARY KEY (session_id, path))",
+      );
+      db.close();
+
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZ"]);
+      expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
+      shutdownHashStore();
+
+      const check = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const columns = columnNames(check, "served");
+      const snapshots = check.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as {
+        n: number;
+      };
+      const undo = check.prepare("SELECT COUNT(*) AS n FROM undo").get() as { n: number };
+      check.close();
+
+      expect(columns).toEqual(expect.arrayContaining(["retired", "canons", "snapshotId"]));
+      expect(snapshots.n).toBe(1);
+      expect(undo.n).toBe(1);
+    });
+  });
+
+  it("declares an identical file_undo schema in the store and the undo domain", async () => {
+    await withTempHome(async (home) => {
+      await loadHashStore();
+      shutdownHashStore();
+
+      const fromStore = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const storeSql = (
+        fromStore
+          .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'file_undo'")
+          .get() as { sql: string }
+      ).sql;
+      fromStore.close();
+
+      const memory = new DatabaseSync(":memory:");
+      ensureFileUndoSchema(memory);
+      const domainSql = (
+        memory
+          .prepare("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'file_undo'")
+          .get() as { sql: string }
+      ).sql;
+      memory.close();
+
+      expect(domainSql).toBe(storeSql);
+    });
+  });
+
+  it("keeps file_undo history immune to a legacy v6 undo drop", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      upsertUndo(store, "/u.ts", {
+        content: "old",
+        bom: "",
+        ending: "\n",
+        hashes: ["UVW"],
+        resultContent: "new",
+      });
+      shutdownHashStore();
+
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      db.exec("DROP TABLE IF EXISTS undo");
+      db.close();
+
+      const reloaded = await loadHashStore();
+      expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
     });
   });
 });

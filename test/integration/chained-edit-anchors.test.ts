@@ -136,6 +136,8 @@ describe("chained edit anchors", () => {
         undefined,
         ctx,
       );
+      // The first edit retired beta's line identity, so reusing its anchor is a stale RANGE
+      // (retired/deleted leased line), not a stale anchor (spec §3.1.1 line 89 / §5.3).
       await expect(
         editTool.execute(
           "e2-stale",
@@ -144,7 +146,7 @@ describe("chained edit anchors", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/stale anchor/);
+      ).rejects.toThrow(/\[MODEL\] \[E_STALE_RANGE\]/);
 
       const alphaEdit = await editTool.execute(
         "e3",

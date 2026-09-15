@@ -141,10 +141,10 @@ describe("store — schema ownership", () => {
     try {
       const store = await loadHashStore();
       const { ensureSnapshotSchema } = await import("../../src/snapshot-store");
-      const { ensureUndoSchema } = await import("../../src/undo-store");
+      const { ensureFileUndoSchema } = await import("../../src/hash-store");
       const { ensureServedSchema } = await import("../../src/served-session/index.js");
       expect(() => ensureSnapshotSchema(store.db)).not.toThrow();
-      expect(() => ensureUndoSchema(store.db)).not.toThrow();
+      expect(() => ensureFileUndoSchema(store.db)).not.toThrow();
       expect(() => ensureServedSchema(store.db)).not.toThrow();
       expect(() => ensureSnapshotSchema(store.db)).not.toThrow();
     } finally {

@@ -12,7 +12,7 @@
 
 import { constants } from "node:fs";
 import { parseHashRef } from "./hashline/index.js";
-import { findSnapshotPathsByHashes } from "./snapshot-store.js";
+import { findSnapshotPathsByHashes, snapshotHashFor } from "./snapshot-store";
 import { sessionKeyFor } from "./served-session/session.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "./payload-contract.js";
 import { execute as engineExecute, preview as enginePreview } from "./mutation-engine/engine.js";
@@ -68,6 +68,7 @@ function toSection(file: ProcessedEditFile): BatchSection {
     result: file.result,
     originalHashes: file.originalHashes,
     resultHashes: file.resultHashes,
+    resultHash: snapshotHashFor(file.result),
     warnings: file.warnings,
     driftNotice: file.driftNotice,
     appliedCount: file.appliedCount,

@@ -13,7 +13,7 @@ async function readSample(ctx: any, readTool: any): Promise<string[]> {
 }
 
 describe("edit tool noop-loop guard", () => {
-  it("rejects the third identical noop with [E_NOOP_LOOP] and echoes the current range", async () => {
+  it("rejects the third identical noop with [E_NOOP_LOOP] and serves the current range", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await readSample(ctx, readTool);
@@ -169,7 +169,7 @@ describe("edit tool noop-loop guard", () => {
     });
   });
 
-  it("echoes rows that serve as usable anchors for a follow-up applied edit", async () => {
+  it("serves rows usable as anchors for a follow-up applied edit", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await readSample(ctx, readTool);
@@ -182,12 +182,12 @@ describe("edit tool noop-loop guard", () => {
         .catch((e: unknown) => e)) as Error;
       expect(err.message).toContain("[E_NOOP_LOOP]");
 
-      const echoedRow = err.message.split("\n").find((l) => l.includes(`│${NOOP_LINE_1}`))!;
-      const echoedHash = extractHash(echoedRow);
+      const servedRow = err.message.split("\n").find((l) => l.includes(`│${NOOP_LINE_1}`))!;
+      const servedHash = extractHash(servedRow);
 
       const followUp = await editTool.execute(
         "e4",
-        { path: "sample.ts", edits: [[echoedHash, echoedHash, "BBB"]] },
+        { path: "sample.ts", edits: [[servedHash, servedHash, "BBB"]] },
         undefined,
         undefined,
         ctx,

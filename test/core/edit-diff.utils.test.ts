@@ -139,7 +139,7 @@ describe("genDiff", () => {
     const newContent = "a\n__ELLIPSIS__\nc\nD\n";
     const hashes = _lineHashesPure(newContent);
     const { diff } = genDiff(oldContent, newContent, 2, hashes);
-    const cLine = diff.split("\n").find((line) => line.endsWith("│c"))!;
-    expect(cLine.startsWith(` ${hashes[2]}`)).toBe(true);
+    const matchedLine = diff.split("\n").find((line) => line.endsWith("│c"))!;
+    expect(matchedLine.startsWith(` ${hashes[2]}`)).toBe(true);
   });
 });

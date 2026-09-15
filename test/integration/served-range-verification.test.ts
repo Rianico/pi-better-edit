@@ -43,7 +43,7 @@ describe("served-state range verification for edit", () => {
     });
   });
 
-  it("echoes the current range as fresh rows; retrying with them applies without read and does not loop", async () => {
+  it("serves the current range as fresh rows; retrying with them applies without read and does not loop", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -75,16 +75,16 @@ describe("served-state range verification for edit", () => {
       expect(rejected).toBeDefined();
       expect(rejected!.message).toMatch(/E_STALE_RANGE/);
 
-      const echoLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
       const currentHashes = await lineHashes("alpha\nBETA\ngamma\n", home.testPath);
-      expect(echoLines).toEqual([
+      expect(servedLines).toEqual([
         `${currentHashes[0]}│alpha`,
         `${currentHashes[1]}│BETA`,
         `${currentHashes[2]}│gamma`,
       ]);
 
-      const retryFrom = echoLines[0]!.split("│")[0]!;
-      const retryTo = echoLines[2]!.split("│")[0]!;
+      const retryFrom = servedLines[0]!.split("│")[0]!;
+      const retryTo = servedLines[2]!.split("│")[0]!;
       const retry = await editTool.execute(
         "e2",
         { path: "sample.ts", edits: [[retryFrom, retryTo, "X\nY"]] },
@@ -97,7 +97,7 @@ describe("served-state range verification for edit", () => {
 
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
       // Pipeline now records dense serves for the successful retry (X/Y),
-      // so the old echo anchors (for alpha/BETA/gamma) are no longer
+      // so the old serve anchors (for alpha/BETA/gamma) are no longer
       // served. The stale retry must be rejected and requires a fresh read.
       await expect(
         editTool.execute(
@@ -247,7 +247,7 @@ describe("served-state range verification for edit", () => {
     });
   });
 
-  it("records [E_STALE_ANCHOR] context rows as serves for edits over that territory", async () => {
+  it("records [E_STALE_RANGE] current-range rows as serves for edits over that territory", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -277,17 +277,20 @@ describe("served-state range verification for edit", () => {
         rejected = error as Error;
       }
       expect(rejected).toBeDefined();
-      expect(rejected!.message).toMatch(/E_STALE_ANCHOR/);
-      expect(rejected!.message).toContain("Current context around resolved anchor");
+      // The beta lease is retired (its line entity is gone), so the identity seam owns the refusal:
+      // [E_STALE_RANGE] with the current range, never [E_STALE_ANCHOR] (spec §3.1.1 line 89 / §5.3).
+      expect(rejected!.message).toMatch(/\[MODEL\] \[E_STALE_RANGE\]/);
+      expect(rejected!.message).not.toMatch(/E_STALE_ANCHOR/);
+      expect(rejected!.message).toContain("Current range:");
 
-      const contextRow = rejected!.message.split("\n").find((l) => l.includes("│BETA"))!;
+      const rangeRow = rejected!.message.split("\n").find((l) => l.includes("│BETA"))!;
       const currentHashes = await lineHashes("alpha\nBETA\n", home.testPath);
-      expect(contextRow).toContain(currentHashes[1]!);
-      const betaRefFromContext = contextRow.split("│")[0]!.split(": ")[1]!;
+      expect(rangeRow).toContain(currentHashes[1]!);
+      const betaRefFromRange = rangeRow.split("│")[0]!;
 
       const retry = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[betaRefFromContext, betaRefFromContext, "BETA2"]] },
+        { path: "sample.ts", edits: [[betaRefFromRange, betaRefFromRange, "BETA2"]] },
         undefined,
         undefined,
         ctx,
@@ -302,6 +305,8 @@ describe("served-state range verification for edit", () => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 
+      // No serve ever leased these anchors, so the boundary lookup is empty: [E_STALE_ANCHOR] with
+      // the fresh context serve (spec §3.1.1 step 1 line 89 / §5.3, ADR-0016).
       await expect(
         editTool.execute(
           "e1",
@@ -310,7 +315,7 @@ describe("served-state range verification for edit", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/cannot verify range against served state/);
+      ).rejects.toThrow(/\[MODEL\] \[E_STALE_ANCHOR\]/);
 
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ngamma\n");
     });

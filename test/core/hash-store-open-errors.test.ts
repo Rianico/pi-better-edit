@@ -39,6 +39,13 @@ vi.mock("node:sqlite", () => ({
       if (sql.includes("PRAGMA quick_check")) {
         return { get: () => ({ quick_check: "ok" }) };
       }
+      if (sql.includes("RETURNING")) {
+        return {
+          get: () => ({ start_id: 1, snapshot_id: 1 }),
+          all: () => [],
+          run: () => undefined,
+        };
+      }
       return {
         get: () => undefined,
         all: () => [],
@@ -129,7 +136,13 @@ describe("hash store open error handling", () => {
     const store = await loadHashStore();
     state.busyOnce = busyError("database is locked");
     expect(() => {
-      upsertSnapshot(store, "/p.ts", "checksum", 1, ["AAA"]);
+      upsertSnapshot(store, {
+        path: "/p.ts",
+        snapshotHash: "checksum",
+        lineCount: 1,
+        hashes: ["AAA"],
+        content: "x\n",
+      });
     }).not.toThrow();
     expect(state.runCalls).toBeGreaterThan(1);
   });
@@ -143,7 +156,13 @@ describe("hash store open error handling", () => {
     state.persistentBusy = true;
     const callsBefore = state.runCalls;
     expect(() => {
-      upsertSnapshot(store, "/p.ts", "checksum", 1, ["AAA"]);
+      upsertSnapshot(store, {
+        path: "/p.ts",
+        snapshotHash: "checksum",
+        lineCount: 1,
+        hashes: ["AAA"],
+        content: "x\n",
+      });
     }).toThrow(/locked/);
     expect(state.runCalls - callsBefore).toBe(4);
   });

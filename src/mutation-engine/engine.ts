@@ -17,6 +17,10 @@ import type { NormalizedEditRequest } from "../payload-contract.js";
 import { errCode } from "../utils.js";
 
 function extractCode(message: string): string {
+  // WHY: messages are `[MODEL] [E_*] …` (spec §5.3 Output Error Code), so the code is the `E_*` tag
+  // WHY: and never the `[MODEL]` audience tag that precedes it.
+  const code = message.match(/\[(E_[A-Z0-9_]+)\]/);
+  if (code) return code[1]!;
   const m = message.match(/\[([A-Z0-9_]+)\]/);
   return m ? m[1]! : "E_UNKNOWN";
 }
@@ -24,10 +28,10 @@ function extractCode(message: string): string {
 function toFailure(error: unknown): MutationResult {
   const message = error instanceof Error ? error.message : String(error);
   const code = error instanceof Error ? (errCode(message) ?? extractCode(message)) : "E_UNKNOWN";
-  // WHY: Try to preserve servedRows/echo if error carries them (ServedRejectionError, AnchorMismatchError)
+  // WHY: Try to preserve servedRows/servedBlock if error carries them (ServedRejectionError, AnchorMismatchError)
   const servedRows = (error as { servedRows?: import("../hashline/served.js").ServedRow[] })
     ?.servedRows;
-  // WHY: Echo is embedded in message for batch abort; keep message as echo source.
+  // WHY: Served block is embedded in message for batch abort; keep message as serve-block source.
   return {
     ok: false,
     code,

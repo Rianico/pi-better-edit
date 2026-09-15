@@ -12,6 +12,8 @@ The five canonical triage labels: `needs-triage`, `needs-info`, `ready-for-agent
 
 Single-context — one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs/agents/domain.md`.
 
+The architecture-revision spec lives at `docs/spec/content-addressed-line-identity-mvcc.md`.
+
 ### Contribution
 
 Conventional commits & changelog: see CONTRIBUTING.md

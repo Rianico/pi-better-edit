@@ -41,15 +41,36 @@ export interface SessionHandle {
   retire(hashes: Iterable<string>): Promise<void>;
   /** SAFETY: Record arbitrary served rows (position → hash). */
   record(rows: ServedEntry[]): Promise<void>;
-  /** SAFETY: Record with truncation (lineCount + optional clearFrom). */
-  recordTruncated(rows: ServedEntry[], lineCount: number, clearFrom?: number): Promise<void>;
+  /** SAFETY: Grant `served_leases` identities for already-materialized rows (undo re-serve). */
+  recordLeases(rows: ServedEntry[], contentHash: string): Promise<void>;
+  /** SAFETY: Record with truncation (lineCount + optional clearFrom + served content hash). */
+  recordTruncated(
+    rows: ServedEntry[],
+    lineCount: number,
+    clearFrom?: number,
+    contentHash?: string,
+  ): Promise<void>;
   /** SAFETY: High-level diff recording: planServeRecording inside, no caller-side plan. */
   recordDiff(
     servedRows: ServedRow[],
-    opts?: { resultLineCount?: number; firstChangedLine?: number },
+    opts: {
+      /**
+       * Committed `file_snapshots.snapshot_hash` of the content served; binds the leases granted.
+       * Absent when the materialization transaction already granted them (spec §3.1.2 step 5) —
+       * the record is then mirror-only.
+       */
+      contentHash?: string;
+      resultLineCount?: number;
+      firstChangedLine?: number;
+    },
   ): Promise<void>;
-  /** SAFETY: Echo recording — preview is no-op per policy (keel: recovery stays inside). */
-  recordEcho(rows: ServedRow[], policy: ServeRecordPolicy, lineCount?: number): Promise<void>;
+  /** SAFETY: Serve-feedback recording — preview is no-op per policy (keel: recovery stays inside). */
+  recordServeFeedback(
+    rows: ServedRow[],
+    policy: ServeRecordPolicy,
+    lineCount?: number,
+    contentHash?: string,
+  ): Promise<void>;
   /** SAFETY: Low-level full epoch record (used by read path for atomically persisting hashes+canons+snapshotId+tombstone). */
   recordEpoch(input: {
     rows: ServedEntry[];
@@ -57,6 +78,8 @@ export interface SessionHandle {
     fullReadHashes?: readonly string[];
     fullReadCanons?: readonly (string | null)[];
     snapshotId?: string;
+    /** Committed `file_snapshots.snapshot_hash` of the content served; binds the leases granted. */
+    contentHash?: string;
     isFullRead?: boolean;
   }): Promise<void>;
   /** SAFETY: Drift: clear reported set (e.g. after a fresh read). */

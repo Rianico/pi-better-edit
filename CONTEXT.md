@@ -67,16 +67,32 @@ A model-visible signal the tool must include in `content` for correctness (e.g. 
 A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice, Batch drift note). Not in model content.
 
 **orphaned serve**:
-An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range.
+An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_UNSERVED_RANGE]`) and a retired `line_id` rejects `[E_STALE_RANGE]`, rather than being healed onto a twin.
 _Avoid_: stale serve (ambiguous with boundary staleness)
 
 **orphaning re-serve**:
-The serve event that creates an orphan: re-serving the same hash at a new position without nulling its previous served position — typically a partial re-read (or an echo/diff that covers the new but not the old slot) after an external relocation that kept the hash. A full re-read heals by overwriting every position; an orphaning re-serve leaves the stale slot behind.
+The serve event that creates an orphan: re-serving the same hash at a new position without nulling its previous served position — typically a partial re-read (or a serve/diff that covers the new but not the old slot) after an external relocation that kept the hash. A full re-read heals by overwriting every position; an orphaning re-serve leaves the stale slot behind. Superseded by ADR-0016: every serve path atomically upserts the anchor's `served_leases` row, so a re-serve replaces the lease instead of leaving a stale slot behind.
 _Avoid_: duplicate serve (conflates duplicated content with relocated-line-keeps-hash)
 
 **relocated line keeps its hash**:
-The file condition where a line's content survives an external write and, because no probe collision occurs at its new spot, the same hash is reproduced by a fresh hashing pass. Distinct from "duplicated content" (same text at two positions in one file gets two different hashes via probing).
+The file condition where a line's content survives an external write and, because no probe collision occurs at its new spot, the same hash is reproduced by a fresh hashing pass. Distinct from "duplicated content" (same text at two positions in one file gets two different hashes via probing). Superseded by ADR-0016: a relocated line keeps its immutable `line_id`, and coordinate realignment is owned solely by `pairSnapshots` + `line_lineage`; hash reproduction no longer decides identity.
 _Avoid_: duplicate content (implies same hash, which perfect hashing prevents)
+
+**line identity**:
+A line's stable identity across the file's materialized versions: the immutable `line_id` allocated for its content, plus its ancestry in `line_lineage`. Identity follows content, not coordinate — an exterior insert or delete shifts line numbers without changing `line_id`, which is exactly what lets an edit rebase silently. Distinct from the 3-char `anchor`, which is a presentation token the model copies out of a served row.
+_Avoid_: anchor identity, hash identity, epoch
+
+**lease** (served lease):
+The `served_leases` row that binds a served anchor to the immutable `line_id` it denotes for the snapshot actually served: `(session_id, file_path, anchor) -> line_id, served_snapshot_hash, retired_at`. `serve` is the only operation that may create one, and it upserts atomically — re-serving an anchor replaces the row (fresh `line_id`, `retired_at = NULL`) instead of failing closed or leaving a stale slot. An edit resolves its lease strictly read-only.
+_Avoid_: reservation, lock, epoch
+
+**retirement** (`retired_at`):
+Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read (or `reject-and-serve`'s served rows) grants a fresh lease, so a stale anchor rejects `[E_STALE_RANGE]` instead of silently rebinding.
+_Avoid_: tombstone (the hash-allocation guard, not a lease state)
+
+**lineage** (`line_lineage`):
+The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, canon_hash, anchor)`, written inside `BEGIN IMMEDIATE` for every materialized version held in `file_snapshots`. It is the sole coordinate authority: an edit looks its leased `line_id` up here and either rebases to the new coordinate or fails closed. A batch's commit writes it directly from the in-memory working buffer — surviving lines keep the `line_id` they already carry and only lines the batch created take fresh ids from `line_id_counters` — so re-pairing `S_latest` against the new content (`pairSnapshots`) stays a read-path mechanism, used where there is content to align and no working buffer to consult.
+_Avoid_: epoch snapshot, served hash map
 
 **read_skill**:
 To read a file's content as plain text — no hash prefixes, no served rows. The model's tool for loading skill content (SKILL.md or any file in its directory) to invoke and consume; `read` remains the hashed read for edit targets.
@@ -115,7 +131,7 @@ A named object `{ "anchor_from": …, "anchor_to": …, "replace_with": … }` �
 _Avoid_: patch language, tuple
 
 **served hash echo**:
-A candidate line that begins with the exact `HASH│` anchor served for the same session, canonical path, and line — tool output mistaken for file content. For `write` the check is absolute line `i` vs `served[i]`; for `edit` it is range-relative line `k` vs `served[startLine + k]` (AA: E1). Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
+A candidate line that begins with the exact `HASH│` anchor served for the same session, canonical path, and line — tool output mistaken for file content. For `write` the check is absolute line `i` vs `served[i]`; for `edit` it is range-relative line `k` vs `served[startLine + k]` (AA: E1), where `startLine` is the first row of the served window — the remapped served start under a lease rebase, not the rebased coordinate. Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
 _Avoid_: hash echo (without served qualification), anchor echo
 
 **E_SERVED_ECHO**:
@@ -131,19 +147,19 @@ The invariant that an edit is exactly the resolved range replaced by the exact `
 _Avoid_: smart edit, autocorrection
 
 **tombstone**:
-The per-session (`sessionKey`, `path`) set of hashes freed since the last full `read` — `served.retired` in `src/served-session/session.ts`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(tombstone)` so a freed anchor never re-binds within the same epoch. Cleared on `full read` (`isFullRead`), kept on `partial`/`truncated`, pruned with `served` via `SERVED_TTL_MS`. Prevents `S@3 reborn @3` whole-span stale success (`E_STALE_RANGE`).
-_Avoid_: retired (use tombstone; downstream `retired TEXT` is storage name, not domain term), blocked, reserved
+The per-session (`sessionKey`, `path`) set of hashes freed since the last full `read` — `served.retired` in `src/served-session/session.ts`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(tombstone)` so a freed anchor never re-binds for the session. ADR-0017 keeps it only as the hash-allocation guard, not as a second identity authority. Cleared on `full read` (`isFullRead`), kept on `partial`/`truncated`, pruned with `served` via `SERVED_TTL_MS`. Prevents `S@3 reborn @3` whole-span stale success (`E_STALE_RANGE`).
+_Avoid_: blocked, reserved (lease retirement is the `retired_at` term above; this entry's `served.retired` is a legacy v6 storage shell)
 
 **epoch**:
-The per-session, per-path read snapshot `{snapshotId: ino|mtime|size|checksum via fileSnap, servedHashes, servedCanons}` stored in `served.snapshotId`/`canons`/`hashes`. `read full` stores epoch; `partial` merges without clearing. `edit` compares `curId=fileSnap(path)` vs `epoch.snapshotId` to decide `resist` (pos-free, `==`) vs `strict` (pos-restricted, `!=`). Exterior drift (`insert @0` before `served 1..5`) stays `resist` when `changed ∩ [L,R]==∅`.
+The per-session, per-path read snapshot `{snapshotId: ino|mtime|size|checksum via fileSnap, servedHashes, servedCanons}` stored in `served.snapshotId`/`canons`/`hashes`. `read full` stores epoch; `partial` merges without clearing. `edit` compares `curId=fileSnap(path)` vs `epoch.snapshotId` to decide `resist` (pos-free, `==`) vs `strict` (pos-restricted, `!=`). Exterior drift (`insert @0` before `served 1..5`) stays `resist` when `changed ∩ [L,R]==∅`. Superseded by ADR-0017: the edit pipeline never populates an epoch, so it gates nothing — the concurrency signal is a leased `line_id` resolved through `line_lineage(C)`.
 _Avoid_: version, snapshot (global last-writer-wins `snapshots` table is file-level, not per-session)
 
 **position-free** (pos-free):
-The single-thread verification mode where `verifyOrThrow` requires only `served[cFrom+k]==fileHashes[startLine-1+k] && tombstone∉ && canon==`, not `from==startLine-1`. Preserves `anchor philosophy` — exterior inserts do not abort unrelated ranges. Default when `epoch==curId`.
-_Avoid_: strict pos (concurrency fallback only)
+The single-thread verification mode where `verifyOrThrow` requires only `served[cFrom+k]==fileHashes[startLine-1+k] && tombstone∉ && canon==`, not `from==startLine-1`. Preserves `anchor philosophy` — exterior inserts do not abort unrelated ranges. Historically the default when the epoch comparison matched; ADR-0017 retired that gate in favour of lease resolution through `line_lineage`.
+_Avoid_: strict pos (concurrency fallback only; that gate is retired by ADR-0017)
 
 **strict** (pos-restricted concurrency):
-The fallback verification mode when `epoch!=curId` (concurrent write detected) — adds `from==startLine-1 && to==endLine-1` to the pos-free checks. Makes `shift==rebind` loud for `S@2->7` isolated `tombstone` case. Cost is one `reject-and-serve` retry with `E.servedRows`. Automatic, no config flag.
+The fallback verification mode when `epoch!=curId` (concurrent write detected) — adds `from==startLine-1 && to==endLine-1` to the pos-free checks. Makes `shift==rebind` loud for `S@2->7` isolated `tombstone` case. Cost is one `reject-and-serve` retry with `E.servedRows`. Automatic, no config flag. Retired by ADR-0017: `strictPos` no longer gates anything, because position equality cannot see a deleted identity (`1 === 1`) while an exterior shift moves every coordinate without touching identity; a leased `line_id` resolved through `line_lineage(C)` replaces it.
 _Avoid_: always-strict
 
 **canon** (canon_at_serve):
