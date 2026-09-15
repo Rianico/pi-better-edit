@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-* **edit:** inform model of served prefix with differing content
+* **edit:** report served prefix mismatches
 * **edit:** require literal mode for served rows
 * **edit:** adopt line-identity MVCC with leases
 
