@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 # /// script
-# requires-python = ">=3.12"
+# requires-python = ">=3.14"
 # dependencies = []
 # ///
 """Manage ## [Unreleased] section in CHANGELOG.md.
@@ -151,10 +151,12 @@ def commits_to_sections(commits: list[tuple[str, str]]) -> dict[str, list[str]]:
             if ctype in ("perf",) and breaking:
                 section = "Performance Improvements"
 
-        entry = f"- {m.group('subject').strip()}"
+        # `*` matches @semantic-release/changelog's notes body. Staying consistent keeps
+        # pi-lens's markdown fixer from normalising the generated section on every touch.
+        entry = f"* {m.group('subject').strip()}"
         scope = m.group("scope")
         if scope:
-            entry = f"- **{scope}:** {m.group('subject').strip()}"
+            entry = f"* **{scope}:** {m.group('subject').strip()}"
         if breaking:
             # annotate breaking
             entry += " (BREAKING CHANGE)"
@@ -255,7 +257,10 @@ def clear_changelog(changelog: Path) -> bool:
     before, rest = content.split(UNRELEASED_HEADING, 1)
     m = VERSION_HEADING_RE.search(rest)
     after = rest[m.start() :] if m else ""
-    new_content = before.rstrip() + "\n\n" + after.lstrip()
+    # Keep the heading: @semantic-release/changelog anchors its insertion point on it, and
+    # prepends the new version above the file title (and stranded the title at the end) when it
+    # is missing - which is exactly what the v2.0.0 release did.
+    new_content = before.rstrip() + "\n\n" + UNRELEASED_HEADING + "\n\n" + after.lstrip()
     new_content = re.sub(r"\n{3,}", "\n\n", new_content).strip() + "\n"
     if new_content == content:
         return False

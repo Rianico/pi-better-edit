@@ -32,10 +32,13 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       git add CHANGELOG.md
       if git rev-parse --verify HEAD >/dev/null 2>&1; then
         if git commit --amend --no-edit --no-verify >/dev/null 2>&1; then
-          echo "[pre-push] amended HEAD $(git rev-parse --short HEAD) with updated CHANGELOG.md [Unreleased]" >&2
-          echo "[pre-push] push aborted — amended commit, please run: git push" >&2
-          echo "[pre-push] (bypass: PREPUSH_AUTOFIX=0 git push --no-verify)" >&2
+          echo "[pre-push] amended HEAD $(git rev-parse --short HEAD) with updated CHANGELOG.md [Unreleased] — auto-pushing..." >&2
           rm -f "$tmp"
+          # Schedule auto-retry after this hook aborts the current push.
+          # Use background job so the outer `git push` can exit cleanly (code 1) before retry.
+          # Retry re-enters this hook once (now Unreleased is clean) and succeeds.
+          echo "[pre-push] push aborted — auto-retrying in background..." >&2
+          ( sleep 0.5; git push </dev/null >&2 || git push --set-upstream origin HEAD </dev/null >&2 ) &
           exit 1
         fi
       fi
