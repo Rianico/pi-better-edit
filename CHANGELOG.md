@@ -6,11 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **edit:** gate reproduced served rows behind a literal declaration
 * **edit:** adopt line-identity MVCC with leases
 
 ### Documentation
 
-* **adr:** amend served-row evidence and literal declaration
+* **adr:** refine served echo and literal escape
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 

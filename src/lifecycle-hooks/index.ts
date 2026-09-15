@@ -1,6 +1,12 @@
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { initHasher as defaultInitHasher } from "../hashline/index.js";
+import {
+  initHasher as defaultInitHasher,
+  findServedHashEcho,
+  LITERAL_BYPASS_NOTICE,
+  clearServedRefusals,
+} from "../hashline/index.js";
+import { splitLines } from "../utils.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
 import {
@@ -60,11 +66,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   onToolResult: (
     event: ToolResultEvent,
     ctx: ToolContext,
-  ) => Promise<{ content: Array<{ type: string; text: string }> } | undefined>;
+  ) => Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined>;
   onWrite: (
     event: ToolResultEvent,
     ctx: ToolContext,
-  ) => Promise<{ content: Array<{ type: string; text: string }> } | undefined>;
+  ) => Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined>;
   onEdit: (
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -106,7 +112,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   async function handleWrite(
     event: ToolResultEvent,
     ctx: ToolContext,
-  ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
+  ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {
     const rawInput = event.input as Record<string, unknown> | undefined;
     const writtenPath = rawInput?.path ?? rawInput?.file_path;
     if (typeof writtenPath === "string") {
@@ -142,6 +148,30 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         DEFAULT_MAX_BYTES,
         AUTO_READ_MAX,
       );
+      // WHY: literal declaration audit for `write` (ADR-0009 revision): the pre-write
+      // WHY: guard allowed `mode: "literal"` through, so re-evaluate the written bytes
+      // WHY: against the pre-auto-read served mirror (still the pre-write mirror here)
+      // WHY: and append the dimmed human line when the bytes reproduce a served row.
+      let literalBypass = false;
+      try {
+        const rawContent = (event.input as Record<string, unknown> | undefined)?.content;
+        const rawMode = (event.input as Record<string, unknown> | undefined)?.mode;
+        if (rawMode === "literal" && typeof rawContent === "string") {
+          const sessionKey = deps.sessionKeyFor(ctx);
+          const handle = createSessionHandle(sessionKey, absolutePath);
+          const served = await handle.load();
+          let canons: (string | null)[] = [];
+          try {
+            canons = await handle.loadCanons();
+          } catch {
+            canons = [];
+          }
+          const reproduction = findServedHashEcho(splitLines(rawContent), served, canons, 1);
+          if (reproduction) literalBypass = true;
+        }
+      } catch (error) {
+        console.error("Failed to evaluate literal declaration after write:", error);
+      }
       await recordServesBestEffort({
         sessionKey: deps.sessionKeyFor(ctx),
         path: absolutePath,
@@ -150,6 +180,13 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         resultLineCount: deps.visLines(normalized).length,
         firstChangedLine: 1,
       });
+      if (literalBypass) {
+        try {
+          clearServedRefusals(absolutePath);
+        } catch {
+          // SAFETY: best-effort counter clear — a missed clear only sharpens the next refusal message, never blocks a write.
+        }
+      }
       return {
         content: [
           ...(event.content ?? []),
@@ -157,7 +194,21 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
             type: "text",
             text: `\n\n--- Auto-read (hashline anchors) ---\n${preview.text}`,
           },
+          ...(literalBypass ? [{ type: "text" as const, text: LITERAL_BYPASS_NOTICE }] : []),
         ],
+        ...(literalBypass
+          ? {
+              details: {
+                metrics: {
+                  classification: "applied" as const,
+                  edits_attempted: 0,
+                  edits_noop: 0,
+                  warnings: 0,
+                  literalDeclarations: 1,
+                },
+              },
+            }
+          : {}),
       };
     } catch (error) {
       console.error("Auto-read after write failed:", error);
@@ -217,7 +268,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   async function handleToolResult(
     event: ToolResultEvent,
     ctx: ToolContext,
-  ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
+  ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {
     if (event.isError) return undefined;
     if (event.toolName === "write") {
       return handleWrite(event, ctx);

@@ -45,11 +45,16 @@ export {
 
 export { resolveLeasedEdit, type LeasedEditResolution } from "./lease-resolve.js";
 
+export { applyEdit, fmtRegion, changedRange, type ApplyVerificationContext } from "./apply.js";
+
 export {
-  applyEdit,
-  fmtRegion,
-  changedRange,
-  findEditHashEcho,
-  EditHashEchoError,
-  type ApplyVerificationContext,
-} from "./apply.js";
+  findServedHashEcho,
+  ServedHashEchoError,
+  buildServedEditMessage,
+  buildServedWriteMessage,
+  trackServedEditRefusal,
+  trackServedWriteRefusal,
+  clearServedRefusals,
+  LITERAL_BYPASS_NOTICE,
+  type ServedHashEchoMatch,
+} from "./served-guard.js";

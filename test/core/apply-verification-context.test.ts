@@ -1,26 +1,36 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { _lineHashesPure } from "../../src/hashline/hash";
-import { applyEdit, EditHashEchoError } from "../../src/hashline/apply";
+import { applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
-import { HASH_SEP } from "../../src/hashline/hash-identity";
+import { HASH_SEP, canon } from "../../src/hashline/hash-identity";
 import type { LeaseIdentityView, LeaseSpanSource, HEdit } from "../../src/hashline/resolve";
 
 beforeAll(async () => {
   await initHasher();
 });
 
+function canonsFor(content: string): (string | null)[] {
+  const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
+  if (content === "") return [];
+  return lines.map((line) => canon(line));
+}
+
 describe("applyEdit — verification descriptor (issue #115)", () => {
-  it("carries filePath + served in one descriptor and still denies a served hash echo", () => {
+  it("carries filePath + served in one descriptor and still refuses a served row", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
-      content_lines: [`${hashes[1]}${HASH_SEP}NEW-beta`],
+      content_lines: [`${hashes[1]}${HASH_SEP}beta`],
     } as unknown as HEdit;
     expect(() =>
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served }),
-    ).toThrow(EditHashEchoError);
+      applyEdit(content, edit, undefined, hashes, {
+        filePath: "a.txt",
+        served,
+        servedCanons: canonsFor(content),
+      }),
+    ).toThrow(ServedHashEchoError);
   });
 
   it("accepts a clean retry through the descriptor", () => {
@@ -34,11 +44,12 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
+      servedCanons: canonsFor(content),
     });
     expect(result.content).toBe("alpha\nNEW-beta\ngamma\ndelta");
   });
 
-  it("E_SERVED_ECHO pinned: boundary-anchor repetition at a non-corresponding line is accepted", () => {
+  it("E_SERVED_ECHO pinned: anchor-shaped repeat with differing content is accepted", () => {
     const content = "z\nq\nw";
     const hashes = _lineHashesPure(content);
     expect(hashes).not.toContain("AAA");
@@ -72,12 +83,13 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
+      servedCanons: ["z", "q", null],
       identity,
     });
     expect(result.content).toBe("z\nplain\nAAA│BOOM");
   });
 
-  it("E_SERVED_ECHO pinned: exact served HASH│ at the replaced line is rejected", () => {
+  it("E_SERVED_ECHO pinned: reproduced served row is refused", () => {
     const content = "z\nq\nw";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = ["AAA", "BBB", null];
@@ -104,10 +116,15 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     };
     const edit = {
       hash_bounds: [{ hash: "AAA" }, { hash: "BBB" }],
-      content_lines: [`AAA${HASH_SEP}BOOM`, "plain"],
+      content_lines: [`AAA${HASH_SEP}z`, "plain"],
     } as unknown as HEdit;
     expect(() =>
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, identity }),
+      applyEdit(content, edit, undefined, hashes, {
+        filePath: "a.txt",
+        served,
+        servedCanons: ["z", "q", null],
+        identity,
+      }),
     ).toThrow(/\[E_SERVED_ECHO\]/);
   });
 });

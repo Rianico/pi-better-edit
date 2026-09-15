@@ -104,6 +104,7 @@ export async function preview(
       warnings: file.warnings.length,
       added_lines: file.totalAddedLines,
       removed_lines: file.totalRemovedLines,
+      ...(file.literalDeclarations > 0 ? { literalDeclarations: file.literalDeclarations } : {}),
     };
     const details: import("../edit-response.js").EditDetails = {
       diff,

@@ -64,7 +64,7 @@ describe("regEdit", () => {
     });
   });
 
-  it("refuses served hash echo in replace_with with E_SERVED_ECHO (deny, not strip)", async () => {
+  it("refuses a reproduced served row in replace_with with E_SERVED_ECHO (deny, not strip)", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -73,7 +73,7 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `${hashes[1]!}│BBB`]] },
+          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `${hashes[1]!}│bbb`]] },
           undefined,
           undefined,
           ctx,
