@@ -626,24 +626,17 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
   }
 }
 
-function parseEdits(
-  items: NormalizedEditRequest["edits"],
-  path: string,
-  warnings: string[],
-): HEdit[] {
+function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[] {
   const parsed: HEdit[] = [];
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
     try {
       parsed.push(
-        resEdit(
-          {
-            anchor_from: item.anchor_from,
-            anchor_to: item.anchor_to,
-            replace_with: item.replace_with,
-          },
-          warnings,
-        ),
+        resEdit({
+          anchor_from: item.anchor_from,
+          anchor_to: item.anchor_to,
+          replace_with: item.replace_with,
+        }),
       );
     } catch (error) {
       if (items.length === 1) throw error;
@@ -678,7 +671,7 @@ async function runMutations(
 
   const isPreview = options?.noPersist === true;
 
-  const parsed = parseEdits(items, path, warnings);
+  const parsed = parseEdits(items, path);
 
   const {
     normalized: originalNormalized,

@@ -153,11 +153,10 @@ describe("downstream #61 — no silent miswrite on canon-repeated lines", () => 
   });
 });
 
-// #63 is NOT cured by the MVCC redesign: `stripBarePrefixes` still throws `E_BAD_ANCHOR` for
-// *literal* `HASH│` content (`0 matched`). The pin below fails the moment it is cured — flip it to
-// a plain `it` then.
+// #63 is cured by dropping the shape refusal: literal `HASH│` bytes now write through
+// byte-exact, while a verbatim served row still refuses via the evidence gate.
 describe("downstream #63 — literal HASH│ content in replace_with", () => {
-  it.fails("writes literal `abc│text` / `KEY│value` lines whose hashes are not anchors of the file", async () => {
+  it("writes literal `abc│text` / `KEY│value` lines whose hashes are not anchors of the file", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -195,7 +194,7 @@ describe("downstream #63 — literal HASH│ content in replace_with", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_SERVED_ECHO|E_BAD_ANCHOR/);
+      ).rejects.toThrow(/E_SERVED_ECHO/);
       expect(await readFile(path, "utf-8")).toBe("one\ntwo\nthree\n");
     });
   });

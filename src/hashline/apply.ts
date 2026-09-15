@@ -10,8 +10,6 @@ import {
 } from "./served-guard.js";
 import {
   resolveEditByContent,
-  stripBarePrefixes,
-  stripDiffPrefixes,
   swapReversedRanges,
   warnUnicodeEsc,
   fmtMismatchWithServes,
@@ -163,19 +161,8 @@ function assemble(content: string, span: RESpan, signal: AbortSignal | undefined
   return content.slice(0, span.start) + span.replacement + content.slice(span.end);
 }
 
-function prepareEdit(
-  fileHashes: string[],
-  edit: HEdit,
-  warnings: string[],
-  mode: "general" | "literal" = "general",
-): { fixed: HEdit } {
-  const rangeFixed = swapReversedRanges(edit, fileHashes, warnings);
-  if (mode === "literal") return { fixed: rangeFixed };
-  const prefixFixed = stripDiffPrefixes(
-    stripBarePrefixes(rangeFixed, fileHashes, warnings),
-    warnings,
-  );
-  return { fixed: prefixFixed };
+function prepareEdit(fileHashes: string[], edit: HEdit, warnings: string[]): { fixed: HEdit } {
+  return { fixed: swapReversedRanges(edit, fileHashes, warnings) };
 }
 
 /**
@@ -259,31 +246,7 @@ export function applyEdit(
   const rawReplacementLines = [...edit.content_lines];
   let literalBypass = false;
 
-  let prefixFixed: typeof edit = edit;
-  try {
-    const res = prepareEdit(fileHashes, edit, warnings, mode);
-    prefixFixed = res.fixed;
-  } catch (e) {
-    const msg = (e as Error).message;
-    if (msg.includes("[E_BAD_ANCHOR]") && served) {
-      let hasServedCopy = false;
-      for (const line of rawReplacementLines) {
-        const m = line.match(/^([A-Za-z0-9]{3})│/);
-        if (m && served.includes(m[1]!)) {
-          hasServedCopy = true;
-          break;
-        }
-      }
-      if (hasServedCopy) {
-        prefixFixed = edit;
-        warnings.length = 0;
-      } else {
-        throw e;
-      }
-    } else {
-      throw e;
-    }
-  }
+  const prefixFixed = prepareEdit(fileHashes, edit, warnings).fixed;
 
   const {
     resolved,

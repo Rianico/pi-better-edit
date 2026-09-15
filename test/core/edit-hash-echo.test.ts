@@ -224,16 +224,16 @@ describe("applyEdit — E_SERVED_ECHO gate", () => {
     ).toThrow(/E_SERVED_ECHO/);
   });
 
-  it("no served means no refusal", () => {
+  it("no served means no refusal, bytes reach disk unchanged", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
     };
-    expect(() => applyEdit(content, edit, undefined, hashes, { filePath: "a.txt" })).toThrow(
-      /\[E_BAD_ANCHOR\]/,
-    );
+    const result = applyEdit(content, edit, undefined, hashes, { filePath: "a.txt" });
+    expect(result.content).toBe(`alpha\n${hashes[1]}${HASH_SEP}beta\ngamma`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
   it("honours a literal declaration byte-exact with a human line", () => {

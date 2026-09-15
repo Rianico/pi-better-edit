@@ -98,10 +98,8 @@ describe("resEdit", () => {
 
   it("leaves bare anchors untouched and emits no warning", () => {
     const edit: HTEdit = { anchor_from: "MQX", anchor_to: "MQX", replace_with: "new" };
-    const warnings: string[] = [];
-    const resolved = resEdit(edit, warnings);
+    const resolved = resEdit(edit);
     expect(resolved.hash_bounds[0].hash).toBe("MQX");
-    expect(warnings).toHaveLength(0);
   });
 
   it("still rejects rows without a leading hash", () => {

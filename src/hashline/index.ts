@@ -34,8 +34,6 @@ export {
   type LeaseSpanSource,
   resEdit,
   valEdit,
-  stripBarePrefixes,
-  stripDiffPrefixes,
   swapReversedRanges,
   isUniformLeaseFastPath,
   resolveLineIdentity,

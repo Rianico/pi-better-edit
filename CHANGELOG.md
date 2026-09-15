@@ -6,8 +6,12 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-* **edit:** gate reproduced served rows behind a literal declaration
+* **edit:** require literal mode for served rows
 * **edit:** adopt line-identity MVCC with leases
+
+### Bug Fixes
+
+* **edit:** drop shape-based refusal from replace_with and write content
 
 ### Documentation
 
