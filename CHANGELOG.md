@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* **contributing:** document the read-only changelog check
 * **context:** align echo refusal template
 * **adr:** refine served echo and literal escape
 
