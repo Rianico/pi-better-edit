@@ -12,12 +12,13 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **edit:** release served-echo refusal counters after write
+* **edit:** clear served-echo counters after write
 * **edit:** drop undo hint from prefix note
 * **edit:** drop shape-based refusal from content
 
 ### Documentation
 
+* **context:** align served echo refusal template with code
 * **adr:** refine served echo and literal escape
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
