@@ -6,7 +6,6 @@
  */
 
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { HASH_SEP } from "./hashline/hash-identity.js";
 import { abortIf, splitLines } from "./utils.js";
 import { resolveTarget } from "./fs-write.js";
 import { toCwd } from "./paths.js";
@@ -17,8 +16,6 @@ import {
   trackServedWriteRefusal,
   type ServedHashEchoMatch,
 } from "./hashline/served-guard.js";
-
-void HASH_SEP;
 
 export interface ServedHashEcho {
   /** SAFETY: One-based candidate line carrying the reproduced served row. */

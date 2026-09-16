@@ -1,5 +1,5 @@
 import { splitLines } from "../utils.js";
-import { HASH_LEN, ALPHA, ALPHA_RE as _ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
+import { HASH_LEN, ALPHA, ALPHA_RE as _ALPHA_RE, HASH_RE } from "./alphabet.js";
 import { defaultHashIdentity as _defaultHI } from "./hash-identity.js";
 import type {
   HashSnapshotIO as _HSIO,
@@ -23,8 +23,6 @@ export interface HashSnapshotIO {
 export function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
   (_defaultHI as any).setSnapshotIO(io as any);
 }
-
-const ANCHOR_LEN = HASH_LEN;
 
 export const HASH_SEP = "│";
 
@@ -94,12 +92,6 @@ function __globalCanonEntriesForTest(): Array<[string, string]> {
   return [..._defaultHI.canonEntries()];
 }
 
-// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char prefix — linear match, no user input, no ReDoS.
-const _HL_PREFIX_PLUS_RE = new RegExp(`^\\+${HASH_CLASS}│`);
-// SAFETY: HASH_CLASS and ANCHOR_LEN are trusted constants (3-char alphanumeric), bounded linear pattern — no user-controlled input, no ReDoS.
-const _HL_PREFIX_MINUS_RE = new RegExp(`^-(?:${HASH_CLASS}│| {${ANCHOR_LEN}}│)`);
-// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char linear anchor — no user input, no ReDoS.
-const _HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
 export const CANON_VERSION = 2;
 const CANON_RE = /[ \t\r\n]+/g;
 

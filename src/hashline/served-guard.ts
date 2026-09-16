@@ -26,6 +26,63 @@ export interface ServedHashEchoMatch {
   servedLine: number;
 }
 
+interface ServedAnchorEntry {
+  /** SAFETY: 1-based served position that carried the anchor. */
+  servedLine: number;
+  canonText: string;
+}
+
+interface ServedAnchorHit {
+  /** SAFETY: 0-based candidate index within the submitted lines. */
+  index: number;
+  /** SAFETY: the served anchor that opens the candidate. */
+  anchor: string;
+  /** SAFETY: every served position that carried the anchor, in served order. */
+  entries: ServedAnchorEntry[];
+  candidateCanon: string;
+}
+
+/**
+ * SAFETY: Shared anchor index plus candidate scan for the served hash echo
+ * gate and the served prefix mismatch tier. Builds the anchor-to-served
+ * map once, then parses each candidate (one optional leading diff marker,
+ * anchor, separator) in submitted order. Callers only differ in how they
+ * judge the parsed hits, so reported ordering never diverges.
+ */
+function collectServedAnchorHits(
+  lines: readonly string[],
+  served: readonly (string | null)[],
+  canons: readonly (string | null)[],
+): ServedAnchorHit[] {
+  const byAnchor = new Map<string, ServedAnchorEntry[]>();
+  for (let pos = 0; pos < served.length; pos++) {
+    const anchor = served[pos];
+    if (anchor === null || anchor === undefined) continue;
+    const canonText = pos < canons.length ? (canons[pos] ?? null) : null;
+    if (canonText === null) continue;
+    const list = byAnchor.get(anchor);
+    const entry = { servedLine: pos + 1, canonText };
+    if (list) list.push(entry);
+    else byAnchor.set(anchor, [entry]);
+  }
+  if (byAnchor.size === 0) return [];
+  const hits: ServedAnchorHit[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    let text = lines[index]!;
+    if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
+      text = text.slice(1);
+    }
+    if (text.length < 4) continue;
+    if (text[3] !== HASH_SEP) continue;
+    const anchor = text.slice(0, 3);
+    if (!/^[A-Za-z0-9]{3}$/.test(anchor)) continue;
+    const entries = byAnchor.get(anchor);
+    if (!entries) continue;
+    hits.push({ index, anchor, entries, candidateCanon: canon(text.slice(4)) });
+  }
+  return hits;
+}
+
 /**
  * SAFETY: The single served hash echo predicate for the edit apply path and
  * the write hook. Position-agnostic and content-matched: `start` only shifts
@@ -38,38 +95,14 @@ export function findServedHashEcho(
   canons: readonly (string | null)[],
   start = 1,
 ): ServedHashEchoMatch | undefined {
-  const byAnchor = new Map<string, Array<{ servedLine: number; canonText: string }>>();
-  for (let pos = 0; pos < served.length; pos++) {
-    const anchor = served[pos];
-    if (anchor === null || anchor === undefined) continue;
-    const canonText = pos < canons.length ? (canons[pos] ?? null) : null;
-    if (canonText === null) continue;
-    const list = byAnchor.get(anchor);
-    const entry = { servedLine: pos + 1, canonText };
-    if (list) list.push(entry);
-    else byAnchor.set(anchor, [entry]);
-  }
-  if (byAnchor.size === 0) return undefined;
-  for (let index = 0; index < lines.length; index++) {
-    let text = lines[index]!;
-    if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
-      text = text.slice(1);
-    }
-    if (text.length < 4) continue;
-    if (text[3] !== HASH_SEP) continue;
-    const anchor = text.slice(0, 3);
-    if (!/^[A-Za-z0-9]{3}$/.test(anchor)) continue;
-    const candidates = byAnchor.get(anchor);
-    if (!candidates) continue;
-    const remainder = text.slice(4);
-    const candidateCanon = canon(remainder);
-    for (const entry of candidates) {
-      if (entry.canonText === candidateCanon) {
+  for (const hit of collectServedAnchorHits(lines, served, canons)) {
+    for (const entry of hit.entries) {
+      if (entry.canonText === hit.candidateCanon) {
         return {
-          k: index + 1,
-          line: start + index,
-          hash: anchor,
-          anchor,
+          k: hit.index + 1,
+          line: start + hit.index,
+          hash: hit.anchor,
+          anchor: hit.anchor,
           servedLine: entry.servedLine,
         };
       }
@@ -114,44 +147,21 @@ export function findServedPrefixMismatches(
   canons: readonly (string | null)[],
   start = 1,
 ): ServedPrefixMismatch[] {
-  const byAnchor = new Map<string, Array<{ servedLine: number; canonText: string }>>();
-  for (let pos = 0; pos < served.length; pos++) {
-    const anchor = served[pos];
-    if (anchor === null || anchor === undefined) continue;
-    const canonText = pos < canons.length ? (canons[pos] ?? null) : null;
-    if (canonText === null) continue;
-    const list = byAnchor.get(anchor);
-    const entry = { servedLine: pos + 1, canonText };
-    if (list) list.push(entry);
-    else byAnchor.set(anchor, [entry]);
-  }
-  if (byAnchor.size === 0) return [];
   const out: ServedPrefixMismatch[] = [];
-  for (let index = 0; index < lines.length; index++) {
-    let text = lines[index]!;
-    if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
-      text = text.slice(1);
-    }
-    if (text.length < 4) continue;
-    if (text[3] !== HASH_SEP) continue;
-    const anchor = text.slice(0, 3);
-    if (!/^[A-Za-z0-9]{3}$/.test(anchor)) continue;
-    const candidates = byAnchor.get(anchor);
-    if (!candidates) continue;
-    const candidateCanon = canon(text.slice(4));
+  for (const hit of collectServedAnchorHits(lines, served, canons)) {
     let exact = false;
-    for (const entry of candidates) {
-      if (entry.canonText === candidateCanon) {
+    for (const entry of hit.entries) {
+      if (entry.canonText === hit.candidateCanon) {
         exact = true;
         break;
       }
     }
     if (exact) continue;
     out.push({
-      k: index + 1,
-      line: start + index,
-      anchor,
-      servedLine: candidates[0]!.servedLine,
+      k: hit.index + 1,
+      line: start + hit.index,
+      anchor: hit.anchor,
+      servedLine: hit.entries[0]!.servedLine,
     });
   }
   return out;

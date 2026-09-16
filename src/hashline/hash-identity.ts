@@ -68,12 +68,6 @@ export function isValidHashList(value: unknown): value is string[] {
 
 const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
-// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char, linear prefix match — no user input, no nested quantifiers, no ReDoS.
-export const HL_PREFIX_PLUS_RE = new RegExp(`^\\+${HASH_CLASS}│`);
-// SAFETY: HASH_CLASS and ANCHOR_LEN are trusted constants (3-char alphanumeric), bounded and linear — no user-controlled pattern, no ReDoS.
-export const HL_PREFIX_MINUS_RE = new RegExp(`^-(?:${HASH_CLASS}│| {${ANCHOR_LEN}}│)`);
-// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char, linear anchor prefix — no user input, no ReDoS.
-export const HL_BARE_PREFIX_RE = new RegExp(`^\\s*(${HASH_CLASS})│`);
 export const CANON_VERSION = 2;
 const CANON_RE = /[ \t\r\n]+/g;
 

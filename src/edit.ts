@@ -32,7 +32,6 @@ import type { EditDetails } from "./edit-response.js";
 import type { RPreview, RRState } from "./edit-render.js";
 
 void EDIT_DESCRIPTION;
-void editModeSchema;
 /** SAFETY: @deprecated Import from "./payload-contract.js" — single source per ADR-0007 */
 export { assertReq };
 /** SAFETY: @deprecated Import from "./payload-contract.js" — single source per ADR-0007. Re-exports retained for compatibility until next MAJOR. */
