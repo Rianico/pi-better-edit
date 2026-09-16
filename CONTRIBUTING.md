@@ -11,6 +11,8 @@
 
 `CHANGELOG.md` `## [Unreleased]` guarded by `pre-push` hook (`warn+block`, `uv run python scripts/changelog-unreleased.py update`) and `changelog-check.yml` (`pull_request` required, `diff -q` vs generated); `release.yml` runs `scripts/changelog-unreleased.py clear` then `semantic-release` owns versioned sections. Do not hand-edit versioned sections. Hidden types `style|chore|refactor|test|build|ci` only appear when `!`/`BREAKING CHANGE`.
 
+Gates and hooks can probe it read-only with `uv run python scripts/changelog-unreleased.py check` (exit 0 in sync, 1 on drift, 2 when the file is absent; nothing is written, staged or committed).
+
 ## Reporting Issues
 Pick the template that matches your intent — see `.github/ISSUE_TEMPLATE/` (blank issues disabled).
 - Bugs: paste-complete input plus the exact args/payload, quote the diff or log; text beats screenshots.
