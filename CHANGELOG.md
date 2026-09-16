@@ -18,7 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* **context:** align served echo refusal template with code
+* **context:** align echo refusal template
 * **adr:** refine served echo and literal escape
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
