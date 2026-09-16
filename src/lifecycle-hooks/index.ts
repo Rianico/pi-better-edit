@@ -198,12 +198,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         resultLineCount: deps.visLines(normalized).length,
         firstChangedLine: 1,
       });
-      if (literalBypass) {
-        try {
-          clearServedRefusals(absolutePath);
-        } catch {
-          // SAFETY: best-effort counter clear — a missed clear only sharpens the next refusal message, never blocks a write.
-        }
+      try {
+        clearServedRefusals(absolutePath);
+      } catch {
+        // SAFETY: best-effort counter clear — a missed clear only sharpens the next refusal message, never blocks a write.
       }
       return {
         content: [

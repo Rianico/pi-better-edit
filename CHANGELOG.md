@@ -12,7 +12,8 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **edit:** stop routing the write-surface prefix note to undo_last_edit
+* **edit:** release served-echo refusal counters after write
+* **edit:** drop undo hint from prefix note
 * **edit:** drop shape-based refusal from content
 
 ### Documentation

@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { lineHashes } from "../../src/hashline";
@@ -8,6 +8,19 @@ import { servedHashEchoDenial } from "../../src/write-hook.js";
 import { resolveTarget } from "../../src/fs-write.js";
 import { toCwd } from "../../src/paths.js";
 import { readFile as readFsFile } from "node:fs/promises";
+
+const writeAtomicGate = vi.hoisted(() => ({ fail: false }));
+
+vi.mock("../../src/fs-write.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/fs-write.js")>();
+  return {
+    ...actual,
+    writeAtomic: async (target: string, data: string) => {
+      if (writeAtomicGate.fail) throw new Error("injected writeAtomic failure");
+      return actual.writeAtomic(target, data);
+    },
+  };
+});
 
 const home = useTestHome();
 
@@ -145,6 +158,53 @@ describe("edit served-row gate with declaration", () => {
         .execute("e1", payload, undefined, undefined, ctx)
         .catch((e: unknown) => e as Error);
       expect(third.message).toMatch(/E_SERVED_ECHO/);
+      expect(await readFsFile(path, "utf-8")).toBe(before);
+    });
+  });
+
+  it("failed commit leaves the refusal counter intact (#129)", async () => {
+    await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      const before = await readFsFile(path, "utf-8");
+      const refusal = {
+        file: "sample.txt",
+        edits: [
+          { anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: `${hashes[1]}│two` },
+        ],
+      } as any;
+      const first = await editTool
+        .execute("e1", refusal, undefined, undefined, ctx)
+        .catch((e: unknown) => e as Error);
+      expect(first.message).toContain("submission 1");
+      writeAtomicGate.fail = true;
+      try {
+        await expect(
+          editTool.execute(
+            "e1",
+            {
+              file: "sample.txt",
+              edits: [
+                {
+                  anchor_from: hashes[0]!,
+                  anchor_to: hashes[0]!,
+                  replace_with: "changed-one",
+                },
+              ],
+            } as any,
+            undefined,
+            undefined,
+            ctx,
+          ),
+        ).rejects.toThrow(/injected writeAtomic failure/);
+      } finally {
+        writeAtomicGate.fail = false;
+      }
+      const second = await editTool
+        .execute("e1", refusal, undefined, undefined, ctx)
+        .catch((e: unknown) => e as Error);
+      expect(second.message).toContain("submission 2");
       expect(await readFsFile(path, "utf-8")).toBe(before);
     });
   });

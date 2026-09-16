@@ -870,7 +870,6 @@ async function runMutations(
       );
     }
     if (!isPreview) clearNoopLoop(absolutePath);
-    if (!isPreview) clearServedRefusals(absolutePath);
     if (outcome.anchorWarnings?.length) {
       warnings.push(...outcome.anchorWarnings);
     }
@@ -1059,6 +1058,7 @@ export async function apply(
       await undo.restore();
       throw error;
     }
+    clearServedRefusals(file.absolutePath);
 
     // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4): it is
     // WHY: deliberately deferred to here, after the bytes are on disk, so an edit that writes nothing
