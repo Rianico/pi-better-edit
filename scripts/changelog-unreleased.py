@@ -7,10 +7,12 @@
 
 - update: generate notes from commits since last tag, place under Unreleased
 - clear:  remove Unreleased section before semantic-release takes over
+- check:  read-only drift probe for hooks and gates (0 in sync, 1 on drift, no writes)
 
 Usage:
   python scripts/changelog-unreleased.py update [--changelog CHANGELOG.md]
   python scripts/changelog-unreleased.py clear [--changelog CHANGELOG.md]
+  python scripts/changelog-unreleased.py check [--changelog CHANGELOG.md]
 """
 
 from __future__ import annotations
@@ -189,21 +191,12 @@ def render_unreleased(sections: dict[str, list[str]]) -> str:
     return "\n".join(lines).strip() + "\n\n"
 
 
-def update_changelog(changelog: Path) -> bool:
-    tag = get_last_tag()
-    commits = get_commits_since(tag)
-    warn_if_visible_sync_head(commits)
-    sections = commits_to_sections(commits)
-    new_block = render_unreleased(sections)
+def plan_update(content: str, new_block: str) -> str | None:
+    """The content `update` would write, or None when it would leave the bytes untouched.
 
-    if not changelog.exists():
-        changelog.write_text(
-            f"{HEADER}\n\nAll notable changes to this project will be documented in this file.\n\n",
-            encoding="utf-8",
-        )
-
-    content = changelog.read_text(encoding="utf-8")
-
+    Pure: the caller owns every file write, so `check` reuses the exact splice and
+    normalization the writer applies and cannot disagree with it.
+    """
     # ensure header exists
     if HEADER not in content:
         content = f"{HEADER}\n\n" + content
@@ -228,7 +221,7 @@ def update_changelog(changelog: Path) -> bool:
     else:
         if not new_block.strip() or new_block.strip() == UNRELEASED_HEADING:
             # nothing to add
-            return False
+            return None
         # insert after header (after first HEADER line and following blank lines)
         # simple: insert right after header's first paragraph
         # find first "## [" after header
@@ -241,11 +234,51 @@ def update_changelog(changelog: Path) -> bool:
             new_content = content.rstrip() + "\n\n" + new_block
 
     if new_content == content:
-        return False
+        return None
     # normalize: ensure single trailing newline, no triple blanks
-    new_content = re.sub(r"\n{3,}", "\n\n", new_content).strip() + "\n"
+    return re.sub(r"\n{3,}", "\n\n", new_content).strip() + "\n"
+
+
+def update_changelog(changelog: Path) -> bool:
+    tag = get_last_tag()
+    commits = get_commits_since(tag)
+    warn_if_visible_sync_head(commits)
+    new_block = render_unreleased(commits_to_sections(commits))
+
+    if not changelog.exists():
+        changelog.write_text(
+            f"{HEADER}\n\nAll notable changes to this project will be documented in this file.\n\n",
+            encoding="utf-8",
+        )
+
+    content = changelog.read_text(encoding="utf-8")
+    new_content = plan_update(content, new_block)
+    if new_content is None:
+        return False
     changelog.write_text(new_content, encoding="utf-8")
     return True
+
+
+def check_changelog(changelog: Path) -> int:
+    """Read-only drift probe: 0 in sync, 1 on drift, 2 when there is nothing to check.
+
+    Mirrors `update` byte for byte through `plan_update`; it never writes, stages or commits,
+    which is what lets a composite gate run it as a normal read-only phase.
+    """
+    if not changelog.exists():
+        print(f"{changelog} not found — nothing to check", file=sys.stderr)
+        return 2
+    # WHY: no warn_if_visible_sync_head here — a read-only probe reports drift, not commit hygiene.
+    new_block = render_unreleased(commits_to_sections(get_commits_since(get_last_tag())))
+    content = changelog.read_text(encoding="utf-8")
+    if plan_update(content, new_block) is None:
+        print("in sync")
+        return 0
+    print(
+        "drift detected — regenerate with: uv run python scripts/changelog-unreleased.py update",
+        file=sys.stderr,
+    )
+    return 1
 
 
 def clear_changelog(changelog: Path) -> bool:
@@ -270,7 +303,11 @@ def clear_changelog(changelog: Path) -> bool:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description="Manage Unreleased section in CHANGELOG.md")
-    parser.add_argument("command", choices=["update", "clear"], help="update or clear Unreleased")
+    parser.add_argument(
+        "command",
+        choices=["update", "clear", "check"],
+        help="update or clear Unreleased, or check it read-only (0 in sync, 1 on drift)",
+    )
     parser.add_argument("--changelog", default="CHANGELOG.md", help="path to CHANGELOG.md")
     args = parser.parse_args()
 
@@ -278,6 +315,8 @@ def main() -> int:
     if args.command == "update":
         changed = update_changelog(changelog)
         print("updated" if changed else "no change")
+    elif args.command == "check":
+        return check_changelog(changelog)
     else:
         changed = clear_changelog(changelog)
         print("cleared" if changed else "no change")
