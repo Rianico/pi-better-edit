@@ -143,7 +143,8 @@ describe("applyEdit ambiguous tier", () => {
     expect(writeNote).toContain("Ab3");
     expect(writeNote).toContain("line 1");
     expect(writeNote).toContain("differs from what was served");
-    expect(writeNote).toContain("undo_last_edit");
+    expect(writeNote).not.toContain("undo_last_edit");
+    expect(writeNote).toContain("re-issue the write without the anchor prefix");
   });
 });
 
@@ -237,7 +238,8 @@ describe("write result content carries the note", () => {
       expect(text).toContain("applied");
       expect(text).toContain(hashes[0]!);
       expect(text).toContain("differs from what was served");
-      expect(text).toContain("undo_last_edit");
+      expect(text).not.toContain("undo_last_edit");
+      expect(text).toContain("re-issue the write without the anchor prefix");
       expect(await readFile(filePath, "utf-8")).toBe(written);
     });
   });

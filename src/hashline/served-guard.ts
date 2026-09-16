@@ -192,7 +192,7 @@ export function buildServedWritePrefixNote(args: {
     `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
     `but its content differs from what was served. ` +
     `The bytes were written as-is. ` +
-    `If the prefix was unintended, run undo_last_edit and retry without the anchor.`
+    `If the prefix was unintended, re-issue the write without the anchor prefix.`
   );
 }
 
@@ -250,7 +250,7 @@ export function buildServedEditMessage(args: {
     `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
     `HASH${HASH_SEP} anchors are tool output, not file content. ` +
     `Remove the copied anchors and retry, or declare intent with mode: "literal". ` +
-    `Re-read the file for fresh anchors if needed. nothing was written. (submission ${args.count}×)`;
+    `Re-read the file for fresh anchors if needed. Nothing was written. (submission ${args.count}×)`;
   return base + sharpenedTail(args.count);
 }
 
@@ -266,6 +266,6 @@ export function buildServedWriteMessage(args: {
     `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
     `HASH${HASH_SEP} anchors are tool output, not file content. ` +
     `Retry with file content only (remove the entire copied anchor chain), or declare intent with mode: "literal". ` +
-    `Re-read the file for fresh anchors if needed. nothing was written. (submission ${args.count}×)`;
+    `Re-read the file for fresh anchors if needed. Nothing was written. (submission ${args.count}×)`;
   return base + sharpenedTail(args.count);
 }

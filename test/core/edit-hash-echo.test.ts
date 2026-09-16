@@ -203,7 +203,7 @@ describe("applyEdit — E_SERVED_ECHO gate", () => {
       expect(msg).toContain(hashes[2]!);
       expect(msg).toContain("line 3");
       expect(msg).toContain("tool output, not file content");
-      expect(msg).toContain("nothing was written");
+      expect(msg).toContain("Nothing was written");
       expect(msg).toContain('mode: "literal"');
       expect(msg).toContain("Re-read");
       expect(msg).not.toContain(`${hashes[2]}${HASH_SEP}three`);

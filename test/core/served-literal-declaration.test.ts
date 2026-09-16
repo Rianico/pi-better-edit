@@ -129,7 +129,7 @@ describe("edit served-row gate with declaration", () => {
       expect(first.message).toContain(hashes[1]!);
       expect(first.message).toContain("line 2");
       expect(first.message).toContain("tool output, not file content");
-      expect(first.message).toContain("nothing was written");
+      expect(first.message).toContain("Nothing was written");
       expect(first.message).toContain('mode: "literal"');
       expect(first.message).toContain("Re-read");
       expect(first.message).not.toContain(`${hashes[1]}│two`);
@@ -193,7 +193,7 @@ describe("write served-row gate with declaration", () => {
       const verbatim = `${hashes[0]}│one\n${hashes[1]}│two\n`;
       const refused = await servedHashEchoDenial(io, path, verbatim, cwd, "sess-w");
       expect(refused).toMatch(/E_SERVED_ECHO/);
-      expect(refused).toContain("nothing was written");
+      expect(refused).toContain("Nothing was written");
       expect(refused).toContain('mode: "literal"');
       const ambiguous = await servedHashEchoDenial(
         io,

@@ -118,7 +118,7 @@ describe("write served hash guard", () => {
       expect(result).toMatchObject({ block: true });
       expect((result as { reason?: string }).reason).toContain("[E_SERVED_ECHO]");
       expect((result as { reason?: string }).reason).toContain("tool output, not file content");
-      expect((result as { reason?: string }).reason).toContain("nothing was written");
+      expect((result as { reason?: string }).reason).toContain("Nothing was written");
       expect((result as { reason?: string }).reason).toContain('mode: "literal"');
       expect(await readFile(path)).toEqual(beforeBytes);
 
@@ -211,7 +211,7 @@ describe("write served hash guard", () => {
       expect(reason).toContain("line 1 begins with");
       expect(reason).toContain("served for this session, path, and line 1");
       expect(reason).toContain("tool output, not file content");
-      expect(reason).toContain("nothing was written");
+      expect(reason).toContain("Nothing was written");
       expect(reason).toContain('mode: "literal"');
       expect(reason).toContain("Re-read");
       // the guard message must not become a paste source
