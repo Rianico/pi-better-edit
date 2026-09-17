@@ -32,13 +32,18 @@ while read -r local_ref local_sha remote_ref remote_sha; do
       git add CHANGELOG.md
       if git rev-parse --verify HEAD >/dev/null 2>&1; then
         if git commit --amend --no-edit --no-verify >/dev/null 2>&1; then
-          echo "[pre-push] amended HEAD $(git rev-parse --short HEAD) with updated CHANGELOG.md [Unreleased] — auto-pushing..." >&2
           rm -f "$tmp"
-          # Schedule auto-retry after this hook aborts the current push.
-          # Use background job so the outer `git push` can exit cleanly (code 1) before retry.
-          # Retry re-enters this hook once (now Unreleased is clean) and succeeds.
-          echo "[pre-push] push aborted — auto-retrying in background..." >&2
-          ( sleep 0.5; git push </dev/null >&2 || git push --set-upstream origin HEAD </dev/null >&2 ) &
+          cat >&2 <<EOF
+
+> [!warning] pre-push hook auto-fixed CHANGELOG.md and amended HEAD
+A visible conventional commit is in the push range but ## [Unreleased] was stale.
+The hook ran \`scripts/changelog-unreleased.py update\` and amended the current commit:
+  git commit --amend --no-edit --no-verify   # HEAD is now $(git rev-parse --short HEAD)
+The current push was BLOCKED so the amended commit is not pushed yet.
+Re-run your push to send the amended commit:
+  git push
+(If you had extra git commands queued, skip them — the hook already amended HEAD.)
+EOF
           exit 1
         fi
       fi
@@ -48,12 +53,11 @@ while read -r local_ref local_sha remote_ref remote_sha; do
 > [!warning] CHANGELOG.md [Unreleased] stale
 Visible conventional commit in push range but Unreleased not updated.
 Fix:
-  uv run python scripts/changelog-unreleased.py update
-  git add CHANGELOG.md
-  git commit -m 'chore: sync changelog unreleased section'  # hidden type required
-  # visible feat/fix/perf/revert/docs re-triggers the guard and loops forever
-  # or amend on a feature branch: git commit --amend --no-edit --no-verify && git push --force-with-lease
-  git push
+  # Do NOT hand-edit CHANGELOG.md — just re-run the commit command directly.
+  # The hook auto-fixes (amends HEAD) on the next attempt and blocks with a warning.
+  git commit --amend --no-edit --no-verify && git push --force-with-lease
+  # or, if the change is not yet committed, simply re-run your original commit
+  # command (e.g. git commit -m 'feat: ...') — the hook updates Unreleased for you.
 Bypass (human): git push --no-verify  or  PREPUSH_AUTOFIX=0 git push
 EOF
     cp "$tmp" CHANGELOG.md
