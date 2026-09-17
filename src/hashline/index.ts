@@ -5,9 +5,6 @@ export {
   HASH_CLASS,
   HASH_SPACE,
   MAX_HASH_LINES,
-  HL_PREFIX_PLUS_RE,
-  HL_PREFIX_MINUS_RE,
-  HL_BARE_PREFIX_RE,
   isValidHashList,
   CANON_VERSION,
   lineHashes,
@@ -34,8 +31,6 @@ export {
   type LeaseSpanSource,
   resEdit,
   valEdit,
-  stripBarePrefixes,
-  stripDiffPrefixes,
   swapReversedRanges,
   isUniformLeaseFastPath,
   resolveLineIdentity,
@@ -45,11 +40,20 @@ export {
 
 export { resolveLeasedEdit, type LeasedEditResolution } from "./lease-resolve.js";
 
+export { applyEdit, fmtRegion, changedRange, type ApplyVerificationContext } from "./apply.js";
+
 export {
-  applyEdit,
-  fmtRegion,
-  changedRange,
-  findEditHashEcho,
-  EditHashEchoError,
-  type ApplyVerificationContext,
-} from "./apply.js";
+  findServedHashEcho,
+  findServedPrefixMismatches,
+  ServedHashEchoError,
+  buildServedEditMessage,
+  buildServedEditPrefixNote,
+  buildServedWriteMessage,
+  buildServedWritePrefixNote,
+  trackServedEditRefusal,
+  trackServedWriteRefusal,
+  clearServedRefusals,
+  LITERAL_BYPASS_NOTICE,
+  type ServedHashEchoMatch,
+  type ServedPrefixMismatch,
+} from "./served-guard.js";

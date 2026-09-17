@@ -1,10 +1,5 @@
 import { abortIf, rejectUnknownFields, clipLine } from "../utils.js";
-import {
-  HASH_CLASS,
-  HL_BARE_PREFIX_RE,
-  HL_PREFIX_PLUS_RE,
-  HL_PREFIX_MINUS_RE,
-} from "./hash-identity.js";
+import { HASH_CLASS } from "./hash-identity.js";
 import { parseHashRef, parseText, type Anchor } from "./parse.js";
 import type { ServedRow } from "./served.js";
 import type { FileSnapshotContext } from "./served-verification.js";
@@ -334,7 +329,7 @@ function firstHashFromBlock(block: string): string | undefined {
   return undefined;
 }
 
-export function resEdit(edit: HTEdit, _warnings?: string[]): HEdit {
+export function resEdit(edit: HTEdit): HEdit {
   assertItem(edit as Record<string, unknown>);
 
   const editLines = parseText(edit.replace_with);
@@ -377,57 +372,6 @@ function warnUnicodeEsc(edit: HEdit, warnings: string[]): void {
   }
 }
 
-export function stripBarePrefixes(edit: HEdit, fileHashes: string[], _warnings: string[]): HEdit {
-  const fileHashSet = new Set(fileHashes);
-  const stripped: { lineIndex: number; matched: boolean }[] = [];
-  const contentLines = edit.content_lines.map((line, lineIndex) => {
-    const match = line.match(HL_BARE_PREFIX_RE);
-    if (!match) return line;
-    stripped.push({ lineIndex, matched: fileHashSet.has(match[1]!) });
-    return line.slice(match[0].length);
-  });
-  if (stripped.length === 0) return edit;
-  const locations = stripped.map((s) => `replace_with line ${s.lineIndex + 1}`).join(", ");
-  const matchedCount = stripped.filter((s) => s.matched).length;
-  const evidence =
-    matchedCount === 0
-      ? "0 matched — verify literal 'HASH│' content"
-      : `${matchedCount}/${stripped.length} matched`;
-  if (matchedCount === stripped.length) {
-    throw new Error(
-      `[MODEL] [E_BAD_ANCHOR] Refused: stripped "HASH│" prefix from ${locations} (${evidence}). Nothing was written; pass bare content without HASH│ and retry.`,
-    );
-  } else {
-    throw new Error(
-      `[MODEL] [E_BAD_ANCHOR] Refused: stripped "HASH│" prefix from ${locations} (${evidence}). Nothing was written; pass bare content and retry.`,
-    );
-  }
-  return { ...edit, content_lines: contentLines };
-}
-
-export function stripDiffPrefixes(edit: HEdit, _warnings: string[]): HEdit {
-  const stripped: number[] = [];
-  const contentLines = edit.content_lines.map((line, lineIndex) => {
-    const plus = line.match(HL_PREFIX_PLUS_RE);
-    if (plus) {
-      stripped.push(lineIndex);
-      return line.slice(plus[0].length);
-    }
-    const minus = line.match(HL_PREFIX_MINUS_RE);
-    if (minus) {
-      stripped.push(lineIndex);
-      return line.slice(minus[0].length);
-    }
-    return line;
-  });
-  if (stripped.length === 0) return edit;
-  const locations = stripped.map((i) => `replace_with line ${i + 1}`).join(", ");
-  throw new Error(
-    `[MODEL] [E_BAD_ANCHOR] Refused: stripped diff-preview marker from ${locations}. Nothing was written; pass bare content without +/- prefixes and retry.`,
-  );
-  return { ...edit, content_lines: contentLines };
-}
-
 export function swapReversedRanges(edit: HEdit, fileHashes: string[], warnings: string[]): HEdit {
   const lineByHash = new Map<string, number>();
   for (let i = 0; i < fileHashes.length; i++) {
@@ -448,7 +392,6 @@ export function swapReversedRanges(edit: HEdit, fileHashes: string[], warnings: 
 export function valEdit(
   edit: HEdit,
   snapshot: FileSnapshotContext,
-  _warnings: string[],
   signal: AbortSignal | undefined,
 ): {
   resolved: RHEdit | undefined;
@@ -510,7 +453,7 @@ export function resolveEditByContent(
   snapshot: FileSnapshotContext,
   signal: AbortSignal | undefined,
 ): { resolved: RHEdit | undefined; mismatches: Parameters<typeof fmtMismatchWithServes>[0] } {
-  const { resolved, mismatches } = valEdit(edit, snapshot, [], signal);
+  const { resolved, mismatches } = valEdit(edit, snapshot, signal);
   return { resolved, mismatches };
 }
 

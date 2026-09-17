@@ -1,15 +1,17 @@
 import { abortIf, splitLines } from "../utils.js";
 import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
+import { AnchorMismatchError, verifyServedRange, type ResolvedRange } from "./served.js";
 import {
-  AnchorMismatchError,
-  verifyServedRange,
-  type ResolvedRange,
-  type ServedRow,
-} from "./served.js";
+  findServedHashEcho,
+  findServedPrefixMismatches,
+  ServedHashEchoError,
+  buildServedEditMessage,
+  buildServedEditPrefixNote,
+  trackServedEditRefusal,
+  LITERAL_BYPASS_NOTICE,
+} from "./served-guard.js";
 import {
   resolveEditByContent,
-  stripBarePrefixes,
-  stripDiffPrefixes,
   swapReversedRanges,
   warnUnicodeEsc,
   fmtMismatchWithServes,
@@ -57,30 +59,8 @@ type NoopSpan = {
   currentContent: string;
 };
 
-export function findEditHashEcho(
-  replacementLines: string[],
-  served: readonly (string | null)[],
-  startLine: number,
-): { k: number; hash: string } | undefined {
-  for (let k = 0; k < replacementLines.length; k++) {
-    const pos = startLine + k - 1;
-    if (
-      pos < served.length &&
-      served[pos] !== null &&
-      replacementLines[k]!.startsWith(served[pos]! + HASH_SEP)
-    ) {
-      return { k: k + 1, hash: served[pos]! };
-    }
-  }
-  return undefined;
-}
-
-export class EditHashEchoError extends AnchorMismatchError {
-  constructor(message: string, servedRows: ServedRow[] = []) {
-    super(message, servedRows);
-    this.name = "EditHashEchoError";
-  }
-}
+/** SAFETY: served hash echo predicate lives in `./served-guard.js` — one evidence predicate for the edit apply path and the write hook. */
+export { findServedHashEcho, ServedHashEchoError } from "./served-guard.js";
 
 /**
  * The verification cluster that travels with an edit from the session pipeline
@@ -90,35 +70,21 @@ export class EditHashEchoError extends AnchorMismatchError {
  */
 export interface ApplyVerificationContext {
   filePath?: string;
+  absolutePath?: string;
   served?: (string | null)[];
   tombstone?: ReadonlySet<string>;
   servedCanons?: (string | null)[];
   identity?: LeaseSpanSource;
+  mode?: "general" | "literal";
 }
-
-type ServedAnchorScanEntry = {
-  lines: string[];
-  anchors: readonly (string | null)[];
-  start: number;
-};
 
 /**
- * One implementation of the candidate × target scan for the served hash echo
- * condition (CONTEXT.md served hash echo, ADR-0009): walks the ordered
- * (candidate lines × anchor target) entries with early exit, delegating each
- * step to the line-relative `findEditHashEcho` — never a free-floating scan
- * for either boundary anchor, so legitimate content repeating an anchor's
- * three characters at a non-corresponding line stays accepted.
+ * WHY: the served hash echo gate is evidence-only (CONTEXT.md served hash echo,
+ * WHY: ADR-0009 revision, `[E_SERVED_ECHO]`): one position-agnostic,
+ * WHY: content-matched scan over the replacement views via the unified
+ * WHY: `findServedHashEcho` — never a shape check, so a served prefix with
+ * WHY: differing content stays accepted.
  */
-function findFirstServedAnchorCopy(
-  entries: readonly ServedAnchorScanEntry[],
-): { k: number; hash: string } | undefined {
-  for (const entry of entries) {
-    const hit = findEditHashEcho(entry.lines, entry.anchors, entry.start);
-    if (hit !== undefined) return hit;
-  }
-  return undefined;
-}
 function assertNotEmpty(originalContent: string, result: string): void {
   if (originalContent.length > 0 && result.length === 0) {
     throw new Error(
@@ -198,12 +164,7 @@ function assemble(content: string, span: RESpan, signal: AbortSignal | undefined
 }
 
 function prepareEdit(fileHashes: string[], edit: HEdit, warnings: string[]): { fixed: HEdit } {
-  const rangeFixed = swapReversedRanges(edit, fileHashes, warnings);
-  const prefixFixed = stripDiffPrefixes(
-    stripBarePrefixes(rangeFixed, fileHashes, warnings),
-    warnings,
-  );
-  return { fixed: prefixFixed };
+  return { fixed: swapReversedRanges(edit, fileHashes, warnings) };
 }
 
 /**
@@ -267,47 +228,32 @@ export function applyEdit(
   range: ResolvedRange;
   warnings?: string[];
   noopEdit?: NEdit;
+  literalBypass?: boolean;
 } {
   abortIf(signal);
 
-  const { filePath, served, tombstone, servedCanons, identity } = verification ?? {};
+  const {
+    filePath,
+    absolutePath,
+    served,
+    tombstone,
+    servedCanons,
+    identity,
+    mode = "general",
+  } = verification ?? {};
 
   const lineIndex = buildIdx(content);
   const fileHashes = precomputedHashes ?? defaultHashIdentity.hashesForSync(content);
   const warnings: string[] = [];
   const rawReplacementLines = [...edit.content_lines];
+  let literalBypass = false;
 
-  let prefixFixed: typeof edit = edit;
-  try {
-    const res = prepareEdit(fileHashes, edit, warnings);
-    prefixFixed = res.fixed;
-  } catch (e) {
-    const msg = (e as Error).message;
-    if (msg.includes("[E_BAD_ANCHOR]") && served) {
-      let hasServedCopy = false;
-      for (const line of rawReplacementLines) {
-        const m = line.match(/^([A-Za-z0-9]{3})│/);
-        if (m && served.includes(m[1]!)) {
-          hasServedCopy = true;
-          break;
-        }
-      }
-      if (hasServedCopy) {
-        prefixFixed = edit;
-        warnings.length = 0;
-      } else {
-        throw e;
-      }
-    } else {
-      throw e;
-    }
-  }
+  const prefixFixed = prepareEdit(fileHashes, edit, warnings).fixed;
 
   const {
     resolved,
     mismatches,
     rebased: leaseRebased,
-    servedStart,
   } = resolveEdit(prefixFixed, lineIndex.fileLines, fileHashes, filePath, served, identity, signal);
   if (mismatches.length || !resolved) {
     const { message, servedRows } = fmtMismatchWithServes(mismatches, {
@@ -321,35 +267,55 @@ export function applyEdit(
   warnUnicodeEsc(prefixFixed, warnings);
 
   if (served) {
-    const startLine = resolved.hash_bounds[0].line;
-    // WHY: the served mirror is indexed by SERVED rows, so the range-relative check anchors on the
-    // WHY: served window. On a rebased span `startLine` is the REBASED coordinate and would compare
-    // WHY: replacement line `k` against the anchor served for a different line
-    // WHY: (CONTEXT.md served hash echo, ADR-0009).
-    const mirrorStart = leaseRebased && servedStart !== undefined ? servedStart : startLine;
-    // WHY: ordered candidate × target entries for the single scan below: the three
-    // WHY: replacement views against the served mirror at the served window, then — only
-    // WHY: under a rebase — the raw and prefix-fixed views against the current anchors
-    // WHY: at the rebased coordinate. Each step stays line-relative (`findEditHashEcho`);
-    // WHY: never a free-floating scan for either boundary anchor.
-    const scanEntries: ServedAnchorScanEntry[] = [
-      { lines: rawReplacementLines, anchors: served, start: mirrorStart },
-      { lines: resolved.content_lines, anchors: served, start: mirrorStart },
-      { lines: prefixFixed.content_lines, anchors: served, start: mirrorStart },
+    // WHY: evidence-only gate (ADR-0009 revision): each replacement view is scanned
+    // WHY: position-agnostic against the served mirror with its canon mirror. No canon
+    // WHY: data means no evidence, so the scan stays silent — never a shape refusal.
+    // WHY: `leaseRebased` needs no separate current-anchor scan: identity lives in the
+    // WHY: lease seam, and the served hash echo condition only names served anchors.
+    const canons = servedCanons ?? [];
+    const views: Array<{ lines: string[]; offending: string[] }> = [
+      { lines: rawReplacementLines, offending: rawReplacementLines },
+      { lines: resolved.content_lines, offending: resolved.content_lines },
+      { lines: prefixFixed.content_lines, offending: prefixFixed.content_lines },
     ];
-    if (leaseRebased && servedStart !== undefined) {
-      // WHY: under a rebase the replacement line may also carry an anchor the current coordinates
-      // WHY: hold for the line it replaces, so the current anchors are checked range-relative too.
-      const startPos = resolved.hash_bounds[0].line;
-      scanEntries.push(
-        { lines: rawReplacementLines, anchors: fileHashes, start: startPos },
-        { lines: prefixFixed.content_lines, anchors: fileHashes, start: startPos },
-      );
+    let servedCopy:
+      | { k: number; hash: string; servedLine: number; offendingLine: string }
+      | undefined;
+    for (const view of views) {
+      const hit = findServedHashEcho(view.lines, served, canons, 1);
+      if (hit !== undefined) {
+        servedCopy = {
+          k: hit.k,
+          hash: hit.hash,
+          servedLine: hit.servedLine,
+          offendingLine: view.offending[hit.k - 1] ?? "",
+        };
+        break;
+      }
     }
-    const servedCopy = findFirstServedAnchorCopy(scanEntries);
     if (servedCopy) {
-      const msg = `[MODEL] [E_SERVED_ECHO] Refused edit to ${filePath ?? "(unknown file)"}: replacement line ${servedCopy.k} begins with the exact ${servedCopy.hash}${HASH_SEP} anchor served for this session, path, and range-relative line. Remove the copied anchors and retry. Nothing was written.`;
-      throw new EditHashEchoError(msg, []);
+      if (mode === "literal") {
+        literalBypass = true;
+        warnings.push(LITERAL_BYPASS_NOTICE);
+      } else {
+        const anchorFrom = edit.hash_bounds[0].hash;
+        const anchorTo = edit.hash_bounds[1].hash;
+        const counterPath = absolutePath ?? filePath ?? "(unknown file)";
+        const count = trackServedEditRefusal(
+          counterPath,
+          anchorFrom,
+          anchorTo,
+          servedCopy.offendingLine,
+        );
+        const msg = buildServedEditMessage({
+          path: filePath ?? "(unknown file)",
+          k: servedCopy.k,
+          hash: servedCopy.hash,
+          servedLine: servedCopy.servedLine,
+          count,
+        });
+        throw new ServedHashEchoError(msg, []);
+      }
     }
     if (!leaseRebased) {
       const startAnchor = resolved.hash_bounds[0];
@@ -377,6 +343,7 @@ export function applyEdit(
       lastChangedLine: undefined,
       range: resolvedRange(resolved),
       ...(warnings.length ? { warnings } : {}),
+      ...(literalBypass ? { literalBypass: true as const } : {}),
       noopEdit: {
         loc: spanResult.loc,
         currentContent: spanResult.currentContent,
@@ -388,12 +355,32 @@ export function applyEdit(
   assertNotEmpty(content, result);
   const changed = changedRange(content, result);
 
+  // WHY: middle tier beside the gate above: a replacement line opening with a
+  // WHY: served anchor whose remainder canon matches none of the canons served
+  // WHY: for that anchor. The bytes are already assembled as-is; the note only
+  // WHY: informs the model channel via the warnings seam (rendered by warnBlock),
+  // WHY: never alters bytes, never blocks, keeps no state, fires per line.
+  if (served) {
+    const canons = servedCanons ?? [];
+    const mismatches = findServedPrefixMismatches(resolved.content_lines, served, canons, 1);
+    for (const mismatch of mismatches) {
+      warnings.push(
+        buildServedEditPrefixNote({
+          k: mismatch.k,
+          anchor: mismatch.anchor,
+          servedLine: mismatch.servedLine,
+        }),
+      );
+    }
+  }
+
   return {
     content: result,
     firstChangedLine: changed?.firstChangedLine,
     lastChangedLine: changed?.lastChangedLine,
     range: resolvedRange(resolved),
     ...(warnings.length ? { warnings } : {}),
+    ...(literalBypass ? { literalBypass: true as const } : {}),
   };
 }
 

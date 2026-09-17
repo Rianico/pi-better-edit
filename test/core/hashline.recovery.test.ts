@@ -123,34 +123,34 @@ describe("applyEdit — recovery scenarios", () => {
     expect(() => resEdit(edit)).toThrow(/Invalid anchor/);
   });
 
-  it("strips bare hash prefix in content_lines", async () => {
+  it("writes bare hash prefix bytes in content_lines through byte-exact", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
-    expect(() =>
-      applyEdit(
-        content,
-        resEdit({
-          anchor_from: hashes[1]!,
-          anchor_to: hashes[2]!,
-          replace_with: `${hashes[1]!}│b\nX`,
-        }),
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyEdit(
+      content,
+      resEdit({
+        anchor_from: hashes[1]!,
+        anchor_to: hashes[2]!,
+        replace_with: `${hashes[1]!}│b\nX`,
+      }),
+    );
+    expect(result.content).toBe(`a\n${hashes[1]!}│b\nX\nd\ne`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("strips diff preview rows in content_lines", async () => {
+  it("writes diff preview marker bytes in content_lines through byte-exact", async () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
-    expect(() =>
-      applyEdit(
-        content,
-        resEdit({
-          anchor_from: hashes[1]!,
-          anchor_to: hashes[1]!,
-          replace_with: `+${hashes[1]!}│B`,
-        }),
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyEdit(
+      content,
+      resEdit({
+        anchor_from: hashes[1]!,
+        anchor_to: hashes[1]!,
+        replace_with: `+${hashes[1]!}│B`,
+      }),
+    );
+    expect(result.content).toBe(`a\n+${hashes[1]!}│B\nc`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
   it("warns on unicode escape sequences in content", async () => {

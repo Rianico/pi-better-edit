@@ -17,6 +17,7 @@ import {
   anchorFromSchema,
   anchorToSchema,
   editFileSchema,
+  editModeSchema,
   assertReq,
 } from "./payload-contract.js";
 import { createEditTool } from "./edit-tool.js";
@@ -41,6 +42,7 @@ export {
   anchorFromSchema,
   anchorToSchema,
   editFileSchema,
+  editModeSchema,
 };
 export { resolveMissingPath } from "./edit-tool.js";
 export { reuseText, reuseMarkdown } from "./tui-presenter.js";

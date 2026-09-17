@@ -5,7 +5,7 @@ import { useTestHome } from "../support/fixtures";
 const home = useTestHome();
 
 describe("edit input validation", () => {
-  it("strips bare HASH| prefix in content with warning", async () => {
+  it("writes bare HASH│ bytes through byte-exact", async () => {
     const file = "foo\nbar";
     const hashes = await lineHashes(file, home.testPath);
     const toolEdit: HTEdit = {
@@ -13,7 +13,9 @@ describe("edit input validation", () => {
       anchor_to: hashes[0]!,
       replace_with: `${hashes[0]!}│FOO`,
     };
-    expect(() => applyEdit(file, resEdit(toolEdit))).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyEdit(file, resEdit(toolEdit));
+    expect(result.content).toBe(`${hashes[0]!}│FOO\nbar`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
   it("rejects array replace_with before patch-prefix validation", () => {
@@ -65,81 +67,81 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
     return applyEdit(file, resEdit(toolEdit), undefined, precomputedHashes);
   }
 
-  it("strips a bare prefix that matches an existing file line hash", async () => {
+  it("writes a bare prefix matching a file hash through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
     const betaHash = hashes[1]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: `${betaHash}│### heading\nreal content`,
-        },
-        hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: `${betaHash}│### heading\nreal content`,
+      },
+      hashes,
+    );
+    expect(result.content).toBe(`${betaHash}│### heading\nreal content\nbeta\ngamma\ndelta`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("strips a bare prefix whose hash exists in the file hash set", async () => {
+  it("writes a bare prefix from the file hash set through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
     const gammaHash = hashes[2]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: `${gammaHash}│text`,
-        },
-        hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: `${gammaHash}│text`,
+      },
+      hashes,
+    );
+    expect(result.content).toBe(`${gammaHash}│text\nbeta\ngamma\ndelta`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("strips bare prefixes even when the hash is not in the file hash set", async () => {
+  it("writes never-served HASH│ lines through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: "ZZZ│one\nZZP│two",
-        },
-        hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: "ZZZ│one\nZZP│two",
+      },
+      hashes,
+    );
+    expect(result.content).toBe("ZZZ│one\nZZP│two\nbeta\ngamma\ndelta");
+    expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("reports the replace_with line for each stripped line", async () => {
+  it("writes mixed literal and HASH│ lines through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: "ZZZ│one\nreal\nZZP│two",
-        },
-        hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: "ZZZ│one\nreal\nZZP│two",
+      },
+      hashes,
+    );
+    expect(result.content).toBe("ZZZ│one\nreal\nZZP│two\nbeta\ngamma\ndelta");
+    expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("keeps indentation after the separator while dropping leading prefix whitespace", async () => {
+  it("writes leading-space HASH│ bytes through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: `  ${hashes[1]!}│  indented`,
-        },
-        hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: `  ${hashes[1]!}│  indented`,
+      },
+      hashes,
+    );
+    expect(result.content).toBe(`  ${hashes[1]!}│  indented\nbeta\ngamma\ndelta`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
   it("accepts a single legit 'TS: TypeScript' line without warning", async () => {
@@ -167,14 +169,17 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
     expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("strips prefixes from long lines without truncation", async () => {
+  it("writes long HASH│ lines through byte-exact without truncation", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
     const betaHash = hashes[1]!;
     const longLine = `${betaHash}│${"y".repeat(500)}`;
-    expect(() =>
-      applyTool({ anchor_from: anchor, anchor_to: anchor, replace_with: longLine }, hashes),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      { anchor_from: anchor, anchor_to: anchor, replace_with: longLine },
+      hashes,
+    );
+    expect(result.content).toBe(`${longLine}\nbeta\ngamma\ndelta`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 });
 
@@ -185,34 +190,34 @@ describe("diff preview rows copied into content", () => {
     return applyEdit(file, resEdit(toolEdit), undefined, precomputedHashes);
   }
 
-  it("strips +HASH│ addition rows with warning", async () => {
+  it("writes +HASH│ bytes through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: `+${hashes[1]!}│### heading\nreal content`,
-        },
-        hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: `+${hashes[1]!}│### heading\nreal content`,
+      },
+      hashes,
+    );
+    expect(result.content).toBe(`+${hashes[1]!}│### heading\nreal content\nbeta\ngamma\ndelta`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("strips -HASH│ and -   │ deletion rows with warning", async () => {
+  it("writes -HASH│ and -   │ bytes through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: `-${hashes[1]!}│one\n-   │two`,
-        },
-        hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: `-${hashes[1]!}│one\n-   │two`,
+      },
+      hashes,
+    );
+    expect(result.content).toBe(`-${hashes[1]!}│one\n-   │two\nbeta\ngamma\ndelta`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
   it("leaves numbered deletion rows as literal content without warning", async () => {
@@ -294,33 +299,55 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
     expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("still strips exact +HASH│ rows without a space", async () => {
+  it("writes exact +HASH│ rows through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: `+${hashes[1]!}│one`,
-        },
-        hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: `+${hashes[1]!}│one`,
+      },
+      hashes,
+    );
+    expect(result.content).toBe(`+${hashes[1]!}│one\nbeta\ngamma\ndelta`);
+    expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("still strips exact -HASH│ and -   │ rows", async () => {
+  it("writes exact -HASH│ and -   │ rows through byte-exact", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    expect(() =>
-      applyTool(
-        {
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: `-${hashes[1]!}│one\n-   │two`,
-        },
+    const result = applyTool(
+      {
+        anchor_from: anchor,
+        anchor_to: anchor,
+        replace_with: `-${hashes[1]!}│one\n-   │two`,
+      },
+      hashes,
+    );
+    expect(result.content).toBe(`-${hashes[1]!}│one\n-   │two\nbeta\ngamma\ndelta`);
+    expect(result.warnings ?? []).toEqual([]);
+  });
+});
+
+describe("literal bytes reach disk unchanged (#126)", () => {
+  const file = "alpha\nbeta\ngamma\ndelta";
+
+  function applyTool(toolEdit: import("../../src/hashline").HTEdit, precomputedHashes?: string[]) {
+    return applyEdit(file, resEdit(toolEdit), undefined, precomputedHashes);
+  }
+
+  it("writes abc│text, leading-space, KEY│value, bullet, and ASCII pipe byte-exact", async () => {
+    const hashes = await lineHashes(file, home.testPath);
+    const anchor = hashes[0]!;
+    const cases = ["abc│text", "   abc│text", "KEY│value", "- wUp│    pass", "abc|text"];
+    for (const literal of cases) {
+      const result = applyTool(
+        { anchor_from: anchor, anchor_to: anchor, replace_with: literal },
         hashes,
-      ),
-    ).toThrow(/\[E_BAD_ANCHOR\]/);
+      );
+      expect(result.content).toBe(`${literal}\nbeta\ngamma\ndelta`);
+      expect(result.warnings ?? []).toEqual([]);
+    }
   });
 });

@@ -121,7 +121,7 @@ function throwStaleAnchor(args: {
   // WHY: at least one boundary is placeable by NEITHER content nor a lease, so no targeted range
   // WHY: exists to serve; `valEdit` cannot resolve both bounds either and its own diagnostic names
   // WHY: the refused anchor(s) with the narrow context of the one boundary we can place.
-  const content = valEdit(edit, snapshot, [], undefined);
+  const content = valEdit(edit, snapshot, undefined);
   const { message, servedRows } = fmtMismatchWithServes(content.mismatches, snapshot);
   throw new AnchorMismatchError(`[MODEL] ${message}`, servedRows);
 }

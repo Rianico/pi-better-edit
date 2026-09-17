@@ -7,6 +7,9 @@ import { describe, it, expect } from "vitest";
  * `anchor identity` (identity belongs to a line's `line_id`), `range staleness` (canonical:
  * `served-range staleness`), and `echo` for served feedback rows (canonical only inside
  * `served hash echo`). This guard keeps the rename from creeping back in (#108, #114).
+ * #108 freeze is served-qualified only: `findServedHashEcho`, `ServedHashEchoError`,
+ * `ServedHashEcho`, `servedHashEchoDenial`, `E_SERVED_ECHO` stay frozen; the
+ * surface-qualified `findEditHashEcho` / `EditHashEchoError` are retired (#125).
  */
 function srcFiles(dir = "src", out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -33,22 +36,21 @@ function matching(pattern: RegExp): string[] {
   return files.filter((file) => pattern.test(readFileSync(file, "utf-8")));
 }
 
-// Allowlist: `src/write-hook.ts` implements the canonical `served hash echo`
-// condition (`ServedHashEcho`, `findServedHashEcho`, `servedHashEchoDenial`,
-// `E_SERVED_ECHO`) and its prose names that condition, so the whole file stays
-// exempt. Every other `src/**/*.ts` file must contain no `/echo/i` once the
-// canonical tokens below are stripped. Sole file exemption in this guard (#114).
-const CANONICAL_ALLOWLIST = new Set(["src/write-hook.ts"]);
+// No file allowlist: every `src/**/*.ts` file must contain no `/echo/i` once the
+// canonical tokens below are stripped (#125 removed the `src/write-hook.ts`
+// exemption — the hook now names only the canonical served hash echo family).
+const CANONICAL_ALLOWLIST = new Set<string>([]);
 
-// Canonical `served hash echo` family (#108 MUST NOT rename, #114 reuses for all
+// Canonical `served hash echo` family (#108 served-qualified freeze, #114 reuses for all
 // three scopes): stripping these tokens (longest first so `findServedHashEcho`
-// does not leave a suffix) plus the glossary phrase `served hash echo` leaves
-// only non-canonical uses.
+// does not leave a suffix and `ServedHashEchoError` does not leave `Error` over
+// `ServedHashEcho`) plus the glossary phrase `served hash echo` leaves only
+// non-canonical uses. Surface-qualified `findEditHashEcho` / `EditHashEchoError`
+// are retired (#125) and must not reappear.
 const CANONICAL_TOKENS = [
   "servedHashEchoDenial",
+  "ServedHashEchoError",
   "findServedHashEcho",
-  "findEditHashEcho",
-  "EditHashEchoError",
   "ServedHashEcho",
   "E_SERVED_ECHO",
 ];
@@ -61,6 +63,9 @@ function stripCanonical(text: string): string {
   // Allow the glossary phrase `served hash echo` (any case, space/hyphen/underscore
   // separated) when it names the canonical error condition.
   out = out.replace(/served[\s\-_]*hash[\s\-_]*echo/gi, "");
+  // Allow the mandated literal-declaration human line, which names the served
+  // condition with a hyphen (`served-echo`) and no hash (#125 escape audit).
+  out = out.split("[USER] served-echo check bypassed by literal declaration").join("");
   return out;
 }
 
@@ -108,7 +113,14 @@ function bindingDocsViolations(): string[] {
       .split("\n")
       .filter((line) => !/^\s*_Avoid_:/.test(line))
       .join("\n");
-    return /echo/i.test(stripCanonical(withoutAvoid));
+    // Retired surface-qualified names may appear in revision notes that document
+    // their retirement (#125); they stay forbidden in `src/` via the src scope.
+    const withoutRetired = withoutAvoid
+      .split("findEditHashEcho")
+      .join("")
+      .split("EditHashEchoError")
+      .join("");
+    return /echo/i.test(stripCanonical(withoutRetired));
   });
 }
 
@@ -132,9 +144,11 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () =>
   it("keeps the canonical served hash echo family and the line-identity rename", () => {
     const apply = readFileSync("src/hashline/apply.ts", "utf-8");
     expect(apply).toContain("E_SERVED_ECHO");
-    expect(apply).toContain("findEditHashEcho");
+    expect(apply).toContain("findServedHashEcho");
+    expect(apply).not.toContain("findEditHashEcho");
     const index = readFileSync("src/hashline/index.ts", "utf-8");
-    expect(index).toContain("EditHashEchoError");
+    expect(index).toContain("ServedHashEchoError");
+    expect(index).not.toContain("EditHashEchoError");
     expect(index).toContain("resolveLineIdentity");
     // The canonical `served-range staleness` term stays named in the verification module; the
     // glossary list wraps, so accept the wrap between the hyphenated head and `staleness`.
@@ -149,7 +163,7 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of test titles/
     // Title-only: strip the canonical `served hash echo` family, then assert no
     // `/echo/i` remains on `it`/`test`/`describe` lines. A title calling served
     // rows by the avoided synonym fails here; titles naming the canonical
-    // condition (`E_SERVED_ECHO`, `findEditHashEcho`, `served hash echo`) stay green.
+    // condition (`E_SERVED_ECHO`, `findServedHashEcho`, `served hash echo`) stay green.
     expect(testTitleViolations()).toEqual([]);
   });
 });

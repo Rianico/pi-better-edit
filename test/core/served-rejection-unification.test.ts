@@ -117,7 +117,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const lines = ["a", "b"];
     const hashes = _lineHashesPure(lines.join("\n"));
     const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", replace_with: "X" });
-    const { mismatches } = valEdit(edit, snapshotFor(lines, hashes), [], undefined);
+    const { mismatches } = valEdit(edit, snapshotFor(lines, hashes), undefined);
     const snapshot = snapshotFor(lines, hashes);
     const { message, servedRows } = fmtMismatchWithServes(mismatches, snapshot);
     expect(message).toMatch(/E_STALE_ANCHOR/);
@@ -129,7 +129,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const hashes = _lineHashesPure(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
     const edit = resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, replace_with: "X" });
-    const { resolved, mismatches } = valEdit(edit, snapshot, [], undefined);
+    const { resolved, mismatches } = valEdit(edit, snapshot, undefined);
     expect(mismatches).toHaveLength(0);
     expect(resolved?.hash_bounds[0].line).toBe(1);
     expect(resolved?.hash_bounds[1].line).toBe(3);

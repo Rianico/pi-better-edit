@@ -119,7 +119,7 @@ A pair of boundary anchors (`anchor_from`, `anchor_to`) identifying the first an
 _Avoid_: hunk, region
 
 **separator**:
-The `│` character dividing a served row into `HASH│content`. The model copies only the 3 chars before it into `anchor_from`/`anchor_to` and never emits it — in `replace_with`, in anchors, or anywhere in the call.
+The `│` character dividing a served row into `HASH│content`. The model copies only the 3 chars before it into `anchor_from`/`anchor_to` and never emits it — in `replace_with`, in anchors, or anywhere in the call — except under a `literal declaration`, which asserts the bytes are content.
 _Avoid_: pipe, delimiter
 
 **file**:
@@ -131,11 +131,15 @@ A named object `{ "anchor_from": …, "anchor_to": …, "replace_with": … }` �
 _Avoid_: patch language, tuple
 
 **served hash echo**:
-A candidate line that begins with the exact `HASH│` anchor served for the same session, canonical path, and line — tool output mistaken for file content. For `write` the check is absolute line `i` vs `served[i]`; for `edit` it is range-relative line `k` vs `served[startLine + k]` (AA: E1), where `startLine` is the first row of the served window — the remapped served start under a lease rebase, not the rebased coordinate. Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
-_Avoid_: hash echo (without served qualification), anchor echo
+A candidate line that begins with the exact served anchor and reproduces the served content that anchor was served with, at any position (position-agnostic, content-matched) — tool output mistaken for file content. One such row suffices. Detection is evidence-only — the tool never gates on the shape of a line. Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
+_Avoid_: hash echo (without served qualification — targets the unqualified condition name), anchor echo; served-qualified identifier (findServedHashEcho) is canonical, surface-qualified one (findEditHashEcho) is not
+
+**literal declaration**:
+The caller's explicit assertion, via `mode: "literal"`, that bytes reproducing served rows are intended file content; the sole escape from `E_SERVED_ECHO`.
+_Avoid_: force, override, bypass
 
 **E_SERVED_ECHO**:
-Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_SERVED_ECHO] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and range-relative line`. Remove the copied anchors and retry. Nothing was written. Deny, not strip — fail-loud, compensable.
+Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_SERVED_ECHO] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Remove the copied anchors and retry, or reassert under a `literal declaration`. Nothing was written. Deny, not strip — fail-loud, compensable.
 _Avoid_: E_HASH_ECHO (ambiguous)
 
 **boundary duplication** (historical — removed):

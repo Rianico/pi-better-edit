@@ -64,7 +64,7 @@ describe("regEdit", () => {
     });
   });
 
-  it("refuses served hash echo in replace_with with E_SERVED_ECHO (deny, not strip)", async () => {
+  it("refuses a reproduced served row in replace_with with E_SERVED_ECHO (deny, not strip)", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -73,7 +73,7 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `${hashes[1]!}│BBB`]] },
+          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `${hashes[1]!}│bbb`]] },
           undefined,
           undefined,
           ctx,
@@ -84,38 +84,40 @@ describe("regEdit", () => {
     });
   });
 
-  it("autocorrects bare HASH│ prefix in content_lines with a warning when not a served hash echo", async () => {
-    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+  it("writes never-served HASH│ bytes through byte-exact", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-      await expect(
-        editTool.execute(
-          "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `Zz9│BBB`]] },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      ).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
+      const result = await editTool.execute(
+        "e1",
+        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "Zz9│BBB"]] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully edited");
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe("aaa\nZz9│BBB\nccc\n");
     });
   });
 
-  it("autocorrects diff-preview rows in content_lines with a warning", async () => {
-    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+  it("writes diff-marker HASH│ bytes through byte-exact", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-
-      await expect(
-        editTool.execute(
-          "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `+${hashes[1]!}│BBB`]] },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      ).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
+      const marker = `+${hashes[1]!}│BBB`;
+      const result = await editTool.execute(
+        "e1",
+        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, marker]] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toContain("Successfully edited");
+      const content = await readFile(path, "utf-8");
+      expect(content).toBe(`aaa\n${marker}\nccc\n`);
     });
   });
 

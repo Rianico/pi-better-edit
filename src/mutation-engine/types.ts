@@ -54,6 +54,7 @@ export interface ProcessedEditFile {
   driftNotice: string | undefined;
   range: ResolvedRange;
   editedIntervals: ResolvedRange[];
+  literalDeclarations: number;
 }
 
 // WHY: Discriminated success/failure for the deep seam.

@@ -38,6 +38,7 @@ export type RMetrics = {
   changed_lines?: { first: number; last: number };
   added_lines?: number;
   removed_lines?: number;
+  literalDeclarations?: number;
 };
 
 type RMeta = {
@@ -86,6 +87,7 @@ export function buildMetrics(args: {
   lastChangedLine?: number;
   addedLines?: number;
   removedLines?: number;
+  literalDeclarations?: number;
 }): RMetrics {
   const metrics: RMetrics = {
     edits_attempted: args.editsAttempted,
@@ -105,6 +107,8 @@ export function buildMetrics(args: {
   }
   if (args.addedLines !== undefined) metrics.added_lines = args.addedLines;
   if (args.removedLines !== undefined) metrics.removed_lines = args.removedLines;
+  if (args.literalDeclarations !== undefined && args.literalDeclarations > 0)
+    metrics.literalDeclarations = args.literalDeclarations;
   return metrics;
 }
 
@@ -244,6 +248,7 @@ export type BatchSection = {
   noopCount: number;
   totalAddedLines: number;
   totalRemovedLines: number;
+  literalDeclarations?: number;
 };
 
 type _BatchDetails = EditDetails;
@@ -255,6 +260,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
   const noopTotal = sections.reduce((n, s) => n + s.noopCount, 0);
   const addedLines = sections.reduce((n, s) => n + s.totalAddedLines, 0);
   const removedLines = sections.reduce((n, s) => n + s.totalRemovedLines, 0);
+  const literalDeclarations = sections.reduce((n, s) => n + (s.literalDeclarations ?? 0), 0);
   const allNoop = appliedTotal === 0;
   const warnings = sections.flatMap((s) => s.warnings ?? []);
   const driftNotice = sections
@@ -275,6 +281,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
           editsAttempted: totalEdits,
           noopEditsCount: noopTotal,
           warningsCount: warnings.length,
+          ...(literalDeclarations > 0 ? { literalDeclarations } : {}),
         }),
         ...(warnings.length > 0 ? { warnings } : {}),
         ...(driftNotice !== undefined ? { driftNotice } : {}),
@@ -328,6 +335,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
         warningsCount: warnings.length,
         addedLines,
         removedLines,
+        ...(literalDeclarations > 0 ? { literalDeclarations } : {}),
       }),
       ...(warnings.length > 0 ? { warnings } : {}),
       servedRows: servedByPath.flatMap((e) => e.servedRows),

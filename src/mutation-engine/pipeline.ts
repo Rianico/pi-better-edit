@@ -107,6 +107,7 @@ import {
 import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
 import { scanDrift } from "../drift.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
+import { clearServedRefusals } from "../hashline/served-guard.js";
 import { saveUndo } from "../edit-undo.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
 import { toCwd } from "../paths.js";
@@ -235,6 +236,7 @@ interface ApplyOneEditInput {
   absolutePath: string;
   store: HashStore;
   isPreview: boolean;
+  mode?: "general" | "literal";
   /**
    * The working buffer's own `line_id` map (spec §3.2.4 step 1), entry `i` naming line `i + 1`.
    * Present for a live batch: identity resolution reads it directly instead of re-deriving positions
@@ -255,12 +257,14 @@ type ApplyOneEditOutcome =
       firstChangedLine: number | undefined;
       lastChangedLine: number | undefined;
       anchorWarnings: string[] | undefined;
+      literalBypass: boolean;
     }
   | {
       kind: "noop";
       range: ResolvedRange;
       noopEdit: NEdit | undefined;
       anchorWarnings: string[] | undefined;
+      literalBypass: boolean;
     };
 
 /**
@@ -316,10 +320,12 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   try {
     anchorResult = applyEdit(input.content, input.edit, input.signal, input.hashes, {
       filePath: input.filePath,
+      absolutePath: input.absolutePath,
       served: input.served,
       ...(input.tombstone !== undefined ? { tombstone: input.tombstone } : {}),
       ...(input.servedCanons !== undefined ? { servedCanons: input.servedCanons } : {}),
       identity,
+      ...(input.mode !== undefined ? { mode: input.mode } : {}),
     });
   } catch (error) {
     if (error instanceof AnchorMismatchError || error instanceof ServedRejectionError) {
@@ -338,12 +344,14 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
 
   const anchorWarnings = anchorResult.warnings;
   const nextContent = anchorResult.content;
+  const literalBypass = anchorResult.literalBypass === true;
   if (nextContent === input.content) {
     return {
       kind: "noop",
       range: anchorResult.range,
       noopEdit: anchorResult.noopEdit,
       anchorWarnings,
+      literalBypass,
     };
   }
 
@@ -372,6 +380,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     firstChangedLine: anchorResult.firstChangedLine,
     lastChangedLine: anchorResult.lastChangedLine,
     anchorWarnings,
+    literalBypass,
   };
 }
 
@@ -617,24 +626,17 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
   }
 }
 
-function parseEdits(
-  items: NormalizedEditRequest["edits"],
-  path: string,
-  warnings: string[],
-): HEdit[] {
+function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[] {
   const parsed: HEdit[] = [];
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
     try {
       parsed.push(
-        resEdit(
-          {
-            anchor_from: item.anchor_from,
-            anchor_to: item.anchor_to,
-            replace_with: item.replace_with,
-          },
-          warnings,
-        ),
+        resEdit({
+          anchor_from: item.anchor_from,
+          anchor_to: item.anchor_to,
+          replace_with: item.replace_with,
+        }),
       );
     } catch (error) {
       if (items.length === 1) throw error;
@@ -661,6 +663,7 @@ async function runMutations(
   }
   const path = request.file;
   const items = request.edits;
+  const mode = request.mode ?? "general";
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
   const warnings: string[] = [];
@@ -668,7 +671,7 @@ async function runMutations(
 
   const isPreview = options?.noPersist === true;
 
-  const parsed = parseEdits(items, path, warnings);
+  const parsed = parseEdits(items, path);
 
   const {
     normalized: originalNormalized,
@@ -727,6 +730,7 @@ async function runMutations(
   let noopCount = 0;
   let totalAddedLines = 0;
   let totalRemovedLines = 0;
+  let literalDeclarations = 0;
   let unionStartLine = Infinity;
   let unionEndLine = -Infinity;
   let unionStartHash = "";
@@ -777,6 +781,7 @@ async function runMutations(
       absolutePath,
       store: hashStore,
       isPreview,
+      mode,
       // WHY: the intermediate buffer is in-memory only, so its identities come from the buffer map
       // WHY: (`null` lines are the batch's own creations) — a re-diff of it against S_latest cannot
       // WHY: tell which of two byte-identical lines carries a leased line_id.
@@ -800,6 +805,7 @@ async function runMutations(
 
     if (outcome.kind === "noop") {
       noopCount += 1;
+      if (outcome.literalBypass) literalDeclarations += 1;
       if (isPreview) {
         if (outcome.anchorWarnings?.length) {
           warnings.push(...outcome.anchorWarnings);
@@ -832,6 +838,7 @@ async function runMutations(
       continue;
     }
     appliedCount += 1;
+    if (outcome.literalBypass) literalDeclarations += 1;
     const { totalAddedLines: added, totalRemovedLines: removed } = countLineChanges(
       edit,
       originalHashes,
@@ -940,6 +947,7 @@ async function runMutations(
     driftNotice,
     range: unionRange,
     editedIntervals,
+    literalDeclarations,
   };
 }
 
@@ -957,6 +965,7 @@ function toSection(file: ProcessedEditFile): BatchSection {
     noopCount: file.noopCount,
     totalAddedLines: file.totalAddedLines,
     totalRemovedLines: file.totalRemovedLines,
+    ...(file.literalDeclarations > 0 ? { literalDeclarations: file.literalDeclarations } : {}),
   };
 }
 
@@ -1049,6 +1058,7 @@ export async function apply(
       await undo.restore();
       throw error;
     }
+    clearServedRefusals(file.absolutePath);
 
     // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4): it is
     // WHY: deliberately deferred to here, after the bytes are on disk, so an edit that writes nothing

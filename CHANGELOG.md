@@ -6,7 +6,21 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **edit:** report served prefix mismatches
+* **edit:** require literal mode for served rows
 * **edit:** adopt line-identity MVCC with leases
+
+### Bug Fixes
+
+* **edit:** clear served-echo counters after write
+* **edit:** drop undo hint from prefix note
+* **edit:** drop shape-based refusal from content
+
+### Documentation
+
+* **contributing:** document the read-only changelog check
+* **context:** align echo refusal template
+* **adr:** refine served echo and literal escape
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 

@@ -75,6 +75,7 @@ function toSection(file: ProcessedEditFile): BatchSection {
     noopCount: file.noopCount,
     totalAddedLines: file.totalAddedLines,
     totalRemovedLines: file.totalRemovedLines,
+    ...(file.literalDeclarations > 0 ? { literalDeclarations: file.literalDeclarations } : {}),
   };
 }
 

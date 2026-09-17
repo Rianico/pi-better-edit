@@ -9,9 +9,12 @@ export type EditItem = {
   replace_with: string;
 };
 
+export type EditMode = "general" | "literal";
+
 export type NormalizedEditRequest = {
   file: string | null;
   edits: EditItem[];
+  mode?: EditMode;
 };
 type NormalizedPayload = NormalizedEditRequest & {
   readonly [normalizedEdit]: true;
@@ -55,6 +58,11 @@ export const editItemSchema = Type.Object(
   { additionalProperties: false },
 );
 
+export const editModeSchema = Type.Union([Type.Literal("general"), Type.Literal("literal")], {
+  description:
+    'How to treat bytes reproducing served rows: "general" refuses them, "literal" declares them as intended file content',
+});
+
 export const editToolSchema = Type.Object(
   {
     file: editFileSchema,
@@ -63,25 +71,26 @@ export const editToolSchema = Type.Object(
       minItems: 1,
       maxItems: EDITS_MAX_ITEMS,
     }),
+    mode: Type.Optional(editModeSchema),
   },
   { additionalProperties: false },
 );
 
 const EDIT_PAYLOAD_HINT =
   "Edit must be called with exactly one payload. Use the canonical payload " +
-  '{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, ...]}: ' +
+  '{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, ...], "mode"?: "general" | "literal"}: ' +
   '"file" is the text file to edit (a non-empty string, never a directory); each item names ' +
   "two inclusive bare-3-char anchors and the full replacement " +
-  "(an empty string deletes the range).";
+  '(an empty string deletes the range); optional "mode" is "general" (default, reproduced served rows are refused) or "literal" (declared literal content).';
 export const EDIT_DESCRIPTION =
-  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` (arity = edits.length, atomic, one file per call). Use `edit` for content seen via `read` or a diff; never for directories, binary files, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors (e.g. "wUp") — copy the 3 chars before `│` in served `HASH│content` lines, never `│` or content. `replace_with` is bare content (`\\n` joins lines, `""` deletes). Example: `{"file":"s.py","edits":[{"anchor_from":"wUp","anchor_to":"AU6","replace_with":"x:\\n    y"}]}`. Chain from diff anchors (no re-read). `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
+  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` (arity = edits.length, atomic, one file per call). Use `edit` for content seen via `read` or a diff; never for directories, binary files, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors (e.g. "wUp") — copy the 3 chars before `│` in served `HASH│content` lines, never `│` or content. `replace_with` is bare content (`\\n` joins lines, `""` deletes; reproduced served rows need `mode: "literal"`). Example: `{"file":"s.py","edits":[{"anchor_from":"wUp","anchor_to":"AU6","replace_with":"x:\\n    y"}]}`. Chain from diff anchors (no re-read). `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
 export const EDIT_SNIPPET =
   'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"replace_with":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), `replace_with` is bare content (`""` deletes). Chain from diff anchors with no re-read.';
 export const EDIT_GUIDELINES: string[] = [
-  'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`, and never emit `│` anywhere in your call.',
+  'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`.',
   'edit: payload shape `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` — `file` is the text file (never a directory); `edits` length is the arity (1 = single, >1 = batched atomically to the one file).',
   "edit: `anchor_from`/`anchor_to` bound the inclusive range (both lines replaced); when an anchor no longer matches, re-read the file and copy fresh anchors.",
-  'edit: `replace_with` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; write no `HASH│` prefixes (the call is refused when a line copies a served anchor).',
+  'edit: `replace_with` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused — declare literal intent with `mode: "literal"`.',
   "edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.",
   "edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone; a dimmed `[USER]` line in `details` is human info, never your error.",
   "edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).",
@@ -197,9 +206,19 @@ function sanitizePath(value: unknown): string | null {
   return s.length > 0 ? s : null;
 }
 
+const ROOT_INPUT_KS = new Set(["file", "file_path", "path", "edits", "mode"]);
+
 export function editRequestFrom(input: unknown): NormalizedEditRequest | undefined {
   if (!isRec(input)) return undefined;
   const rec = input as Record<string, unknown>;
+  for (const key of Object.keys(rec)) {
+    if (!ROOT_INPUT_KS.has(key)) return undefined;
+  }
+  let mode: "general" | "literal" | undefined;
+  if ("mode" in rec) {
+    if (rec.mode !== "general" && rec.mode !== "literal") return undefined;
+    mode = rec.mode;
+  }
   const hasFilePath = "file_path" in rec;
   const hasPath = "path" in rec;
   if (hasFilePath) {
@@ -247,6 +266,7 @@ export function editRequestFrom(input: unknown): NormalizedEditRequest | undefin
     if (!normalized) return undefined;
     items.push(normalized);
   }
+  if (mode !== undefined) return { file: effectivePath as string | null, edits: items, mode };
   return { file: effectivePath as string | null, edits: items };
 }
 
@@ -254,7 +274,10 @@ export function normReq(input: unknown): NormReqResult {
   const valid = editRequestFrom(input);
   // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
   if (!valid) return input as NormReqResult;
-  const record = { file: valid.file, edits: valid.edits };
+  const record: Record<string, unknown> & { file: string | null; edits: EditItem[] } =
+    valid.mode !== undefined
+      ? { file: valid.file, edits: valid.edits, mode: valid.mode }
+      : { file: valid.file, edits: valid.edits };
   Object.defineProperty(record, normalizedEdit, {
     value: true,
     enumerable: false,
@@ -278,6 +301,8 @@ export function prepareEditArguments(args: unknown): Record<string, unknown> {
   const valid = editRequestFrom(args);
   if (valid) {
     // SAFETY: valid.edits are folded to modern objects (tuples/legacy keys normalized) so the return matches the public schema
+    if (valid.mode !== undefined)
+      return { file: valid.file, edits: valid.edits as unknown, mode: valid.mode };
     return { file: valid.file, edits: valid.edits as unknown };
   }
   throw new Error(`[MODEL] [E_BAD_PAYLOAD] ${EDIT_PAYLOAD_HINT} ${describeReceived(args)}`);
@@ -304,12 +329,12 @@ function rejectUnknownFields(
   }
 }
 
-const ROOT_KS = new Set(["file", "edits"]);
+const ROOT_KS = new Set(["file", "edits", "mode"]);
 
 export function assertReq(request: unknown): asserts request is NormalizedEditRequest {
   if (!isNormalizedEdit(request)) {
     throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...] }. " +
+      '[MODEL] [E_BAD_PAYLOAD] Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...], mode?: "general" | "literal" }. ' +
         EDIT_PAYLOAD_HINT,
     );
   }
@@ -318,8 +343,16 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     request,
     ROOT_KS,
     "Edit request",
-    'Pass "file" (the text file to edit) and "edits".',
+    'Pass "file" (the text file to edit), "edits", and optional "mode" ("general" | "literal").',
   );
+
+  const modeValue = (request as Record<string, unknown>).mode;
+  if (modeValue !== undefined && modeValue !== "general" && modeValue !== "literal") {
+    throw new Error(
+      '[MODEL] [E_BAD_PAYLOAD] Edit request "mode" must be "general" or "literal" (absent means "general"). ' +
+        EDIT_PAYLOAD_HINT,
+    );
+  }
 
   if (request.file !== null && (typeof request.file !== "string" || request.file.length === 0)) {
     throw new Error(
