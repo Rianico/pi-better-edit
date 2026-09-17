@@ -274,7 +274,10 @@ export function applyEdit(
     // WHY: `leaseRebased` needs no separate current-anchor scan: identity lives in the
     // WHY: lease seam, and the served hash echo condition only names served anchors.
     const canons = servedCanons ?? [];
-    const hit = findServedHashEcho(resolved.content_lines, served, canons, 1);
+    // WHY: the scan input names that one view explicitly, so a future stage
+    // WHY: cannot re-add a second view silently.
+    const scan = { lines: resolved.content_lines, anchors: served, canons };
+    const hit = findServedHashEcho(scan.lines, scan.anchors, scan.canons, 1);
     let servedCopy:
       | { k: number; hash: string; servedLine: number; offendingLine: string }
       | undefined;
