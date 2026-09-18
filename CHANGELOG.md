@@ -17,6 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* **docs:** make the E_UNSERVED_RANGE contract true (#144)
 * **prompts:** bind anchors to serving file
 * **spec:** fix the ADR-0014 citation in the E_UNDO_STALE re-open
 * **spec:** withdraw the E_UNDO_STALE refutation in the audit

@@ -42,14 +42,14 @@ The model-facing word for the `served span` — the span between `anchor_from` a
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **served-range staleness**:
-The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`). Reported as `[E_STALE_RANGE]` (changed) or `[E_UNSERVED_RANGE]` (never-served). Both do `reject-and-serve`.
+The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`). Reported as `[E_STALE_RANGE]` (changed) or `[E_UNSERVED_RANGE]` (never-served: interior loop miss, or boundary `throwUnverified` when a boundary anchor has no served position). Both do `reject-and-serve`; the interior retry needs no `read`, while the boundary-unverified variant requires a full `read` (retrying without re-reading cannot clear a stale duplicate outside the served window).
 _Avoid_: range staleness (use `served range` for span)
 
 **never-served**:
-An interior line with no entry in the served record — the model was never shown that line. Reported as `[E_UNSERVED_RANGE]`; the response serves the current range so the model can retry.
+A line with no entry in the served record — the model was never served that line. Reported as `[E_UNSERVED_RANGE]` in two variants: interior loop miss — a line strictly between the anchors has no served entry, and the response serves the current range so the model retries with those rows (no `read` needed); boundary unverified (`throwUnverified`) — a boundary anchor has no served position so no served span matched, and the response serves the current range but the served rows alone do not suffice — a full `read` is required, because retrying without re-reading cannot clear a stale duplicate outside the served window. `details.unservedKind` (`interior` for the loop miss, `boundary` for `throwUnverified`) names these two provable cases but is reserved, not emitted yet.
 
 **reject-and-serve**:
-The staleness policy for a region-matched rejection: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the retry needs no read. A rejection whose region cannot be identified carries no rows (see `target-lost rejection`).
+The staleness policy for a region-matched rejection: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the interior retry needs no read. The boundary-unverified `[E_UNSERVED_RANGE]` variant still serves the current range but requires a full `read` (see `never-served`). A rejection whose region cannot be identified carries no rows (see `target-lost rejection`).
 _Avoid_: reject-then-reread (the retry must not require a read)
 
 **target-lost rejection**:
@@ -71,7 +71,7 @@ A model-visible signal the tool must include in `content` for correctness (e.g. 
 A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice, Batch drift note). Not in model content.
 
 **orphaned serve**:
-An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_UNSERVED_RANGE]`) and a retired `line_id` rejects `[E_STALE_RANGE]`, rather than being healed onto a twin.
+An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_STALE_ANCHOR]`) and a retired `line_id` rejects `[E_STALE_RANGE]`, rather than being healed onto a twin.
 _Avoid_: stale serve (ambiguous with boundary staleness)
 
 **orphaning re-serve**:

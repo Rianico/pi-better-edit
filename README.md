@@ -34,7 +34,7 @@
 
 > *"The harness — not the model — is the bottleneck."* — Can Bölük, [*The Harness Problem*](https://stencil.so/blog/the-harness-problem)
 >
-> **This is the harness fix.** Content hashes replace line numbers — an edit above never shifts the anchor below. Every range is verified against what the agent actually saw. Stale or unseen lines are hard-rejected with fresh anchors to retry — no `read` needed.
+> **This is the harness fix.** Content hashes replace line numbers — an edit above never shifts the anchor below. Every range is verified against what the agent was actually served. Stale or never-served interior lines are hard-rejected with fresh anchors to retry — no `read` needed, except the boundary-unverified `[E_UNSERVED_RANGE]` variant, which requires a full `read` (see Error codes).
 >
 > **3 tool calls vs 6 · -55.8% tokens · 23/23 correctness.** Same external-drift refactor, same correct file (single stochastic run vs OMP; [full method](benchmarks/results/2026-08-17-practical-token-benchmark.md)).
 
@@ -117,7 +117,7 @@ served rows — what `read`, a post-edit diff, or a rejection serve actually sho
 A line inside the range that changed on disk since it was served, or was never served, is
 hard-rejected before any file I/O: `[E_STALE_RANGE]` / `[E_UNSERVED_RANGE]` /
 `[E_UNSERVED_RANGE]`, and the current range is served as fresh `HASH│content` rows. The
-retry needs no `read`. Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
+interior retry needs no `read`; the boundary-unverified `[E_UNSERVED_RANGE]` variant requires a full `read` (see Error codes). Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
 never validate the main session's edits and vice versa.
 
 **Content-addressed anchors.** Anchors are derived from line content (ASCII-whitespace
@@ -195,7 +195,7 @@ atomically to that one file — one item per call is the norm, several same-file
 | `[E_LARGE_FILE]` | The file exceeds the 238,328-line hashline limit. |
 | `[E_STALE_RANGE]` | A line inside the resolved edit range changed on disk since it was served (read output, diff, or rejection feedback). The edit is refused and the current range is served as fresh `HASH│content` rows; retry with those rows (no `read` needed). |
 | `[E_TARGET_LOST]` | A leased line identity was deleted or replaced and its region cannot be identified (deleted target, shifted neighbour, re-added text elsewhere). The edit is refused with no `HASH│content` rows and nothing is leased; read the file and re-target. |
-| `[E_UNSERVED_RANGE]` | A line inside the resolved range or a boundary anchor was never served (paged reads, truncated output, never-read file). The edit is refused and the current range is served as fresh `HASH│content` rows; `details.unservedKind` is `interior` or `boundary`. |
+| `[E_UNSERVED_RANGE]` | A line of the resolved range was never served (paged reads, truncated output, never-read file). Two variants: interior loop miss — a line strictly between the anchors has no served entry, so retry with the served rows (no `read` needed); boundary unverified (`throwUnverified`) — a boundary anchor has no served position so no served span matched, so a full `read` is required (retrying without re-reading cannot clear a stale duplicate outside the served window). `details.unservedKind` (`interior`/`boundary`) names these two provable cases but is reserved, not emitted yet. |
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is served as fresh `HASH│content` rows. |
 | `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_BAD_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
 
@@ -266,7 +266,7 @@ each tool does when they hit:
 > The oh-my-pi payload saving is a lighter wire format; the table above is what that format
 > asks the model to hold in its head instead — renumbering, tag-chasing, node choice — the
 > exact component that fails most with replace-style edits. This extension's contract is:
-> a wrong edit cannot land, and any rejection needs no re-read. Measured on the same
+> a wrong edit cannot land, and any reject-and-serve rejection needs no re-read except the boundary-unverified `[E_UNSERVED_RANGE]` variant, which requires a full `read`. Measured on the same
 > stale-serve scenarios, both engines gate the same guarantee — **stale edits are detected,
 > never silently applied** — with different policies when drift is found (recover-with-
 > warning vs fail-closed rejection).
