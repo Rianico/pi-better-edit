@@ -12,13 +12,14 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **edit:** tighten rejection seams and add live-mapping oracle
+* **edit:** tighten rejection seams, add oracle
 * **edit:** cap never-served hint to one per call
 * **edit:** reject retired identities without rows
 * **edit:** unify rejection diagnostics
 
 ### Documentation
 
+* record as-built rejection oracle, retire stale handoff item
 * make the E_UNSERVED_RANGE contract true
 * **prompts:** bind anchors to serving file
 * **spec:** fix the ADR-0014 citation in the E_UNDO_STALE re-open
