@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* **spec:** withdraw the E_UNDO_STALE refutation in the audit
 * hand off the target-lost defect, ADR-0018 and the code audit
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
