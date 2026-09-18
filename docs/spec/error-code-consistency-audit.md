@@ -11,6 +11,7 @@ This audit covers commit `7990a91`. It checks model-emitted error codes against 
 | F2b — README promises `details.unservedKind` | **confirmed, HIGH** | `rg -n unservedKind` over the tree returns only `README.md:197`, `docs/adr/0014-user-model-audience.md:21` and `:33` — no producer in `src/` |
 | F3a — `[E_NOOP_LOOP]` rejects lack `[MODEL]` | **confirmed, LOW** | `src/noop-guard.ts:82-83` (bare); the notice variants at `:89-90` correctly stay `[USER]`-dimmed |
 | F3b — "the batch" on a single-item call | **confirmed, LOW** | `src/mutation-engine/pipeline.ts:821` passes `batch: true` unconditionally inside the item loop, and that same loop serves single-item calls (`if (items.length === 1) throw error` in its `onRejected`), so the single-item wording at `src/noop-guard.ts:83` is production-unreachable |
+| Flag 2 — `E_UNDO_STALE` lacks `[MODEL]` | **refutation withdrawn** — re-checked against ADR-0014:19 (the prefix is an audience marker, not a retry demand) and against `src/edit-tool.ts:53` (a non-blocking `[MODEL]` warning already exists); now tracked in #147 |
 | F2c — README boundary scope | **resolved — not an open question** | README's boundary clause is right for the content path (`src/hashline/served-verification.ts:678`, `:683`); the wrong artifact is `CONTEXT.md:70`, i.e. F1's fix |
 ## Scope and method
 
@@ -20,14 +21,15 @@ A claim was accepted only with `file:line` evidence. A verbatim quote was requir
 
 ## Summary
 
-Codes scanned: 16 model-emitted codes. Auxiliary items examined: 2. Total examined: 18. Distinct codes with confirmed flags: 8. Distinct codes with no finding: 8. Needs-human items: 2. Refuted items: 4.
+Codes scanned: 16 model-emitted codes. Auxiliary items examined: 2. Total examined: 18. Distinct codes with confirmed flags: 9. Distinct codes with no finding: 7. Needs-human items: 2. Refuted items: 3 (one refutation withdrawn: `E_UNDO_STALE`).
 
-Confirmed flag findings: 10. Consistent confirmations: 3. The gap is docs or prose only. One needs-human item is behavioral governance.
+Confirmed flag findings: 11. Consistent confirmations: 3. The gap is docs or prose only. One needs-human item is behavioral governance.
 
 Flagged codes in severity order:
 
 - `E_UNSERVED_RANGE` — HIGH: the phantom `details.unservedKind` promise (F2b).
 - `E_STALE_ANCHOR` — MED: `CONTEXT.md:70` routes a no-lease anchor to the wrong code (F1).
+- `E_UNDO_STALE` — LOW: a `content` error without the audience prefix; the audit's refutation is withdrawn (Flag 2, #147).
 - `E_TARGET_LOST` — HIGH needs-human.
 - `E_BAD_PAYLOAD` — LOW.
 - `E_BAD_ANCHOR` — LOW.
@@ -50,7 +52,7 @@ Flagged codes in severity order:
 | `E_NOT_FOUND` | `src/validation.ts:17` | Check `file`, use ls, retry | `README.md:190` omits remedy by design | Not cited | consistent |
 | `E_ACCESS` | `src/validation.ts:28`, `src/validation.ts:32` | Retry with real location; verify reachability | `README.md:191` coarse row | Not cited | confirmed |
 | `E_UNSUPPORTED_FILE` | `src/read.ts:87`, `src/read.ts:91`, `src/read.ts:95`, `src/validation.ts:43`, `src/validation.ts:48`, `src/validation.ts:53` | Rich on edit path; bare on read path | `README.md:180-199` table entry | Not cited | confirmed |
-| `E_UNDO_STALE` | `src/edit-undo.ts:151`, `src/edit-undo.ts:164` | Terminal; no retry sentence | `README.md:180-199` table entry | Not cited | refuted — not a finding |
+| `E_UNDO_STALE` | `src/edit-undo.ts:151`, `src/edit-undo.ts:164` | Terminal; no retry sentence | `README.md:180-199` table entry | Not cited | re-opened — LOW |
 | `E_UNDO_UNAVAILABLE` | `src/mutation-engine/pipeline.ts:1048` | Retry edit, or use write | `README.md:194` omits remedy | Not cited | confirmed |
 | `E_LARGE_FILE` | No producer cited in source reports | Not cited | `README.md:180-199` table entry | Not cited | consistent |
 | `E_STALE_RANGE` | `src/hashline/served-verification.ts:401`, `src/hashline/served-verification.ts:449`, `src/hashline/served-verification.ts:469`, `src/hashline/served-verification.ts:632`, `src/hashline/served-verification.ts:644` | Retry with served anchors; no read needed | `README.md:196` | `CONTEXT.md:44-46`, `CONTEXT.md:89-90` | consistent |
@@ -156,6 +158,8 @@ Minimal fix: add `[MODEL]` to the producer line. Optionally expand README Meanin
 
 ## Refuted — not a finding
 
+**Flag 2 sits in this section only because the audit was assembled before the review; its refutation is withdrawn — see its entry.**
+
 ### F3c. Prefix all four plus dead single variants
 
 Claim asked to prefix notices. Evidence: `src/mutation-engine/pipeline.ts:829` — `"if (decision.action === \"warn\") warnings.push(decision.notice);"`. Rendering is at `src/edit-render.ts:102-104` — `"theme.fg(\"dim\", warnings.join(\"\\n\"))"`. ADR classifies these as `[USER]`-dimmed. See `docs/adr/0014-user-model-audience.md:19` — `"wraps \`warnings\`/\`driftNotice\` with \`theme.fg(dim, \"[USER] …\")\""`. Single variants are reachable. Re-export is at `src/edit-presentation.ts:79`. Test seam is at `test/core/edit-presentation.test.ts:6` — `"import { runNoopPolicy }"`.
@@ -168,9 +172,9 @@ Claim saw contradiction between README and recording. README says: `README.md:19
 
 Refutation reason: delivered rows are serves by definition. File is unchanged so prior leases survive. No model-action difference exists.
 
-### Flag 2. `E_UNDO_STALE` missing `[MODEL]` prefix
+### Flag 2. `E_UNDO_STALE` missing `[MODEL]` prefix — refutation withdrawn
 
-Fact is true. Prefix absence confirmed at `src/edit-undo.ts:151` `` `text: \`[E_UNDO_STALE] cannot undo on ${path}: file no longer exists.\`,` `` and `:164`. Clear happens first at `:147,160`. Mandate was misread. ADR list at `0014:40` `` ``src/hashline/parse.ts`, `src/payload-contract.ts`, `src/validation.ts`, `src/file-content/*`, …` `` never lists `src/edit-undo.ts`. Undo refusals are direct `content` returns. They never pass through `engine.ts:19-30` `extractCode`. `[MODEL]` denotes retryability per `prompts/edit-guidelines.md:6`. `E_UNDO_STALE` is terminal. Its channel is at `prompts/undo-last-edit-guidelines.md:1`.
+Fact is true, and the original refutation is **withdrawn**. `[MODEL]` is an audience marker, not a retry demand: `docs/adr/0014-user-model-audience.md:19` — *"Audience is display-layer only… `[MODEL]` normal vs `[USER]` dimmed collapsed; prefix survives monochrome logs."* The retry reading comes only from `prompts/edit-guidelines.md` / `EDIT_GUIDELINES` (`src/payload-contract.ts:95`), and that sentence is scoped to a `[MODEL]` line **in `content`**. Prefix absence is confirmed at `src/edit-undo.ts:151` (`` `text: \`[E_UNDO_STALE] cannot undo on ${path}: file no longer exists.\`,` ``) and `:164` — both are `content` returns with `isError: true`, while ADR-0014:19 states that error `content` headers are emitted as `[MODEL] [E_*]`. The ADR's file list (`0014:40`) never listed `src/edit-undo.ts`, so the edit sweep missed this tool. A non-blocking `[MODEL]` line is existing practice, not an invention: `src/edit-tool.ts:53` emits `[MODEL] [E_BAD_PAYLOAD] Autocorrected: …` as a warning, and `src/edit-response.ts:139-141` appends warnings to model content. Verdict: **re-opened as LOW** — tracked in #147.
 
 Refutation reason: prefixing would falsely promise retry. Precedent includes `src/read.ts:87` and `src/noop-guard.ts:82-83,89-90` and `src/utils.ts:59`. At most a LOW docs nicety exists.
 
@@ -202,7 +206,7 @@ Human must choose implement vs downgrade. No docs-only fix suffices. Code-emitte
 
 No direct contradiction was found. All three agree on severity discipline. `[MODEL]` omission alone is LOW. README coarseness alone is LOW. Phantom machine fields are HIGH.
 
-One apparent tension was checked. Served-state flags missing `[MODEL]` on `E_NOOP_LOOP`. Io/undo excuses missing `[MODEL]` on `E_UNDO_STALE`. Rationale is consistent. Retryable edit-path throws need `[MODEL]`. Terminal direct returns must not carry it.
+One apparent tension was checked and then resolved the other way. Served-state flags the missing `[MODEL]` on `E_NOOP_LOOP` (F3a). The io/undo family excused the missing `[MODEL]` on `E_UNDO_STALE` by reading the prefix as a retry promise. That reading is wrong: `[MODEL]` is an audience marker (ADR-0014:19), so the retryability argument does not hold and Flag 2 is re-opened as LOW. Both are now tracked in #147.
 
 One bar difference was checked. `E_NOT_FOUND` omission is consistent. `E_UNDO_UNAVAILABLE` omission was flagged. Header resolves it. Column is `Meaning` at `README.md:180-182`. Both rows match that design. Flag 3 prefix half still stands. Its README half is weak.
 
