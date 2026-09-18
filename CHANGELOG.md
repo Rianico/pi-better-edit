@@ -20,7 +20,6 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* rename error codes in specs and record ADR-0019
 * record as-built rejection oracle
 * make the E_UNSERVED_RANGE contract true
 * **prompts:** bind anchors to serving file
