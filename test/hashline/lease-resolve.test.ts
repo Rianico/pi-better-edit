@@ -68,28 +68,27 @@ describe("resolveLineIdentity — lease identity is authoritative", () => {
   const src = source({ leases: {}, positions: { 7: 3 } });
 
   it("returns the rebased coordinate for a live lease", () => {
-    expect(resolveLineIdentity(lease({ lineId: 7 }), 3, src)).toEqual({ kind: "line", line: 3 });
+    expect(resolveLineIdentity(lease({ lineId: 7 }), src)).toEqual({ kind: "line", line: 3 });
   });
 
   it("rebases even when the content anchor moved to a colliding line", () => {
     // The leased identity lives at 3; the anchor string now renders on line 2.
-    expect(resolveLineIdentity(lease({ lineId: 7 }), 2, src)).toEqual({ kind: "line", line: 3 });
+    // Resolution consults no content: the answer stays the rebased coordinate.
+    expect(resolveLineIdentity(lease({ lineId: 7 }), src)).toEqual({ kind: "line", line: 3 });
   });
 
   it("fails closed when a retired lease still has a live content anchor (Probe E)", () => {
-    // `retired_at` set -> `E_STALE_RANGE` with the current-range serve, never `E_STALE_ANCHOR`.
-    expect(resolveLineIdentity(lease({ lineId: 7, retiredAt: 1 }), 2, src)).toEqual({
+    // `retired_at` set -> `E_STALE_RANGE` naming the lease coordinate, never a content match.
+    // Contract change (D5): the stale line is `servedLineNumber` (7), not the re-added line (2).
+    expect(resolveLineIdentity(lease({ lineId: 7, retiredAt: 1 }), src)).toEqual({
       kind: "stale",
-      line: 2,
+      line: 7,
     });
   });
 
   it("fails closed when a live lease has no lineage coordinate", () => {
-    expect(resolveLineIdentity(lease({ lineId: 99 }), 4, src)).toEqual({
-      kind: "stale",
-      line: 4,
-    });
-    expect(resolveLineIdentity(lease({ lineId: 99 }), undefined, src)).toEqual({
+    // Contract change (D5): no content lookup names the stale line; both read 99.
+    expect(resolveLineIdentity(lease({ lineId: 99 }), src)).toEqual({
       kind: "stale",
       line: 99,
     });
@@ -97,7 +96,7 @@ describe("resolveLineIdentity — lease identity is authoritative", () => {
 
   it("fails closed when a retired lease is absent from the content", () => {
     // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> E_STALE_RANGE, never a content question.
-    expect(resolveLineIdentity(lease({ lineId: 7, retiredAt: 1 }), undefined, src)).toEqual({
+    expect(resolveLineIdentity(lease({ lineId: 7, retiredAt: 1 }), src)).toEqual({
       kind: "stale",
       line: 7,
     });

@@ -172,8 +172,8 @@ export function resolveLeasedEdit(args: {
     });
   }
 
-  const fromDecision = resolveLineIdentity(fromLease, fromContent, source);
-  const toDecision = resolveLineIdentity(toLease, toContent, source);
+  const fromDecision = resolveLineIdentity(fromLease, source);
+  const toDecision = resolveLineIdentity(toLease, source);
 
   // WHY: a retired or identity-absent leased line has no coordinate to apply (spec §3.1.1
   // WHY: line 89 / §5.3, stale-identity-reject-and-serve D1/D5/D6, ADR-0018 decisions 1-3). The
@@ -205,7 +205,6 @@ export function resolveLeasedEdit(args: {
     throw makeTargetLostRejection({
       headline: `line ${staleServedLine}${where} no longer resolves to the line identity it was served with.`,
       servedLine: staleServedLine,
-      snapshot,
     });
   }
 

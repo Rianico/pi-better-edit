@@ -76,7 +76,6 @@ export type LineIdentityDecision = { kind: "line"; line: number } | { kind: "sta
  */
 export function resolveLineIdentity(
   lease: LeaseIdentityView,
-  contentLine: number | undefined,
   source: LeaseSpanSource,
 ): LineIdentityDecision {
   // WHY: a dead lease can never be applied, and a live lease is authoritative about *where* its
@@ -85,12 +84,14 @@ export function resolveLineIdentity(
   // WHY: `retired_at` is set -> `E_STALE_RANGE` even when the anchor string is gone from the content
   // WHY: entirely (spec §3.1.1 line 89 / §5.3): the leased line was retired, so nothing has changed
   // WHY: about *which* line identity is missing, only about whether it still has a coordinate.
+  // WHY: stale coordinates stay lease-derived only (`lease.servedLineNumber`): no content lookup
+  // WHY: ever names the headline or the window for a retired bound (stale-identity D5, Probe P).
   if (lease.retiredAt !== null) {
-    return { kind: "stale", line: contentLine ?? lease.servedLineNumber };
+    return { kind: "stale", line: lease.servedLineNumber };
   }
   const rebased = source.rebasedLineOf(lease.lineId);
   if (rebased === undefined) {
-    return { kind: "stale", line: contentLine ?? lease.servedLineNumber };
+    return { kind: "stale", line: lease.servedLineNumber };
   }
   return { kind: "line", line: rebased };
 }

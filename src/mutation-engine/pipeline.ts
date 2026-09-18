@@ -483,10 +483,10 @@ async function recordRejectionServe(args: {
   lineCount: number;
   contentHash: string | undefined;
 }): Promise<void> {
-  // WHY: a target-lost rejection (stale-identity-reject-and-serve D2) carries no rows, so there is
+  // WHY: a target-lost rejection carries no rows (seam oracle pins `servedRows: []`), so there is
   // WHY: nothing to lease — an accidental retry cannot write. Every window that identifies the
-  // WHY: model's region still leases through the rows below.
-  if ("code" in args.error && (args.error as { code?: string }).code === "E_TARGET_LOST") return;
+  // WHY: model's range still leases through the rows below. The length check alone owns the
+  // WHY: skip: no code branch is needed because the oracle proves the payload invariant.
   if (args.error.servedRows.length === 0) return;
   const handle = createSessionHandle(args.sessionKey, args.absolutePath);
   if (args.isPreview) {
@@ -517,7 +517,6 @@ function stripModelPrefix(message: string): string {
  */
 function batchAbortServeBlock(args: {
   rows: ServedRow[] | undefined;
-  index: number;
   originalNormalized: string;
 }): string {
   return args.rows
@@ -534,14 +533,7 @@ function batchAbortServeBlock(args: {
  * or nested spans, so a malformed anchor or a failed apply reads as the code the model can act on
  * (`[E_BAD_ANCHOR]`, `[E_STALE_RANGE]`, …), with the atomicity trailer instead of a relabel.
  */
-function batchAbortFor(args: {
-  error: Error;
-  index: number;
-  edit: HEdit;
-  path: string;
-  originalHashes: string[];
-  originalNormalized: string;
-}): Error {
+function batchAbortFor(args: { error: Error; index: number; path: string }): Error {
   const { error, index, path } = args;
   // WHY: the inner rejection already carries its own reject-and-serve rows under `Current range:`,
   // WHY: so the wrapper must not render them a second time — one serve block per rejection.
@@ -581,10 +573,7 @@ async function resolveBaselineSpan(
       throw batchAbortFor({
         error,
         index,
-        edit,
         path: ctx.path,
-        originalHashes: ctx.originalHashes,
-        originalNormalized: ctx.originalNormalized,
       });
     }
     throw error;
@@ -629,7 +618,6 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
         // WHY: so the retry never needs a re-read.
         const serveBlock = batchAbortServeBlock({
           rows: serveRowsForEdit(edits[b.index]!, ctx.originalHashes),
-          index: b.index,
           originalNormalized: ctx.originalNormalized,
         });
         throw new Error(
@@ -817,7 +805,7 @@ async function runMutations(
       currentIds: isPreview ? undefined : currentIds,
       onRejected: async (error) => {
         if (items.length === 1) throw error;
-        throw batchAbortFor({ error, index, edit, path, originalHashes, originalNormalized });
+        throw batchAbortFor({ error, index, path });
       },
     });
 

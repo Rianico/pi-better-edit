@@ -42,6 +42,21 @@ interface ServedAnchorHit {
   candidateCanon: string;
 }
 
+/** Single owner of the anchor-shape parse: optional diff-marker strip, length, separator, class. */
+const ANCHOR_SHAPE_RE = /^[A-Za-z0-9]{3}$/;
+
+function anchorShapeFromLine(line: string): { anchor: string; tail: string } | undefined {
+  let text = line;
+  if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
+    text = text.slice(1);
+  }
+  if (text.length < 4) return undefined;
+  if (text[3] !== HASH_SEP) return undefined;
+  const anchor = text.slice(0, 3);
+  if (!ANCHOR_SHAPE_RE.test(anchor)) return undefined;
+  return { anchor, tail: text.slice(4) };
+}
+
 /**
  * SAFETY: Shared anchor index plus candidate scan for the served hash echo
  * gate and the served prefix mismatch tier. Builds the anchor-to-served
@@ -68,17 +83,11 @@ function collectServedAnchorHits(
   if (byAnchor.size === 0) return [];
   const hits: ServedAnchorHit[] = [];
   for (let index = 0; index < lines.length; index++) {
-    let text = lines[index]!;
-    if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
-      text = text.slice(1);
-    }
-    if (text.length < 4) continue;
-    if (text[3] !== HASH_SEP) continue;
-    const anchor = text.slice(0, 3);
-    if (!/^[A-Za-z0-9]{3}$/.test(anchor)) continue;
-    const entries = byAnchor.get(anchor);
+    const parsed = anchorShapeFromLine(lines[index]!);
+    if (!parsed) continue;
+    const entries = byAnchor.get(parsed.anchor);
     if (!entries) continue;
-    hits.push({ index, anchor, entries, candidateCanon: canon(text.slice(4)) });
+    hits.push({ index, anchor: parsed.anchor, entries, candidateCanon: canon(parsed.tail) });
   }
   return hits;
 }
@@ -237,16 +246,10 @@ export function findNeverServedAnchorShapes(
   }
   const out: NeverServedAnchorShape[] = [];
   for (let index = 0; index < lines.length; index++) {
-    let text = lines[index]!;
-    if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
-      text = text.slice(1);
-    }
-    if (text.length < 4) continue;
-    if (text[3] !== HASH_SEP) continue;
-    const anchor = text.slice(0, 3);
-    if (!/^[A-Za-z0-9]{3}$/.test(anchor)) continue;
-    if (servedSet.has(anchor)) continue;
-    out.push({ k: index + 1, line: start + index, anchor });
+    const parsed = anchorShapeFromLine(lines[index]!);
+    if (!parsed) continue;
+    if (servedSet.has(parsed.anchor)) continue;
+    out.push({ k: index + 1, line: start + index, anchor: parsed.anchor });
   }
   return out;
 }

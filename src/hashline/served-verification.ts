@@ -154,7 +154,6 @@ function assembleRejectAndServe(args: {
   startLine: number;
   endLine: number;
   snapshot: FileSnapshotContext;
-  retryHint?: boolean;
 }): { message: string; servedRows: ServedRow[]; servedBlock: string } {
   const { servedRows, rendered } = buildRangeServeBlock(
     args.startLine,
@@ -162,7 +161,7 @@ function assembleRejectAndServe(args: {
     args.snapshot.fileHashes,
     args.snapshot.fileLines,
   );
-  const hint = (args.retryHint ?? true) ? `\n${retryHint()}` : "";
+  const hint = `\n${retryHint()}`;
   return {
     message: `[MODEL] [${args.code}] ${args.headline}\nCurrent range:\n${rendered}${hint}`,
     servedRows,
@@ -187,7 +186,6 @@ export const TARGET_LOST_RECOVERY =
 export function makeTargetLostRejection(opts: {
   headline: string;
   servedLine: number;
-  snapshot: FileSnapshotContext;
 }): ServedRejectionError {
   const message = `[MODEL] [E_TARGET_LOST] ${opts.headline}\n${TARGET_LOST_RECOVERY}`;
   return new ServedRejectionError({
