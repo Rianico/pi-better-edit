@@ -83,7 +83,7 @@ const EDIT_PAYLOAD_HINT =
   "two inclusive bare-3-char anchors and the full replacement " +
   '(an empty string deletes the range); optional "mode" is "general" (default, reproduced served rows are refused) or "literal" (declared literal content).';
 export const EDIT_DESCRIPTION =
-  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` (arity = edits.length, atomic, one file per call). Use `edit` for content seen via `read` or a diff; never for directories, binary files, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors (e.g. "wUp") — copy the 3 chars before `│` in served `HASH│content` lines, never `│` or content. `replace_with` is bare content (`\\n` joins lines, `""` deletes; reproduced served rows need `mode: "literal"`). Example: `{"file":"s.py","edits":[{"anchor_from":"wUp","anchor_to":"AU6","replace_with":"x:\\n    y"}]}`. Chain from diff anchors (no re-read). `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
+  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` (arity = edits.length, atomic, one file per call). Use `edit` for content seen via `read` or a diff; never for directories, binaries, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors (e.g. "wUp") — copy the 3 chars before `│` in this file\'s served `HASH│content` lines (lease (session, file, anchor)), never `│` or content. `replace_with` is bare content (`\\n` joins lines, `""` deletes; reproduced served rows need `mode: "literal"`). Example: `{"file":"s.py","edits":[{"anchor_from":"wUp","anchor_to":"AU6","replace_with":"x:\\n    y"}]}`. `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
 export const EDIT_SNIPPET =
   'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"replace_with":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), `replace_with` is bare content (`""` deletes). Chain from diff anchors with no re-read.';
 export const EDIT_GUIDELINES: string[] = [
@@ -95,6 +95,7 @@ export const EDIT_GUIDELINES: string[] = [
   "edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone; a dimmed `[USER]` line in `details` is human info, never your error.",
   "edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).",
   "edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.",
+  "edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so an anchor copied from another file's served rows is refused; copy `anchor_from`/`anchor_to` only from this file's served rows.",
 ];
 
 function _getPayloadPromptFragments(): {

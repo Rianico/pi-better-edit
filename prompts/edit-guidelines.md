@@ -6,3 +6,4 @@
 - edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone; a dimmed `[USER]` line in `details` is human info, never your error.
 - edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).
 - edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.
+- edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so an anchor copied from another file's served rows is refused; copy `anchor_from`/`anchor_to` only from this file's served rows.
