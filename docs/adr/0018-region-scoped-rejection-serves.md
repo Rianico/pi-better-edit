@@ -4,7 +4,7 @@ Date: 2026-09-15
 
 ## Status
 
-proposed — amends [ADR-0016](0016-content-addressed-line-identity-supersedes-healing.md)'s Consequences recovery clause. ADR-0016's Decision is **not** superseded: no non-leasing serve is introduced, so `serve` remains the only operation that presents an anchor and it still does so through the atomic lease upsert.
+accepted — amends [ADR-0016](0016-content-addressed-line-identity-supersedes-healing.md)'s Consequences recovery clause. ADR-0016's Decision is **not** superseded: no non-leasing serve is introduced, so `serve` remains the only operation that presents an anchor and it still does so through the atomic lease upsert.
 
 **Acceptance timing (decided 2026-09-15): accepted in the same commit that lands decisions 1–4.** This record stays `proposed` until the behavior changes, so no accepted ADR claims a contract the code does not honor — the exact condition that let ADR-0016's recovery clause outlive its correctness. The implementation is deliberately not started yet: the open questions in [`../spec/stale-identity-reject-and-serve.md`](../spec/stale-identity-reject-and-serve.md) are resolved first.
 

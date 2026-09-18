@@ -27,7 +27,7 @@ import type { LeaseIdentityView } from "./resolve.js";
 // WHY: Public contracts — mirrors served.ts so it can re-export without identity split
 // WHY: ---------------------------------------------------------------------------
 
-export type ServedCode = "E_STALE_RANGE" | "E_UNSERVED_RANGE";
+export type ServedCode = "E_STALE_RANGE" | "E_UNSERVED_RANGE" | "E_TARGET_LOST";
 
 export interface ServedRow {
   position: number;
@@ -154,6 +154,7 @@ function assembleRejectAndServe(args: {
   startLine: number;
   endLine: number;
   snapshot: FileSnapshotContext;
+  retryHint?: boolean;
 }): { message: string; servedRows: ServedRow[]; servedBlock: string } {
   const { servedRows, rendered } = buildRangeServeBlock(
     args.startLine,
@@ -161,11 +162,41 @@ function assembleRejectAndServe(args: {
     args.snapshot.fileHashes,
     args.snapshot.fileLines,
   );
+  const hint = (args.retryHint ?? true) ? `\n${retryHint()}` : "";
   return {
-    message: `[MODEL] [${args.code}] ${args.headline}\nCurrent range:\n${rendered}\n${retryHint()}`,
+    message: `[MODEL] [${args.code}] ${args.headline}\nCurrent range:\n${rendered}${hint}`,
     servedRows,
     servedBlock: rendered,
   };
+}
+
+/**
+ * Recovery sentence for a target-lost rejection (spec stale-identity-reject-and-serve D3):
+ * the submitted anchors describe a version of the file that no longer exists, so only a
+ * read restores the grounding. Carried instead of the retry hint.
+ */
+export const TARGET_LOST_RECOVERY =
+  "The line you targeted was deleted or replaced; your anchors describe a version of this file that no longer exists. Read the file and re-target.";
+
+/**
+ * Builds an `[E_TARGET_LOST]` rejection for a retired leased identity whose region cannot be
+ * identified (spec stale-identity-reject-and-serve D1/D6, ADR-0018 decisions 1-2). The payload
+ * carries no rows, no `Current range:` heading and no retry hint, so the two codes stay disjoint
+ * by payload shape: `[E_STALE_RANGE]` always renders rows, `[E_TARGET_LOST]` never does.
+ */
+export function makeTargetLostRejection(opts: {
+  headline: string;
+  servedLine: number;
+  snapshot: FileSnapshotContext;
+}): ServedRejectionError {
+  const message = `[MODEL] [E_TARGET_LOST] ${opts.headline}\n${TARGET_LOST_RECOVERY}`;
+  return new ServedRejectionError({
+    code: "E_TARGET_LOST",
+    message,
+    firstOffendingLine: opts.servedLine,
+    servedRows: [],
+    servedBlock: "",
+  });
 }
 
 /** Builds a reject-and-serve `ServedRejectionError` whose rows are the current on-disk range. */

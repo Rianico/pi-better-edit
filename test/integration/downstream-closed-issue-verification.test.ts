@@ -97,7 +97,7 @@ describe("closed #31 — retired anchors never re-bind to a twin", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_STALE_(ANCHOR|RANGE)/);
+      ).rejects.toThrow(/E_TARGET_LOST/);
       expect(await readFile(path, "utf-8")).toBe("bbb\naaa\n");
     });
   });

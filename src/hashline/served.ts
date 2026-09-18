@@ -13,7 +13,11 @@ export {
   servedPositionsOf,
   ServedRejectionError,
   AnchorMismatchError,
+  makeServedRejection,
+  makeTargetLostRejection,
+  TARGET_LOST_RECOVERY,
   type FileSnapshotContext,
+  type ServedCode,
   type ServedRow,
   type ResolvedRange,
 } from "./served-verification.js";

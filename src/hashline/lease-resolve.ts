@@ -16,6 +16,8 @@
  * Fail-closed semantics (never weakened): an unleased anchor, a retired/absent leased `line_id`, a
  * coordinate that no longer carries the leased identity, or an external insert/delete strictly
  * inside the span all reject before any write, so a rejection leaves the file byte-identical.
+ * A retired identity whose region cannot be identified rejects `[E_TARGET_LOST]` with no rows;
+ * the in-place retired case keeps `[E_STALE_RANGE]` with the served coordinates.
  *
  * INVARIANT (spec §3.1.1, §5.3, ADR-0016) — a served anchor is never resolved by content. `apply.ts`
  * routes EVERY edit that has a lease source here, so a boundary anchor either has a live lease or its
@@ -38,6 +40,7 @@ import {
   AnchorMismatchError,
   makeServedRejection,
   makeStaleAnchorRejection,
+  makeTargetLostRejection,
   verifyRebasedSpan,
   type FileSnapshotContext,
 } from "./served-verification.js";
@@ -172,19 +175,37 @@ export function resolveLeasedEdit(args: {
   const fromDecision = resolveLineIdentity(fromLease, fromContent, source);
   const toDecision = resolveLineIdentity(toLease, toContent, source);
 
-  // WHY: a retired or identity-absent leased line has no coordinate to apply: refuse at the same
-  // WHY: seam by serving the current range, never `E_STALE_ANCHOR` (spec §3.1.1 line 89 / §5.3).
+  // WHY: a retired or identity-absent leased line has no coordinate to apply (spec §3.1.1
+  // WHY: line 89 / §5.3, stale-identity-reject-and-serve D1/D5/D6, ADR-0018 decisions 1-3). The
+  // WHY: region rule owns the payload: rows are emitted only for the region the submitted anchors
+  // WHY: identify — a live bound whose rebased coordinate equals its served coordinate proves no
+  // WHY: shift occurred, so the served coordinates are the model's own and stay `[E_STALE_RANGE]`.
+  // WHY: Otherwise the region cannot be identified and the rejection is `[E_TARGET_LOST]` with no
+  // WHY: rows, no `Current range:` heading and no retry hint. Content placement (`uniqueAnchorLine`)
+  // WHY: never places a window and never names the headline coordinate for a retired bound (Probe P).
   if (fromDecision.kind === "stale" || toDecision.kind === "stale") {
-    const staleLine = fromDecision.kind === "stale" ? fromDecision.line : undefined;
-    const startLine = fromContent ?? fromLease.servedLineNumber;
-    const endLine = toContent ?? toLease.servedLineNumber;
-    throw makeServedRejection({
-      code: "E_STALE_RANGE",
-      headline: `line ${staleLine ?? Math.min(startLine, endLine)}${where} no longer resolves to the line identity it was served with.`,
-      startLine: Math.min(startLine, endLine),
-      endLine: Math.max(startLine, endLine),
+    const fromLiveUnshifted =
+      fromDecision.kind === "line" && fromDecision.line === fromLease.servedLineNumber;
+    const toLiveUnshifted =
+      toDecision.kind === "line" && toDecision.line === toLease.servedLineNumber;
+    const staleServedLine =
+      fromDecision.kind === "stale" ? fromLease.servedLineNumber : toLease.servedLineNumber;
+    if (fromLiveUnshifted || toLiveUnshifted) {
+      const startLine = Math.min(fromLease.servedLineNumber, toLease.servedLineNumber);
+      const endLine = Math.max(fromLease.servedLineNumber, toLease.servedLineNumber);
+      throw makeServedRejection({
+        code: "E_STALE_RANGE",
+        headline: `line ${staleServedLine}${where} no longer resolves to the line identity it was served with.`,
+        startLine,
+        endLine,
+        snapshot,
+        firstOffendingLine: staleServedLine,
+      });
+    }
+    throw makeTargetLostRejection({
+      headline: `line ${staleServedLine}${where} no longer resolves to the line identity it was served with.`,
+      servedLine: staleServedLine,
       snapshot,
-      firstOffendingLine: staleLine,
     });
   }
 

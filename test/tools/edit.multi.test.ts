@@ -90,7 +90,7 @@ describe("edit multi-item tool", () => {
 
       // The failing item keeps its OWN code — the retired lease is what the model must fix — plus the
       // atomicity trailer; `[E_BATCH_ABORT]` is reserved for overlapping/nested spans.
-      expect(rejection.message).toContain("[E_STALE_RANGE]");
+      expect(rejection.message).toContain("[E_TARGET_LOST]");
       expect(rejection.message).toContain("edit[1] (sample.ts) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);

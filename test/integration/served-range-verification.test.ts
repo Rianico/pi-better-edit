@@ -107,7 +107,7 @@ describe("served-state range verification for edit", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_UNSERVED_RANGE|E_STALE_RANGE/);
+      ).rejects.toThrow(/E_UNSERVED_RANGE|E_STALE_RANGE|E_TARGET_LOST/);
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
       // Fresh read re-serves and then edit succeeds
       const freshRead = await readTool.execute(

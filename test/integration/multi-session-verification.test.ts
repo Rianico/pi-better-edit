@@ -165,7 +165,7 @@ describe("multi-session — concurrent edits are external changes", () => {
           undefined,
           sessionA,
         ),
-      ).rejects.toThrow(/E_STALE_(ANCHOR|RANGE)/);
+      ).rejects.toThrow(/E_TARGET_LOST/);
 
       const lines = (await readFile(path, "utf-8")).split("\n");
       expect(lines[8]).toBe("\tif (x > 111) {");

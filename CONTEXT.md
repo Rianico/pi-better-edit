@@ -49,8 +49,12 @@ _Avoid_: range staleness (use `served range` for span)
 An interior line with no entry in the served record — the model was never shown that line. Reported as `[E_UNSERVED_RANGE]`; the response serves the current range so the model can retry.
 
 **reject-and-serve**:
-The staleness policy: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the retry needs no read.
+The staleness policy for a region-matched rejection: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the retry needs no read. A rejection whose region cannot be identified carries no rows (see `target-lost rejection`).
 _Avoid_: reject-then-reread (the retry must not require a read)
+
+**target-lost rejection**:
+A rejection whose region cannot be identified, so its payload carries no rows and recovery is a re-read. Reported as `[E_TARGET_LOST]` for a retired leased identity with no live unshifted bound (deleted target, shifted neighbour, re-added text elsewhere). Disjoint from `[E_STALE_RANGE]` by payload shape: `[E_STALE_RANGE]` always renders rows, `[E_TARGET_LOST]` never does.
+_Avoid_: context serve (no such operation exists)
 
 **drift**:
 The divergence between the served state and the current file: lines the model was shown whose content has changed on disk since they were served. Detected by comparing served hashes against current hashes.
@@ -87,7 +91,7 @@ The `served_leases` row that binds a served anchor to the immutable `line_id` it
 _Avoid_: reservation, lock, epoch
 
 **retirement** (`retired_at`):
-Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read (or `reject-and-serve`'s served rows) grants a fresh lease, so a stale anchor rejects `[E_STALE_RANGE]` instead of silently rebinding.
+Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read grants a fresh lease, so a stale anchor rejects `[E_TARGET_LOST]` (region unidentifiable) or `[E_STALE_RANGE]` (in-place, live bound unshifted) instead of silently rebinding.
 _Avoid_: tombstone (the hash-allocation guard, not a lease state)
 
 **lineage** (`line_lineage`):

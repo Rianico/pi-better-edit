@@ -110,7 +110,7 @@ describe("multi-item edit error propagation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("[E_STALE_RANGE]");
+      expect(rejection.message).toContain("[E_TARGET_LOST]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (apply-failure.txt)");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);

@@ -638,3 +638,108 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
     expect(err.message).toMatch(/50 more — read offset=151/);
   });
 });
+
+describe("resolveLeasedEdit — target-lost region rule (spec stale-identity-reject-and-serve D1/D5/D6)", () => {
+  const editBoth = resEdit({ anchor_from: "AAA", anchor_to: "AAA", replace_with: "X" });
+
+  it("emits [E_TARGET_LOST] with no rows and no retry hint when both bounds share one dead anchor", () => {
+    const dead = lease({ lineId: 7, servedSnapshotHash: "S", servedLineNumber: 3, retiredAt: 9 });
+    const src = source({ leases: { AAA: dead }, positions: {}, currentSnapshotHash: "C" });
+    let caught: unknown;
+    try {
+      resolveLeasedEdit({
+        edit: editBoth,
+        snapshot: { fileHashes: ["QQQ", "WWW"], fileLines: ["q", "w"] },
+        served: ["AAA", "BBB"],
+        source: src,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ServedRejectionError);
+    const err = caught as ServedRejectionError;
+    expect(err.code).toBe("E_TARGET_LOST");
+    expect(err.servedRows).toEqual([]);
+    expect(err.servedBlock).toBe("");
+    expect(err.message).toMatch(/\[MODEL\] \[E_TARGET_LOST\] line 3/);
+    expect(err.message).not.toContain("Current range:");
+    expect(err.message).not.toContain("Retry with these anchors");
+    expect(err.message).toMatch(/Read the file and re-target/);
+    expect(err.firstOffendingLine).toBe(3);
+  });
+
+  it("bans content placement: a retired bound re-added elsewhere still names the served coordinate", () => {
+    const dead = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2, retiredAt: 4 });
+    const src = source({ leases: { BBB: dead }, positions: {}, currentSnapshotHash: "C" });
+    let caught: unknown;
+    try {
+      resolveLeasedEdit({
+        edit: resEdit({ anchor_from: "BBB", anchor_to: "BBB", replace_with: "X" }),
+        // The retired text re-appears at line 4, but the payload must not place a window there.
+        snapshot: { fileHashes: ["A1", "A2", "A3", "BBB"], fileLines: ["a1", "a2", "a3", "beta"] },
+        served: ["A1", "BBB"],
+        source: src,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ServedRejectionError);
+    const err = caught as ServedRejectionError;
+    expect(err.code).toBe("E_TARGET_LOST");
+    expect(err.message).toMatch(/line 2/);
+    expect(err.message).not.toMatch(/line 4/);
+    expect(err.servedRows).toEqual([]);
+  });
+
+  it("keeps [E_STALE_RANGE] with the served-coordinate window when one bound is live and unshifted", () => {
+    const dead = lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 6 });
+    const live = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 });
+    const src = source({
+      leases: { AAA: dead, BBB: live },
+      positions: { 2: 2 },
+      currentSnapshotHash: "C",
+    });
+    let caught: unknown;
+    try {
+      resolveLeasedEdit({
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        snapshot: { fileHashes: ["QQQ", "BBB"], fileLines: ["q", "b"] },
+        served: ["AAA", "BBB"],
+        source: src,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ServedRejectionError);
+    const err = caught as ServedRejectionError;
+    expect(err.code).toBe("E_STALE_RANGE");
+    expect(err.message).toContain("Current range:");
+    expect(err.message).toContain("Retry with these anchors");
+    expect(err.servedRows.length).toBeGreaterThan(0);
+    expect(err.firstOffendingLine).toBe(1);
+  });
+
+  it("emits [E_TARGET_LOST] when the live bound shifted (one stale, one moved)", () => {
+    const dead = lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 6 });
+    const moved = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 });
+    const src = source({
+      leases: { AAA: dead, BBB: moved },
+      positions: { 2: 3 },
+      currentSnapshotHash: "C",
+    });
+    let caught: unknown;
+    try {
+      resolveLeasedEdit({
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        snapshot: { fileHashes: ["Q", "Q", "BBB"], fileLines: ["q", "q", "b"] },
+        served: ["AAA", "BBB"],
+        source: src,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ServedRejectionError);
+    expect((caught as ServedRejectionError).code).toBe("E_TARGET_LOST");
+    expect((caught as ServedRejectionError).servedRows).toEqual([]);
+  });
+});

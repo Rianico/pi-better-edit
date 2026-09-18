@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+* **edit:** reject retired identities as target-lost with no rows (#136)
 * **edit:** unify rejection diagnostics with distinct-anchor counts
 
 ### Documentation

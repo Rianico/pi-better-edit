@@ -476,6 +476,11 @@ async function recordRejectionServe(args: {
   lineCount: number;
   contentHash: string | undefined;
 }): Promise<void> {
+  // WHY: a target-lost rejection (stale-identity-reject-and-serve D2) carries no rows, so there is
+  // WHY: nothing to lease — an accidental retry cannot write. Every window that identifies the
+  // WHY: model's region still leases through the rows below.
+  if ("code" in args.error && (args.error as { code?: string }).code === "E_TARGET_LOST") return;
+  if (args.error.servedRows.length === 0) return;
   const handle = createSessionHandle(args.sessionKey, args.absolutePath);
   if (args.isPreview) {
     await handle.recordServeFeedback(args.error.servedRows, "preview", args.lineCount);
