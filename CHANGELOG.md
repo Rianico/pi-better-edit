@@ -12,6 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+* **edit:** cap never-served hint to one counted note per call
 * **edit:** reject retired identities without rows
 * **edit:** unify rejection diagnostics
 

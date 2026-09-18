@@ -4,9 +4,7 @@ import {
   initHasher as defaultInitHasher,
   findServedHashEcho,
   findServedPrefixMismatches,
-  findNeverServedAnchorShapes,
   buildServedWritePrefixNote,
-  buildNeverServedWriteHint,
   LITERAL_BYPASS_NOTICE,
   clearServedRefusals,
 } from "../hashline/index.js";
@@ -161,13 +159,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: whose remainder canon matches none of the canons served for that anchor.
       // WHY: The bytes are already on disk; each note only informs the model channel,
       // WHY: never alters bytes, never blocks, keeps no state, fires per line.
-      // WHY: soft-hint tier beside it: a written line opening with an anchor-shaped
-      // WHY: prefix never served for this session and file. The bytes are already on
-      // WHY: disk as-is with no rewrite; the hint only names the anchor and states
-      // WHY: no action is required unless accidental. Fires regardless of literal
-      // WHY: declaration, never blocks, keeps no state, fires per line.
       let prefixNotes: string[] = [];
-      let neverServedNotes: string[] = [];
       try {
         const rawContent = (event.input as Record<string, unknown> | undefined)?.content;
         const rawMode = (event.input as Record<string, unknown> | undefined)?.mode;
@@ -193,15 +185,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               servedLine: mismatch.servedLine,
             }),
           );
-          const neverServed = findNeverServedAnchorShapes(splitLines(rawContent), served, 1);
-          neverServedNotes = neverServed.map((shape) =>
-            buildNeverServedWriteHint({ line: shape.line, anchor: shape.anchor }),
-          );
         }
       } catch (error) {
         console.error("Failed to evaluate served prefix notes after write:", error);
         prefixNotes = [];
-        neverServedNotes = [];
       }
       await recordServesBestEffort({
         sessionKey: deps.sessionKeyFor(ctx),
@@ -225,7 +212,6 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           },
           ...(literalBypass ? [{ type: "text" as const, text: LITERAL_BYPASS_NOTICE }] : []),
           ...prefixNotes.map((note) => ({ type: "text" as const, text: note })),
-          ...neverServedNotes.map((note) => ({ type: "text" as const, text: note })),
         ],
         ...(literalBypass
           ? {

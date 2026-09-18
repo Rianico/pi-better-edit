@@ -84,6 +84,8 @@ import {
   resEdit,
   resolveLeasedEdit,
   swapReversedRanges,
+  buildNeverServedEditHint,
+  isNeverServedEditHint,
   type HEdit,
   type LeasedEditResolution,
   type LeaseSpanSource,
@@ -258,6 +260,7 @@ type ApplyOneEditOutcome =
       lastChangedLine: number | undefined;
       anchorWarnings: string[] | undefined;
       literalBypass: boolean;
+      neverServedCount: number;
     }
   | {
       kind: "noop";
@@ -265,6 +268,7 @@ type ApplyOneEditOutcome =
       noopEdit: NEdit | undefined;
       anchorWarnings: string[] | undefined;
       literalBypass: boolean;
+      neverServedCount: number;
     };
 
 /**
@@ -345,6 +349,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   const anchorWarnings = anchorResult.warnings;
   const nextContent = anchorResult.content;
   const literalBypass = anchorResult.literalBypass === true;
+  const neverServedCount = anchorResult.neverServedCount ?? 0;
   if (nextContent === input.content) {
     return {
       kind: "noop",
@@ -352,6 +357,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       noopEdit: anchorResult.noopEdit,
       anchorWarnings,
       literalBypass,
+      neverServedCount,
     };
   }
 
@@ -381,6 +387,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     lastChangedLine: anchorResult.lastChangedLine,
     anchorWarnings,
     literalBypass,
+    neverServedCount,
   };
 }
 
@@ -676,6 +683,19 @@ async function runMutations(
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
   const warnings: string[] = [];
+  // WHY: (#146) the never-served soft hint is once per call: per-item hints are
+  // WHY: held back by `pushAnchorWarnings` while their offending-line counts
+  // WHY: accumulate here, and one counted hint is emitted after the loop.
+  // WHY: No other warning tier is capped.
+  let neverServedTotal = 0;
+  const pushAnchorWarnings = (list: string[] | undefined, hintCount: number): void => {
+    if (list) {
+      for (const warning of list) {
+        if (!isNeverServedEditHint(warning)) warnings.push(warning);
+      }
+    }
+    neverServedTotal += hintCount;
+  };
   abortIf(options?.signal);
 
   const isPreview = options?.noPersist === true;
@@ -816,9 +836,7 @@ async function runMutations(
       noopCount += 1;
       if (outcome.literalBypass) literalDeclarations += 1;
       if (isPreview) {
-        if (outcome.anchorWarnings?.length) {
-          warnings.push(...outcome.anchorWarnings);
-        }
+        pushAnchorWarnings(outcome.anchorWarnings, outcome.neverServedCount);
         continue;
       }
       const decision = await runNoopPolicy({
@@ -841,9 +859,7 @@ async function runMutations(
           `edit[${index}] (${path}) was a noop: the range already contains the replacement text.`,
         );
       }
-      if (outcome.anchorWarnings?.length) {
-        warnings.push(...outcome.anchorWarnings);
-      }
+      pushAnchorWarnings(outcome.anchorWarnings, outcome.neverServedCount);
       continue;
     }
     appliedCount += 1;
@@ -879,9 +895,11 @@ async function runMutations(
       );
     }
     if (!isPreview) clearNoopLoop(absolutePath);
-    if (outcome.anchorWarnings?.length) {
-      warnings.push(...outcome.anchorWarnings);
-    }
+    pushAnchorWarnings(outcome.anchorWarnings, outcome.neverServedCount);
+  }
+
+  if (neverServedTotal > 0) {
+    warnings.push(buildNeverServedEditHint({ count: neverServedTotal }));
   }
 
   const result = currentContent;

@@ -231,6 +231,7 @@ export function applyEdit(
   warnings?: string[];
   noopEdit?: NEdit;
   literalBypass?: boolean;
+  neverServedCount?: number;
 } {
   abortIf(signal);
 
@@ -362,12 +363,14 @@ export function applyEdit(
   // WHY: for that anchor. The bytes are already assembled as-is; the note only
   // WHY: informs the model channel via the warnings seam (rendered by warnBlock),
   // WHY: never alters bytes, never blocks, keeps no state, fires per line.
-  // WHY: soft-hint tier beside it: a replacement line opening with an anchor-shaped
+  // WHY: soft-hint tier beside it: replacement lines opening with an anchor-shaped
   // WHY: prefix never served for this session and file. The bytes are already
-  // WHY: assembled as-is with no rewrite; the hint only names the anchor and states
-  // WHY: no action is required unless accidental. Fires regardless of literal
+  // WHY: assembled as-is with no rewrite; the single hint states the offending-line
+  // WHY: count and the tool's own row shape, never a remedy. Fires regardless of literal
   // WHY: declaration (the declaration covers served rows, not never-served shapes),
-  // WHY: never blocks, keeps no state, fires per line.
+  // WHY: never blocks, keeps no state. Capped to one hint per item here; the batch
+  // WHY: path holds per-item hints back and emits one counted hint per call.
+  let neverServedCount = 0;
   if (served) {
     const canons = servedCanons ?? [];
     const mismatches = findServedPrefixMismatches(resolved.content_lines, served, canons, 1);
@@ -381,8 +384,9 @@ export function applyEdit(
       );
     }
     const neverServed = findNeverServedAnchorShapes(resolved.content_lines, served, 1);
-    for (const shape of neverServed) {
-      warnings.push(buildNeverServedEditHint({ k: shape.k, anchor: shape.anchor }));
+    if (neverServed.length > 0) {
+      neverServedCount = neverServed.length;
+      warnings.push(buildNeverServedEditHint({ count: neverServed.length }));
     }
   }
 
@@ -393,6 +397,7 @@ export function applyEdit(
     range: resolvedRange(resolved),
     ...(warnings.length ? { warnings } : {}),
     ...(literalBypass ? { literalBypass: true as const } : {}),
+    ...(neverServedCount > 0 ? { neverServedCount } : {}),
   };
 }
 

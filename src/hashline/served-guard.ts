@@ -252,32 +252,39 @@ export function findNeverServedAnchorShapes(
 }
 
 /**
- * SAFETY: Soft hint for an applied edit carrying a never-served anchor-shaped line.
+ * SAFETY: Soft hint for an applied edit carrying never-served anchor-shaped lines.
  * Applied-only, bytes untouched, never blocks: the bytes were written as-is with
- * no rewrite, and no action is required unless the prefix was accidental.
+ * no rewrite. Once per `edit` call however many offending lines it holds — `count`
+ * states how many replacement lines match the tool's own row shape with anchors
+ * never served for this session and file. Observation only: no remedy, no imperative.
  * Surfaced through the warnings seam (rendered by warnBlock) on the model-visible channel.
  */
-export function buildNeverServedEditHint(args: { k: number; anchor: string }): string {
+export function buildNeverServedEditHint(args: { count: number }): string {
+  const lines =
+    args.count === 1
+      ? "1 anchor-shaped replacement line"
+      : `${args.count} anchor-shaped replacement lines`;
+  const anchors =
+    args.count === 1
+      ? "an anchor never served for this session and file"
+      : "anchors never served for this session and file";
   return (
-    `[MODEL] Edit applied with a never-served anchor-shaped line: replacement line ${args.k} begins with ` +
-    `the anchor ${args.anchor}${HASH_SEP}, an anchor never served for this session and file. ` +
-    `The bytes were written as-is with no rewrite. ` +
-    `No action is required unless the prefix was accidental — if unintended, run undo_last_edit and retry without the anchor.`
+    `[MODEL] Edit applied with ${lines} matching the tool's own row shape ` +
+    `(HASH${HASH_SEP}content): ${anchors}. ` +
+    `The bytes were written as-is with no rewrite.`
   );
 }
 
+const NEVER_SERVED_HINT_OPEN = "[MODEL] Edit applied with ";
+const NEVER_SERVED_HINT_MARK = "anchor-shaped replacement line";
+
 /**
- * SAFETY: Soft hint for an applied write carrying a never-served anchor-shaped line.
- * Same applied-only, bytes-untouched contract as the edit hint, surfaced
- * through the `tool_result` handler that owns the write auto-read.
+ * SAFETY: Identifies the never-served soft hint among pooled warnings so the batch
+ * path can hold every per-item hint back and emit one counted hint per call.
+ * Matches the fixed open and mark owned by `buildNeverServedEditHint`.
  */
-export function buildNeverServedWriteHint(args: { line: number; anchor: string }): string {
-  return (
-    `[MODEL] Write applied with a never-served anchor-shaped line: line ${args.line} begins with ` +
-    `the anchor ${args.anchor}${HASH_SEP}, an anchor never served for this session and file. ` +
-    `The bytes were written as-is with no rewrite. ` +
-    `No action is required unless the prefix was accidental — if unintended, re-issue the write without the anchor prefix.`
-  );
+export function isNeverServedEditHint(warning: string): boolean {
+  return warning.startsWith(NEVER_SERVED_HINT_OPEN) && warning.includes(NEVER_SERVED_HINT_MARK);
 }
 
 type RefusalEntry = {
