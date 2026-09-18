@@ -503,7 +503,7 @@ describe("undo_last_edit", () => {
 
       const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
       expect(undoResult.isError).toBe(true);
-      expect(getText(undoResult)).toMatch(/E_UNDO_STALE/);
+      expect(getText(undoResult)).toMatch(/\[MODEL\] \[E_UNDO_STALE\]/);
       expect(getText(undoResult)).toMatch(/file modified after edit/i);
 
       const content = await readFile(join(cwd, "sample.ts"), "utf-8");

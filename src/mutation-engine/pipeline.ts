@@ -492,9 +492,16 @@ const BATCH_ATOMICITY_TRAILER =
   "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
 
 /**
- * The reject-and-serve block every batch-rejection path appends. One renderer means a rejected item
- * reads identically whichever gate caught it: the item's own served rows when its rejection carried
- * them, else the current on-disk range of the item the model retries from.
+ * Strips a leading audience tag so a wrapped rejection carries exactly one `[MODEL]` marker.
+ * The inner diagnostic already names its own code; the outer wrapper owns the single prefix.
+ */
+function stripModelPrefix(message: string): string {
+  return message.startsWith("[MODEL] ") ? message.slice("[MODEL] ".length) : message;
+}
+
+/**
+ * The reject-and-serve block for the overlap gate. It renders the current range once with the
+ * shared `Current range:` contract, so a batched rejection never repeats the served rows.
  */
 function batchAbortServeBlock(args: {
   rows: ServedRow[] | undefined;
@@ -502,7 +509,7 @@ function batchAbortServeBlock(args: {
   originalNormalized: string;
 }): string {
   return args.rows
-    ? ` Current on-disk range for edit[${args.index}] (unchanged — nothing was written):\n${fmtServedRows(args.rows, splitLines(args.originalNormalized))}`
+    ? ` Current range:\n${fmtServedRows(args.rows, splitLines(args.originalNormalized))}`
     : " Call read() to get fresh anchors.";
 }
 
@@ -523,14 +530,11 @@ function batchAbortFor(args: {
   originalHashes: string[];
   originalNormalized: string;
 }): Error {
-  const { error, index, edit, path } = args;
-  const ownRows =
-    error instanceof AnchorMismatchError || error instanceof ServedRejectionError
-      ? error.servedRows
-      : [];
-  const serveRows = ownRows.length > 0 ? ownRows : serveRowsForEdit(edit, args.originalHashes);
+  const { error, index, path } = args;
+  // WHY: the inner rejection already carries its own reject-and-serve rows under `Current range:`,
+  // WHY: so the wrapper must not render them a second time — one serve block per rejection.
   return new Error(
-    `[MODEL] edit[${index}] (${path}) failed: ${error.message}${batchAbortServeBlock({ rows: serveRows, index, originalNormalized: args.originalNormalized })}\n` +
+    `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}\n` +
       `${BATCH_ATOMICITY_TRAILER} Fix the failing edit (and any later edit that depends on it), then resubmit.`,
   );
 }
@@ -643,9 +647,9 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
       // WHY: a payload malformation keeps its own code (`[E_BAD_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
       // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
       // WHY: hunt for coordinate overlap.
-      const message = error instanceof Error ? error.message : String(error);
+      const raw = error instanceof Error ? error.message : String(error);
       throw new Error(
-        `[MODEL] edit[${index}] (${path}) failed: ${message}\n${BATCH_ATOMICITY_TRAILER}`,
+        `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(raw)}\n${BATCH_ATOMICITY_TRAILER}`,
       );
     }
   }
@@ -818,7 +822,7 @@ async function runMutations(
         removeTo: item.anchor_to,
         replacementText: item.replace_with,
         ref: `edit[${index}] (${path})`,
-        batch: true,
+        batch: items.length > 1,
         range,
         hashes: currentHashes,
         lines: splitLines(currentContent),

@@ -101,9 +101,13 @@ function throwStaleAnchor(args: {
   const { edit, snapshot, fromLine, toLine } = args;
   const { filePath } = snapshot;
   const refused = [
-    args.refusedFrom ? edit.hash_bounds[0].hash : undefined,
-    args.refusedTo ? edit.hash_bounds[1].hash : undefined,
-  ].filter((hash): hash is string => hash !== undefined);
+    ...new Set(
+      [
+        args.refusedFrom ? edit.hash_bounds[0].hash : undefined,
+        args.refusedTo ? edit.hash_bounds[1].hash : undefined,
+      ].filter((hash): hash is string => hash !== undefined),
+    ),
+  ];
   // WHY: parity — the spec's `E_STALE_ANCHOR` serve is the current range, so a boundary placed by
   // WHY: content or by the surviving lease is enough to name the range the model targeted.
   if (fromLine !== undefined && toLine !== undefined) {

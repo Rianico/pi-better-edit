@@ -148,7 +148,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
             content: [
               {
                 type: "text",
-                text: `[E_UNDO_STALE] cannot undo on ${path}: file no longer exists.`,
+                text: `[MODEL] [E_UNDO_STALE] cannot undo on ${path}: file no longer exists.`,
               },
             ],
             isError: true,
@@ -161,7 +161,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
             content: [
               {
                 type: "text",
-                text: `[E_UNDO_STALE] cannot undo on ${path}: file modified after edit — undo would overwrite changes.`,
+                text: `[MODEL] [E_UNDO_STALE] cannot undo on ${path}: file modified after edit — undo would overwrite changes.`,
               },
             ],
             isError: true,

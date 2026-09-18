@@ -9,9 +9,13 @@ All notable changes to this project will be documented in this file.
 * **edit:** gate reproduced served rows behind a literal declaration (#134)
 * **edit:** adopt line-identity MVCC with leases
 
+### Bug Fixes
+
+* **edit:** unify rejection diagnostics with distinct-anchor counts
+
 ### Documentation
 
-* **prompts:** bind anchors to the file that served them
+* **prompts:** bind anchors to serving file
 * **spec:** fix the ADR-0014 citation in the E_UNDO_STALE re-open
 * **spec:** withdraw the E_UNDO_STALE refutation in the audit
 * hand off the target-lost defect, ADR-0018 and the code audit

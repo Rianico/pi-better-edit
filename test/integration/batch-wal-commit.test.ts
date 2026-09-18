@@ -396,6 +396,7 @@ describe("multi-edit batch WAL commit", () => {
       expect(rejection.message).toContain("edit[1] (parse-abort.txt) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message.match(/\bMODEL\b/g) ?? []).toHaveLength(1);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
   });
@@ -438,10 +439,10 @@ describe("multi-edit batch WAL commit", () => {
       expect(rejection.message).toContain("edit[1] (reject-abort.txt) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
-      // The single shared helper renders the serve block verbatim at this call site too.
-      expect(rejection.message).toContain(
-        "Current on-disk range for edit[1] (unchanged — nothing was written):",
-      );
+      // The rejection carries the inner serve block once under the shared contract.
+      expect(rejection.message).toContain("Current range:");
+      expect(rejection.message.match(/\bCurrent range\b/g) ?? []).toHaveLength(1);
+      expect(rejection.message.match(/\bMODEL\b/g) ?? []).toHaveLength(1);
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
     });
   });

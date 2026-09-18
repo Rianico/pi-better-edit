@@ -197,11 +197,12 @@ function formatNotFound(
   out: string[],
 ): void {
   if (notFound.length === 0) return;
-  const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
+  const distinct = [...new Map(notFound.map((m) => [m.ref.hash, m])).values()];
+  const refList = distinct.map((m) => `"${m.ref.hash}"`).join(", ");
   out.push(
-    `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
+    `[E_STALE_ANCHOR] ${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
   );
-  for (const m of notFound) {
+  for (const m of distinct) {
     const ctx = m.context;
     if (!ctx) continue;
     const from = Math.max(1, ctx.line - 1);
@@ -227,10 +228,11 @@ function formatAmbiguous(
 ): void {
   if (ambiguous.length === 0) return;
   if (out.length > 0) out.push("");
+  const distinctAmbiguous = [...new Map(ambiguous.map((m) => [m.ref.hash, m])).values()];
   out.push(
-    `[E_STALE_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
+    `[E_STALE_ANCHOR] ${distinctAmbiguous.length} ambiguous anchor${distinctAmbiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
   );
-  for (const m of ambiguous) {
+  for (const m of distinctAmbiguous) {
     const sample = (m.candidates ?? []).slice(0, 5);
     const more =
       (m.candidates?.length ?? 0) > sample.length
