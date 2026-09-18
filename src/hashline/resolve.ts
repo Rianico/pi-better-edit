@@ -343,7 +343,7 @@ export function resEdit(edit: HTEdit): HEdit {
       if (hash) {
         const lines = trimmed.split("\n").length;
         throw new Error(
-          `[MODEL] [E_BAD_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`,
+          `[MODEL] [E_MALFORMED_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`,
         );
       }
     }
@@ -351,11 +351,11 @@ export function resEdit(edit: HTEdit): HEdit {
     if (match) {
       let message: string;
       if (match[1] === "+") {
-        message = `[MODEL] [E_BAD_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
+        message = `[MODEL] [E_MALFORMED_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
       } else if (match[1] === "-") {
-        message = `[MODEL] [E_BAD_ANCHOR] stripped leading "-" marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
+        message = `[MODEL] [E_MALFORMED_ANCHOR] stripped leading "-" marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
       } else {
-        message = `[MODEL] [E_BAD_ANCHOR] stripped "HASH│" prefix from anchor_from/anchor_to "${trimmed}". Nothing was written; copy only the 3 chars before │ and retry.`;
+        message = `[MODEL] [E_MALFORMED_ANCHOR] stripped "HASH│" prefix from anchor_from/anchor_to "${trimmed}". Nothing was written; copy only the 3 chars before │ and retry.`;
       }
       throw new Error(message);
     }

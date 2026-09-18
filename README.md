@@ -131,7 +131,7 @@ serves all count as serves. `read` is on-demand recovery, not a per-edit ritual.
 
 **Stop the loop.** A no-op edit reports `No changes made` and leaves anchors alone; the
 same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `edit` applies up to 32
-edits atomically — a failing item rejects the whole call and reports its own code (`[E_STALE_RANGE]`, `[E_BAD_ANCHOR]`, …) so the model fixes the actual cause, while `[E_BATCH_ABORT]` is reserved for items whose spans overlap.
+edits atomically — a failing item rejects the whole call and reports its own code (`[E_STALE_RANGE]`, `[E_MALFORMED_ANCHOR]`, …) so the model fixes the actual cause, while `[E_BATCH_ABORT]` is reserved for items whose spans overlap.
 
 ### Token economics: envelope savings
 
@@ -182,9 +182,9 @@ atomically to that one file — one item per call is the norm, several same-file
 | Code | Meaning |
 | --- | --- |
 | `[E_BAD_PAYLOAD]` | The payload is not `{ "file": file, "edits": [{ "anchor_from", "anchor_to", "replace_with" }, …] }`, or a member has an unknown, missing, or wrongly-typed value. |
-| `[E_BAD_ANCHOR]` | An **anchor field** is not a bare 3-char hash: empty, numeric and not 3 chars, multi-line, containing `│`, or carrying a diff-preview marker (`+`/`-`/`HASH│`). Nothing was written; pass the bare 3-char anchor and retry. Anchor fields only — `replace_with` is never refused for its shape; a replacement that reproduces a served row is `[E_SERVED_ECHO]`. |
+| `[E_MALFORMED_ANCHOR]` | An **anchor field** is not a bare 3-char hash: empty, numeric and not 3 chars, multi-line, containing `│`, or carrying a diff-preview marker (`+`/`-`/`HASH│`). Nothing was written; pass the bare 3-char anchor and retry. Anchor fields only — `replace_with` is never refused for its shape; a replacement that reproduces a served row is `[E_MALFORM_TEXT]`. |
 | `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; re-read the file and copy the fresh 3-char anchors (the 3 chars before `│`). |
-| `[E_SERVED_ECHO]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; remove the copied anchors and retry, or assert the bytes are content with `mode: "literal"`. Nothing was written. Evidence-only: a `HASH│`-shaped line whose anchor was **never served** is written verbatim. |
+| `[E_MALFORM_TEXT]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; remove the copied anchors and retry, or assert the bytes are content with `mode: "literal"`. Nothing was written. Evidence-only: a `HASH│`-shaped line whose anchor was **never served** is written verbatim. |
 | `[E_REVERSED_ANCHORS]` | Range start line is after range end line. The `edit` is refused (`[MODEL]`, nothing written — swap `anchor_from`/`anchor_to` and retry), unless the tool heals it: `[USER] [E_REVERSED_ANCHORS] … healed and applied with the range swapped` is returned dimmed on success. |
 | `[E_EMPTY_RANGE]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |
@@ -197,7 +197,7 @@ atomically to that one file — one item per call is the norm, several same-file
 | `[E_TARGET_LOST]` | A leased line identity was deleted or replaced and its region cannot be identified (deleted target, shifted neighbour, re-added text elsewhere). The edit is refused with no `HASH│content` rows and nothing is leased; read the file and re-target. |
 | `[E_UNSERVED_RANGE]` | A line of the resolved range was never served (paged reads, truncated output, never-read file). Two variants: interior loop miss — a line strictly between the anchors has no served entry, so retry with the served rows (no `read` needed); boundary unverified (`throwUnverified`) — a boundary anchor has no served position so no served span matched, so a full `read` is required (retrying without re-reading cannot clear a stale duplicate outside the served window). `details.unservedKind` (`interior`/`boundary`) names these two provable cases but is reserved, not emitted yet. |
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is served as fresh `HASH│content` rows. |
-| `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_BAD_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
+| `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_MALFORMED_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
 
 ## Comparison
 

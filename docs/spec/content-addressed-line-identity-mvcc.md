@@ -368,7 +368,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 │  - Scaled Patience Pairing: dynamic budget MAX(100k, 4*(prev+curr))              │
 │  - LIS Pin Backbone: crossing pins retire strictly within non-LIS spans          │
 │  - Span Contiguity Gate: asserts interior span is not torn (Probe J)             │
-│  - Preserved Guards: E_SERVED_ECHO (rejects), E_REVERSED_ANCHORS, E_BAD_ANCHOR   │
+│  - Preserved Guards: E_MALFORM_TEXT (rejects), E_REVERSED_ANCHORS, E_MALFORMED_ANCHOR   │
 └────────────────────────────────────────┬─────────────────────────────────────────┘
                                          │
 ┌────────────────────────────────────────▼─────────────────────────────────────────┐
@@ -644,8 +644,8 @@ If any anchor originates from a different snapshot, or disk content has drifted 
 | External insert strictly inside span (Probe `J`) | `served-verification.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
 | External swap/reorder of code blocks (Probe `K`) | `patience-pairing.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
 | Overlapping/nested spans in multi-edit batch | `pipeline.ts` (`assertBatchSpansDisjoint`, on lease-resolved baseline spans) | `[MODEL] [E_BATCH_ABORT]` | Rejects batch; model separates edits |
-| Malformed payload or apply-time failure inside a multi-item batch | `pipeline.ts` | the item's **own** code (`E_BAD_ANCHOR`, `E_REVERSED_ANCHORS`, `E_SERVED_ECHO`, `E_STALE_RANGE`, …) | Rejects the whole call — nothing was written; the message carries the atomicity trailer |
-| Replacement text contains `HASH│` prefix | `apply.ts` | `[MODEL] [E_SERVED_ECHO]` | Rejects literal echoed prefix (`EditHashEchoError`) |
+| Malformed payload or apply-time failure inside a multi-item batch | `pipeline.ts` | the item's **own** code (`E_MALFORMED_ANCHOR`, `E_REVERSED_ANCHORS`, `E_MALFORM_TEXT`, `E_STALE_RANGE`, …) | Rejects the whole call — nothing was written; the message carries the atomicity trailer |
+| Replacement text contains `HASH│` prefix | `apply.ts` | `[MODEL] [E_MALFORM_TEXT]` | Rejects literal echoed prefix (`EditHashEchoError`) |
 | Inverted anchors (`anchor_from` after `anchor_to`) | `resolve.ts` | `[MODEL] [E_REVERSED_ANCHORS]` | Heals or rejects reversed anchors |
 | Dangling lease (snapshot evicted by vacuum) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
 
@@ -699,7 +699,7 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
 - Implement `pairSnapshots` with scaled dynamic budget (`MAX(100k, 4*(p+c))`), Patience LIS pin backbone with unconditional intersection tie-breaking across minimal-displacement candidates (via polynomial two-pass DP), progress-guaranteed leaf fall-through, rigid block shift preservation (Probe `N`), and bounded leaf LCS.
 - Wire edit-path on-demand materialization inside `BEGIN IMMEDIATE` in `pipeline.ts` with `retired_at` writer.
 - Implement in-memory working-buffer preceding delta rebase for multi-edit batches (Probes `I`, `M`).
-- Re-architect `valEdit` in `resolve.ts` to resolve via rebased `served_leases`, preserving `E_SERVED_ECHO` (rejects), `E_REVERSED_ANCHORS`, `E_BAD_ANCHOR`.
+- Re-architect `valEdit` in `resolve.ts` to resolve via rebased `served_leases`, preserving `E_MALFORM_TEXT` (rejects), `E_REVERSED_ANCHORS`, `E_MALFORMED_ANCHOR`.
 - **ADR-0008 Healing Subsystem Deprecation & Test Modernization**:
   - Delete `tryHealOrphanedSpan` and the heuristic canon healing module `src/hashline/healing/*`.
   - Retire unit test files dedicated to deprecated heuristic healing: delete `test/hashline/healing.test.ts` and `test/hashline/healing-policy.test.ts`.
@@ -782,10 +782,10 @@ The `stale` decision in `resolveLeasedEdit` (`src/hashline/lease-resolve.ts:173-
 | D2 | A target-lost rejection performs **no** `recordRejectionServe` upsert (there are no rows), so an accidental retry cannot write. Every window that identifies the model's range (in-place drift, `E_UNSERVED_RANGE`, `E_BATCH_ABORT`, content-placeable `E_STALE_ANCHOR`) still leases. | new invariant |
 | D5 | **Content placement is banned from the payload.** `uniqueAnchorLine` may not place a rejection window, and neither the window nor the headline's line number may come from a content match for a retired bound (Probe `P`: the header named line 4 for a line-2 lease). | §3.1.1 step 1 / §5.3 |
 | D3 | The retry hint is a property of the rejection payload, not an unconditional suffix. A target-lost rejection instead carries `The line you targeted no longer exists — read the file and re-target.` | §3.1.1 step 1 (*"Throw [E_STALE_ANCHOR] (Echo fresh anchors)"*); §5.3 recovery column |
-| D4 | One wording family across `E_STALE_ANCHOR` / `E_STALE_RANGE` / `E_TARGET_LOST` / `E_UNSERVED_RANGE` / `E_SERVED_ECHO`; anchors are counted and listed per **distinct** anchor. | §5.3 recovery column text |
+| D4 | One wording family across `E_STALE_ANCHOR` / `E_STALE_RANGE` / `E_TARGET_LOST` / `E_UNSERVED_RANGE` / `E_MALFORM_TEXT`; anchors are counted and listed per **distinct** anchor. | §5.3 recovery column text |
 | D6 | **New code `[E_TARGET_LOST]`** for exactly the region-unidentifiable rejections of D1. The codes become disjoint by payload shape: `[E_STALE_RANGE]` always renders rows, `[E_TARGET_LOST]` never does, so the remedy is machine-readable. | new code (README error table, `CONTEXT.md`, prompts) |
 
-Post-sync notes for §9.2: `ba7c8d2` added `src/hashline/served-guard.ts` with `[E_SERVED_ECHO]` and the `mode: "literal"` escape — a **third** rejection contract to fold into D4 (frozen literals per ADR-0009's 2026-09-15 revision) — and removed the content-surface shape refusal, so a `replace_with` holding never-served anchor-shaped lines is now written verbatim; decide whether that case warrants a non-blocking `[MODEL]` note. The deltas are D1–D6: D5 bans content placement from the payload (the arm Probe `P` exercised), and D6 splits the code so `[E_TARGET_LOST]` ⇒ no rows, `[E_STALE_RANGE]` ⇒ rows. The full producer audit is the patch spec's Appendix E.
+Post-sync notes for §9.2: `ba7c8d2` added `src/hashline/served-guard.ts` with `[E_MALFORM_TEXT]` and the `mode: "literal"` escape — a **third** rejection contract to fold into D4 (frozen literals per ADR-0009's 2026-09-15 revision) — and removed the content-surface shape refusal, so a `replace_with` holding never-served anchor-shaped lines is now written verbatim; decide whether that case warrants a non-blocking `[MODEL]` note. The deltas are D1–D6: D5 bans content placement from the payload (the arm Probe `P` exercised), and D6 splits the code so `[E_TARGET_LOST]` ⇒ no rows, `[E_STALE_RANGE]` ⇒ rows. The full producer audit is the patch spec's Appendix E.
 
 ### 9.3 Replacement row for the §5.3 decision table
 

@@ -51,7 +51,7 @@ describe("anchor validation order", () => {
         undefined,
         { cwd: "/tmp" } as any,
       ),
-    ).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
+    ).rejects.toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });
 });
 describe("prepareArguments normalization", () => {

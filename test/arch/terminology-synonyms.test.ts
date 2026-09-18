@@ -8,8 +8,9 @@ import { describe, it, expect } from "vitest";
  * `served-range staleness`), and `echo` for served feedback rows (canonical only inside
  * `served hash echo`). This guard keeps the rename from creeping back in (#108, #114).
  * #108 freeze is served-qualified only: `findServedHashEcho`, `ServedHashEchoError`,
- * `ServedHashEcho`, `servedHashEchoDenial`, `E_SERVED_ECHO` stay frozen; the
- * surface-qualified `findEditHashEcho` / `EditHashEchoError` are retired (#125).
+ * `ServedHashEcho`, `servedHashEchoDenial` stay frozen; the model-facing refusal
+ * code is `E_MALFORM_TEXT` (renamed per ADR-0019, no alias); the surface-qualified
+ * `findEditHashEcho` / `EditHashEchoError` are retired (#125).
  */
 function srcFiles(dir = "src", out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -52,7 +53,7 @@ const CANONICAL_TOKENS = [
   "ServedHashEchoError",
   "findServedHashEcho",
   "ServedHashEcho",
-  "E_SERVED_ECHO",
+  "E_MALFORM_TEXT",
 ];
 
 function stripCanonical(text: string): string {
@@ -101,10 +102,25 @@ function testTitleViolations(): string[] {
 // `served hash echo` (via `stripCanonical`) plus the glossary `_Avoid_:` lines
 // themselves (they must name the banned synonym to define the ban, e.g.
 // `_Avoid_: display, show, echo` and `_Avoid_: hash echo ..., anchor echo`);
-// prose naming the canonical condition stays green. No file carve-outs in
-// this scope.
+// prose naming the canonical condition stays green. Accepted records that predate
+// the T-rename keep their original codes as historical quotes (see ADR-0019) and
+// are exempt here by path; `src/` keeps zero tolerance via the src scope.
+//
+// Accepted ADR records exempt from scope 3: they predate the T-rename and retain
+// the original model-facing codes as historical quotes (never rewritten). ADR-0019
+// is exempt as the rename record itself.
+const HISTORICAL_ADR_FILES = new Set<string>([
+  "docs/adr/0009-bounded-hash-echo-guard.md",
+  "docs/adr/0010-user-facing-drift-signals.md",
+  "docs/adr/0014-user-model-audience.md",
+  "docs/adr/0015-named-object-edit-payload.md",
+  "docs/adr/0018-region-scoped-rejection-serves.md",
+  "docs/adr/0019-malformed-code-rename.md",
+]);
 function bindingDocsViolations(): string[] {
-  const docs = ["CONTEXT.md", ...allFiles("docs/adr", ".md")];
+  const docs = ["CONTEXT.md", ...allFiles("docs/adr", ".md")].filter(
+    (file) => !HISTORICAL_ADR_FILES.has(file),
+  );
   return docs.filter((file) => {
     const text = readFileSync(file, "utf-8");
     // Strip `_Avoid_:` definition lines: the glossary must name the banned term
@@ -143,7 +159,7 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () =>
 
   it("keeps the canonical served hash echo family and the line-identity rename", () => {
     const apply = readFileSync("src/hashline/apply.ts", "utf-8");
-    expect(apply).toContain("E_SERVED_ECHO");
+    expect(apply).toContain("E_MALFORM_TEXT");
     expect(apply).toContain("findServedHashEcho");
     expect(apply).not.toContain("findEditHashEcho");
     const index = readFileSync("src/hashline/index.ts", "utf-8");
@@ -163,17 +179,18 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of test titles/
     // Title-only: strip the canonical `served hash echo` family, then assert no
     // `/echo/i` remains on `it`/`test`/`describe` lines. A title calling served
     // rows by the avoided synonym fails here; titles naming the canonical
-    // condition (`E_SERVED_ECHO`, `findServedHashEcho`, `served hash echo`) stay green.
+    // condition (`E_MALFORM_TEXT`, `findServedHashEcho`, `served hash echo`) stay green.
     expect(testTitleViolations()).toEqual([]);
   });
 });
 
 describe("CONTEXT.md terminology — forbidden synonyms stay out of binding docs/", () => {
   it("keeps the binding domain docs free of the avoided synonym for served feedback (canonical family stripped)", () => {
-    // Whole-file over `CONTEXT.md` + `docs/adr/**.md`: strip the canonical
-    // `served hash echo` family, then assert no `/echo/i` remains. Prose calling
-    // served rows by the avoided synonym fails here; prose naming the canonical
-    // condition stays green. No file carve-outs in this scope.
+    // Whole-file over live binding docs (`CONTEXT.md` + non-historical ADRs):
+    // strip the canonical `served hash echo` family, then assert no `/echo/i`
+    // remains. Prose calling served rows by the avoided synonym fails here;
+    // prose naming the canonical condition stays green. Historical ADR records
+    // are path-exempt above (they keep original codes as quotes, never rewritten).
     expect(bindingDocsViolations()).toEqual([]);
   });
 });

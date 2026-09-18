@@ -84,7 +84,7 @@ describe("resEdit", () => {
       anchor_to: "MQX│const x = 1;",
       replace_with: "new",
     };
-    expect(() => resEdit(edit)).toThrow(/\[E_BAD_ANCHOR\]/);
+    expect(() => resEdit(edit)).toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });
 
   it("strips diff-preview rows pasted into anchor_from/anchor_to with a warning", () => {
@@ -93,7 +93,7 @@ describe("resEdit", () => {
       anchor_to: "-MQX│const x = 1;",
       replace_with: "new",
     };
-    expect(() => resEdit(edit)).toThrow(/\[E_BAD_ANCHOR\]/);
+    expect(() => resEdit(edit)).toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });
 
   it("leaves bare anchors untouched and emits no warning", () => {
@@ -104,6 +104,6 @@ describe("resEdit", () => {
 
   it("still rejects rows without a leading hash", () => {
     const edit: HTEdit = { anchor_from: "│const x = 1;", anchor_to: "MQX", replace_with: "new" };
-    expect(() => resEdit(edit)).toThrow(/\[E_BAD_ANCHOR\]/);
+    expect(() => resEdit(edit)).toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });
 });

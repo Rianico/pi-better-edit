@@ -531,7 +531,7 @@ function batchAbortServeBlock(args: {
  *
  * The item's OWN error code is propagated untouched — `[E_BATCH_ABORT]` is reserved for overlapping
  * or nested spans, so a malformed anchor or a failed apply reads as the code the model can act on
- * (`[E_BAD_ANCHOR]`, `[E_STALE_RANGE]`, …), with the atomicity trailer instead of a relabel.
+ * (`[E_MALFORMED_ANCHOR]`, `[E_STALE_RANGE]`, …), with the atomicity trailer instead of a relabel.
  */
 function batchAbortFor(args: { error: Error; index: number; path: string }): Error {
   const { error, index, path } = args;
@@ -644,7 +644,7 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
       );
     } catch (error) {
       if (items.length === 1) throw error;
-      // WHY: a payload malformation keeps its own code (`[E_BAD_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
+      // WHY: a payload malformation keeps its own code (`[E_MALFORMED_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
       // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
       // WHY: hunt for coordinate overlap.
       const raw = error instanceof Error ? error.message : String(error);

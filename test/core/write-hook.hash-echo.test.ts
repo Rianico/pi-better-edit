@@ -116,7 +116,7 @@ describe("write served hash guard", () => {
       );
 
       expect(result).toMatchObject({ block: true });
-      expect((result as { reason?: string }).reason).toContain("[E_SERVED_ECHO]");
+      expect((result as { reason?: string }).reason).toContain("[E_MALFORM_TEXT]");
       expect((result as { reason?: string }).reason).toContain("tool output, not file content");
       expect((result as { reason?: string }).reason).toContain("Nothing was written");
       expect((result as { reason?: string }).reason).toContain('mode: "literal"');
@@ -184,7 +184,7 @@ describe("write served hash guard", () => {
       const previewText = await servedPreviewForFile(path, cwd, "sess");
       // general refuses the verbatim preview
       const refused = await servedHashEchoDenial(io, path, previewText, cwd, "sess");
-      expect(refused).toMatch(/\[E_SERVED_ECHO\]/);
+      expect(refused).toMatch(/\[E_MALFORM_TEXT\]/);
       // literal allows the same bytes through
       const allowed = await servedHashEchoDenial(
         io,
@@ -207,7 +207,7 @@ describe("write served hash guard", () => {
       await writeFile(path, "line\n", "utf-8");
       const previewText = await servedPreviewForFile(path, cwd, "sess");
       const reason = await servedHashEchoDenial(io, path, previewText, cwd, "sess");
-      expect(reason).toContain("[MODEL] [E_SERVED_ECHO]");
+      expect(reason).toContain("[MODEL] [E_MALFORM_TEXT]");
       expect(reason).toContain("line 1 begins with");
       expect(reason).toContain("served for this session, path, and line 1");
       expect(reason).toContain("tool output, not file content");

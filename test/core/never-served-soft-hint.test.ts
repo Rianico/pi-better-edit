@@ -116,7 +116,7 @@ describe("applyEdit never-served soft hint", () => {
     expectObservationOnly(hints[0]!);
   });
 
-  it("served hash echo still refuses with E_SERVED_ECHO", () => {
+  it("served hash echo still refuses with E_MALFORM_TEXT", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
@@ -127,7 +127,7 @@ describe("applyEdit never-served soft hint", () => {
     };
     expect(() =>
       applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
-    ).toThrow(/E_SERVED_ECHO/);
+    ).toThrow(/E_MALFORM_TEXT/);
   });
 
   it("literal declaration succeeds without refusal", () => {

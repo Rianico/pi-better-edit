@@ -359,7 +359,7 @@ describe("multi-edit batch WAL commit", () => {
     });
   });
 
-  it("keeps [E_BAD_ANCHOR] on the parse-time item rejection and prefixes it with [MODEL]", async () => {
+  it("keeps [E_MALFORMED_ANCHOR] on the parse-time item rejection and prefixes it with [MODEL]", async () => {
     await withTempFile("parse-abort.txt", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
@@ -392,7 +392,7 @@ describe("multi-edit batch WAL commit", () => {
         .catch((error: unknown) => error)) as Error;
 
       expect(rejection.message.startsWith("[MODEL] ")).toBe(true);
-      expect(rejection.message).toContain("[E_BAD_ANCHOR]");
+      expect(rejection.message).toContain("[E_MALFORMED_ANCHOR]");
       expect(rejection.message).toContain("edit[1] (parse-abort.txt) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);

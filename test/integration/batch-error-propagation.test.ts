@@ -16,7 +16,7 @@ async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<
 }
 
 describe("multi-item edit error propagation", () => {
-  it("a malformed anchor in a later item surfaces [E_BAD_ANCHOR], never [E_BATCH_ABORT]", async () => {
+  it("a malformed anchor in a later item surfaces [E_MALFORMED_ANCHOR], never [E_BATCH_ABORT]", async () => {
     const content = "alpha\nbeta\ngamma\n";
     await withTempFile("bad-anchor.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -41,7 +41,7 @@ describe("multi-item edit error propagation", () => {
 
       // The item keeps its OWN code: `E_BATCH_ABORT` is reserved for overlapping/nested spans, and a
       // model sent hunting for coordinate overlap instead of fixing the anchor string retries wrong.
-      expect(rejection.message).toContain("[E_BAD_ANCHOR]");
+      expect(rejection.message).toContain("[E_MALFORMED_ANCHOR]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (bad-anchor.txt)");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
@@ -74,7 +74,7 @@ describe("multi-item edit error propagation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("[E_SERVED_ECHO]");
+      expect(rejection.message).toContain("[E_MALFORM_TEXT]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (apply-loop.txt) failed");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);

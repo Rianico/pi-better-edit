@@ -340,7 +340,7 @@ export function buildServedEditMessage(args: {
   count: number;
 }): string {
   const base =
-    `[MODEL] [E_SERVED_ECHO] Refused edit to ${args.path}: replacement line ${args.k} begins with ` +
+    `[MODEL] [E_MALFORM_TEXT] Refused edit to ${args.path}: replacement line ${args.k} begins with ` +
     `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
     `HASH${HASH_SEP} anchors are tool output, not file content. ` +
     `Remove the copied anchors and retry, or declare intent with mode: "literal". ` +
@@ -356,7 +356,7 @@ export function buildServedWriteMessage(args: {
   count: number;
 }): string {
   const base =
-    `[MODEL] [E_SERVED_ECHO] Refused write to ${args.path}: line ${args.line} begins with ` +
+    `[MODEL] [E_MALFORM_TEXT] Refused write to ${args.path}: line ${args.line} begins with ` +
     `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
     `HASH${HASH_SEP} anchors are tool output, not file content. ` +
     `Retry with file content only (remove the entire copied anchor chain), or declare intent with mode: "literal". ` +

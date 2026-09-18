@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **edit:** rename two model-facing error codes
 * **edit:** add never-served soft hint (#146)
 * **edit:** gate reproduced served rows behind a literal declaration (#134)
 * **edit:** adopt line-identity MVCC with leases
@@ -19,7 +20,8 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* record as-built rejection oracle, retire stale handoff item
+* rename error codes in specs and record ADR-0019
+* record as-built rejection oracle
 * make the E_UNSERVED_RANGE contract true
 * **prompts:** bind anchors to serving file
 * **spec:** fix the ADR-0014 citation in the E_UNDO_STALE re-open

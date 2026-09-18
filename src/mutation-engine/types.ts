@@ -80,7 +80,7 @@ export interface MutationSuccess {
 
 export interface MutationFailure {
   ok: false;
-  /** SAFETY: Machine code, e.g. E_BATCH_ABORT, E_STALE_ANCHOR, E_STALE_RANGE, E_SERVED_ECHO, E_NOOP_LOOP, E_EMPTY_RANGE */
+  /** SAFETY: Machine code, e.g. E_BATCH_ABORT, E_STALE_ANCHOR, E_STALE_RANGE, E_MALFORM_TEXT, E_NOOP_LOOP, E_EMPTY_RANGE */
   code: string;
   /** SAFETY: Human message — model-facing signal when applicable. */
   message: string;

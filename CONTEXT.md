@@ -65,7 +65,7 @@ The informational section appended to a replace result (applied or noop, not und
 _Avoid_: warning (the operation succeeded; it is information, not a warning)
 
 **model-facing signal**:
-A model-visible signal the tool must include in `content` for correctness (e.g. `anchor staleness`, `served-range staleness`, `E_STALE_*`/`E_UNSERVED_*`, `E_SERVED_ECHO`). The model needs it to retry correctly.
+A model-visible signal the tool must include in `content` for correctness (e.g. `anchor staleness`, `served-range staleness`, `E_STALE_*`/`E_UNSERVED_*`, `E_MALFORM_TEXT`). The model needs it to retry correctly.
 
 **user-facing signal**:
 A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice, Batch drift note). Not in model content.
@@ -139,11 +139,11 @@ A candidate line that begins with the exact served anchor and reproduces the ser
 _Avoid_: hash echo (without served qualification — targets the unqualified condition name), anchor echo; served-qualified identifier (findServedHashEcho) is canonical, surface-qualified one (findEditHashEcho) is not
 
 **literal declaration**:
-The caller's explicit assertion, via `mode: "literal"`, that bytes reproducing served rows are intended file content; the sole escape from `E_SERVED_ECHO`.
+The caller's explicit assertion, via `mode: "literal"`, that bytes reproducing served rows are intended file content; the sole escape from `E_MALFORM_TEXT`.
 _Avoid_: force, override, bypass
 
-**E_SERVED_ECHO**:
-Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_SERVED_ECHO] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Remove the copied anchors and retry, or reassert under a `literal declaration`. Nothing was written. Deny, not strip — fail-loud, compensable.
+**E_MALFORM_TEXT**:
+Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_MALFORM_TEXT] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Remove the copied anchors and retry, or reassert under a `literal declaration`. Nothing was written. Deny, not strip — fail-loud, compensable.
 _Avoid_: E_HASH_ECHO (ambiguous)
 
 **boundary duplication** (historical — removed):

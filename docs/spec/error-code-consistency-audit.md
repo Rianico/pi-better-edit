@@ -32,7 +32,7 @@ Flagged codes in severity order:
 - `E_UNDO_STALE` — LOW: a `content` error without the audience prefix; the audit's refutation is withdrawn (Flag 2, #147).
 - `E_TARGET_LOST` — HIGH needs-human.
 - `E_BAD_PAYLOAD` — LOW.
-- `E_BAD_ANCHOR` — LOW.
+- `E_MALFORMED_ANCHOR` — LOW.
 - `E_UNSUPPORTED_FILE` — LOW.
 - `E_NOOP_LOOP` — LOW.
 - `E_ACCESS` — LOW.
@@ -44,9 +44,9 @@ Flagged codes in severity order:
 | Code | Producer(s) (file:line) | Remedy prose | README row | CONTEXT.md | Verdict |
 |---|---|---|---|---|---|
 | `E_BAD_PAYLOAD` | `src/utils.ts:59`, `src/payload-contract.ts:327`, `src/mutation-engine/pipeline.ts:661`, `src/mutation-engine/pipeline.ts:1010`, `src/edit-tool.ts:138`, `src/paths.ts:19`, `src/paths.ts:21`, `src/fs-write.ts:19`, `src/fs-write.ts:122`, `src/hashline/resolve.ts:287` | Varies by layer | `README.md:180-199` table entry | Not cited | confirmed |
-| `E_BAD_ANCHOR` | `src/hashline/resolve.ts:343`, `src/hashline/resolve.ts:351`, `src/hashline/resolve.ts:353`, `src/hashline/resolve.ts:355`, `src/hashline/parse.ts:10`, `src/hashline/parse.ts:14`, `src/hashline/parse.ts:34` | Varies; full retry only on some paths | `README.md:184-185` | Not cited | confirmed |
+| `E_MALFORMED_ANCHOR` | `src/hashline/resolve.ts:343`, `src/hashline/resolve.ts:351`, `src/hashline/resolve.ts:353`, `src/hashline/resolve.ts:355`, `src/hashline/parse.ts:10`, `src/hashline/parse.ts:14`, `src/hashline/parse.ts:34` | Varies; full retry only on some paths | `README.md:184-185` | Not cited | confirmed |
 | `E_STALE_ANCHOR` | `src/hashline/lease-resolve.ts:155` | Re-read for fresh anchors | `README.md:180-199` table entry | `CONTEXT.md:70` routes no-lease to wrong code | confirmed |
-| `E_SERVED_ECHO` | `src/hashline/served-guard.ts:258-264` | Remove anchors and retry, or use `mode: "literal"` | `README.md:187` | `CONTEXT.md:141-142` | consistent |
+| `E_MALFORM_TEXT` | `src/hashline/served-guard.ts:258-264` | Remove anchors and retry, or use `mode: "literal"` | `README.md:187` | `CONTEXT.md:141-142` | consistent |
 | `E_REVERSED_ANCHORS` | No producer cited in source reports | Swap and retry, or healed `[USER]` | `README.md:180-199` table entry | Not cited | consistent |
 | `E_EMPTY_RANGE` | No producer cited in source reports | Use `write` instead | `README.md:180-199` table entry | Not cited | consistent |
 | `E_NOT_FOUND` | `src/validation.ts:17` | Check `file`, use ls, retry | `README.md:190` omits remedy by design | Not cited | consistent |
@@ -74,9 +74,9 @@ Disagreement is prose polish. Missing `[MODEL]` is display-layer only. ADR state
 
 Minimal fix: copy the richer remedy into the barer sibling. Or scope the README row by level. Severity: LOW.
 
-### 2. `E_BAD_ANCHOR` — heal verbs and missing remedy on bare paths
+### 2. `E_MALFORMED_ANCHOR` — heal verbs and missing remedy on bare paths
 
-Artifact promises full remedy. `README.md:184-185` promises `Nothing was written; pass the bare 3-char anchor and retry.` Code gives full remedy only sometimes. Example: `src/hashline/resolve.ts:351` `` `[MODEL] [E_BAD_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.` ``. Same pattern at `:353,:355`. Bare paths lack it: `src/hashline/parse.ts:10` `` `[MODEL] [E_BAD_ANCHOR] Invalid anchor. Expected a 3-char alphanumeric anchor (e.g. "aB3").` ``. Same shape at `:14`, `:34`. Past-tense variant: `src/hashline/resolve.ts:343` `` `[MODEL] [E_BAD_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time` ``.
+Artifact promises full remedy. `README.md:184-185` promises `Nothing was written; pass the bare 3-char anchor and retry.` Code gives full remedy only sometimes. Example: `src/hashline/resolve.ts:351` `` `[MODEL] [E_MALFORMED_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.` ``. Same pattern at `:353,:355`. Bare paths lack it: `src/hashline/parse.ts:10` `` `[MODEL] [E_MALFORMED_ANCHOR] Invalid anchor. Expected a 3-char alphanumeric anchor (e.g. "aB3").` ``. Same shape at `:14`, `:34`. Past-tense variant: `src/hashline/resolve.ts:343` `` `[MODEL] [E_MALFORMED_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time` ``.
 
 Code throws on healed input. Only `swapReversedRanges` should use healed `[USER]`. Past tense on a `throw` misstates write status. Multi-item calls add trailer at `pipeline.ts:648` and `:533`.
 

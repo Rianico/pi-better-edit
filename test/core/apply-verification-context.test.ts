@@ -49,7 +49,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     expect(result.content).toBe("alpha\nNEW-beta\ngamma\ndelta");
   });
 
-  it("E_SERVED_ECHO pinned: anchor-shaped repeat with differing content is accepted", () => {
+  it("E_MALFORM_TEXT pinned: anchor-shaped repeat with differing content is accepted", () => {
     const content = "z\nq\nw";
     const hashes = _lineHashesPure(content);
     expect(hashes).not.toContain("AAA");
@@ -89,7 +89,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     expect(result.content).toBe("z\nplain\nAAA│BOOM");
   });
 
-  it("E_SERVED_ECHO pinned: reproduced served row is refused", () => {
+  it("E_MALFORM_TEXT pinned: reproduced served row is refused", () => {
     const content = "z\nq\nw";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = ["AAA", "BBB", null];
@@ -125,6 +125,6 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
         servedCanons: ["z", "q", null],
         identity,
       }),
-    ).toThrow(/\[E_SERVED_ECHO\]/);
+    ).toThrow(/\[E_MALFORM_TEXT\]/);
   });
 });

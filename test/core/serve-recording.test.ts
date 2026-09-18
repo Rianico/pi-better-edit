@@ -392,7 +392,7 @@ describe("rejected edits — pre-load failures write zero serves (#69)", () => {
           home,
           { store, sessionKey: "s1" },
         ),
-      ).rejects.toThrow(/E_BAD_ANCHOR/);
+      ).rejects.toThrow(/E_MALFORMED_ANCHOR/);
       expect(getServed(store, "s1", absPath)).toEqual([]);
       expect(await loadEpochId("s1", absPath)).toBeUndefined();
     });
