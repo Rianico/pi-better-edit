@@ -11,6 +11,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* **spec:** fix the ADR-0014 citation in the E_UNDO_STALE re-open
 * **spec:** withdraw the E_UNDO_STALE refutation in the audit
 * hand off the target-lost defect, ADR-0018 and the code audit
 
