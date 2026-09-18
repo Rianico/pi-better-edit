@@ -1,5 +1,7 @@
 # Spec: Line Identity across File Versions via Content-Addressed Line-Identity MVCC (Revision 24)
 
+> [!info] Revision 25 patch proposed — the retired-identity reject-and-serve payload can silently miswrite the line that took the target's old number. Normative deltas D1–D5 are in [§9](#9-appendix--revision-25-patch-stale-identity-rejection); full analysis in [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) and [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md).
+
 Status: ready-for-agent
 Revision: 24 — Production-Grade Line-Identity CAS MVCC with Pre-Allocation Snapshot Cache Verification, Universal Counter-Routed Commits, Explicit S_latest Predecessor Pairing & Watertight ID Invariants, reconciled with the delivered implementation (embedding-level optimal-pairing uniqueness, batch-overlap and item-error attribution, and the delivered module layout). Revision 24 clarifies the delivered seams without changing behavior: leased-anchor resolution lives in `lease-resolve.ts`, the preceding-delta closed form is normative semantics materialized by the working buffer, and pinned snapshots are never evicted (soft overflow is reported, never resolved by eviction).
 Core Architectural Mandate: **Model context headroom is the single most precious resource. Tool runtime compute, diffing, and storage are effectively free.** The tool absorbs all complexity required to silently auto-rebase valid edits across external file shifts and internal batch edits (0 tokens burned, 0 retries), reserving fail-closed intercepts strictly for true semantic conflicts (interior span tearing, contested non-monotone reorders, duplicate ambiguity, and retired anchors).
@@ -761,3 +763,50 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
   - `src/hash-store.ts`: SQLite busy-retry loops and connection lifecycle.
   - `src/drift.ts`: Interval arithmetic and span calculations.
   - Superseded ADRs: ADR-0008, ADR-0013.
+
+---
+
+## 9. Appendix — Revision 25 patch (stale-identity rejection)
+
+Status: **proposed** — derived from the 2026-09-15 session triage ([`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md)). Where this appendix contradicts the body, this appendix is normative. Fix spec and verification: [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md).
+
+### 9.1 Defect
+
+The `stale` decision in `resolveLeasedEdit` (`src/hashline/lease-resolve.ts:173-183`) builds its reject-and-serve window from `fromLease.servedLineNumber` / `toLease.servedLineNumber` — the lease's **historical** coordinate. `assembleRejectAndServe` (`src/hashline/served-verification.ts:107,128-171`) renders it as `Current range:` plus `Retry with these anchors (no read needed).`, and `recordRejectionServe` (`src/mutation-engine/pipeline.ts:471-485` → `src/served-session/session.ts:679,953`) leases those rows. For a retired identity that coordinate identifies nothing about the model's target, so a model following §5.3's recovery replaces whichever line now occupies the old number. Reproduced: external deletion of the targeted line → the rejection serves the shifted-in neighbour → the retry is accepted and that neighbour is overwritten, reported as success. Re-confirmed on `ba7c8d2` (current `main`, 2026-09-15): the rejection and the miswrite are byte-identical to `bd3a8f2` — see the Revision check in [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md). Probe `P` (same revision) covers the other arm of the same expression: when the retired line's text is re-added elsewhere, the content match relocates the window to the new coordinate and the leased retry writes there — ADR-0008's class, with a lease on it.
+
+### 9.2 Normative deltas
+
+| # | Delta | Supersedes |
+| :- | :--- | :--- |
+| D1 | A `stale` decision emits a **target-lost rejection** under the new code **`[E_TARGET_LOST]`** (D6): no `Current range:` heading and **no rows at all** — the message names the previously served position in prose. The branch serves the model's coordinates (keeping `[E_STALE_RANGE]`) only when at least one bound is live *and* its rebased coordinate equals its served coordinate. | §5.3 row "Leased `line_id` deleted or retired" (its "Echoes current range" recovery) |
+| D2 | A target-lost rejection performs **no** `recordRejectionServe` upsert (there are no rows), so an accidental retry cannot write. Every window that identifies the model's range (in-place drift, `E_UNSERVED_RANGE`, `E_BATCH_ABORT`, content-placeable `E_STALE_ANCHOR`) still leases. | new invariant |
+| D5 | **Content placement is banned from the payload.** `uniqueAnchorLine` may not place a rejection window, and neither the window nor the headline's line number may come from a content match for a retired bound (Probe `P`: the header named line 4 for a line-2 lease). | §3.1.1 step 1 / §5.3 |
+| D3 | The retry hint is a property of the rejection payload, not an unconditional suffix. A target-lost rejection instead carries `The line you targeted no longer exists — read the file and re-target.` | §3.1.1 step 1 (*"Throw [E_STALE_ANCHOR] (Echo fresh anchors)"*); §5.3 recovery column |
+| D4 | One wording family across `E_STALE_ANCHOR` / `E_STALE_RANGE` / `E_TARGET_LOST` / `E_UNSERVED_RANGE` / `E_SERVED_ECHO`; anchors are counted and listed per **distinct** anchor. | §5.3 recovery column text |
+| D6 | **New code `[E_TARGET_LOST]`** for exactly the region-unidentifiable rejections of D1. The codes become disjoint by payload shape: `[E_STALE_RANGE]` always renders rows, `[E_TARGET_LOST]` never does, so the remedy is machine-readable. | new code (README error table, `CONTEXT.md`, prompts) |
+
+Post-sync notes for §9.2: `ba7c8d2` added `src/hashline/served-guard.ts` with `[E_SERVED_ECHO]` and the `mode: "literal"` escape — a **third** rejection contract to fold into D4 (frozen literals per ADR-0009's 2026-09-15 revision) — and removed the content-surface shape refusal, so a `replace_with` holding never-served anchor-shaped lines is now written verbatim; decide whether that case warrants a non-blocking `[MODEL]` note. The deltas are D1–D6: D5 bans content placement from the payload (the arm Probe `P` exercised), and D6 splits the code so `[E_TARGET_LOST]` ⇒ no rows, `[E_STALE_RANGE]` ⇒ rows. The full producer audit is the patch spec's Appendix E.
+
+### 9.3 Replacement row for the §5.3 decision table
+
+| Failure condition | Seam | Code | Window | Hint | Leased |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| Leased `line_id` deleted or retired (Probe `E`, `A`) | `lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_TARGET_LOST]` | none — prose names the previously served position; served coordinates only when one bound is live and unshifted (then `[E_STALE_RANGE]`) | read and re-target | n/a (no rows) |
+
+Rows for `E_STALE_ANCHOR` (content-placeable), `E_UNSERVED_RANGE` and in-place `E_STALE_RANGE` keep their current recovery; only their wording is unified under D4.
+
+### 9.4 Errata in the body
+
+| Location | Claim | Correction |
+| :--- | :--- | :--- |
+| §5.3 decision table, "Target span contains unread interior lines" | recovery: *"Echoes unread range; model reads range"* | the implementation appends the shared `Retry with these anchors (no read needed).`; D3/D4 must make the hint match the column — the interior was never served, so the model reads |
+| §7.1.5 *Sound Execution* | an edit never commits to a line whose `line_id` differs from the leased one | strengthened: a rejection payload must also never *present* a coordinate the model never targeted, because served rows are leased and thereby become committable |
+| §8 prior art, downstream #62 | "Fixed by maintaining absolute line coordinates in `line_lineage`" | unchanged, with one clarification: absolute coordinates do not make a retired identity's historical coordinate an identity — retired identities recover only by re-read |
+
+### 9.5 Decision record required
+
+ADR-0016's *Consequences* states that a retired anchor "is recoverable only by a re-read (or by `reject-and-serve`'s served rows)". The parenthetical must be **deleted** (not narrowed): target-lost recovery is always a re-read. This is written as [`../../docs/adr/0018-region-scoped-rejection-serves.md`](../../docs/adr/0018-region-scoped-rejection-serves.md) (status `proposed`), which leaves ADR-0016's Decision intact — no non-leasing serve is introduced — and records the region rule plus the derivable-rows oracle. `CONTEXT.md` gains the term **target-lost rejection**; the previously floated **context serve** term is dropped, since D1 renders no rows at all.
+
+### 9.6 Acceptance
+
+The nine tests listed in [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) must fail on `bd3a8f2` (and on `ba7c8d2`, where the defect is re-confirmed) and pass on the patched revision; the `lint`, `format`, `typecheck` and `test:coverage` gates are unchanged.

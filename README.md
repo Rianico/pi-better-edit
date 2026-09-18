@@ -182,9 +182,9 @@ atomically to that one file — one item per call is the norm, several same-file
 | Code | Meaning |
 | --- | --- |
 | `[E_BAD_PAYLOAD]` | The payload is not `{ "file": file, "edits": [{ "anchor_from", "anchor_to", "replace_with" }, …] }`, or a member has an unknown, missing, or wrongly-typed value. |
-| `[E_BAD_ANCHOR]` | An anchor is not a bare 3-char hash, or `replace_with` contains a `HASH│` / diff-preview prefix (`+HASH│`, `-HASH│`). The edit is refused with `[E_BAD_ANCHOR]`; remove the prefix and retry. |
+| `[E_BAD_ANCHOR]` | An **anchor field** is not a bare 3-char hash: empty, numeric and not 3 chars, multi-line, containing `│`, or carrying a diff-preview marker (`+`/`-`/`HASH│`). Nothing was written; pass the bare 3-char anchor and retry. Anchor fields only — `replace_with` is never refused for its shape; a replacement that reproduces a served row is `[E_SERVED_ECHO]`. |
 | `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; re-read the file and copy the fresh 3-char anchors (the 3 chars before `│`). |
-| `[E_SERVED_ECHO]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; remove the copied anchors and retry. Nothing was written. |
+| `[E_SERVED_ECHO]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; remove the copied anchors and retry, or assert the bytes are content with `mode: "literal"`. Nothing was written. Evidence-only: a `HASH│`-shaped line whose anchor was **never served** is written verbatim. |
 | `[E_REVERSED_ANCHORS]` | Range start line is after range end line. The `edit` is refused (`[MODEL]`, nothing written — swap `anchor_from`/`anchor_to` and retry), unless the tool heals it: `[USER] [E_REVERSED_ANCHORS] … healed and applied with the range swapped` is returned dimmed on success. |
 | `[E_EMPTY_RANGE]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |
