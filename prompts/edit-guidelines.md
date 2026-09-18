@@ -3,7 +3,7 @@
 - edit: `anchor_from`/`anchor_to` bound the inclusive range (both lines replaced); when an anchor no longer matches, re-read the file and copy fresh anchors.
 - edit: `replace_with` is plain file content — join lines with `\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused — declare literal intent with `mode: "literal"`.
 - edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.
-- edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone; a dimmed `[USER]` line in `details` is human info, never your error.
+- edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone, unless it states No action is required (soft hint, bytes already written as-is); a dimmed `[USER]` line in `details` is human info, never your error.
 - edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).
 - edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.
 - edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so an anchor copied from another file's served rows is refused; copy `anchor_from`/`anchor_to` only from this file's served rows.

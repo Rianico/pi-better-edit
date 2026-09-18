@@ -4,9 +4,11 @@ import { AnchorMismatchError, verifyServedRange, type ResolvedRange } from "./se
 import {
   findServedHashEcho,
   findServedPrefixMismatches,
+  findNeverServedAnchorShapes,
   ServedHashEchoError,
   buildServedEditMessage,
   buildServedEditPrefixNote,
+  buildNeverServedEditHint,
   trackServedEditRefusal,
   LITERAL_BYPASS_NOTICE,
 } from "./served-guard.js";
@@ -360,6 +362,12 @@ export function applyEdit(
   // WHY: for that anchor. The bytes are already assembled as-is; the note only
   // WHY: informs the model channel via the warnings seam (rendered by warnBlock),
   // WHY: never alters bytes, never blocks, keeps no state, fires per line.
+  // WHY: soft-hint tier beside it: a replacement line opening with an anchor-shaped
+  // WHY: prefix never served for this session and file. The bytes are already
+  // WHY: assembled as-is with no rewrite; the hint only names the anchor and states
+  // WHY: no action is required unless accidental. Fires regardless of literal
+  // WHY: declaration (the declaration covers served rows, not never-served shapes),
+  // WHY: never blocks, keeps no state, fires per line.
   if (served) {
     const canons = servedCanons ?? [];
     const mismatches = findServedPrefixMismatches(resolved.content_lines, served, canons, 1);
@@ -371,6 +379,10 @@ export function applyEdit(
           servedLine: mismatch.servedLine,
         }),
       );
+    }
+    const neverServed = findNeverServedAnchorShapes(resolved.content_lines, served, 1);
+    for (const shape of neverServed) {
+      warnings.push(buildNeverServedEditHint({ k: shape.k, anchor: shape.anchor }));
     }
   }
 

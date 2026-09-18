@@ -206,6 +206,80 @@ export function buildServedWritePrefixNote(args: {
   );
 }
 
+export interface NeverServedAnchorShape {
+  /** SAFETY: 1-based candidate index within the submitted lines. */
+  k: number;
+  /** SAFETY: absolute candidate line (`start + k - 1`); equals `k` when `start` is 1. */
+  line: number;
+  /** SAFETY: the anchor-shaped prefix never served for this session and file. */
+  anchor: string;
+}
+
+/**
+ * SAFETY: Never-served anchor-shaped lines — the soft-hint tier beside the
+ * refusal gate and the served prefix mismatch tier.
+ *
+ * A candidate reports here when it opens with an anchor-shaped prefix
+ * (3 alphanumerics plus the separator, after one optional leading diff marker)
+ * whose anchor was never served for this session and file. Shape-only by design:
+ * the hint never blocks and never rewrites, so evidence gating does not apply.
+ * Served anchors are excluded (the gate and the mismatch tier own them).
+ * Pure with no retained state: fires per occurrence, never suppressed.
+ */
+export function findNeverServedAnchorShapes(
+  lines: readonly string[],
+  served: readonly (string | null)[],
+  start = 1,
+): NeverServedAnchorShape[] {
+  const servedSet = new Set<string>();
+  for (const anchor of served) {
+    if (anchor !== null && anchor !== undefined) servedSet.add(anchor);
+  }
+  const out: NeverServedAnchorShape[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    let text = lines[index]!;
+    if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
+      text = text.slice(1);
+    }
+    if (text.length < 4) continue;
+    if (text[3] !== HASH_SEP) continue;
+    const anchor = text.slice(0, 3);
+    if (!/^[A-Za-z0-9]{3}$/.test(anchor)) continue;
+    if (servedSet.has(anchor)) continue;
+    out.push({ k: index + 1, line: start + index, anchor });
+  }
+  return out;
+}
+
+/**
+ * SAFETY: Soft hint for an applied edit carrying a never-served anchor-shaped line.
+ * Applied-only, bytes untouched, never blocks: the bytes were written as-is with
+ * no rewrite, and no action is required unless the prefix was accidental.
+ * Surfaced through the warnings seam (rendered by warnBlock) on the model-visible channel.
+ */
+export function buildNeverServedEditHint(args: { k: number; anchor: string }): string {
+  return (
+    `[MODEL] Edit applied with a never-served anchor-shaped line: replacement line ${args.k} begins with ` +
+    `the anchor ${args.anchor}${HASH_SEP}, an anchor never served for this session and file. ` +
+    `The bytes were written as-is with no rewrite. ` +
+    `No action is required unless the prefix was accidental — if unintended, run undo_last_edit and retry without the anchor.`
+  );
+}
+
+/**
+ * SAFETY: Soft hint for an applied write carrying a never-served anchor-shaped line.
+ * Same applied-only, bytes-untouched contract as the edit hint, surfaced
+ * through the `tool_result` handler that owns the write auto-read.
+ */
+export function buildNeverServedWriteHint(args: { line: number; anchor: string }): string {
+  return (
+    `[MODEL] Write applied with a never-served anchor-shaped line: line ${args.line} begins with ` +
+    `the anchor ${args.anchor}${HASH_SEP}, an anchor never served for this session and file. ` +
+    `The bytes were written as-is with no rewrite. ` +
+    `No action is required unless the prefix was accidental — if unintended, re-issue the write without the anchor prefix.`
+  );
+}
+
 type RefusalEntry = {
   payload: string;
   count: number;
