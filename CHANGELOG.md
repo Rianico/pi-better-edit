@@ -13,7 +13,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **edit:** restore hint literal and structure never-served channel
+* **edit:** clarify retry wording, structure hints
 * **edit:** tighten rejection seams, add oracle
 * **edit:** cap never-served hint to one per call
 * **edit:** reject retired identities without rows
@@ -21,7 +21,6 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* clarify anchor retry wording in readme and context
 * record as-built rejection oracle
 * make the E_UNSERVED_RANGE contract true
 * **prompts:** bind anchors to serving file
