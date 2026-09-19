@@ -35,7 +35,6 @@ export type DomainErrorCode =
   | "E_UNVERIFIED_RANGE"
   | "E_MALFORMED_ANCHOR"
   | "E_SUSPICIOUS_TEXT"
-  | "E_REVERSED_ANCHORS"
   | "E_BATCH_ABORT"
   | "E_NOOP_LOOP"
   | "E_UNSUPPORTED_FILE"
@@ -45,6 +44,22 @@ export type DomainErrorCode =
   | "E_UNDO_UNAVAILABLE"
   | "E_UNKNOWN"
   | "E_LARGE_FILE";
+
+/**
+ * Applied-tier warning codes — the `W_*` namespace (spec
+ * docs/spec/unified-error-and-warning-contract.md sections 3.1, 3.3, D3).
+ * A `[W_*]` line reports an applied mutation; `[E_*]` reports a rejection.
+ * `formatWarning` is the sole producer of `[W_*]` headers: no raw `[W_*]`
+ * header literal may exist outside this module (asserted in
+ * test/arch/domain-error-registry.test.ts).
+ */
+export type DomainWarningCode =
+  | "W_NEVER_SERVED_SHAPE"
+  | "W_SERVED_PREFIX_MISMATCH"
+  | "W_REVERSED_ANCHORS"
+  | "W_UNICODE_LITERAL"
+  | "W_LITERAL_BYPASS"
+  | "W_NOOP";
 
 /** SAFETY: one served row — position is 0-based, hash is the 3-char anchor. */
 export interface ServedRow {
@@ -114,12 +129,6 @@ export interface ErrorPayloadMap {
     hash: string;
     servedLine: number;
     count: number;
-  };
-  E_REVERSED_ANCHORS: {
-    startLine: number;
-    endLine: number;
-    fromAnchor: string;
-    toAnchor: string;
   };
   E_BATCH_ABORT: {
     earlierIndex: number;
@@ -365,13 +374,6 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     remedy:
       'Omit the copied anchors from replace_with and retry with the same anchors, or declare intent with mode: "literal".',
   },
-  E_REVERSED_ANCHORS: {
-    audience: "MODEL",
-    format: ({ startLine, endLine, fromAnchor, toAnchor }) =>
-      `Refused: range start line ${startLine} is after end line ${endLine} ` +
-      `(anchors ${fromAnchor} and ${toAnchor}). Nothing was written; swap anchor_from/anchor_to and retry.`,
-    remedy: "Swap anchor_from/anchor_to and retry.",
-  },
   E_BATCH_ABORT: {
     audience: "MODEL",
     format: ({
@@ -446,6 +448,113 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
 };
 
+export interface WarningPayloadMap {
+  W_NEVER_SERVED_SHAPE: {
+    count: number;
+  };
+  W_SERVED_PREFIX_MISMATCH: {
+    k: number;
+    anchor: string;
+    servedLine: number;
+  };
+  W_REVERSED_ANCHORS: {
+    fromHash: string;
+    toHash: string;
+  };
+  W_UNICODE_LITERAL: {
+    line: number;
+  };
+  W_LITERAL_BYPASS: Record<string, never>;
+  W_NOOP: {
+    ref: string;
+    removeFrom: string;
+    removeTo: string;
+    batch: boolean;
+    count: number;
+  };
+}
+
+function neverServedShapeFormat(payload: WarningPayloadMap["W_NEVER_SERVED_SHAPE"]): string {
+  if (payload.count === 1) {
+    return (
+      "1 replacement line opens with an anchor-shaped token " +
+      "never served for this session and file. Applied verbatim."
+    );
+  }
+  return (
+    `${payload.count} replacement lines open with anchor-shaped tokens ` +
+    "never served for this session and file. Applied verbatim."
+  );
+}
+
+function servedPrefixMismatchFormat(
+  payload: WarningPayloadMap["W_SERVED_PREFIX_MISMATCH"],
+): string {
+  return (
+    `Line ${payload.k} begins with the exact ${payload.anchor}│ anchor ` +
+    `served for this session and file for line ${payload.servedLine}, ` +
+    "but its content differs from what was served. Applied verbatim."
+  );
+}
+
+function noopWarnFormat(payload: WarningPayloadMap["W_NOOP"]): string {
+  if (payload.batch) {
+    return (
+      `Notice: ${payload.ref} — identical edit no-op'd twice; ` +
+      "range already has this text. Resend will reject the batch."
+    );
+  }
+  return (
+    `Notice: identical edit (${payload.removeFrom} → ${payload.removeTo} ${payload.ref}) ` +
+    "no-op'd twice; range already has this text. Resend will reject."
+  );
+}
+
+export const WARNING_REGISTRY: {
+  [K in DomainWarningCode]: CodeSpec<WarningPayloadMap[K]>;
+} = {
+  W_NEVER_SERVED_SHAPE: {
+    audience: "MODEL",
+    format: neverServedShapeFormat,
+  },
+  W_SERVED_PREFIX_MISMATCH: {
+    audience: "MODEL",
+    format: servedPrefixMismatchFormat,
+  },
+  W_REVERSED_ANCHORS: {
+    audience: "USER",
+    format: ({ fromHash, toHash }) =>
+      `anchor_from/anchor_to were reversed (${fromHash} after ${toHash}); ` +
+      "healed and applied with the range swapped.",
+  },
+  W_UNICODE_LITERAL: {
+    audience: "USER",
+    format: ({ line }) => `Literal \\uDDDD detected on replacement line ${line}; applied verbatim.`,
+  },
+  W_LITERAL_BYPASS: {
+    audience: "USER",
+    format: () => "served-echo check bypassed by literal declaration.",
+  },
+  W_NOOP: {
+    audience: "USER",
+    format: noopWarnFormat,
+  },
+};
+
+/**
+ * SAFETY: the sole producer of `[W_*]` headers. Renders
+ * `[<AUDIENCE>] [<W_CODE>] <neutral-observation>` from the registry, so every
+ * applied-tier warning carries its machine-readable code and audience by
+ * construction. Callers append caller-specific remedies (never raw headers).
+ */
+export function formatWarning<K extends DomainWarningCode>(
+  code: K,
+  payload: WarningPayloadMap[K],
+): string {
+  const spec = WARNING_REGISTRY[code] as CodeSpec<WarningPayloadMap[K]>;
+  return `[${spec.audience}] [${code}] ${spec.format(payload)}`;
+}
+
 export class DomainError<K extends DomainErrorCode = DomainErrorCode> extends Error {
   readonly code: K;
   readonly audience: Audience;
@@ -487,31 +596,4 @@ export class DomainError<K extends DomainErrorCode = DomainErrorCode> extends Er
 // WHY: of the domain contract: only registry members route the typed path.
 export function isDomainErrorCode(code: unknown): code is DomainErrorCode {
   return typeof code === "string" && code.startsWith("E_") && code in ERROR_REGISTRY;
-}
-
-// WHY: transitional carriers for the two refusal-adjacent warning arms the tier
-// WHY: task owns. The `[USER]` warn arm of `E_NOOP_LOOP` (count===2) and the
-// WHY: healed `[USER] [E_REVERSED_ANCHORS]` notice stay byte-identical here —
-// WHY: audience, tier, and wording change in the tier task, which also retires
-// WHY: these helpers. They live in this module so no raw header literal exists
-// WHY: anywhere else in non-test src/.
-export function formatNoopLoopWarn(args: {
-  ref: string;
-  removeFrom: string;
-  removeTo: string;
-  batch: boolean;
-}): string {
-  return args.batch
-    ? `[USER] [E_NOOP_LOOP] Notice: ${args.ref} — identical edit no-op'd twice; range already has this text. Resend will reject the batch.`
-    : `[USER] [E_NOOP_LOOP] Notice: identical edit (${args.removeFrom} → ${args.removeTo} ${args.ref}) no-op'd twice; range already has this text. Resend will reject.`;
-}
-
-export function formatReversedAnchorsHealed(args: {
-  fromAnchor: string;
-  toAnchor: string;
-}): string {
-  return (
-    `[USER] [E_REVERSED_ANCHORS] anchor_from/anchor_to were reversed ` +
-    `(${args.fromAnchor} after ${args.toAnchor}); healed and applied with the range swapped.`
-  );
 }

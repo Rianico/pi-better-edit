@@ -6,8 +6,8 @@ import { describe, expect, it } from "vitest";
 const root = join(dirname(fileURLToPath(import.meta.url)), "..", "..");
 // WHY: the registry owns every header: codes appear bracketed in comments and
 // WHY: quoted as union members / producers in code. Both shapes normalize to
-// WHY: `[E_*]`; bare identifiers (EDIT_DESCRIPTION, W_OK) never match either.
-const codeRe = /\[E_[A-Z0-9_]+\]|"E_[A-Z0-9_]+"/g;
+// WHY: `[E_*]` / `[W_*]`; bare identifiers (EDIT_DESCRIPTION, W_OK) never match either.
+const codeRe = /\[[EW]_[A-Z0-9_]+\]|"[EW]_[A-Z0-9_]+"/g;
 
 function collectCodes(dir: string): Set<string> {
   const codes = new Set<string>();

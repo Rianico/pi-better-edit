@@ -193,3 +193,11 @@ _Avoid_: E_TOO_BIG (unclaimed code)
 **E_UNKNOWN**:
 The unexpected-error envelope: a throw that is not a `DomainError` (an invariant breach, a filesystem or store failure) is reported through the registry as `[MODEL] [E_UNKNOWN]` carrying only the error name and the first message line — never a scraped bracket token, never the verbatim dump. Carries no remedy by rule: no cause is knowable at all.
 _Avoid_: E_UNSPECIFIED (unclaimed code)
+
+**applied warning** (`W_*`):
+The applied-path diagnostic tier: a `[W_*]` line reports a mutation that was applied, carrying the audience that owns it — `[MODEL]` lines are informational (the bytes were written, so no retry is needed) and `[USER]` lines render dimmed for the human. An `[E_*]` line reports a rejection; an applied mutation never emits one. The six codes are `W_NEVER_SERVED_SHAPE` and `W_SERVED_PREFIX_MISMATCH` (`MODEL`), plus `W_REVERSED_ANCHORS`, `W_UNICODE_LITERAL`, `W_LITERAL_BYPASS`, and `W_NOOP` (`USER`).
+_Avoid_: E-tier code on a success; No action is required (retired sentinel, redundant with the tier)
+
+**reversed anchors**:
+An `anchor_from`/`anchor_to` pair whose resolved lines run opposite the slot order. Anchors carry no order, so reversal is a property of the resolved lines of the slot pair — never of the anchor strings. The tool heals the swapped pair and narrates `[USER] [W_REVERSED_ANCHORS]`; the retired refusal name must not be reused.
+_Avoid_: E_REVERSED_ANCHORS (retired refusal; the healed notice is W_REVERSED_ANCHORS)

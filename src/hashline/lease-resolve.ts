@@ -47,8 +47,15 @@ import {
   type FileSnapshotContext,
 } from "./served-verification.js";
 
+export type ReversedAnchorsHeal = {
+  /** The submitted `anchor_from` slot value whose resolved line ran after `toHash`. */
+  fromHash: string;
+  /** The submitted `anchor_to` slot value whose resolved line ran before `fromHash`. */
+  toHash: string;
+};
+
 export type LeasedEditResolution =
-  | { status: "fast"; resolved: RHEdit }
+  | { status: "fast"; resolved: RHEdit; reversed?: ReversedAnchorsHeal }
   | {
       status: "rebased";
       resolved: RHEdit;
@@ -58,6 +65,7 @@ export type LeasedEditResolution =
        * comparing a replacement against served state stays range-relative against the mirror.
        */
       servedStart: number;
+      reversed?: ReversedAnchorsHeal;
     };
 
 /**
@@ -72,15 +80,6 @@ function resolvedAt(edit: HEdit, fileHashes: string[], fromLine: number, toLine:
       { line: toLine, hash: fileHashes[toLine - 1]!, hashMatched: true },
     ],
   };
-}
-
-function throwReversed(edit: HEdit, startLine: number, endLine: number): never {
-  throw new DomainError("E_REVERSED_ANCHORS", {
-    startLine,
-    endLine,
-    fromAnchor: edit.hash_bounds[0].hash,
-    toAnchor: edit.hash_bounds[1].hash,
-  });
 }
 
 /**
@@ -199,9 +198,20 @@ export function resolveLeasedEdit(args: {
     });
   }
 
-  const fromLine = fromDecision.line;
-  const toLine = toDecision.line;
-  if (fromLine > toLine) throwReversed(edit, fromLine, toLine);
+  // WHY: heal, then narrate (no `E_*` on a success): anchors carry no order, so a
+  // WHY: reversal is a property of the resolved lines of the `anchor_from`/`anchor_to`
+  // WHY: slot pair — the submitted `anchor_from` resolved after `anchor_to`. Swap the
+  // WHY: lines and fall through to the normal fast/rebased branching; the caller
+  // WHY: narrates the heal as `[W_REVERSED_ANCHORS]` from the returned `reversed` field.
+  let fromLine = fromDecision.line;
+  let toLine = toDecision.line;
+  const reversed: ReversedAnchorsHeal | undefined =
+    fromLine > toLine ? { fromHash: fromAnchor, toHash: toAnchor } : undefined;
+  if (reversed) {
+    const healed = fromLine;
+    fromLine = toLine;
+    toLine = healed;
+  }
 
   // WHY: the fast path is exactly the spec's predicate (spec §3.5):
   // WHY: `lease_from.served_snapshot_hash === C ∧ lease_to.served_snapshot_hash === C ∧
@@ -212,7 +222,11 @@ export function resolveLeasedEdit(args: {
     // WHY: the fast path applies at the served coordinates the lease itself names, so the edit is
     // WHY: resolved here too — the caller must never fall back to content resolution for a served
     // WHY: anchor (the mirror-only `valEdit` fallback this seam replaced).
-    return { status: "fast", resolved: resolvedAt(edit, fileHashes, fromLine, toLine) };
+    return {
+      status: "fast",
+      resolved: resolvedAt(edit, fileHashes, fromLine, toLine),
+      ...(reversed ? { reversed } : {}),
+    };
   }
 
   // WHY: dynamic rebase (spec §3.1.1) — the served window comes from the mirror, falling back to the
@@ -238,5 +252,6 @@ export function resolveLeasedEdit(args: {
     status: "rebased",
     resolved: resolvedAt(edit, fileHashes, fromLine, toLine),
     servedStart,
+    ...(reversed ? { reversed } : {}),
   };
 }

@@ -1,5 +1,5 @@
 import { abortIf, rejectUnknownFields, clipLine } from "../utils.js";
-import { DomainError, formatReversedAnchorsHealed } from "../domain-errors.js";
+import { DomainError, formatWarning } from "../domain-errors.js";
 import { HASH_CLASS } from "./hash-identity.js";
 import { parseHashRef, parseText, type Anchor } from "./parse.js";
 import type { ServedRow } from "./served.js";
@@ -387,10 +387,9 @@ export function resEdit(edit: HTEdit): HEdit {
 }
 
 function warnUnicodeEsc(edit: HEdit, warnings: string[]): void {
-  if (edit.content_lines.some((line) => /\\uDDDD/i.test(line))) {
-    warnings.push(
-      "Literal \\uDDDD in edit content; no autocorrection applied. Verify whether this is a real Unicode escape or plain text.",
-    );
+  const index = edit.content_lines.findIndex((line) => /\\uDDDD/i.test(line));
+  if (index !== -1) {
+    warnings.push(formatWarning("W_UNICODE_LITERAL", { line: index + 1 }));
   }
 }
 
@@ -405,7 +404,9 @@ export function swapReversedRanges(edit: HEdit, fileHashes: string[], warnings: 
   if (startLine === undefined || endLine === undefined || startLine <= endLine) {
     return edit;
   }
-  warnings.push(formatReversedAnchorsHealed({ fromAnchor: startRef.hash, toAnchor: endRef.hash }));
+  warnings.push(
+    formatWarning("W_REVERSED_ANCHORS", { fromHash: startRef.hash, toHash: endRef.hash }),
+  );
   return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
 
@@ -416,6 +417,7 @@ export function valEdit(
 ): {
   resolved: RHEdit | undefined;
   mismatches: HMismatch[];
+  reversed?: { fromHash: string; toHash: string };
 } {
   const { fileLines, fileHashes } = snapshot;
   assertAligned(fileLines, fileHashes, "valEdit");
@@ -445,13 +447,18 @@ export function valEdit(
     }
     return { resolved: undefined, mismatches };
   }
+  // WHY: heal, then narrate (no `E_*` on a success): the content path heals the same
+  // WHY: way the lease seam does — anchors carry no order, so the swapped pair applies
+  // WHY: with the range swapped and the caller narrates `[W_REVERSED_ANCHORS]`.
   if (startResolved.line > endResolved.line) {
-    throw new DomainError("E_REVERSED_ANCHORS", {
-      startLine: startResolved.line,
-      endLine: endResolved.line,
-      fromAnchor: edit.hash_bounds[0].hash,
-      toAnchor: edit.hash_bounds[1].hash,
-    });
+    return {
+      resolved: {
+        content_lines: edit.content_lines,
+        hash_bounds: [endResolved, startResolved],
+      },
+      mismatches,
+      reversed: { fromHash: edit.hash_bounds[0].hash, toHash: edit.hash_bounds[1].hash },
+    };
   }
 
   return {
@@ -475,9 +482,13 @@ export function resolveEditByContent(
   edit: HEdit,
   snapshot: FileSnapshotContext,
   signal: AbortSignal | undefined,
-): { resolved: RHEdit | undefined; mismatches: Parameters<typeof fmtMismatchWithServes>[0] } {
-  const { resolved, mismatches } = valEdit(edit, snapshot, signal);
-  return { resolved, mismatches };
+): {
+  resolved: RHEdit | undefined;
+  mismatches: Parameters<typeof fmtMismatchWithServes>[0];
+  reversed?: { fromHash: string; toHash: string };
+} {
+  const { resolved, mismatches, reversed } = valEdit(edit, snapshot, signal);
+  return { resolved, mismatches, ...(reversed ? { reversed } : {}) };
 }
 
 export { warnUnicodeEsc };

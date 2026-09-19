@@ -65,8 +65,10 @@ function stripCanonical(text: string): string {
   // separated) when it names the canonical error condition.
   out = out.replace(/served[\s\-_]*hash[\s\-_]*echo/gi, "");
   // Allow the mandated literal-declaration human line, which names the served
-  // condition with a hyphen (`served-echo`) and no hash (#125 escape audit).
-  out = out.split("[USER] served-echo check bypassed by literal declaration").join("");
+  // condition with a hyphen (`served-echo`) and no hash (#125 escape audit);
+  // the tier task codes it as `[W_LITERAL_BYPASS]` without changing the wording,
+  // and the registry owns the header so the source holds only the wording.
+  out = out.split("served-echo check bypassed by literal declaration").join("");
   return out;
 }
 
@@ -314,6 +316,12 @@ type AnchorTermBaselineEntry = {
 };
 
 const ANCHOR_TERM_BASELINE: AnchorTermBaselineEntry[] = [
+  {
+    term: "reversed anchors",
+    avoids: ["E_REVERSED_ANCHORS"],
+    supersededCode: "W_REVERSED_ANCHORS",
+    definedIn: "CONTEXT.md",
+  },
   {
     term: "unknown anchor",
     avoids: ["unserved anchor", "missing anchor", "stale anchor"],

@@ -136,7 +136,7 @@ describe("regEdit", () => {
       );
       expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Added 1 line(s), removed 2 line(s).");
-      expect(result.content[0].text).toContain("[E_REVERSED_ANCHORS]");
+      expect(result.content[0].text).toContain("[USER] [W_REVERSED_ANCHORS]");
       expect(result.content[0].text).toContain("were reversed");
       expect(result.details?.diff).toContain("X");
     });

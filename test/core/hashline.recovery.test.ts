@@ -13,7 +13,7 @@ describe("applyEdit — recovery scenarios", () => {
       resEdit({ anchor_from: hashes[3]!, anchor_to: hashes[1]!, replace_with: "X" }),
     );
     expect(result.content).toBe("a\nX\ne");
-    expect(result.warnings?.[0]).toMatch(/\[E_REVERSED_ANCHORS\].*were reversed/);
+    expect(result.warnings?.[0]).toMatch(/\[USER\] \[W_REVERSED_ANCHORS\].*were reversed/);
   });
 
   it("rejects unknown anchor", async () => {

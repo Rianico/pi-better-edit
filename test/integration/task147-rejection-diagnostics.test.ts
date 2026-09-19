@@ -102,8 +102,8 @@ describe("task-147 rejection diagnostics", () => {
     const notice = await runNoopPolicy({ ...base, batch: false });
     expect(notice.action).toBe("warn");
     if (notice.action === "warn") {
-      expect(notice.notice).toContain("[USER]");
-      expect(notice.notice).toContain("[E_NOOP_LOOP]");
+      expect(notice.notice).toContain("[USER] [W_NOOP]");
+      expect(notice.notice).not.toContain("[E_NOOP_LOOP]");
       expect(notice.notice).not.toContain("[MODEL]");
     }
     const rejectSingle = await runNoopPolicy({ ...base, batch: false });

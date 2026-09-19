@@ -11,7 +11,7 @@
  */
 
 import { HASH_SEP, canon } from "./hash-identity.js";
-import { DomainError } from "../domain-errors.js";
+import { DomainError, formatWarning } from "../domain-errors.js";
 
 export interface ServedHashEchoMatch {
   /** SAFETY: 1-based candidate index within the submitted lines. */
@@ -175,6 +175,16 @@ export function findServedPrefixMismatches(
 }
 
 /**
+ * SAFETY: the canonical remedy shared verbatim by both applied-hint builders
+ * (this builder and `buildNeverServedEditHint`): the bytes were applied, so a
+ * retry is knowably safe, and the remedy names the exact failing shape. Pinned
+ * byte-identical by test so the two builders cannot drift.
+ */
+export const ANCHOR_PREFIX_REMEDY =
+  "If the hash anchor prefix was unintended, `undo_last_edit`, then retry " +
+  "with the same `anchor_from`/`anchor_to` and drop the anchor prefix from `replace_with`.";
+
+/**
  * SAFETY: Model note for an applied edit carrying a served prefix mismatch.
  * Applied-only, bytes untouched, never blocks: the post-edit diff already
  * carries the written line, this note only tells the model the prefix
@@ -185,13 +195,11 @@ export function buildServedEditPrefixNote(args: {
   anchor: string;
   servedLine: number;
 }): string {
-  return (
-    `[MODEL] Edit applied with a served anchor prefix: replacement line ${args.k} begins with ` +
-    `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
-    `but its content differs from what was served. ` +
-    `The bytes were written as-is. ` +
-    `If the prefix was unintended, run undo_last_edit and retry with the same anchors, omitting the anchor prefix from the replacement text.`
-  );
+  return `${formatWarning("W_SERVED_PREFIX_MISMATCH", {
+    k: args.k,
+    anchor: args.anchor,
+    servedLine: args.servedLine,
+  })} ${ANCHOR_PREFIX_REMEDY}`;
 }
 
 /**
@@ -204,13 +212,11 @@ export function buildServedWritePrefixNote(args: {
   anchor: string;
   servedLine: number;
 }): string {
-  return (
-    `[MODEL] Write applied with a served anchor prefix: line ${args.line} begins with ` +
-    `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
-    `but its content differs from what was served. ` +
-    `The bytes were written as-is. ` +
-    `If the prefix was unintended, re-issue the write with the anchor prefix omitted from the written lines.`
-  );
+  return `${formatWarning("W_SERVED_PREFIX_MISMATCH", {
+    k: args.line,
+    anchor: args.anchor,
+    servedLine: args.servedLine,
+  })} If the prefix was unintended, re-issue the write with the anchor prefix omitted from the written lines.`;
 }
 
 export interface NeverServedAnchorShape {
@@ -261,19 +267,7 @@ export function findNeverServedAnchorShapes(
  * Surfaced through the warnings seam (rendered by warnBlock) on the model-visible channel.
  */
 export function buildNeverServedEditHint(args: { count: number }): string {
-  const lines =
-    args.count === 1
-      ? "1 anchor-shaped replacement line"
-      : `${args.count} anchor-shaped replacement lines`;
-  const anchors =
-    args.count === 1
-      ? "an anchor never served for this session and file"
-      : "anchors never served for this session and file";
-  return (
-    `[MODEL] Edit applied with ${lines} matching the tool's own row shape ` +
-    `(HASH${HASH_SEP}content): ${anchors}. ` +
-    `No action is required. The bytes were written as-is with no rewrite.`
-  );
+  return `${formatWarning("W_NEVER_SERVED_SHAPE", { count: args.count })} ${ANCHOR_PREFIX_REMEDY}`;
 }
 
 type RefusalEntry = {
@@ -308,7 +302,7 @@ export function trackServedWriteRefusal(absolutePath: string, offendingLine: str
 }
 
 /** SAFETY: dimmed human line for a literal declaration; never a model retry instruction. */
-export const LITERAL_BYPASS_NOTICE = "[USER] served-echo check bypassed by literal declaration";
+export const LITERAL_BYPASS_NOTICE = formatWarning("W_LITERAL_BYPASS", {});
 
 export function buildServedEditMessage(args: {
   path: string;

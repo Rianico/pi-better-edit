@@ -1,5 +1,5 @@
 import { NOOP_LOOP_THRESHOLD } from "./constants.js";
-import { DomainError, formatNoopLoopWarn } from "./domain-errors.js";
+import { DomainError, formatWarning } from "./domain-errors.js";
 import { buildRangeServeRows, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { createSessionHandle } from "./served-session/session.js";
 
@@ -87,11 +87,12 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
   }
 
   if (count === 2) {
-    const notice = formatNoopLoopWarn({
+    const notice = formatWarning("W_NOOP", {
       ref: input.ref,
       removeFrom: input.removeFrom,
       removeTo: input.removeTo,
       batch: input.batch,
+      count,
     });
     return { action: "warn", count, notice };
   }

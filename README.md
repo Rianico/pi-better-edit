@@ -185,7 +185,6 @@ atomically to that one file — one item per call is the norm, several same-file
 | `[E_UNKNOWN_ANCHOR]` | This session holds no lease for the anchor in any file. The edit is refused with no `HASH│content` rows and nothing is leased; carries no remedy. |
 | `[E_FOREIGN_ANCHOR]` | This session holds a lease for the anchor, but for a file other than the one the edit names. The edit is refused with no `HASH│content` rows and nothing is leased; the message names where the anchors were served (capped at 3 plus "and N more"); carries no remedy. |
 | `[E_SUSPICIOUS_TEXT]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; omit the copied anchors from `replace_with` and retry with the same anchors, or assert the bytes are content with `mode: "literal"`, the sole escape. Nothing was written. Evidence-only: a `HASH│`-shaped line whose anchor was **never served** is written verbatim. |
-| `[E_REVERSED_ANCHORS]` | Range start line is after range end line. The `edit` is refused (`[MODEL]`, nothing written — swap `anchor_from`/`anchor_to` and retry), unless the tool heals it: `[USER] [E_REVERSED_ANCHORS] … healed and applied with the range swapped` is returned dimmed on success. |
 | `[E_EMPTY_RANGE]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |
 | `[E_ACCESS]` | The path is not readable or writable. |
@@ -199,6 +198,19 @@ atomically to that one file — one item per call is the norm, several same-file
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is served as fresh `HASH│content` rows. |
 | `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_MALFORMED_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
 | `[E_UNKNOWN]` | An unexpected failure that is not a domain rejection (invariant breach, filesystem or store error). Reported with the error name and the first message line only; carries no remedy. |
+
+### Applied warnings
+
+A `[W_*]` line reports an applied mutation; an `[E_*]` line reports a rejection. `[MODEL]` warnings are informational — the bytes were applied, so no retry is needed. `[USER]` warnings render dimmed for the human.
+
+| Code | Meaning |
+| --- | --- |
+| `[W_NEVER_SERVED_SHAPE]` | A `replace_with` line opens with an anchor-shaped token never served for this session and file. Applied verbatim (`[MODEL]`). |
+| `[W_SERVED_PREFIX_MISMATCH]` | A replacement line begins with an anchor served for a different line and the content differs. Applied verbatim (`[MODEL]`). |
+| `[W_REVERSED_ANCHORS]` | `anchor_from`/`anchor_to` were reversed; healed and applied with the range swapped (`[USER]`, dimmed). Reversal always heals — the old reversed-anchor refusal no longer exists. |
+| `[W_UNICODE_LITERAL]` | A literal `\uDDDD` sequence was detected in the replacement; applied verbatim (`[USER]`, dimmed). |
+| `[W_LITERAL_BYPASS]` | The served-row reproduction check was bypassed by an explicit `mode: "literal"` declaration (`[USER]`, dimmed). |
+| `[W_NOOP]` | The exact same edit no-op'd twice; the range already contains the replacement text. A third identical resend is refused as `[E_NOOP_LOOP]` (`[USER]`, dimmed). |
 
 ## Comparison
 

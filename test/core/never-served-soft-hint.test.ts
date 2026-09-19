@@ -6,6 +6,7 @@ import { applyEdit } from "../../src/hashline/apply";
 import {
   findNeverServedAnchorShapes,
   buildNeverServedEditHint,
+  ANCHOR_PREFIX_REMEDY,
 } from "../../src/hashline/served-guard";
 import { initHasher } from "../../src/hashline";
 import { HASH_SEP, canon } from "../../src/hashline/hash-identity";
@@ -29,26 +30,9 @@ function canonsFor(content: string): (string | null)[] {
 
 /** Local hint detector for rendered pipeline warnings (test-only).
  * Production no longer matches warning strings; the count travels as data. */
-const HINT_MARK = "anchor-shaped replacement line";
+const HINT_MARK = "never served for this session and file";
 function isRenderedHint(warning: string): boolean {
   return warning.includes(HINT_MARK);
-}
-
-/** A conforming hint states state only: no remedy, no imperative, no obligation. */
-const REMEDY_TOKENS = [
-  /if unintended/i,
-  /undo_last_edit/,
-  /re-issue/i,
-  /reissue/i,
-  /\brun\b/i,
-  /\bretry\b/i,
-  /\bundo\b/i,
-  /\bshould\b/i,
-  /\bmust\b/i,
-];
-
-function expectObservationOnly(hint: string): void {
-  for (const token of REMEDY_TOKENS) expect(hint).not.toMatch(token);
 }
 
 describe("never-served anchor-shaped predicate", () => {
@@ -146,18 +130,20 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     expect(result.literalBypass).toBe(true);
   });
 
-  it("hint builder states the count and the row shape with no remedy", () => {
+  it("hint builder codes the observation and carries the canonical remedy", () => {
     const hint = buildNeverServedEditHint({ count: 3 });
-    expect(hint).toContain("[MODEL]");
+    expect(hint).toContain("[MODEL] [W_NEVER_SERVED_SHAPE]");
     expect(hint).toContain("3");
-    expect(hint).toContain("anchor");
-    expect(hint).toContain("row shape");
-    expect(hint).toContain("written as-is");
-    expect(hint).toContain("No action is required");
-    expectObservationOnly(hint);
+    expect(hint).toContain("anchor-shaped token");
+    expect(hint).toContain("never served for this session and file");
+    expect(hint).toContain("Applied verbatim");
+    expect(hint).toContain(ANCHOR_PREFIX_REMEDY);
+    expect(hint).not.toContain("No action is required");
     const single = buildNeverServedEditHint({ count: 1 });
-    expect(single).toContain("No action is required");
-    expectObservationOnly(single);
+    expect(single).toContain("[MODEL] [W_NEVER_SERVED_SHAPE]");
+    expect(single).toContain("1 replacement line opens");
+    expect(single).toContain(ANCHOR_PREFIX_REMEDY);
+    expect(single).not.toContain("No action is required");
   });
 });
 
@@ -185,10 +171,10 @@ describe("edit tool never-served success plus hint", () => {
       expect(text).toContain("Successfully edited");
       const hints = (result.details.warnings as string[]).filter(isRenderedHint);
       expect(hints).toHaveLength(1);
+      expect(hints[0]).toContain("[MODEL] [W_NEVER_SERVED_SHAPE]");
       expect(hints[0]).toContain("1");
-      expect(hints[0]).toContain("No action is required");
-      expect(text).toContain("row shape");
-      expectObservationOnly(hints[0]!);
+      expect(hints[0]).toContain(ANCHOR_PREFIX_REMEDY);
+      expect(hints[0]).not.toContain("No action is required");
       expect(await readFsFile(path, "utf-8")).toContain(submitted);
     });
   });
@@ -221,9 +207,10 @@ describe("edit tool never-served success plus hint", () => {
       expect(text).toContain("Successfully edited");
       const hints = (result.details.warnings as string[]).filter(isRenderedHint);
       expect(hints).toHaveLength(1);
+      expect(hints[0]).toContain("[MODEL] [W_NEVER_SERVED_SHAPE]");
       expect(hints[0]).toContain("2");
-      expect(hints[0]).toContain("No action is required");
-      expectObservationOnly(hints[0]!);
+      expect(hints[0]).toContain(ANCHOR_PREFIX_REMEDY);
+      expect(hints[0]).not.toContain("No action is required");
       const bytes = await readFsFile(path, "utf-8");
       expect(bytes).toContain(first);
       expect(bytes).toContain(second);
@@ -318,11 +305,16 @@ describe("noop edit carries no never-served hint", () => {
   });
 });
 
-describe("guideline soft-hint scoping", () => {
-  it("qualifies the MODEL line in content so the soft hint is not read as a retry demand", async () => {
+describe("guideline tier contract", () => {
+  it("grades MODEL lines by tier: W_* informational, E_* retry-or-reject", async () => {
     const line = EDIT_GUIDELINES.find((g) => g.includes("[MODEL]") && g.includes("content"));
     expect(line).toBeDefined();
-    expect(line!).toContain("No action is required");
+    expect(line!).toContain("[W_*]");
+    expect(line!).toContain("informational");
+    expect(line!).toContain("[E_*]");
+    expect(line!).toContain("retry instruction or a rejection");
+    expect(line!).toContain("Current range (fresh read):");
+    expect(line!).not.toContain("No action is required");
     const promptText = await readFile(
       new URL("../../prompts/edit-guidelines.md", import.meta.url),
       "utf-8",
@@ -331,6 +323,6 @@ describe("guideline soft-hint scoping", () => {
       .split("\n")
       .find((l) => l.includes("[MODEL]") && l.includes("content"));
     expect(promptLine).toBeDefined();
-    expect(promptLine!).toContain("No action is required");
+    expect(`- ${line}`).toBe(promptLine);
   });
 });

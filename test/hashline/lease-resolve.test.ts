@@ -392,23 +392,28 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     ).toThrow(/E_STALE_RANGE/);
   });
 
-  it("rejects reversed rebased anchors", () => {
+  it("heals reversed rebased anchors and reports the swap for narration", () => {
+    // Anchors carry no order: reversal is a property of the resolved lines of the
+    // `anchor_from`/`anchor_to` slot pair, so the lease path swaps the lines and
+    // returns the heal for the caller to narrate as `[W_REVERSED_ANCHORS]`.
     const src = source({
       leases: {
         AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
         BBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 }),
       },
       positions: { 1: 3, 2: 1 },
-      currentSnapshotHash: "C",
+      currentSnapshotHash: "S",
     });
-    expect(() =>
-      resolveLeasedEdit({
-        edit,
-        snapshot: { fileHashes: ["BBB", "Q", "AAA"], fileLines: ["b", "q", "a"] },
-        served: ["AAA", "BBB"],
-        source: src,
-      }),
-    ).toThrow(/E_REVERSED_ANCHORS/);
+    const result = resolveLeasedEdit({
+      edit,
+      snapshot: { fileHashes: ["BBB", "Q", "AAA"], fileLines: ["b", "q", "a"] },
+      served: ["AAA", "BBB"],
+      source: src,
+    });
+    expect(result.status).toBe("fast");
+    expect(result.resolved.hash_bounds[0].line).toBe(1);
+    expect(result.resolved.hash_bounds[1].line).toBe(3);
+    expect(result.reversed).toEqual({ fromHash: "AAA", toHash: "BBB" });
   });
 });
 
@@ -441,6 +446,28 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
     expect(caught?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
     expect((caught as DomainError).code).toBe("E_UNKNOWN_ANCHOR");
     expect((caught as DomainError).servedRows).toEqual([]);
+  });
+
+  it("heals a lease-resolved reversal and narrates [USER] [W_REVERSED_ANCHORS]", () => {
+    const crossed: LeaseSpanSource = {
+      currentSnapshotHash: "S",
+      leaseFor: (anchor) =>
+        anchor === hashes[0]
+          ? lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 })
+          : anchor === hashes[1]
+            ? lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 })
+            : undefined,
+      rebasedLineOf: (lineId) => (lineId === 1 ? 2 : lineId === 2 ? 1 : undefined),
+    };
+    const result = applyEdit(content, edit, undefined, hashes, {
+      filePath: "a.txt",
+      served,
+      identity: crossed,
+    });
+    expect(result.content).toBe("X\ngamma");
+    expect((result.warnings ?? []).some((w) => w.includes("[USER] [W_REVERSED_ANCHORS]"))).toBe(
+      true,
+    );
   });
 
   it("rejects a retired lease absent from the content with [MODEL] [E_UNVERIFIED_RANGE] and a fresh read", () => {

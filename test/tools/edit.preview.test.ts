@@ -505,12 +505,14 @@ describe("renderResult", () => {
       content: [
         {
           type: "text",
-          text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped.",
+          text: "Successfully edited in sample.ts.\n\nWarnings:\n[USER] [W_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (aB3 after cD4); healed and applied with the range swapped.",
         },
       ],
       details: {
         diff: "+aB3│BBB",
-        warnings: ["[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped."],
+        warnings: [
+          "[USER] [W_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (aB3 after cD4); healed and applied with the range swapped.",
+        ],
         metrics: {
           classification: "applied",
           added_lines: 1,
@@ -526,7 +528,7 @@ describe("renderResult", () => {
     ) as Text;
     const text = (component as any).text as string;
     expect(text).toContain("+aB3│BBB");
-    expect(text).toContain("[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped.");
+    expect(text).toContain("[W_REVERSED_ANCHORS]");
   });
 
   it("returns an empty component when there is nothing to render", () => {

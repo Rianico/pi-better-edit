@@ -593,8 +593,11 @@ async function resolveBaselineSpan(
     }
     throw error;
   };
-  // WHY: `applyEdit` runs `swapReversedRanges` (its `prepareEdit`) before resolution, so a reversed
-  // WHY: pair is healed rather than tripping the lease seam's own `E_REVERSED_ANCHORS` guard here.
+  // WHY: follow-up — this pre-heal is dead since the lease seam heals a reversed pair
+  // WHY: internally (`resolveLeasedEdit` swaps the resolved lines and narrates
+  // WHY: `[W_REVERSED_ANCHORS]`), and the measured span below is order-proof via
+  // WHY: `Math.min`/`Math.max` either way. Kept (not deleted) pending a cleanup pass
+  // WHY: that removes the redundant swap once the heal path is covered.
   const fixed = swapReversedRanges(edit, fileHashes, []);
   let leased: LeasedEditResolution;
   try {

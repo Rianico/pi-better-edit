@@ -347,7 +347,7 @@ describe("edit multi-item tool", () => {
         ctx,
       );
       expect(getText(result)).toContain("Successfully edited");
-      expect(result.details.warnings?.some((w: string) => w.includes("[E_REVERSED_ANCHORS]"))).toBe(
+      expect(result.details.warnings?.some((w: string) => w.includes("[W_REVERSED_ANCHORS]"))).toBe(
         true,
       );
       expect(await readFile(path, "utf-8")).toBe("XX\n");
@@ -399,7 +399,7 @@ describe("edit multi-item tool", () => {
       expect(getText(first)).not.toContain("[E_NOOP_LOOP]");
 
       const second = await editTool.execute("e2", payload, undefined, undefined, ctx);
-      expect(getText(second)).toContain("[E_NOOP_LOOP] Notice");
+      expect(getText(second)).toContain("[W_NOOP]");
 
       await expect(editTool.execute("e3", payload, undefined, undefined, ctx)).rejects.toThrow(
         /\[E_NOOP_LOOP\]/,

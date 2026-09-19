@@ -1,5 +1,5 @@
 import { abortIf, splitLines } from "../utils.js";
-import { DomainError } from "../domain-errors.js";
+import { DomainError, formatWarning } from "../domain-errors.js";
 import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
 import { verifyServedRange, type ResolvedRange } from "./served.js";
 import {
@@ -189,6 +189,8 @@ function resolveEdit(
   rebased: boolean;
   /** First row of the served window when `rebased`; `undefined` on the fast/content paths. */
   servedStart: number | undefined;
+  /** The healed swap when the resolved lines ran opposite the slot pair; narrated by the caller. */
+  reversed: { fromHash: string; toHash: string } | undefined;
 } {
   if (served && identity) {
     const leased = resolveLeasedEdit({
@@ -202,15 +204,19 @@ function resolveEdit(
       mismatches: [],
       rebased: leased.status === "rebased",
       servedStart: leased.status === "rebased" ? leased.servedStart : undefined,
+      reversed: leased.reversed,
     };
   }
   // WHY: no seam at all (no mirror, no lease source): the library-level `applyEdit` seam, where
   // WHY: anchor algebra is the only authority. A session edit always carries both, so it can never
   // WHY: reach this branch — lost identity fails closed in the lease seam above.
+  const byContent = resolveEditByContent(edit, { fileHashes, fileLines, filePath }, signal);
   return {
-    ...resolveEditByContent(edit, { fileHashes, fileLines, filePath }, signal),
+    resolved: byContent.resolved,
+    mismatches: byContent.mismatches,
     rebased: false,
     servedStart: undefined,
+    reversed: byContent.reversed,
   };
 }
 export function applyEdit(
@@ -253,7 +259,11 @@ export function applyEdit(
     resolved,
     mismatches,
     rebased: leaseRebased,
+    reversed,
   } = resolveEdit(prefixFixed, lineIndex.fileLines, fileHashes, filePath, served, identity, signal);
+  if (reversed) {
+    warnings.push(formatWarning("W_REVERSED_ANCHORS", reversed));
+  }
   if (mismatches.length || !resolved) {
     const anchors = [...new Set(mismatches.map((mismatch) => mismatch.ref.hash))];
     throw new DomainError("E_UNKNOWN_ANCHOR", {

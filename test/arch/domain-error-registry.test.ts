@@ -5,8 +5,12 @@ import { describe, expect, it } from "vitest";
 import {
   DomainError,
   ERROR_REGISTRY,
+  WARNING_REGISTRY,
+  formatWarning,
   type DomainErrorCode,
+  type DomainWarningCode,
   type ErrorPayloadMap,
+  type WarningPayloadMap,
 } from "../../src/domain-errors.js";
 
 function srcFiles(dir = "src", out: string[] = []): string[] {
@@ -42,14 +46,14 @@ function parseSrc(path: string): AnyNode {
   }).program as unknown as AnyNode;
 }
 
-function unionMembers(): string[] {
+function unionMembersOf(alias: string): string[] {
   const program = parseSrc(join("src", "domain-errors.ts"));
   const members: string[] = [];
   walk(program, (node) => {
     if (
       node.type === "TSTypeAliasDeclaration" &&
       (node.id as AnyNode)?.type === "Identifier" &&
-      ((node.id as AnyNode).name as string) === "DomainErrorCode" &&
+      ((node.id as AnyNode).name as string) === alias &&
       (node.typeAnnotation as AnyNode)?.type === "TSUnionType"
     ) {
       for (const variant of (node.typeAnnotation as AnyNode).types as AnyNode[]) {
@@ -63,6 +67,14 @@ function unionMembers(): string[] {
     }
   });
   return members;
+}
+
+function unionMembers(): string[] {
+  return unionMembersOf("DomainErrorCode");
+}
+
+function warningUnionMembers(): string[] {
+  return unionMembersOf("DomainWarningCode");
 }
 
 function producers(): Map<string, string[]> {
@@ -89,6 +101,37 @@ function producers(): Map<string, string[]> {
         ((node.callee as AnyNode).name as string) === "DomainError"
       ) {
         const code = codeOf(((node.arguments as AnyNode[]) ?? [])[0] as AnyNode | undefined);
+        if (code !== undefined) {
+          const list = found.get(code) ?? [];
+          list.push(file);
+          found.set(code, list);
+        }
+      }
+    });
+  }
+  return found;
+}
+
+function warningProducers(): Map<string, string[]> {
+  const found = new Map<string, string[]>();
+  for (const file of srcFiles()) {
+    walk(parseSrc(file), (node) => {
+      if (
+        node.type === "CallExpression" &&
+        (node.callee as AnyNode)?.type === "Identifier" &&
+        ((node.callee as AnyNode).name as string) === "formatWarning"
+      ) {
+        const first = ((node.arguments as AnyNode[]) ?? [])[0] as AnyNode | undefined;
+        let code: string | undefined;
+        if (first?.type === "StringLiteral") code = first.value as string;
+        if (
+          (first?.type === "TSAsExpression" ||
+            first?.type === "TSSatisfiesExpression" ||
+            first?.type === "TypeCastExpression") &&
+          (first.expression as AnyNode)?.type === "StringLiteral"
+        ) {
+          code = (first.expression as AnyNode).value as string;
+        }
         if (code !== undefined) {
           const list = found.get(code) ?? [];
           list.push(file);
@@ -134,7 +177,6 @@ const LIVE_CODES: DomainErrorCode[] = [
   "E_UNVERIFIED_RANGE",
   "E_MALFORMED_ANCHOR",
   "E_SUSPICIOUS_TEXT",
-  "E_REVERSED_ANCHORS",
   "E_BATCH_ABORT",
   "E_NOOP_LOOP",
   "E_UNSUPPORTED_FILE",
@@ -179,7 +221,6 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
     servedLine: 2,
     count: 1,
   },
-  E_REVERSED_ANCHORS: { startLine: 3, endLine: 1, fromAnchor: "zzz", toAnchor: "aaa" },
   E_BATCH_ABORT: {
     earlierIndex: 0,
     laterIndex: 1,
@@ -310,5 +351,61 @@ describe("domain error registry: closed contract, not a list", () => {
     expect(bare.message).toBe("[MODEL] [E_STALE_ANCHOR] anchor gone");
     expect(bare.servedRows).toEqual([]);
     expect(bare.servedBlock).toBe("");
+  });
+});
+
+describe("domain warning registry: applied tier, never a rejection", () => {
+  const WARNING_CODES: DomainWarningCode[] = [
+    "W_NEVER_SERVED_SHAPE",
+    "W_SERVED_PREFIX_MISMATCH",
+    "W_REVERSED_ANCHORS",
+    "W_UNICODE_LITERAL",
+    "W_LITERAL_BYPASS",
+    "W_NOOP",
+  ];
+
+  const WARNING_EXAMPLES: { [K in DomainWarningCode]: WarningPayloadMap[K] } = {
+    W_NEVER_SERVED_SHAPE: { count: 2 },
+    W_SERVED_PREFIX_MISMATCH: { k: 1, anchor: "abc", servedLine: 2 },
+    W_REVERSED_ANCHORS: { fromHash: "zzz", toHash: "aaa" },
+    W_UNICODE_LITERAL: { line: 3 },
+    W_LITERAL_BYPASS: {},
+    W_NOOP: {
+      ref: "edit[0] (probe.ts)",
+      removeFrom: "abc",
+      removeTo: "def",
+      batch: false,
+      count: 2,
+    },
+  };
+
+  it("the warning union is exactly the six W_* codes", () => {
+    expect(warningUnionMembers().sort()).toEqual([...WARNING_CODES].sort());
+  });
+
+  it("every warning code renders [<AUDIENCE>] [<CODE>] as its message header", () => {
+    for (const code of WARNING_CODES) {
+      const spec = WARNING_REGISTRY[code];
+      const rendered = formatWarning(code, WARNING_EXAMPLES[code]);
+      expect(rendered.startsWith(`[${spec.audience}] [${code}] `)).toBe(true);
+    }
+  });
+
+  it("every produced warning code is a union member", () => {
+    const members = new Set(warningUnionMembers());
+    const unknown = [...warningProducers().keys()].filter((code) => !members.has(code));
+    expect(unknown).toEqual([]);
+  });
+
+  it("every warning union member has at least one producer in src/", () => {
+    const produced = warningProducers();
+    const codeless = WARNING_CODES.filter((code) => (produced.get(code) ?? []).length === 0);
+    expect(codeless).toEqual([]);
+  });
+
+  it("grades the tiers: applied warnings never carry E_* and rejections never carry W_*", () => {
+    for (const code of WARNING_CODES) {
+      expect(formatWarning(code, WARNING_EXAMPLES[code])).not.toContain("[E_");
+    }
   });
 });
