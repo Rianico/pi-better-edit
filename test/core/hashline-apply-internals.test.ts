@@ -19,7 +19,7 @@ describe("resAnchor (via applyEdit)", () => {
     const content = "a\nb\nc\nd\ne";
     expect(() =>
       applyEdit(content, resEdit({ anchor_from: "ZZZ", anchor_to: "ZZZ", replace_with: "X" })),
-    ).toThrow(/E_STALE_ANCHOR/);
+    ).toThrow(/E_UNKNOWN_ANCHOR/);
   });
 
   it("reports ambiguous when hash matches multiple lines (synthetic collision)", async () => {
@@ -33,7 +33,7 @@ describe("resAnchor (via applyEdit)", () => {
         undefined,
         forgedHashes,
       ),
-    ).toThrow(/E_STALE_ANCHOR/);
+    ).toThrow(/E_UNKNOWN_ANCHOR/);
   });
 });
 

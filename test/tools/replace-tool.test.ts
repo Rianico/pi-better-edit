@@ -108,7 +108,7 @@ describe("regEdit", () => {
           undefined,
           { cwd } as any,
         ),
-      ).rejects.toThrow(/E_STALE_ANCHOR/);
+      ).rejects.toThrow(/E_UNKNOWN_ANCHOR/);
     });
   });
 

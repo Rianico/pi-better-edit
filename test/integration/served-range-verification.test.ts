@@ -307,8 +307,7 @@ describe("served-state range verification for edit", () => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
 
-      // No serve ever leased these anchors, so the boundary lookup is empty: [E_STALE_ANCHOR] with
-      // the fresh context serve (spec §3.1.1 step 1 line 89 / §5.3, ADR-0016).
+      // No serve ever leased these anchors, so the boundary lookup is empty.
       await expect(
         editTool.execute(
           "e1",
@@ -317,7 +316,7 @@ describe("served-state range verification for edit", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/\[MODEL\] \[E_STALE_ANCHOR\]/);
+      ).rejects.toThrow(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
 
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ngamma\n");
     });

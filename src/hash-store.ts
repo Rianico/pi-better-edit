@@ -276,6 +276,10 @@ function buildStore(db: DatabaseSync): void {
       "ON served_leases (file_path, retired_at)",
   );
   db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_leases_session_anchor " +
+      "ON served_leases (session_id, anchor)",
+  );
+  db.exec(
     "CREATE TABLE IF NOT EXISTS served_session_meta (" +
       "session_id TEXT NOT NULL, " +
       "file_path TEXT NOT NULL, " +

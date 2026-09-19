@@ -101,6 +101,7 @@ import { DomainError } from "../domain-errors.js";
 import {
   createSessionHandle,
   sessionKeyFor,
+  loadAnchorHomes,
   loadLeases,
   type ServedLease,
 } from "../served-session/session.js";
@@ -290,6 +291,9 @@ function leaseSpanSource(input: {
   const positions = input.currentIds
     ? identityPositions(input.currentIds)
     : positionsByIdentity(input.store, input.absolutePath, input.content);
+  // WHY: the session-wide home lookup runs on the failure path only: the happy
+  // WHY: path never calls it, so serving one more file costs nothing at edit time.
+  const { store, sessionKey, absolutePath } = input;
   return {
     currentSnapshotHash: snapshotHashFor(input.content),
     leaseFor: (anchor) => {
@@ -304,6 +308,8 @@ function leaseSpanSource(input: {
       };
     },
     rebasedLineOf: (lineId) => positions.get(lineId),
+    anchorHomes: (anchor) =>
+      loadAnchorHomes(store, sessionKey, anchor).filter((home) => home !== absolutePath),
   };
 }
 

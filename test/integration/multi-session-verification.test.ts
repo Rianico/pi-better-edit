@@ -60,7 +60,7 @@ describe("multi-session — lease isolation", () => {
           undefined,
           sessionB,
         ),
-      ).rejects.toThrow(/E_STALE_(ANCHOR|RANGE)/);
+      ).rejects.toThrow(/E_UNKNOWN_ANCHOR/);
       expect(await readFile(path, "utf-8")).toBe(SMALL_CPP);
 
       // control: the very same anchor is authorized once B holds its own lease
@@ -195,7 +195,7 @@ describe("multi-session — restart semantics", () => {
           undefined,
           after,
         ),
-      ).rejects.toThrow(/E_STALE_(ANCHOR|RANGE)/);
+      ).rejects.toThrow(/E_UNKNOWN_ANCHOR/);
       expect(await readFile(path, "utf-8")).toBe(SMALL_CPP);
 
       // and after its own read the new session works normally
@@ -259,7 +259,7 @@ describe("multi-session — path scoping", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_STALE_(ANCHOR|RANGE)/);
+      ).rejects.toThrow(/E_FOREIGN_ANCHOR/);
       expect(await readFile(neverRead, "utf-8")).toBe("alpha\nbravo\ncharlie\n");
     });
   });

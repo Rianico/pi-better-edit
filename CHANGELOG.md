@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **edit:** split anchor family with unknown and foreign codes
 * **edit:** land tagged domain error registry
 * **edit:** rename to E_SUSPICIOUS_TEXT
 * **edit:** add unverified range, retire unserved
@@ -24,7 +25,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* document E_UNKNOWN and E_LARGE_FILE rows
+* **edit:** mint unknown and foreign anchor terms with rows
 * add the unified error and warning contract spec
 * **spec:** sync spec to retired-identity rule
 * record as-built rejection oracle

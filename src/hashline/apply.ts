@@ -255,15 +255,10 @@ export function applyEdit(
     rebased: leaseRebased,
   } = resolveEdit(prefixFixed, lineIndex.fileLines, fileHashes, filePath, served, identity, signal);
   if (mismatches.length || !resolved) {
-    const { message, servedRows } = fmtMismatchWithServes(mismatches, {
-      fileHashes,
-      fileLines: lineIndex.fileLines,
-      filePath,
-    });
-    throw new DomainError("E_STALE_ANCHOR", {
-      headline: message,
-      servedRows,
-      cause: "anchor staleness",
+    const anchors = [...new Set(mismatches.map((mismatch) => mismatch.ref.hash))];
+    throw new DomainError("E_UNKNOWN_ANCHOR", {
+      path: filePath ?? "this file",
+      anchors,
     });
   }
 

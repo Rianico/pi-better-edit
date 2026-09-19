@@ -72,6 +72,7 @@ interface ServedStmts {
   ) => void;
   leaseGet: (sessionKey: string, path: string, anchor: string) => ServedLease | undefined;
   leaseList: (sessionKey: string, path: string) => ServedLease[];
+  leaseHomes: (sessionKey: string, anchor: string) => string[];
   leaseRetireAbsent: (now: number, path: string, snapshotId: number) => void;
   leaseDelete: (sessionKey: string, path: string) => void;
   leaseDeletePath: (path: string) => void;
@@ -217,6 +218,10 @@ function buildStmts(db: DatabaseSync): ServedStmts {
       "served_line_number, updated_at, retired_at FROM served_leases " +
       "WHERE session_id = ? AND file_path = ? ORDER BY served_line_number ASC, anchor ASC",
   );
+  const leaseHomesStmt = db.prepare(
+    "SELECT DISTINCT file_path AS file_path FROM served_leases " +
+      "WHERE session_id = ? AND anchor = ? ORDER BY file_path ASC",
+  );
   const leaseRetireAbsentStmt = db.prepare(
     "UPDATE served_leases SET retired_at = ? " +
       "WHERE file_path = ? AND retired_at IS NULL " +
@@ -327,6 +332,10 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     },
     leaseGet: (...params) => leaseGetStmt.get(...params) as ServedLease | undefined,
     leaseList: (...params) => leaseListStmt.all(...params) as unknown as ServedLease[],
+    leaseHomes: (sessionKey, anchor) =>
+      (leaseHomesStmt.all(sessionKey, anchor) as unknown as Array<{ file_path: string }>).map(
+        (row) => row.file_path,
+      ),
     leaseRetireAbsent: (now, path, snapshotId) => {
       leaseRetireAbsentStmt.run(now, path, snapshotId);
     },
@@ -1145,6 +1154,11 @@ export function loadLease(
   anchor: string,
 ): ServedLease | undefined {
   return servedStmts(store.db).leaseGet(sessionKey, path, anchor);
+}
+
+/** Every file this session served one anchor for, ordered for stable output. */
+export function loadAnchorHomes(store: HashStore, sessionKey: string, anchor: string): string[] {
+  return servedStmts(store.db).leaseHomes(sessionKey, anchor);
 }
 
 // WHY: --- Legacy low-level exports for facade compat (keep import surface stable) ---

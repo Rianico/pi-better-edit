@@ -16,8 +16,10 @@
  * When the intent is ambiguous the payload states the fact and carries NO
  * remedy, because an intent-guessing suggestion steers the model's next
  * action. The remedy field is absent BY RULE for `E_UNKNOWN` (no cause is
- * knowable at all); later tasks add `E_UNKNOWN_ANCHOR`, `E_FOREIGN_ANCHOR`
- * and `E_UNVERIFIED_RANGE` to that set.
+ * knowable at all), `E_UNKNOWN_ANCHOR` and `E_FOREIGN_ANCHOR` (the tool
+ * cannot tell a wrong file value from wrong anchors from another session,
+ * so any suggestion would steer on a guess) and `E_UNVERIFIED_RANGE`
+ * (the model decides from the fresh read).
  */
 
 export type Audience = "MODEL" | "USER";
@@ -26,6 +28,8 @@ export type DomainErrorCode =
   | "E_BAD_PAYLOAD"
   | "E_EMPTY_RANGE"
   | "E_STALE_ANCHOR"
+  | "E_UNKNOWN_ANCHOR"
+  | "E_FOREIGN_ANCHOR"
   | "E_STALE_RANGE"
   | "E_TARGET_LOST"
   | "E_UNVERIFIED_RANGE"
@@ -70,6 +74,15 @@ export interface ErrorPayloadMap {
     servedBlock?: string;
     cause: RangeCause;
     firstOffendingLine?: number;
+  };
+  E_UNKNOWN_ANCHOR: {
+    path: string;
+    anchors: string[];
+  };
+  E_FOREIGN_ANCHOR: {
+    path: string;
+    anchors: string[];
+    homes: string[];
   };
   E_STALE_RANGE: {
     headline: string;
@@ -271,6 +284,36 @@ function staleAnchorFormat(payload: ErrorPayloadMap["E_STALE_ANCHOR"]): string {
   return `${payload.headline}\nCurrent range:\n${payload.servedBlock}\n${RETRY_HINT}`;
 }
 
+function unknownAnchorFormat(payload: ErrorPayloadMap["E_UNKNOWN_ANCHOR"]): string {
+  const anchors = payload.anchors;
+  if (anchors.length === 1) {
+    return `${payload.path} has not served the anchor "${anchors[0]}"; nothing was written.`;
+  }
+  if (anchors.length === 0) {
+    return `${payload.path} has not served an anchor; nothing was written.`;
+  }
+  return `${payload.path} has not served the anchors ${anchors.map((a) => `"${a}"`).join(", ")}; nothing was written.`;
+}
+
+function foreignHomesDisplay(homes: string[]): string {
+  if (homes.length <= 3) return homes.join(", ");
+  return `${homes.slice(0, 3).join(", ")} and ${homes.length - 3} more`;
+}
+
+function foreignAnchorFormat(payload: ErrorPayloadMap["E_FOREIGN_ANCHOR"]): string {
+  const anchors = payload.anchors;
+  const noun =
+    anchors.length === 1
+      ? `the anchor "${anchors[0]}"`
+      : `the anchors ${anchors.map((a) => `"${a}"`).join(", ")}`;
+  const verb = anchors.length === 1 ? "is" : "are";
+  const homes = foreignHomesDisplay(payload.homes);
+  if (homes.length === 0) {
+    return `${noun} ${verb} inconsistent with ${payload.path}; nothing was written.`;
+  }
+  return `${noun} ${verb} inconsistent with ${payload.path}; served for ${homes}; nothing was written.`;
+}
+
 export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[K]> } = {
   E_BAD_PAYLOAD: {
     audience: "MODEL",
@@ -286,6 +329,14 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     format: staleAnchorFormat,
     remedy: "Retry with the served rows; no read is needed.",
+  },
+  E_UNKNOWN_ANCHOR: {
+    audience: "MODEL",
+    format: unknownAnchorFormat,
+  },
+  E_FOREIGN_ANCHOR: {
+    audience: "MODEL",
+    format: foreignAnchorFormat,
   },
   E_STALE_RANGE: {
     audience: "MODEL",

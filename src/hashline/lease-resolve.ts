@@ -16,25 +16,24 @@
  * Fail-closed semantics (never weakened): an unleased anchor, a retired/absent leased `line_id`, a
  * coordinate that no longer carries the leased identity, or an external insert/delete strictly
  * inside the span all reject before any write, so a rejection leaves the file byte-identical.
- * A retired identity whose range cannot be identified rejects `[E_TARGET_LOST]` with no rows;
- * the surviving-bound-live-and-unshifted case serves the named window as `[E_UNVERIFIED_RANGE]`
- * (fresh read, no retry hint) with the rows leased as today.
+ * A retired identity whose named window collapses or misses the file rejects with no rows;
+ * the surviving-bound-live-and-unshifted case serves the named window as a fresh read
+ * (no retry hint) with the rows leased as today; any other retired identity with an
+ * identifiable window rejects with that window served for a retry.
  *
  * INVARIANT (spec §3.1.1, §5.3, ADR-0016) — a served anchor is never resolved by content. `apply.ts`
  * routes EVERY edit that has a lease source here, so a boundary anchor either has a live lease or its
- * identity is lost: lost identity is `[E_STALE_ANCHOR]` (no lease) or `[E_TARGET_LOST]`
- * (retired/deleted leased line with no live unshifted survivor) or `[E_UNVERIFIED_RANGE]`
- * (one bound retired, the survivor live and unshifted), never a content question.
+ * identity is lost: a missing lease is an unknown or foreign anchor (the session-wide lookup
+ * decides which), a retired identity with no live unshifted survivor and no identifiable window
+ * carries no rows, and the one-bound-retired survivor-live-and-unshifted case serves a fresh
+ * read to decide from, never a content question.
  * A never-served interior line strictly between the anchors is caught by the span gates
  * (`[E_STALE_RANGE]`, spec §5.3).
  */
 import {
-  fmtMismatchWithServes,
   isUniformLeaseFastPath,
   resolveLineIdentity,
-  uniqueAnchorLine,
   uniqueServedPosition,
-  valEdit,
   type HEdit,
   type LeaseSpanSource,
   type RHEdit,
@@ -42,7 +41,6 @@ import {
 import { DomainError } from "../domain-errors.js";
 import {
   makeServedRejection,
-  makeStaleAnchorRejection,
   makeTargetLostRejection,
   UNVERIFIED_HEADLINE,
   verifyRebasedSpan,
@@ -86,30 +84,22 @@ function throwReversed(edit: HEdit, startLine: number, endLine: number): never {
 }
 
 /**
- * Refuses an anchor the lease seam cannot resolve: the session holds no lease for it at all.
+ * Refuses anchors the lease seam cannot place: the session holds no lease for them in this file.
  *
- * SPEC §5.3: the unleased-anchor rejection is reject-and-serve like the others — it serves the FULL
- * current range of the targeted span (the rows are themselves serves), never a narrow +/-1 context
- * window, so the model retries with the served anchors and needs no `read`.
- *
- * INVARIANT: content resolution is a DIAGNOSTIC here, never a resolution — the coordinates it finds
- * are not returned to the caller, so an unleased anchor can never be satisfied by a colliding
- * content anchor. That silent miswrite is the class this seam exists to remove.
- *
- * WHY: when neither content nor a lease can place a boundary, no targeted range exists to serve; the
- * WHY: diagnostic falls back to the narrow context around the one boundary that IS placeable.
+ * Deterministic precedence, one condition per code: a lease held for another file wins over
+ * holding no lease anywhere. Homes come from the session-wide `(session_id, anchor)` lookup;
+ * the lookup runs here on the failure path only. Neither rejection serves rows: with no lease
+ * for this file no range can be identified, so there is nothing trustworthy to retry with.
  */
-function throwStaleAnchor(args: {
+function throwUnknownOrForeign(args: {
   edit: HEdit;
   snapshot: FileSnapshotContext;
   refusedFrom: boolean;
   refusedTo: boolean;
-  /** Current-content or served coordinate of each boundary; `undefined` when neither can place it. */
-  fromLine: number | undefined;
-  toLine: number | undefined;
+  source: LeaseSpanSource;
 }): never {
-  const { edit, snapshot, fromLine, toLine } = args;
-  const { filePath } = snapshot;
+  const { edit, snapshot, source } = args;
+  const path = snapshot.filePath ?? "this file";
   const refused = [
     ...new Set(
       [
@@ -118,31 +108,13 @@ function throwStaleAnchor(args: {
       ].filter((hash): hash is string => hash !== undefined),
     ),
   ];
-  // WHY: parity — the spec's `E_STALE_ANCHOR` serve is the current range, so a boundary placed by
-  // WHY: content or by the surviving lease is enough to name the range the model targeted.
-  if (fromLine !== undefined && toLine !== undefined) {
-    const label = refused.length > 1 ? "anchors" : "anchor";
-    const list = refused.map((hash) => `"${hash}"`).join(", ");
-    throw makeStaleAnchorRejection({
-      headline:
-        `${label} ${list} ${refused.length > 1 ? "are" : "is"} not present in the served leases ` +
-        `for ${filePath ?? "this path"}; nothing was written.`,
-      startLine: Math.min(fromLine, toLine),
-      endLine: Math.max(fromLine, toLine),
-      snapshot,
-      cause: "never-served",
-    });
+  const homes = [
+    ...new Set(refused.flatMap((anchor) => source.anchorHomes?.(anchor) ?? [])),
+  ].sort();
+  if (homes.length > 0) {
+    throw new DomainError("E_FOREIGN_ANCHOR", { path, anchors: refused, homes });
   }
-  // WHY: at least one boundary is placeable by NEITHER content nor a lease, so no targeted range
-  // WHY: exists to serve; `valEdit` cannot resolve both bounds either and its own diagnostic names
-  // WHY: the refused anchor(s) with the narrow context of the one boundary we can place.
-  const content = valEdit(edit, snapshot, undefined);
-  const { message, servedRows } = fmtMismatchWithServes(content.mismatches, snapshot);
-  throw new DomainError("E_STALE_ANCHOR", {
-    headline: message,
-    servedRows,
-    cause: "never-served",
-  });
+  throw new DomainError("E_UNKNOWN_ANCHOR", { path, anchors: refused });
 }
 
 /**
@@ -162,24 +134,19 @@ export function resolveLeasedEdit(args: {
   const { fileHashes } = snapshot;
   const fromAnchor = edit.hash_bounds[0].hash;
   const toAnchor = edit.hash_bounds[1].hash;
-  const fromContent = uniqueAnchorLine(fileHashes, fromAnchor);
-  const toContent = uniqueAnchorLine(fileHashes, toAnchor);
   const fromLease = source.leaseFor(fromAnchor);
   const toLease = source.leaseFor(toAnchor);
 
-  // WHY: a boundary anchor with no lease at all is lost identity (spec §3.1.1 step 1 line 89 /
-  // WHY: §5.3, ADR-0016): the lease lookup is the edit's first step, so content anchors can never
-  // WHY: stand in for the missing lease — that substitution is the silent rebind this seam removes.
+  // WHY: a boundary anchor with no lease for this file is never satisfied by content:
+  // WHY: the lookup is the edit's first step, so a colliding content anchor cannot stand
+  // WHY: in for the missing lease — that substitution is the silent rebind this seam removes.
   if (!fromLease || !toLease) {
-    throwStaleAnchor({
+    throwUnknownOrForeign({
       edit,
       snapshot,
       refusedFrom: !fromLease,
       refusedTo: !toLease,
-      // WHY: the targeted range is the span between the two boundaries, placed by content when the
-      // WHY: anchor is on disk and by the surviving lease's served coordinate otherwise.
-      fromLine: fromContent ?? fromLease?.servedLineNumber,
-      toLine: toContent ?? toLease?.servedLineNumber,
+      source,
     });
   }
 
@@ -190,16 +157,11 @@ export function resolveLeasedEdit(args: {
   // WHY: line 89 / §5.3, stale-identity-reject-and-serve D1/D5/D6, ADR-0018 decisions 1-3). The
   // WHY: boundary rule owns the payload: rows are served ONLY when the surviving bound is live
   // WHY: AND unshifted (its rebased coordinate equals its served coordinate — evidence no shift
-  // WHY: occurred). That single case is `[E_UNVERIFIED_RANGE]`: the named window (the served
-  // WHY: coordinates, clamped to the file) is served as a fresh read with no retry hint, and the
-  // WHY: rows are leased through the normal seam so the model decides from them. Every other
-  // WHY: stale case — both bounds stale, the survivor shifted, or the clamped window collapsing
-  // WHY: or missing the file — is `[E_TARGET_LOST]` with no rows and no heading. The named
-  // WHY: coordinate is always lease-derived (`lease.servedLineNumber`); content placement
-  // WHY: (`uniqueAnchorLine`) never places a window and never names a coordinate for a retired
-  // WHY: bound (Probe P). The old disjunction serving a stale-range retry was unsound: a live
-  // WHY: unshifted head with a deleted tail served a window the model never targeted with a
-  // WHY: blind-retry affordance — the Bug-1 wrong-range write.
+  // WHY: occurred). That single case serves the named window as a fresh read with no retry hint,
+  // WHY: and the rows are leased through the normal seam so the model decides from them. Every
+  // WHY: other stale case carries no rows. The named coordinate is always lease-derived
+  // WHY: (`lease.servedLineNumber`); content placement never places a window and never names a
+  // WHY: coordinate for a retired bound (Probe P).
   if (fromDecision.kind === "stale" || toDecision.kind === "stale") {
     const fromLiveUnshifted =
       fromDecision.kind === "line" && fromDecision.line === fromLease.servedLineNumber;

@@ -447,8 +447,8 @@ export class ServedVerification {
     const currentLen = endLine - startLine + 1;
 
     // WHY: Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read.
-    // WHY: A tombstoned boundary hash is exactly what cannot be trusted, so the payload is a
-    // WHY: fresh read to decide from (no retry hint): the anchor binding is unplaceable.
+    // WHY: A tombstoned boundary hash is exactly what cannot be trusted: the lease is terminal
+    // WHY: for this window, so the rejection serves the current range for a retry.
     if ((tombstone.has(startHash) || tombstone.has(endHash)) && servedCanons) {
       const tombstonedHash = tombstone.has(startHash) ? startHash : endHash;
       const pos = fileHashes.indexOf(tombstonedHash);
@@ -457,11 +457,12 @@ export class ServedVerification {
         const expected = servedIdx >= 0 ? servedCanons[servedIdx] : undefined;
         const actual = canon(fileLines[pos] ?? "");
         if (expected !== undefined && expected !== null && expected !== actual) {
-          this.throwUnverifiedFresh({
+          this.throwStaleForTombstone({
+            tombstonedHash,
+            startLine,
+            endLine,
+            snapshot: { fileHashes, fileLines, ...(filePath !== undefined ? { filePath } : {}) },
             firstOffendingLine: pos + 1,
-            servedRows,
-            rendered,
-            cause: "tombstone",
           });
         }
       }
@@ -476,7 +477,7 @@ export class ServedVerification {
       fileHashes,
     });
 
-    // WHY: --- decision table entry 1: no span could be resolved -> E_UNVERIFIED_RANGE ---
+    // WHY: --- decision table entry 1: no span could be resolved -> unknown anchor ---
     // WHY: ADR-0008 canon healing is retired (spec §3.3): an unresolvable span is never relocated
     // WHY: by scanning for matching canons. It fails closed; coordinate realignment is owned
     // WHY: exclusively by MVCC `pairSnapshots` + `line_lineage` in the edit path.
@@ -484,14 +485,10 @@ export class ServedVerification {
     const to: number | undefined = span.to;
 
     if (from === undefined || to === undefined) {
-      this.throwUnverified({
-        served,
+      this.throwUnknownForMissingSpan({
         startHash,
         endHash,
-        currentLen,
-        rendered,
-        servedRows,
-        where,
+        filePath,
         startPositions: servedPositionsOf(served, startHash),
         endPositions: servedPositionsOf(served, endHash),
       });
@@ -722,40 +719,43 @@ export class ServedVerification {
 
   // WHY: -- private: throws with decision-table mapping -------------------------
 
-  private throwUnverified(args: {
-    served: (string | null)[];
+  private throwUnknownForMissingSpan(args: {
     startHash: string;
     endHash: string;
-    currentLen: number;
-    rendered: string;
-    servedRows: ServedRow[];
-    where: string;
+    filePath?: string;
     startPositions: number[];
     endPositions: number[];
   }): never {
-    const { rendered, servedRows } = args;
-    // WHY: one general headline clause, no line-by-line narration: the bound is unplaceable,
-    // WHY: so naming per-anchor positions would narrate lines the model never targeted.
-    throw new DomainError("E_UNVERIFIED_RANGE", {
-      servedRows: servedRows,
-      servedBlock: rendered,
-      cause: "never-served",
+    const missing = [
+      ...new Set(
+        [
+          args.startPositions.length === 0 ? args.startHash : undefined,
+          args.endPositions.length === 0 ? args.endHash : undefined,
+        ].filter((hash): hash is string => hash !== undefined),
+      ),
+    ];
+    const anchors = missing.length > 0 ? missing : [...new Set([args.startHash, args.endHash])];
+    throw new DomainError("E_UNKNOWN_ANCHOR", {
+      path: args.filePath ?? "this file",
+      anchors,
     });
   }
 
-  private throwUnverifiedFresh(args: {
+  private throwStaleForTombstone(args: {
+    tombstonedHash: string;
+    startLine: number;
+    endLine: number;
+    snapshot: FileSnapshotContext;
     firstOffendingLine: number;
-    servedRows: ServedRow[];
-    rendered: string;
-    cause: RangeCause;
   }): never {
-    throw new DomainError("E_UNVERIFIED_RANGE", {
-      servedRows: args.servedRows,
-      servedBlock: args.rendered,
-      cause: args.cause,
-      ...(args.firstOffendingLine !== undefined
-        ? { firstOffendingLine: args.firstOffendingLine }
-        : {}),
+    throw makeStaleAnchorRejection({
+      headline:
+        `anchor "${args.tombstonedHash}" no longer resolves to the line identity ` +
+        `it was served with; nothing was written.`,
+      startLine: args.startLine,
+      endLine: args.endLine,
+      snapshot: args.snapshot,
+      cause: "tombstone",
     });
   }
 

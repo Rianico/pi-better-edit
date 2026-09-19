@@ -133,7 +133,7 @@ describe("anchor position helpers", () => {
 describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   const edit: HEdit = resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" });
 
-  it("rejects an unleased anchor with [E_STALE_ANCHOR] — content never satisfies a served anchor", () => {
+  it("rejects an unleased anchor with [E_UNKNOWN_ANCHOR] — content never satisfies a served anchor", () => {
     const src = source({ leases: { AAA: lease({ lineId: 1 }) }, positions: { 1: 1 } });
     let caught: Error | undefined;
     try {
@@ -146,20 +146,14 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     } catch (error) {
       caught = error as Error;
     }
-    expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
-    // Reject-and-serve: the serve is the current RANGE (not a +/-1 context window), so the rows are
-    // themselves serves and the model retries without re-reading (spec §5.3).
+    expect(caught?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
     expect(caught).toBeInstanceOf(DomainError);
-    expect(caught?.message).toContain("Current range:");
-    expect(caught?.message).not.toContain("Current context around resolved anchor");
-    expect((caught as DomainError).servedRows).toEqual([
-      { position: 0, hash: "AAA" },
-      { position: 1, hash: "BBB" },
-    ]);
-    expect(caught?.message).toContain("BBB│b");
+    expect((caught as DomainError).code).toBe("E_UNKNOWN_ANCHOR");
+    expect((caught as DomainError).servedRows).toEqual([]);
+    expect((caught as DomainError).servedBlock).toBe("");
   });
 
-  it("serves the full targeted range for an unleased boundary anchor, not a narrow context window", () => {
+  it("carries no rows for an unleased boundary anchor", () => {
     const src = source({
       leases: { AAA: lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 }) },
       positions: { 1: 1 },
@@ -179,19 +173,10 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     } catch (error) {
       caught = error as Error;
     }
-    expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
-    expect(caught?.message).toContain("Current range:");
-    // Every row of the targeted range is served, so the retry can rebuild both anchors.
-    expect((caught as DomainError).servedRows).toEqual([
-      { position: 0, hash: "AAA" },
-      { position: 1, hash: "m2" },
-      { position: 2, hash: "m3" },
-      { position: 3, hash: "m4" },
-      { position: 4, hash: "BBB" },
-    ]);
-    for (const row of ["AAA│a", "m2│b", "m3│c", "m4│d", "BBB│e"]) {
-      expect(caught?.message).toContain(row);
-    }
+    expect(caught?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
+    expect((caught as DomainError).code).toBe("E_UNKNOWN_ANCHOR");
+    expect((caught as DomainError).servedRows).toEqual([]);
+    expect((caught as DomainError).servedBlock).toBe("");
   });
 
   it("omits the range serve when neither boundary can be placed by content or by a lease", () => {
@@ -208,7 +193,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
       caught = error as Error;
     }
     expect(caught).toBeInstanceOf(DomainError);
-    expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
+    expect(caught?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
     // No targeted range is knowable, so there is nothing to serve as fresh anchors.
     expect(caught?.message).not.toContain("Current range:");
     expect((caught as DomainError).servedRows).toEqual([]);
@@ -348,7 +333,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect((caught as DomainError).details.cause).toBe("retirement");
   });
 
-  it("rejects a served anchor held by no lease with [E_STALE_ANCHOR] — mirror-only serves fail closed", () => {
+  it("rejects a served anchor held by no lease with [E_UNKNOWN_ANCHOR] — mirror-only serves fail closed", () => {
     const src = source({ leases: {}, positions: {} });
     let caught: Error | undefined;
     try {
@@ -362,9 +347,9 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
       caught = error as Error;
     }
     expect(caught).toBeInstanceOf(DomainError);
-    expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
+    expect(caught?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
     expect(caught?.message).not.toMatch(/E_STALE_RANGE|E_UNVERIFIED_RANGE/);
-    expect((caught as DomainError).servedRows.length).toBeGreaterThan(0);
+    expect((caught as DomainError).servedRows).toEqual([]);
   });
 
   it("rejects a torn span whose rebased window grew (Probe J)", () => {
@@ -441,7 +426,7 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
     rebasedLineOf: () => undefined,
   };
 
-  it("fails closed with [E_STALE_ANCHOR] instead of applying at the colliding content anchor", () => {
+  it("fails closed with [E_UNKNOWN_ANCHOR] instead of applying at the colliding content anchor", () => {
     let caught: Error | undefined;
     try {
       applyEdit(content, edit, undefined, hashes, {
@@ -453,10 +438,9 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
       caught = error as Error;
     }
     expect(caught).toBeInstanceOf(DomainError);
-    expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
-    expect(caught?.message).toContain("Current range:");
-    expect(caught?.message).not.toContain("Current context around resolved anchor");
-    expect((caught as DomainError).servedRows.length).toBeGreaterThan(0);
+    expect(caught?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
+    expect((caught as DomainError).code).toBe("E_UNKNOWN_ANCHOR");
+    expect((caught as DomainError).servedRows).toEqual([]);
   });
 
   it("rejects a retired lease absent from the content with [MODEL] [E_UNVERIFIED_RANGE] and a fresh read", () => {

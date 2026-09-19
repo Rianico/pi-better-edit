@@ -127,6 +127,8 @@ const LIVE_CODES: DomainErrorCode[] = [
   "E_BAD_PAYLOAD",
   "E_EMPTY_RANGE",
   "E_STALE_ANCHOR",
+  "E_UNKNOWN_ANCHOR",
+  "E_FOREIGN_ANCHOR",
   "E_STALE_RANGE",
   "E_TARGET_LOST",
   "E_UNVERIFIED_RANGE",
@@ -153,6 +155,8 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
     servedBlock: "abc│alpha",
     cause: "never-served",
   },
+  E_UNKNOWN_ANCHOR: { path: "a.py", anchors: ["ZZZ"] },
+  E_FOREIGN_ANCHOR: { path: "a.py", anchors: ["wUp"], homes: ["b.py"] },
   E_STALE_RANGE: {
     headline: 'line 2 in probe.ts differs from what was served (expected "a" vs actual "b").',
     servedRows: [{ position: 1, hash: "def" }],

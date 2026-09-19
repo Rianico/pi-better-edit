@@ -38,7 +38,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
     expect(result.ok).toBe(true);
   });
 
-  it("duplicate candidate → E_UNVERIFIED_RANGE with a fresh read (no per-anchor narration)", () => {
+  it("duplicate candidate → E_UNKNOWN_ANCHOR with no rows", () => {
     const store = createCanonStore();
     const oldContent = "a\nb\nc";
     const oldHashes = _lineHashesPure(oldContent, store);
@@ -49,29 +49,29 @@ describe("ServedVerification deep module — isolated store & decision table", (
     const fileLines = newContent.split("\n");
 
     const verifier = new ServedVerification(store);
-    const result = verifier.verify({
-      range: {
-        startHash: oldHashes[0]!,
-        endHash: oldHashes[2]!,
-        startLine: 1,
-        endLine: 3,
-      },
-      served,
-      fileHashes,
-      fileLines,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe("E_UNVERIFIED_RANGE");
-      expect(result.message).toContain("Current range (fresh read):");
-      expect(result.message).not.toContain("Retry with these anchors");
-      expect(result.message).not.toMatch(/was served at \d+ positions/);
-      expect(result.details.cause).toBe("never-served");
-      expect(result.servedRows.length).toBeGreaterThan(0);
+    let caught: unknown;
+    try {
+      verifier.verifyOrThrow({
+        range: {
+          startHash: oldHashes[0]!,
+          endHash: oldHashes[2]!,
+          startLine: 1,
+          endLine: 3,
+        },
+        served,
+        fileHashes,
+        fileLines,
+      });
+    } catch (error) {
+      caught = error;
     }
+    const err = caught as { code?: string; message: string; servedRows: Array<unknown> };
+    expect(err.code).toBe("E_UNKNOWN_ANCHOR");
+    expect(err.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
+    expect(err.servedRows).toEqual([]);
   });
 
-  it("un-rebased served array fails closed: a b c -> a 1 b c is never healed (ADR-0008 retired)", () => {
+  it("un-rebased served array fails closed with E_UNKNOWN_ANCHOR (ADR-0008 retired)", () => {
     const store = createCanonStore();
     const oldContent = "a\nb\nc";
     const oldHashes = _lineHashesPure(oldContent, store);
@@ -86,23 +86,23 @@ describe("ServedVerification deep module — isolated store & decision table", (
     const verifier = new ServedVerification(store);
     // MVCC owns coordinate realignment (`pairSnapshots` + `line_lineage`); a caller that did not
     // rebase has no served position for the shifted line, so `verify` rejects instead of healing.
-    const result = verifier.verify({
-      range: {
-        startHash: newHashes[1]!,
-        endHash: oldHashes[2]!,
-        startLine: 2,
-        endLine: 3,
-      },
-      served,
-      fileHashes: newHashes,
-      fileLines,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe("E_UNVERIFIED_RANGE");
-      expect(result.message).toContain("Current range (fresh read):");
-      expect(result.details.cause).toBe("never-served");
+    let caught: unknown;
+    try {
+      verifier.verifyOrThrow({
+        range: {
+          startHash: newHashes[1]!,
+          endHash: oldHashes[2]!,
+          startLine: 2,
+          endLine: 3,
+        },
+        served,
+        fileHashes: newHashes,
+        fileLines,
+      });
+    } catch (error) {
+      caught = error;
     }
+    expect((caught as { code?: string }).code).toBe("E_UNKNOWN_ANCHOR");
 
     // The throwing variant rejects too — no silent canon relocation.
     expect(() =>
@@ -117,7 +117,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
         fileHashes: newHashes,
         fileLines,
       }),
-    ).toThrow(/E_UNVERIFIED_RANGE/);
+    ).toThrow(/E_UNKNOWN_ANCHOR/);
   });
 
   it("never-served gap → E_STALE_RANGE (first offending line, retry with served rows)", () => {
@@ -343,7 +343,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
     ).toThrow(/E_STALE_RANGE/);
   });
 
-  it("tombstone boundary serves [E_UNVERIFIED_RANGE] as a fresh read with no retry hint", () => {
+  it("tombstone boundary serves [E_STALE_ANCHOR] with the current range", () => {
     const store = createCanonStore();
     const servedContent = "a\nb\nc";
     const servedHashes = _lineHashesPure(servedContent, store);
@@ -352,22 +352,31 @@ describe("ServedVerification deep module — isolated store & decision table", (
     const fileLines = ["CHANGED", "b", "c"];
     const fileHashes = [...servedHashes];
     const verifier = new ServedVerification(store);
-    const result = verifier.verify({
-      range: { startHash: servedHashes[0]!, endHash: servedHashes[2]!, startLine: 1, endLine: 3 },
-      served: [...servedHashes],
-      fileHashes,
-      fileLines,
-      tombstone: new Set([servedHashes[0]!]),
-      servedCanons,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe("E_UNVERIFIED_RANGE");
-      expect(result.message).toContain("Current range (fresh read):");
-      expect(result.message).not.toContain("Retry with these anchors");
-      expect(result.details.cause).toBe("tombstone");
-      expect(result.servedRows.length).toBeGreaterThan(0);
+    let caught: unknown;
+    try {
+      verifier.verifyOrThrow({
+        range: { startHash: servedHashes[0]!, endHash: servedHashes[2]!, startLine: 1, endLine: 3 },
+        served: [...servedHashes],
+        fileHashes,
+        fileLines,
+        tombstone: new Set([servedHashes[0]!]),
+        servedCanons,
+      });
+    } catch (error) {
+      caught = error;
     }
+    const err = caught as {
+      code?: string;
+      message: string;
+      servedRows: Array<unknown>;
+      details?: { cause?: string };
+    };
+    expect(err.code).toBe("E_STALE_ANCHOR");
+    expect(err.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
+    expect(err.message).toContain("Current range:");
+    expect(err.message).toContain("Retry with these anchors");
+    expect(err.details?.cause).toBe("tombstone");
+    expect(err.servedRows.length).toBeGreaterThan(0);
   });
 
   it("servedPositionsOf / buildRangeServeRows / fmtServedRows remain accessible", () => {

@@ -16,7 +16,7 @@ describe("applyEdit — recovery scenarios", () => {
     expect(result.warnings?.[0]).toMatch(/\[E_REVERSED_ANCHORS\].*were reversed/);
   });
 
-  it("rejects stale anchor", async () => {
+  it("rejects unknown anchor", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     expect(() =>
@@ -26,10 +26,10 @@ describe("applyEdit — recovery scenarios", () => {
         undefined,
         ["STALE", "STALE", "STALE", "STALE", "STALE"],
       ),
-    ).toThrow(/\[E_STALE_ANCHOR\]/);
+    ).toThrow(/\[E_UNKNOWN_ANCHOR\]/);
   });
 
-  it("shows current context around the resolved anchor when only one anchor of a range is stale", async () => {
+  it("carries no rows when only one anchor of a range is unknown", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const staleStart = "ZZZ";
@@ -43,12 +43,11 @@ describe("applyEdit — recovery scenarios", () => {
       caught = error as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/\[E_STALE_ANCHOR\]/);
-    expect(caught!.message).toMatch(/Current context around resolved anchor/);
-    expect(caught!.message).toContain(` 3: ${hashes[2]}│c`);
+    expect(caught!.message).toMatch(/\[E_UNKNOWN_ANCHOR\]/);
+    expect((caught as unknown as { servedRows: Array<unknown> }).servedRows).toEqual([]);
   });
 
-  it("shows context anchored on the start when only the end is stale", async () => {
+  it("carries no rows when only the end is unknown", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
     const staleEnd = "ZZZ";
@@ -62,8 +61,8 @@ describe("applyEdit — recovery scenarios", () => {
       caught = error as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/Current context around resolved anchor/);
-    expect(caught!.message).toContain(` 1: ${hashes[0]}│a`);
+    expect(caught!.message).toMatch(/\[E_UNKNOWN_ANCHOR\]/);
+    expect((caught as unknown as { servedRows: Array<unknown> }).servedRows).toEqual([]);
   });
 
   it("omits context when both anchors are stale", async () => {
@@ -75,7 +74,7 @@ describe("applyEdit — recovery scenarios", () => {
       caught = error as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).not.toMatch(/Current context around resolved anchor/);
+    expect(caught!.message).toMatch(/\[E_UNKNOWN_ANCHOR\]/);
   });
 
   it("rejects ambiguous anchor", async () => {
@@ -89,7 +88,7 @@ describe("applyEdit — recovery scenarios", () => {
         undefined,
         forgedHashes,
       ),
-    ).toThrow(/\[E_STALE_ANCHOR\]/);
+    ).toThrow(/\[E_UNKNOWN_ANCHOR\]/);
   });
 
   it("rejects unknown fields in edit items", () => {

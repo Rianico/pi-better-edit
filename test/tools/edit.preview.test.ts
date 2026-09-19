@@ -190,12 +190,8 @@ describe("compPreview — served-state staleness surfacing", () => {
       );
       expect(preview).toHaveProperty("error");
       const errorText = (preview as { error: string }).error;
-      // The lease lookup is the edit's first step, so an anchor no serve ever leased is a stale
-      // anchor with a fresh RANGE serve (spec §3.1.1 step 1 line 89 / §5.3, ADR-0016); the served
-      // rows are themselves serves, so the retry needs no read.
-      expect(errorText).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
-      expect(errorText).toContain("Current range:");
-      expect(errorText).not.toContain("Current context around resolved anchor");
+      expect(errorText).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
+      expect((preview as { servedRows?: Array<unknown> }).servedRows ?? []).toEqual([]);
     });
   });
 

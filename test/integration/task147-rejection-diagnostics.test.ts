@@ -49,7 +49,8 @@ describe("task-147 rejection diagnostics", () => {
       caught = error as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toContain('anchor "AAA" is not present');
+    expect(caught!.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
+    expect(caught!.message).toContain('has not served the anchor "AAA"');
     expect(caught!.message).not.toContain('anchors "AAA"');
     expect(caught!.message).not.toContain('"AAA", "AAA"');
     expect(countMatches(caught!.message, /"AAA"/)).toBe(1);

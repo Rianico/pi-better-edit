@@ -23,6 +23,14 @@ The project's core contract: per-line anchors are content-derived with ASCII whi
 An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon`/`tombstone` miss). The model must re-`read` for fresh anchors.
 _Avoid_: boundary staleness (use `anchor` for one line, `served range` for span)
 
+**unknown anchor**:
+An anchor this session holds no lease for in any file. Reported as `[E_UNKNOWN_ANCHOR]` with no rows and no remedy — the tool cannot tell a wrong file value from wrong anchors from another session, so it states the fact and the model decides. Distinct from `anchor staleness`, which names a served anchor whose content changed.
+_Avoid_: unserved anchor, missing anchor, stale anchor
+
+**foreign anchor**:
+An anchor this session holds a lease for, but for a file other than the one the edit names. Reported as `[E_FOREIGN_ANCHOR]` with no rows and no remedy — the message names where the anchors were served. Distinct from `anchor staleness`, which names a served anchor whose content changed.
+_Avoid_: cross-file anchor, wrong-file anchor, leaked anchor
+
 **interior**:
 The lines of a resolved range strictly between `anchor_from` and `anchor_to`.
 

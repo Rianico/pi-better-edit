@@ -39,6 +39,15 @@ export interface LeaseSpanSource {
   leaseFor(anchor: string): LeaseIdentityView | undefined;
   /** Current line of a leased `line_id` in `line_lineage(C)`; undefined when deleted/retired (spec §3.1.1 steps 3-4). */
   rebasedLineOf(lineId: number): number | undefined;
+  /**
+   * Other files this session served one anchor for, excluding the file being edited.
+   * Backed by its own `served_leases` query on `(session_id, anchor)`; it runs
+   * on the failure path only, so the happy path pays nothing. A path-level
+   * clear deletes rows, so a previously served anchor then reads as holding
+   * no lease anywhere — re-reading is the correct recovery either way, so no
+   * special case is kept.
+   */
+  anchorHomes?(anchor: string): string[];
 }
 
 /**

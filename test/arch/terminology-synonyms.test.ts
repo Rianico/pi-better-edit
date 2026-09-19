@@ -281,7 +281,6 @@ describe("terminology baseline stays recorded and shrink-only", () => {
       expect(entry.retiredBy.length).toBeGreaterThan(0);
     }
   });
-
   it("keeps every entry needed: each listed file still quotes each declared retired code", () => {
     for (const entry of HISTORICAL_BASELINE) {
       const text = readFileSync(entry.file, "utf-8");
@@ -304,5 +303,49 @@ describe("terminology baseline stays recorded and shrink-only", () => {
     expect(names).not.toContain("README.md");
     expect(names.some((file) => file.startsWith("src/"))).toBe(false);
     expect(names.some((file) => file.startsWith("docs/spec/"))).toBe(false);
+  });
+});
+
+type AnchorTermBaselineEntry = {
+  term: string;
+  avoids: string[];
+  supersededCode: string;
+  definedIn: string;
+};
+
+const ANCHOR_TERM_BASELINE: AnchorTermBaselineEntry[] = [
+  {
+    term: "unknown anchor",
+    avoids: ["unserved anchor", "missing anchor", "stale anchor"],
+    supersededCode: "E_STALE_ANCHOR",
+    definedIn: "CONTEXT.md",
+  },
+  {
+    term: "foreign anchor",
+    avoids: ["cross-file anchor", "wrong-file anchor", "leaked anchor"],
+    supersededCode: "E_STALE_ANCHOR",
+    definedIn: "CONTEXT.md",
+  },
+];
+
+describe("anchor term baseline stays recorded and shrink-only", () => {
+  it("declares avoids and a superseded code for every entry", () => {
+    for (const entry of ANCHOR_TERM_BASELINE) {
+      expect(entry.avoids.length).toBeGreaterThan(0);
+      expect(entry.supersededCode.length).toBeGreaterThan(0);
+      expect(entry.definedIn.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps every entry needed: CONTEXT still defines each term with its Avoid line", () => {
+    for (const entry of ANCHOR_TERM_BASELINE) {
+      const text = readFileSync(entry.definedIn, "utf-8");
+      expect(text).toContain(`**${entry.term}**`);
+      for (const avoid of entry.avoids) {
+        expect(text).toContain(avoid);
+      }
+      const srcText = readFileSync("src/domain-errors.ts", "utf-8");
+      expect(srcText).toContain(entry.supersededCode);
+    }
   });
 });

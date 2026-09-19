@@ -29,10 +29,10 @@ function servedLineRe(): RegExp {
  * (hardcoded per scenario); this file never imports the content lookup, so a
  * window placed by such a lookup cannot satisfy the window check. `fileHashes`
  * are the current on-disk hashes; each row must reproduce them exactly.
- * Payload shape is disjoint by code: a target-lost payload carries zero rows and
- * no `Current range` heading of either form; an unverified payload carries rows
- * under the exact `Current range (fresh read):` heading with no retry hint;
- * every other payload carries rows under `Current range:` with a retry hint.
+ * Payload shape is disjoint by code: a target-lost, unknown-anchor, or foreign-anchor
+ * payload carries zero rows and no `Current range` heading of either form; an unverified
+ * payload carries rows under the exact `Current range (fresh read):` heading with no retry
+ * hint; every other payload carries rows under `Current range:` with a retry hint.
  */
 function assertLivePayload(args: {
   error: unknown;
@@ -50,7 +50,11 @@ function assertLivePayload(args: {
   if (args.expectedCode !== undefined) {
     expect(err.code).toBe(args.expectedCode);
   }
-  if (err.code === "E_TARGET_LOST") {
+  if (
+    err.code === "E_TARGET_LOST" ||
+    err.code === "E_UNKNOWN_ANCHOR" ||
+    err.code === "E_FOREIGN_ANCHOR"
+  ) {
     expect(args.liveStart).toBeNull();
     expect(err.servedRows).toEqual([]);
     expect(err.servedBlock).toBe("");
@@ -257,7 +261,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     });
   });
 
-  it("unleased boundary rejects [E_STALE_ANCHOR] with the current window", async () => {
+  it("unleased boundary rejects [E_UNKNOWN_ANCHOR] with no rows", async () => {
     const content = "l1\nl2\nl3\nl4\nl5\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -276,18 +280,15 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         caught = error;
       }
       const msg = (caught as Error).message;
-      expect(msg).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
+      expect(msg).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
       expect(await readFile(path, "utf-8")).toBe(content);
-      // Content-placeable unleased span serves its current window 4-5; rows still
-      // reproduce the on-disk hashes exactly.
-      expect(msg).toContain("Current range:");
-      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
-      const diskHashes = await currentHashes(content);
-      expect(servedLines).toEqual([`${diskHashes[3]}│l4`, `${diskHashes[4]}│l5`]);
+      expect(msg).not.toContain("Current range:");
+      expect((caught as { servedRows: ServedRow[] }).servedRows).toEqual([]);
+      expect((caught as { servedBlock: string }).servedBlock).toBe("");
     });
   });
 
-  it("duplicate anchor rejects [E_STALE_ANCHOR] with current rows", async () => {
+  it("duplicate anchor rejects [E_UNKNOWN_ANCHOR] with no rows", async () => {
     const file = "alpha\nbeta\ngamma\ndelta";
     const real = await lineHashes(file, home.testPath);
     const forged = [...real];
@@ -305,15 +306,9 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       caught = error;
     }
     const msg = (caught as Error).message;
-    expect(msg).toMatch(/E_STALE_ANCHOR/);
-    expect(msg).toMatch(/ambiguous/);
+    expect(msg).toMatch(/E_UNKNOWN_ANCHOR/);
     const rows = (caught as { servedRows: ServedRow[] }).servedRows;
-    // Both colliding lines are served; each row reproduces the forged bytes exactly.
-    expect(rows).toHaveLength(2);
-    expect(rows.map((r) => r.position)).toEqual([0, 2]);
-    for (const row of rows) {
-      expect(row.hash).toBe(forged[row.position]);
-    }
+    expect(rows).toEqual([]);
   });
 
   it("batched call rejects atomically and leaves the file unchanged", async () => {
