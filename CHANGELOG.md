@@ -23,6 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* add the unified error and warning contract spec
 * **spec:** sync spec to retired-identity rule
 * record as-built rejection oracle
 * make the E_UNSERVED_RANGE contract true
