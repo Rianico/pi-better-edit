@@ -31,12 +31,20 @@ function toFailure(error: unknown): MutationResult {
   // WHY: Try to preserve servedRows/servedBlock if error carries them (ServedRejectionError, AnchorMismatchError)
   const servedRows = (error as { servedRows?: import("../hashline/served.js").ServedRow[] })
     ?.servedRows;
+  const servedBlock = (error as { servedBlock?: string })?.servedBlock;
+  // WHY: Every range-family producer emits `details.cause` (user-facing diagnosis, never a
+  // WHY: model remedy) so it cannot rot into a phantom promise — preserve it on the failure.
+  const cause = (error as { cause?: string })?.cause;
+  const details = (error as { details?: { cause: string } })?.details;
   // WHY: Served block is embedded in message for batch abort; keep message as serve-block source.
   return {
     ok: false,
     code,
     message,
     ...(servedRows && servedRows.length > 0 ? { servedRows } : {}),
+    ...(typeof servedBlock === "string" && servedBlock.length > 0 ? { servedBlock } : {}),
+    ...(typeof cause === "string" ? { cause } : {}),
+    ...(details && typeof details.cause === "string" ? { details } : {}),
   };
 }
 

@@ -87,6 +87,9 @@ export interface MutationFailure {
   /** SAFETY: Fresh served block for retry when available (reject-and-serve). */
   servedBlock?: string;
   servedRows?: import("../hashline/served.js").ServedRow[];
+  /** SAFETY: User-facing diagnosis, never a model remedy — a CONTEXT.md glossary term. */
+  cause?: string;
+  details?: { cause: string };
 }
 
 export type MutationResult = MutationSuccess | MutationFailure;

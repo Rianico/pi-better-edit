@@ -263,7 +263,7 @@ export function applyEdit(
       fileLines: lineIndex.fileLines,
       filePath,
     });
-    throw new AnchorMismatchError(message, servedRows);
+    throw new AnchorMismatchError(message, servedRows, undefined, "anchor staleness");
   }
 
   warnUnicodeEsc(prefixFixed, warnings);

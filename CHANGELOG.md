@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **edit:** add E_UNVERIFIED_RANGE and retire E_UNSERVED_RANGE
 * **edit:** rename two model-facing error codes
 * **edit:** add never-served soft hint (#146)
 * **edit:** gate reproduced served rows behind a literal declaration (#134)
@@ -21,6 +22,8 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* record unverified range boundary rule in ADR-0020
+* sync glossary, readme and specs for unverified range
 * record as-built rejection oracle
 * make the E_UNSERVED_RANGE contract true
 * **prompts:** bind anchors to serving file

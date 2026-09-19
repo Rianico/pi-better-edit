@@ -78,7 +78,7 @@ describe("resolveLineIdentity — lease identity is authoritative", () => {
   });
 
   it("fails closed when a retired lease still has a live content anchor (Probe E)", () => {
-    // `retired_at` set -> `E_STALE_RANGE` naming the lease coordinate, never a content match.
+    // `retired_at` set -> stale decision naming the lease coordinate, never a content match.
     // Contract change (D5): the stale line is `servedLineNumber` (7), not the re-added line (2).
     expect(resolveLineIdentity(lease({ lineId: 7, retiredAt: 1 }), src)).toEqual({
       kind: "stale",
@@ -95,7 +95,7 @@ describe("resolveLineIdentity — lease identity is authoritative", () => {
   });
 
   it("fails closed when a retired lease is absent from the content", () => {
-    // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> E_STALE_RANGE, never a content question.
+    // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> stale, never a content question.
     expect(resolveLineIdentity(lease({ lineId: 7, retiredAt: 1 }), src)).toEqual({
       kind: "stale",
       line: 7,
@@ -218,7 +218,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect((caught as AnchorMismatchError).servedRows).toEqual([]);
   });
 
-  it("reports [E_UNSERVED_RANGE] for a never-served interior line of a rebased span", () => {
+  it("reports [E_STALE_RANGE] for a never-served interior line of a rebased span", () => {
     const src = source({
       leases: {
         AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
@@ -234,7 +234,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
         served: ["AAA", null, "BBB"],
         source: src,
       }),
-    ).toThrow(/\[E_UNSERVED_RANGE\]/);
+    ).toThrow(/\[E_STALE_RANGE\]/);
   });
 
   it("takes the O(1) fast path on a uniform snapshot even when the content anchor is ambiguous", () => {
@@ -318,10 +318,10 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
         served: ["AAA", "BBB"],
         source: src,
       }),
-    ).toThrow(/E_STALE_RANGE/);
+    ).toThrow(/E_UNVERIFIED_RANGE/);
   });
 
-  it("rejects a retired lease absent from content with [E_STALE_RANGE], never [E_STALE_ANCHOR]", () => {
+  it("rejects a retired lease absent from content with [E_UNVERIFIED_RANGE], never [E_STALE_ANCHOR]", () => {
     const src = source({
       leases: {
         AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 5 }),
@@ -343,11 +343,13 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
       caught = error as Error;
     }
     expect(caught).toBeInstanceOf(ServedRejectionError);
-    expect((caught as ServedRejectionError).code).toBe("E_STALE_RANGE");
+    expect((caught as ServedRejectionError).code).toBe("E_UNVERIFIED_RANGE");
     expect(caught?.message).not.toMatch(/E_STALE_ANCHOR/);
-    // Reject-and-serve: the serve is the current range the model retries from.
-    expect(caught?.message).toContain("Current range:");
+    // Fresh read: the named window is served for the model to decide from (no retry hint).
+    expect(caught?.message).toContain("Current range (fresh read):");
+    expect(caught?.message).not.toContain("Retry with these anchors");
     expect((caught as ServedRejectionError).servedRows.length).toBeGreaterThan(0);
+    expect((caught as ServedRejectionError).details.cause).toBe("retirement");
   });
 
   it("rejects a served anchor held by no lease with [E_STALE_ANCHOR] — mirror-only serves fail closed", () => {
@@ -365,7 +367,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     }
     expect(caught).toBeInstanceOf(AnchorMismatchError);
     expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
-    expect(caught?.message).not.toMatch(/E_STALE_RANGE|E_UNSERVED_RANGE/);
+    expect(caught?.message).not.toMatch(/E_STALE_RANGE|E_UNVERIFIED_RANGE/);
     expect((caught as AnchorMismatchError).servedRows.length).toBeGreaterThan(0);
   });
 
@@ -406,7 +408,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
         served: [],
         source: src,
       }),
-    ).toThrow(/E_UNSERVED_RANGE/);
+    ).toThrow(/E_STALE_RANGE/);
   });
 
   it("rejects reversed rebased anchors", () => {
@@ -461,9 +463,9 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
     expect((caught as AnchorMismatchError).servedRows.length).toBeGreaterThan(0);
   });
 
-  it("rejects a retired lease absent from the content with [MODEL] [E_STALE_RANGE] and a range serve", () => {
-    // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> E_STALE_RANGE, never E_STALE_ANCHOR, even
-    // when the anchor string is gone from the content entirely.
+  it("rejects a retired lease absent from the content with [MODEL] [E_UNVERIFIED_RANGE] and a fresh read", () => {
+    // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> unverified fresh read, never E_STALE_ANCHOR,
+    // even when the anchor string is gone from the content entirely.
     const staleContent = "alpha\nBETA";
     const staleHashes = _lineHashesPure(staleContent);
     const oldBeta = "OLD";
@@ -491,11 +493,13 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
       caught = error as Error;
     }
     expect(caught).toBeInstanceOf(ServedRejectionError);
-    expect((caught as ServedRejectionError).code).toBe("E_STALE_RANGE");
-    expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_RANGE\]/);
+    expect((caught as ServedRejectionError).code).toBe("E_UNVERIFIED_RANGE");
+    expect(caught?.message).toMatch(/\[MODEL\] \[E_UNVERIFIED_RANGE\]/);
     expect(caught?.message).not.toMatch(/E_STALE_ANCHOR/);
-    expect(caught?.message).toContain("Current range:");
+    expect(caught?.message).toContain("Current range (fresh read):");
+    expect(caught?.message).not.toContain("Retry with these anchors");
     expect((caught as ServedRejectionError).servedRows.length).toBeGreaterThan(0);
+    expect((caught as ServedRejectionError).details.cause).toBe("retirement");
   });
 });
 
@@ -541,7 +545,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
     ).toThrow(/E_STALE_RANGE/);
   });
 
-  it("reports E_UNSERVED_RANGE for a never-served interior line", () => {
+  it("reports E_STALE_RANGE for a never-served interior line", () => {
     expect(() =>
       verifyRebasedSpan({
         served: ["AAA", null],
@@ -553,10 +557,10 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
         leaseFor: () => lease({ lineId: 1 }),
         rebasedLineOf: (lineId) => lineId,
       }),
-    ).toThrow(/E_UNSERVED_RANGE/);
+    ).toThrow(/E_STALE_RANGE/);
   });
 
-  it("reports E_UNSERVED_RANGE when a served anchor has no lease", () => {
+  it("reports E_STALE_RANGE when a served anchor has no lease", () => {
     expect(() =>
       verifyRebasedSpan({
         served: ["AAA"],
@@ -568,7 +572,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
         leaseFor: () => undefined,
         rebasedLineOf: () => 1,
       }),
-    ).toThrow(/E_UNSERVED_RANGE/);
+    ).toThrow(/E_STALE_RANGE/);
   });
 
   it("rejects a retired interior lease or an identity that moved elsewhere", () => {
@@ -611,6 +615,7 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
       endLine: 3,
       snapshot: { fileHashes: hashes, fileLines },
       firstOffendingLine: 2,
+      cause: "served-range staleness",
     });
     expect(err).toBeInstanceOf(ServedRejectionError);
     expect(err.code).toBe("E_STALE_RANGE");
@@ -632,13 +637,14 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
       startLine: 1,
       endLine: 200,
       snapshot: { fileHashes: many, fileLines: many },
+      cause: "served-range staleness",
     });
     expect(err.servedRows).toHaveLength(150);
     expect(err.message).toMatch(/50 more — read offset=151/);
   });
 });
 
-describe("resolveLeasedEdit — target-lost region rule (spec stale-identity-reject-and-serve D1/D5/D6)", () => {
+describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reject-and-serve D1/D5/D6)", () => {
   const editBoth = resEdit({ anchor_from: "AAA", anchor_to: "AAA", replace_with: "X" });
 
   it("emits [E_TARGET_LOST] with no rows and no retry hint when both bounds share one dead anchor", () => {
@@ -690,7 +696,7 @@ describe("resolveLeasedEdit — target-lost region rule (spec stale-identity-rej
     expect(err.servedRows).toEqual([]);
   });
 
-  it("keeps [E_STALE_RANGE] with the served-coordinate window when one bound is live and unshifted", () => {
+  it("serves [E_UNVERIFIED_RANGE] with the named window when the survivor is live and unshifted", () => {
     const dead = lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 6 });
     const live = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 });
     const src = source({
@@ -711,11 +717,13 @@ describe("resolveLeasedEdit — target-lost region rule (spec stale-identity-rej
     }
     expect(caught).toBeInstanceOf(ServedRejectionError);
     const err = caught as ServedRejectionError;
-    expect(err.code).toBe("E_STALE_RANGE");
-    expect(err.message).toContain("Current range:");
-    expect(err.message).toContain("Retry with these anchors");
+    expect(err.code).toBe("E_UNVERIFIED_RANGE");
+    expect(err.message).toContain("Current range (fresh read):");
+    expect(err.message).not.toContain("Retry with these anchors");
+    expect(err.message).not.toContain("No action is required");
     expect(err.servedRows.length).toBeGreaterThan(0);
     expect(err.firstOffendingLine).toBe(1);
+    expect(err.details.cause).toBe("retirement");
   });
 
   it("emits [E_TARGET_LOST] when the live bound shifted (one stale, one moved)", () => {
@@ -740,5 +748,32 @@ describe("resolveLeasedEdit — target-lost region rule (spec stale-identity-rej
     expect(caught).toBeInstanceOf(ServedRejectionError);
     expect((caught as ServedRejectionError).code).toBe("E_TARGET_LOST");
     expect((caught as ServedRejectionError).servedRows).toEqual([]);
+  });
+
+  it("fails closed to [E_TARGET_LOST] when the named window collapses against a short file", () => {
+    // The survivor reads live+unshifted in the fake source, but the served window (lines 10-11)
+    // collapses against the 4-line file — the guard fails closed instead of serving nothing.
+    const survivor = lease({ lineId: 10, servedSnapshotHash: "S", servedLineNumber: 10 });
+    const dead = lease({ lineId: 11, servedSnapshotHash: "S", servedLineNumber: 11, retiredAt: 3 });
+    const src = source({
+      leases: { AAA: survivor, BBB: dead },
+      positions: { 10: 10 },
+      currentSnapshotHash: "C",
+    });
+    let caught: unknown;
+    try {
+      resolveLeasedEdit({
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        snapshot: { fileHashes: ["a", "b", "c", "d"], fileLines: ["a", "b", "c", "d"] },
+        served: ["AAA", "BBB"],
+        source: src,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(ServedRejectionError);
+    expect((caught as ServedRejectionError).code).toBe("E_TARGET_LOST");
+    expect((caught as ServedRejectionError).servedRows).toEqual([]);
+    expect((caught as ServedRejectionError).details.cause).toBe("retirement");
   });
 });

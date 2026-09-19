@@ -179,7 +179,7 @@ describe("compPreview no-persist guarantee", () => {
         cwd,
       );
       expect(preview).toHaveProperty("error");
-      expect((preview as { error: string }).error).toMatch(/\[E_UNSERVED_RANGE\]/);
+      expect((preview as { error: string }).error).toMatch(/\[E_STALE_RANGE\]/);
 
       await expect(
         editTool.execute(
@@ -189,7 +189,7 @@ describe("compPreview no-persist guarantee", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/\[E_UNSERVED_RANGE\]/);
+      ).rejects.toThrow(/\[E_STALE_RANGE\]/);
     });
   });
 });

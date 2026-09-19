@@ -151,7 +151,7 @@ describe("compPreview — served-state staleness surfacing", () => {
     });
   });
 
-  it("returns [E_UNSERVED_RANGE] for a never-served interior after a paged read", async () => {
+  it("returns [E_STALE_RANGE] for a never-served interior after a paged read", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute(
@@ -176,7 +176,7 @@ describe("compPreview — served-state staleness surfacing", () => {
       );
       expect(preview).toHaveProperty("error");
       const errorText = (preview as { error: string }).error;
-      expect(errorText).toMatch(/\[E_UNSERVED_RANGE\] line 2 in sample.ts/);
+      expect(errorText).toMatch(/\[E_STALE_RANGE\] line 2 in sample.ts/);
       expect(errorText).toContain("Current range:");
     });
   });

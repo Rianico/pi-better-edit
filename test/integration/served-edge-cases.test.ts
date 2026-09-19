@@ -12,7 +12,7 @@ import {
 const home = useTestHome();
 
 describe("served-state edge cases for edit", () => {
-  it("rejects [E_UNSERVED_RANGE] for a range spanning paged-read gaps, then applies on retry", async () => {
+  it("rejects [E_STALE_RANGE] for a range spanning paged-read gaps, then applies on retry", async () => {
     const content = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -50,7 +50,7 @@ describe("served-state edge cases for edit", () => {
         rejected = error as Error;
       }
       expect(rejected).toBeDefined();
-      expect(rejected!.message).toMatch(/E_UNSERVED_RANGE.*line 4/);
+      expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 4/);
       expect(await readFile(path, "utf-8")).toBe(content);
 
       const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));

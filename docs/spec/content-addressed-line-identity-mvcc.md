@@ -619,7 +619,7 @@ export function pairSnapshots(
              ┌───────┴───────┐                                         3. Rebase line coordinates to s'
              ▼ Valid         ▼ Torn/Never-Served                                   │
          APPLY EDIT      Throw [E_STALE_RANGE]                         Are leased line_ids in S_current?
-                         or [E_UNSERVED_RANGE]                                     │
+                                                                                   │
                                                                        ┌───────────┴───────────┐
                                                                        ▼ YES                   ▼ NO (Retired/Torn)
                                                                Validate Span Contiguity    Throw [E_STALE_RANGE]
@@ -639,15 +639,15 @@ If any anchor originates from a different snapshot, or disk content has drifted 
 | Failure Condition | Seam Responsible | Output Error Code | Recovery Action |
 | :--- | :--- | :--- | :--- |
 | Anchor not present in `served_leases` | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_STALE_ANCHOR]` | Echoes current range; model retries |
-| Target span contains unread interior lines | `served-verification.ts` | `[MODEL] [E_UNSERVED_RANGE]` | Echoes unread range; model reads range |
-| Leased `line_id` deleted or retired (Probe `E`, `A`) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
+| Target span contains unread interior lines | `served-verification.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes unread range; model retries with those rows |
+| Leased `line_id` deleted or retired (Probe `E`, `A`) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_UNVERIFIED_RANGE]` (survivor live and unshifted: fresh read to decide from) or `[MODEL] [E_TARGET_LOST]` (otherwise: read and re-target) | Serves the named window or nothing |
 | External insert strictly inside span (Probe `J`) | `served-verification.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
 | External swap/reorder of code blocks (Probe `K`) | `patience-pairing.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
 | Overlapping/nested spans in multi-edit batch | `pipeline.ts` (`assertBatchSpansDisjoint`, on lease-resolved baseline spans) | `[MODEL] [E_BATCH_ABORT]` | Rejects batch; model separates edits |
 | Malformed payload or apply-time failure inside a multi-item batch | `pipeline.ts` | the item's **own** code (`E_MALFORMED_ANCHOR`, `E_REVERSED_ANCHORS`, `E_MALFORM_TEXT`, `E_STALE_RANGE`, …) | Rejects the whole call — nothing was written; the message carries the atomicity trailer |
 | Replacement text contains `HASH│` prefix | `apply.ts` | `[MODEL] [E_MALFORM_TEXT]` | Rejects literal echoed prefix (`EditHashEchoError`) |
 | Inverted anchors (`anchor_from` after `anchor_to`) | `resolve.ts` | `[MODEL] [E_REVERSED_ANCHORS]` | Heals or rejects reversed anchors |
-| Dangling lease (snapshot evicted by vacuum) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
+| Dangling lease (snapshot evicted by vacuum) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_UNVERIFIED_RANGE]` or `[MODEL] [E_TARGET_LOST]` (boundary rule) | Serves the named window or nothing |
 
 Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`, `:155-185`); `valEdit` (`src/hashline/resolve.ts:448-497`) is the pure content-resolution seam for callers with no served mirror and no lease source.
 
@@ -663,7 +663,7 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
   - `A, E`: P0 silent miswrites on `main`
   - `B, H`: Anchor collision / reshuffle rejections on `main` before leases
   - `K`: External swap heals and auto-rebases on `main` instead of rejecting fail-closed
-  - `Undo Usability (§7.2.9)`: `undo_last_edit` does not grant leases in session store on `main`, rejecting with `E_UNSERVED_RANGE`
+  - `Undo Usability (§7.2.9)`: `undo_last_edit` does not grant leases in session store on `main`, rejecting with `E_STALE_ANCHOR`
 - Normal passing tests on `main`: `C, D, I, J, L, M, N`, §3.1.2 re-serve upsert, §3.6.2 post-write failure recovery.
 - Suite status: 100% green (9 passed, 6 expected fail).
 
@@ -703,7 +703,7 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
 - **ADR-0008 Healing Subsystem Deprecation & Test Modernization**:
   - Delete `tryHealOrphanedSpan` and the heuristic canon healing module `src/hashline/healing/*`.
   - Retire unit test files dedicated to deprecated heuristic healing: delete `test/hashline/healing.test.ts` and `test/hashline/healing-policy.test.ts`.
-  - Update `test/core/served-verification.test.ts:71` ("single-candidate canon heal"): directly calling `ServedVerification.verify` with un-rebased coordinates must now assert fail-closed rejection (`result.ok === false`, `code: "E_UNSERVED_RANGE"`), while full-pipeline coordinate shifts are asserted end-to-end in `test/integration/p0-drift-line-identity.test.ts` Probe `C`.
+  - Update `test/core/served-verification.test.ts:71` ("single-candidate canon heal"): directly calling `ServedVerification.verify` with un-rebased coordinates must now assert fail-closed rejection (`result.ok === false`, `code: "E_UNVERIFIED_RANGE"`), while full-pipeline coordinate shifts are asserted end-to-end in `test/integration/p0-drift-line-identity.test.ts` Probe `C`.
   - Re-align integration test expectations in `test/integration/hash-heal-tdd.test.ts` and `test/integration/served-edge-cases.test.ts:98` to assert MVCC line-identity rebase / re-serve upsert / fail-closed semantics rather than calling deprecated healing adapters.
 - Enforce span contiguity invariant in `served-verification.ts` (Probe `J`).
 - Remove `it.fails` from Stage 0. All 15 tests pass green.
@@ -730,7 +730,7 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
    - **Canon-Equality**: $\text{canon}(prev) === \text{canon}(curr)$ for every paired line.
    - **Unpaired Absenteeism**: Every unpaired prev `line_id` is absent from $S_{curr}$ lineage.
    - **Sound Execution**: An edit shall NEVER commit to a line whose stored `line_id` differs from the `line_id` leased **in the active, unretired lease in force at edit time** (the most recent serve of that anchor in that session where `retired_at IS NULL`). A retired lease or un-leased anchor intercepts fail-closed with `[E_STALE_RANGE]` / `[E_STALE_ANCHOR]`, and strictly monotonic counter allocation guarantees a defunct `line_id` is never re-issued.
-6. **Negative Regression Guard: Heuristic Canon Relocation Rejection**: Direct calls to `ServedVerification.verify` with shifted coordinates against an un-rebased `served` array (`test/core/served-verification.test.ts:71`) **must reject fail-closed** (`ok: false`, `code: "E_UNSERVED_RANGE"`). Heuristic canon guessing (`tryHealOrphanedSpan`) is completely retired; coordinate realignment is exclusively owned by MVCC `pairSnapshots` + `line_lineage`.
+6. **Negative Regression Guard: Heuristic Canon Relocation Rejection**: Direct calls to `ServedVerification.verify` with shifted coordinates against an un-rebased `served` array (`test/core/served-verification.test.ts:71`) **must reject fail-closed** (`ok: false`, `code: "E_UNVERIFIED_RANGE"`). Heuristic canon guessing (`tryHealOrphanedSpan`) is completely retired; coordinate realignment is exclusively owned by MVCC `pairSnapshots` + `line_lineage`.
 
 ### 7.2 Context-Preservation Criteria (Position-Free Rebase)
 
@@ -779,10 +779,10 @@ The `stale` decision in `resolveLeasedEdit` (`src/hashline/lease-resolve.ts:173-
 | # | Delta | Supersedes |
 | :- | :--- | :--- |
 | D1 | A `stale` decision emits a **target-lost rejection** under the new code **`[E_TARGET_LOST]`** (D6): no `Current range:` heading and **no rows at all** — the message names the previously served position in prose. The branch serves the model's coordinates (keeping `[E_STALE_RANGE]`) only when at least one bound is live *and* its rebased coordinate equals its served coordinate. | §5.3 row "Leased `line_id` deleted or retired" (its "Echoes current range" recovery) |
-| D2 | A target-lost rejection performs **no** `recordRejectionServe` upsert (there are no rows), so an accidental retry cannot write. Every window that identifies the model's range (in-place drift, `E_UNSERVED_RANGE`, `E_BATCH_ABORT`, content-placeable `E_STALE_ANCHOR`) still leases. | new invariant |
+| D2 | A target-lost rejection performs **no** `recordRejectionServe` upsert (there are no rows), so an accidental retry cannot write. Every window that identifies the model's range (in-place drift, never-served interior, `E_UNVERIFIED_RANGE` fresh reads, `E_BATCH_ABORT`, content-placeable `E_STALE_ANCHOR`) still leases. | new invariant |
 | D5 | **Content placement is banned from the payload.** `uniqueAnchorLine` may not place a rejection window, and neither the window nor the headline's line number may come from a content match for a retired bound (Probe `P`: the header named line 4 for a line-2 lease). | §3.1.1 step 1 / §5.3 |
 | D3 | The retry hint is a property of the rejection payload, not an unconditional suffix. A target-lost rejection instead carries `The line you targeted no longer exists — read the file and re-target.` | §3.1.1 step 1 (*"Throw [E_STALE_ANCHOR] (Echo fresh anchors)"*); §5.3 recovery column |
-| D4 | One wording family across `E_STALE_ANCHOR` / `E_STALE_RANGE` / `E_TARGET_LOST` / `E_UNSERVED_RANGE` / `E_MALFORM_TEXT`; anchors are counted and listed per **distinct** anchor. | §5.3 recovery column text |
+| D4 | One wording family across `E_STALE_ANCHOR` / `E_STALE_RANGE` / `E_TARGET_LOST` / `E_UNVERIFIED_RANGE` / `E_MALFORM_TEXT`; anchors are counted and listed per **distinct** anchor. | §5.3 recovery column text |
 | D6 | **New code `[E_TARGET_LOST]`** for exactly the region-unidentifiable rejections of D1. The codes become disjoint by payload shape: `[E_STALE_RANGE]` always renders rows, `[E_TARGET_LOST]` never does, so the remedy is machine-readable. | new code (README error table, `CONTEXT.md`, prompts) |
 
 Post-sync notes for §9.2: `ba7c8d2` added `src/hashline/served-guard.ts` with `[E_MALFORM_TEXT]` and the `mode: "literal"` escape — a **third** rejection contract to fold into D4 (frozen literals per ADR-0009's 2026-09-15 revision) — and removed the content-surface shape refusal, so a `replace_with` holding never-served anchor-shaped lines is now written verbatim; decide whether that case warrants a non-blocking `[MODEL]` note. The deltas are D1–D6: D5 bans content placement from the payload (the arm Probe `P` exercised), and D6 splits the code so `[E_TARGET_LOST]` ⇒ no rows, `[E_STALE_RANGE]` ⇒ rows. The full producer audit is the patch spec's Appendix E.
@@ -793,7 +793,7 @@ Post-sync notes for §9.2: `ba7c8d2` added `src/hashline/served-guard.ts` with `
 | :--- | :--- | :--- | :--- | :--- | :--- |
 | Leased `line_id` deleted or retired (Probe `E`, `A`) | `lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_TARGET_LOST]` | none — prose names the previously served position; served coordinates only when one bound is live and unshifted (then `[E_STALE_RANGE]`) | read and re-target | n/a (no rows) |
 
-Rows for `E_STALE_ANCHOR` (content-placeable), `E_UNSERVED_RANGE` and in-place `E_STALE_RANGE` keep their current recovery; only their wording is unified under D4.
+Rows for `E_STALE_ANCHOR` (content-placeable), never-served interiors (now `E_STALE_RANGE`) and in-place `E_STALE_RANGE` keep their current recovery; only their wording is unified under D4.
 
 ### 9.4 Errata in the body
 

@@ -536,10 +536,26 @@ function batchAbortFor(args: { error: Error; index: number; path: string }): Err
   const { error, index, path } = args;
   // WHY: the inner rejection already carries its own reject-and-serve rows under `Current range:`,
   // WHY: so the wrapper must not render them a second time — one serve block per rejection.
-  return new Error(
+  // WHY: the inner `details.cause` (user-facing diagnosis) is preserved on the wrapper so a
+  // WHY: batched failure still emits it.
+  const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}\n` +
       `${BATCH_ATOMICITY_TRAILER} Fix the failing edit (and any later edit that depends on it), then resubmit.`,
   );
+  const details = (error as { details?: { cause: string } }).details;
+  if (details && typeof details.cause === "string") {
+    (wrapped as { details?: { cause: string } }).details = details;
+    (wrapped as { cause?: string }).cause = details.cause;
+  }
+  const code = (error as { code?: string }).code;
+  if (typeof code === "string") {
+    (wrapped as { code?: string }).code = code;
+  }
+  const servedRows = (error as { servedRows?: unknown }).servedRows;
+  if (Array.isArray(servedRows)) {
+    (wrapped as { servedRows?: unknown }).servedRows = servedRows;
+  }
+  return wrapped;
 }
 
 /**

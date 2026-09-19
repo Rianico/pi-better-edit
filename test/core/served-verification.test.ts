@@ -38,7 +38,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
     expect(result.ok).toBe(true);
   });
 
-  it("duplicate candidate → E_UNSERVED_RANGE with duplicate position hint", () => {
+  it("duplicate candidate → E_UNVERIFIED_RANGE with a fresh read (no per-anchor narration)", () => {
     const store = createCanonStore();
     const oldContent = "a\nb\nc";
     const oldHashes = _lineHashesPure(oldContent, store);
@@ -62,8 +62,11 @@ describe("ServedVerification deep module — isolated store & decision table", (
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe("E_UNSERVED_RANGE");
-      expect(result.message).toMatch(/anchor_from.*was served at 2 positions/);
+      expect(result.code).toBe("E_UNVERIFIED_RANGE");
+      expect(result.message).toContain("Current range (fresh read):");
+      expect(result.message).not.toContain("Retry with these anchors");
+      expect(result.message).not.toMatch(/was served at \d+ positions/);
+      expect(result.details.cause).toBe("never-served");
       expect(result.servedRows.length).toBeGreaterThan(0);
     }
   });
@@ -96,8 +99,9 @@ describe("ServedVerification deep module — isolated store & decision table", (
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe("E_UNSERVED_RANGE");
-      expect(result.message).toMatch(/has no served position/);
+      expect(result.code).toBe("E_UNVERIFIED_RANGE");
+      expect(result.message).toContain("Current range (fresh read):");
+      expect(result.details.cause).toBe("never-served");
     }
 
     // The throwing variant rejects too — no silent canon relocation.
@@ -113,10 +117,10 @@ describe("ServedVerification deep module — isolated store & decision table", (
         fileHashes: newHashes,
         fileLines,
       }),
-    ).toThrow(/E_UNSERVED_RANGE/);
+    ).toThrow(/E_UNVERIFIED_RANGE/);
   });
 
-  it("never-served gap → E_UNSERVED_RANGE (first offending line)", () => {
+  it("never-served gap → E_STALE_RANGE (first offending line, retry with served rows)", () => {
     const store = createCanonStore();
     const content = "l1\nl2\nl3\nl4\nl5\nl6\nl7\nl8\nl9";
     const hashes = _lineHashesPure(content, store);
@@ -136,9 +140,11 @@ describe("ServedVerification deep module — isolated store & decision table", (
     });
     expect(result.ok).toBe(false);
     if (!result.ok) {
-      expect(result.code).toBe("E_UNSERVED_RANGE");
+      expect(result.code).toBe("E_STALE_RANGE");
       expect(result.firstOffendingLine).toBe(4);
-      expect(result.message).toMatch(/E_UNSERVED_RANGE.*line 4/);
+      expect(result.message).toMatch(/E_STALE_RANGE.*line 4/);
+      expect(result.message).toContain("Retry with these anchors");
+      expect(result.details.cause).toBe("never-served");
     }
   });
 
@@ -186,7 +192,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
     });
     expect(result2.ok).toBe(false);
     if (!result2.ok) {
-      expect(["E_STALE_RANGE", "E_UNSERVED_RANGE"]).toContain(result2.code);
+      expect(result2.code).toBe("E_STALE_RANGE");
     }
   });
 
@@ -334,7 +340,34 @@ describe("ServedVerification deep module — isolated store & decision table", (
         fileLines: content.split("\n"),
         canonStore: store,
       }),
-    ).toThrow(/E_UNSERVED_RANGE/);
+    ).toThrow(/E_STALE_RANGE/);
+  });
+
+  it("tombstone boundary serves [E_UNVERIFIED_RANGE] as a fresh read with no retry hint", () => {
+    const store = createCanonStore();
+    const servedContent = "a\nb\nc";
+    const servedHashes = _lineHashesPure(servedContent, store);
+    const servedCanons = servedContent.split("\n").map((l) => canon(l));
+    // The boundary anchor string is still in the file bytes but its canon changed since serving.
+    const fileLines = ["CHANGED", "b", "c"];
+    const fileHashes = [...servedHashes];
+    const verifier = new ServedVerification(store);
+    const result = verifier.verify({
+      range: { startHash: servedHashes[0]!, endHash: servedHashes[2]!, startLine: 1, endLine: 3 },
+      served: [...servedHashes],
+      fileHashes,
+      fileLines,
+      tombstone: new Set([servedHashes[0]!]),
+      servedCanons,
+    });
+    expect(result.ok).toBe(false);
+    if (!result.ok) {
+      expect(result.code).toBe("E_UNVERIFIED_RANGE");
+      expect(result.message).toContain("Current range (fresh read):");
+      expect(result.message).not.toContain("Retry with these anchors");
+      expect(result.details.cause).toBe("tombstone");
+      expect(result.servedRows.length).toBeGreaterThan(0);
+    }
   });
 
   it("servedPositionsOf / buildRangeServeRows / fmtServedRows remain accessible", () => {

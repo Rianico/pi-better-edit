@@ -38,6 +38,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       endLine: 3,
       snapshot,
       firstOffendingLine: 2,
+      cause: "served-range staleness",
     });
     expect(err).toBeInstanceOf(ServedRejectionError);
     expect(typeof err.servedBlock).toBe("string");
@@ -75,6 +76,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       endLine: 3,
       snapshot,
       firstOffendingLine: 2,
+      cause: "served-range staleness",
     });
     const anchor = makeStaleAnchorRejection({
       headline: "anchor missing.",

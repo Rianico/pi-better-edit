@@ -169,7 +169,17 @@ export function createEditTool(): EditTool {
           details: unknown;
         };
       }
-      throw new Error(result.message);
+      // WHY: every range-family producer emits `details.cause` (user-facing diagnosis) —
+      // WHY: carry it on the thrown error so callers catching the message still see the cause.
+      const failure = new Error(result.message);
+      (failure as { code?: string }).code = result.code;
+      (failure as { servedRows?: unknown }).servedRows = result.servedRows ?? [];
+      (failure as { servedBlock?: string }).servedBlock = result.servedBlock ?? "";
+      if (result.details && typeof result.details.cause === "string") {
+        (failure as { details?: { cause: string } }).details = result.details;
+        (failure as { cause?: string }).cause = result.details.cause;
+      }
+      throw failure;
     },
     async preview(request, cwd) {
       try {

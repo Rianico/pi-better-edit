@@ -146,7 +146,13 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () =>
   });
 
   it("names no `range staleness`: the canonical term is served-range staleness", () => {
-    expect(matching(/range staleness/i)).toEqual([]);
+    // The canonical `served-range staleness` cause value (CONTEXT.md glossary) is exempt:
+    // only the bare synonym stays banned.
+    const violations = files.filter((file) => {
+      const stripped = readFileSync(file, "utf-8").replace(/served-range staleness/gi, "");
+      return /range staleness/i.test(stripped);
+    });
+    expect(violations).toEqual([]);
   });
 
   it("names served feedback as serve, not the avoided synonym, tree-wide (canonical family stripped)", () => {

@@ -42,18 +42,22 @@ The model-facing word for the `served span` — the span between `anchor_from` a
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **served-range staleness**:
-The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`). Reported as `[E_STALE_RANGE]` (changed) or `[E_UNSERVED_RANGE]` (never-served: interior loop miss, or boundary `throwUnverified` when a boundary anchor has no served position). Both do `reject-and-serve`; the interior retry needs no `read`, while the boundary-unverified variant requires a full `read` (retrying without re-reading cannot clear a stale duplicate outside the served window).
+The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`). Reported as `[E_STALE_RANGE]` — for a changed span, or for a never-served interior (interior loop miss: a line strictly between the anchors has no served entry; the remedy is identical — retry with the served rows — so no separate code is kept). Every `[E_STALE_RANGE]` does `reject-and-serve`: the retry needs no `read`.
 _Avoid_: range staleness (use `served range` for span)
 
 **never-served**:
-A line with no entry in the served record — the model was never served that line. Reported as `[E_UNSERVED_RANGE]` in two variants: interior loop miss — a line strictly between the anchors has no served entry, and the response serves the current range so the model retries with those rows (no `read` needed); boundary unverified (`throwUnverified`) — a boundary anchor has no served position so no served span matched, and the response serves the current range but the served rows alone do not suffice — a full `read` is required, because retrying without re-reading cannot clear a stale duplicate outside the served window. `details.unservedKind` (`interior` for the loop miss, `boundary` for `throwUnverified`) names these two provable cases but is reserved, not emitted yet.
+A line with no entry in the served record — the model was never served that line. A user-facing diagnosis carried as `details.cause` on the rejection, never the model remedy (the code alone selects the retry): a never-served interior reports `[E_STALE_RANGE]` (retry with the served rows, no `read` needed); an unplaceable boundary reports `[E_UNVERIFIED_RANGE]` (decide from the fresh read); an anchor with no lease at all reports `[E_STALE_ANCHOR]` (acquire anchors from the served rows).
+
+**unverified range**:
+The named window served when one bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted. Reported as `[E_UNVERIFIED_RANGE]`: the rows of the named window are served as a fresh read under the exact heading `Current range (fresh read):`, with no retry hint and no mandate — the model decides from those rows, and the rows are leased through the normal serve seam. One bound stale covers a retired lease, a tombstoned boundary hash, and a boundary anchor with no served position.
+_Avoid_: unverified region (the model-facing word is `range`, never `region`)
 
 **reject-and-serve**:
-The staleness policy for a region-matched rejection: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the interior retry needs no read. The boundary-unverified `[E_UNSERVED_RANGE]` variant still serves the current range but requires a full `read` (see `never-served`). A rejection whose region cannot be identified carries no rows (see `target-lost rejection`).
+The staleness policy for a range-matched rejection: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the interior retry needs no read. An `[E_UNVERIFIED_RANGE]` fresh read is leased the same way but carries no retry hint — the model decides from those rows instead of retrying blind. A rejection whose range cannot be identified carries no rows (see `target-lost rejection`).
 _Avoid_: reject-then-reread (the retry must not require a read)
 
 **target-lost rejection**:
-A rejection whose region cannot be identified, so its payload carries no rows and recovery is a re-read. Reported as `[E_TARGET_LOST]` for a retired leased identity with no live unshifted bound (deleted target, shifted neighbour, re-added text elsewhere). Disjoint from `[E_STALE_RANGE]` by payload shape: `[E_STALE_RANGE]` always renders rows, `[E_TARGET_LOST]` never does.
+A rejection whose range cannot be identified, so its payload carries no rows and recovery is a re-read. Reported as `[E_TARGET_LOST]` for a retired leased identity with no live unshifted bound (deleted target, shifted neighbour, re-added text elsewhere, collapsed window). Disjoint from the row-carrying codes by payload shape: `[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]` and `[E_STALE_ANCHOR]` always render rows, `[E_TARGET_LOST]` never does.
 _Avoid_: context serve (no such operation exists)
 
 **drift**:
@@ -65,13 +69,13 @@ The informational section appended to a replace result (applied or noop, not und
 _Avoid_: warning (the operation succeeded; it is information, not a warning)
 
 **model-facing signal**:
-A model-visible signal the tool must include in `content` for correctness (e.g. `anchor staleness`, `served-range staleness`, `E_STALE_*`/`E_UNSERVED_*`, `E_MALFORM_TEXT`). The model needs it to retry correctly.
+A model-visible signal the tool must include in `content` for correctness (e.g. `anchor staleness`, `served-range staleness`, `E_STALE_*`/`E_UNVERIFIED_RANGE`, `E_MALFORM_TEXT`). The model needs it to retry correctly.
 
 **user-facing signal**:
 A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice, Batch drift note). Not in model content.
 
 **orphaned serve**:
-An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_STALE_ANCHOR]`) and a retired `line_id` rejects `[E_STALE_RANGE]`, rather than being healed onto a twin.
+An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_STALE_ANCHOR]`) and a retired `line_id` rejects `[E_UNVERIFIED_RANGE]` (live unshifted survivor) or `[E_TARGET_LOST]` (otherwise), rather than being healed onto a twin.
 _Avoid_: stale serve (ambiguous with boundary staleness)
 
 **orphaning re-serve**:
@@ -91,7 +95,7 @@ The `served_leases` row that binds a served anchor to the immutable `line_id` it
 _Avoid_: reservation, lock, epoch
 
 **retirement** (`retired_at`):
-Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read grants a fresh lease, so a stale anchor rejects `[E_TARGET_LOST]` (region unidentifiable) or `[E_STALE_RANGE]` (in-place, live bound unshifted) instead of silently rebinding.
+Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read grants a fresh lease, so a stale anchor rejects `[E_TARGET_LOST]` (no live unshifted survivor) or `[E_UNVERIFIED_RANGE]` (survivor live and unshifted: a fresh read to decide from) instead of silently rebinding.
 _Avoid_: tombstone (the hash-allocation guard, not a lease state)
 
 **lineage** (`line_lineage`):

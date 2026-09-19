@@ -107,7 +107,7 @@ describe("served-state range verification for edit", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_UNSERVED_RANGE|E_STALE_RANGE|E_TARGET_LOST/);
+      ).rejects.toThrow(/E_STALE_RANGE|E_TARGET_LOST/);
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
       // Fresh read re-serves and then edit succeeds
       const freshRead = await readTool.execute(
@@ -247,7 +247,7 @@ describe("served-state range verification for edit", () => {
     });
   });
 
-  it("records [E_STALE_RANGE] current-range rows as serves for edits over that territory", async () => {
+  it("records [E_UNVERIFIED_RANGE] fresh-read rows as serves for edits over that territory", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -277,11 +277,13 @@ describe("served-state range verification for edit", () => {
         rejected = error as Error;
       }
       expect(rejected).toBeDefined();
-      // The beta lease is retired (its line entity is gone), so the identity seam owns the refusal:
-      // [E_STALE_RANGE] with the current range, never [E_STALE_ANCHOR] (spec §3.1.1 line 89 / §5.3).
-      expect(rejected!.message).toMatch(/\[MODEL\] \[E_STALE_RANGE\]/);
+      // The beta lease is retired (its line entity is gone) while alpha stays live and unshifted,
+      // so the boundary rule serves the named window as a fresh read to decide from
+      // (never [E_STALE_ANCHOR]; spec §3.1.1 line 89 / §5.3).
+      expect(rejected!.message).toMatch(/\[MODEL\] \[E_UNVERIFIED_RANGE\]/);
       expect(rejected!.message).not.toMatch(/E_STALE_ANCHOR/);
-      expect(rejected!.message).toContain("Current range:");
+      expect(rejected!.message).toContain("Current range (fresh read):");
+      expect(rejected!.message).not.toContain("Retry with these anchors");
 
       const rangeRow = rejected!.message.split("\n").find((l) => l.includes("│BETA"))!;
       const currentHashes = await lineHashes("alpha\nBETA\n", home.testPath);
