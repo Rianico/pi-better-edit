@@ -1,10 +1,6 @@
 import { NOOP_LOOP_THRESHOLD } from "./constants.js";
-import {
-  buildRangeServeRows,
-  fmtServedRows,
-  type ResolvedRange,
-  type ServedRow,
-} from "./hashline/served.js";
+import { DomainError, formatNoopLoopWarn } from "./domain-errors.js";
+import { buildRangeServeRows, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { createSessionHandle } from "./served-session/session.js";
 
 type NoopLoopEntry = {
@@ -54,7 +50,7 @@ export interface NoopPolicyInput {
 export type NoopPolicyOutcome =
   | { action: "proceed"; count: number }
   | { action: "warn"; count: number; notice: string }
-  | { action: "reject"; count: number; message: string; servedRows: ServedRow[] };
+  | { action: "reject"; count: number; error: DomainError<"E_NOOP_LOOP"> };
 
 export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyOutcome> {
   const payload = noopPayloadKey(
@@ -78,16 +74,25 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
       input.hashes.length,
       input.contentHash,
     );
-    const message = input.batch
-      ? `[MODEL] [E_NOOP_LOOP] ${input.ref}: identical edit (${input.removeFrom} → ${input.removeTo}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject the batch. Current range:\n${rendered}`
-      : `[MODEL] [E_NOOP_LOOP] identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject. Current range:\n${rendered}`;
-    return { action: "reject", count, message, servedRows };
+    const error = new DomainError("E_NOOP_LOOP", {
+      ref: input.ref,
+      removeFrom: input.removeFrom,
+      removeTo: input.removeTo,
+      count,
+      batch: input.batch,
+      servedRows,
+      servedBlock: rendered,
+    });
+    return { action: "reject", count, error };
   }
 
   if (count === 2) {
-    const notice = input.batch
-      ? `[USER] [E_NOOP_LOOP] Notice: ${input.ref} — identical edit no-op'd twice; range already has this text. Resend will reject the batch.`
-      : `[USER] [E_NOOP_LOOP] Notice: identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) no-op'd twice; range already has this text. Resend will reject.`;
+    const notice = formatNoopLoopWarn({
+      ref: input.ref,
+      removeFrom: input.removeFrom,
+      removeTo: input.removeTo,
+      batch: input.batch,
+    });
     return { action: "warn", count, notice };
   }
 

@@ -92,13 +92,12 @@ import {
 } from "../hashline/index.js";
 import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import {
-  AnchorMismatchError,
-  ServedRejectionError,
   buildRangeServeRows,
   fmtServedRows,
   type ResolvedRange,
   type ServedRow,
 } from "../hashline/served.js";
+import { DomainError } from "../domain-errors.js";
 import {
   createSessionHandle,
   sessionKeyFor,
@@ -245,7 +244,7 @@ interface ApplyOneEditInput {
    * apart. Absent for preview, where no identity map is in flight.
    */
   currentIds?: (number | null)[];
-  onRejected: (error: AnchorMismatchError | ServedRejectionError) => Promise<never>;
+  onRejected: (error: DomainError) => Promise<never>;
 }
 
 type ApplyOneEditOutcome =
@@ -331,7 +330,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       ...(input.mode !== undefined ? { mode: input.mode } : {}),
     });
   } catch (error) {
-    if (error instanceof AnchorMismatchError || error instanceof ServedRejectionError) {
+    if (error instanceof DomainError) {
       await recordRejectionServe({
         error,
         sessionKey: input.sessionKey,
@@ -361,9 +360,11 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   }
 
   if (!input.hashes || input.hashes.length === 0)
-    throw new Error(
-      "[MODEL] [E_STALE_ANCHOR] missing previous hashes for stable anchoring. Re-read the full file and copy fresh 3-char anchors (before │), then retry.",
-    );
+    throw new DomainError("E_STALE_ANCHOR", {
+      headline:
+        "missing previous hashes for stable anchoring. Re-read the full file and copy fresh 3-char anchors (before │), then retry.",
+      cause: "never-served",
+    });
   const removedHashes = collectRemovedHashes(input.edit, input.hashes);
   const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
     path: input.absolutePath,
@@ -475,7 +476,7 @@ interface BaselineSpanContext {
  * sequential mutate loop share it, so a rejection records the same serves whichever one catches it.
  */
 async function recordRejectionServe(args: {
-  error: AnchorMismatchError | ServedRejectionError;
+  error: DomainError;
   sessionKey: string;
   absolutePath: string;
   isPreview: boolean;
@@ -511,19 +512,6 @@ function stripModelPrefix(message: string): string {
 }
 
 /**
- * The reject-and-serve block for the overlap gate. It renders the current range once with the
- * shared `Current range:` contract, so a batched rejection never repeats the served rows.
- */
-function batchAbortServeBlock(args: {
-  rows: ServedRow[] | undefined;
-  originalNormalized: string;
-}): string {
-  return args.rows
-    ? ` Current range:\n${fmtServedRows(args.rows, splitLines(args.originalNormalized))}`
-    : " Call read() to get fresh anchors.";
-}
-
-/**
  * Wraps a rejected item of a multi-item call for the model. Shared by the pre-mutation span gate and
  * the sequential mutate loop, so an item that fails either way reads identically: the failing item,
  * its own diagnostic, and the reject-and-serve rows of the range the model retries from.
@@ -538,6 +526,8 @@ function batchAbortFor(args: { error: Error; index: number; path: string }): Err
   // WHY: so the wrapper must not render them a second time — one serve block per rejection.
   // WHY: the inner `details.cause` (user-facing diagnosis) is preserved on the wrapper so a
   // WHY: batched failure still emits it.
+  // WHY: the failing edit's pre-rendered serve block is forwarded too (spec D2): an atomic
+  // WHY: batch abort must preserve the serve block or the retry owes a re-read.
   const wrapped = new Error(
     `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}\n` +
       `${BATCH_ATOMICITY_TRAILER} Fix the failing edit (and any later edit that depends on it), then resubmit.`,
@@ -554,6 +544,10 @@ function batchAbortFor(args: { error: Error; index: number; path: string }): Err
   const servedRows = (error as { servedRows?: unknown }).servedRows;
   if (Array.isArray(servedRows)) {
     (wrapped as { servedRows?: unknown }).servedRows = servedRows;
+  }
+  const servedBlock = (error as { servedBlock?: unknown }).servedBlock;
+  if (typeof servedBlock === "string" && servedBlock.length > 0) {
+    (wrapped as { servedBlock?: unknown }).servedBlock = servedBlock;
   }
   return wrapped;
 }
@@ -576,7 +570,7 @@ async function resolveBaselineSpan(
   const fileLines = splitLines(ctx.originalNormalized);
   const fileHashes = ctx.originalHashes;
   const abort = async (error: unknown): Promise<never> => {
-    if (error instanceof AnchorMismatchError || error instanceof ServedRejectionError) {
+    if (error instanceof DomainError) {
       await recordRejectionServe({
         error,
         sessionKey: ctx.sessionKey,
@@ -631,15 +625,18 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
         // WHY: the rejected batch still owes the model usable anchors (README error-code contract):
         // WHY: the later item's span is served exactly like the sequential anchor-mismatch abort,
         // WHY: so the retry never needs a re-read.
-        const serveBlock = batchAbortServeBlock({
-          rows: serveRowsForEdit(edits[b.index]!, ctx.originalHashes),
-          originalNormalized: ctx.originalNormalized,
+        const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes);
+        throw new DomainError("E_BATCH_ABORT", {
+          earlierIndex: a.index,
+          laterIndex: b.index,
+          earlierStart: a.startLine,
+          earlierEnd: a.endLine,
+          laterStart: b.startLine,
+          laterEnd: b.endLine,
+          path: ctx.path,
+          servedBlock:
+            rows === undefined ? "" : fmtServedRows(rows, splitLines(ctx.originalNormalized)),
         });
-        throw new Error(
-          `[MODEL] [E_BATCH_ABORT] edit[${b.index}] (${ctx.path}) failed: overlapping spans — edit[${a.index}] targets lines ${a.startLine}-${a.endLine} and edit[${b.index}] targets lines ${b.startLine}-${b.endLine} of the same call. Spans in one edits[] call must be disjoint.\n` +
-            `The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.${serveBlock}\n` +
-            `Merge the overlapping ranges into a single edit (or split them into separate edit calls), then resubmit.`,
-        );
       }
     }
   }
@@ -663,9 +660,21 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
       // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
       // WHY: hunt for coordinate overlap.
       const raw = error instanceof Error ? error.message : String(error);
-      throw new Error(
+      const wrapped = new Error(
         `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(raw)}\n${BATCH_ATOMICITY_TRAILER}`,
       );
+      // WHY: the wrapper carries the inner code and diagnosis as fields so the
+      // WHY: failure envelope keeps the code the model can act on.
+      const code = (error as { code?: string }).code;
+      if (typeof code === "string") {
+        (wrapped as { code?: string }).code = code;
+      }
+      const details = (error as { details?: { cause: string } }).details;
+      if (details && typeof details.cause === "string") {
+        (wrapped as { details?: { cause: string } }).details = details;
+        (wrapped as { cause?: string }).cause = details.cause;
+      }
+      throw wrapped;
     }
   }
   return parsed;
@@ -676,9 +685,9 @@ async function runMutations(
   options?: PipelineOptions,
 ): Promise<ProcessedEditFile> {
   if (request.file === null) {
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Edit request file could not be inferred from anchors.",
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: "Edit request file could not be inferred from anchors.",
+    });
   }
   const path = request.file;
   const items = request.edits;
@@ -854,7 +863,7 @@ async function runMutations(
         sessionKey,
         contentHash: snapshotHashFor(currentContent),
       });
-      if (decision.action === "reject") throw new Error(decision.message);
+      if (decision.action === "reject") throw decision.error;
       if (decision.action === "warn") warnings.push(decision.notice);
       if (items.length > 1) {
         warnings.push(
@@ -1035,9 +1044,9 @@ export async function apply(
 
   const path = request.file;
   if (path === null) {
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Edit request file could not be inferred from anchors.",
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: "Edit request file could not be inferred from anchors.",
+    });
   }
   const absolutePath = toCwd(path, cwd);
   const mutationTargetPath = await resolveTarget(absolutePath);
@@ -1073,9 +1082,7 @@ export async function apply(
       resultContent: file.result,
     });
     if (!undo.persisted) {
-      throw new Error(
-        `[E_UNDO_UNAVAILABLE] Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. Retry the edit, or use write if the store cannot be recovered.`,
-      );
+      throw new DomainError("E_UNDO_UNAVAILABLE", { path });
     }
     try {
       abortIf(options?.signal);

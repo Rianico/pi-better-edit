@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
 import { initHasher, lineHashes, applyEdit } from "../../src/hashline";
-import { ServedRejectionError, type ServedRow } from "../../src/hashline/served-verification";
+import type { ServedRow } from "../../src/hashline/served-verification";
 import {
   withTempFile,
   setupIntegrationTest,
@@ -41,7 +41,12 @@ function assertLivePayload(args: {
   liveEnd: number | null;
   expectedCode?: string;
 }): void {
-  const err = args.error as ServedRejectionError & { code?: string };
+  const err = args.error as {
+    code?: string;
+    message: string;
+    servedRows: ServedRow[];
+    servedBlock: string;
+  };
   if (args.expectedCode !== undefined) {
     expect(err.code).toBe(args.expectedCode);
   }
@@ -367,11 +372,36 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     });
   });
 
+  /**
+   * A malformed payload the registry cannot construct (e.g. a target-lost
+   * carrying rows): plain field bags, never `DomainError`, so the check proves
+   * the shape rather than the class.
+   */
+  function plantedError(args: {
+    code: string;
+    message: string;
+    servedRows: ServedRow[];
+    servedBlock: string;
+    cause: string;
+  }): Error & { code: string; servedRows: ServedRow[]; servedBlock: string; cause: string } {
+    const error = new Error(args.message) as Error & {
+      code: string;
+      servedRows: ServedRow[];
+      servedBlock: string;
+      cause: string;
+    };
+    error.code = args.code;
+    error.servedRows = args.servedRows;
+    error.servedBlock = args.servedBlock;
+    error.cause = args.cause;
+    return error;
+  }
+
   it("negative control: a misplaced row fails the live-mapping check", async () => {
     const disk = "alpha\nBETA\ngamma\n";
     const hashes = await currentHashes(disk);
     const misplaced: ServedRow = { position: 0, hash: hashes[2]! };
-    const planted = new ServedRejectionError({
+    const planted = plantedError({
       code: "E_STALE_RANGE",
       message: `[MODEL] [E_STALE_RANGE] line 2 differs.\nCurrent range:\n${misplaced.hash}│alpha\nRetry with these anchors (no read needed).`,
       servedRows: [misplaced],
@@ -386,7 +416,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("negative control: a target-lost payload carrying rows fails the check", async () => {
     const disk = "alpha\nbeta\ndelta\n";
     const hashes = await currentHashes(disk);
-    const planted = new ServedRejectionError({
+    const planted = plantedError({
       code: "E_TARGET_LOST",
       message: `[MODEL] [E_TARGET_LOST] line 3 gone.\nCurrent range:\n${hashes[2]}│delta`,
       servedRows: [{ position: 2, hash: hashes[2]! }],
@@ -577,7 +607,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("negative control: a retry hint on an unverified payload fails the check", async () => {
     const disk = "alpha\ngamma\n";
     const hashes = await currentHashes(disk);
-    const planted = new ServedRejectionError({
+    const planted = plantedError({
       code: "E_UNVERIFIED_RANGE",
       message:
         `[MODEL] [E_UNVERIFIED_RANGE] a bound of this range no longer resolves to the line identity it was served with.\n` +
@@ -603,7 +633,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("negative control: a stale heading on an unverified payload fails the check", async () => {
     const disk = "alpha\ngamma\n";
     const hashes = await currentHashes(disk);
-    const planted = new ServedRejectionError({
+    const planted = plantedError({
       code: "E_UNVERIFIED_RANGE",
       message:
         `[MODEL] [E_UNVERIFIED_RANGE] a bound of this range no longer resolves to the line identity it was served with.\n` +
@@ -631,7 +661,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     // serves rows for the shifted window (the old disjunction's wrong-range write) must fail.
     const disk = "ZERO\nalpha\nbeta\n";
     const hashes = await currentHashes(disk);
-    const planted = new ServedRejectionError({
+    const planted = plantedError({
       code: "E_UNVERIFIED_RANGE",
       message:
         `[MODEL] [E_UNVERIFIED_RANGE] a bound of this range no longer resolves to the line identity it was served with.\n` +

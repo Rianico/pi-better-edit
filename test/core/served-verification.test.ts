@@ -308,7 +308,7 @@ describe("ServedVerification deep module — isolated store & decision table", (
     expect(okB.ok).toBe(true);
   });
 
-  it("global verifyServedRange delegates to deep module and throws ServedRejectionError", () => {
+  it("global verifyServedRange delegates to deep module and throws a DomainError", () => {
     const store = createCanonStore();
     const content = "a\nb\nc\nd";
     const hashes = _lineHashesPure(content, store);

@@ -11,12 +11,8 @@ import {
 } from "../../src/hashline/resolve";
 import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import { applyEdit } from "../../src/hashline/apply";
-import {
-  AnchorMismatchError,
-  makeServedRejection,
-  ServedRejectionError,
-  verifyRebasedSpan,
-} from "../../src/hashline/served-verification";
+import { DomainError } from "../../src/domain-errors.js";
+import { makeServedRejection, verifyRebasedSpan } from "../../src/hashline/served-verification";
 import { _lineHashesPure } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 
@@ -153,10 +149,10 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
     // Reject-and-serve: the serve is the current RANGE (not a +/-1 context window), so the rows are
     // themselves serves and the model retries without re-reading (spec §5.3).
-    expect(caught).toBeInstanceOf(AnchorMismatchError);
+    expect(caught).toBeInstanceOf(DomainError);
     expect(caught?.message).toContain("Current range:");
     expect(caught?.message).not.toContain("Current context around resolved anchor");
-    expect((caught as AnchorMismatchError).servedRows).toEqual([
+    expect((caught as DomainError).servedRows).toEqual([
       { position: 0, hash: "AAA" },
       { position: 1, hash: "BBB" },
     ]);
@@ -186,7 +182,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
     expect(caught?.message).toContain("Current range:");
     // Every row of the targeted range is served, so the retry can rebuild both anchors.
-    expect((caught as AnchorMismatchError).servedRows).toEqual([
+    expect((caught as DomainError).servedRows).toEqual([
       { position: 0, hash: "AAA" },
       { position: 1, hash: "m2" },
       { position: 2, hash: "m3" },
@@ -211,11 +207,11 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     } catch (error) {
       caught = error as Error;
     }
-    expect(caught).toBeInstanceOf(AnchorMismatchError);
+    expect(caught).toBeInstanceOf(DomainError);
     expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
     // No targeted range is knowable, so there is nothing to serve as fresh anchors.
     expect(caught?.message).not.toContain("Current range:");
-    expect((caught as AnchorMismatchError).servedRows).toEqual([]);
+    expect((caught as DomainError).servedRows).toEqual([]);
   });
 
   it("reports [E_STALE_RANGE] for a never-served interior line of a rebased span", () => {
@@ -342,14 +338,14 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     } catch (error) {
       caught = error as Error;
     }
-    expect(caught).toBeInstanceOf(ServedRejectionError);
-    expect((caught as ServedRejectionError).code).toBe("E_UNVERIFIED_RANGE");
+    expect(caught).toBeInstanceOf(DomainError);
+    expect((caught as DomainError).code).toBe("E_UNVERIFIED_RANGE");
     expect(caught?.message).not.toMatch(/E_STALE_ANCHOR/);
     // Fresh read: the named window is served for the model to decide from (no retry hint).
     expect(caught?.message).toContain("Current range (fresh read):");
     expect(caught?.message).not.toContain("Retry with these anchors");
-    expect((caught as ServedRejectionError).servedRows.length).toBeGreaterThan(0);
-    expect((caught as ServedRejectionError).details.cause).toBe("retirement");
+    expect((caught as DomainError).servedRows.length).toBeGreaterThan(0);
+    expect((caught as DomainError).details.cause).toBe("retirement");
   });
 
   it("rejects a served anchor held by no lease with [E_STALE_ANCHOR] — mirror-only serves fail closed", () => {
@@ -365,10 +361,10 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     } catch (error) {
       caught = error as Error;
     }
-    expect(caught).toBeInstanceOf(AnchorMismatchError);
+    expect(caught).toBeInstanceOf(DomainError);
     expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
     expect(caught?.message).not.toMatch(/E_STALE_RANGE|E_UNVERIFIED_RANGE/);
-    expect((caught as AnchorMismatchError).servedRows.length).toBeGreaterThan(0);
+    expect((caught as DomainError).servedRows.length).toBeGreaterThan(0);
   });
 
   it("rejects a torn span whose rebased window grew (Probe J)", () => {
@@ -456,11 +452,11 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
     } catch (error) {
       caught = error as Error;
     }
-    expect(caught).toBeInstanceOf(AnchorMismatchError);
+    expect(caught).toBeInstanceOf(DomainError);
     expect(caught?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
     expect(caught?.message).toContain("Current range:");
     expect(caught?.message).not.toContain("Current context around resolved anchor");
-    expect((caught as AnchorMismatchError).servedRows.length).toBeGreaterThan(0);
+    expect((caught as DomainError).servedRows.length).toBeGreaterThan(0);
   });
 
   it("rejects a retired lease absent from the content with [MODEL] [E_UNVERIFIED_RANGE] and a fresh read", () => {
@@ -492,14 +488,14 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
     } catch (error) {
       caught = error as Error;
     }
-    expect(caught).toBeInstanceOf(ServedRejectionError);
-    expect((caught as ServedRejectionError).code).toBe("E_UNVERIFIED_RANGE");
+    expect(caught).toBeInstanceOf(DomainError);
+    expect((caught as DomainError).code).toBe("E_UNVERIFIED_RANGE");
     expect(caught?.message).toMatch(/\[MODEL\] \[E_UNVERIFIED_RANGE\]/);
     expect(caught?.message).not.toMatch(/E_STALE_ANCHOR/);
     expect(caught?.message).toContain("Current range (fresh read):");
     expect(caught?.message).not.toContain("Retry with these anchors");
-    expect((caught as ServedRejectionError).servedRows.length).toBeGreaterThan(0);
-    expect((caught as ServedRejectionError).details.cause).toBe("retirement");
+    expect((caught as DomainError).servedRows.length).toBeGreaterThan(0);
+    expect((caught as DomainError).details.cause).toBe("retirement");
   });
 });
 
@@ -617,7 +613,7 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
       firstOffendingLine: 2,
       cause: "served-range staleness",
     });
-    expect(err).toBeInstanceOf(ServedRejectionError);
+    expect(err).toBeInstanceOf(DomainError);
     expect(err.code).toBe("E_STALE_RANGE");
     expect(err.firstOffendingLine).toBe(2);
     expect(err.servedRows).toEqual([
@@ -661,8 +657,8 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(ServedRejectionError);
-    const err = caught as ServedRejectionError;
+    expect(caught).toBeInstanceOf(DomainError);
+    const err = caught as DomainError;
     expect(err.code).toBe("E_TARGET_LOST");
     expect(err.servedRows).toEqual([]);
     expect(err.servedBlock).toBe("");
@@ -688,8 +684,8 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(ServedRejectionError);
-    const err = caught as ServedRejectionError;
+    expect(caught).toBeInstanceOf(DomainError);
+    const err = caught as DomainError;
     expect(err.code).toBe("E_TARGET_LOST");
     expect(err.message).toMatch(/line 2/);
     expect(err.message).not.toMatch(/line 4/);
@@ -715,8 +711,8 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(ServedRejectionError);
-    const err = caught as ServedRejectionError;
+    expect(caught).toBeInstanceOf(DomainError);
+    const err = caught as DomainError;
     expect(err.code).toBe("E_UNVERIFIED_RANGE");
     expect(err.message).toContain("Current range (fresh read):");
     expect(err.message).not.toContain("Retry with these anchors");
@@ -745,9 +741,9 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(ServedRejectionError);
-    expect((caught as ServedRejectionError).code).toBe("E_TARGET_LOST");
-    expect((caught as ServedRejectionError).servedRows).toEqual([]);
+    expect(caught).toBeInstanceOf(DomainError);
+    expect((caught as DomainError).code).toBe("E_TARGET_LOST");
+    expect((caught as DomainError).servedRows).toEqual([]);
   });
 
   it("fails closed to [E_TARGET_LOST] when the named window collapses against a short file", () => {
@@ -771,9 +767,9 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     } catch (error) {
       caught = error;
     }
-    expect(caught).toBeInstanceOf(ServedRejectionError);
-    expect((caught as ServedRejectionError).code).toBe("E_TARGET_LOST");
-    expect((caught as ServedRejectionError).servedRows).toEqual([]);
-    expect((caught as ServedRejectionError).details.cause).toBe("retirement");
+    expect(caught).toBeInstanceOf(DomainError);
+    expect((caught as DomainError).code).toBe("E_TARGET_LOST");
+    expect((caught as DomainError).servedRows).toEqual([]);
+    expect((caught as DomainError).details.cause).toBe("retirement");
   });
 });

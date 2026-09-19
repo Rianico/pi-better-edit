@@ -196,6 +196,7 @@ atomically to that one file — one item per call is the norm, several same-file
 | `[E_UNVERIFIED_RANGE]` | One bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted (retired lease, tombstoned boundary, unplaceable bound). The edit is refused and the named window is served as a fresh read under `Current range (fresh read):` with no retry hint — decide from those rows. `details.cause` carries the user-facing diagnosis (`retirement`, `tombstone`, `never-served`). |
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is served as fresh `HASH│content` rows. |
 | `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_MALFORMED_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
+| `[E_UNKNOWN]` | An unexpected failure that is not a domain rejection (invariant breach, filesystem or store error). Reported with the error name and the first message line only; carries no remedy. |
 
 ## Comparison
 

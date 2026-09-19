@@ -1,9 +1,9 @@
 import { abortIf, rejectUnknownFields, clipLine } from "../utils.js";
+import { DomainError, formatReversedAnchorsHealed } from "../domain-errors.js";
 import { HASH_CLASS } from "./hash-identity.js";
 import { parseHashRef, parseText, type Anchor } from "./parse.js";
 import type { ServedRow } from "./served.js";
 import type { FileSnapshotContext } from "./served-verification.js";
-import { NEW_CONTENT_NOT_STRING_MSG } from "../constants.js";
 
 type RAnchor = {
   line: number;
@@ -200,8 +200,10 @@ function formatNotFound(
   if (notFound.length === 0) return;
   const distinct = [...new Map(notFound.map((m) => [m.ref.hash, m])).values()];
   const refList = distinct.map((m) => `"${m.ref.hash}"`).join(", ");
+  // WHY: the body carries no code tag — the registry owns the `[MODEL] [E_*]`
+  // WHY: header when the caller wraps this in a `DomainError`.
   out.push(
-    `[E_STALE_ANCHOR] ${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
+    `${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
   );
   for (const m of distinct) {
     const ctx = m.context;
@@ -231,7 +233,7 @@ function formatAmbiguous(
   if (out.length > 0) out.push("");
   const distinctAmbiguous = [...new Map(ambiguous.map((m) => [m.ref.hash, m])).values()];
   out.push(
-    `[E_STALE_ANCHOR] ${distinctAmbiguous.length} ambiguous anchor${distinctAmbiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
+    `${distinctAmbiguous.length} ambiguous anchor${distinctAmbiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
   );
   for (const m of distinctAmbiguous) {
     const sample = (m.candidates ?? []).slice(0, 5);
@@ -295,27 +297,34 @@ function assertItem(edit: Record<string, unknown>): void {
   );
 
   if ("anchor_from" in edit && typeof edit.anchor_from !== "string") {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] Field "anchor_from" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Field "anchor_from" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.',
+    });
   }
   if ("anchor_to" in edit && typeof edit.anchor_to !== "string") {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] Field "anchor_to" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Field "anchor_to" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.',
+    });
   }
   if (!("replace_with" in edit)) {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] The edit requires a "replace_with" field. Provide the replacement text (use "" to delete). Nothing was written.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'The edit requires a "replace_with" field. Provide the replacement text (use "" to delete). Nothing was written.',
+    });
   }
   if (typeof edit.replace_with !== "string") {
-    throw new Error(NEW_CONTENT_NOT_STRING_MSG);
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        '"replace_with" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
+    });
   }
   if (typeof edit.anchor_from !== "string" || typeof edit.anchor_to !== "string") {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.',
+    });
   }
 }
 
@@ -342,22 +351,23 @@ export function resEdit(edit: HTEdit): HEdit {
       const hash = firstHashFromBlock(trimmed);
       if (hash) {
         const lines = trimmed.split("\n").length;
-        throw new Error(
-          `[MODEL] [E_MALFORMED_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`,
-        );
+        throw new DomainError("E_MALFORMED_ANCHOR", {
+          rawAnchor: `${lines}-line block`,
+          reason: `extracted first hash "${hash}" from a ${lines}-line block — use bare "${hash}" next time`,
+        });
       }
     }
     const match = trimmed.match(ANCHOR_ROW_RE);
     if (match) {
-      let message: string;
+      let reason: string;
       if (match[1] === "+") {
-        message = `[MODEL] [E_MALFORMED_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
+        reason = `anchor carries a diff-preview "+" marker ("${trimmed}"). Nothing was written; pass the bare 3-char anchor and retry.`;
       } else if (match[1] === "-") {
-        message = `[MODEL] [E_MALFORMED_ANCHOR] stripped leading "-" marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
+        reason = `anchor carries a leading "-" marker ("${trimmed}"). Nothing was written; pass the bare 3-char anchor and retry.`;
       } else {
-        message = `[MODEL] [E_MALFORMED_ANCHOR] stripped "HASH│" prefix from anchor_from/anchor_to "${trimmed}". Nothing was written; copy only the 3 chars before │ and retry.`;
+        reason = `anchor carries a "HASH│" prefix ("${trimmed}"). Nothing was written; copy only the 3 chars before │ and retry.`;
       }
-      throw new Error(message);
+      throw new DomainError("E_MALFORMED_ANCHOR", { rawAnchor: trimmed, reason });
     }
     return ref;
   }) as [string, string];
@@ -386,9 +396,7 @@ export function swapReversedRanges(edit: HEdit, fileHashes: string[], warnings: 
   if (startLine === undefined || endLine === undefined || startLine <= endLine) {
     return edit;
   }
-  warnings.push(
-    `[USER] [E_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (${startRef.hash} after ${endRef.hash}); healed and applied with the range swapped.`,
-  );
+  warnings.push(formatReversedAnchorsHealed({ fromAnchor: startRef.hash, toAnchor: endRef.hash }));
   return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
 
@@ -429,9 +437,12 @@ export function valEdit(
     return { resolved: undefined, mismatches };
   }
   if (startResolved.line > endResolved.line) {
-    throw new Error(
-      `[MODEL] [E_REVERSED_ANCHORS] Refused: range start line ${startResolved.line} is after end line ${endResolved.line} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}). Nothing was written; swap anchor_from/anchor_to and retry.`,
-    );
+    throw new DomainError("E_REVERSED_ANCHORS", {
+      startLine: startResolved.line,
+      endLine: endResolved.line,
+      fromAnchor: edit.hash_bounds[0].hash,
+      toAnchor: edit.hash_bounds[1].hash,
+    });
   }
 
   return {

@@ -21,6 +21,14 @@
  */
 import { HASH_SEP, canon, globalCanonStore, type CanonStore } from "./hash.js";
 import { SERVED_ROWS_CAP } from "../constants.js";
+import {
+  DomainError,
+  FRESH_READ_HEADING,
+  TARGET_LOST_RECOVERY,
+  UNVERIFIED_HEADLINE,
+  type RangeCause,
+  type ServedRow,
+} from "../domain-errors.js";
 import type { LeaseIdentityView } from "./resolve.js";
 
 // WHY: ---------------------------------------------------------------------------
@@ -29,30 +37,13 @@ import type { LeaseIdentityView } from "./resolve.js";
 
 export type ServedCode = "E_STALE_RANGE" | "E_UNVERIFIED_RANGE" | "E_TARGET_LOST";
 
-/**
- * User-facing diagnosis carried as `details.cause` on every range-family rejection.
- * Never a model remedy: the code alone selects the retry. Values are CONTEXT.md
- * glossary terms, so a consumer can match them without a new vocabulary.
- */
-export type RangeCause =
-  | "retirement"
-  | "tombstone"
-  | "never-served"
-  | "served-range staleness"
-  | "anchor staleness"
-  | "served span";
-
-/** Exact heading for an unverified fresh-read serve: machine-checkable, never a retry. */
-export const FRESH_READ_HEADING = "Current range (fresh read):";
-
-/** General headline for an unplaceable bound: one clause, no line-by-line narration. */
-export const UNVERIFIED_HEADLINE =
-  "a bound of this range no longer resolves to the line identity it was served with.";
-
-export interface ServedRow {
-  position: number;
-  hash: string;
-}
+export {
+  FRESH_READ_HEADING,
+  TARGET_LOST_RECOVERY,
+  UNVERIFIED_HEADLINE,
+  type RangeCause,
+  type ServedRow,
+};
 
 export interface FileSnapshotContext {
   fileHashes: string[];
@@ -60,60 +51,19 @@ export interface FileSnapshotContext {
   filePath?: string;
 }
 
-export class ServedRejectionError extends Error {
-  readonly code: ServedCode;
-  readonly firstOffendingLine: number | undefined;
-  readonly servedRows: ServedRow[];
-  readonly servedBlock: string;
-  readonly cause: RangeCause;
-  readonly details: { cause: RangeCause };
+// WHY: the ad-hoc `ServedRejectionError` / `AnchorMismatchError` subclasses are retired
+// WHY: (spec D1): every rejection below is a `DomainError` whose code selects the
+// WHY: range-family payload shape, so `toFailure` and downstream consumers keep
+// WHY: `servedRows`, `servedBlock`, `cause`, and `details`.
+type RangeRejection = DomainError<"E_STALE_RANGE" | "E_UNVERIFIED_RANGE" | "E_TARGET_LOST">;
 
-  constructor(opts: {
-    code: ServedCode;
-    message: string;
-    firstOffendingLine?: number;
-    servedRows: ServedRow[];
-    servedBlock: string;
-    cause: RangeCause;
-  }) {
-    super(opts.message);
-    this.name = "ServedRejectionError";
-    this.code = opts.code;
-    this.firstOffendingLine = opts.firstOffendingLine;
-    this.servedRows = opts.servedRows;
-    this.servedBlock = opts.servedBlock;
-    this.cause = opts.cause;
-    this.details = { cause: opts.cause };
-  }
-}
-
-function isServedRejection(error: unknown): error is ServedRejectionError {
-  return error instanceof ServedRejectionError;
-}
-
-export class AnchorMismatchError extends Error {
-  readonly servedRows: ServedRow[];
-  readonly servedBlock?: string;
-  readonly cause: RangeCause;
-  readonly details: { cause: RangeCause };
-
-  constructor(
-    message: string,
-    servedRows: ServedRow[],
-    servedBlock?: string,
-    cause: RangeCause = "never-served",
-  ) {
-    super(message);
-    this.name = "AnchorMismatchError";
-    this.servedRows = servedRows;
-    this.servedBlock = servedBlock;
-    this.cause = cause;
-    this.details = { cause };
-  }
-}
-
-function _isAnchorMismatch(error: unknown): error is AnchorMismatchError {
-  return error instanceof AnchorMismatchError;
+function isRangeRejection(error: unknown): error is RangeRejection {
+  return (
+    error instanceof DomainError &&
+    (error.code === "E_STALE_RANGE" ||
+      error.code === "E_UNVERIFIED_RANGE" ||
+      error.code === "E_TARGET_LOST")
+  );
 }
 
 // WHY: ---------------------------------------------------------------------------
@@ -205,14 +155,6 @@ function assembleRejectAndServe(args: {
 }
 
 /**
- * Recovery sentence for a target-lost rejection (spec stale-identity-reject-and-serve D3):
- * the submitted anchors describe a version of the file that no longer exists, so only a
- * read restores the grounding. Carried instead of the retry hint.
- */
-export const TARGET_LOST_RECOVERY =
-  "The line you targeted was deleted or replaced; your anchors describe a version of this file that no longer exists. Read the file and re-target.";
-
-/**
  * Builds an `[E_TARGET_LOST]` rejection for a retired leased identity whose range cannot be
  * identified (spec stale-identity-reject-and-serve D1/D6, ADR-0018 decisions 1-2). The payload
  * carries no rows, no `Current range` heading and no retry hint, so the codes stay disjoint
@@ -220,18 +162,17 @@ export const TARGET_LOST_RECOVERY =
  * `[E_TARGET_LOST]` never does.
  */
 export function makeTargetLostRejection(opts: {
-  headline: string;
   servedLine: number;
+  path?: string;
   cause?: RangeCause;
-}): ServedRejectionError {
-  const message = `[MODEL] [E_TARGET_LOST] ${opts.headline}\n${TARGET_LOST_RECOVERY}`;
-  return new ServedRejectionError({
-    code: "E_TARGET_LOST",
-    message,
-    firstOffendingLine: opts.servedLine,
-    servedRows: [],
-    servedBlock: "",
+}): DomainError<"E_TARGET_LOST"> {
+  return new DomainError("E_TARGET_LOST", {
+    servedLine: opts.servedLine,
+    ...(opts.path !== undefined ? { path: opts.path } : {}),
     cause: opts.cause ?? "retirement",
+    // WHY: the retired line is the offending line — preserved so `verify()` and
+    // WHY: downstream consumers keep the coordinate without a second lookup.
+    firstOffendingLine: opts.servedLine,
   });
 }
 
@@ -249,37 +190,41 @@ export function makeServedRejection(opts: {
   snapshot: FileSnapshotContext;
   firstOffendingLine?: number;
   cause: RangeCause;
-}): ServedRejectionError {
+}): DomainError<"E_STALE_RANGE" | "E_UNVERIFIED_RANGE"> {
   if (opts.code === "E_UNVERIFIED_RANGE") {
+    // WHY: the unverified payload renders the general headline, never the
+    // WHY: caller-supplied clause: the bound is unplaceable, so naming
+    // WHY: per-anchor positions would narrate lines never targeted.
     const { servedRows, rendered } = buildRangeServeBlock(
       opts.startLine,
       opts.endLine,
       opts.snapshot.fileHashes,
       opts.snapshot.fileLines,
     );
-    return new ServedRejectionError({
-      code: opts.code,
-      message: `[MODEL] [${opts.code}] ${opts.headline}\n${FRESH_READ_HEADING}\n${rendered}`,
-      firstOffendingLine: opts.firstOffendingLine,
+    return new DomainError("E_UNVERIFIED_RANGE", {
       servedRows,
       servedBlock: rendered,
       cause: opts.cause,
+      ...(opts.firstOffendingLine !== undefined
+        ? { firstOffendingLine: opts.firstOffendingLine }
+        : {}),
     });
   }
-  const { message, servedRows, servedBlock } = assembleRejectAndServe({
+  const { servedRows, servedBlock } = assembleRejectAndServe({
     code: "E_STALE_RANGE",
     headline: opts.headline,
     startLine: opts.startLine,
     endLine: opts.endLine,
     snapshot: opts.snapshot,
   });
-  return new ServedRejectionError({
-    code: opts.code,
-    message,
-    firstOffendingLine: opts.firstOffendingLine,
+  return new DomainError("E_STALE_RANGE", {
+    headline: opts.headline,
     servedRows,
     servedBlock,
     cause: opts.cause,
+    ...(opts.firstOffendingLine !== undefined
+      ? { firstOffendingLine: opts.firstOffendingLine }
+      : {}),
   });
 }
 
@@ -294,15 +239,20 @@ export function makeStaleAnchorRejection(opts: {
   endLine: number;
   snapshot: FileSnapshotContext;
   cause?: RangeCause;
-}): AnchorMismatchError {
-  const { message, servedRows, servedBlock } = assembleRejectAndServe({
+}): DomainError<"E_STALE_ANCHOR"> {
+  const { servedRows, servedBlock } = assembleRejectAndServe({
     code: "E_STALE_ANCHOR",
     headline: opts.headline,
     startLine: opts.startLine,
     endLine: opts.endLine,
     snapshot: opts.snapshot,
   });
-  return new AnchorMismatchError(message, servedRows, servedBlock, opts.cause ?? "never-served");
+  return new DomainError("E_STALE_ANCHOR", {
+    headline: opts.headline,
+    servedRows,
+    servedBlock,
+    cause: opts.cause ?? "never-served",
+  });
 }
 
 /**
@@ -449,7 +399,7 @@ export class ServedVerification {
       this.verifyOrThrow(input);
       return { ok: true };
     } catch (error) {
-      if (isServedRejection(error)) {
+      if (isRangeRejection(error)) {
         // WHY: the serve block travels as a typed readonly field populated at construction,
         // WHY: so no rebuild is needed here.
         return {
@@ -458,9 +408,11 @@ export class ServedVerification {
           servedRows: error.servedRows,
           servedBlock: error.servedBlock,
           message: error.message,
-          firstOffendingLine: error.firstOffendingLine,
-          cause: error.cause,
-          details: error.details,
+          ...(error.firstOffendingLine !== undefined
+            ? { firstOffendingLine: error.firstOffendingLine }
+            : {}),
+          cause: error.cause ?? "served-range staleness",
+          details: { cause: error.cause ?? "served-range staleness" },
         };
       }
       throw error;
@@ -554,7 +506,7 @@ export class ServedVerification {
           const actual = canon(fileLines[startLine - 1 + k] ?? "");
           if (expected !== actual) {
             this.throwStale({
-              message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${rendered}\n${retryHint()}`,
+              headline: `line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").`,
               firstOffendingLine: startLine + k,
               servedRows,
               rendered,
@@ -574,8 +526,12 @@ export class ServedVerification {
             expectedCanon !== null &&
             expectedCanon !== actualCanon
           ) {
+            // WHY: unified with the canon-mismatch clause above: ONE clause plus
+            // WHY: cause, keeping the first mismatching line (expected vs actual)
+            // WHY: and dropping the per-line anchor-changed narration. The cause
+            // WHY: (`tombstone`) is what distinguishes the signal.
             this.throwStale({
-              message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} no longer matches what was served (its anchor "${h}" changed since you saw it).\nCurrent range:\n${rendered}\n${retryHint()}`,
+              headline: `line ${startLine + k}${where} differs from what was served (expected "${expectedCanon}" vs actual "${actualCanon}").`,
               firstOffendingLine: startLine + k,
               servedRows,
               rendered,
@@ -727,7 +683,7 @@ export class ServedVerification {
     for (let i = from; i <= to; i++) {
       if (served[i] === null) {
         this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] line ${i + 1}${where} was never served.\nCurrent range:\n${rendered}\n${retryHint()}`,
+          headline: `line ${i + 1}${where} was never served.`,
           firstOffendingLine: i + 1,
           servedRows,
           rendered,
@@ -741,7 +697,7 @@ export class ServedVerification {
     const servedLen = to - from + 1;
     if (servedLen !== currentLen) {
       this.throwStale({
-        message: `[MODEL] [E_STALE_RANGE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${rendered}\n${retryHint()}`,
+        headline: `served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.`,
         firstOffendingLine: startLine,
         servedRows,
         rendered,
@@ -754,7 +710,7 @@ export class ServedVerification {
       if (served[from + k] !== fileHashes[startLine - 1 + k]) {
         const offendingLine = startLine + k;
         this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${rendered}\n${retryHint()}`,
+          headline: `line ${offendingLine}${where} differs from what was served.`,
           firstOffendingLine: offendingLine,
           servedRows,
           rendered,
@@ -780,16 +736,11 @@ export class ServedVerification {
     const { rendered, servedRows } = args;
     // WHY: one general headline clause, no line-by-line narration: the bound is unplaceable,
     // WHY: so naming per-anchor positions would narrate lines the model never targeted.
-    const err = new ServedRejectionError({
-      code: "E_UNVERIFIED_RANGE",
-      message:
-        `[MODEL] [E_UNVERIFIED_RANGE] ${UNVERIFIED_HEADLINE}\n` +
-        `${FRESH_READ_HEADING}\n${rendered}`,
+    throw new DomainError("E_UNVERIFIED_RANGE", {
       servedRows: servedRows,
       servedBlock: rendered,
       cause: "never-served",
     });
-    throw err;
   }
 
   private throwUnverifiedFresh(args: {
@@ -798,35 +749,30 @@ export class ServedVerification {
     rendered: string;
     cause: RangeCause;
   }): never {
-    const err = new ServedRejectionError({
-      code: "E_UNVERIFIED_RANGE",
-      message:
-        `[MODEL] [E_UNVERIFIED_RANGE] ${UNVERIFIED_HEADLINE}\n` +
-        `${FRESH_READ_HEADING}\n${args.rendered}`,
-      firstOffendingLine: args.firstOffendingLine,
+    throw new DomainError("E_UNVERIFIED_RANGE", {
       servedRows: args.servedRows,
       servedBlock: args.rendered,
       cause: args.cause,
+      ...(args.firstOffendingLine !== undefined
+        ? { firstOffendingLine: args.firstOffendingLine }
+        : {}),
     });
-    throw err;
   }
 
   private throwStale(args: {
-    message: string;
+    headline: string;
     firstOffendingLine: number;
     servedRows: ServedRow[];
     rendered: string;
     cause: RangeCause;
   }): never {
-    const err = new ServedRejectionError({
-      code: "E_STALE_RANGE",
-      message: args.message,
+    throw new DomainError("E_STALE_RANGE", {
+      headline: args.headline,
       firstOffendingLine: args.firstOffendingLine,
       servedRows: args.servedRows,
       servedBlock: args.rendered,
       cause: args.cause,
     });
-    throw err;
   }
 }
 

@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **edit:** land tagged domain error registry
 * **edit:** rename to E_SUSPICIOUS_TEXT
 * **edit:** add unverified range, retire unserved
 * **edit:** rename two model-facing error codes
@@ -23,6 +24,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* document E_UNKNOWN and E_LARGE_FILE rows
 * add the unified error and warning contract spec
 * **spec:** sync spec to retired-identity rule
 * record as-built rejection oracle

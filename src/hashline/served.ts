@@ -11,8 +11,6 @@ export {
   buildRangeServeRows,
   fmtServedRows,
   servedPositionsOf,
-  ServedRejectionError,
-  AnchorMismatchError,
   makeServedRejection,
   makeTargetLostRejection,
   makeStaleAnchorRejection,
@@ -25,3 +23,4 @@ export {
   type ServedRow,
   type ResolvedRange,
 } from "./served-verification.js";
+export { DomainError, type DomainErrorCode } from "../domain-errors.js";

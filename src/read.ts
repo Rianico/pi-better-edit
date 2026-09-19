@@ -10,6 +10,7 @@ import { abortIf, isRec, normalizeFilePath } from "./utils.js";
 import { splitLines, visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { prepareFile } from "./file-content/index.js";
+import { DomainError } from "./domain-errors.js";
 import { fileSnap } from "./file-reader.js";
 import { snapshotHashFor, upsertSnapshotFor } from "./snapshot-store";
 // WHY: Facade re-export for callers still importing preview directly
@@ -84,16 +85,16 @@ export function regRead(pi: ExtensionAPI): void {
       }
       if (prepared.kind !== "text") {
         if (prepared.kind === "directory") {
-          throw new Error(`[E_UNSUPPORTED_FILE] Path is a directory: ${rawPath}.`);
+          throw new DomainError("E_UNSUPPORTED_FILE", { path: rawPath, kind: "directory" });
         }
         if (prepared.kind === "binary") {
-          throw new Error(
-            `[E_UNSUPPORTED_FILE] Path is a binary file: ${rawPath} (${prepared.description}). Hashline edit only supports text files.`,
-          );
+          throw new DomainError("E_UNSUPPORTED_FILE", {
+            path: rawPath,
+            kind: "binary",
+            description: prepared.description,
+          });
         }
-        throw new Error(
-          `[E_UNSUPPORTED_FILE] Path is an image file: ${rawPath}. Hashline edit only supports text files.`,
-        );
+        throw new DomainError("E_UNSUPPORTED_FILE", { path: rawPath, kind: "image" });
       }
 
       const session = sessionFromContext(

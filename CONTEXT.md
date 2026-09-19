@@ -177,3 +177,11 @@ _Avoid_: always-strict
 **canon** (canon_at_serve):
 The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`) captured at serve time and persisted parallel to `hashes` in `served.canons`. Used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without `tombstone`.
 _Avoid_: content (byte-level, not canon)
+
+**E_LARGE_FILE**:
+Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 238,328-line ceiling for 3-char anchors, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files.
+_Avoid_: E_TOO_BIG (unclaimed code)
+
+**E_UNKNOWN**:
+The unexpected-error envelope: a throw that is not a `DomainError` (an invariant breach, a filesystem or store failure) is reported through the registry as `[MODEL] [E_UNKNOWN]` carrying only the error name and the first message line — never a scraped bracket token, never the verbatim dump. Carries no remedy by rule: no cause is knowable at all.
+_Avoid_: E_UNSPECIFIED (unclaimed code)

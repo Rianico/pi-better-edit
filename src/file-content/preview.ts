@@ -5,6 +5,7 @@ import {
   type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
 import { MAX_READ_LINE_BYTES } from "../constants.js";
+import { DomainError } from "../domain-errors.js";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "../hashline/index.js";
 import type { ServedRow } from "../hashline/served.js";
 import { visLines } from "../utils.js";
@@ -14,9 +15,9 @@ function normPosInt(value: number | undefined, name: "offset" | "limit"): number
     return undefined;
   }
   if (!Number.isInteger(value) || value < 1) {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] Read request field "${name}" must be a positive integer.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: `Read request field "${name}" must be a positive integer.`,
+    });
   }
   return value;
 }

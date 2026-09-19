@@ -39,8 +39,8 @@ import {
   type LeaseSpanSource,
   type RHEdit,
 } from "./resolve.js";
+import { DomainError } from "../domain-errors.js";
 import {
-  AnchorMismatchError,
   makeServedRejection,
   makeStaleAnchorRejection,
   makeTargetLostRejection,
@@ -77,9 +77,12 @@ function resolvedAt(edit: HEdit, fileHashes: string[], fromLine: number, toLine:
 }
 
 function throwReversed(edit: HEdit, startLine: number, endLine: number): never {
-  throw new Error(
-    `[MODEL] [E_REVERSED_ANCHORS] Refused: range start line ${startLine} is after end line ${endLine} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}). Nothing was written; swap anchor_from/anchor_to and retry.`,
-  );
+  throw new DomainError("E_REVERSED_ANCHORS", {
+    startLine,
+    endLine,
+    fromAnchor: edit.hash_bounds[0].hash,
+    toAnchor: edit.hash_bounds[1].hash,
+  });
 }
 
 /**
@@ -135,7 +138,11 @@ function throwStaleAnchor(args: {
   // WHY: the refused anchor(s) with the narrow context of the one boundary we can place.
   const content = valEdit(edit, snapshot, undefined);
   const { message, servedRows } = fmtMismatchWithServes(content.mismatches, snapshot);
-  throw new AnchorMismatchError(`[MODEL] ${message}`, servedRows, undefined, "never-served");
+  throw new DomainError("E_STALE_ANCHOR", {
+    headline: message,
+    servedRows,
+    cause: "never-served",
+  });
 }
 
 /**
@@ -152,8 +159,7 @@ export function resolveLeasedEdit(args: {
   source: LeaseSpanSource;
 }): LeasedEditResolution {
   const { edit, snapshot, served, source } = args;
-  const { fileHashes, filePath } = snapshot;
-  const where = filePath ? ` in ${filePath}` : "";
+  const { fileHashes } = snapshot;
   const fromAnchor = edit.hash_bounds[0].hash;
   const toAnchor = edit.hash_bounds[1].hash;
   const fromContent = uniqueAnchorLine(fileHashes, fromAnchor);
@@ -225,8 +231,8 @@ export function resolveLeasedEdit(args: {
       }
     }
     throw makeTargetLostRejection({
-      headline: `line ${staleServedLine}${where} no longer resolves to the line identity it was served with.`,
       servedLine: staleServedLine,
+      ...(snapshot.filePath !== undefined ? { path: snapshot.filePath } : {}),
       cause: "retirement",
     });
   }

@@ -1,9 +1,8 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
 import { _lineHashesPure, createCanonStore } from "../../src/hashline/hash";
+import { DomainError } from "../../src/domain-errors.js";
 import {
-  AnchorMismatchError,
-  ServedRejectionError,
   makeServedRejection,
   makeStaleAnchorRejection,
   verifyRebasedSpan,
@@ -40,7 +39,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       firstOffendingLine: 2,
       cause: "served-range staleness",
     });
-    expect(err).toBeInstanceOf(ServedRejectionError);
+    expect(err).toBeInstanceOf(DomainError);
     expect(typeof err.servedBlock).toBe("string");
     expect(err.servedBlock).toContain(`${hashes[1]}│beta`);
     expect(err.message).toContain("Current range:");
@@ -57,7 +56,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       endLine: 2,
       snapshot,
     });
-    expect(err).toBeInstanceOf(AnchorMismatchError);
+    expect(err).toBeInstanceOf(DomainError);
     expect(typeof err.servedBlock).toBe("string");
     expect(err.servedBlock).toContain(`${hashes[0]}│alpha`);
     expect(err.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
@@ -122,7 +121,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const { mismatches } = valEdit(edit, snapshotFor(lines, hashes), undefined);
     const snapshot = snapshotFor(lines, hashes);
     const { message, servedRows } = fmtMismatchWithServes(mismatches, snapshot);
-    expect(message).toMatch(/E_STALE_ANCHOR/);
+    expect(message).toMatch(/stale anchor/);
     expect(Array.isArray(servedRows)).toBe(true);
   });
 

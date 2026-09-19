@@ -11,7 +11,7 @@
  */
 
 import { HASH_SEP, canon } from "./hash-identity.js";
-import { AnchorMismatchError, type ServedRow } from "./served.js";
+import { DomainError } from "../domain-errors.js";
 
 export interface ServedHashEchoMatch {
   /** SAFETY: 1-based candidate index within the submitted lines. */
@@ -120,12 +120,10 @@ export function findServedHashEcho(
   return undefined;
 }
 
-export class ServedHashEchoError extends AnchorMismatchError {
-  constructor(message: string, servedRows: ServedRow[] = []) {
-    super(message, servedRows);
-    this.name = "ServedHashEchoError";
-  }
-}
+// WHY: the ad-hoc `ServedHashEchoError` subclass is retired (spec D1): the edit
+// WHY: and write seams throw `DomainError` with `E_SUSPICIOUS_TEXT` instead, so
+// WHY: `servedRows`, `servedBlock`, `cause`, and `details` keep their shape.
+export { DomainError as ServedHashEchoError };
 
 export interface ServedPrefixMismatch {
   /** SAFETY: 1-based candidate index within the submitted lines. */
@@ -312,14 +310,6 @@ export function trackServedWriteRefusal(absolutePath: string, offendingLine: str
 /** SAFETY: dimmed human line for a literal declaration; never a model retry instruction. */
 export const LITERAL_BYPASS_NOTICE = "[USER] served-echo check bypassed by literal declaration";
 
-function sharpenedTail(count: number): string {
-  if (count < 2) return "";
-  return (
-    ` Identical refusal submitted ${count}× — the bytes still reproduce a served row.` +
-    ` Omit the copied anchors from \`replace_with\` and retry with the same anchors, or declare intent with mode: "literal".`
-  );
-}
-
 export function buildServedEditMessage(args: {
   path: string;
   k: number;
@@ -327,13 +317,14 @@ export function buildServedEditMessage(args: {
   servedLine: number;
   count: number;
 }): string {
-  const base =
-    `[MODEL] [E_SUSPICIOUS_TEXT] Refused edit to ${args.path}: replacement line ${args.k} begins with ` +
-    `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
-    `HASH${HASH_SEP} anchors are tool output, not file content. ` +
-    `Omit the copied anchors from \`replace_with\` and retry with the same anchors, or declare intent with mode: "literal". ` +
-    `Re-read the file for fresh anchors if needed. Nothing was written. (submission ${args.count}×)`;
-  return base + sharpenedTail(args.count);
+  return new DomainError("E_SUSPICIOUS_TEXT", {
+    target: "edit",
+    path: args.path,
+    line: args.k,
+    hash: args.hash,
+    servedLine: args.servedLine,
+    count: args.count,
+  }).message;
 }
 
 export function buildServedWriteMessage(args: {
@@ -343,11 +334,12 @@ export function buildServedWriteMessage(args: {
   servedLine: number;
   count: number;
 }): string {
-  const base =
-    `[MODEL] [E_SUSPICIOUS_TEXT] Refused write to ${args.path}: line ${args.line} begins with ` +
-    `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
-    `HASH${HASH_SEP} anchors are tool output, not file content. ` +
-    `Retry with file content only (remove the entire copied anchor chain), or declare intent with mode: "literal". ` +
-    `Re-read the file for fresh anchors if needed. Nothing was written. (submission ${args.count}×)`;
-  return base + sharpenedTail(args.count);
+  return new DomainError("E_SUSPICIOUS_TEXT", {
+    target: "write",
+    path: args.path,
+    line: args.line,
+    hash: args.hash,
+    servedLine: args.servedLine,
+    count: args.count,
+  }).message;
 }

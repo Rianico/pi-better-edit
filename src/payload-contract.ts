@@ -1,5 +1,6 @@
 import { Type } from "typebox";
 import { EDITS_MAX_ITEMS } from "./constants.js";
+import { DomainError } from "./domain-errors.js";
 
 const normalizedEdit = Symbol("normalizedEdit");
 
@@ -306,7 +307,9 @@ export function prepareEditArguments(args: unknown): Record<string, unknown> {
       return { file: valid.file, edits: valid.edits as unknown, mode: valid.mode };
     return { file: valid.file, edits: valid.edits as unknown };
   }
-  throw new Error(`[MODEL] [E_BAD_PAYLOAD] ${EDIT_PAYLOAD_HINT} ${describeReceived(args)}`);
+  throw new DomainError("E_BAD_PAYLOAD", {
+    message: `${EDIT_PAYLOAD_HINT} ${describeReceived(args)}`,
+  });
 }
 
 export function getPreviewInput(args: unknown): { file: string | null; edits: EditItem[] } | null {
@@ -324,9 +327,9 @@ function rejectUnknownFields(
   const unknown = Object.keys(obj).filter((key) => !allowed.has(key));
   if (unknown.length > 0) {
     const suffix = hint ? ` ${hint}` : "";
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: `${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
+    });
   }
 }
 
@@ -334,10 +337,11 @@ const ROOT_KS = new Set(["file", "edits", "mode"]);
 
 export function assertReq(request: unknown): asserts request is NormalizedEditRequest {
   if (!isNormalizedEdit(request)) {
-    throw new Error(
-      '[MODEL] [E_BAD_PAYLOAD] Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...], mode?: "general" | "literal" }. ' +
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...], mode?: "general" | "literal" }. ' +
         EDIT_PAYLOAD_HINT,
-    );
+    });
   }
 
   rejectUnknownFields(
@@ -349,20 +353,24 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
 
   const modeValue = (request as Record<string, unknown>).mode;
   if (modeValue !== undefined && modeValue !== "general" && modeValue !== "literal") {
-    throw new Error(
-      '[MODEL] [E_BAD_PAYLOAD] Edit request "mode" must be "general" or "literal" (absent means "general"). ' +
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Edit request "mode" must be "general" or "literal" (absent means "general"). ' +
         EDIT_PAYLOAD_HINT,
-    );
+    });
   }
 
   if (request.file !== null && (typeof request.file !== "string" || request.file.length === 0)) {
-    throw new Error(
-      '[MODEL] [E_BAD_PAYLOAD] Edit request "file" must be a non-empty string naming the text file to edit (never a directory).',
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Edit request "file" must be a non-empty string naming the text file to edit (never a directory).',
+    });
   }
 
   if (!Array.isArray(request.edits) || request.edits.length === 0) {
-    throw new Error('[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "edits" array.');
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: 'Edit request requires a non-empty "edits" array.',
+    });
   }
 
   for (let index = 0; index < request.edits.length; index++) {
@@ -372,9 +380,9 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
       typeof item.anchor_to !== "string" ||
       typeof item.replace_with !== "string"
     ) {
-      throw new Error(
-        `[MODEL] [E_BAD_PAYLOAD] Edit request edits[${index}] must be { anchor_from, anchor_to, replace_with }: two bare 3-char anchors and the replacement text.`,
-      );
+      throw new DomainError("E_BAD_PAYLOAD", {
+        message: `Edit request edits[${index}] must be { anchor_from, anchor_to, replace_with }: two bare 3-char anchors and the replacement text.`,
+      });
     }
   }
 }

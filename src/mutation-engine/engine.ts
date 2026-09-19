@@ -14,38 +14,70 @@ import { apply as pipelineApply, previewEdits as pipelinePreview } from "./pipel
 import type { PipelineOptions } from "./types.js";
 import type { MutationResult } from "./types.js";
 import type { NormalizedEditRequest } from "../payload-contract.js";
-import { errCode } from "../utils.js";
+import { DomainError, isDomainErrorCode } from "../domain-errors.js";
+import type { ServedRow } from "../domain-errors.js";
 
-function extractCode(message: string): string {
-  // WHY: messages are `[MODEL] [E_*] …` (spec §5.3 Output Error Code), so the code is the `E_*` tag
-  // WHY: and never the `[MODEL]` audience tag that precedes it.
-  const code = message.match(/\[(E_[A-Z0-9_]+)\]/);
-  if (code) return code[1]!;
-  const m = message.match(/\[([A-Z0-9_]+)\]/);
-  return m ? m[1]! : "E_UNKNOWN";
+function failureFromFields(args: {
+  code: string;
+  message: string;
+  fields: {
+    servedRows?: unknown;
+    servedBlock?: unknown;
+    cause?: unknown;
+    details?: unknown;
+  };
+}): MutationResult {
+  const { servedRows, servedBlock, cause, details } = args.fields;
+  return {
+    ok: false,
+    code: args.code,
+    message: args.message,
+    ...(Array.isArray(servedRows) && servedRows.length > 0
+      ? { servedRows: servedRows as ServedRow[] }
+      : {}),
+    ...(typeof servedBlock === "string" && servedBlock.length > 0 ? { servedBlock } : {}),
+    ...(typeof cause === "string" ? { cause } : {}),
+    ...(details !== null &&
+    typeof details === "object" &&
+    "cause" in details &&
+    typeof (details as { cause: unknown }).cause === "string"
+      ? { details: details as { cause: string } }
+      : {}),
+  };
 }
 
 function toFailure(error: unknown): MutationResult {
+  // WHY: registry errors carry their code, rows, block, and diagnosis as typed
+  // WHY: fields — the code is read, never scraped from the message, so a
+  // WHY: `[MODEL]`-only message can never surface as `code: "MODEL"`.
+  if (error instanceof DomainError) {
+    return failureFromFields({ code: error.code, message: error.message, fields: error });
+  }
+  const fields = error as
+    | {
+        code?: unknown;
+        servedRows?: unknown;
+        servedBlock?: unknown;
+        cause?: unknown;
+        details?: unknown;
+      }
+    | null
+    | undefined;
   const message = error instanceof Error ? error.message : String(error);
-  const code = error instanceof Error ? (errCode(message) ?? extractCode(message)) : "E_UNKNOWN";
-  // WHY: Try to preserve servedRows/servedBlock if error carries them (ServedRejectionError, AnchorMismatchError)
-  const servedRows = (error as { servedRows?: import("../hashline/served.js").ServedRow[] })
-    ?.servedRows;
-  const servedBlock = (error as { servedBlock?: string })?.servedBlock;
-  // WHY: Every range-family producer emits `details.cause` (user-facing diagnosis, never a
-  // WHY: model remedy) so it cannot rot into a phantom promise — preserve it on the failure.
-  const cause = (error as { cause?: string })?.cause;
-  const details = (error as { details?: { cause: string } })?.details;
-  // WHY: Served block is embedded in message for batch abort; keep message as serve-block source.
-  return {
-    ok: false,
-    code,
+  // WHY: the batch-abort wrapper preserves the failing item's own code as a
+  // WHY: plain field — a registry member routes the typed path, while
+  // WHY: errno-style codes (ENOENT) and unexpected throws fall through to
+  // WHY: `E_UNKNOWN` instead of leaking a scraped token as the code.
+  if (fields !== null && typeof fields === "object" && isDomainErrorCode(fields.code)) {
+    return failureFromFields({ code: fields.code, message, fields });
+  }
+  // WHY: unexpected errors emit `E_UNKNOWN` through the registry: the first
+  // WHY: message line only, never the verbatim `String(error)` dump.
+  const unknown = new DomainError("E_UNKNOWN", {
+    errorName: error instanceof Error ? error.name : typeof error,
     message,
-    ...(servedRows && servedRows.length > 0 ? { servedRows } : {}),
-    ...(typeof servedBlock === "string" && servedBlock.length > 0 ? { servedBlock } : {}),
-    ...(typeof cause === "string" ? { cause } : {}),
-    ...(details && typeof details.cause === "string" ? { details } : {}),
-  };
+  });
+  return failureFromFields({ code: unknown.code, message: unknown.message, fields: unknown });
 }
 
 /**

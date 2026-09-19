@@ -1,7 +1,7 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
-import { ServedRejectionError } from "../../src/hashline/served";
+import { DomainError } from "../../src/domain-errors.js";
 import { finalizeToolResult } from "../../src/edit-response";
 import { loadServed, recordRejectionServes } from "../../src/served-session/index.js";
 import { applyEdit, _lineHashesPure, type HEdit } from "../../src/hashline";
@@ -59,8 +59,8 @@ describe("applyEdit — stale range beats would-empty", () => {
     } catch (caught) {
       error = caught;
     }
-    expect(error).toBeInstanceOf(ServedRejectionError);
-    expect((error as ServedRejectionError).code).toBe("E_STALE_RANGE");
+    expect(error).toBeInstanceOf(DomainError);
+    expect((error as DomainError).code).toBe("E_STALE_RANGE");
   });
 });
 describe("finalizeToolResult", () => {

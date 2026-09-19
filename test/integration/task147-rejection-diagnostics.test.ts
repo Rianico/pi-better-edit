@@ -108,10 +108,10 @@ describe("task-147 rejection diagnostics", () => {
     const rejectSingle = await runNoopPolicy({ ...base, batch: false });
     expect(rejectSingle.action).toBe("reject");
     if (rejectSingle.action === "reject") {
-      expect(rejectSingle.message).toContain("[MODEL]");
-      expect(rejectSingle.message).toContain("[E_NOOP_LOOP]");
-      expect(rejectSingle.message).toContain("resend will reject.");
-      expect(rejectSingle.message).not.toContain("resend will reject the batch");
+      expect(rejectSingle.error.message).toContain("[MODEL]");
+      expect(rejectSingle.error.message).toContain("[E_NOOP_LOOP]");
+      expect(rejectSingle.error.message).toContain("rejecting.");
+      expect(rejectSingle.error.message).not.toContain("rejecting the batch");
     }
     clearNoopLoop(`${base.absolutePath}-batch`);
     const batchBase = { ...base, absolutePath: `${base.absolutePath}-batch` };
@@ -120,8 +120,8 @@ describe("task-147 rejection diagnostics", () => {
     const rejectBatch = await runNoopPolicy({ ...batchBase, batch: true });
     expect(rejectBatch.action).toBe("reject");
     if (rejectBatch.action === "reject") {
-      expect(rejectBatch.message).toContain("[MODEL]");
-      expect(rejectBatch.message).toContain("resend will reject the batch");
+      expect(rejectBatch.error.message).toContain("[MODEL]");
+      expect(rejectBatch.error.message).toContain("rejecting the batch");
     }
   });
 

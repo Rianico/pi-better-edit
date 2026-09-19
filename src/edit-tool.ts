@@ -17,6 +17,7 @@ import { sessionKeyFor } from "./served-session/session.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "./payload-contract.js";
 import { execute as engineExecute, preview as enginePreview } from "./mutation-engine/engine.js";
 import { isMutationSuccess } from "./mutation-engine/types.js";
+import { DomainError } from "./domain-errors.js";
 import { genDiff } from "./edit-diff.js";
 import { buildBatchResult, type BatchSection } from "./edit-response.js";
 import type { ProcessedEditFile } from "./mutation-engine/types.js";
@@ -50,13 +51,15 @@ export async function resolveMissingPath(
   if (matches.length === 1) {
     return {
       file: matches[0]!,
-      warning: `[MODEL] [E_BAD_PAYLOAD] Autocorrected: missing "file" resolved to ${matches[0]} — the only file whose stored hashes contain both anchors.`,
+      warning: new DomainError("E_BAD_PAYLOAD", {
+        message: `Autocorrected: missing "file" resolved to ${matches[0]} — the only file whose stored hashes contain both anchors.`,
+      }).message,
     };
   }
   if (matches.length > 1) {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "file" string; the anchors match multiple known files: ${matches.join(", ")}. Include the intended file.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: `Edit request requires a non-empty "file" string; the anchors match multiple known files: ${matches.join(", ")}. Include the intended file.`,
+    });
   }
   return undefined;
 }
@@ -134,9 +137,10 @@ export function createEditTool(): EditTool {
       }
       assertReq(effectiveCanonical);
       if (effectiveCanonical.file === null) {
-        throw new Error(
-          "[MODEL] [E_BAD_PAYLOAD] Edit request file could not be inferred from anchors. Pass the text file to edit.",
-        );
+        throw new DomainError("E_BAD_PAYLOAD", {
+          message:
+            "Edit request file could not be inferred from anchors. Pass the text file to edit.",
+        });
       }
       // SAFETY: ctx is untyped at pi boundary — cast validated by pi's runtime context shape (cwd + sessionManager)
       const sessionKey = sessionKeyFor(

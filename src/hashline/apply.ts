@@ -1,12 +1,11 @@
 import { abortIf, splitLines } from "../utils.js";
+import { DomainError } from "../domain-errors.js";
 import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
-import { AnchorMismatchError, verifyServedRange, type ResolvedRange } from "./served.js";
+import { verifyServedRange, type ResolvedRange } from "./served.js";
 import {
   findServedHashEcho,
   findServedPrefixMismatches,
   findNeverServedAnchorShapes,
-  ServedHashEchoError,
-  buildServedEditMessage,
   buildServedEditPrefixNote,
   trackServedEditRefusal,
   LITERAL_BYPASS_NOTICE,
@@ -88,9 +87,7 @@ export interface ApplyVerificationContext {
  */
 function assertNotEmpty(originalContent: string, result: string): void {
   if (originalContent.length > 0 && result.length === 0) {
-    throw new Error(
-      "[MODEL] [E_EMPTY_RANGE] Cannot empty a non-empty file via edit. Use `write` if you need to clear the file.",
-    );
+    throw new DomainError("E_EMPTY_RANGE", {});
   }
 }
 
@@ -263,7 +260,11 @@ export function applyEdit(
       fileLines: lineIndex.fileLines,
       filePath,
     });
-    throw new AnchorMismatchError(message, servedRows, undefined, "anchor staleness");
+    throw new DomainError("E_STALE_ANCHOR", {
+      headline: message,
+      servedRows,
+      cause: "anchor staleness",
+    });
   }
 
   warnUnicodeEsc(prefixFixed, warnings);
@@ -309,14 +310,14 @@ export function applyEdit(
           anchorTo,
           servedCopy.offendingLine,
         );
-        const msg = buildServedEditMessage({
+        throw new DomainError("E_SUSPICIOUS_TEXT", {
+          target: "edit",
           path: filePath ?? "(unknown file)",
-          k: servedCopy.k,
+          line: servedCopy.k,
           hash: servedCopy.hash,
           servedLine: servedCopy.servedLine,
           count,
         });
-        throw new ServedHashEchoError(msg, []);
       }
     }
     if (!leaseRebased) {
