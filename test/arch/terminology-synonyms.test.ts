@@ -104,23 +104,92 @@ function testTitleViolations(): string[] {
 // `_Avoid_: display, show, echo` and `_Avoid_: hash echo ..., anchor echo`);
 // prose naming the canonical condition stays green. Accepted records that predate
 // the T-rename keep their original codes as historical quotes (see ADR-0019) and
-// are exempt here by path; `src/` keeps zero tolerance via the src scope.
+// are exempt here per file and per code; `src/` keeps zero tolerance via the src scope.
 //
-// Accepted ADR records exempt from scope 3: they predate the T-rename and retain
-// the original model-facing codes as historical quotes (never rewritten). ADR-0019
-// is exempt as the rename record itself.
-const HISTORICAL_ADR_FILES = new Set<string>([
-  "docs/adr/0009-bounded-hash-echo-guard.md",
-  "docs/adr/0010-user-facing-drift-signals.md",
-  "docs/adr/0014-user-model-audience.md",
-  "docs/adr/0015-named-object-edit-payload.md",
-  "docs/adr/0018-region-scoped-rejection-serves.md",
-  "docs/adr/0019-malformed-code-rename.md",
-]);
+// Guard policy B (maintainer decision 2026-09-19: keep the per-file carve-out,
+// recorded and shrink-only):
+// - decisionAuthority: maintainer decision 2026-09-19
+// - reason: accepted records predate the T-rename and retain original codes as
+//   historical quotes, never rewritten (see ADR-0019)
+// - narrowScope: scope 3 binding-docs check only; `src/` keeps zero tolerance;
+//   each listed file is exempt only for its declared retired codes
+// - owner: edit maintainer
+// - reviewTrigger: any proposal to add or widen an entry, or any retirement
+//   that quotes a retired code
+// - removalCondition: delete an entry when its file no longer quotes every
+//   declared retired code; retire the baseline when no entries remain
+// `CONTEXT.md`, `README.md`, `src/`, and `docs/spec/` stay fully checked:
+// no entry may name them. Only the listed records are exempt, and only for
+// the retired codes they declare. Growth without a declared retired code
+// cannot pass: a file outside the baseline gets no stripping, and an entry
+// with an empty code list strips nothing.
+type HistoricalBaselineEntry = {
+  file: string;
+  retiredCodes: string[];
+  retiredBy: string;
+};
+
+const HISTORICAL_BASELINE_POLICY = {
+  decisionAuthority: "maintainer decision 2026-09-19",
+  reason:
+    "accepted records predate the T-rename and retain original codes as historical quotes, never rewritten (see ADR-0019)",
+  narrowScope:
+    "scope 3 binding-docs check only; src/ keeps zero tolerance; each listed file is exempt only for its declared retired codes",
+  owner: "edit maintainer",
+  reviewTrigger:
+    "any proposal to add or widen an entry, or any retirement that quotes a retired code",
+  removalCondition:
+    "delete an entry when its file no longer quotes every declared retired code; retire the baseline when no entries remain",
+};
+
+const HISTORICAL_BASELINE: HistoricalBaselineEntry[] = [
+  {
+    file: "docs/adr/0009-bounded-hash-echo-guard.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+  },
+  {
+    file: "docs/adr/0010-user-facing-drift-signals.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+  },
+  {
+    file: "docs/adr/0014-user-model-audience.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+  },
+  {
+    file: "docs/adr/0015-named-object-edit-payload.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+  },
+  {
+    file: "docs/adr/0018-region-scoped-rejection-serves.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+  },
+  {
+    file: "docs/adr/0019-malformed-code-rename.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+  },
+];
+
+function baselineByFile(): Map<string, HistoricalBaselineEntry> {
+  return new Map(HISTORICAL_BASELINE.map((entry) => [entry.file, entry]));
+}
+
+function stripBaselineCodes(text: string, codes: string[]): string {
+  let out = text;
+  for (const code of codes) {
+    out = out.split(code).join("");
+  }
+  return out;
+}
+
 function bindingDocsViolations(): string[] {
-  const docs = ["CONTEXT.md", ...allFiles("docs/adr", ".md")].filter(
-    (file) => !HISTORICAL_ADR_FILES.has(file),
-  );
+  const byFile = baselineByFile();
+  const docs = ["CONTEXT.md", ...allFiles("docs/adr", ".md")];
   return docs.filter((file) => {
     const text = readFileSync(file, "utf-8");
     // Strip `_Avoid_:` definition lines: the glossary must name the banned term
@@ -136,7 +205,10 @@ function bindingDocsViolations(): string[] {
       .join("")
       .split("EditHashEchoError")
       .join("");
-    return /echo/i.test(stripCanonical(withoutRetired));
+    const stripped = stripCanonical(withoutRetired);
+    const entry = byFile.get(file);
+    const withoutBaseline = entry ? stripBaselineCodes(stripped, entry.retiredCodes) : stripped;
+    return /echo/i.test(withoutBaseline);
   });
 }
 
@@ -192,11 +264,45 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of test titles/
 
 describe("CONTEXT.md terminology — forbidden synonyms stay out of binding docs/", () => {
   it("keeps the binding domain docs free of the avoided synonym for served feedback (canonical family stripped)", () => {
-    // Whole-file over live binding docs (`CONTEXT.md` + non-historical ADRs):
-    // strip the canonical `served hash echo` family, then assert no `/echo/i`
-    // remains. Prose calling served rows by the avoided synonym fails here;
-    // prose naming the canonical condition stays green. Historical ADR records
-    // are path-exempt above (they keep original codes as quotes, never rewritten).
+    // Whole-file over live binding docs (`CONTEXT.md` + ADRs): strip the
+    // canonical `served hash echo` family, then assert no `/echo/i` remains.
+    // Prose calling served rows by the avoided synonym fails here; prose
+    // naming the canonical condition stays green. Listed records are exempt
+    // per file and per code above (they keep original codes as quotes, never
+    // rewritten); all other files stay fully checked.
     expect(bindingDocsViolations()).toEqual([]);
+  });
+});
+
+describe("terminology baseline stays recorded and shrink-only", () => {
+  it("declares a retired code and a retiring record for every entry", () => {
+    for (const entry of HISTORICAL_BASELINE) {
+      expect(entry.retiredCodes.length).toBeGreaterThan(0);
+      expect(entry.retiredBy.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps every entry needed: each listed file still quotes each declared retired code", () => {
+    for (const entry of HISTORICAL_BASELINE) {
+      const text = readFileSync(entry.file, "utf-8");
+      for (const code of entry.retiredCodes) {
+        expect(text).toContain(code);
+      }
+      expect(() => readFileSync(entry.retiredBy, "utf-8")).not.toThrow();
+    }
+  });
+
+  it("records the six guard-policy fields and keeps live surfaces fully checked", () => {
+    expect(HISTORICAL_BASELINE_POLICY.decisionAuthority).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.reason).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.narrowScope).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.owner).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.reviewTrigger).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.removalCondition).not.toBe("");
+    const names = HISTORICAL_BASELINE.map((entry) => entry.file);
+    expect(names).not.toContain("CONTEXT.md");
+    expect(names).not.toContain("README.md");
+    expect(names.some((file) => file.startsWith("src/"))).toBe(false);
+    expect(names.some((file) => file.startsWith("docs/spec/"))).toBe(false);
   });
 });

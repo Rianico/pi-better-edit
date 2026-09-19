@@ -22,7 +22,8 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* **spec:** sync living spec to retired-identity boundary rule
+* **adr:** record rename procedure for retiring names
+* **spec:** sync spec to retired-identity rule
 * record as-built rejection oracle
 * make the E_UNSERVED_RANGE contract true
 * **prompts:** bind anchors to serving file

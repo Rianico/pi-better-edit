@@ -45,3 +45,14 @@ synonym.
 - The terminology guard (`test/arch/terminology-synonyms.test.ts`) tracks the
   new code and path-exempts the accepted records above, including this file as
   the rename record itself.
+
+## Rename procedure (2026-09-19)
+
+Retiring a name syncs the live docs in the same task (`CONTEXT.md`,
+`README.md`, `src/`, `docs/spec/`), so no accepted record claims a contract
+the code does not honor. The same task adds or updates exactly the baseline
+entries the retirement needs in `test/arch/terminology-synonyms.test.ts` —
+each entry names the file, the retired codes it still quotes, and the record
+that retired them. No unattributed growth: a file outside the baseline stays
+fully checked, and an entry whose file no longer quotes its declared codes
+must be deleted (the arch guard enforces this shrink-only rule).
