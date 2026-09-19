@@ -143,7 +143,7 @@ The caller's explicit assertion, via `mode: "literal"`, that bytes reproducing s
 _Avoid_: force, override, bypass
 
 **E_MALFORM_TEXT**:
-Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_MALFORM_TEXT] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Remove the copied anchors and retry, or reassert under a `literal declaration`. Nothing was written. Deny, not strip — fail-loud, compensable.
+Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_MALFORM_TEXT] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Omit the copied anchors from `replace_with` and retry with the same anchors, or reassert under a `literal declaration`. Nothing was written. Deny, not strip — fail-loud, compensable.
 _Avoid_: E_HASH_ECHO (ambiguous)
 
 **boundary duplication** (historical — removed):

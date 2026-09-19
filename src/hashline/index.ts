@@ -52,7 +52,6 @@ export {
   buildServedWriteMessage,
   buildServedWritePrefixNote,
   buildNeverServedEditHint,
-  isNeverServedEditHint,
   trackServedEditRefusal,
   trackServedWriteRefusal,
   clearServedRefusals,

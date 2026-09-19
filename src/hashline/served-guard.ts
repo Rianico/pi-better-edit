@@ -192,7 +192,7 @@ export function buildServedEditPrefixNote(args: {
     `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
     `but its content differs from what was served. ` +
     `The bytes were written as-is. ` +
-    `If the prefix was unintended, run undo_last_edit and retry without the anchor.`
+    `If the prefix was unintended, run undo_last_edit and retry with the same anchors, omitting the anchor prefix from the replacement text.`
   );
 }
 
@@ -211,7 +211,7 @@ export function buildServedWritePrefixNote(args: {
     `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
     `but its content differs from what was served. ` +
     `The bytes were written as-is. ` +
-    `If the prefix was unintended, re-issue the write without the anchor prefix.`
+    `If the prefix was unintended, re-issue the write with the anchor prefix omitted from the written lines.`
   );
 }
 
@@ -274,20 +274,8 @@ export function buildNeverServedEditHint(args: { count: number }): string {
   return (
     `[MODEL] Edit applied with ${lines} matching the tool's own row shape ` +
     `(HASH${HASH_SEP}content): ${anchors}. ` +
-    `The bytes were written as-is with no rewrite.`
+    `No action is required. The bytes were written as-is with no rewrite.`
   );
-}
-
-const NEVER_SERVED_HINT_OPEN = "[MODEL] Edit applied with ";
-const NEVER_SERVED_HINT_MARK = "anchor-shaped replacement line";
-
-/**
- * SAFETY: Identifies the never-served soft hint among pooled warnings so the batch
- * path can hold every per-item hint back and emit one counted hint per call.
- * Matches the fixed open and mark owned by `buildNeverServedEditHint`.
- */
-export function isNeverServedEditHint(warning: string): boolean {
-  return warning.startsWith(NEVER_SERVED_HINT_OPEN) && warning.includes(NEVER_SERVED_HINT_MARK);
 }
 
 type RefusalEntry = {
@@ -328,7 +316,7 @@ function sharpenedTail(count: number): string {
   if (count < 2) return "";
   return (
     ` Identical refusal submitted ${count}× — the bytes still reproduce a served row.` +
-    ` Remove the copied anchors and retry, or declare intent with mode: "literal".`
+    ` Omit the copied anchors from \`replace_with\` and retry with the same anchors, or declare intent with mode: "literal".`
   );
 }
 
@@ -343,7 +331,7 @@ export function buildServedEditMessage(args: {
     `[MODEL] [E_MALFORM_TEXT] Refused edit to ${args.path}: replacement line ${args.k} begins with ` +
     `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
     `HASH${HASH_SEP} anchors are tool output, not file content. ` +
-    `Remove the copied anchors and retry, or declare intent with mode: "literal". ` +
+    `Omit the copied anchors from \`replace_with\` and retry with the same anchors, or declare intent with mode: "literal". ` +
     `Re-read the file for fresh anchors if needed. Nothing was written. (submission ${args.count}×)`;
   return base + sharpenedTail(args.count);
 }

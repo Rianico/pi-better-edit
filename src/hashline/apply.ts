@@ -8,7 +8,6 @@ import {
   ServedHashEchoError,
   buildServedEditMessage,
   buildServedEditPrefixNote,
-  buildNeverServedEditHint,
   trackServedEditRefusal,
   LITERAL_BYPASS_NOTICE,
 } from "./served-guard.js";
@@ -365,11 +364,12 @@ export function applyEdit(
   // WHY: never alters bytes, never blocks, keeps no state, fires per line.
   // WHY: soft-hint tier beside it: replacement lines opening with an anchor-shaped
   // WHY: prefix never served for this session and file. The bytes are already
-  // WHY: assembled as-is with no rewrite; the single hint states the offending-line
-  // WHY: count and the tool's own row shape, never a remedy. Fires regardless of literal
+  // WHY: assembled as-is with no rewrite; the count states the offending-line
+  // WHY: total and the tool's own row shape, never a remedy. Fires regardless of literal
   // WHY: declaration (the declaration covers served rows, not never-served shapes),
-  // WHY: never blocks, keeps no state. Capped to one hint per item here; the batch
-  // WHY: path holds per-item hints back and emits one counted hint per call.
+  // WHY: never blocks, keeps no state. The per-item count travels as structured
+  // WHY: data (`neverServedCount`); the batch path aggregates across items and
+  // WHY: renders one counted hint per call, never via warning-string matching.
   let neverServedCount = 0;
   if (served) {
     const canons = servedCanons ?? [];
@@ -386,7 +386,6 @@ export function applyEdit(
     const neverServed = findNeverServedAnchorShapes(resolved.content_lines, served, 1);
     if (neverServed.length > 0) {
       neverServedCount = neverServed.length;
-      warnings.push(buildNeverServedEditHint({ count: neverServed.length }));
     }
   }
 

@@ -136,6 +136,9 @@ describe("applyEdit ambiguous tier", () => {
     expect(editNote).toContain("line 1");
     expect(editNote).toContain("differs from what was served");
     expect(editNote).toContain("undo_last_edit");
+    expect(editNote).toMatch(/same anchors/i);
+    expect(editNote).toMatch(/replacement text/i);
+    expect(editNote).not.toMatch(/without the anchor/i);
     const writeNote = buildServedWritePrefixNote({ line: 2, anchor: "Ab3", servedLine: 1 });
     expect(writeNote.startsWith("[MODEL]")).toBe(true);
     expect(writeNote).toContain("applied");
@@ -144,7 +147,20 @@ describe("applyEdit ambiguous tier", () => {
     expect(writeNote).toContain("line 1");
     expect(writeNote).toContain("differs from what was served");
     expect(writeNote).not.toContain("undo_last_edit");
-    expect(writeNote).toContain("re-issue the write without the anchor prefix");
+    expect(writeNote).toMatch(/omitted from the written lines/i);
+    expect(writeNote).not.toMatch(/without the anchor/i);
+  });
+
+  it("never instructs a retry without an anchor", () => {
+    const editNote = buildServedEditPrefixNote({ k: 2, anchor: "Ab3", servedLine: 1 });
+    const writeNote = buildServedWritePrefixNote({ line: 2, anchor: "Ab3", servedLine: 1 });
+    for (const note of [editNote, writeNote]) {
+      expect(note).not.toMatch(/without the anchor/i);
+      expect(note).not.toMatch(/without anchor/i);
+      expect(note).not.toMatch(/remove the (copied )?anchors?/i);
+    }
+    expect(editNote).toMatch(/same anchors/i);
+    expect(editNote).toMatch(/replacement text/i);
   });
 });
 
@@ -239,7 +255,8 @@ describe("write result content carries the note", () => {
       expect(text).toContain(hashes[0]!);
       expect(text).toContain("differs from what was served");
       expect(text).not.toContain("undo_last_edit");
-      expect(text).toContain("re-issue the write without the anchor prefix");
+      expect(text).toMatch(/omitted from the written lines/i);
+      expect(text).not.toMatch(/without the anchor/i);
       expect(await readFile(filePath, "utf-8")).toBe(written);
     });
   });

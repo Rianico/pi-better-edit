@@ -85,7 +85,6 @@ import {
   resolveLeasedEdit,
   swapReversedRanges,
   buildNeverServedEditHint,
-  isNeverServedEditHint,
   type HEdit,
   type LeasedEditResolution,
   type LeaseSpanSource,
@@ -671,18 +670,17 @@ async function runMutations(
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
   const warnings: string[] = [];
-  // WHY: (#146) the never-served soft hint is once per call: per-item hints are
-  // WHY: held back by `pushAnchorWarnings` while their offending-line counts
-  // WHY: accumulate here, and one counted hint is emitted after the loop.
-  // WHY: No other warning tier is capped.
+  // WHY: (#146) the never-served soft hint is once per call: per-item counts
+  // WHY: travel as structured data (`neverServedCount`) and aggregate here, and
+  // WHY: one counted hint is rendered after the loop. No other warning tier is
+  // WHY: capped. A noop writes nothing, so its count is never aggregated.
   let neverServedTotal = 0;
-  const pushAnchorWarnings = (list: string[] | undefined, hintCount: number): void => {
-    if (list) {
-      for (const warning of list) {
-        if (!isNeverServedEditHint(warning)) warnings.push(warning);
-      }
-    }
+  const pushAppliedWarnings = (list: string[] | undefined, hintCount: number): void => {
+    if (list) warnings.push(...list);
     neverServedTotal += hintCount;
+  };
+  const pushNoopWarnings = (list: string[] | undefined): void => {
+    if (list) warnings.push(...list);
   };
   abortIf(options?.signal);
 
@@ -824,7 +822,7 @@ async function runMutations(
       noopCount += 1;
       if (outcome.literalBypass) literalDeclarations += 1;
       if (isPreview) {
-        pushAnchorWarnings(outcome.anchorWarnings, outcome.neverServedCount);
+        pushNoopWarnings(outcome.anchorWarnings);
         continue;
       }
       const decision = await runNoopPolicy({
@@ -847,7 +845,7 @@ async function runMutations(
           `edit[${index}] (${path}) was a noop: the range already contains the replacement text.`,
         );
       }
-      pushAnchorWarnings(outcome.anchorWarnings, outcome.neverServedCount);
+      pushNoopWarnings(outcome.anchorWarnings);
       continue;
     }
     appliedCount += 1;
@@ -883,7 +881,7 @@ async function runMutations(
       );
     }
     if (!isPreview) clearNoopLoop(absolutePath);
-    pushAnchorWarnings(outcome.anchorWarnings, outcome.neverServedCount);
+    pushAppliedWarnings(outcome.anchorWarnings, outcome.neverServedCount);
   }
 
   if (neverServedTotal > 0) {

@@ -6,7 +6,6 @@ import { applyEdit } from "../../src/hashline/apply";
 import {
   findNeverServedAnchorShapes,
   buildNeverServedEditHint,
-  isNeverServedEditHint,
 } from "../../src/hashline/served-guard";
 import { initHasher } from "../../src/hashline";
 import { HASH_SEP, canon } from "../../src/hashline/hash-identity";
@@ -26,6 +25,13 @@ function canonsFor(content: string): (string | null)[] {
   if (content === "") return [];
   const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
   return lines.map((line) => canon(line));
+}
+
+/** Local hint detector for rendered pipeline warnings (test-only).
+ * Production no longer matches warning strings; the count travels as data. */
+const HINT_MARK = "anchor-shaped replacement line";
+function isRenderedHint(warning: string): boolean {
+  return warning.includes(HINT_MARK);
 }
 
 /** A conforming hint states state only: no remedy, no imperative, no obligation. */
@@ -64,8 +70,8 @@ describe("never-served anchor-shaped predicate", () => {
   });
 });
 
-describe("applyEdit never-served soft hint", () => {
-  it("emits exactly one hint stating the count for 3 offending lines", () => {
+describe("applyEdit never-served data (structured, no string channel)", () => {
+  it("returns the offending count as data for 3 offending lines", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
@@ -83,16 +89,10 @@ describe("applyEdit never-served soft hint", () => {
     });
     expect(result.content).toBe(`alpha\n${submitted.join("\n")}\ngamma`);
     expect(result.neverServedCount).toBe(3);
-    const hints = (result.warnings ?? []).filter(isNeverServedEditHint);
-    expect(hints).toHaveLength(1);
-    expect(hints[0]).toContain("[MODEL]");
-    expect(hints[0]).toContain("3");
-    expect(hints[0]).toContain("row shape");
-    expect(hints[0]).toContain("written as-is");
-    expectObservationOnly(hints[0]!);
+    expect((result.warnings ?? []).filter(isRenderedHint)).toHaveLength(0);
   });
 
-  it("emits exactly one hint stating the count for a single offending line", () => {
+  it("returns the offending count as data for a single offending line", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
@@ -110,10 +110,7 @@ describe("applyEdit never-served soft hint", () => {
     });
     expect(result.content).toBe(`alpha\n${submitted}\ngamma`);
     expect(result.neverServedCount).toBe(1);
-    const hints = (result.warnings ?? []).filter(isNeverServedEditHint);
-    expect(hints).toHaveLength(1);
-    expect(hints[0]).toContain("1");
-    expectObservationOnly(hints[0]!);
+    expect((result.warnings ?? []).filter(isRenderedHint)).toHaveLength(0);
   });
 
   it("served hash echo still refuses with E_MALFORM_TEXT", () => {
@@ -156,10 +153,11 @@ describe("applyEdit never-served soft hint", () => {
     expect(hint).toContain("anchor");
     expect(hint).toContain("row shape");
     expect(hint).toContain("written as-is");
-    expect(isNeverServedEditHint(hint)).toBe(true);
-    expect(isNeverServedEditHint("unrelated warning")).toBe(false);
+    expect(hint).toContain("No action is required");
     expectObservationOnly(hint);
-    expectObservationOnly(buildNeverServedEditHint({ count: 1 }));
+    const single = buildNeverServedEditHint({ count: 1 });
+    expect(single).toContain("No action is required");
+    expectObservationOnly(single);
   });
 });
 
@@ -185,9 +183,10 @@ describe("edit tool never-served success plus hint", () => {
         .map((part) => part.text ?? "")
         .join("\n");
       expect(text).toContain("Successfully edited");
-      const hints = (result.details.warnings as string[]).filter(isNeverServedEditHint);
+      const hints = (result.details.warnings as string[]).filter(isRenderedHint);
       expect(hints).toHaveLength(1);
       expect(hints[0]).toContain("1");
+      expect(hints[0]).toContain("No action is required");
       expect(text).toContain("row shape");
       expectObservationOnly(hints[0]!);
       expect(await readFsFile(path, "utf-8")).toContain(submitted);
@@ -220,9 +219,10 @@ describe("edit tool never-served success plus hint", () => {
         .map((part) => part.text ?? "")
         .join("\n");
       expect(text).toContain("Successfully edited");
-      const hints = (result.details.warnings as string[]).filter(isNeverServedEditHint);
+      const hints = (result.details.warnings as string[]).filter(isRenderedHint);
       expect(hints).toHaveLength(1);
       expect(hints[0]).toContain("2");
+      expect(hints[0]).toContain("No action is required");
       expectObservationOnly(hints[0]!);
       const bytes = await readFsFile(path, "utf-8");
       expect(bytes).toContain(first);
@@ -266,6 +266,54 @@ describe("write path carries no never-served hint", () => {
           .join("\n") ?? "";
       expect(text).not.toContain("never-served");
       expect(await readFsFile(filePath, "utf-8")).toBe(written);
+    });
+  });
+});
+
+describe("noop edit carries no never-served hint", () => {
+  it("a noop edit yields no never-served hint at applyEdit level", () => {
+    const content = "alpha\nbeta\ngamma";
+    const hashes = _lineHashesPure(content);
+    const served: (string | null)[] = [...hashes];
+    const servedCanons = canonsFor(content);
+    const edit = {
+      hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
+      content_lines: ["beta"],
+    };
+    const result = applyEdit(content, edit, undefined, hashes, {
+      filePath: "a.txt",
+      served,
+      servedCanons,
+    });
+    expect(result.content).toBe(content);
+    expect(result.neverServedCount ?? 0).toBe(0);
+    expect((result.warnings ?? []).join("\n")).not.toContain("anchor-shaped replacement line");
+    expect((result.warnings ?? []).join("\n")).not.toContain("Edit applied with");
+  });
+
+  it("a noop edit yields no never-served hint at edit-tool level", async () => {
+    await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      const result = await editTool.execute(
+        "e1",
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "two" }],
+        } as any,
+        undefined,
+        undefined,
+        ctx,
+      );
+      const text = (result.content as Array<{ text?: string }>)
+        .map((part) => part.text ?? "")
+        .join("\n");
+      expect(text).toContain("No changes made");
+      expect(text).not.toContain("anchor-shaped replacement line");
+      expect(text).not.toContain("Edit applied with");
+      const warnings = ((result.details as { warnings?: string[] }).warnings ?? []).join("\n");
+      expect(warnings).not.toContain("anchor-shaped replacement line");
     });
   });
 });
