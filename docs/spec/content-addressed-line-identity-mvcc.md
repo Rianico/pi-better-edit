@@ -88,7 +88,7 @@ Probe `A` reproduces the exact same miswrite under a partial read (`offset=1, li
            WHERE session_id = :session_id AND file_path = :file_path AND anchor = :anchor AND retired_at IS NULL;
            ```
 
-           If anchor is missing $\implies$ throw `[E_STALE_ANCHOR]`. If `retired_at` is set $\implies$ throw `[E_STALE_RANGE]`.
+           If anchor is missing $\implies$ throw `[E_STALE_ANCHOR]`. If `retired_at` is set, the leased identity is gone and the **boundary rule** (`src/hashline/lease-resolve.ts:198-231`) owns the payload: exactly one bound stale with the survivor live and unshifted (its rebased coordinate equals its served coordinate — evidence that no shift occurred) $\implies$ throw `[E_UNVERIFIED_RANGE]` — the named window (served coordinates clamped to the file) served as a fresh read under the exact heading `Current range (fresh read):` with no retry hint, the rows leased through the normal serve seam; both bounds stale, a shifted survivor, or a clamped window that collapses or misses the file $\implies$ throw `[E_TARGET_LOST]` with no rows and no heading. The named coordinate is always lease-derived (`lease.servedLineNumber`); content placement never names it.
 
         2. Query `line_lineage` of current snapshot $S_{curr}$:
 
@@ -98,7 +98,7 @@ Probe `A` reproduces the exact same miswrite under a partial read (`offset=1, li
            ```
 
         3. If found at line $p'$: the line survived and shifted to $p'$.
-        4. If NOT found: the line was deleted or retired. Intercept fail-closed with `[E_STALE_RANGE]`.
+        4. If NOT found: the line was deleted or retired. The edit enters the same **boundary rule** as a retired lease: `[E_UNVERIFIED_RANGE]` (fresh read to decide from) for a live unshifted survivor, otherwise `[E_TARGET_LOST]` with no rows (`src/hashline/lease-resolve.ts:198-231`).
       - An in-flight edit cannot alter or adopt a fresh `line_id`, eliminating P0 silent miswrites from first principles.
   2. **Serve Operation (`read.ts`, `recordDiff`, `recordEcho`, `recordTruncated`, `undo_last_edit`)**:
       - Serving an anchor presents an authoritative *new contract* to the model for that session and path.
@@ -271,7 +271,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
        Their intersection is $\{H, T\}$. `H` and `T` are unanimously stable and partition the file.
        The gap between `H` and `T` contains `[A, B]` $\to$ `[B, A]`, where candidate LISs are $\{A\}$ and $\{B\}$ with intersection $\emptyset$.
        Falling through to leaf LCS, non-unique traceback paths mark both `A` and `B` as `UNPAIRED / RETIRED`.
-       Editing either `A` or `B` fails closed (`[E_STALE_RANGE]`), while editing `H` or `T` auto-rebases cleanly.
+       Editing either `A` or `B` fails closed under the §3.1.1 boundary rule (both bounds stale, so `[E_TARGET_LOST]` with no rows), while editing `H` or `T` auto-rebases cleanly.
      - In a bare symmetric swap `prev = [A, B]` $\to$ `curr = [B, A]`:
        $\mathcal{LIS}_{\min \Delta} = \{\{A\}, \{B\}\}$. The intersection is $\emptyset$.
        `stablePins` is empty $\implies$ falls through to leaf LCS $\implies$ both `A` and `B` are retired fail-closed.
@@ -279,8 +279,8 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
      - When `stablePins.length > 0`, each stable pin acts as an authoritative topological boundary. Sub-intervals strictly between adjacent stable pins are recursively aligned via `alignRecursive(pCur, pin.pLine - 1, cCur, pin.cLine - 1)` and `alignRecursive(pCur, pEnd, cCur, cEnd)`. Because each sub-interval is strictly smaller than the parent interval ($pin.pLine - 1 - pCur + 1 < pEnd - pStart + 1$), progress is guaranteed.
      - When `stablePins.length === 0`: The interval contains only contested/crossing candidate pins (or zero pins). The engine **never recurses on identical bounds** (eliminating the self-recursion / budget starvation defect). Instead, it falls through directly to leaf handling (Phase 2 rigid block shift $\to$ Phase 3 leaf budget guard $\to$ Phase 4 bounded LCS optimal-path uniqueness). If no unique pairing exists, lines in that contested interval remain UNPAIRED / RETIRED.
    - **Equal-Length Contested Swaps (Probe `K`) vs. Unequal Reordering**:
-     - **Equal-Length Contested Swaps (Probe `K`)**: In a symmetric swap of equal-sized blocks (e.g. `alpha` of 3 lines and `beta` of 3 lines), neither block dominates in length or displacement $\implies$ $\bigcap \mathcal{LIS} = \emptyset \implies$ both blocks are retired fail-closed (`[E_STALE_RANGE]`), preserving code bytes on disk. Probe `K` specifically scopes this symmetric contested reorder.
-     - **Unequal-Length Reordering**: When two blocks of unequal length swap without intervening stable pins (e.g. `alpha` of 3 lines and `beta` of 7 lines), standard patience alignment naturally identifies the longer monotonic block (`beta`, length 7) as the dominant LIS backbone. `beta` auto-rebases to its new coordinates, while the displaced minority block (`alpha`, length 3) falls outside the LIS backbone and is retired fail-closed (`[E_STALE_RANGE]`).
+     - **Equal-Length Contested Swaps (Probe `K`)**: In a symmetric swap of equal-sized blocks (e.g. `alpha` of 3 lines and `beta` of 3 lines), neither block dominates in length or displacement $\implies$ $\bigcap \mathcal{LIS} = \emptyset \implies$ both blocks are retired fail-closed (an edit inside either rejects `[E_TARGET_LOST]` — both bounds stale, no rows), preserving code bytes on disk. Probe `K` specifically scopes this symmetric contested reorder.
+     - **Unequal-Length Reordering**: When two blocks of unequal length swap without intervening stable pins (e.g. `alpha` of 3 lines and `beta` of 7 lines), standard patience alignment naturally identifies the longer monotonic block (`beta`, length 7) as the dominant LIS backbone. `beta` auto-rebases to its new coordinates, while the displaced minority block (`alpha`, length 3) falls outside the LIS backbone and is retired fail-closed (an edit inside it rejects `[E_TARGET_LOST]` — both bounds stale, no rows).
      - **Preservation of Untouched Spans**: In `prev = [A, M1..M100, B]` $\to$ `curr = [B, M1..M100, A]`, $M_1 \dots M_{100}$ forms the unique LIS of length 100 with displacement 0, dominating the swapped endpoints ($100 > 1$). All 100 middle lines are selected as stable backbone pins and preserved! Only the swapped endpoints (`A` and `B`) are retired.
    - **Polynomial Two-Pass DP Implementation of $\bigcap \mathcal{LIS}_{\min \Delta}$**:
      Enumerating all subsequences would risk combinatorial explosion. Instead, the intersection is computed deterministically in $O(m \log m)$ time:
@@ -310,7 +310,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
    If an interval has duplicate lines with $pCount == cCount$ and the canon sequence matches identically:
    The run has simply shifted without internal modification. Line $p$ is uniquely and unambiguously paired to $cStart + (p - pStart)$ (Probe `N`).
 2. **Interior Modification Ambiguity**:
-   Only when $pCount \neq cCount$ (lines inserted/deleted inside the repetitive run) AND the leaf bound is exceeded ($pCount > MAX\_LEAF\_LINES$ or $pCount \times cCount > MAX\_LEAF\_CELLS$) is it an information-theoretic impossibility to align duplicate lines without guessing. In that case, lines within the ambiguous interval fail-closed with `[E_STALE_RANGE]`, echoing fresh anchors.
+   Only when $pCount \neq cCount$ (lines inserted/deleted inside the repetitive run) AND the leaf bound is exceeded ($pCount > MAX\_LEAF\_LINES$ or $pCount \times cCount > MAX\_LEAF\_CELLS$) is it an information-theoretic impossibility to align duplicate lines without guessing. In that case, lines within the ambiguous interval fail closed under the §3.1.1 boundary rule (`[E_TARGET_LOST]` when no bound survives live and unshifted — no rows, read and re-target).
 
 ### 3.6 Coherent Storage Bounds & Post-Write Failure Semantics (Fixing B7 Review Gap)
 
@@ -333,7 +333,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 
 ### 3.8 Verification Rigor (Fixing B9)
 
-- In Stage 0, all fail-closed probes (`A, E, J, K`) assert both `rejects.toThrow(/E_STALE_RANGE/)` **AND** `expect(await readFile(path, 'utf-8')).toBe(originalBytes)` to verify zero file corruption.
+- In Stage 0, the fail-closed probes assert both the boundary-rule code (probes `A`, `E`, `K` assert `rejects.toThrow(/E_TARGET_LOST/)`; probe `J` asserts `rejects.toThrow(/E_STALE_RANGE/)`) **AND** `expect(await readFile(path, 'utf-8')).toBe(originalBytes)` to verify zero file corruption.
 - Monotonicity is verified by asserting $curr_i > curr_{i-1}$ across all pairs sorted by $prev_i$.
 
 ---
@@ -622,8 +622,12 @@ export function pairSnapshots(
                                                                                    │
                                                                        ┌───────────┴───────────┐
                                                                        ▼ YES                   ▼ NO (Retired/Torn)
-                                                               Validate Span Contiguity    Throw [E_STALE_RANGE]
-                                                                       │                   (Echo fresh anchors)
+                                                               Validate Span Contiguity    Boundary rule (§3.1.1): exactly
+                                                                       │                   one stale + survivor live and
+                                                                       │                   unshifted ⇒ [E_UNVERIFIED_RANGE]
+                                                                       │                   (fresh read, decide from rows);
+                                                                       │                   otherwise ⇒ [E_TARGET_LOST]
+                                                                       │                   (no rows; read and re-target)
                                                                ┌───────┴───────┐
                                                                ▼ Valid         ▼ Torn (Probe J)
                                                            APPLY AT s'     Throw [E_STALE_RANGE]
@@ -642,14 +646,18 @@ If any anchor originates from a different snapshot, or disk content has drifted 
 | Target span contains unread interior lines | `served-verification.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes unread range; model retries with those rows |
 | Leased `line_id` deleted or retired (Probe `E`, `A`) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_UNVERIFIED_RANGE]` (survivor live and unshifted: fresh read to decide from) or `[MODEL] [E_TARGET_LOST]` (otherwise: read and re-target) | Serves the named window or nothing |
 | External insert strictly inside span (Probe `J`) | `served-verification.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
-| External swap/reorder of code blocks (Probe `K`) | `patience-pairing.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
+| External swap/reorder of code blocks (Probe `K`) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`, stale branch — both bounds retired) | `[MODEL] [E_TARGET_LOST]` | No rows; prose names the previously served position | Read and re-target |
 | Overlapping/nested spans in multi-edit batch | `pipeline.ts` (`assertBatchSpansDisjoint`, on lease-resolved baseline spans) | `[MODEL] [E_BATCH_ABORT]` | Rejects batch; model separates edits |
 | Malformed payload or apply-time failure inside a multi-item batch | `pipeline.ts` | the item's **own** code (`E_MALFORMED_ANCHOR`, `E_REVERSED_ANCHORS`, `E_MALFORM_TEXT`, `E_STALE_RANGE`, …) | Rejects the whole call — nothing was written; the message carries the atomicity trailer |
 | Replacement text contains `HASH│` prefix | `apply.ts` | `[MODEL] [E_MALFORM_TEXT]` | Rejects literal echoed prefix (`EditHashEchoError`) |
 | Inverted anchors (`anchor_from` after `anchor_to`) | `resolve.ts` | `[MODEL] [E_REVERSED_ANCHORS]` | Heals or rejects reversed anchors |
 | Dangling lease (snapshot evicted by vacuum) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_UNVERIFIED_RANGE]` or `[MODEL] [E_TARGET_LOST]` (boundary rule) | Serves the named window or nothing |
 
-Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`, `:155-185`); `valEdit` (`src/hashline/resolve.ts:448-497`) is the pure content-resolution seam for callers with no served mirror and no lease source.
+**Tombstone's two live jobs.** `tombstone` is never a lease state and never a second identity authority — ADR-0017 explicitly rejected that; `tryHealOrphanedSpan`, `removedByContent` and epoch/`strictPos` are retired (§3.3). Its first job is the hash-allocation guard: `src/hashline/hash-identity.ts:202-209` (`lineHashesPure`) and `:348-349` (`mapStableHashes`) mark every tombstoned hash used, so a freed anchor never re-binds for the session (plumbed via `src/hashline/hash.ts:105-134`, stored as `served.retired` in `src/served-session/session.ts:804-815`). Its second job is the verification signal: `src/hashline/served-verification.ts:497-518` rejects a tombstoned boundary hash as `[E_UNVERIFIED_RANGE]` (fresh read, `details.cause: "tombstone"`), and `:566-587` rejects a tombstoned interior as `[E_STALE_RANGE]` (retry, same cause).
+
+**Rejection payloads carry `details.cause`.** Every range-family producer emits it as a user-facing diagnosis — never the model remedy, the code alone selects that (`src/mutation-engine/engine.ts:35-47` preserves it onto the failure). As built (`src/hashline/served-verification.ts:36-44`): the `stale` branch reports `retirement` for both its codes (`src/hashline/lease-resolve.ts:216-230`); the tombstone checks report `tombstone` (`served-verification.ts:512,582`); an unleased anchor reports `never-served` (`lease-resolve.ts:130`), as do a never-served interior (`served-verification.ts:734`) and an unplaceable bound (`:790`); drift, length and hash mismatches report `served-range staleness` (`:356,393,561,748,761`); a content-path mismatch reports `anchor staleness` (`src/hashline/apply.ts:266`). `served span` stays a reserved glossary value with no current producer.
+
+Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`, `:148-231`); `valEdit` (`src/hashline/resolve.ts:448-497`) is the pure content-resolution seam for callers with no served mirror and no lease source.
 
 ---
 
@@ -721,15 +729,15 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
 
 ### 7.1 Soundness Criteria (Fail-Closed)
 
-1. **Probe `E` (External Delete Collision)**: Full read $\to$ external delete of `f1` $\to$ edit with `psM` $\to$ **must reject with `[E_STALE_RANGE]`**; file bytes unchanged on disk.
-2. **Probe `A` (Partial Read Variant)**: Partial read $\to$ external delete $\to$ edit with deleted line's anchor $\to$ **must reject**; file bytes unchanged on disk.
+1. **Probe `E` (External Delete Collision)**: Full read $\to$ external delete of `f1` $\to$ edit with `psM` $\to$ **must reject with `[E_TARGET_LOST]`** (no rows; read and re-target); file bytes unchanged on disk.
+2. **Probe `A` (Partial Read Variant)**: Partial read $\to$ external delete $\to$ edit with deleted line's anchor $\to$ **must reject with `[E_TARGET_LOST]`** (no rows; read and re-target); file bytes unchanged on disk.
 3. **Probe `J` (Interior Span Tearing)**: External insert strictly inside target span $\to$ **must reject with `[E_STALE_RANGE]`**; file bytes unchanged on disk.
-4. **Probe `K` (Equal-Length Contested Swap)**: External swap of two equal-length unique functions without intervening stable pins $\to$ edit either function $\to$ **must reject with `[E_STALE_RANGE]`**; file bytes unchanged on disk.
+4. **Probe `K` (Equal-Length Contested Swap)**: External swap of two equal-length unique functions without intervening stable pins $\to$ edit either function $\to$ **must reject with `[E_TARGET_LOST]`** (both bounds retired — no rows; read and re-target); file bytes unchanged on disk.
 5. **Formal Invariants (Asserted on SQLite Store)**:
    - **Monotonicity**: All paired lines preserve strict coordinate ordering ($p_1 < p_2 \implies c_1 < c_2$).
    - **Canon-Equality**: $\text{canon}(prev) === \text{canon}(curr)$ for every paired line.
    - **Unpaired Absenteeism**: Every unpaired prev `line_id` is absent from $S_{curr}$ lineage.
-   - **Sound Execution**: An edit shall NEVER commit to a line whose stored `line_id` differs from the `line_id` leased **in the active, unretired lease in force at edit time** (the most recent serve of that anchor in that session where `retired_at IS NULL`). A retired lease or un-leased anchor intercepts fail-closed with `[E_STALE_RANGE]` / `[E_STALE_ANCHOR]`, and strictly monotonic counter allocation guarantees a defunct `line_id` is never re-issued.
+   - **Sound Execution**: An edit shall NEVER commit to a line whose stored `line_id` differs from the `line_id` leased **in the active, unretired lease in force at edit time** (the most recent serve of that anchor in that session where `retired_at IS NULL`). A retired lease intercepts fail-closed with `[E_UNVERIFIED_RANGE]` (live unshifted survivor: fresh read to decide from) or `[E_TARGET_LOST]` (otherwise: no rows, read and re-target); an un-leased anchor intercepts with `[E_STALE_ANCHOR]`, and strictly monotonic counter allocation guarantees a defunct `line_id` is never re-issued.
 6. **Negative Regression Guard: Heuristic Canon Relocation Rejection**: Direct calls to `ServedVerification.verify` with shifted coordinates against an un-rebased `served` array (`test/core/served-verification.test.ts:71`) **must reject fail-closed** (`ok: false`, `code: "E_UNVERIFIED_RANGE"`). Heuristic canon guessing (`tryHealOrphanedSpan`) is completely retired; coordinate realignment is exclusively owned by MVCC `pairSnapshots` + `line_lineage`.
 
 ### 7.2 Context-Preservation Criteria (Position-Free Rebase)
@@ -778,20 +786,20 @@ The `stale` decision in `resolveLeasedEdit` (`src/hashline/lease-resolve.ts:173-
 
 | # | Delta | Supersedes |
 | :- | :--- | :--- |
-| D1 | A `stale` decision emits a **target-lost rejection** under the new code **`[E_TARGET_LOST]`** (D6): no `Current range:` heading and **no rows at all** — the message names the previously served position in prose. The branch serves the model's coordinates (keeping `[E_STALE_RANGE]`) only when at least one bound is live *and* its rebased coordinate equals its served coordinate. | §5.3 row "Leased `line_id` deleted or retired" (its "Echoes current range" recovery) |
+| D1 | A `stale` decision applies the **boundary rule** (`src/hashline/lease-resolve.ts:198-231`): rows are served **only** when exactly one bound is stale and the survivor is live *and* unshifted (its rebased coordinate equals its served coordinate — evidence that no shift occurred). That single case is **`[E_UNVERIFIED_RANGE]`**: the named window (served coordinates clamped to the file) under the exact heading `Current range (fresh read):`, one general headline clause, no retry hint and no mandate, rows leased through the normal serve seam. Both bounds stale, a shifted survivor, or a clamped window that collapses or misses the file is **`[E_TARGET_LOST]`**: no `Current range` heading of either form and **no rows at all** — the message names the previously served position in prose. | §5.3 row "Leased `line_id` deleted or retired" (its "Echoes current range" recovery) |
 | D2 | A target-lost rejection performs **no** `recordRejectionServe` upsert (there are no rows), so an accidental retry cannot write. Every window that identifies the model's range (in-place drift, never-served interior, `E_UNVERIFIED_RANGE` fresh reads, `E_BATCH_ABORT`, content-placeable `E_STALE_ANCHOR`) still leases. | new invariant |
 | D5 | **Content placement is banned from the payload.** `uniqueAnchorLine` may not place a rejection window, and neither the window nor the headline's line number may come from a content match for a retired bound (Probe `P`: the header named line 4 for a line-2 lease). | §3.1.1 step 1 / §5.3 |
 | D3 | The retry hint is a property of the rejection payload, not an unconditional suffix. A target-lost rejection instead carries `The line you targeted no longer exists — read the file and re-target.` | §3.1.1 step 1 (*"Throw [E_STALE_ANCHOR] (Echo fresh anchors)"*); §5.3 recovery column |
 | D4 | One wording family across `E_STALE_ANCHOR` / `E_STALE_RANGE` / `E_TARGET_LOST` / `E_UNVERIFIED_RANGE` / `E_MALFORM_TEXT`; anchors are counted and listed per **distinct** anchor. | §5.3 recovery column text |
-| D6 | **New code `[E_TARGET_LOST]`** for exactly the region-unidentifiable rejections of D1. The codes become disjoint by payload shape: `[E_STALE_RANGE]` always renders rows, `[E_TARGET_LOST]` never does, so the remedy is machine-readable. | new code (README error table, `CONTEXT.md`, prompts) |
+| D6 | **New code `[E_TARGET_LOST]`** for exactly the range-unidentifiable rejections of D1. The codes are disjoint by payload shape: `[E_STALE_RANGE]` and `[E_UNVERIFIED_RANGE]` always render rows (under `Current range:` with a retry hint, and under `Current range (fresh read):` with none, respectively), `[E_TARGET_LOST]` never does, so the remedy is machine-readable. | new code (README error table, `CONTEXT.md`, prompts) |
 
-Post-sync notes for §9.2: `ba7c8d2` added `src/hashline/served-guard.ts` with `[E_MALFORM_TEXT]` and the `mode: "literal"` escape — a **third** rejection contract to fold into D4 (frozen literals per ADR-0009's 2026-09-15 revision) — and removed the content-surface shape refusal, so a `replace_with` holding never-served anchor-shaped lines is now written verbatim; decide whether that case warrants a non-blocking `[MODEL]` note. The deltas are D1–D6: D5 bans content placement from the payload (the arm Probe `P` exercised), and D6 splits the code so `[E_TARGET_LOST]` ⇒ no rows, `[E_STALE_RANGE]` ⇒ rows. The full producer audit is the patch spec's Appendix E.
+Post-sync notes for §9.2: `ba7c8d2` added `src/hashline/served-guard.ts` with `[E_MALFORM_TEXT]` and the `mode: "literal"` escape — a **third** rejection contract to fold into D4 (frozen literals per ADR-0009's 2026-09-15 revision) — and removed the content-surface shape refusal, so a `replace_with` holding never-served anchor-shaped lines is now written verbatim; decide whether that case warrants a non-blocking `[MODEL]` note. The deltas are D1–D6: D5 bans content placement from the payload (the arm Probe `P` exercised), and D6 splits the code so `[E_TARGET_LOST]` ⇒ no rows, `[E_STALE_RANGE]` ⇒ rows under `Current range:` with a retry hint, `[E_UNVERIFIED_RANGE]` ⇒ rows under `Current range (fresh read):` with none. The full producer audit is the patch spec's Appendix E.
 
 ### 9.3 Replacement row for the §5.3 decision table
 
 | Failure condition | Seam | Code | Window | Hint | Leased |
 | :--- | :--- | :--- | :--- | :--- | :--- |
-| Leased `line_id` deleted or retired (Probe `E`, `A`) | `lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_TARGET_LOST]` | none — prose names the previously served position; served coordinates only when one bound is live and unshifted (then `[E_STALE_RANGE]`) | read and re-target | n/a (no rows) |
+| Leased `line_id` deleted or retired (Probe `E`, `A`) | `lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_TARGET_LOST]` | none — prose names the previously served position; the named window (served coordinates clamped to the file) only when exactly one bound is stale and the survivor is live and unshifted (then `[E_UNVERIFIED_RANGE]` fresh read to decide from) | read and re-target | n/a (no rows) |
 
 Rows for `E_STALE_ANCHOR` (content-placeable), never-served interiors (now `E_STALE_RANGE`) and in-place `E_STALE_RANGE` keep their current recovery; only their wording is unified under D4.
 
