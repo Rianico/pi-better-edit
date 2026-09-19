@@ -27,8 +27,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* sync README and CONTEXT to the accepted error contract
-* **adr:** accept the unified error and warning contract (ADR-0021)
+* **adr:** accept ADR-0021 error-warning contract
 * add the unified error and warning contract spec
 * **spec:** sync spec to retired-identity rule
 * record as-built rejection oracle
