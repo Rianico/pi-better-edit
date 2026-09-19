@@ -113,7 +113,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     expect((result.warnings ?? []).filter(isRenderedHint)).toHaveLength(0);
   });
 
-  it("served hash echo still refuses with E_MALFORM_TEXT", () => {
+  it("served hash echo still refuses with E_SUSPICIOUS_TEXT", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
@@ -124,7 +124,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     };
     expect(() =>
       applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
-    ).toThrow(/E_MALFORM_TEXT/);
+    ).toThrow(/E_SUSPICIOUS_TEXT/);
   });
 
   it("literal declaration succeeds without refusal", () => {

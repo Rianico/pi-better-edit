@@ -9,7 +9,7 @@ import { describe, it, expect } from "vitest";
  * `served hash echo`). This guard keeps the rename from creeping back in (#108, #114).
  * #108 freeze is served-qualified only: `findServedHashEcho`, `ServedHashEchoError`,
  * `ServedHashEcho`, `servedHashEchoDenial` stay frozen; the model-facing refusal
- * code is `E_MALFORM_TEXT` (renamed per ADR-0019, no alias); the surface-qualified
+ * code is `E_SUSPICIOUS_TEXT` (renamed per ADR-0019, no alias); the surface-qualified
  * `findEditHashEcho` / `EditHashEchoError` are retired (#125).
  */
 function srcFiles(dir = "src", out: string[] = []): string[] {
@@ -53,7 +53,7 @@ const CANONICAL_TOKENS = [
   "ServedHashEchoError",
   "findServedHashEcho",
   "ServedHashEcho",
-  "E_MALFORM_TEXT",
+  "E_SUSPICIOUS_TEXT",
 ];
 
 function stripCanonical(text: string): string {
@@ -237,7 +237,7 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () =>
 
   it("keeps the canonical served hash echo family and the line-identity rename", () => {
     const apply = readFileSync("src/hashline/apply.ts", "utf-8");
-    expect(apply).toContain("E_MALFORM_TEXT");
+    expect(apply).toContain("E_SUSPICIOUS_TEXT");
     expect(apply).toContain("findServedHashEcho");
     expect(apply).not.toContain("findEditHashEcho");
     const index = readFileSync("src/hashline/index.ts", "utf-8");
@@ -257,7 +257,7 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of test titles/
     // Title-only: strip the canonical `served hash echo` family, then assert no
     // `/echo/i` remains on `it`/`test`/`describe` lines. A title calling served
     // rows by the avoided synonym fails here; titles naming the canonical
-    // condition (`E_MALFORM_TEXT`, `findServedHashEcho`, `served hash echo`) stay green.
+    // condition (`E_SUSPICIOUS_TEXT`, `findServedHashEcho`, `served hash echo`) stay green.
     expect(testTitleViolations()).toEqual([]);
   });
 });

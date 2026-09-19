@@ -74,7 +74,7 @@ describe("multi-item edit error propagation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("[E_MALFORM_TEXT]");
+      expect(rejection.message).toContain("[E_SUSPICIOUS_TEXT]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain("edit[1] (apply-loop.txt) failed");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);

@@ -79,7 +79,7 @@ describe("edit served-row gate with declaration", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_MALFORM_TEXT/);
+      ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
       // multi-row chain copied from another position
       await expect(
         editTool.execute(
@@ -98,7 +98,7 @@ describe("edit served-row gate with declaration", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_MALFORM_TEXT/);
+      ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
       // ambiguous: served prefix, differing content stays accepted
       const ok = await editTool.execute(
         "e1",
@@ -137,7 +137,7 @@ describe("edit served-row gate with declaration", () => {
       const first = await editTool
         .execute("e1", payload, undefined, undefined, ctx)
         .catch((e: unknown) => e as Error);
-      expect(first.message).toContain("[MODEL] [E_MALFORM_TEXT]");
+      expect(first.message).toContain("[MODEL] [E_SUSPICIOUS_TEXT]");
       expect(first.message).toContain("replacement line 1");
       expect(first.message).toContain(hashes[1]!);
       expect(first.message).toContain("line 2");
@@ -157,7 +157,7 @@ describe("edit served-row gate with declaration", () => {
       const third = await editTool
         .execute("e1", payload, undefined, undefined, ctx)
         .catch((e: unknown) => e as Error);
-      expect(third.message).toMatch(/E_MALFORM_TEXT/);
+      expect(third.message).toMatch(/E_SUSPICIOUS_TEXT/);
       expect(await readFsFile(path, "utf-8")).toBe(before);
     });
   });
@@ -252,7 +252,7 @@ describe("write served-row gate with declaration", () => {
       const hashes = await lh("one\ntwo\n", path);
       const verbatim = `${hashes[0]}│one\n${hashes[1]}│two\n`;
       const refused = await servedHashEchoDenial(io, path, verbatim, cwd, "sess-w");
-      expect(refused).toMatch(/E_MALFORM_TEXT/);
+      expect(refused).toMatch(/E_SUSPICIOUS_TEXT/);
       expect(refused).toContain("Nothing was written");
       expect(refused).toContain('mode: "literal"');
       const ambiguous = await servedHashEchoDenial(

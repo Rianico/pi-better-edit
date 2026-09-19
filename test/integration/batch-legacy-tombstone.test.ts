@@ -45,7 +45,7 @@ describe("batch legacy tombstone atomicity (#117)", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("[E_MALFORM_TEXT]");
+      expect(rejection.message).toContain("[E_SUSPICIOUS_TEXT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
       expect(await readFile(path, "utf-8")).toBe(content);
 

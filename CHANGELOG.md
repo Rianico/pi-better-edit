@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **edit:** rename E_MALFORM_TEXT to E_SUSPICIOUS_TEXT
 * **edit:** add unverified range, retire unserved
 * **edit:** rename two model-facing error codes
 * **edit:** add never-served soft hint (#146)
@@ -22,6 +23,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* **edit:** rename E_MALFORM_TEXT to E_SUSPICIOUS_TEXT
 * **adr:** record rename procedure for retiring names
 * **spec:** sync spec to retired-identity rule
 * record as-built rejection oracle

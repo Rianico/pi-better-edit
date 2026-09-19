@@ -103,7 +103,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
   });
 });
 
-describe("applyEdit — E_MALFORM_TEXT gate", () => {
+describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
   it("refuses a verbatim served row", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
     const hashes = _lineHashesPure(content);
@@ -118,7 +118,7 @@ describe("applyEdit — E_MALFORM_TEXT gate", () => {
     ).toThrow(ServedHashEchoError);
     expect(() =>
       applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
-    ).toThrow(/\[E_MALFORM_TEXT\]/);
+    ).toThrow(/\[E_SUSPICIOUS_TEXT\]/);
   });
 
   it("accepts a clean retry", () => {
@@ -136,7 +136,7 @@ describe("applyEdit — E_MALFORM_TEXT gate", () => {
         served,
         servedCanons,
       }),
-    ).toThrow(/E_MALFORM_TEXT/);
+    ).toThrow(/E_SUSPICIOUS_TEXT/);
     const editClean = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: ["NEW-beta"],
@@ -179,7 +179,7 @@ describe("applyEdit — E_MALFORM_TEXT gate", () => {
     try {
       applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons });
     } catch (e) {
-      expect((e as Error).message).toMatch(/E_MALFORM_TEXT/);
+      expect((e as Error).message).toMatch(/E_SUSPICIOUS_TEXT/);
     }
     expect(content).toBe(original);
   });
@@ -198,7 +198,7 @@ describe("applyEdit — E_MALFORM_TEXT gate", () => {
       expect.unreachable();
     } catch (e) {
       const msg = (e as Error).message;
-      expect(msg).toMatch(/\[MODEL\] \[E_MALFORM_TEXT\]/);
+      expect(msg).toMatch(/\[MODEL\] \[E_SUSPICIOUS_TEXT\]/);
       expect(msg).toContain("replacement line 2");
       expect(msg).toContain(hashes[2]!);
       expect(msg).toContain("line 3");
@@ -221,7 +221,7 @@ describe("applyEdit — E_MALFORM_TEXT gate", () => {
     };
     expect(() =>
       applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
-    ).toThrow(/E_MALFORM_TEXT/);
+    ).toThrow(/E_SUSPICIOUS_TEXT/);
   });
 
   it("no served means no refusal, bytes reach disk unchanged", () => {
@@ -309,6 +309,6 @@ describe("applyEdit — rebased served check stays evidence-only", () => {
   });
 
   it("still refuses the anchor served for the line it reproduces", () => {
-    expect(() => applyRebased(rebasedEdit("AAA\u2502z\nplain"))).toThrow(/\[E_MALFORM_TEXT\]/);
+    expect(() => applyRebased(rebasedEdit("AAA\u2502z\nplain"))).toThrow(/\[E_SUSPICIOUS_TEXT\]/);
   });
 });

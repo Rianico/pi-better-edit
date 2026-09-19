@@ -124,7 +124,7 @@ describe("applyEdit ambiguous tier", () => {
         served,
         servedCanons,
       }),
-    ).toThrow(/E_MALFORM_TEXT/);
+    ).toThrow(/E_SUSPICIOUS_TEXT/);
   });
 
   it("builds edit and write notes with the required fields", () => {

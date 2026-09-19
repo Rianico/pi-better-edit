@@ -18,17 +18,21 @@ verbatim: the anchor-syntax refusal and the served-row reproduction refusal.
 Both names appear on live contract surfaces (`src/`, `test/`, `README.md`,
 `CONTEXT.md`, `docs/spec/` living specs); accepted ADR prose and `CHANGELOG.md`
 history keep the original codes as historical quotes and are never rewritten.
+An intermediate candidate `E_MALFORM_TEXT` for the served-row reproduction
+refusal was rejected during review before the branch was pushed, so no
+rename-then-rename trail is recorded — the decision below carries the
+final names only.
 
 ## Decision
 
 Hard rename, no alias (ADR-0014 precedent):
 
 - `E_BAD_ANCHOR` → `E_MALFORMED_ANCHOR`
-- `E_SERVED_ECHO` → `E_MALFORM_TEXT`
+- `E_SERVED_ECHO` → `E_SUSPICIOUS_TEXT`
 
 No alias is kept: `rg -nw` under `src/` for either original code is empty, and
 the suite's error-code assertions are updated for names only. Semantics do not
-drift with the names: `E_MALFORM_TEXT` stays evidence-gated (fires only when
+drift with the names: `E_SUSPICIOUS_TEXT` stays evidence-gated (fires only when
 `replace_with` reproduces rows actually served for this session, path, and
 line — never for shape alone) with the `mode: "literal"` escape intact, and
 `E_MALFORMED_ANCHOR` keeps the exact meaning of an anchor field that is not a
