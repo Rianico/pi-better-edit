@@ -377,6 +377,10 @@ export function applyEdit(
   // WHY: data (`neverServedCount`); the batch path aggregates across items and
   // WHY: renders one counted hint per call, never via warning-string matching.
   let neverServedCount = 0;
+  // WHY: (spec D6) the never-served shape scan is shape-only and pure, so it runs
+  // WHY: against an empty served set when the tracker is missing — the hint must not
+  // WHY: depend on lease state. The served prefix mismatch tier stays evidence-gated
+  // WHY: (`if (served)`): with no served content it reports nothing by construction.
   if (served) {
     const canons = servedCanons ?? [];
     const mismatches = findServedPrefixMismatches(resolved.content_lines, served, canons, 1);
@@ -389,10 +393,10 @@ export function applyEdit(
         }),
       );
     }
-    const neverServed = findNeverServedAnchorShapes(resolved.content_lines, served, 1);
-    if (neverServed.length > 0) {
-      neverServedCount = neverServed.length;
-    }
+  }
+  const neverServed = findNeverServedAnchorShapes(resolved.content_lines, served ?? [], 1);
+  if (neverServed.length > 0) {
+    neverServedCount = neverServed.length;
   }
 
   return {

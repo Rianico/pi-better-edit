@@ -206,7 +206,7 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
     cause: "served-range staleness",
     firstOffendingLine: 2,
   },
-  E_TARGET_LOST: { servedLine: 2, path: "probe.ts" },
+  E_TARGET_LOST: { servedLine: 2, path: "probe.ts", cause: "retirement" },
   E_UNVERIFIED_RANGE: {
     servedRows: [{ position: 0, hash: "abc" }],
     servedBlock: "abc│alpha",
@@ -342,7 +342,7 @@ describe("domain error registry: closed contract, not a list", () => {
     expect(writable.message).toContain("not writable");
     const gone = new DomainError("E_UNDO_STALE", { path: "p", reason: "deleted" });
     expect(gone.message).toContain("no longer exists");
-    const lost = new DomainError("E_TARGET_LOST", { servedLine: 4 });
+    const lost = new DomainError("E_TARGET_LOST", { servedLine: 4, cause: "retirement" });
     expect(lost.message).toContain("line 4 no longer resolves");
     const bare = new DomainError("E_STALE_ANCHOR", {
       headline: "anchor gone",

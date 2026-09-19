@@ -109,7 +109,7 @@ export interface ErrorPayloadMap {
   E_TARGET_LOST: {
     servedLine: number;
     path?: string;
-    cause?: RangeCause;
+    cause: RangeCause;
     firstOffendingLine?: number;
   };
   E_UNVERIFIED_RANGE: {

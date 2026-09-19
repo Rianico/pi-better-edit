@@ -51,10 +51,10 @@ export interface FileSnapshotContext {
   filePath?: string;
 }
 
-// WHY: the ad-hoc `ServedRejectionError` / `AnchorMismatchError` subclasses are retired
-// WHY: (spec D1): every rejection below is a `DomainError` whose code selects the
-// WHY: range-family payload shape, so `toFailure` and downstream consumers keep
-// WHY: `servedRows`, `servedBlock`, `cause`, and `details`.
+// WHY: the ad-hoc rejection subclasses are retired (spec D1): every rejection
+// WHY: below is a `DomainError` whose code selects the range-family payload shape, so
+// WHY: `toFailure` and downstream consumers keep `servedRows`, `servedBlock`, `cause`,
+// WHY: and `details`.
 type RangeRejection = DomainError<"E_STALE_RANGE" | "E_UNVERIFIED_RANGE" | "E_TARGET_LOST">;
 
 function isRangeRejection(error: unknown): error is RangeRejection {
@@ -164,12 +164,12 @@ function assembleRejectAndServe(args: {
 export function makeTargetLostRejection(opts: {
   servedLine: number;
   path?: string;
-  cause?: RangeCause;
+  cause: RangeCause;
 }): DomainError<"E_TARGET_LOST"> {
   return new DomainError("E_TARGET_LOST", {
     servedLine: opts.servedLine,
     ...(opts.path !== undefined ? { path: opts.path } : {}),
-    cause: opts.cause ?? "retirement",
+    cause: opts.cause,
     // WHY: the retired line is the offending line — preserved so `verify()` and
     // WHY: downstream consumers keep the coordinate without a second lookup.
     firstOffendingLine: opts.servedLine,
@@ -238,7 +238,7 @@ export function makeStaleAnchorRejection(opts: {
   startLine: number;
   endLine: number;
   snapshot: FileSnapshotContext;
-  cause?: RangeCause;
+  cause: RangeCause;
 }): DomainError<"E_STALE_ANCHOR"> {
   const { servedRows, servedBlock } = assembleRejectAndServe({
     code: "E_STALE_ANCHOR",
@@ -251,7 +251,7 @@ export function makeStaleAnchorRejection(opts: {
     headline: opts.headline,
     servedRows,
     servedBlock,
-    cause: opts.cause ?? "never-served",
+    cause: opts.cause,
   });
 }
 
@@ -400,6 +400,11 @@ export class ServedVerification {
       return { ok: true };
     } catch (error) {
       if (isRangeRejection(error)) {
+        // WHY: every range-family builder pins its own evidence cause (G3: no borrowed
+        // WHY: defaults) — a missing cause is a builder defect, so surface it loud by
+        // WHY: rethrowing the original instead of inventing one here.
+        if (error.cause === undefined) throw error;
+        const cause = error.cause;
         // WHY: the serve block travels as a typed readonly field populated at construction,
         // WHY: so no rebuild is needed here.
         return {
@@ -411,8 +416,8 @@ export class ServedVerification {
           ...(error.firstOffendingLine !== undefined
             ? { firstOffendingLine: error.firstOffendingLine }
             : {}),
-          cause: error.cause ?? "served-range staleness",
-          details: { cause: error.cause ?? "served-range staleness" },
+          cause,
+          details: { cause },
         };
       }
       throw error;

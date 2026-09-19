@@ -6,7 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
-* **edit:** add W_* applied tier, heal reversed anchors
+* **edit:** add W_* tier, heal reversed anchors
 * **edit:** add unknown and foreign anchors
 * **edit:** land tagged domain error registry
 * **edit:** rename to E_SUSPICIOUS_TEXT
@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+* **edit:** close forwarding gaps in batch and diagnostic seams
 * **edit:** clarify retry wording, structure hints
 * **edit:** tighten rejection seams, add oracle
 * **edit:** cap never-served hint to one per call
@@ -26,7 +27,6 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* document W_* warning tier and retired E_REVERSED_ANCHORS
 * add the unified error and warning contract spec
 * **spec:** sync spec to retired-identity rule
 * record as-built rejection oracle

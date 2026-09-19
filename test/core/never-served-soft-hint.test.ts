@@ -326,3 +326,38 @@ describe("guideline tier contract", () => {
     expect(`- ${line}`).toBe(promptLine);
   });
 });
+
+describe("never-served hint with no lease state (spec D6)", () => {
+  it("fires with a missing served tracker instead of skipping the scan", () => {
+    const content = "alpha\nbeta\ngamma";
+    const hashes = _lineHashesPure(content);
+    expect(hashes).not.toContain("ZZZ");
+    const submitted = `ZZZ${HASH_SEP}alpha`;
+    const edit = {
+      hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
+      content_lines: [submitted],
+    };
+    // No verification cluster at all: the shape-only scan runs against an empty
+    // served set, so the hint must not depend on lease state.
+    const result = applyEdit(content, edit, undefined, hashes);
+    expect(result.content).toBe(`alpha\n${submitted}\ngamma`);
+    expect(result.neverServedCount).toBe(1);
+  });
+
+  it("fires with an explicitly undefined served mirror", () => {
+    const content = "alpha\nbeta\ngamma";
+    const hashes = _lineHashesPure(content);
+    expect(hashes).not.toContain("ZZZ");
+    const submitted = `ZZZ${HASH_SEP}alpha`;
+    const edit = {
+      hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
+      content_lines: [submitted],
+    };
+    const result = applyEdit(content, edit, undefined, hashes, {
+      filePath: "a.txt",
+      served: undefined,
+    });
+    expect(result.content).toBe(`alpha\n${submitted}\ngamma`);
+    expect(result.neverServedCount).toBe(1);
+  });
+});
