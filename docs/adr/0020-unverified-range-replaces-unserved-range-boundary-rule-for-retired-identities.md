@@ -10,6 +10,8 @@ Amends [ADR-0018 — Region-scoped rejection serves; a retired identity recovers
 
 Amends [ADR-0014 — User/Model audience split and glossary-aligned error codes](0014-user-model-audience.md)
 
+Amended by [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md)
+
 ## Context
 
 ADR-0018 decision 1 served the model's coordinates iff at least one stale-branch bound was live and unshifted, keeping `[E_STALE_RANGE]` with its blind-retry affordance. The disjunction is unsound: a live, unshifted head with a deleted tail serves a window of lines the model never targeted while carrying `Retry with these anchors (no read needed)` — a silent wrong-range write of the Bug-1 class. The rows are leased, so the retry writes where the model never aimed.

@@ -1,6 +1,6 @@
 # Spec: Unified Error, Warning, and Feedback Contract (Zero-Leakage Domain Model)
 
-Status: proposed — amends [ADR-0014](../adr/0014-user-model-audience.md), [ADR-0018](../adr/0018-region-scoped-rejection-serves.md), [ADR-0019](../adr/0019-malformed-code-rename.md), and [ADR-0020](../adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md).
+Status: proposed — amends [ADR-0014](../adr/0014-user-model-audience.md), [ADR-0018](../adr/0018-region-scoped-rejection-serves.md), [ADR-0019](../adr/0019-malformed-code-rename.md), and [ADR-0020](../adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md). Accepted as the contract in [ADR-0021](../adr/0021-unified-error-and-warning-contract.md); where this spec differs from the registry — the `E_UNVERIFIED_RANGE` format text, the single-quoted flag spelling, the source-scan oracle sketch — the ADR-0021 decision governs.
 Foundational references: Gunnar Morling (*"What's in a Good Error Message?"*), Keel Architecture Principles (Principles 1, 2, 3, 5, 6, 8).
 
 ---

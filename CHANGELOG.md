@@ -18,7 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **edit:** close forwarding gaps in batch and diagnostic seams
+* **edit:** close batch and diagnostic gaps
 * **edit:** clarify retry wording, structure hints
 * **edit:** tighten rejection seams, add oracle
 * **edit:** cap never-served hint to one per call
@@ -27,6 +27,8 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* sync README and CONTEXT to the accepted error contract
+* **adr:** accept the unified error and warning contract (ADR-0021)
 * add the unified error and warning contract spec
 * **spec:** sync spec to retired-identity rule
 * record as-built rejection oracle

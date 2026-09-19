@@ -129,6 +129,7 @@ type HistoricalBaselineEntry = {
   file: string;
   retiredCodes: string[];
   retiredBy: string;
+  replacedBy: string[];
 };
 
 const HISTORICAL_BASELINE_POLICY = {
@@ -149,31 +150,37 @@ const HISTORICAL_BASELINE: HistoricalBaselineEntry[] = [
     file: "docs/adr/0009-bounded-hash-echo-guard.md",
     retiredCodes: ["E_SERVED_ECHO"],
     retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
   },
   {
     file: "docs/adr/0010-user-facing-drift-signals.md",
     retiredCodes: ["E_SERVED_ECHO"],
     retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
   },
   {
     file: "docs/adr/0014-user-model-audience.md",
     retiredCodes: ["E_SERVED_ECHO"],
     retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
   },
   {
     file: "docs/adr/0015-named-object-edit-payload.md",
     retiredCodes: ["E_SERVED_ECHO"],
     retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
   },
   {
     file: "docs/adr/0018-region-scoped-rejection-serves.md",
     retiredCodes: ["E_SERVED_ECHO"],
     retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
   },
   {
     file: "docs/adr/0019-malformed-code-rename.md",
     retiredCodes: ["E_SERVED_ECHO"],
     retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
   },
 ];
 
@@ -281,6 +288,19 @@ describe("terminology baseline stays recorded and shrink-only", () => {
     for (const entry of HISTORICAL_BASELINE) {
       expect(entry.retiredCodes.length).toBeGreaterThan(0);
       expect(entry.retiredBy.length).toBeGreaterThan(0);
+    }
+  });
+  it("declares the replacement code for every retired quote (keel §6: name what is retired)", () => {
+    for (const entry of HISTORICAL_BASELINE) {
+      expect(entry.replacedBy.length).toBeGreaterThan(0);
+    }
+  });
+  it("keeps every replacement live: each replacing code is still a registry member", () => {
+    const srcText = readFileSync("src/domain-errors.ts", "utf-8");
+    for (const entry of HISTORICAL_BASELINE) {
+      for (const code of entry.replacedBy) {
+        expect(srcText).toContain(`"${code}"`);
+      }
     }
   });
   it("keeps every entry needed: each listed file still quotes each declared retired code", () => {

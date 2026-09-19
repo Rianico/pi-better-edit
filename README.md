@@ -181,17 +181,17 @@ atomically to that one file — one item per call is the norm, several same-file
 | --- | --- |
 | `[E_BAD_PAYLOAD]` | The payload is not `{ "file": file, "edits": [{ "anchor_from", "anchor_to", "replace_with" }, …] }`, or a member has an unknown, missing, or wrongly-typed value. |
 | `[E_MALFORMED_ANCHOR]` | An **anchor field** is not a bare 3-char hash: empty, numeric and not 3 chars, multi-line, containing `│`, or carrying a diff-preview marker (`+`/`-`/`HASH│`). Nothing was written; pass the bare 3-char anchor and retry. Anchor fields only — `replace_with` is never refused for its shape; a replacement that reproduces a served row is `[E_SUSPICIOUS_TEXT]`. |
-| `[E_STALE_ANCHOR]` | A served anchor for this session and file no longer resolves to the line identity it was served with (retired lease with an identifiable window, or tombstoned boundary). The edit is refused and the current range is served as fresh `HASH│content` rows; retry with those rows (no `read` needed). `details.cause` carries the user-facing diagnosis (`retirement`, `tombstone`). |
+| `[E_STALE_ANCHOR]` | A served anchor for this session and file no longer resolves to the line identity it was served with (tombstoned boundary), or the call carries no previous hashes. The edit is refused; when the window is identifiable the current range is served as fresh `HASH│content` rows — retry with those rows (no `read` needed). `details.cause` carries the user-facing diagnosis (`tombstone`, `never-served`). |
 | `[E_UNKNOWN_ANCHOR]` | This session holds no lease for the anchor in any file. The edit is refused with no `HASH│content` rows and nothing is leased; carries no remedy. |
 | `[E_FOREIGN_ANCHOR]` | This session holds a lease for the anchor, but for a file other than the one the edit names. The edit is refused with no `HASH│content` rows and nothing is leased; the message names where the anchors were served (capped at 3 plus "and N more"); carries no remedy. |
-| `[E_SUSPICIOUS_TEXT]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; omit the copied anchors from `replace_with` and retry with the same anchors, or assert the bytes are content with `mode: "literal"`, the sole escape. Nothing was written. Evidence-only: a `HASH│`-shaped line whose anchor was **never served** is written verbatim. |
+| `[E_SUSPICIOUS_TEXT]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line. The edit/write is refused; omit the copied anchors from `replace_with` and retry with the same anchors, or assert the bytes are content with `mode: "literal"`, the sole escape. Nothing was written. Evidence-only: a `HASH│`-shaped line whose anchor was **never served** is written verbatim. |
 | `[E_EMPTY_RANGE]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |
 | `[E_ACCESS]` | The path is not readable or writable. |
 | `[E_UNSUPPORTED_FILE]` | The path is a directory, binary file, image, or UTF-16/UTF-32 encoded text; hashline editing only supports text files. |
 | `[E_UNDO_STALE]` | `undo_last_edit` refused: the file was modified or deleted after the last edit. |
 | `[E_UNDO_UNAVAILABLE]` | Undo history could not be persisted to the hash store; the `edit` was refused and the file was left unchanged. |
-| `[E_LARGE_FILE]` | The file exceeds the 238,328-line hashline limit. |
+| `[E_LARGE_FILE]` | The file exceeds the 238,328-line hashline limit — more than 238,328 lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or anchor space exhausted during allocation (`limitKind: "hash-space"`, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files. |
 | `[E_STALE_RANGE]` | A line inside the resolved edit range changed on disk since it was served — or was never served (paged reads, truncated output). The edit is refused and the current range is served as fresh `HASH│content` rows; retry with those rows (no `read` needed). `details.cause` carries the user-facing diagnosis (`served-range staleness`, `never-served`, `tombstone`). |
 | `[E_TARGET_LOST]` | A leased line identity was deleted or replaced and its range cannot be identified (deleted target, shifted neighbour, re-added text elsewhere, collapsed window). The edit is refused with no `HASH│content` rows and nothing is leased; read the file and re-target. `details.cause` carries the user-facing diagnosis (`retirement`). |
 | `[E_UNVERIFIED_RANGE]` | One bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted (retired lease). The edit is refused and the named window is served as a fresh read under `Current range (fresh read):` with no retry hint — decide from those rows. `details.cause` carries the user-facing diagnosis (`retirement`). |
@@ -407,8 +407,7 @@ from an older version, the previous `hash-store.json` is imported once and renam
 
 ## Troubleshooting
 
-- Stale anchors. `[E_STALE_ANCHOR]` means the file changed since
-  the anchors were read. Call `read` for fresh anchors and retry.
+- Stale anchors. `[E_STALE_ANCHOR]` means a served anchor no longer resolves to the line identity it was served with. Retry with the served rows in the rejection (no `read` needed).
 - Reset the hash store. Anchors live in
   `~/.config/pi-better-edit/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit
   pi, delete those three files, and the store is rebuilt on the next session. Anchor

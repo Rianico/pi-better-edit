@@ -8,6 +8,8 @@ accepted; amended by [ADR-0020](0020-unverified-range-replaces-unserved-range-bo
 
 Amended by [ADR-0020 — Unverified range replaces unserved range; boundary rule for retired identities](0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md)
 
+Amended by [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md)
+
 ## Context
 
 `E_*` codes were split across `content` throw vs `details.warnings`/`driftNotice` collapsed without an audience taxonomy. Humans could not distinguish informational `drift:` outside the `range` from `anchor`/`served range` staleness that the model must retry. Codes mixed `noun+adj` (`E_RANGE_STALE`) with `adj+noun` (`E_STALE_ANCHOR`), overloaded `stale anchor` for both one-line and span, retained dead `E_AMBIGUOUS_ANCHOR` (hash probing + `tombstone` `used = bitset(oldHashes) ∪ tombstone` makes file duplicates impossible except synthetic `test: synthetic collision`), and split `E_RANGE_UNVERIFIED`/`E_RANGE_UNSERVED` for the same `never-served` concept. `E_NOT_TEXT` leaked an affordance (`Use ls…`), and `E_BARE_HASH_PREFIX`/`E_INVALID_PATCH`/`E_BAD_REF` triplicated anchor-syntax with auto-heal warnings that violated `model–tool boundary` (“tool never silently rewrites `replacement_text`”). `ADR-0013` (tombstone epoch, `canon`+`snapshotId`, position-free `verifyOrThrow` with `strict` fallback) made the staleness model `tombstone∉ && canon==` + `snapshotId` epoch, but the surface was not realigned to `CONTEXT.md` glossary (`anchor`, `served range`/`served span`, `anchor staleness` vs `served-range staleness`, `drift`/`drift notice`, `payload contract`, `inclusive anchor range`).

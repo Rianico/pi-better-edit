@@ -10,6 +10,8 @@ ADR-0014's Decision is **not** superseded: audience routing (`[MODEL]` /
 extends that table with two further hard renames. ADR-0014 itself is left
 untouched as an accepted record.
 
+Amended by [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md)
+
 ## Context
 
 ADR-0014 aligned the `E_*` family to `adj+noun` with no alias and recorded the
