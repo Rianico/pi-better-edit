@@ -918,7 +918,6 @@ async function runMutations(
         splitLines(outcome.content).length,
       );
     }
-    if (!isPreview) clearNoopLoop(sessionKey, absolutePath);
     pushAppliedWarnings(outcome.anchorWarnings, outcome.neverServedCount);
   }
 
@@ -1104,6 +1103,11 @@ export async function apply(
       throw error;
     }
     clearServedRefusals(file.absolutePath);
+    // WHY: the noop-loop tracker clears only here, after the bytes are on disk, beside the
+    // WHY: served-refusal tracker — the counters reflect committed reality. An edit that writes
+    // WHY: nothing (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) never reaches this
+    // WHY: site, so its counters survive for the resubmission to trip on.
+    clearNoopLoop(sessionKey, file.absolutePath);
 
     // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4): it is
     // WHY: deliberately deferred to here, after the bytes are on disk, so an edit that writes nothing

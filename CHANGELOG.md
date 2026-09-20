@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+* **edit:** clear noop-loop tracker at the commit boundary
 * **edit:** correct warning and path comments
 * **edit:** centralize file admission in assertReq
 * **edit:** scope noop-loop tracker to session
