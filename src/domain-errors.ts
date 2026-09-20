@@ -557,7 +557,13 @@ export const WARNING_REGISTRY: {
  * SAFETY: the sole producer of `[W_*]` headers. Renders
  * `[<AUDIENCE>] [<W_CODE>] <neutral-observation>` from the registry, so every
  * applied-tier warning carries its machine-readable code and audience by
- * construction. Callers append caller-specific remedies (never raw headers).
+ * construction. The registry owns the neutral observation only: the
+ * applied-hint builders append exactly one retained conditional clause
+ * after it (never a raw header) — the shared `ANCHOR_PREFIX_REMEDY` on
+ * `buildServedEditPrefixNote` and `buildNeverServedEditHint`, a
+ * write-specific conditional clause on `buildServedWritePrefixNote`. Each
+ * clause is guidance phrased as a conditional reference (`If ... unintended`),
+ * not an order.
  */
 export function formatWarning<K extends DomainWarningCode>(
   code: K,

@@ -46,6 +46,10 @@ Each item is the same fixed three-position tuple as `edit`. Existing batch limit
 
 - Both public shapes normalize into the existing internal edit representation before mutation.
 - `null` path is normalized through the existing `resolveMissingPath` behavior; it does not create a variable-arity tuple.
+  - Note: `resolveMissingPath` was retired by ADR-0021 and Keel Principle 4
+    (naming the target belongs to the caller, not the tool); a missing, null
+    or empty `file` now fails closed with `[E_BAD_PAYLOAD]` at the admission
+    boundary.
 - The range array is normalized to the existing `remove_from` and `remove_to` fields.
 - No model-supplied digest, expected-hash list, force flag, fuzzy matching, silent remapping, or recovery merge is added.
 - Rejection feedback continues to serve fresh rows, so a retry does not require a read.
