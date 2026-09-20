@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { lineHashes, _lineHashesPure } from "../../src/hashline";
-import { clearNoopLoop, runNoopPolicy } from "../../src/noop-guard";
+import { _noopLoopHasSession, clearNoopLoop, runNoopPolicy } from "../../src/noop-guard";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
 
 function sessionCtx(base: any, id: string): any {
@@ -137,6 +137,39 @@ describe("edit noop-loop tracker session scope", () => {
     const twoKept = await runNoopPolicy(baseFor(fileTwo));
     expect(twoKept.action).toBe("warn");
     expect(twoKept.count).toBe(2);
+    clearNoopLoop(sessionKey);
+  });
+
+  it("releases the session entry once its last path is cleared", async () => {
+    const lines = ["aaa", "bbb", "ccc"];
+    const hashes = _lineHashesPure(lines.join("\n"));
+    const fileOne = "/tmp/noop-session-guard-r1.ts";
+    const fileTwo = "/tmp/noop-session-guard-r2.ts";
+    const sessionKey = "guard-path-release";
+    const baseFor = (absolutePath: string) => ({
+      absolutePath,
+      removeFrom: hashes[1]!,
+      removeTo: hashes[1]!,
+      replacementText: "bbb",
+      ref: `edit[0] (${absolutePath})`,
+      range: { startLine: 2, endLine: 2, startHash: hashes[1]!, endHash: hashes[1]!, delta: 0 },
+      hashes,
+      lines,
+      contentHash: "C",
+      sessionKey,
+      batch: false as const,
+    });
+    clearNoopLoop(sessionKey);
+    await runNoopPolicy(baseFor(fileOne));
+    await runNoopPolicy(baseFor(fileTwo));
+    expect(_noopLoopHasSession(sessionKey)).toBe(true);
+
+    clearNoopLoop(sessionKey, fileOne);
+    expect(_noopLoopHasSession(sessionKey)).toBe(true);
+
+    clearNoopLoop(sessionKey, fileTwo);
+    expect(_noopLoopHasSession(sessionKey)).toBe(false);
+
     clearNoopLoop(sessionKey);
   });
 });

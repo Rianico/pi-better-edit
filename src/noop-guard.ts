@@ -56,7 +56,22 @@ export function clearNoopLoop(sessionKey: string, absolutePath?: string): void {
     noopLoopTracker.delete(sessionKey);
     return;
   }
-  noopLoopTracker.get(sessionKey)?.delete(absolutePath);
+  const perSession = noopLoopTracker.get(sessionKey);
+  if (perSession === undefined) {
+    return;
+  }
+  perSession.delete(absolutePath);
+  if (perSession.size === 0) {
+    noopLoopTracker.delete(sessionKey);
+  }
+}
+
+// WHY: test seam only — lets the unit check confirm the per-path
+// WHY: clear releases the session entry once its last path is gone,
+// WHY: so a long-lived process keeps no empty maps. Never used
+// WHY: outside tests; the policy path stays unchanged.
+export function _noopLoopHasSession(sessionKey: string): boolean {
+  return noopLoopTracker.has(sessionKey);
 }
 
 // WHY: NOOP_LOOP_THRESHOLD re-export removed

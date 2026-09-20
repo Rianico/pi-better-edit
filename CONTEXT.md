@@ -207,5 +207,5 @@ A call whose resolved range already contains the replacement text: nothing chang
 _Avoid_: E_NOOP (no such code; the warn arm is W_NOOP, the refuse arm is E_NOOP_LOOP)
 
 **remedy-eligibility**:
-Payload text reports facts; a remedy clause may appear only when it is helpful, unharmful and fail-closed AND the evidence pins a single cause. When the intent is ambiguous the payload states the fact and carries no remedy, because an intent-guessing suggestion steers the model's next action. Remedy-free by rule: `E_UNKNOWN`, `E_UNKNOWN_ANCHOR`, `E_FOREIGN_ANCHOR`, `E_UNVERIFIED_RANGE` (see ADR-0021 decision 4).
+Payload text reports facts; a remedy clause may appear only when it is helpful, unharmful and fail-closed AND the evidence pins a single cause. When the intent is ambiguous the payload states the fact and carries no remedy, because an intent-guessing suggestion steers the model's next action. Remedy-free by rule: `E_UNKNOWN`, `E_UNKNOWN_ANCHOR`, `E_FOREIGN_ANCHOR`, `E_UNVERIFIED_RANGE`, `E_NOOP_LOOP` (see ADR-0021 decision 4).
 _Avoid_: suggestion (an intent-guessing remedy steers the model's next action)
