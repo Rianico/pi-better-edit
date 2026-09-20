@@ -81,7 +81,7 @@ export interface ApplyVerificationContext {
 /**
  * WHY: the served hash echo gate is evidence-only (CONTEXT.md served hash echo,
  * WHY: ADR-0009 revision, `[E_SUSPICIOUS_TEXT]`): one position-agnostic,
- * WHY: content-matched scan over the replacement views via the unified
+ * WHY: content-matched scan over the lines that will be written via the unified
  * WHY: `findServedHashEcho` — never a shape check, so a served prefix with
  * WHY: differing content stays accepted.
  */
@@ -250,7 +250,6 @@ export function applyEdit(
   const lineIndex = buildIdx(content);
   const fileHashes = precomputedHashes ?? defaultHashIdentity.hashesForSync(content);
   const warnings: string[] = [];
-  const rawReplacementLines = [...edit.content_lines];
   let literalBypass = false;
 
   const prefixFixed = prepareEdit(fileHashes, edit, warnings).fixed;
@@ -275,31 +274,28 @@ export function applyEdit(
   warnUnicodeEsc(prefixFixed, warnings);
 
   if (served) {
-    // WHY: evidence-only gate (ADR-0009 revision): each replacement view is scanned
-    // WHY: position-agnostic against the served mirror with its canon mirror. No canon
-    // WHY: data means no evidence, so the scan stays silent — never a shape refusal.
+    // WHY: evidence-only gate (ADR-0009 revision): one position-agnostic scan of
+    // WHY: the lines that will be written (`resolved.content_lines`) against the
+    // WHY: served mirror with its canon mirror. Nothing rewrites `content_lines`
+    // WHY: between `prepareEdit`/`resolveEdit` and the write, so one view suffices.
+    // WHY: No canon data means no evidence, so the scan stays silent — never a shape refusal.
     // WHY: `leaseRebased` needs no separate current-anchor scan: identity lives in the
     // WHY: lease seam, and the served hash echo condition only names served anchors.
     const canons = servedCanons ?? [];
-    const views: Array<{ lines: string[]; offending: string[] }> = [
-      { lines: rawReplacementLines, offending: rawReplacementLines },
-      { lines: resolved.content_lines, offending: resolved.content_lines },
-      { lines: prefixFixed.content_lines, offending: prefixFixed.content_lines },
-    ];
+    // WHY: the scan input names that one view explicitly, so a future stage
+    // WHY: cannot re-add a second view silently.
+    const scan = { lines: resolved.content_lines, anchors: served, canons };
+    const hit = findServedHashEcho(scan.lines, scan.anchors, scan.canons, 1);
     let servedCopy:
       | { k: number; hash: string; servedLine: number; offendingLine: string }
       | undefined;
-    for (const view of views) {
-      const hit = findServedHashEcho(view.lines, served, canons, 1);
-      if (hit !== undefined) {
-        servedCopy = {
-          k: hit.k,
-          hash: hit.hash,
-          servedLine: hit.servedLine,
-          offendingLine: view.offending[hit.k - 1] ?? "",
-        };
-        break;
-      }
+    if (hit !== undefined) {
+      servedCopy = {
+        k: hit.k,
+        hash: hit.hash,
+        servedLine: hit.servedLine,
+        offendingLine: resolved.content_lines[hit.k - 1] ?? "",
+      };
     }
     if (servedCopy) {
       if (mode === "literal") {

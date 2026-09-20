@@ -255,6 +255,20 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     expect(result.literalBypass).toBe(true);
     expect(result.warnings?.join("\n")).toContain("[USER]");
   });
+
+  it("refuses a served hash echo submitted with reversed anchors ([E_SUSPICIOUS_TEXT] healed path)", () => {
+    const content = "alpha\nbeta\ngamma\ndelta";
+    const hashes = _lineHashesPure(content);
+    const served: (string | null)[] = [...hashes];
+    const servedCanons = canonsFor(content);
+    const edit = {
+      hash_bounds: [{ hash: hashes[2]! }, { hash: hashes[1]! }] as any,
+      content_lines: [`${hashes[1]}${HASH_SEP}beta`],
+    };
+    expect(() =>
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
+    ).toThrow(/\[E_SUSPICIOUS_TEXT\]/);
+  });
 });
 
 describe("applyEdit — rebased served check stays evidence-only", () => {
