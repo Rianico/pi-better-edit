@@ -97,7 +97,7 @@ describe("task-147 rejection diagnostics", () => {
       sessionKey: "task147-noop",
       contentHash: "C",
     };
-    clearNoopLoop(base.absolutePath);
+    clearNoopLoop(base.sessionKey, base.absolutePath);
     await runNoopPolicy({ ...base, batch: false });
     const notice = await runNoopPolicy({ ...base, batch: false });
     expect(notice.action).toBe("warn");
@@ -114,7 +114,7 @@ describe("task-147 rejection diagnostics", () => {
       expect(rejectSingle.error.message).toContain("rejecting.");
       expect(rejectSingle.error.message).not.toContain("rejecting the batch");
     }
-    clearNoopLoop(`${base.absolutePath}-batch`);
+    clearNoopLoop(base.sessionKey, `${base.absolutePath}-batch`);
     const batchBase = { ...base, absolutePath: `${base.absolutePath}-batch` };
     await runNoopPolicy({ ...batchBase, batch: true });
     await runNoopPolicy({ ...batchBase, batch: true });

@@ -922,7 +922,7 @@ async function runMutations(
         splitLines(outcome.content).length,
       );
     }
-    if (!isPreview) clearNoopLoop(absolutePath);
+    if (!isPreview) clearNoopLoop(sessionKey, absolutePath);
     pushAppliedWarnings(outcome.anchorWarnings, outcome.neverServedCount);
   }
 

@@ -8,13 +8,17 @@ type NoopLoopEntry = {
   count: number;
 };
 
-// WHY: one slot per sibling item (`path -> ref -> entry`): siblings in one call
-// WHY: carry distinct payloads, so a shared path key would let each item reset
-// WHY: the other's count and the loop would never trip. A nested map keeps the
-// WHY: slots structurally separate (no separator to collide) and lets
-// WHY: `clearNoopLoop(path)` drop every slot with one delete. A single-item
-// WHY: call carries only `edit[0]`, so its behaviour is unchanged.
-const noopLoopTracker = new Map<string, Map<string, NoopLoopEntry>>();
+// WHY: session-keyed slots (`session -> path -> ref -> entry`): serves are
+// WHY: session-keyed (ADR-0002), so one session's counts must never leak into
+// WHY: another session editing the same file. Siblings in one call carry
+// WHY: distinct payloads per `ref`, so a shared key would let each item reset
+// WHY: the other's count and the loop would never trip. Nested maps keep the
+// WHY: slots structurally separate (no separator to collide). Clearing takes
+// WHY: the session first because the session owns the authority: one delete
+// WHY: drops the whole session tracker, and one nested delete drops a single
+// WHY: file's slots. A single-item call carries only `edit[0]`, so its
+// WHY: behaviour is unchanged.
+const noopLoopTracker = new Map<string, Map<string, Map<string, NoopLoopEntry>>>();
 
 function noopPayloadKey(
   absolutePath: string,
@@ -25,11 +29,21 @@ function noopPayloadKey(
   return JSON.stringify([absolutePath, removeFrom, removeTo, replacementText]);
 }
 
-function trackNoopPayload(absolutePath: string, ref: string, payload: string): number {
-  let perPath = noopLoopTracker.get(absolutePath);
+function trackNoopPayload(
+  sessionKey: string,
+  absolutePath: string,
+  ref: string,
+  payload: string,
+): number {
+  let perSession = noopLoopTracker.get(sessionKey);
+  if (perSession === undefined) {
+    perSession = new Map<string, Map<string, NoopLoopEntry>>();
+    noopLoopTracker.set(sessionKey, perSession);
+  }
+  let perPath = perSession.get(absolutePath);
   if (perPath === undefined) {
     perPath = new Map<string, NoopLoopEntry>();
-    noopLoopTracker.set(absolutePath, perPath);
+    perSession.set(absolutePath, perPath);
   }
   const existing = perPath.get(ref);
   const count = existing && existing.payload === payload ? existing.count + 1 : 1;
@@ -37,8 +51,12 @@ function trackNoopPayload(absolutePath: string, ref: string, payload: string): n
   return count;
 }
 
-export function clearNoopLoop(absolutePath: string): void {
-  noopLoopTracker.delete(absolutePath);
+export function clearNoopLoop(sessionKey: string, absolutePath?: string): void {
+  if (absolutePath === undefined) {
+    noopLoopTracker.delete(sessionKey);
+    return;
+  }
+  noopLoopTracker.get(sessionKey)?.delete(absolutePath);
 }
 
 // WHY: NOOP_LOOP_THRESHOLD re-export removed
@@ -70,7 +88,7 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
     input.removeTo,
     input.replacementText,
   );
-  const count = trackNoopPayload(input.absolutePath, input.ref, payload);
+  const count = trackNoopPayload(input.sessionKey, input.absolutePath, input.ref, payload);
 
   if (count >= NOOP_LOOP_THRESHOLD) {
     const servedRows = buildRangeServeRows(
