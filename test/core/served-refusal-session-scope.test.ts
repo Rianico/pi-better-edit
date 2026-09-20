@@ -1,16 +1,17 @@
 /**
  * Issue #132: the refusal tally beside the served hash echo gate is session-scoped and
  * bounded.
+ *
  * The tally only sharpens the `(submission N×)` clause of `E_SUSPICIOUS_TEXT`
  * (`suspiciousTail` in `src/domain-errors.ts`); it gates nothing. Keying it by
- * absolute path alone let two sessions sharing a path inherit each other's count
- * and let a long-running process retain one entry per refused path forever.
+ * absolute path alone let two sessions sharing a path inherit each other's count and
+ * let a long-running process retain one entry per refused path forever.
  */
-import { describe, expect, it } from "vitest";
+import { beforeEach, describe, expect, it } from "vitest";
 import {
   SERVED_REFUSAL_MAX_ENTRIES,
-  _servedRefusalEntryCount,
-  _servedRefusalHasSession,
+  _servedRefusalSize,
+  clearAllServedRefusalsForTest,
   clearServedRefusals,
   trackServedEditRefusal,
   trackServedWriteRefusal,
@@ -21,6 +22,10 @@ import { setupIntegrationTest, useTestHome, withTempFile } from "../support/fixt
 const REFUSED_LINE = "Ab3│hello";
 const home = useTestHome();
 
+beforeEach(() => {
+  clearAllServedRefusalsForTest();
+});
+
 describe("served-refusal tally — session scope (#132)", () => {
   it("does not share a count between two sessions refusing the same path", () => {
     const path = "/tmp/132-share.txt";
@@ -29,6 +34,8 @@ describe("served-refusal tally — session scope (#132)", () => {
     // The second session starts at 1: no inherited tally from the first.
     expect(trackServedWriteRefusal("sess-share-b", path, REFUSED_LINE)).toBe(1);
     expect(trackServedWriteRefusal("sess-share-b", path, REFUSED_LINE)).toBe(2);
+    // One composite key per (session, path), never one per refusal.
+    expect(_servedRefusalSize()).toBe(2);
   });
 
   it("sharpens within one session and restarts when the refused payload changes", () => {
@@ -39,6 +46,7 @@ describe("served-refusal tally — session scope (#132)", () => {
     expect(trackServedEditRefusal(sessionKey, path, "Ab3", "Cd4", REFUSED_LINE)).toBe(3);
     // A different refused payload is a new refusal, not a continuum.
     expect(trackServedEditRefusal(sessionKey, path, "Ab3", "Cd4", "Zz9│hello")).toBe(1);
+    expect(_servedRefusalSize()).toBe(1);
   });
 
   it("clears one path without touching the session's other paths or another session", () => {
@@ -47,34 +55,58 @@ describe("served-refusal tally — session scope (#132)", () => {
     expect(trackServedWriteRefusal("sess-clear", a, REFUSED_LINE)).toBe(1);
     expect(trackServedWriteRefusal("sess-clear", b, REFUSED_LINE)).toBe(1);
     expect(trackServedWriteRefusal("sess-clear-other", a, REFUSED_LINE)).toBe(1);
+    expect(_servedRefusalSize()).toBe(3);
     clearServedRefusals("sess-clear", a);
+    // The composite key for exactly that (session, path) is gone.
+    expect(_servedRefusalSize()).toBe(2);
     expect(trackServedWriteRefusal("sess-clear", a, REFUSED_LINE)).toBe(1);
     expect(trackServedWriteRefusal("sess-clear", b, REFUSED_LINE)).toBe(2);
     expect(trackServedWriteRefusal("sess-clear-other", a, REFUSED_LINE)).toBe(2);
+    expect(_servedRefusalSize()).toBe(3);
   });
 
-  it("releases the session entry when its last path is cleared", () => {
-    const path = "/tmp/132-release.txt";
-    const sessionKey = "sess-release";
-    trackServedWriteRefusal(sessionKey, path, REFUSED_LINE);
-    expect(_servedRefusalHasSession(sessionKey)).toBe(true);
-    clearServedRefusals(sessionKey, path);
-    expect(_servedRefusalHasSession(sessionKey)).toBe(false);
-  });
-
-  it("bounds the tracker: past the cap the oldest entry is released, the newest sharpens", () => {
-    const sessionKey = "sess-bound";
-    const first = "/tmp/132-bound-first.txt";
-    expect(trackServedWriteRefusal(sessionKey, first, REFUSED_LINE)).toBe(1);
-    for (let index = 0; index < SERVED_REFUSAL_MAX_ENTRIES + 64; index++) {
-      trackServedWriteRefusal(sessionKey, `/tmp/132-bound-${index}.txt`, REFUSED_LINE);
+  it("bounds the tracker globally without draining one session first", () => {
+    const sessions = Array.from({ length: 10 }, (_, index) => `sess-multi-${index}`);
+    const pathOf = (pathIndex: number) => `/tmp/132-multi-${pathIndex}.txt`;
+    // Round-robin insertion: 10 sessions x 30 paths = 300 distinct composite keys, so
+    // every session's keys are spread across the whole insertion order.
+    for (let pathIndex = 0; pathIndex < 30; pathIndex++) {
+      for (const sessionKey of sessions) {
+        trackServedWriteRefusal(sessionKey, pathOf(pathIndex), REFUSED_LINE);
+      }
+      expect(_servedRefusalSize()).toBeLessThanOrEqual(SERVED_REFUSAL_MAX_ENTRIES);
     }
-    expect(_servedRefusalEntryCount()).toBeLessThanOrEqual(SERVED_REFUSAL_MAX_ENTRIES);
-    // The first entry was evicted: its tally restarts at 1.
-    expect(trackServedWriteRefusal(sessionKey, first, REFUSED_LINE)).toBe(1);
-    // The newest entry survived eviction: it still sharpens.
-    const newest = `/tmp/132-bound-${SERVED_REFUSAL_MAX_ENTRIES + 63}.txt`;
-    expect(trackServedWriteRefusal(sessionKey, newest, REFUSED_LINE)).toBe(2);
+    expect(_servedRefusalSize()).toBe(SERVED_REFUSAL_MAX_ENTRIES);
+    // The 44 globally oldest keys are gone: each session's earliest paths restart at 1.
+    for (const sessionKey of sessions) {
+      expect(trackServedWriteRefusal(sessionKey, pathOf(0), REFUSED_LINE)).toBe(1);
+    }
+    // No session was drained: every session still holds its newest path and it sharpens.
+    for (const sessionKey of sessions) {
+      expect(trackServedWriteRefusal(sessionKey, pathOf(29), REFUSED_LINE)).toBe(2);
+    }
+  });
+
+  it("keeps a resubmitted refusal (LRU on touch) and evicts the head", () => {
+    const sessionKey = "sess-lru";
+    const touched = "/tmp/132-lru-touched.txt";
+    const oldest = "/tmp/132-lru-oldest.txt";
+    expect(trackServedWriteRefusal(sessionKey, oldest, REFUSED_LINE)).toBe(1);
+    expect(trackServedWriteRefusal(sessionKey, touched, REFUSED_LINE)).toBe(1);
+    for (let index = 0; index < 200; index++) {
+      trackServedWriteRefusal("sess-lru-other", `/tmp/132-lru-${index}.txt`, REFUSED_LINE);
+    }
+    // A resubmission moves its key to the tail of the LRU order.
+    expect(trackServedWriteRefusal(sessionKey, touched, REFUSED_LINE)).toBe(2);
+    for (let index = 200; index < 300; index++) {
+      trackServedWriteRefusal("sess-lru-other", `/tmp/132-lru-${index}.txt`, REFUSED_LINE);
+    }
+    expect(_servedRefusalSize()).toBe(SERVED_REFUSAL_MAX_ENTRIES);
+    // 46 keys over the cap were evicted, and the resubmitted one is not among them —
+    // insertion-order FIFO would have evicted it as the 2nd-oldest key.
+    expect(trackServedWriteRefusal(sessionKey, touched, REFUSED_LINE)).toBe(3);
+    // The least recently refused key is the head, and the head is what goes.
+    expect(trackServedWriteRefusal(sessionKey, oldest, REFUSED_LINE)).toBe(1);
   });
 });
 
