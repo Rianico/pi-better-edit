@@ -18,10 +18,8 @@ export type NormalizedEditRequest = {
   edits: EditItem[];
   mode?: EditMode;
 };
-// WHY: pre-admission record shape — normReq folds legacy keys before the gate;
-// WHY: the file stays nullable here until assertReq narrows to NormalizedEditRequest.
 type PreAdmissionRequest = {
-  file: string | null;
+  file: string;
   edits: EditItem[];
   mode?: EditMode;
 };
@@ -269,15 +267,15 @@ export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined
     if (!normalized) return undefined;
     items.push(normalized);
   }
-  if (mode !== undefined) return { file: effectivePath as string | null, edits: items, mode };
-  return { file: effectivePath as string | null, edits: items };
+  if (mode !== undefined) return { file: effectivePath as string, edits: items, mode };
+  return { file: effectivePath as string, edits: items };
 }
 
 export function normReq(input: unknown): NormReqResult {
   const valid = editRequestFrom(input);
   // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
   if (!valid) return input as NormReqResult;
-  const record: Record<string, unknown> & { file: string | null; edits: EditItem[] } =
+  const record: Record<string, unknown> & { file: string; edits: EditItem[] } =
     valid.mode !== undefined
       ? { file: valid.file, edits: valid.edits, mode: valid.mode }
       : { file: valid.file, edits: valid.edits };
@@ -313,7 +311,7 @@ export function prepareEditArguments(args: unknown): Record<string, unknown> {
   });
 }
 
-export function getPreviewInput(args: unknown): { file: string | null; edits: EditItem[] } | null {
+export function getPreviewInput(args: unknown): { file: string; edits: EditItem[] } | null {
   const req = editRequestFrom(args);
   if (!req) return null;
   return req;
