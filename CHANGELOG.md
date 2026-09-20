@@ -18,7 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **edit:** unify admission gate on structural hint
+* **edit:** unify admission on structural hint
 * **edit:** drop empty noop session maps
 * **edit:** clear noop-loop tracker on commit
 * **edit:** correct warning and path comments
