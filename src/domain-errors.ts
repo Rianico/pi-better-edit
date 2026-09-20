@@ -332,11 +332,13 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     format: () =>
       "Cannot empty a non-empty file via edit. Use `write` if you need to clear the file.",
+    // WHY remedy: the resolved edit empties a non-empty file and the payload carries no fields, so the clear belongs to write. See ADR-0021.
     remedy: "Use write to clear the file.",
   },
   E_STALE_ANCHOR: {
     audience: "MODEL",
     format: staleAnchorFormat,
+    // WHY remedy: a row was served for this path and its line identity is retired, so the served window pins the retry. See ADR-0021.
     remedy: "Retry with the served rows; no read is needed.",
   },
   E_UNKNOWN_ANCHOR: {
@@ -351,12 +353,14 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     format: ({ headline, servedBlock }) =>
       `${headline}\nCurrent range:\n${servedBlock}\n${RETRY_HINT}`,
+    // WHY remedy: the served rows prove the named lines no longer match what was served, and `cause` names the drift kind. See ADR-0021.
     remedy: "Retry with the served rows; no read is needed.",
   },
   E_TARGET_LOST: {
     audience: "MODEL",
     format: ({ servedLine, path }) =>
       `line ${servedLine}${path ? ` in ${path}` : ""} no longer resolves to the line identity it was served with.\n${TARGET_LOST_RECOVERY}`,
+    // WHY remedy: the leased identity is gone with no surviving window to serve — `servedLine` names the dead line, so recovery is a read. See ADR-0021.
     remedy: "Read the file and re-target.",
   },
   E_UNVERIFIED_RANGE: {
@@ -366,11 +370,13 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_MALFORMED_ANCHOR: {
     audience: "MODEL",
     format: ({ rawAnchor, reason }) => `Invalid anchor "${rawAnchor}": ${reason}`,
+    // WHY remedy: the parse rejected the token before any resolution — `rawAnchor` and `reason` name the shape failure. See ADR-0021.
     remedy: "Pass the bare 3-char anchor and retry.",
   },
   E_SUSPICIOUS_TEXT: {
     audience: "MODEL",
     format: suspiciousFormat,
+    // WHY remedy: the replacement reproduces a served hash echo for this session, path and line — `target`, `hash` and `servedLine` pin the row. See ADR-0021.
     remedy:
       'Omit the copied anchors from replace_with and retry with the same anchors, or declare intent with mode: "literal".',
   },
@@ -392,6 +398,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
       `The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.` +
       (servedBlock ? ` Current range:\n${servedBlock}` : " Call read() to get fresh anchors.") +
       `\nMerge the overlapping ranges into a single edit (or split them into separate edit calls), then resubmit.`,
+    // WHY remedy: the resolved coordinates prove the two spans overlap — `earlierStart`/`earlierEnd` and `laterStart`/`laterEnd` pin the pair. See ADR-0021.
     remedy: "Merge the overlapping ranges into a single edit, or split them into separate calls.",
   },
   E_NOOP_LOOP: {
@@ -406,11 +413,13 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
           `Range already contains this text; rejecting the batch. Current range:\n${servedBlock}`
         : `identical edit (${removeFrom} → ${removeTo} ${ref}) submitted ${count}×, no changes each time. ` +
           `Range already contains this text; rejecting. Current range:\n${servedBlock}`,
+    // WHY remedy: `count` proves the identical edit (`ref`, `removeFrom`→`removeTo`) resubmitted with the range already holding the text. See ADR-0021.
     remedy: "The range already contains this text; nothing was written.",
   },
   E_UNSUPPORTED_FILE: {
     audience: "MODEL",
     format: unsupportedFormat,
+    // WHY remedy: detection classified the target — `kind` (directory, binary or image) proves it is not an editable text file. See ADR-0021.
     remedy: "Choose a text file and retry.",
   },
   E_ACCESS: {
@@ -422,6 +431,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     format: ({ path }) =>
       `File not found: ${path}. Check the "file" value (a text file, never a directory); ` +
       `use ls on the parent directory and retry with the corrected file.`,
+    // WHY remedy: the filesystem answered ENOENT — `path` names a file that does not exist to edit. See ADR-0021.
     remedy: "Use ls on the parent directory and retry with the corrected file.",
   },
   E_UNDO_STALE: {
@@ -436,6 +446,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     format: ({ path }) =>
       `Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. ` +
       `Retry the edit, or use write if the store cannot be recovered.`,
+    // WHY remedy: the hash store persist failed with the edit unapplied and the file unchanged, so retrying the edit is safe. See ADR-0021.
     remedy: "Retry the edit.",
   },
   E_UNKNOWN: {
@@ -446,6 +457,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_LARGE_FILE: {
     audience: "MODEL",
     format: largeFileFormat,
+    // WHY remedy: the named limit was exceeded — `limitKind` (lines with `lineCount`, or hash-space) and `limit` pin the capacity. See ADR-0021.
     remedy: "Use write or a non-line-based approach for very large files.",
   },
 };
