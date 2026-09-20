@@ -37,6 +37,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* **adr:** record E_NOOP_LOOP as remedy-free
 * **readme:** scope interiors to [E_STALE_RANGE]
 * **adr:** accept ADR-0021 error-warning contract
 * add the unified error and warning contract spec
