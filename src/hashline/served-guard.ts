@@ -263,7 +263,12 @@ export function findNeverServedAnchorShapes(
  * Applied-only, bytes untouched, never blocks: the bytes were written as-is with
  * no rewrite. Once per `edit` call however many offending lines it holds — `count`
  * states how many replacement lines match the tool's own row shape with anchors
- * never served for this session and file. Observation only: no remedy, no imperative.
+ * never served for this session and file. The trailing conditional clause is deliberate:
+ * gated on `if ... unintended`, it names the affordance that exists in that case
+ * (`undo_last_edit`, then retry without the prefix) — a conditional reference, not an
+ * order, carrying no run prefix. Both applied-hint builders (this one and
+ * `buildServedEditPrefixNote`) carry the clause byte-identically, pinned by
+ * test/core/served-prefix-note.test.ts.
  * Surfaced through the warnings seam (rendered by warnBlock) on the model-visible channel.
  */
 export function buildNeverServedEditHint(args: { count: number }): string {

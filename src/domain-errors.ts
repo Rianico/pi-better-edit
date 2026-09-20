@@ -406,7 +406,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
           `Range already contains this text; rejecting the batch. Current range:\n${servedBlock}`
         : `identical edit (${removeFrom} → ${removeTo} ${ref}) submitted ${count}×, no changes each time. ` +
           `Range already contains this text; rejecting. Current range:\n${servedBlock}`,
-    remedy: "The range already contains the replacement text; send different content.",
+    remedy: "The range already contains this text; nothing was written.",
   },
   E_UNSUPPORTED_FILE: {
     audience: "MODEL",
