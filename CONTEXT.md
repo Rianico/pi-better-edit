@@ -139,7 +139,7 @@ The `│` character dividing a served row into `HASH│content`. The model copie
 _Avoid_: pipe, delimiter
 
 **file**:
-The top-level payload field naming the text file to edit — a non-empty string, never a directory. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file. A legacy `null` (anchor-based inference) is still folded in code but untaught.
+The top-level payload field naming the text file to edit — a non-empty string, never a directory. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file. A legacy `null` file is still folded in code but rejected fail-closed with `[E_BAD_PAYLOAD]`.
 _Avoid_: path, optional path
 
 **edit item**:

@@ -18,7 +18,8 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **edit:** route noop-loop rejection through batch envelope per slot
+* **edit:** retire file inference, fail closed on missing file
+* **edit:** route noop-loop rejection via batch
 * **edit:** close batch and diagnostic gaps
 * **edit:** clarify retry wording, structure hints
 * **edit:** tighten rejection seams, add oracle
@@ -28,6 +29,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* **edit:** retire file inference mention in glossary
 * **adr:** accept ADR-0021 error-warning contract
 * add the unified error and warning contract spec
 * **spec:** sync spec to retired-identity rule

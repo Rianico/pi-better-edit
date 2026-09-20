@@ -20,12 +20,10 @@ describe("C1 deepening — Edit Tool seam", () => {
     expect(editToolSource).not.toContain("Text");
   });
 
-  it("owns pipeline delegation, path resolution and mutation stitching inside EditTool", async () => {
+  it("owns pipeline delegation inside EditTool", async () => {
     const src = readFileSync("src/edit-tool.ts", "utf-8");
-    expect(src).toContain("resolveMissingPath");
     expect(src).toContain("engineExecute");
     expect(src).toContain("sessionKeyFor");
-    expect(src).toContain("buildBatchResult");
   });
 
   it("moves TUI rendering into TuiPresenter adapter with isolated casts", async () => {

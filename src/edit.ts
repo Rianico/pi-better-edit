@@ -44,7 +44,6 @@ export {
   editFileSchema,
   editModeSchema,
 };
-export { resolveMissingPath } from "./edit-tool.js";
 export { reuseText, reuseMarkdown } from "./tui-presenter.js";
 
 export type EditParams = {
