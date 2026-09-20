@@ -15,7 +15,6 @@ import { sessionKeyFor } from "./served-session/session.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "./payload-contract.js";
 import { execute as engineExecute, preview as enginePreview } from "./mutation-engine/engine.js";
 import { isMutationSuccess } from "./mutation-engine/types.js";
-import { DomainError } from "./domain-errors.js";
 import { genDiff } from "./edit-diff.js";
 
 export type EditToolContext = {
@@ -44,12 +43,6 @@ export function createEditTool(): EditTool {
     async execute(params, signal, ctx) {
       const canonical = normReq(params);
       assertReq(canonical);
-      if (canonical.file === null) {
-        throw new DomainError("E_BAD_PAYLOAD", {
-          message:
-            'Edit request "file" must be a non-empty string naming the text file to edit (never a directory); nothing was written.',
-        });
-      }
       // SAFETY: ctx is untyped at pi boundary — cast validated by pi's runtime context shape (cwd + sessionManager)
       const sessionKey = sessionKeyFor(
         ctx as unknown as { sessionManager?: { getSessionId(): string } },
@@ -84,12 +77,6 @@ export function createEditTool(): EditTool {
       try {
         const normalized = normReq(request);
         assertReq(normalized);
-        if ((normalized as NormalizedEditRequest).file === null) {
-          throw new DomainError("E_BAD_PAYLOAD", {
-            message:
-              'Edit request "file" must be a non-empty string naming the text file to edit (never a directory); nothing was written.',
-          });
-        }
         // SAFETY: normalized is validated NormalizedEditRequest after assertReq
         const result = await enginePreview(normalized as NormalizedEditRequest, cwd, {
           accessMode: constants.R_OK,

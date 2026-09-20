@@ -20,11 +20,13 @@ describe("assertReq", () => {
     ).toThrow("exactly");
   });
 
-  it("accepts legacy path and null-path payloads via folding", () => {
+  it("accepts legacy path payloads via folding and rejects null-path fail-closed", () => {
     expect(() =>
       assertReq(normReq({ path: "test.txt", edits: [["AAA", "BBB", "new"]] })),
     ).not.toThrow();
-    expect(() => assertReq(normReq({ path: null, edits: [["AAA", "BBB", "new"]] }))).not.toThrow();
+    expect(() => assertReq(normReq({ path: null, edits: [["AAA", "BBB", "new"]] }))).toThrow(
+      'Edit request "file" must be a non-empty string',
+    );
   });
 
   it("rejects malformed shapes and member types", () => {

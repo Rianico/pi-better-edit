@@ -693,11 +693,7 @@ async function runMutations(
   cwd: string,
   options?: PipelineOptions,
 ): Promise<ProcessedEditFile> {
-  if (request.file === null) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: "Edit request file could not be inferred from anchors.",
-    });
-  }
+  // WHY: the file was answered at admission (assertReq); the narrowed type carries it here.
   const path = request.file;
   const items = request.edits;
   const mode = request.mode ?? "general";
@@ -1059,12 +1055,8 @@ export async function apply(
     };
   }
 
+  // WHY: the file was answered at admission (assertReq); the narrowed type carries it here.
   const path = request.file;
-  if (path === null) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: "Edit request file could not be inferred from anchors.",
-    });
-  }
   const absolutePath = toCwd(path, cwd);
   const mutationTargetPath = await resolveTarget(absolutePath);
   const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);

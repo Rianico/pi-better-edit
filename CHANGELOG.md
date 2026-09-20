@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+* **edit:** make assertReq the sole file admission gate
 * **edit:** scope noop-loop tracker to session
 * **edit:** remedy-free noop loop, fix ref grammar
 * **edit:** clarify noop-loop remedy and hint note
