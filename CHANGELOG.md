@@ -30,6 +30,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
+* **readme:** scope never-served interiors to [E_STALE_RANGE]
 * **adr:** accept ADR-0021 error-warning contract
 * add the unified error and warning contract spec
 * **spec:** sync spec to retired-identity rule

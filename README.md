@@ -254,7 +254,7 @@ remain outside this verified line-range contract.
 
 ### What you get
 
-- **Verified before it writes** — every line of the resolved range is checked against served rows; stale or never-served interiors are hard-rejected (`[E_STALE_RANGE]`/`[E_UNVERIFIED_RANGE]`) and re-served as fresh anchors.
+- **Verified before it writes** — every line of the resolved range is checked against served rows; stale or never-served interiors are hard-rejected (`[E_STALE_RANGE]`) and re-served as fresh anchors.
 - **Session-keyed** — sub-agent serves never validate the main session's edits and vice versa (ADR-0002).
 - **Drift notices** — served territory outside the range that changed on disk is reported once per episode, not as a warning.
 - **Chained without re-reads** — diff, auto-read, and rejection rows all count as serves.
