@@ -21,17 +21,9 @@ describe("normReq", () => {
     });
   });
 
-  it("preserves null file for anchor-based inference", () => {
-    expect(normReq({ file: null, edits: [["aB3", "cD4", "new"]] })).toMatchObject({
-      file: null,
-      edits: [
-        {
-          anchor_from: "aB3",
-          anchor_to: "cD4",
-          replace_with: "new",
-        },
-      ],
-    });
+  it("rejects a null file fail-closed", () => {
+    const input = { file: null, edits: [["aB3", "cD4", "new"]] };
+    expect(normReq(input)).toBe(input);
   });
 
   it("does not normalize malformed payloads", () => {

@@ -27,13 +27,13 @@ describe("getPreviewInput", () => {
     expect(getPreviewInput(42)).toBeNull();
   });
 
-  it("accepts null file for anchor-based inference", () => {
-    const result = getPreviewInput({
-      file: null,
-      edits: [["AAA", "BBB", "new"]],
-    });
-    expect(result?.file).toBeNull();
-    expect(result?.edits.length).toBe(1);
+  it("rejects a null file fail-closed", () => {
+    expect(
+      getPreviewInput({
+        file: null,
+        edits: [["AAA", "BBB", "new"]],
+      }),
+    ).toBeNull();
   });
 
   it("returns null for record with non-string file", () => {

@@ -134,8 +134,7 @@ describe("edit payload contract", () => {
           (entry) => entry as Error,
         );
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain('"file"');
-      expect(String(error.message)).toContain("nothing was written");
+      expect(String(error.message)).toContain("Edit request must be exactly");
       expect(await readFile(path, "utf8")).toBe("aaa\nbbb\n");
     });
   });

@@ -459,8 +459,8 @@ describe("prepareEditArguments normalization", () => {
     expect(prepareEditArguments(args)).toEqual(args);
   });
 
-  it("folds legacy tuples and null file to multi-item edits", () => {
-    expect(
+  it("rejects a null file fail-closed", () => {
+    expect(() =>
       prepareEditArguments({
         path: null,
         edits: [
@@ -468,13 +468,7 @@ describe("prepareEditArguments normalization", () => {
           ["CCC", "DDD", ""],
         ],
       }),
-    ).toEqual({
-      file: null,
-      edits: [
-        { anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" },
-        { anchor_from: "CCC", anchor_to: "DDD", replace_with: "" },
-      ],
-    });
+    ).toThrow(/\[E_BAD_PAYLOAD\]/);
   });
 
   it("rejects malformed shapes with an actionable E_BAD_PAYLOAD hint", () => {

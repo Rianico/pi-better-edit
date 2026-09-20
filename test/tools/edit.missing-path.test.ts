@@ -28,8 +28,7 @@ describe("edit — missing file fails closed", () => {
           (entry) => entry as Error,
         );
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain('"file"');
-      expect(String(error.message)).toContain("nothing was written");
+      expect(String(error.message)).toContain("Edit request must be exactly");
       expect(String(error.message)).not.toContain("resolved to");
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
@@ -52,7 +51,7 @@ describe("edit — missing file fails closed", () => {
       expect("error" in result).toBe(true);
       if ("error" in result) {
         expect(result.error).toContain("[E_BAD_PAYLOAD]");
-        expect(result.error).toContain('"file"');
+        expect(result.error).toContain("Edit request must be exactly");
       }
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });

@@ -25,7 +25,7 @@ describe("assertReq", () => {
       assertReq(normReq({ path: "test.txt", edits: [["AAA", "BBB", "new"]] })),
     ).not.toThrow();
     expect(() => assertReq(normReq({ path: null, edits: [["AAA", "BBB", "new"]] }))).toThrow(
-      'Edit request "file" must be a non-empty string',
+      "exactly",
     );
   });
 
@@ -72,10 +72,9 @@ describe("prepareArguments normalization", () => {
       file: "test.txt",
       edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
     });
-    expect(tool.prepareArguments!({ path: null, edits: [["AAA", "BBB", "x"]] })).toEqual({
-      file: null,
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
-    });
+    expect(() => tool.prepareArguments!({ path: null, edits: [["AAA", "BBB", "x"]] })).toThrow(
+      /\[E_BAD_PAYLOAD\]/,
+    );
   });
 
   it("rejects malformed shapes with an actionable E_BAD_PAYLOAD hint", () => {

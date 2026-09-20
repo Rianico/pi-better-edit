@@ -257,18 +257,11 @@ export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined
   if (!("edits" in rec)) return undefined;
   const edits = rec.edits;
 
-  if (typeof effectivePath === "string") {
-    const sanitized = sanitizePath(effectivePath);
-    if (sanitized === null) return undefined;
-    effectivePath = sanitized;
-  }
-
-  if (
-    effectivePath !== null &&
-    (typeof effectivePath !== "string" || (effectivePath as string).length === 0)
-  ) {
+  const sanitized = typeof effectivePath === "string" ? sanitizePath(effectivePath) : null;
+  if (typeof effectivePath !== "string" || sanitized === null || sanitized.length === 0) {
     return undefined;
   }
+  effectivePath = sanitized;
   if (!Array.isArray(edits) || edits.length === 0) return undefined;
   const items: EditItem[] = [];
   for (const item of edits) {
@@ -328,34 +321,7 @@ export function getPreviewInput(args: unknown): { file: string | null; edits: Ed
 
 const ROOT_KS = new Set(["file", "edits", "mode"]);
 
-const FILE_REQUIRED_MESSAGE =
-  'Edit request "file" must be a non-empty string naming the text file to edit (never a directory); nothing was written.';
-
-// WHY: the gate reads the effective file the same way normReq folds it — `file`
-// WHY: wins, then `path`, then `file_path` — so a legacy-keyed call with a usable
-// WHY: file is not misreported when its edits carry the true defect.
-function effectiveFileOf(record: Record<string, unknown>): unknown {
-  if ("file" in record) return record.file;
-  if ("path" in record) {
-    const candidate = record.path;
-    if (typeof candidate === "string" || candidate === null) return candidate;
-    if ("file_path" in record) return record.file_path;
-    return candidate;
-  }
-  if ("file_path" in record) return record.file_path;
-  return undefined;
-}
-
 export function assertReq(request: unknown): asserts request is NormalizedEditRequest {
-  if (isRec(request)) {
-    const effective = effectiveFileOf(request);
-    if (effective === null || typeof effective !== "string" || effective.trim().length === 0) {
-      throw new DomainError("E_BAD_PAYLOAD", {
-        message: FILE_REQUIRED_MESSAGE,
-      });
-    }
-  }
-
   if (!isNormalizedEdit(request)) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
@@ -380,7 +346,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     });
   }
 
-  // WHY: the file was answered above; the narrowed type carries the guarantee inward.
+  // WHY: the file was answered at admission (editRequestFrom); the narrowed type carries it here.
   if (!Array.isArray(request.edits) || request.edits.length === 0) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message: 'Edit request requires a non-empty "edits" array.',

@@ -5,8 +5,8 @@ import { createEditTool } from "../../src/edit-tool.js";
 import { assertReq, normReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
-const FILE_REQUIRED_MESSAGE =
-  'Edit request "file" must be a non-empty string naming the text file to edit (never a directory); nothing was written.';
+const STRUCTURAL_PREFIX =
+  'Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...], mode?: "general" | "literal" }.';
 
 async function executeWithFile(cwd: string, fileValue: unknown): Promise<Error> {
   const { ctx, readTool } = setupIntegrationTest(cwd);
@@ -25,53 +25,62 @@ async function executeWithFile(cwd: string, fileValue: unknown): Promise<Error> 
   );
 }
 
-describe("edit admission gate — file is the sole entry check", () => {
-  it("rejects a null file with the exact E_BAD_PAYLOAD message and writes nothing", async () => {
+function messageOf(shape: unknown): string {
+  try {
+    assertReq(normReq(shape));
+  } catch (entry) {
+    return String((entry as Error).message);
+  }
+  throw new Error("expected rejection");
+}
+
+describe("edit admission gate — single structural hint", () => {
+  it("rejects a null file with the structural hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, null);
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(FILE_REQUIRED_MESSAGE);
+      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects a missing file with the exact E_BAD_PAYLOAD message and writes nothing", async () => {
+  it("rejects a missing file with the structural hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, undefined);
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(FILE_REQUIRED_MESSAGE);
+      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects an empty-string file with the exact E_BAD_PAYLOAD message and writes nothing", async () => {
+  it("rejects an empty-string file with the structural hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, "");
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(FILE_REQUIRED_MESSAGE);
+      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects a whitespace-only file with the exact E_BAD_PAYLOAD message and writes nothing", async () => {
+  it("rejects a whitespace-only file with the structural hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, "   ");
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(FILE_REQUIRED_MESSAGE);
+      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects a non-string file with the exact E_BAD_PAYLOAD message and writes nothing", async () => {
+  it("rejects a non-string file with the structural hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, 123);
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(FILE_REQUIRED_MESSAGE);
+      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects a preview with a null file carrying the exact message and writes nothing", async () => {
+  it("rejects a preview with a null file carrying the structural hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", path);
@@ -87,35 +96,43 @@ describe("edit admission gate — file is the sole entry check", () => {
       expect("error" in result).toBe(true);
       if ("error" in result) {
         expect(result.error).toContain("[E_BAD_PAYLOAD]");
-        expect(result.error).toContain(FILE_REQUIRED_MESSAGE);
+        expect(result.error).toContain(STRUCTURAL_PREFIX);
       }
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("assertReq fails closed on every unusable file shape with no remedy", async () => {
+  it("assertReq reports one hint for every invalid class", () => {
     const shapes: unknown[] = [
-      { file: null, edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
       { edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
+      { file: null, edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
+      { file: 123, edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
       { file: "", edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
       { file: "   ", edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
-      { file: 123, edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
+      { file: "sample.ts", edits: [{ anchor_from: "aB3", anchor_to: "cD4" }] },
+      "bare-string",
     ];
-    for (const shape of shapes) {
-      let error: unknown;
-      try {
-        assertReq(normReq(shape));
-      } catch (entry) {
-        error = entry;
-      }
-      expect(error).toBeInstanceOf(Error);
-      expect(String((error as Error).message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String((error as Error).message)).toContain(FILE_REQUIRED_MESSAGE);
-      const payload = (error as { payload?: Record<string, unknown> }).payload;
-      if (payload !== undefined) {
-        expect(payload).toEqual({ message: FILE_REQUIRED_MESSAGE });
-      }
+    const messages = shapes.map((shape) => messageOf(shape));
+    for (const message of messages) {
+      expect(message).toContain("[E_BAD_PAYLOAD]");
+      expect(message).toContain(STRUCTURAL_PREFIX);
     }
+    for (const message of messages) {
+      expect(message).toBe(messages[0]);
+    }
+  });
+
+  it("fails closed for a valid file with malformed edits and for a non-object", () => {
+    const badEdits = messageOf({
+      file: "sample.ts",
+      edits: [{ anchor_from: "aB3", anchor_to: "cD4" }],
+    });
+    expect(badEdits).toContain("[E_BAD_PAYLOAD]");
+    expect(badEdits).toContain(STRUCTURAL_PREFIX);
+    const nonObject = messageOf("bare-string");
+    expect(nonObject).toContain("[E_BAD_PAYLOAD]");
+    expect(nonObject).toContain(STRUCTURAL_PREFIX);
+    expect(badEdits).toBe(nonObject);
   });
 
   it("the narrowed request carries a string file (null is unrepresentable)", () => {
