@@ -5,7 +5,7 @@
  *  - served span resolve (servedPositionsOf + candidate enumeration)
  *  - length mismatch and never-served checks
  *  - rebased-span contiguity gate for the MVCC dynamic rebase path (spec §3.1.1 / Probe J)
- *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint/retryHint)
+ *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint)
  *  - E_RANGE_* branching via decision table
  *
  * ADR-0008 heuristic canon healing is retired (spec §3.3): un-rebased coordinates reject
@@ -88,10 +88,6 @@ export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
   return rows.map((row) => `${row.hash}${HASH_SEP}${fileLines[row.position] ?? ""}`).join("\n");
 }
 
-function retryHint(): string {
-  return "Retry with these anchors (no read needed).";
-}
-
 function paginationHint(nextOffset: number, more: number): string {
   return `[... ${more} more — read offset=${nextOffset}]`;
 }
@@ -128,30 +124,25 @@ function buildRangeServeBlock(
 }
 
 /**
- * One reject-and-serve assembly shared by the retry-code entry points: the block build and the
- * payload assembly live here, so the `[MODEL] [CODE]` prefix, the `Current range:` contract, the
- * retry hint, and the served rows cannot drift between codes. The unverified code never routes
- * here: it serves a fresh read under `Current range (fresh read):` with no retry hint.
+ * One reject-and-serve assembly shared by the retry-code entry points: the block build lives
+ * here so the served rows cannot drift between codes. The `[MODEL] [CODE]` prefix, the
+ * `Current range:` heading, and the retry hint render in the domain-errors registry formats
+ * (the retry affordance is owned there), so this helper returns rows and block only. The
+ * unverified code never routes here: it serves a fresh read under
+ * `Current range (fresh read):` with no retry hint.
  */
 function assembleRejectAndServe(args: {
-  code: "E_STALE_RANGE" | "E_STALE_ANCHOR";
-  headline: string;
   startLine: number;
   endLine: number;
   snapshot: FileSnapshotContext;
-}): { message: string; servedRows: ServedRow[]; servedBlock: string } {
+}): { servedRows: ServedRow[]; servedBlock: string } {
   const { servedRows, rendered } = buildRangeServeBlock(
     args.startLine,
     args.endLine,
     args.snapshot.fileHashes,
     args.snapshot.fileLines,
   );
-  const hint = `\n${retryHint()}`;
-  return {
-    message: `[MODEL] [${args.code}] ${args.headline}\nCurrent range:\n${rendered}${hint}`,
-    servedRows,
-    servedBlock: rendered,
-  };
+  return { servedRows, servedBlock: rendered };
 }
 
 /**
@@ -211,8 +202,6 @@ export function makeServedRejection(opts: {
     });
   }
   const { servedRows, servedBlock } = assembleRejectAndServe({
-    code: "E_STALE_RANGE",
-    headline: opts.headline,
     startLine: opts.startLine,
     endLine: opts.endLine,
     snapshot: opts.snapshot,
@@ -241,8 +230,6 @@ export function makeStaleAnchorRejection(opts: {
   cause: RangeCause;
 }): DomainError<"E_STALE_ANCHOR"> {
   const { servedRows, servedBlock } = assembleRejectAndServe({
-    code: "E_STALE_ANCHOR",
-    headline: opts.headline,
     startLine: opts.startLine,
     endLine: opts.endLine,
     snapshot: opts.snapshot,

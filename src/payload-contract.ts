@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { EDITS_MAX_ITEMS } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
+import { rejectUnknownFields } from "./utils.js";
 
 const normalizedEdit = Symbol("normalizedEdit");
 
@@ -316,21 +317,6 @@ export function getPreviewInput(args: unknown): { file: string | null; edits: Ed
   const req = editRequestFrom(args);
   if (!req) return null;
   return req;
-}
-
-function rejectUnknownFields(
-  obj: Record<string, unknown>,
-  allowed: Set<string>,
-  label: string,
-  hint?: string,
-): void {
-  const unknown = Object.keys(obj).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) {
-    const suffix = hint ? ` ${hint}` : "";
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
-    });
-  }
 }
 
 const ROOT_KS = new Set(["file", "edits", "mode"]);
