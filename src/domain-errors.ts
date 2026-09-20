@@ -411,10 +411,8 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
       batch
         ? `identical edit (${removeFrom} → ${removeTo}) submitted ${count}×, no changes each time. ` +
           `Range already contains this text; rejecting the batch. Current range:\n${servedBlock}`
-        : `identical edit (${removeFrom} → ${removeTo} ${ref}) submitted ${count}×, no changes each time. ` +
+        : `identical edit ${ref} (${removeFrom} → ${removeTo}) submitted ${count}×, no changes each time. ` +
           `Range already contains this text; rejecting. Current range:\n${servedBlock}`,
-    // WHY remedy: `count` proves the identical edit (`ref`, `removeFrom`→`removeTo`) resubmitted with the range already holding the text. See ADR-0021.
-    remedy: "The range already contains this text; nothing was written.",
   },
   E_UNSUPPORTED_FILE: {
     audience: "MODEL",

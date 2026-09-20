@@ -23,13 +23,19 @@ import {
  * negative controls below).
  */
 
-type RemedyFreeCode = "E_UNKNOWN" | "E_UNKNOWN_ANCHOR" | "E_FOREIGN_ANCHOR" | "E_UNVERIFIED_RANGE";
+type RemedyFreeCode =
+  | "E_UNKNOWN"
+  | "E_UNKNOWN_ANCHOR"
+  | "E_FOREIGN_ANCHOR"
+  | "E_UNVERIFIED_RANGE"
+  | "E_NOOP_LOOP";
 
 const REMEDY_FREE: RemedyFreeCode[] = [
   "E_UNKNOWN",
   "E_UNKNOWN_ANCHOR",
   "E_FOREIGN_ANCHOR",
   "E_UNVERIFIED_RANGE",
+  "E_NOOP_LOOP",
 ];
 
 const FREE_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K] } = {
@@ -40,6 +46,15 @@ const FREE_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K] } = {
     servedRows: [{ position: 0, hash: "abc" }],
     servedBlock: "abc│alpha",
     cause: "retirement",
+  },
+  E_NOOP_LOOP: {
+    ref: "edit[0] (probe.ts)",
+    removeFrom: "abc",
+    removeTo: "def",
+    count: 3,
+    batch: false,
+    servedRows: [{ position: 0, hash: "abc" }],
+    servedBlock: "abc│alpha",
   },
 };
 
