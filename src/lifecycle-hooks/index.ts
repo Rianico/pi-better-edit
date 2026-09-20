@@ -7,6 +7,7 @@ import {
   buildServedWritePrefixNote,
   LITERAL_BYPASS_NOTICE,
   clearServedRefusals,
+  canon,
 } from "../hashline/index.js";
 import { splitLines } from "../utils.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
@@ -190,10 +191,17 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         console.error("Failed to evaluate served prefix notes after write:", error);
         prefixNotes = [];
       }
+      const writtenLines = splitLines(normalized);
       await recordServesBestEffort({
         sessionKey: deps.sessionKeyFor(ctx),
         path: absolutePath,
-        servedRows: fileHashes.map((hash, position) => ({ position, hash })),
+        // WHY: stamp each row with its own line's canon (issue #149): the serve writer has no file
+        // WHY: lines, and a file-blind hash->canon lookup collides across files.
+        servedRows: fileHashes.map((hash, position) => ({
+          position,
+          hash,
+          canon: canon(writtenLines[position] ?? ""),
+        })),
         contentHash: snapshotHashFor(normalized),
         resultLineCount: deps.visLines(normalized).length,
         firstChangedLine: 1,

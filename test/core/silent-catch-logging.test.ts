@@ -5,7 +5,6 @@ import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 
 import { initHasher } from "../../src/hashline/hasher.js";
-import { globalCanonStore } from "../../src/hashline/hash.js";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store.js";
 import { createSessionHandle, ensureServedSchema } from "../../src/served-session/session.js";
 import * as snapshotStore from "../../src/snapshot-store";
@@ -68,14 +67,20 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
   it("canon sync failure logs once and keeps the serve (best-effort)", async () => {
     await withTempHome(async () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      vi.spyOn(globalCanonStore, "get").mockImplementation(() => {
-        throw new Error("canon boom");
-      });
+      // WHY: the canon sync is the only statement whose failure must stay best-effort. With the
+      // WHY: process-global canon map gone (issue #149), the honest injection point is the SQL
+      // WHY: itself: a trigger aborts only writes that carry a canon.
       const store = await loadHashStore();
+      store.db.exec(
+        "CREATE TRIGGER canon_boom_insert BEFORE INSERT ON served " +
+          "WHEN NEW.canons IS NOT NULL BEGIN SELECT RAISE(ABORT, 'canon boom'); END;" +
+          "CREATE TRIGGER canon_boom_update BEFORE UPDATE OF canons ON served " +
+          "WHEN NEW.canons IS NOT NULL BEGIN SELECT RAISE(ABORT, 'canon boom'); END;",
+      );
       const handle = createSessionHandle("sess-canon-121", "/canon-121.ts", store);
       const rows = [
-        { position: 0, hash: "abc" },
-        { position: 1, hash: "def" },
+        { position: 0, hash: "abc", canon: "alpha" },
+        { position: 1, hash: "def", canon: "beta" },
       ];
       await expect(handle.record(rows)).resolves.toBeUndefined();
       expect(await handle.load()).toEqual(["abc", "def"]);

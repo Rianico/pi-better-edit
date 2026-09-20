@@ -352,6 +352,22 @@ describe("domain error registry: closed contract, not a list", () => {
     expect(bare.servedRows).toEqual([]);
     expect(bare.servedBlock).toBe("");
   });
+
+  it("E_STALE_RANGE serves a fresh read and never mandates a blind retry (#149)", () => {
+    const error = new DomainError("E_STALE_RANGE", {
+      headline: "line 2 differs from what was served.",
+      servedRows: [{ position: 1, hash: "abc" }],
+      servedBlock: "abc│beta",
+      cause: "served-range staleness",
+    });
+    expect(error.message).toContain("Current range (fresh read):");
+    expect(error.message).toContain("abc│beta");
+    // WHY: the rows prove the served state disagrees with the file, never that the anchors are the
+    // WHY: right retry — a `(no read needed)` mandate trapped models in identical failing retries.
+    expect(error.message).not.toContain("Retry with these anchors");
+    expect(error.message).not.toContain("no read needed");
+    expect(ERROR_REGISTRY.E_STALE_RANGE.remedy).toBeUndefined();
+  });
 });
 
 describe("domain warning registry: applied tier, never a rejection", () => {

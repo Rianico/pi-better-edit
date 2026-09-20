@@ -1,4 +1,3 @@
-import { splitLines } from "../utils.js";
 import { HASH_LEN, ALPHA, ALPHA_RE as _ALPHA_RE, HASH_RE } from "./alphabet.js";
 import { defaultHashIdentity as _defaultHI } from "./hash-identity.js";
 import type {
@@ -38,60 +37,6 @@ export function isValidHashList(value: unknown): value is string[] {
 }
 const _HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
-function rememberHashCanon(hash: string, canonText: string): void {
-  _defaultHI.rememberHashCanon(hash, canonText);
-}
-
-function getCanonForHash(hash: string): string | undefined {
-  return _defaultHI.getCanonForHash(hash);
-}
-
-export interface CanonStore {
-  get(hash: string): string | undefined;
-  set(hash: string, canonText: string): void;
-}
-
-export function createCanonStore(): CanonStore {
-  const m = new Map<string, string>();
-  return {
-    get(hash) {
-      return m.get(hash);
-    },
-    set(hash, canonText) {
-      if (!m.has(hash)) m.set(hash, canonText);
-    },
-  };
-}
-
-function _createCanonStoreFromEntries(entries: Array<[string, string]>): CanonStore {
-  const m = new Map<string, string>(entries);
-  return {
-    get(hash) {
-      return m.get(hash);
-    },
-    set(hash, canonText) {
-      if (!m.has(hash)) m.set(hash, canonText);
-    },
-  };
-}
-
-export const globalCanonStore: CanonStore = {
-  get(hash) {
-    return getCanonForHash(hash);
-  },
-  set(hash, canonText) {
-    rememberHashCanon(hash, canonText);
-  },
-};
-
-function __clearGlobalCanonStoreForTest(): void {
-  _defaultHI.clearCanon();
-}
-
-function __globalCanonEntriesForTest(): Array<[string, string]> {
-  return [..._defaultHI.canonEntries()];
-}
-
 export const CANON_VERSION = 2;
 const CANON_RE = /[ \t\r\n]+/g;
 
@@ -99,21 +44,7 @@ export function canon(line: string): string {
   return line.replace(CANON_RE, "");
 }
 
-export function _lineHashesPure(
-  content: string,
-  canonStore?: CanonStore,
-  tombstone?: ReadonlySet<string>,
-): string[] {
-  if (canonStore && canonStore !== globalCanonStore) {
-    const lines = splitLines(content);
-    const tmp = _defaultHI.hashesForSync(content, tombstone);
-    for (let i = 0; i < tmp.length; i++) {
-      const h = tmp[i]!;
-      const c = canon(lines[i] ?? "");
-      canonStore.set(h, c);
-    }
-    return tmp;
-  }
+export function _lineHashesPure(content: string, tombstone?: ReadonlySet<string>): string[] {
   return _defaultHI.hashesForSync(content, tombstone);
 }
 
@@ -123,7 +54,6 @@ async function _lineHashes(
   previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
   io?: HashSnapshotIO,
   persist?: boolean,
-  _canonStore?: CanonStore,
   tombstone?: ReadonlySet<string>,
 ): Promise<string[]> {
   return _defaultHI.hashesFor(content, {

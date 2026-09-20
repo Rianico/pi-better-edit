@@ -30,9 +30,10 @@ function servedLineRe(): RegExp {
  * window placed by such a lookup cannot satisfy the window check. `fileHashes`
  * are the current on-disk hashes; each row must reproduce them exactly.
  * Payload shape is disjoint by code: a target-lost, unknown-anchor, or foreign-anchor
- * payload carries zero rows and no `Current range` heading of either form; an unverified
- * payload carries rows under the exact `Current range (fresh read):` heading with no retry
- * hint; every other payload carries rows under `Current range:` with a retry hint.
+ * payload carries zero rows and no `Current range` heading of either form; the range-family codes
+ * (`E_STALE_RANGE`, `E_UNVERIFIED_RANGE`) carry rows under the exact `Current range (fresh read):`
+ * heading with no retry hint; every other payload carries rows under `Current range:` with a retry
+ * hint.
  */
 function assertLivePayload(args: {
   error: unknown;
@@ -65,7 +66,7 @@ function assertLivePayload(args: {
   }
   const rows = (err as unknown as { servedRows: ServedRow[] }).servedRows;
   expect(rows.length).toBeGreaterThan(0);
-  if (err.code === "E_UNVERIFIED_RANGE") {
+  if (err.code === "E_UNVERIFIED_RANGE" || err.code === "E_STALE_RANGE") {
     expect(err.message).toContain("Current range (fresh read):");
     expect(err.message).not.toContain("Retry with these anchors");
     expect(err.message).not.toContain("No action is required");
@@ -133,8 +134,8 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const disk = await readFile(path, "utf-8");
       expect(disk).toBe("alpha\nBETA\ngamma\n");
       // Served coordinates 1-3 prove no shift; window is hardcoded, never searched.
-      expect(msg).toContain("Current range:");
-      expect(msg).toContain("Retry with these anchors");
+      expect(msg).toContain("Current range (fresh read):");
+      expect(msg).not.toContain("Retry with these anchors");
       const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
       const diskHashes = await currentHashes(disk);
       expect(servedLines).toEqual([
@@ -249,9 +250,9 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).toMatch(/E_STALE_RANGE/);
       expect(await readFile(path, "utf-8")).toBe(content);
       // Rebased window 3-7 from the two served bounds; interior 4-6 were never served.
-      // The remedy is identical (retry with the served rows), so no separate code is kept.
-      expect(msg).toContain("Current range:");
-      expect(msg).toContain("Retry with these anchors");
+      // The rows are served as a fresh read the model decides from (issue #149).
+      expect(msg).toContain("Current range (fresh read):");
+      expect(msg).not.toContain("Retry with these anchors");
       expect((caught as { details?: { cause: string } }).details?.cause).toBe("never-served");
       const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
       expect(servedLines).toHaveLength(5);
@@ -398,7 +399,9 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     const misplaced: ServedRow = { position: 0, hash: hashes[2]! };
     const planted = plantedError({
       code: "E_STALE_RANGE",
-      message: `[MODEL] [E_STALE_RANGE] line 2 differs.\nCurrent range:\n${misplaced.hash}│alpha\nRetry with these anchors (no read needed).`,
+      // WHY: the planted payload wears the right heading for its code, so the check fails on the
+      // WHY: misplaced row rather than on the heading shape.
+      message: `[MODEL] [E_STALE_RANGE] line 2 differs.\nCurrent range (fresh read):\n${misplaced.hash}│alpha`,
       servedRows: [misplaced],
       servedBlock: `${misplaced.hash}│alpha`,
       cause: "served-range staleness",
@@ -406,6 +409,32 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     expect(() =>
       assertLivePayload({ error: planted, fileHashes: hashes, liveStart: 1, liveEnd: 3 }),
     ).toThrow(/expected .* to be /);
+  });
+
+  it("negative control: a retry hint on a stale-range payload fails the check", async () => {
+    const disk = "alpha\nBETA\ngamma\n";
+    const hashes = await currentHashes(disk);
+    const planted = plantedError({
+      code: "E_STALE_RANGE",
+      message:
+        `[MODEL] [E_STALE_RANGE] line 2 differs from what was served.\n` +
+        `Current range (fresh read):\n${hashes[0]}│alpha\n${hashes[1]}│BETA\nRetry with these anchors (no read needed).`,
+      servedRows: [
+        { position: 0, hash: hashes[0]! },
+        { position: 1, hash: hashes[1]! },
+      ],
+      servedBlock: `${hashes[0]}│alpha\n${hashes[1]}│BETA`,
+      cause: "served-range staleness",
+    });
+    expect(() =>
+      assertLivePayload({
+        error: planted,
+        fileHashes: hashes,
+        liveStart: 1,
+        liveEnd: 3,
+        expectedCode: "E_STALE_RANGE",
+      }),
+    ).toThrow();
   });
 
   it("negative control: a target-lost payload carrying rows fails the check", async () => {

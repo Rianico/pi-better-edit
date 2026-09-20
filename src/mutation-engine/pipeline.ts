@@ -90,7 +90,7 @@ import {
   type LeaseSpanSource,
   type NEdit,
 } from "../hashline/index.js";
-import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
+import { canon, defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import {
   buildRangeServeRows,
   fmtServedRows,
@@ -151,13 +151,17 @@ function countLineChanges(
   };
 }
 
-function serveRowsForEdit(edit: HEdit, originalHashes: string[]): ServedRow[] | undefined {
+function serveRowsForEdit(
+  edit: HEdit,
+  originalHashes: string[],
+  originalLines: string[],
+): ServedRow[] | undefined {
   const startHash = edit.hash_bounds[0].hash;
   const endHash = edit.hash_bounds[1].hash;
   const s = originalHashes.indexOf(startHash);
   const e = originalHashes.indexOf(endHash);
   if (s < 0 || e < 0) return undefined;
-  return buildRangeServeRows(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes);
+  return buildRangeServeRows(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes, originalLines);
 }
 
 interface EditFileSource {
@@ -634,7 +638,8 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
         // WHY: the rejected batch still owes the model usable anchors (README error-code contract):
         // WHY: the later item's span is served exactly like the sequential anchor-mismatch abort,
         // WHY: so the retry never needs a re-read.
-        const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes);
+        const originalLines = splitLines(ctx.originalNormalized);
+        const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes, originalLines);
         throw new DomainError("E_BATCH_ABORT", {
           earlierIndex: a.index,
           laterIndex: b.index,
@@ -643,8 +648,7 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
           laterStart: b.startLine,
           laterEnd: b.endLine,
           path: ctx.path,
-          servedBlock:
-            rows === undefined ? "" : fmtServedRows(rows, splitLines(ctx.originalNormalized)),
+          servedBlock: rows === undefined ? "" : fmtServedRows(rows, originalLines),
         });
       }
     }
@@ -1138,9 +1142,17 @@ export async function apply(
       file.resultHashes,
       file.originalHashes,
     );
+    // WHY: the canon travels with each row (issue #149): a hash->canon lookup in the serve writer is
+    // WHY: file-blind, so a 3-char collision across files would persist another file's content as
+    // WHY: this file's served canon and reject the next edit with a false [E_STALE_RANGE].
+    const resultLines = splitLines(file.result);
     const denseRows: ServedRow[] = [];
     for (let i = 0; i < file.resultHashes.length; i++) {
-      denseRows.push({ position: i, hash: file.resultHashes[i]! });
+      denseRows.push({
+        position: i,
+        hash: file.resultHashes[i]!,
+        canon: canon(resultLines[i] ?? ""),
+      });
     }
     try {
       // WHY: the served diff rows are step 5 of the commit transaction (spec §3.2.4 step 4):

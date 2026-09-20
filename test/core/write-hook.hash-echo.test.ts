@@ -39,10 +39,16 @@ async function servedPreviewForFile(
   await initHasher();
   const content = await readFile(path, "utf-8");
   const hashes = await lineHashes(content, path);
-  const rows = hashes.map((hash, idx) => ({ position: idx, hash }));
-  await recordServed(sessionKey, await resolveTarget(path), rows);
   const { fmtRegion } = await import("../../src/hashline");
-  const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
+  const lines = splitLines(content);
+  // WHY: the canon travels with the row (issue #149) — the write guard compares the submitted text
+  // WHY: against the canons this serve recorded, with no process-global hash->canon fallback.
+  const rows = hashes.map((hash, idx) => ({
+    position: idx,
+    hash,
+    canon: canon(lines[idx] ?? ""),
+  }));
+  await recordServed(sessionKey, await resolveTarget(path), rows);
   if (lines.length === 1 && lines[0] === "") {
     return `${hashes[0]}│`;
   }

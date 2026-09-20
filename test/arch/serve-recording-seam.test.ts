@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { createSessionHandle, recordServes, recordServesTruncated } from "../../src/served-session";
-import { initHasher, lineHashes } from "../../src/hashline";
+import { canon, initHasher, lineHashes } from "../../src/hashline";
 import { getWritableTempRoot } from "../support/fixtures";
 
 const SESSION_MODULE = "src/served-session/session.ts";
@@ -104,12 +104,19 @@ describe("serve recording — one shared writer for the mirror, canon sync and l
     expect(truncated).toContain("clearFrom");
   });
 
-  it("syncs canon rows from served hashes on both the plain and the truncated path", async () => {
+  it("syncs canon rows from the served rows on both the plain and the truncated path", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const path = "/serve-seam.ts";
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", path);
-      const rows = hashes.map((hash, position) => ({ position, hash }));
+      const lines = ["alpha", "beta", "gamma"];
+      const hashes = await lineHashes(`${lines.join("\n")}\n`, path);
+      // WHY: the canon travels WITH the row (issue #149); there is no hash->canon lookup to fall
+      // WHY: back on, so a row without a canon records none.
+      const rows = hashes.map((hash, position) => ({
+        position,
+        hash,
+        canon: canon(lines[position]!),
+      }));
 
       recordServes(store, "plain", path, rows);
       recordServesTruncated(store, "truncated", path, rows, rows.length, 0);

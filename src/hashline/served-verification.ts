@@ -12,14 +12,15 @@
  * fail-closed with E_STALE_RANGE. Coordinate realignment is owned exclusively by MVCC
  * `pairSnapshots` + `line_lineage` upstream in the edit path.
  *
- * Canon resolution is instance-scoped via CanonStore (injected), not global.
- * Production uses globalCanonStore; tests inject createCanonStore() for isolation.
+ * Canon comparison reads only the persisted, file-scoped served canons the caller passes. There is no
+ * process-wide hash->canon map (issue #149: a 3-char hash is unique only inside one file, so such a
+ * map would serve another file's content as this file's canon).
  *
  * CONTEXT.md terms preserved: serve, served state, served span, served-range
  * staleness, never-served, reject-and-serve, drift, orphaned serve, orphaning
  * re-serve, relocated line keeps its hash.
  */
-import { HASH_SEP, canon, globalCanonStore, type CanonStore } from "./hash.js";
+import { HASH_SEP, canon } from "./hash.js";
 import { SERVED_ROWS_CAP } from "../constants.js";
 import {
   DomainError,
@@ -70,16 +71,25 @@ function isRangeRejection(error: unknown): error is RangeRejection {
 // WHY: Shared formatting helpers — owned by verification (reject-and-serve contract)
 // WHY: ---------------------------------------------------------------------------
 
+/**
+ * WHY: `fileLines` is optional so a caller with only hashes still builds rows; supplying it stamps each
+ * WHY: row with its own line's canon, so the serve writer persists a file-scoped canon instead of
+ * WHY: consulting a file-blind hash map (issue #149).
+ */
 export function buildRangeServeRows(
   startLine: number,
   endLine: number,
   fileHashes: string[],
+  fileLines?: string[],
 ): ServedRow[] {
   const total = endLine - startLine + 1;
   const shown = Math.min(total, SERVED_ROWS_CAP);
   const rows: ServedRow[] = [];
   for (let ln = startLine; ln < startLine + shown; ln++) {
-    rows.push({ position: ln - 1, hash: fileHashes[ln - 1]! });
+    const position = ln - 1;
+    const hash = fileHashes[position]!;
+    const line = fileLines?.[position];
+    rows.push(line === undefined ? { position, hash } : { position, hash, canon: canon(line) });
   }
   return rows;
 }
@@ -114,7 +124,7 @@ function buildRangeServeBlock(
   const len = fileHashes.length;
   const first = Math.max(1, Math.min(startLine, Math.max(len, 1)));
   const last = Math.max(first, Math.min(endLine, Math.max(len, first)));
-  const servedRows = buildRangeServeRows(first, last, fileHashes);
+  const servedRows = buildRangeServeRows(first, last, fileHashes, fileLines);
   const totalLen = endLine - startLine + 1;
   const tail =
     first === startLine && servedRows.length < totalLen
@@ -126,10 +136,9 @@ function buildRangeServeBlock(
 /**
  * One reject-and-serve assembly shared by the retry-code entry points: the block build lives
  * here so the served rows cannot drift between codes. The `[MODEL] [CODE]` prefix, the
- * `Current range:` heading, and the retry hint render in the domain-errors registry formats
- * (the retry affordance is owned there), so this helper returns rows and block only. The
- * unverified code never routes here: it serves a fresh read under
- * `Current range (fresh read):` with no retry hint.
+ * `Current range (fresh read):` heading renders in the domain-errors registry formats, so this
+ * helper returns rows and block only. Every code that routes here serves the rows as a fresh read
+ * the model decides from — never a blind-retry mandate (issue #149).
  */
 function assembleRejectAndServe(args: {
   startLine: number;
@@ -168,10 +177,10 @@ export function makeTargetLostRejection(opts: {
 }
 
 /**
- * Builds a `ServedRejectionError` whose rows are the current on-disk range. `E_STALE_RANGE`
- * serves under `Current range:` with a retry hint; `E_UNVERIFIED_RANGE` serves a fresh read
- * under `Current range (fresh read):` with no retry hint and no mandate — the model decides
- * from those rows. `E_TARGET_LOST` never routes here (see `makeTargetLostRejection`).
+ * Builds a `ServedRejectionError` whose rows are the current on-disk range. Both `E_STALE_RANGE`
+ * and `E_UNVERIFIED_RANGE` serve under `Current range (fresh read):` with no retry hint and no
+ * mandate — the model decides from those rows. `E_TARGET_LOST` never routes here (see
+ * `makeTargetLostRejection`).
  */
 export function makeServedRejection(opts: {
   code: "E_STALE_RANGE" | "E_UNVERIFIED_RANGE";
@@ -219,8 +228,9 @@ export function makeServedRejection(opts: {
 
 /**
  * Builds the `[E_STALE_ANCHOR]` reject-and-serve rejection for a boundary anchor the session holds
- * no lease for. It emits the SAME `Current range:` serve contract as the other reject-and-serve
- * rejections (spec §5.3): the served rows are themselves serves, so the retry needs no `read`.
+ * no lease for. It serves the rows under `Current range:` with the retry hint (spec §5.3): the
+ * served rows are themselves serves, so the retry needs no `read`. Distinct from the range-family
+ * codes, which serve a fresh read with no mandate (issue #149).
  */
 export function makeStaleAnchorRejection(opts: {
   headline: string;
@@ -373,12 +383,6 @@ export type VerificationResult =
 // WHY: ---------------------------------------------------------------------------
 
 export class ServedVerification {
-  private readonly store: CanonStore;
-
-  constructor(canonStore?: CanonStore) {
-    this.store = canonStore ?? globalCanonStore;
-  }
-
   // WHY: -- public: pure result -------------------------------------------------
 
   verify(input: VerificationInput): VerificationResult {
@@ -427,9 +431,6 @@ export class ServedVerification {
     const servedCanons = inputServedCanons;
     const where = filePath ? ` in ${filePath}` : "";
     const { startHash, endHash, startLine, endLine } = range;
-
-    this.ensureCanonsPopulated(fileHashes, fileLines, served);
-
     const { servedRows, rendered } = this.buildServeBlock(
       startLine,
       endLine,
@@ -545,26 +546,6 @@ export class ServedVerification {
     });
   }
 
-  // WHY: -- private: canon population -------------------------------------------
-
-  private ensureCanonsPopulated(
-    fileHashes: string[],
-    fileLines: string[],
-    served: (string | null)[],
-  ): void {
-    for (let i = 0; i < fileHashes.length; i++) {
-      const h = fileHashes[i]!;
-      if (this.store.get(h) === undefined) this.store.set(h, canon(fileLines[i] ?? ""));
-    }
-    for (let i = 0; i < served.length; i++) {
-      const h = served[i];
-      if (h !== null && this.store.get(h) === undefined) {
-        const pos = fileHashes.indexOf(h);
-        if (pos >= 0) this.store.set(h, canon(fileLines[pos] ?? ""));
-      }
-    }
-  }
-
   // WHY: -- private: serve block --------------------------------------------------------
 
   private buildServeBlock(
@@ -573,7 +554,7 @@ export class ServedVerification {
     fileHashes: string[],
     fileLines: string[],
   ): { servedRows: ServedRow[]; rendered: string } {
-    const servedRows = buildRangeServeRows(startLine, endLine, fileHashes);
+    const servedRows = buildRangeServeRows(startLine, endLine, fileHashes, fileLines);
     const totalLen = endLine - startLine + 1;
     const tail =
       servedRows.length < totalLen
@@ -783,12 +764,10 @@ export function verifyServedRange(args: {
   fileHashes: string[];
   fileLines: string[];
   filePath?: string;
-  canonStore?: CanonStore;
   tombstone?: ReadonlySet<string>;
   servedCanons?: (string | null)[];
 }): void {
-  const verifier = args.canonStore ? new ServedVerification(args.canonStore) : defaultVerifier;
-  verifier.verifyOrThrow({
+  defaultVerifier.verifyOrThrow({
     range: {
       startHash: args.startHash,
       endHash: args.endHash,
@@ -805,12 +784,8 @@ export function verifyServedRange(args: {
 }
 
 /** SAFETY: Pure result variant — does not throw for expected rejections. */
-export function verifyServedRangeResult(
-  input: VerificationInput,
-  canonStore?: CanonStore,
-): VerificationResult {
-  const verifier = canonStore ? new ServedVerification(canonStore) : defaultVerifier;
-  return verifier.verify(input);
+export function verifyServedRangeResult(input: VerificationInput): VerificationResult {
+  return defaultVerifier.verify(input);
 }
 
 export interface ResolvedRange {
