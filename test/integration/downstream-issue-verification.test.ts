@@ -194,7 +194,7 @@ describe("downstream #63 — literal HASH│ content in replace_with", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_SERVED_ECHO/);
+      ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
       expect(await readFile(path, "utf-8")).toBe("one\ntwo\nthree\n");
     });
   });

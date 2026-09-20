@@ -1,4 +1,5 @@
 import { splitLines } from "../utils.js";
+import { DomainError } from "../domain-errors.js";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
 import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
 
@@ -182,9 +183,10 @@ export class HashIdentity {
       idx += HASH_PROBE_STRIDE;
       if (idx >= totalBits) idx -= totalBits;
     }
-    throw new Error(
-      `[MODEL] [E_LARGE_FILE] Cannot allocate a unique hash anchor: the file exceeds the ${HASH_SPACE}-line limit for ${HASH_LEN}-char hashline anchors. For very large files use write or a non-line-based approach.`,
-    );
+    throw new DomainError("E_LARGE_FILE", {
+      limitKind: "hash-space",
+      limit: HASH_SPACE,
+    });
   }
 
   private assignHash(used: Uint32Array, baseIdx: number, hint: { value: number }): string {

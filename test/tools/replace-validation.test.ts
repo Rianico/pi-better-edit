@@ -20,11 +20,13 @@ describe("assertReq", () => {
     ).toThrow("exactly");
   });
 
-  it("accepts legacy path and null-path payloads via folding", () => {
+  it("accepts legacy path payloads via folding and rejects null-path fail-closed", () => {
     expect(() =>
       assertReq(normReq({ path: "test.txt", edits: [["AAA", "BBB", "new"]] })),
     ).not.toThrow();
-    expect(() => assertReq(normReq({ path: null, edits: [["AAA", "BBB", "new"]] }))).not.toThrow();
+    expect(() => assertReq(normReq({ path: null, edits: [["AAA", "BBB", "new"]] }))).toThrow(
+      "exactly",
+    );
   });
 
   it("rejects malformed shapes and member types", () => {
@@ -51,7 +53,7 @@ describe("anchor validation order", () => {
         undefined,
         { cwd: "/tmp" } as any,
       ),
-    ).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
+    ).rejects.toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });
 });
 describe("prepareArguments normalization", () => {
@@ -70,10 +72,9 @@ describe("prepareArguments normalization", () => {
       file: "test.txt",
       edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
     });
-    expect(tool.prepareArguments!({ path: null, edits: [["AAA", "BBB", "x"]] })).toEqual({
-      file: null,
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
-    });
+    expect(() => tool.prepareArguments!({ path: null, edits: [["AAA", "BBB", "x"]] })).toThrow(
+      /\[E_BAD_PAYLOAD\]/,
+    );
   });
 
   it("rejects malformed shapes with an actionable E_BAD_PAYLOAD hint", () => {

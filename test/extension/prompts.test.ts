@@ -175,3 +175,29 @@ describe("payload-contract prompt generation", () => {
     expect(loadGuide("../prompts/edit-guidelines.md")).toEqual(EDIT_GUIDELINES);
   });
 });
+
+describe("anchor file binding (#145)", () => {
+  it("EDIT_DESCRIPTION scopes anchors to the serving file via lease", () => {
+    expect(EDIT_DESCRIPTION).toContain("lease");
+    expect(EDIT_DESCRIPTION).toContain("this file's served");
+  });
+
+  it("prompts/edit.md carries the byte-equal binding clause", () => {
+    expect(editPrompt).toContain("lease");
+    expect(editPrompt).toContain("this file's served");
+  });
+
+  it("EDIT_GUIDELINES refuses anchors copied from another file", () => {
+    expect(EDIT_GUIDELINES.some((guideline) => guideline.includes("lease"))).toBe(true);
+    expect(EDIT_GUIDELINES.some((guideline) => guideline.includes("another file"))).toBe(true);
+  });
+
+  it("prompts/edit-guidelines.md mirrors the binding bullet", () => {
+    const fileGuidelines = loadGuide("../prompts/edit-guidelines.md");
+    expect(fileGuidelines.some((guideline) => guideline.includes("lease"))).toBe(true);
+  });
+
+  it("prompts/read.md declares file-scoped hashes", () => {
+    expect(readPrompt).toContain("file-scoped");
+  });
+});

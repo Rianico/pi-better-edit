@@ -620,11 +620,6 @@ onStoreOpen(() => {
   });
 });
 
-export async function findSnapshotPathsByHashes(hashes: string[]): Promise<string[]> {
-  const store = await loadHashStore();
-  return findSnapshotPaths(store, hashes);
-}
-
 export async function pruneMissingAll(): Promise<void> {
   const store = await loadHashStore();
   await pruneMissing(store);
@@ -636,20 +631,6 @@ export async function upsertSnapshotFor(
 ): Promise<void> {
   const store = await loadHashStore();
   upsertSnapshot(store, descriptor, options);
-}
-
-function findSnapshotPaths(store: HashStore, hashes: string[]): string[] {
-  const distinct = [...new Set(hashes)];
-  if (distinct.length === 0) return [];
-  const placeholders = distinct.map(() => "?").join(", ");
-  const stmt = store.db.prepare(
-    "SELECT fs.path AS path FROM file_snapshots fs " +
-      "JOIN line_lineage ll ON ll.snapshot_id = fs.snapshot_id " +
-      `WHERE fs.committed = 1 AND ll.anchor IN (${placeholders}) ` +
-      "GROUP BY fs.snapshot_id HAVING COUNT(DISTINCT ll.anchor) = ?",
-  );
-  const rows = stmt.all(...distinct, distinct.length) as { path: string }[];
-  return [...new Set(rows.map((row) => row.path))];
 }
 
 const STAT_BATCH = 64;

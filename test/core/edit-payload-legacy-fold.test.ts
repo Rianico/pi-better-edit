@@ -50,11 +50,11 @@ describe("legacy payload folding (ADR-0015 shim)", () => {
     );
   });
 
-  it("keeps legacy null file for anchor inference (undocumented)", () => {
-    expect(editRequestFrom({ path: null, edits: [["aB3", "cD4", "new"]] })).toEqual({
-      file: null,
-      edits: [ITEM],
-    });
+  it("rejects a legacy null file fail-closed with the structural hint", () => {
+    expect(editRequestFrom({ path: null, edits: [["aB3", "cD4", "new"]] })).toBeUndefined();
+    expect(() => assertReq(normReq({ path: null, edits: [["aB3", "cD4", "new"]] }))).toThrow(
+      "exactly",
+    );
   });
 
   it("rejects mixed old/new item keys and extra item keys", () => {

@@ -160,8 +160,8 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
       await writeFile(abs, "func hello() {\n    }\n", "utf-8");
 
-      // The merged line is a different line entity, so the served lease is retired: the refusal is
-      // [E_STALE_RANGE] with the current-range serve (spec §3.1.1 line 89 / §5.3).
+      // The merged line is a different line entity, so the served lease is retired with no live
+      // unshifted bound: the refusal is [E_TARGET_LOST] with no rows (spec §3.1.1 line 89 / §5.3, ADR-0018).
       await expect(
         editTool.execute(
           "e1",
@@ -170,7 +170,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/\[MODEL\] \[E_STALE_RANGE\]/);
+      ).rejects.toThrow(/\[MODEL\] \[E_TARGET_LOST\]/);
     });
   });
 

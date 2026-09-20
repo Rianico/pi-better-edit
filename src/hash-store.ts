@@ -4,6 +4,7 @@ import { rename, mkdir } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { homedir } from "node:os";
 import { isAbsolute, resolve as resolvePath, join, dirname } from "node:path";
+import { DomainError } from "./domain-errors.js";
 import { errCode } from "./utils.js";
 import { initHasher } from "./hashline/hasher.js";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
@@ -50,18 +51,18 @@ function expand(filePath: string): string {
 
 export function toCwd(filePath: string, cwd: string): string {
   if (filePath.includes("\0"))
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Path contains null byte. Pass a plain file string and retry.",
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: "Path contains null byte. Pass a plain file string and retry.",
+    });
   const expanded = expand(filePath);
   if (expanded.includes("\0"))
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Path contains null byte. Pass a plain file string and retry.",
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: "Path contains null byte. Pass a plain file string and retry.",
+    });
   // SAFETY: cwd is trusted (ctx.cwd), expand resolves "~" via homedir/XDG and resolvePath normalizes ".."; editing scope intentionally allows any absolute path — OS permissions enforced by valAccess downstream; guard ensures null-byte free and absolute result.
   const resolved = isAbsolute(expanded) ? expanded : resolvePath(cwd, expanded);
   if (!isAbsolute(resolved))
-    throw new Error("[MODEL] [E_BAD_PAYLOAD] Resolved path must be absolute");
+    throw new DomainError("E_BAD_PAYLOAD", { message: "Resolved path must be absolute" });
   return resolved;
 }
 
@@ -273,6 +274,10 @@ function buildStore(db: DatabaseSync): void {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_leases_file_retired " +
       "ON served_leases (file_path, retired_at)",
+  );
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_leases_session_anchor " +
+      "ON served_leases (session_id, anchor)",
   );
   db.exec(
     "CREATE TABLE IF NOT EXISTS served_session_meta (" +

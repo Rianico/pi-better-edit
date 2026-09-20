@@ -359,7 +359,7 @@ describe("multi-edit batch WAL commit", () => {
     });
   });
 
-  it("keeps [E_BAD_ANCHOR] on the parse-time item rejection and prefixes it with [MODEL]", async () => {
+  it("keeps [E_MALFORMED_ANCHOR] on the parse-time item rejection and prefixes it with [MODEL]", async () => {
     await withTempFile("parse-abort.txt", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
@@ -392,15 +392,16 @@ describe("multi-edit batch WAL commit", () => {
         .catch((error: unknown) => error)) as Error;
 
       expect(rejection.message.startsWith("[MODEL] ")).toBe(true);
-      expect(rejection.message).toContain("[E_BAD_ANCHOR]");
+      expect(rejection.message).toContain("[E_MALFORMED_ANCHOR]");
       expect(rejection.message).toContain("edit[1] (parse-abort.txt) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect(rejection.message.match(/\bMODEL\b/g) ?? []).toHaveLength(1);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
   });
 
-  it("keeps [E_STALE_RANGE] on the served-state item rejection and serves the shared abort block", async () => {
+  it("keeps [E_UNVERIFIED_RANGE] on the served-state item rejection and serves the shared abort block", async () => {
     await withTempFile("reject-abort.txt", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
@@ -434,14 +435,15 @@ describe("multi-edit batch WAL commit", () => {
         .catch((error: unknown) => error)) as Error;
 
       expect(rejection.message.startsWith("[MODEL] ")).toBe(true);
-      expect(rejection.message).toContain("[E_STALE_RANGE]");
+      expect(rejection.message).toContain("[E_UNVERIFIED_RANGE]");
       expect(rejection.message).toContain("edit[1] (reject-abort.txt) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
-      // The single shared helper renders the serve block verbatim at this call site too.
-      expect(rejection.message).toContain(
-        "Current on-disk range for edit[1] (unchanged — nothing was written):",
-      );
+      // The rejection carries the inner fresh-read block once under the shared contract.
+      expect(rejection.message).toContain("Current range (fresh read):");
+      expect(rejection.message).not.toContain("Retry with these anchors");
+      expect(rejection.message.match(/\bCurrent range\b/g) ?? []).toHaveLength(1);
+      expect(rejection.message.match(/\bMODEL\b/g) ?? []).toHaveLength(1);
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
     });
   });

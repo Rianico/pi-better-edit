@@ -151,7 +151,7 @@ describe("compPreview — served-state staleness surfacing", () => {
     });
   });
 
-  it("returns [E_UNSERVED_RANGE] for a never-served interior after a paged read", async () => {
+  it("returns [E_STALE_RANGE] for a never-served interior after a paged read", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute(
@@ -176,7 +176,7 @@ describe("compPreview — served-state staleness surfacing", () => {
       );
       expect(preview).toHaveProperty("error");
       const errorText = (preview as { error: string }).error;
-      expect(errorText).toMatch(/\[E_UNSERVED_RANGE\] line 2 in sample.ts/);
+      expect(errorText).toMatch(/\[E_STALE_RANGE\] line 2 in sample.ts/);
       expect(errorText).toContain("Current range:");
     });
   });
@@ -190,12 +190,8 @@ describe("compPreview — served-state staleness surfacing", () => {
       );
       expect(preview).toHaveProperty("error");
       const errorText = (preview as { error: string }).error;
-      // The lease lookup is the edit's first step, so an anchor no serve ever leased is a stale
-      // anchor with a fresh RANGE serve (spec §3.1.1 step 1 line 89 / §5.3, ADR-0016); the served
-      // rows are themselves serves, so the retry needs no read.
-      expect(errorText).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
-      expect(errorText).toContain("Current range:");
-      expect(errorText).not.toContain("Current context around resolved anchor");
+      expect(errorText).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
+      expect((preview as { servedRows?: Array<unknown> }).servedRows ?? []).toEqual([]);
     });
   });
 
@@ -509,12 +505,14 @@ describe("renderResult", () => {
       content: [
         {
           type: "text",
-          text: "Successfully edited in sample.ts.\n\nWarnings:\n[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped.",
+          text: "Successfully edited in sample.ts.\n\nWarnings:\n[USER] [W_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (aB3 after cD4); healed and applied with the range swapped.",
         },
       ],
       details: {
         diff: "+aB3│BBB",
-        warnings: ["[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped."],
+        warnings: [
+          "[USER] [W_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (aB3 after cD4); healed and applied with the range swapped.",
+        ],
         metrics: {
           classification: "applied",
           added_lines: 1,
@@ -530,7 +528,7 @@ describe("renderResult", () => {
     ) as Text;
     const text = (component as any).text as string;
     expect(text).toContain("+aB3│BBB");
-    expect(text).toContain("[E_REVERSED_ANCHORS] reversed anchor_from/anchor_to; swapped.");
+    expect(text).toContain("[W_REVERSED_ANCHORS]");
   });
 
   it("returns an empty component when there is nothing to render", () => {

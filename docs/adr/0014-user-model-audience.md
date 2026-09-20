@@ -4,7 +4,11 @@ Date: 2026-09-02
 
 ## Status
 
-accepted
+accepted; amended by [ADR-0020](0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md) (decision 33)
+
+Amended by [ADR-0020 — Unverified range replaces unserved range; boundary rule for retired identities](0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md)
+
+Amended by [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md)
 
 ## Context
 
@@ -30,7 +34,7 @@ Grill rounds (Q1-5) agreed: audience is the primary axis (`[USER]` dimmed collap
 - **Keep `E_NOT_TEXT` with `Use ls…`** — rejected; affordance belongs in model prompt, not error; trimmed message is shorter and matches `E_UNSUPPORTED_FILE` noun.
 - **Rename `E_STALE_ANCHOR→E_BOUNDARY_STALE`** — rejected per decision #3 keep `E_STALE_ANCHOR`; `anchor` (one line) vs `served range` (span) is clearer than `boundary` (abstract) and `E_STALE_ANCHOR` already matches `adj+noun` and tests.
 - **Keep `E_AMBIGUOUS_ANCHOR` as separate code** — rejected; `tombstone` probing makes production duplicates impossible, only synthetic collision test remains, and `E_STALE_ANCHOR` already covers “hash appears at 2 lines” with same retry (`re-read`).
-- **Keep `E_RANGE_UNVERIFIED` as third `RANGE` code** — rejected; `UNVERIFIED` (no served span) and `UNSERVED` (interior hole) both mean `never-served` and both `reject-and-serve` with serves; merging to `E_UNSERVED_RANGE` with `unservedKind` keeps model retry identical and cuts one bucket.
+- **Keep `E_RANGE_UNVERIFIED` as third `RANGE` code** — rejected; `UNVERIFIED` (no served span) and `UNSERVED` (interior hole) both mean `never-served` and both `reject-and-serve` with serves; merging to `E_UNSERVED_RANGE` with `unservedKind` keeps model retry identical and cuts one bucket. (Amended by ADR-0020, 2026-09-19: the premise is falsified — decide-from-a-fresh-read and retry-with-the-served-rows are different remedies. The boundary producer is `[E_UNVERIFIED_RANGE]` and the interior hole is `[E_STALE_RANGE]`; `E_UNSERVED_RANGE` is retired with no alias.)
 - **Keep `E_BARE_HASH_PREFIX`/`E_INVALID_PATCH` as warnings (heal)** — rejected per `model–tool boundary` and grill Q4: tool shouldered model’s `HASH│` copy-paste; now `throw [MODEL] [E_BAD_ANCHOR]` fail-loud, compensable.
 
 ## Consequences

@@ -16,34 +16,46 @@
  * Fail-closed semantics (never weakened): an unleased anchor, a retired/absent leased `line_id`, a
  * coordinate that no longer carries the leased identity, or an external insert/delete strictly
  * inside the span all reject before any write, so a rejection leaves the file byte-identical.
+ * A retired identity whose named window collapses or misses the file rejects with no rows;
+ * the surviving-bound-live-and-unshifted case serves the named window as a fresh read
+ * (no retry hint) with the rows leased as today; any other retired identity with an
+ * identifiable window rejects with that window served for a retry.
  *
  * INVARIANT (spec §3.1.1, §5.3, ADR-0016) — a served anchor is never resolved by content. `apply.ts`
  * routes EVERY edit that has a lease source here, so a boundary anchor either has a live lease or its
- * identity is lost: lost identity is `[E_STALE_ANCHOR]` (no lease) or `[E_STALE_RANGE]`
- * (retired/deleted leased line), never a content question. `[E_UNSERVED_RANGE]` stays reserved for an
- * interior line strictly between the anchors that the model was never shown.
+ * identity is lost: a missing lease is an unknown or foreign anchor (the session-wide lookup
+ * decides which), a retired identity with no live unshifted survivor and no identifiable window
+ * carries no rows, and the one-bound-retired survivor-live-and-unshifted case serves a fresh
+ * read to decide from, never a content question.
+ * A never-served interior line strictly between the anchors is caught by the span gates
+ * (`[E_STALE_RANGE]`, spec §5.3).
  */
 import {
-  fmtMismatchWithServes,
   isUniformLeaseFastPath,
   resolveLineIdentity,
-  uniqueAnchorLine,
   uniqueServedPosition,
-  valEdit,
   type HEdit,
   type LeaseSpanSource,
   type RHEdit,
 } from "./resolve.js";
+import { DomainError } from "../domain-errors.js";
 import {
-  AnchorMismatchError,
   makeServedRejection,
-  makeStaleAnchorRejection,
+  makeTargetLostRejection,
+  UNVERIFIED_HEADLINE,
   verifyRebasedSpan,
   type FileSnapshotContext,
 } from "./served-verification.js";
 
+export type ReversedAnchorsHeal = {
+  /** The submitted `anchor_from` slot value whose resolved line ran after `toHash`. */
+  fromHash: string;
+  /** The submitted `anchor_to` slot value whose resolved line ran before `fromHash`. */
+  toHash: string;
+};
+
 export type LeasedEditResolution =
-  | { status: "fast"; resolved: RHEdit }
+  | { status: "fast"; resolved: RHEdit; reversed?: ReversedAnchorsHeal }
   | {
       status: "rebased";
       resolved: RHEdit;
@@ -53,6 +65,7 @@ export type LeasedEditResolution =
        * comparing a replacement against served state stays range-relative against the mirror.
        */
       servedStart: number;
+      reversed?: ReversedAnchorsHeal;
     };
 
 /**
@@ -69,61 +82,38 @@ function resolvedAt(edit: HEdit, fileHashes: string[], fromLine: number, toLine:
   };
 }
 
-function throwReversed(edit: HEdit, startLine: number, endLine: number): never {
-  throw new Error(
-    `[MODEL] [E_REVERSED_ANCHORS] Refused: range start line ${startLine} is after end line ${endLine} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}). Nothing was written; swap anchor_from/anchor_to and retry.`,
-  );
-}
-
 /**
- * Refuses an anchor the lease seam cannot resolve: the session holds no lease for it at all.
+ * Refuses anchors the lease seam cannot place: the session holds no lease for them in this file.
  *
- * SPEC §5.3: the unleased-anchor rejection is reject-and-serve like the others — it serves the FULL
- * current range of the targeted span (the rows are themselves serves), never a narrow +/-1 context
- * window, so the model retries with the served anchors and needs no `read`.
- *
- * INVARIANT: content resolution is a DIAGNOSTIC here, never a resolution — the coordinates it finds
- * are not returned to the caller, so an unleased anchor can never be satisfied by a colliding
- * content anchor. That silent miswrite is the class this seam exists to remove.
- *
- * WHY: when neither content nor a lease can place a boundary, no targeted range exists to serve; the
- * WHY: diagnostic falls back to the narrow context around the one boundary that IS placeable.
+ * Deterministic precedence, one condition per code: a lease held for another file wins over
+ * holding no lease anywhere. Homes come from the session-wide `(session_id, anchor)` lookup;
+ * the lookup runs here on the failure path only. Neither rejection serves rows: with no lease
+ * for this file no range can be identified, so there is nothing trustworthy to retry with.
  */
-function throwStaleAnchor(args: {
+function throwUnknownOrForeign(args: {
   edit: HEdit;
   snapshot: FileSnapshotContext;
   refusedFrom: boolean;
   refusedTo: boolean;
-  /** Current-content or served coordinate of each boundary; `undefined` when neither can place it. */
-  fromLine: number | undefined;
-  toLine: number | undefined;
+  source: LeaseSpanSource;
 }): never {
-  const { edit, snapshot, fromLine, toLine } = args;
-  const { filePath } = snapshot;
+  const { edit, snapshot, source } = args;
+  const path = snapshot.filePath ?? "this file";
   const refused = [
-    args.refusedFrom ? edit.hash_bounds[0].hash : undefined,
-    args.refusedTo ? edit.hash_bounds[1].hash : undefined,
-  ].filter((hash): hash is string => hash !== undefined);
-  // WHY: parity — the spec's `E_STALE_ANCHOR` serve is the current range, so a boundary placed by
-  // WHY: content or by the surviving lease is enough to name the range the model targeted.
-  if (fromLine !== undefined && toLine !== undefined) {
-    const label = refused.length > 1 ? "anchors" : "anchor";
-    const list = refused.map((hash) => `"${hash}"`).join(", ");
-    throw makeStaleAnchorRejection({
-      headline:
-        `${label} ${list} ${refused.length > 1 ? "are" : "is"} not present in the served leases ` +
-        `for ${filePath ?? "this path"}; nothing was written.`,
-      startLine: Math.min(fromLine, toLine),
-      endLine: Math.max(fromLine, toLine),
-      snapshot,
-    });
+    ...new Set(
+      [
+        args.refusedFrom ? edit.hash_bounds[0].hash : undefined,
+        args.refusedTo ? edit.hash_bounds[1].hash : undefined,
+      ].filter((hash): hash is string => hash !== undefined),
+    ),
+  ];
+  const homes = [
+    ...new Set(refused.flatMap((anchor) => source.anchorHomes?.(anchor) ?? [])),
+  ].sort();
+  if (homes.length > 0) {
+    throw new DomainError("E_FOREIGN_ANCHOR", { path, anchors: refused, homes });
   }
-  // WHY: at least one boundary is placeable by NEITHER content nor a lease, so no targeted range
-  // WHY: exists to serve; `valEdit` cannot resolve both bounds either and its own diagnostic names
-  // WHY: the refused anchor(s) with the narrow context of the one boundary we can place.
-  const content = valEdit(edit, snapshot, undefined);
-  const { message, servedRows } = fmtMismatchWithServes(content.mismatches, snapshot);
-  throw new AnchorMismatchError(`[MODEL] ${message}`, servedRows);
+  throw new DomainError("E_UNKNOWN_ANCHOR", { path, anchors: refused });
 }
 
 /**
@@ -131,7 +121,7 @@ function throwStaleAnchor(args: {
  *
  * The caller (`apply.ts`) routes every edit that has a served mirror and a lease source here — a
  * boundary anchor with no lease is lost identity (`[E_STALE_ANCHOR]`), never a content question; a
- * never-served interior line is caught by the span gates (`[E_UNSERVED_RANGE]`, spec §5.3).
+ * never-served interior line is caught by the span gates (`[E_STALE_RANGE]`, spec §5.3).
  */
 export function resolveLeasedEdit(args: {
   edit: HEdit;
@@ -140,53 +130,88 @@ export function resolveLeasedEdit(args: {
   source: LeaseSpanSource;
 }): LeasedEditResolution {
   const { edit, snapshot, served, source } = args;
-  const { fileHashes, filePath } = snapshot;
-  const where = filePath ? ` in ${filePath}` : "";
+  const { fileHashes } = snapshot;
   const fromAnchor = edit.hash_bounds[0].hash;
   const toAnchor = edit.hash_bounds[1].hash;
-  const fromContent = uniqueAnchorLine(fileHashes, fromAnchor);
-  const toContent = uniqueAnchorLine(fileHashes, toAnchor);
   const fromLease = source.leaseFor(fromAnchor);
   const toLease = source.leaseFor(toAnchor);
 
-  // WHY: a boundary anchor with no lease at all is lost identity (spec §3.1.1 step 1 line 89 /
-  // WHY: §5.3, ADR-0016): the lease lookup is the edit's first step, so content anchors can never
-  // WHY: stand in for the missing lease — that substitution is the silent rebind this seam removes.
+  // WHY: a boundary anchor with no lease for this file is never satisfied by content:
+  // WHY: the lookup is the edit's first step, so a colliding content anchor cannot stand
+  // WHY: in for the missing lease — that substitution is the silent rebind this seam removes.
   if (!fromLease || !toLease) {
-    throwStaleAnchor({
+    throwUnknownOrForeign({
       edit,
       snapshot,
       refusedFrom: !fromLease,
       refusedTo: !toLease,
-      // WHY: the targeted range is the span between the two boundaries, placed by content when the
-      // WHY: anchor is on disk and by the surviving lease's served coordinate otherwise.
-      fromLine: fromContent ?? fromLease?.servedLineNumber,
-      toLine: toContent ?? toLease?.servedLineNumber,
+      source,
     });
   }
 
-  const fromDecision = resolveLineIdentity(fromLease, fromContent, source);
-  const toDecision = resolveLineIdentity(toLease, toContent, source);
+  const fromDecision = resolveLineIdentity(fromLease, source);
+  const toDecision = resolveLineIdentity(toLease, source);
 
-  // WHY: a retired or identity-absent leased line has no coordinate to apply: refuse at the same
-  // WHY: seam by serving the current range, never `E_STALE_ANCHOR` (spec §3.1.1 line 89 / §5.3).
+  // WHY: a retired or identity-absent leased line has no coordinate to apply (spec §3.1.1
+  // WHY: line 89 / §5.3, stale-identity-reject-and-serve D1/D5/D6, ADR-0018 decisions 1-3). The
+  // WHY: boundary rule owns the payload: rows are served ONLY when the surviving bound is live
+  // WHY: AND unshifted (its rebased coordinate equals its served coordinate — evidence no shift
+  // WHY: occurred). That single case serves the named window as a fresh read with no retry hint,
+  // WHY: and the rows are leased through the normal seam so the model decides from them. Every
+  // WHY: other stale case carries no rows. The named coordinate is always lease-derived
+  // WHY: (`lease.servedLineNumber`); content placement never places a window and never names a
+  // WHY: coordinate for a retired bound (Probe P).
   if (fromDecision.kind === "stale" || toDecision.kind === "stale") {
-    const staleLine = fromDecision.kind === "stale" ? fromDecision.line : undefined;
-    const startLine = fromContent ?? fromLease.servedLineNumber;
-    const endLine = toContent ?? toLease.servedLineNumber;
-    throw makeServedRejection({
-      code: "E_STALE_RANGE",
-      headline: `line ${staleLine ?? Math.min(startLine, endLine)}${where} no longer resolves to the line identity it was served with.`,
-      startLine: Math.min(startLine, endLine),
-      endLine: Math.max(startLine, endLine),
-      snapshot,
-      firstOffendingLine: staleLine,
+    const fromLiveUnshifted =
+      fromDecision.kind === "line" && fromDecision.line === fromLease.servedLineNumber;
+    const toLiveUnshifted =
+      toDecision.kind === "line" && toDecision.line === toLease.servedLineNumber;
+    const staleServedLine =
+      fromDecision.kind === "stale" ? fromLease.servedLineNumber : toLease.servedLineNumber;
+    const exactlyOneStale = (fromDecision.kind === "stale") !== (toDecision.kind === "stale");
+    const survivorLiveUnshifted =
+      fromDecision.kind === "stale" ? toLiveUnshifted : fromLiveUnshifted;
+    if (exactlyOneStale && survivorLiveUnshifted) {
+      const rawStart = Math.min(fromLease.servedLineNumber, toLease.servedLineNumber);
+      const rawEnd = Math.max(fromLease.servedLineNumber, toLease.servedLineNumber);
+      const len = fileHashes.length;
+      const startLine = Math.max(1, rawStart);
+      const endLine = Math.min(len, rawEnd);
+      // WHY: collapsed-window guard: clamp to the file and fail closed when the named window
+      // WHY: collapses (e.g. served startLine 10 against a 4-line file) or misses the file.
+      if (len > 0 && startLine <= endLine && rawEnd >= 1 && rawStart <= len) {
+        throw makeServedRejection({
+          code: "E_UNVERIFIED_RANGE",
+          headline: UNVERIFIED_HEADLINE,
+          startLine,
+          endLine,
+          snapshot,
+          firstOffendingLine: staleServedLine,
+          cause: "retirement",
+        });
+      }
+    }
+    throw makeTargetLostRejection({
+      servedLine: staleServedLine,
+      ...(snapshot.filePath !== undefined ? { path: snapshot.filePath } : {}),
+      cause: "retirement",
     });
   }
 
-  const fromLine = fromDecision.line;
-  const toLine = toDecision.line;
-  if (fromLine > toLine) throwReversed(edit, fromLine, toLine);
+  // WHY: heal, then narrate (no `E_*` on a success): anchors carry no order, so a
+  // WHY: reversal is a property of the resolved lines of the `anchor_from`/`anchor_to`
+  // WHY: slot pair — the submitted `anchor_from` resolved after `anchor_to`. Swap the
+  // WHY: lines and fall through to the normal fast/rebased branching; the caller
+  // WHY: narrates the heal as `[W_REVERSED_ANCHORS]` from the returned `reversed` field.
+  let fromLine = fromDecision.line;
+  let toLine = toDecision.line;
+  const reversed: ReversedAnchorsHeal | undefined =
+    fromLine > toLine ? { fromHash: fromAnchor, toHash: toAnchor } : undefined;
+  if (reversed) {
+    const healed = fromLine;
+    fromLine = toLine;
+    toLine = healed;
+  }
 
   // WHY: the fast path is exactly the spec's predicate (spec §3.5):
   // WHY: `lease_from.served_snapshot_hash === C ∧ lease_to.served_snapshot_hash === C ∧
@@ -197,7 +222,11 @@ export function resolveLeasedEdit(args: {
     // WHY: the fast path applies at the served coordinates the lease itself names, so the edit is
     // WHY: resolved here too — the caller must never fall back to content resolution for a served
     // WHY: anchor (the mirror-only `valEdit` fallback this seam replaced).
-    return { status: "fast", resolved: resolvedAt(edit, fileHashes, fromLine, toLine) };
+    return {
+      status: "fast",
+      resolved: resolvedAt(edit, fileHashes, fromLine, toLine),
+      ...(reversed ? { reversed } : {}),
+    };
   }
 
   // WHY: dynamic rebase (spec §3.1.1) — the served window comes from the mirror, falling back to the
@@ -223,5 +252,6 @@ export function resolveLeasedEdit(args: {
     status: "rebased",
     resolved: resolvedAt(edit, fileHashes, fromLine, toLine),
     servedStart,
+    ...(reversed ? { reversed } : {}),
   };
 }

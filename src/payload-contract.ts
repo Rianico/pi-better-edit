@@ -1,5 +1,7 @@
 import { Type } from "typebox";
 import { EDITS_MAX_ITEMS } from "./constants.js";
+import { DomainError } from "./domain-errors.js";
+import { rejectUnknownFields } from "./utils.js";
 
 const normalizedEdit = Symbol("normalizedEdit");
 
@@ -12,11 +14,12 @@ export type EditItem = {
 export type EditMode = "general" | "literal";
 
 export type NormalizedEditRequest = {
-  file: string | null;
+  file: string;
   edits: EditItem[];
   mode?: EditMode;
 };
-type NormalizedPayload = NormalizedEditRequest & {
+type PreAdmissionRequest = NormalizedEditRequest;
+type NormalizedPayload = PreAdmissionRequest & {
   readonly [normalizedEdit]: true;
 };
 
@@ -83,18 +86,19 @@ const EDIT_PAYLOAD_HINT =
   "two inclusive bare-3-char anchors and the full replacement " +
   '(an empty string deletes the range); optional "mode" is "general" (default, reproduced served rows are refused) or "literal" (declared literal content).';
 export const EDIT_DESCRIPTION =
-  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` (arity = edits.length, atomic, one file per call). Use `edit` for content seen via `read` or a diff; never for directories, binary files, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors (e.g. "wUp") — copy the 3 chars before `│` in served `HASH│content` lines, never `│` or content. `replace_with` is bare content (`\\n` joins lines, `""` deletes; reproduced served rows need `mode: "literal"`). Example: `{"file":"s.py","edits":[{"anchor_from":"wUp","anchor_to":"AU6","replace_with":"x:\\n    y"}]}`. Chain from diff anchors (no re-read). `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
+  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` (arity = edits.length, atomic, one file per call). Use `edit` for content seen via `read` or a diff; never for directories, binaries, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors (e.g. "wUp") — copy the 3 chars before `│` in this file\'s served `HASH│content` lines (lease (session, file, anchor)), never `│` or content. `replace_with` is bare content (`\\n` joins lines, `""` deletes; a line reproducing a served row is refused). Example: `{"file":"s.py","edits":[{"anchor_from":"wUp","anchor_to":"AU6","replace_with":"x:\\n    y"}]}`. `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
 export const EDIT_SNIPPET =
   'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"replace_with":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), `replace_with` is bare content (`""` deletes). Chain from diff anchors with no re-read.';
 export const EDIT_GUIDELINES: string[] = [
   'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`.',
   'edit: payload shape `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` — `file` is the text file (never a directory); `edits` length is the arity (1 = single, >1 = batched atomically to the one file).',
   "edit: `anchor_from`/`anchor_to` bound the inclusive range (both lines replaced); when an anchor no longer matches, re-read the file and copy fresh anchors.",
-  'edit: `replace_with` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused — declare literal intent with `mode: "literal"`.',
+  'edit: `replace_with` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused.',
   "edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.",
-  "edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone; a dimmed `[USER]` line in `details` is human info, never your error.",
+  "edit: a `[MODEL] [W_*]` line in `content` is informational — the mutation was applied; a `[MODEL] [E_*]` line is your retry instruction or a rejection — follow it from the message alone; a `[MODEL]` line that presents rows as a fresh read (`Current range (fresh read):`) is not a blind retry — decide from those rows; a dimmed `[USER]` line in `details` is human info, never your error.",
   "edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).",
   "edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.",
+  "edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so an anchor copied from another file's served rows is refused; copy `anchor_from`/`anchor_to` only from this file's served rows.",
 ];
 
 function _getPayloadPromptFragments(): {
@@ -208,7 +212,7 @@ function sanitizePath(value: unknown): string | null {
 
 const ROOT_INPUT_KS = new Set(["file", "file_path", "path", "edits", "mode"]);
 
-export function editRequestFrom(input: unknown): NormalizedEditRequest | undefined {
+export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined {
   if (!isRec(input)) return undefined;
   const rec = input as Record<string, unknown>;
   for (const key of Object.keys(rec)) {
@@ -247,18 +251,11 @@ export function editRequestFrom(input: unknown): NormalizedEditRequest | undefin
   if (!("edits" in rec)) return undefined;
   const edits = rec.edits;
 
-  if (typeof effectivePath === "string") {
-    const sanitized = sanitizePath(effectivePath);
-    if (sanitized === null) return undefined;
-    effectivePath = sanitized;
-  }
-
-  if (
-    effectivePath !== null &&
-    (typeof effectivePath !== "string" || (effectivePath as string).length === 0)
-  ) {
+  const sanitized = typeof effectivePath === "string" ? sanitizePath(effectivePath) : null;
+  if (typeof effectivePath !== "string" || sanitized === null || sanitized.length === 0) {
     return undefined;
   }
+  const file = sanitized;
   if (!Array.isArray(edits) || edits.length === 0) return undefined;
   const items: EditItem[] = [];
   for (const item of edits) {
@@ -266,15 +263,15 @@ export function editRequestFrom(input: unknown): NormalizedEditRequest | undefin
     if (!normalized) return undefined;
     items.push(normalized);
   }
-  if (mode !== undefined) return { file: effectivePath as string | null, edits: items, mode };
-  return { file: effectivePath as string | null, edits: items };
+  if (mode !== undefined) return { file, edits: items, mode };
+  return { file, edits: items };
 }
 
 export function normReq(input: unknown): NormReqResult {
   const valid = editRequestFrom(input);
   // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
   if (!valid) return input as NormReqResult;
-  const record: Record<string, unknown> & { file: string | null; edits: EditItem[] } =
+  const record: Record<string, unknown> & { file: string; edits: EditItem[] } =
     valid.mode !== undefined
       ? { file: valid.file, edits: valid.edits, mode: valid.mode }
       : { file: valid.file, edits: valid.edits };
@@ -305,38 +302,26 @@ export function prepareEditArguments(args: unknown): Record<string, unknown> {
       return { file: valid.file, edits: valid.edits as unknown, mode: valid.mode };
     return { file: valid.file, edits: valid.edits as unknown };
   }
-  throw new Error(`[MODEL] [E_BAD_PAYLOAD] ${EDIT_PAYLOAD_HINT} ${describeReceived(args)}`);
+  throw new DomainError("E_BAD_PAYLOAD", {
+    message: `${EDIT_PAYLOAD_HINT} ${describeReceived(args)}`,
+  });
 }
 
-export function getPreviewInput(args: unknown): { file: string | null; edits: EditItem[] } | null {
+export function getPreviewInput(args: unknown): { file: string; edits: EditItem[] } | null {
   const req = editRequestFrom(args);
   if (!req) return null;
   return req;
-}
-
-function rejectUnknownFields(
-  obj: Record<string, unknown>,
-  allowed: Set<string>,
-  label: string,
-  hint?: string,
-): void {
-  const unknown = Object.keys(obj).filter((key) => !allowed.has(key));
-  if (unknown.length > 0) {
-    const suffix = hint ? ` ${hint}` : "";
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] ${label} contains unknown or unsupported fields: ${unknown.join(", ")}.${suffix}`,
-    );
-  }
 }
 
 const ROOT_KS = new Set(["file", "edits", "mode"]);
 
 export function assertReq(request: unknown): asserts request is NormalizedEditRequest {
   if (!isNormalizedEdit(request)) {
-    throw new Error(
-      '[MODEL] [E_BAD_PAYLOAD] Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...], mode?: "general" | "literal" }. ' +
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...], mode?: "general" | "literal" }. ' +
         EDIT_PAYLOAD_HINT,
-    );
+    });
   }
 
   rejectUnknownFields(
@@ -348,20 +333,18 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
 
   const modeValue = (request as Record<string, unknown>).mode;
   if (modeValue !== undefined && modeValue !== "general" && modeValue !== "literal") {
-    throw new Error(
-      '[MODEL] [E_BAD_PAYLOAD] Edit request "mode" must be "general" or "literal" (absent means "general"). ' +
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Edit request "mode" must be "general" or "literal" (absent means "general"). ' +
         EDIT_PAYLOAD_HINT,
-    );
+    });
   }
 
-  if (request.file !== null && (typeof request.file !== "string" || request.file.length === 0)) {
-    throw new Error(
-      '[MODEL] [E_BAD_PAYLOAD] Edit request "file" must be a non-empty string naming the text file to edit (never a directory).',
-    );
-  }
-
+  // WHY: the file was answered at admission (editRequestFrom); the narrowed type carries it here.
   if (!Array.isArray(request.edits) || request.edits.length === 0) {
-    throw new Error('[MODEL] [E_BAD_PAYLOAD] Edit request requires a non-empty "edits" array.');
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: 'Edit request requires a non-empty "edits" array.',
+    });
   }
 
   for (let index = 0; index < request.edits.length; index++) {
@@ -371,9 +354,9 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
       typeof item.anchor_to !== "string" ||
       typeof item.replace_with !== "string"
     ) {
-      throw new Error(
-        `[MODEL] [E_BAD_PAYLOAD] Edit request edits[${index}] must be { anchor_from, anchor_to, replace_with }: two bare 3-char anchors and the replacement text.`,
-      );
+      throw new DomainError("E_BAD_PAYLOAD", {
+        message: `Edit request edits[${index}] must be { anchor_from, anchor_to, replace_with }: two bare 3-char anchors and the replacement text.`,
+      });
     }
   }
 }

@@ -1,11 +1,11 @@
-import { describe, it, expect, beforeAll } from "vitest";
+import { describe, it, expect, beforeAll, vi } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
 import { _lineHashesPure, createCanonStore } from "../../src/hashline/hash";
+import { DomainError, type ErrorPayloadMap } from "../../src/domain-errors.js";
 import {
-  AnchorMismatchError,
-  ServedRejectionError,
   makeServedRejection,
   makeStaleAnchorRejection,
+  makeTargetLostRejection,
   verifyRebasedSpan,
   ServedVerification,
   type FileSnapshotContext,
@@ -38,8 +38,9 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       endLine: 3,
       snapshot,
       firstOffendingLine: 2,
+      cause: "served-range staleness",
     });
-    expect(err).toBeInstanceOf(ServedRejectionError);
+    expect(err).toBeInstanceOf(DomainError);
     expect(typeof err.servedBlock).toBe("string");
     expect(err.servedBlock).toContain(`${hashes[1]}│beta`);
     expect(err.message).toContain("Current range:");
@@ -55,8 +56,9 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       startLine: 1,
       endLine: 2,
       snapshot,
+      cause: "never-served",
     });
-    expect(err).toBeInstanceOf(AnchorMismatchError);
+    expect(err).toBeInstanceOf(DomainError);
     expect(typeof err.servedBlock).toBe("string");
     expect(err.servedBlock).toContain(`${hashes[0]}│alpha`);
     expect(err.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
@@ -75,12 +77,14 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       endLine: 3,
       snapshot,
       firstOffendingLine: 2,
+      cause: "served-range staleness",
     });
     const anchor = makeStaleAnchorRejection({
       headline: "anchor missing.",
       startLine: 1,
       endLine: 3,
       snapshot,
+      cause: "never-served",
     });
     for (const err of [stale, anchor]) {
       expect(err.message).toMatch(/^\[MODEL\] \[E_[A-Z_]+\]/);
@@ -120,7 +124,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const { mismatches } = valEdit(edit, snapshotFor(lines, hashes), undefined);
     const snapshot = snapshotFor(lines, hashes);
     const { message, servedRows } = fmtMismatchWithServes(mismatches, snapshot);
-    expect(message).toMatch(/E_STALE_ANCHOR/);
+    expect(message).toMatch(/stale anchor/);
     expect(Array.isArray(servedRows)).toBe(true);
   });
 
@@ -207,5 +211,101 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       source: src,
     });
     expect(resolved.status).toBe("fast");
+  });
+});
+
+describe("range-family cause uniformity: explicit evidence, never a borrowed default (G3)", () => {
+  it("makeStaleAnchorRejection pins the caller cause and invents none when omitted", () => {
+    const lines = ["alpha", "beta"];
+    const hashes = _lineHashesPure(lines.join("\n"));
+    const snapshot = snapshotFor(lines, hashes);
+    const explicit = makeStaleAnchorRejection({
+      headline: "anchor missing.",
+      startLine: 1,
+      endLine: 2,
+      snapshot,
+      cause: "tombstone",
+    });
+    expect(explicit.details.cause).toBe("tombstone");
+    expect(explicit.cause).toBe("tombstone");
+    // SAFETY: the cast omits the required cause to pin that no default is invented.
+    const omitted = makeStaleAnchorRejection({
+      headline: "anchor missing.",
+      startLine: 1,
+      endLine: 2,
+      snapshot,
+    } as unknown as Parameters<typeof makeStaleAnchorRejection>[0]);
+    expect(omitted.cause).toBeUndefined();
+    expect("cause" in omitted.details).toBe(false);
+  });
+
+  it("makeTargetLostRejection pins the caller cause and invents none when omitted", () => {
+    const explicit = makeTargetLostRejection({
+      servedLine: 2,
+      path: "probe.ts",
+      cause: "retirement",
+    });
+    expect(explicit.details.cause).toBe("retirement");
+    expect(explicit.cause).toBe("retirement");
+    // SAFETY: the cast omits the required cause to pin that no default is invented.
+    const omitted = makeTargetLostRejection({
+      servedLine: 2,
+      path: "probe.ts",
+    } as unknown as Parameters<typeof makeTargetLostRejection>[0]);
+    expect(omitted.cause).toBeUndefined();
+    expect("cause" in omitted.details).toBe(false);
+  });
+
+  it("every production range rejection carries its explicit cause end to end", () => {
+    const lines = ["alpha", "beta", "gamma"];
+    const hashes = _lineHashesPure(lines.join("\n"));
+    const snapshot = snapshotFor(lines, hashes);
+    const stale = makeServedRejection({
+      code: "E_STALE_RANGE",
+      headline: "line 2 differs.",
+      startLine: 1,
+      endLine: 3,
+      snapshot,
+      firstOffendingLine: 2,
+      cause: "served-range staleness",
+    });
+    const anchor = makeStaleAnchorRejection({
+      headline: "anchor missing.",
+      startLine: 1,
+      endLine: 3,
+      snapshot,
+      cause: "never-served",
+    });
+    for (const err of [stale, anchor]) {
+      expect(typeof err.details.cause).toBe("string");
+      expect(err.details.cause).toBe(err.cause);
+    }
+    expect(stale.details.cause).toBe("served-range staleness");
+    expect(anchor.details.cause).toBe("never-served");
+  });
+
+  it("verify() rethrows a causeless range rejection instead of inventing a cause", () => {
+    // SAFETY: the cast builds the causeless rejection the type now forbids, pinning the
+    // SAFETY: adapter: a missing cause is a builder defect and must surface loud, never as
+    // SAFETY: an invented "served-range staleness".
+    const causeless = new DomainError("E_TARGET_LOST", {
+      servedLine: 2,
+    } as unknown as ErrorPayloadMap["E_TARGET_LOST"]);
+    const verifier = new ServedVerification(createCanonStore());
+    const spy = vi.spyOn(verifier, "verifyOrThrow").mockImplementation(() => {
+      throw causeless;
+    });
+    try {
+      expect(() =>
+        verifier.verify({
+          range: { startHash: "AAA", endHash: "BBB", startLine: 1, endLine: 2 },
+          served: ["AAA", "BBB"],
+          fileHashes: ["AAA", "BBB"],
+          fileLines: ["a", "b"],
+        }),
+      ).toThrow(causeless);
+    } finally {
+      spy.mockRestore();
+    }
   });
 });

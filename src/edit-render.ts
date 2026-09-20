@@ -15,7 +15,7 @@ export type RRState = {
   previewTimer?: ReturnType<typeof setTimeout>;
 };
 
-export function getPreviewInput(args: unknown): { file: string | null; edits: EditItem[] } | null {
+export function getPreviewInput(args: unknown): { file: string; edits: EditItem[] } | null {
   return contractPreviewInput(args);
 }
 
@@ -47,7 +47,7 @@ export function fmtResult(diff: string, theme: FgT): string {
 }
 
 export function fmtCall(
-  args: { file: string | null; edits: EditItem[] } | null,
+  args: { file: string; edits: EditItem[] } | null,
   state: RRState,
   expanded: boolean,
   theme: CallT,

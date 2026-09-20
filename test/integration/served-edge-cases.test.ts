@@ -12,7 +12,7 @@ import {
 const home = useTestHome();
 
 describe("served-state edge cases for edit", () => {
-  it("rejects [E_UNSERVED_RANGE] for a range spanning paged-read gaps, then applies on retry", async () => {
+  it("rejects [E_STALE_RANGE] for a range spanning paged-read gaps, then applies on retry", async () => {
     const content = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -50,7 +50,7 @@ describe("served-state edge cases for edit", () => {
         rejected = error as Error;
       }
       expect(rejected).toBeDefined();
-      expect(rejected!.message).toMatch(/E_UNSERVED_RANGE.*line 4/);
+      expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 4/);
       expect(await readFile(path, "utf-8")).toBe(content);
 
       const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
@@ -133,7 +133,7 @@ describe("served-state edge cases for edit", () => {
     });
   });
 
-  it("fail-safes with [E_STALE_ANCHOR] when a boundary was never served (paged read)", async () => {
+  it("fail-safes with [E_UNKNOWN_ANCHOR] when a boundary was never served (paged read)", async () => {
     const content = "l1\nl2\nl3\nl4\nl5\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -142,8 +142,7 @@ describe("served-state edge cases for edit", () => {
 
       const hashes = await lineHashes(content, home.testPath);
 
-      // A boundary anchor absent from `served_leases` is [E_STALE_ANCHOR] with the fresh context
-      // serve — never content-resolved (spec §3.1.1 step 1 line 89 / §5.3, ADR-0016).
+      // A boundary anchor absent from `served_leases` carries no rows — re-read for fresh anchors.
       let rejected: Error | undefined;
       try {
         await editTool.execute(
@@ -156,18 +155,18 @@ describe("served-state edge cases for edit", () => {
       } catch (error) {
         rejected = error as Error;
       }
-      expect(rejected?.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
+      expect(rejected?.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
       expect(await readFile(path, "utf-8")).toBe(content);
 
-      // Reject-and-serve: the served rows are recorded as serves, so the retry needs no read.
+      const fresh = getText(
+        await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx),
+      );
       const servedFor = (line: string): string =>
-        rejected!.message
+        fresh
           .split("\n")
           .find((row) => row.includes(`│${line}`))!
           .trim()
-          .split("│")[0]!
-          .split(": ")
-          .at(-1)!;
+          .split("│")[0]!;
       const retry = await editTool.execute(
         "e2",
         { path: "sample.ts", edits: [[servedFor("l4"), servedFor("l5"), "X"]] },

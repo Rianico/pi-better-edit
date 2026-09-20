@@ -5,11 +5,11 @@
  *  - served span resolve (servedPositionsOf + candidate enumeration)
  *  - length mismatch and never-served checks
  *  - rebased-span contiguity gate for the MVCC dynamic rebase path (spec §3.1.1 / Probe J)
- *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint/retryHint)
+ *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint)
  *  - E_RANGE_* branching via decision table
  *
  * ADR-0008 heuristic canon healing is retired (spec §3.3): un-rebased coordinates reject
- * fail-closed with E_UNSERVED_RANGE. Coordinate realignment is owned exclusively by MVCC
+ * fail-closed with E_STALE_RANGE. Coordinate realignment is owned exclusively by MVCC
  * `pairSnapshots` + `line_lineage` upstream in the edit path.
  *
  * Canon resolution is instance-scoped via CanonStore (injected), not global.
@@ -21,18 +21,29 @@
  */
 import { HASH_SEP, canon, globalCanonStore, type CanonStore } from "./hash.js";
 import { SERVED_ROWS_CAP } from "../constants.js";
+import {
+  DomainError,
+  FRESH_READ_HEADING,
+  TARGET_LOST_RECOVERY,
+  UNVERIFIED_HEADLINE,
+  type RangeCause,
+  type ServedRow,
+} from "../domain-errors.js";
 import type { LeaseIdentityView } from "./resolve.js";
 
 // WHY: ---------------------------------------------------------------------------
 // WHY: Public contracts — mirrors served.ts so it can re-export without identity split
 // WHY: ---------------------------------------------------------------------------
 
-export type ServedCode = "E_STALE_RANGE" | "E_UNSERVED_RANGE";
+export type ServedCode = "E_STALE_RANGE" | "E_UNVERIFIED_RANGE" | "E_TARGET_LOST";
 
-export interface ServedRow {
-  position: number;
-  hash: string;
-}
+export {
+  FRESH_READ_HEADING,
+  TARGET_LOST_RECOVERY,
+  UNVERIFIED_HEADLINE,
+  type RangeCause,
+  type ServedRow,
+};
 
 export interface FileSnapshotContext {
   fileHashes: string[];
@@ -40,46 +51,19 @@ export interface FileSnapshotContext {
   filePath?: string;
 }
 
-export class ServedRejectionError extends Error {
-  readonly code: ServedCode;
-  readonly firstOffendingLine: number | undefined;
-  readonly servedRows: ServedRow[];
-  readonly servedBlock: string;
+// WHY: the ad-hoc rejection subclasses are retired (spec D1): every rejection
+// WHY: below is a `DomainError` whose code selects the range-family payload shape, so
+// WHY: `toFailure` and downstream consumers keep `servedRows`, `servedBlock`, `cause`,
+// WHY: and `details`.
+type RangeRejection = DomainError<"E_STALE_RANGE" | "E_UNVERIFIED_RANGE" | "E_TARGET_LOST">;
 
-  constructor(opts: {
-    code: ServedCode;
-    message: string;
-    firstOffendingLine?: number;
-    servedRows: ServedRow[];
-    servedBlock: string;
-  }) {
-    super(opts.message);
-    this.name = "ServedRejectionError";
-    this.code = opts.code;
-    this.firstOffendingLine = opts.firstOffendingLine;
-    this.servedRows = opts.servedRows;
-    this.servedBlock = opts.servedBlock;
-  }
-}
-
-function isServedRejection(error: unknown): error is ServedRejectionError {
-  return error instanceof ServedRejectionError;
-}
-
-export class AnchorMismatchError extends Error {
-  readonly servedRows: ServedRow[];
-  readonly servedBlock?: string;
-
-  constructor(message: string, servedRows: ServedRow[], servedBlock?: string) {
-    super(message);
-    this.name = "AnchorMismatchError";
-    this.servedRows = servedRows;
-    this.servedBlock = servedBlock;
-  }
-}
-
-function _isAnchorMismatch(error: unknown): error is AnchorMismatchError {
-  return error instanceof AnchorMismatchError;
+function isRangeRejection(error: unknown): error is RangeRejection {
+  return (
+    error instanceof DomainError &&
+    (error.code === "E_STALE_RANGE" ||
+      error.code === "E_UNVERIFIED_RANGE" ||
+      error.code === "E_TARGET_LOST")
+  );
 }
 
 // WHY: ---------------------------------------------------------------------------
@@ -102,10 +86,6 @@ export function buildRangeServeRows(
 
 export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
   return rows.map((row) => `${row.hash}${HASH_SEP}${fileLines[row.position] ?? ""}`).join("\n");
-}
-
-function retryHint(): string {
-  return "Retry with these anchors (no read needed).";
 }
 
 function paginationHint(nextOffset: number, more: number): string {
@@ -144,46 +124,96 @@ function buildRangeServeBlock(
 }
 
 /**
- * One reject-and-serve assembly shared by both rejection entry points: the block build and the
- * payload assembly live here, so the `[MODEL] [CODE]` prefix, the `Current range:` contract, the
- * retry hint, and the served rows cannot drift between codes.
+ * One reject-and-serve assembly shared by the retry-code entry points: the block build lives
+ * here so the served rows cannot drift between codes. The `[MODEL] [CODE]` prefix, the
+ * `Current range:` heading, and the retry hint render in the domain-errors registry formats
+ * (the retry affordance is owned there), so this helper returns rows and block only. The
+ * unverified code never routes here: it serves a fresh read under
+ * `Current range (fresh read):` with no retry hint.
  */
 function assembleRejectAndServe(args: {
-  code: ServedCode | "E_STALE_ANCHOR";
-  headline: string;
   startLine: number;
   endLine: number;
   snapshot: FileSnapshotContext;
-}): { message: string; servedRows: ServedRow[]; servedBlock: string } {
+}): { servedRows: ServedRow[]; servedBlock: string } {
   const { servedRows, rendered } = buildRangeServeBlock(
     args.startLine,
     args.endLine,
     args.snapshot.fileHashes,
     args.snapshot.fileLines,
   );
-  return {
-    message: `[MODEL] [${args.code}] ${args.headline}\nCurrent range:\n${rendered}\n${retryHint()}`,
-    servedRows,
-    servedBlock: rendered,
-  };
+  return { servedRows, servedBlock: rendered };
 }
 
-/** Builds a reject-and-serve `ServedRejectionError` whose rows are the current on-disk range. */
+/**
+ * Builds an `[E_TARGET_LOST]` rejection for a retired leased identity whose range cannot be
+ * identified (spec stale-identity-reject-and-serve D1/D6, ADR-0018 decisions 1-2). The payload
+ * carries no rows, no `Current range` heading and no retry hint, so the codes stay disjoint
+ * by payload shape: `[E_STALE_RANGE]` and `[E_UNVERIFIED_RANGE]` always render rows,
+ * `[E_TARGET_LOST]` never does.
+ */
+export function makeTargetLostRejection(opts: {
+  servedLine: number;
+  path?: string;
+  cause: RangeCause;
+}): DomainError<"E_TARGET_LOST"> {
+  return new DomainError("E_TARGET_LOST", {
+    servedLine: opts.servedLine,
+    ...(opts.path !== undefined ? { path: opts.path } : {}),
+    cause: opts.cause,
+    // WHY: the retired line is the offending line — preserved so `verify()` and
+    // WHY: downstream consumers keep the coordinate without a second lookup.
+    firstOffendingLine: opts.servedLine,
+  });
+}
+
+/**
+ * Builds a `ServedRejectionError` whose rows are the current on-disk range. `E_STALE_RANGE`
+ * serves under `Current range:` with a retry hint; `E_UNVERIFIED_RANGE` serves a fresh read
+ * under `Current range (fresh read):` with no retry hint and no mandate — the model decides
+ * from those rows. `E_TARGET_LOST` never routes here (see `makeTargetLostRejection`).
+ */
 export function makeServedRejection(opts: {
-  code: ServedCode;
+  code: "E_STALE_RANGE" | "E_UNVERIFIED_RANGE";
   headline: string;
   startLine: number;
   endLine: number;
   snapshot: FileSnapshotContext;
   firstOffendingLine?: number;
-}): ServedRejectionError {
-  const { message, servedRows, servedBlock } = assembleRejectAndServe(opts);
-  return new ServedRejectionError({
-    code: opts.code,
-    message,
-    firstOffendingLine: opts.firstOffendingLine,
+  cause: RangeCause;
+}): DomainError<"E_STALE_RANGE" | "E_UNVERIFIED_RANGE"> {
+  if (opts.code === "E_UNVERIFIED_RANGE") {
+    // WHY: the unverified payload renders the general headline, never the
+    // WHY: caller-supplied clause: the bound is unplaceable, so naming
+    // WHY: per-anchor positions would narrate lines never targeted.
+    const { servedRows, rendered } = buildRangeServeBlock(
+      opts.startLine,
+      opts.endLine,
+      opts.snapshot.fileHashes,
+      opts.snapshot.fileLines,
+    );
+    return new DomainError("E_UNVERIFIED_RANGE", {
+      servedRows,
+      servedBlock: rendered,
+      cause: opts.cause,
+      ...(opts.firstOffendingLine !== undefined
+        ? { firstOffendingLine: opts.firstOffendingLine }
+        : {}),
+    });
+  }
+  const { servedRows, servedBlock } = assembleRejectAndServe({
+    startLine: opts.startLine,
+    endLine: opts.endLine,
+    snapshot: opts.snapshot,
+  });
+  return new DomainError("E_STALE_RANGE", {
+    headline: opts.headline,
     servedRows,
     servedBlock,
+    cause: opts.cause,
+    ...(opts.firstOffendingLine !== undefined
+      ? { firstOffendingLine: opts.firstOffendingLine }
+      : {}),
   });
 }
 
@@ -197,15 +227,19 @@ export function makeStaleAnchorRejection(opts: {
   startLine: number;
   endLine: number;
   snapshot: FileSnapshotContext;
-}): AnchorMismatchError {
-  const { message, servedRows, servedBlock } = assembleRejectAndServe({
-    code: "E_STALE_ANCHOR",
-    headline: opts.headline,
+  cause: RangeCause;
+}): DomainError<"E_STALE_ANCHOR"> {
+  const { servedRows, servedBlock } = assembleRejectAndServe({
     startLine: opts.startLine,
     endLine: opts.endLine,
     snapshot: opts.snapshot,
   });
-  return new AnchorMismatchError(message, servedRows, servedBlock);
+  return new DomainError("E_STALE_ANCHOR", {
+    headline: opts.headline,
+    servedRows,
+    servedBlock,
+    cause: opts.cause,
+  });
 }
 
 /**
@@ -215,7 +249,8 @@ export function makeStaleAnchorRejection(opts: {
  *
  *  - a different window length means an external insert/delete landed strictly inside the range
  *    (Probe J) -> `E_STALE_RANGE`;
- *  - a served line with no mirror row or no lease -> `E_UNSERVED_RANGE`;
+ *  - a served line with no mirror row or no lease -> `E_STALE_RANGE` (never-served interior:
+ *    the remedy is identical — retry with the served rows — so no separate code is kept);
  *  - a served line whose lease is retired, or whose `line_id` no longer lives at its expected
  *    rebased coordinate, -> `E_STALE_RANGE` (Probes A/E/K: never apply at a coordinate whose
  *    immutable `line_id` is not the one leased).
@@ -255,6 +290,7 @@ export function verifyRebasedSpan(args: {
       endLine: rebasedEnd,
       snapshot,
       firstOffendingLine: rebasedStart,
+      cause: "served-range staleness",
     });
   }
   for (let k = 0; k < servedLen; k++) {
@@ -262,23 +298,25 @@ export function verifyRebasedSpan(args: {
     const currentLine = rebasedStart + k;
     if (servedAnchor === null || servedAnchor === undefined) {
       throw makeServedRejection({
-        code: "E_UNSERVED_RANGE",
+        code: "E_STALE_RANGE",
         headline: `line ${currentLine}${where} was never served.`,
         startLine: rebasedStart,
         endLine: rebasedEnd,
         snapshot,
         firstOffendingLine: currentLine,
+        cause: "never-served",
       });
     }
     const lease = leaseFor(servedAnchor);
     if (lease === undefined) {
       throw makeServedRejection({
-        code: "E_UNSERVED_RANGE",
+        code: "E_STALE_RANGE",
         headline: `line ${currentLine}${where} has no served line identity.`,
         startLine: rebasedStart,
         endLine: rebasedEnd,
         snapshot,
         firstOffendingLine: currentLine,
+        cause: "never-served",
       });
     }
     if (lease.retiredAt !== null || rebasedLineOf(lease.lineId) !== currentLine) {
@@ -289,6 +327,7 @@ export function verifyRebasedSpan(args: {
         endLine: rebasedEnd,
         snapshot,
         firstOffendingLine: currentLine,
+        cause: "served-range staleness",
       });
     }
   }
@@ -325,6 +364,8 @@ export type VerificationResult =
       servedBlock: string;
       message: string;
       firstOffendingLine?: number;
+      cause: RangeCause;
+      details: { cause: RangeCause };
     };
 
 // WHY: ---------------------------------------------------------------------------
@@ -345,7 +386,12 @@ export class ServedVerification {
       this.verifyOrThrow(input);
       return { ok: true };
     } catch (error) {
-      if (isServedRejection(error)) {
+      if (isRangeRejection(error)) {
+        // WHY: every range-family builder pins its own evidence cause (G3: no borrowed
+        // WHY: defaults) — a missing cause is a builder defect, so surface it loud by
+        // WHY: rethrowing the original instead of inventing one here.
+        if (error.cause === undefined) throw error;
+        const cause = error.cause;
         // WHY: the serve block travels as a typed readonly field populated at construction,
         // WHY: so no rebuild is needed here.
         return {
@@ -354,7 +400,11 @@ export class ServedVerification {
           servedRows: error.servedRows,
           servedBlock: error.servedBlock,
           message: error.message,
-          firstOffendingLine: error.firstOffendingLine,
+          ...(error.firstOffendingLine !== undefined
+            ? { firstOffendingLine: error.firstOffendingLine }
+            : {}),
+          cause,
+          details: { cause },
         };
       }
       throw error;
@@ -388,7 +438,9 @@ export class ServedVerification {
     );
     const currentLen = endLine - startLine + 1;
 
-    // WHY: Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read
+    // WHY: Early tombstone boundary check (whole-span S@3==S@3) — gated on canon inequality to avoid false positive on same-line re-read.
+    // WHY: A tombstoned boundary hash is exactly what cannot be trusted: the lease is terminal
+    // WHY: for this window, so the rejection serves the current range for a retry.
     if ((tombstone.has(startHash) || tombstone.has(endHash)) && servedCanons) {
       const tombstonedHash = tombstone.has(startHash) ? startHash : endHash;
       const pos = fileHashes.indexOf(tombstonedHash);
@@ -397,11 +449,12 @@ export class ServedVerification {
         const expected = servedIdx >= 0 ? servedCanons[servedIdx] : undefined;
         const actual = canon(fileLines[pos] ?? "");
         if (expected !== undefined && expected !== null && expected !== actual) {
-          this.throwStale({
-            message: `[MODEL] [E_STALE_RANGE] anchor "${tombstonedHash}" no longer matches the current file (its line changed since you saw it).\nCurrent range:\n${rendered}\n${retryHint()}`,
+          this.throwStaleForTombstone({
+            tombstonedHash,
+            startLine,
+            endLine,
+            snapshot: { fileHashes, fileLines, ...(filePath !== undefined ? { filePath } : {}) },
             firstOffendingLine: pos + 1,
-            servedRows,
-            rendered,
           });
         }
       }
@@ -416,7 +469,7 @@ export class ServedVerification {
       fileHashes,
     });
 
-    // WHY: --- decision table entry 1: no span could be resolved -> E_UNSERVED_RANGE ---
+    // WHY: --- decision table entry 1: no span could be resolved -> unknown anchor ---
     // WHY: ADR-0008 canon healing is retired (spec §3.3): an unresolvable span is never relocated
     // WHY: by scanning for matching canons. It fails closed; coordinate realignment is owned
     // WHY: exclusively by MVCC `pairSnapshots` + `line_lineage` in the edit path.
@@ -424,14 +477,10 @@ export class ServedVerification {
     const to: number | undefined = span.to;
 
     if (from === undefined || to === undefined) {
-      this.throwUnverified({
-        served,
+      this.throwUnknownForMissingSpan({
         startHash,
         endHash,
-        currentLen,
-        rendered,
-        servedRows,
-        where,
+        filePath,
         startPositions: servedPositionsOf(served, startHash),
         endPositions: servedPositionsOf(served, endHash),
       });
@@ -446,10 +495,11 @@ export class ServedVerification {
           const actual = canon(fileLines[startLine - 1 + k] ?? "");
           if (expected !== actual) {
             this.throwStale({
-              message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").\nCurrent range:\n${rendered}\n${retryHint()}`,
+              headline: `line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").`,
               firstOffendingLine: startLine + k,
               servedRows,
               rendered,
+              cause: "served-range staleness",
             });
           }
         }
@@ -465,11 +515,16 @@ export class ServedVerification {
             expectedCanon !== null &&
             expectedCanon !== actualCanon
           ) {
+            // WHY: unified with the canon-mismatch clause above: ONE clause plus
+            // WHY: cause, keeping the first mismatching line (expected vs actual)
+            // WHY: and dropping the per-line anchor-changed narration. The cause
+            // WHY: (`tombstone`) is what distinguishes the signal.
             this.throwStale({
-              message: `[MODEL] [E_STALE_RANGE] line ${startLine + k}${where} no longer matches what was served (its anchor "${h}" changed since you saw it).\nCurrent range:\n${rendered}\n${retryHint()}`,
+              headline: `line ${startLine + k}${where} differs from what was served (expected "${expectedCanon}" vs actual "${actualCanon}").`,
               firstOffendingLine: startLine + k,
               servedRows,
               rendered,
+              cause: "tombstone",
             });
           }
         }
@@ -612,14 +667,16 @@ export class ServedVerification {
     const { served, from, to, startLine, currentLen, fileHashes, rendered, servedRows, where } =
       args;
 
-    // WHY: Decision: never-served gap inside served span
+    // WHY: Decision: never-served gap inside served span — collapses into E_STALE_RANGE:
+    // WHY: the remedy is identical (retry with the served rows), so no separate code is kept.
     for (let i = from; i <= to; i++) {
       if (served[i] === null) {
-        this.throwUnserved({
-          message: `[MODEL] [E_UNSERVED_RANGE] line ${i + 1}${where} was never served.\nCurrent range:\n${rendered}\n${retryHint()}`,
+        this.throwStale({
+          headline: `line ${i + 1}${where} was never served.`,
           firstOffendingLine: i + 1,
           servedRows,
           rendered,
+          cause: "never-served",
         });
       }
     }
@@ -629,10 +686,11 @@ export class ServedVerification {
     const servedLen = to - from + 1;
     if (servedLen !== currentLen) {
       this.throwStale({
-        message: `[MODEL] [E_STALE_RANGE] served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.\nCurrent range:\n${rendered}\n${retryHint()}`,
+        headline: `served span (${servedLen} lines) no longer matches current range (${currentLen} lines)${where}.`,
         firstOffendingLine: startLine,
         servedRows,
         rendered,
+        cause: "served-range staleness",
       });
     }
 
@@ -641,10 +699,11 @@ export class ServedVerification {
       if (served[from + k] !== fileHashes[startLine - 1 + k]) {
         const offendingLine = startLine + k;
         this.throwStale({
-          message: `[MODEL] [E_STALE_RANGE] line ${offendingLine}${where} differs from what was served.\nCurrent range:\n${rendered}\n${retryHint()}`,
+          headline: `line ${offendingLine}${where} differs from what was served.`,
           firstOffendingLine: offendingLine,
           servedRows,
           rendered,
+          cause: "served-range staleness",
         });
       }
     }
@@ -652,82 +711,60 @@ export class ServedVerification {
 
   // WHY: -- private: throws with decision-table mapping -------------------------
 
-  private throwUnverified(args: {
-    served: (string | null)[];
+  private throwUnknownForMissingSpan(args: {
     startHash: string;
     endHash: string;
-    currentLen: number;
-    rendered: string;
-    servedRows: ServedRow[];
-    where: string;
+    filePath?: string;
     startPositions: number[];
     endPositions: number[];
   }): never {
-    const {
-      startHash,
-      endHash,
-      currentLen,
-      rendered,
-      servedRows,
-      where,
-      startPositions,
-      endPositions,
-    } = args;
-    const problems: string[] = [];
-    if (startPositions.length === 0) {
-      problems.push(`anchor_from "${startHash}" has no served position`);
-    } else if (startPositions.length > 1) {
-      problems.push(`anchor_from "${startHash}" was served at ${startPositions.length} positions`);
-    }
-    if (endPositions.length === 0) {
-      problems.push(`anchor_to "${endHash}" has no served position`);
-    } else if (endPositions.length > 1) {
-      problems.push(`anchor_to "${endHash}" was served at ${endPositions.length} positions`);
-    }
-    const err = new ServedRejectionError({
-      code: "E_UNSERVED_RANGE",
-      message:
-        `[MODEL] [E_UNSERVED_RANGE] cannot verify range against served state${where}: ${problems.join("; ")}. ` +
-        `No served span matched the current range (${currentLen} lines). ` +
-        `A full read will re-sync the served mirror — the served range below is current content, ` +
-        `but retrying without re-reading cannot clear a stale duplicate outside the served window.\n` +
-        `Current range:\n${rendered}`,
-      servedRows: servedRows,
-      servedBlock: rendered,
+    const missing = [
+      ...new Set(
+        [
+          args.startPositions.length === 0 ? args.startHash : undefined,
+          args.endPositions.length === 0 ? args.endHash : undefined,
+        ].filter((hash): hash is string => hash !== undefined),
+      ),
+    ];
+    const anchors = missing.length > 0 ? missing : [...new Set([args.startHash, args.endHash])];
+    throw new DomainError("E_UNKNOWN_ANCHOR", {
+      path: args.filePath ?? "this file",
+      anchors,
     });
-    throw err;
+  }
+
+  private throwStaleForTombstone(args: {
+    tombstonedHash: string;
+    startLine: number;
+    endLine: number;
+    snapshot: FileSnapshotContext;
+    firstOffendingLine: number;
+  }): never {
+    throw makeStaleAnchorRejection({
+      headline:
+        `anchor "${args.tombstonedHash}" no longer resolves to the line identity ` +
+        `it was served with; nothing was written.`,
+      startLine: args.startLine,
+      endLine: args.endLine,
+      snapshot: args.snapshot,
+      cause: "tombstone",
+    });
   }
 
   private throwStale(args: {
-    message: string;
+    headline: string;
     firstOffendingLine: number;
     servedRows: ServedRow[];
     rendered: string;
+    cause: RangeCause;
   }): never {
-    const err = new ServedRejectionError({
-      code: "E_STALE_RANGE",
-      message: args.message,
+    throw new DomainError("E_STALE_RANGE", {
+      headline: args.headline,
       firstOffendingLine: args.firstOffendingLine,
       servedRows: args.servedRows,
       servedBlock: args.rendered,
+      cause: args.cause,
     });
-    throw err;
-  }
-
-  private throwUnserved(args: {
-    message: string;
-    firstOffendingLine: number;
-    servedRows: ServedRow[];
-    rendered: string;
-  }): never {
-    const err = new ServedRejectionError({
-      code: "E_UNSERVED_RANGE",
-      message: args.message,
-      firstOffendingLine: args.firstOffendingLine,
-      servedRows: args.servedRows,
-      servedBlock: args.rendered,
-    });
-    throw err;
   }
 }
 

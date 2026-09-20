@@ -6,6 +6,7 @@ import { resolveTarget } from "../fs-write.js";
 import { toCwd } from "../paths.js";
 import { detectEnding, toLF, stripBOM } from "../edit-diff.js";
 import { abortIf } from "../utils.js";
+import { DomainError } from "../domain-errors.js";
 import { valKind, valAccess } from "../validation.js";
 import { visLines } from "../utils.js";
 import { loadHashStore, type HashStore } from "../hash-store.js";
@@ -83,9 +84,12 @@ export async function readNormFile(
   if (options?.maxLines !== undefined) {
     const lineCount = visLines(normalized).length;
     if (lineCount > options.maxLines) {
-      throw new Error(
-        `[MODEL] [E_LARGE_FILE] ${path} has ${lineCount} lines, exceeding the ${options.maxLines}-line edit limit. Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.`,
-      );
+      throw new DomainError("E_LARGE_FILE", {
+        path,
+        limitKind: "lines",
+        lineCount,
+        limit: options.maxLines,
+      });
     }
   }
 

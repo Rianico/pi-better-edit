@@ -392,7 +392,7 @@ describe("rejected edits — pre-load failures write zero serves (#69)", () => {
           home,
           { store, sessionKey: "s1" },
         ),
-      ).rejects.toThrow(/E_BAD_ANCHOR/);
+      ).rejects.toThrow(/E_MALFORMED_ANCHOR/);
       expect(getServed(store, "s1", absPath)).toEqual([]);
       expect(await loadEpochId("s1", absPath)).toBeUndefined();
     });
@@ -884,7 +884,7 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
 
       // The failing item keeps its OWN code — the unleased anchor is what the model must fix — plus
       // the atomicity trailer; `[E_BATCH_ABORT]` is reserved for overlapping/nested spans.
-      expect(rejection.message).toContain("[E_STALE_ANCHOR]");
+      expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(
         "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.",

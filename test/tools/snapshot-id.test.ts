@@ -63,7 +63,7 @@ describe("snapshotId surface (details-only after W2)", () => {
     });
   });
 
-  it("a retired anchor still triggers [E_STALE_RANGE] with refresh hints", async () => {
+  it("a retired anchor still triggers [E_TARGET_LOST] with a read hint", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -96,7 +96,7 @@ describe("snapshotId surface (details-only after W2)", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/\[MODEL\] \[E_STALE_RANGE\]/);
+      ).rejects.toThrow(/\[MODEL\] \[E_TARGET_LOST\]/);
     });
   });
 });

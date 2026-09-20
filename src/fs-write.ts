@@ -11,13 +11,14 @@ import {
   writeFile,
 } from "node:fs/promises";
 import { dirname, join, parse, resolve, sep } from "node:path";
+import { DomainError } from "./domain-errors.js";
 import { errCode } from "./utils.js";
 
 export async function resolveTarget(path: string): Promise<string> {
   if (path.includes("\0"))
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Path contains null byte. Pass a plain file string and retry.",
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: "Path contains null byte. Pass a plain file string and retry.",
+    });
   // SAFETY: resolve normalizes ".." and sep; result is absolute and null-byte validated — editing scope intentionally allows any absolute path, OS permissions enforced by valAccess.
   const absolutePath = resolve(path);
   const { root } = parse(absolutePath);
@@ -118,9 +119,9 @@ async function syncDir(dir: string): Promise<void> {
 
 export async function writeAtomic(path: string, content: string): Promise<void> {
   if (path.includes("\0"))
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Path contains null byte. Pass a plain file string and retry.",
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: "Path contains null byte. Pass a plain file string and retry.",
+    });
   const targetPath = await resolveTarget(path);
 
   let existingStats: Awaited<ReturnType<typeof stat>> | null = null;

@@ -45,15 +45,18 @@ export { applyEdit, fmtRegion, changedRange, type ApplyVerificationContext } fro
 export {
   findServedHashEcho,
   findServedPrefixMismatches,
+  findNeverServedAnchorShapes,
   ServedHashEchoError,
   buildServedEditMessage,
   buildServedEditPrefixNote,
   buildServedWriteMessage,
   buildServedWritePrefixNote,
+  buildNeverServedEditHint,
   trackServedEditRefusal,
   trackServedWriteRefusal,
   clearServedRefusals,
   LITERAL_BYPASS_NOTICE,
   type ServedHashEchoMatch,
   type ServedPrefixMismatch,
+  type NeverServedAnchorShape,
 } from "./served-guard.js";

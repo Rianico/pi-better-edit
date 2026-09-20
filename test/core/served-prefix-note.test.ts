@@ -7,6 +7,8 @@ import {
   findServedPrefixMismatches,
   buildServedEditPrefixNote,
   buildServedWritePrefixNote,
+  buildNeverServedEditHint,
+  ANCHOR_PREFIX_REMEDY,
 } from "../../src/hashline/served-guard";
 import { initHasher, lineHashes } from "../../src/hashline";
 import { HASH_SEP, canon } from "../../src/hashline/hash-identity";
@@ -83,8 +85,9 @@ describe("applyEdit ambiguous tier", () => {
     expect(result.content).toBe(`alpha\n${hashes[1]}${HASH_SEP}CHANGED-beta\ngamma`);
     const notes = (result.warnings ?? []).filter((w) => w.startsWith("[MODEL]"));
     expect(notes).toHaveLength(1);
-    expect(notes[0]).toContain("applied");
-    expect(notes[0]).toContain("replacement line 1");
+    expect(notes[0]).toContain("[MODEL] [W_SERVED_PREFIX_MISMATCH]");
+    expect(notes[0]).toContain("Applied verbatim");
+    expect(notes[0]).toContain("Line 1");
     expect(notes[0]).toContain(hashes[1]!);
     expect(notes[0]).toContain("line 2");
     expect(notes[0]).toContain("differs from what was served");
@@ -124,27 +127,63 @@ describe("applyEdit ambiguous tier", () => {
         served,
         servedCanons,
       }),
-    ).toThrow(/E_SERVED_ECHO/);
+    ).toThrow(/E_SUSPICIOUS_TEXT/);
   });
 
   it("builds edit and write notes with the required fields", () => {
     const editNote = buildServedEditPrefixNote({ k: 2, anchor: "Ab3", servedLine: 1 });
-    expect(editNote.startsWith("[MODEL]")).toBe(true);
-    expect(editNote).toContain("applied");
-    expect(editNote).toContain("replacement line 2");
+    expect(editNote.startsWith("[MODEL] [W_SERVED_PREFIX_MISMATCH]")).toBe(true);
+    expect(editNote).toContain("Applied verbatim");
+    expect(editNote).toContain("Line 2");
     expect(editNote).toContain("Ab3");
     expect(editNote).toContain("line 1");
     expect(editNote).toContain("differs from what was served");
     expect(editNote).toContain("undo_last_edit");
+    expect(editNote).toMatch(/anchor_from.*anchor_to/);
+    expect(editNote).toMatch(/replace_with/);
+    expect(editNote).not.toMatch(/without the anchor/i);
     const writeNote = buildServedWritePrefixNote({ line: 2, anchor: "Ab3", servedLine: 1 });
-    expect(writeNote.startsWith("[MODEL]")).toBe(true);
-    expect(writeNote).toContain("applied");
-    expect(writeNote).toContain("line 2");
+    expect(writeNote.startsWith("[MODEL] [W_SERVED_PREFIX_MISMATCH]")).toBe(true);
+    expect(writeNote).toContain("Applied verbatim");
+    expect(writeNote).toContain("Line 2");
     expect(writeNote).toContain("Ab3");
     expect(writeNote).toContain("line 1");
     expect(writeNote).toContain("differs from what was served");
     expect(writeNote).not.toContain("undo_last_edit");
-    expect(writeNote).toContain("re-issue the write without the anchor prefix");
+    expect(writeNote).toMatch(/omitted from the written lines/i);
+    expect(writeNote).not.toMatch(/without the anchor/i);
+  });
+
+  it("never instructs a retry without an anchor", () => {
+    const editNote = buildServedEditPrefixNote({ k: 2, anchor: "Ab3", servedLine: 1 });
+    const writeNote = buildServedWritePrefixNote({ line: 2, anchor: "Ab3", servedLine: 1 });
+    for (const note of [editNote, writeNote]) {
+      expect(note).not.toMatch(/without the anchor/i);
+      expect(note).not.toMatch(/without anchor/i);
+      expect(note).not.toMatch(/remove the (copied )?anchors?/i);
+    }
+    expect(editNote).toMatch(/anchor_from/);
+    expect(editNote).toMatch(/replace_with/);
+  });
+});
+
+describe("canonical applied-hint remedy stays byte-identical across builders", () => {
+  it("both applied-hint builders carry the identical canonical sentence", () => {
+    const editNote = buildServedEditPrefixNote({ k: 1, anchor: "Ab3", servedLine: 2 });
+    const neverServed = buildNeverServedEditHint({ count: 1 });
+    const tailOf = (note: string): string => {
+      const marker = "Applied verbatim. ";
+      const at = note.indexOf(marker);
+      expect(at).toBeGreaterThan(-1);
+      return note.slice(at + marker.length);
+    };
+    expect(tailOf(editNote)).toBe(ANCHOR_PREFIX_REMEDY);
+    expect(tailOf(neverServed)).toBe(ANCHOR_PREFIX_REMEDY);
+    expect(tailOf(editNote)).toBe(tailOf(neverServed));
+    expect(ANCHOR_PREFIX_REMEDY).toBe(
+      "If the hash anchor prefix was unintended, `undo_last_edit`, then retry " +
+        "with the same `anchor_from`/`anchor_to` and drop the anchor prefix from `replace_with`.",
+    );
   });
 });
 
@@ -168,8 +207,8 @@ describe("edit result content carries the note", () => {
       const text = (result.content as Array<{ text?: string }>)
         .map((part) => part.text ?? "")
         .join("\n");
-      expect(text).toContain("[MODEL]");
-      expect(text).toContain("applied");
+      expect(text).toContain("[MODEL] [W_SERVED_PREFIX_MISMATCH]");
+      expect(text).toContain("Applied verbatim");
       expect(text).toContain(hashes[1]!);
       expect(text).toContain("differs from what was served");
       expect(text).toContain("undo_last_edit");
@@ -234,12 +273,13 @@ describe("write result content carries the note", () => {
         (out?.content as Array<{ text?: string }> | undefined)
           ?.map((part) => (part as { text?: string }).text ?? "")
           .join("\n") ?? "";
-      expect(text).toContain("[MODEL]");
-      expect(text).toContain("applied");
+      expect(text).toContain("[MODEL] [W_SERVED_PREFIX_MISMATCH]");
+      expect(text).toContain("Applied verbatim");
       expect(text).toContain(hashes[0]!);
       expect(text).toContain("differs from what was served");
       expect(text).not.toContain("undo_last_edit");
-      expect(text).toContain("re-issue the write without the anchor prefix");
+      expect(text).toMatch(/omitted from the written lines/i);
+      expect(text).not.toMatch(/without the anchor/i);
       expect(await readFile(filePath, "utf-8")).toBe(written);
     });
   });

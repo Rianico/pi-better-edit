@@ -33,6 +33,10 @@ The root object must contain only `path` and `edits`. Missing/extra fields, empt
 
 - Each tuple normalizes into the existing internal edit representation (`remove_from`, `remove_to`, `replacement_text`) before mutation.
 - `null` path is normalized through the existing `resolveMissingPath` behavior.
+  - Note: `resolveMissingPath` was retired by ADR-0021 and Keel Principle 4
+    (naming the target belongs to the caller, not the tool); a missing, null
+    or empty `file` now fails closed with `[E_BAD_PAYLOAD]` at the admission
+    boundary.
 - Per-item served-range verification, reject-and-serve, noop policy, drift notices, and persisted undo are unchanged.
 - No model-supplied digest, expected-hash list, force flag, fuzzy matching, silent remapping, or recovery merge is added.
 - Rejection feedback continues to serve fresh rows, so a retry does not require a read.

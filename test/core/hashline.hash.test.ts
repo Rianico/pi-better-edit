@@ -22,13 +22,13 @@ describe("strict hashline contract", () => {
     expect(parseText("alpha\n\n")).toEqual(["alpha", "", ""]);
   });
 
-  it("rejects stale anchors instead of relocating by hash", () => {
+  it("rejects unknown anchors instead of relocating by hash", () => {
     const content = ["a", "INSERTED", "b", "target", "c"].join("\n");
     const stale = {
       hash_bounds: [{ hash: "ZZZZ" }, { hash: "ZZZZ" }],
       content_lines: ["updated"],
     } as any;
-    expect(() => applyEdit(content, stale)).toThrow(/stale anchor/);
+    expect(() => applyEdit(content, stale)).toThrow(/E_UNKNOWN_ANCHOR/);
   });
 });
 
@@ -71,7 +71,7 @@ describe("perfect hashing", () => {
     expect(result.content).toBe("const x = 1;\nconst y = 2;\nconst x = 999;");
   });
 
-  it("stale-anchor error shows the file's current state for context", () => {
+  it("unknown-anchor error carries no rows", () => {
     const file = ["const x = 1;", "const y = 2;", "const x = 1;"].join("\n");
     const staleHash = "ZZZZ";
     let caught: Error | undefined;
@@ -84,11 +84,11 @@ describe("perfect hashing", () => {
       caught = e as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/E_STALE_ANCHOR/);
-    expect(caught!.message).toContain("Re-read the full file and copy the fresh 3-char anchors");
+    expect(caught!.message).toMatch(/E_UNKNOWN_ANCHOR/);
+    expect((caught as unknown as { servedRows: Array<unknown> }).servedRows).toEqual([]);
   });
 
-  it("rejects an ambiguous hash with [E_STALE_ANCHOR] (synthetic collision)", async () => {
+  it("rejects an ambiguous hash with [E_UNKNOWN_ANCHOR] (synthetic collision)", async () => {
     const file = "alpha\nbeta\ngamma\ndelta";
     const realHashes = await lineHashes(file, home.testPath);
     const forgedHashes = [...realHashes];
@@ -108,10 +108,8 @@ describe("perfect hashing", () => {
       caught = error as Error;
     }
     expect(caught).toBeDefined();
-    expect(caught!.message).toMatch(/E_STALE_ANCHOR/);
-    expect(caught!.message).toMatch(/matches lines 1, 3/);
-    expect(caught!.message).toContain(`${realHashes[0]!}│alpha`);
-    expect(caught!.message).toContain(`${realHashes[0]!}│gamma`);
+    expect(caught!.message).toMatch(/E_UNKNOWN_ANCHOR/);
+    expect((caught as unknown as { servedRows: Array<unknown> }).servedRows).toEqual([]);
   });
 
   it("all hashes are unique for any file shape", async () => {

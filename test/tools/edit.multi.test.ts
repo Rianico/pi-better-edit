@@ -90,7 +90,7 @@ describe("edit multi-item tool", () => {
 
       // The failing item keeps its OWN code — the retired lease is what the model must fix — plus the
       // atomicity trailer; `[E_BATCH_ABORT]` is reserved for overlapping/nested spans.
-      expect(rejection.message).toContain("[E_STALE_RANGE]");
+      expect(rejection.message).toContain("[E_TARGET_LOST]");
       expect(rejection.message).toContain("edit[1] (sample.ts) failed");
       expect(rejection.message).not.toContain("[E_BATCH_ABORT]");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
@@ -99,7 +99,7 @@ describe("edit multi-item tool", () => {
     });
   });
 
-  it("serves the current range (reject-and-serve) when an item's boundary anchor went stale", async () => {
+  it("serves a fresh read when an item's boundary anchor went stale", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", path);
@@ -122,10 +122,11 @@ describe("edit multi-item tool", () => {
           ctx,
         )
         .catch((e: unknown) => e)) as Error;
-      expect(err.message).toContain("[E_STALE_RANGE]");
+      expect(err.message).toContain("[E_UNVERIFIED_RANGE]");
       expect(err.message).toContain("edit[1] (sample.ts) failed");
       expect(err.message).not.toContain("[E_BATCH_ABORT]");
       expect(err.message).toContain(ATOMICITY_TRAILER);
+      expect(err.message).toContain("Current range (fresh read):");
 
       const servedBeta = err.message.split("\n").find((l) => /^[A-Za-z0-9]{3}│BETA$/.test(l));
       expect(servedBeta).toBeDefined();
@@ -346,7 +347,7 @@ describe("edit multi-item tool", () => {
         ctx,
       );
       expect(getText(result)).toContain("Successfully edited");
-      expect(result.details.warnings?.some((w: string) => w.includes("[E_REVERSED_ANCHORS]"))).toBe(
+      expect(result.details.warnings?.some((w: string) => w.includes("[W_REVERSED_ANCHORS]"))).toBe(
         true,
       );
       expect(await readFile(path, "utf-8")).toBe("XX\n");
@@ -398,7 +399,7 @@ describe("edit multi-item tool", () => {
       expect(getText(first)).not.toContain("[E_NOOP_LOOP]");
 
       const second = await editTool.execute("e2", payload, undefined, undefined, ctx);
-      expect(getText(second)).toContain("[E_NOOP_LOOP] Notice");
+      expect(getText(second)).toContain("[W_NOOP]");
 
       await expect(editTool.execute("e3", payload, undefined, undefined, ctx)).rejects.toThrow(
         /\[E_NOOP_LOOP\]/,
@@ -458,8 +459,8 @@ describe("prepareEditArguments normalization", () => {
     expect(prepareEditArguments(args)).toEqual(args);
   });
 
-  it("folds legacy tuples and null file to multi-item edits", () => {
-    expect(
+  it("rejects a null file fail-closed", () => {
+    expect(() =>
       prepareEditArguments({
         path: null,
         edits: [
@@ -467,13 +468,7 @@ describe("prepareEditArguments normalization", () => {
           ["CCC", "DDD", ""],
         ],
       }),
-    ).toEqual({
-      file: null,
-      edits: [
-        { anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" },
-        { anchor_from: "CCC", anchor_to: "DDD", replace_with: "" },
-      ],
-    });
+    ).toThrow(/\[E_BAD_PAYLOAD\]/);
   });
 
   it("rejects malformed shapes with an actionable E_BAD_PAYLOAD hint", () => {

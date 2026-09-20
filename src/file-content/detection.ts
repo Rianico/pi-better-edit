@@ -1,6 +1,7 @@
 import { open as fsOpen, stat as fsStat } from "node:fs/promises";
 import { fileTypeFromBuffer } from "file-type";
 import { MAX_BYTES, SNIFF_BYTES } from "../constants.js";
+import { DomainError } from "../domain-errors.js";
 
 const IMG_TYPES = new Set<string>(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -113,9 +114,11 @@ export async function loadFileKindAndText(
       if (options?.maxLines === undefined) return;
       for (let i = 0; i < decoded.length; i++) if (decoded.charCodeAt(i) === 10) newlineCount++;
       if (newlineCount > options.maxLines) {
-        throw new Error(
-          `[MODEL] [E_LARGE_FILE] ${options.displayPath ?? filePath} has more than ${options.maxLines} lines, exceeding the ${options.maxLines}-line edit limit. Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.`,
-        );
+        throw new DomainError("E_LARGE_FILE", {
+          path: options.displayPath ?? filePath,
+          limitKind: "lines",
+          limit: options.maxLines,
+        });
       }
     }
     function decodeChunk(chunk: Uint8Array, stream: boolean): string {

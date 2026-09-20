@@ -12,6 +12,7 @@ import { toLF, stripBOM, genDiff, restoreEndings, type LineEnding } from "./edit
 import { cntDiff, visLines, splitLines, errCode, isRec, normalizeFilePath } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
+import { DomainError } from "./domain-errors.js";
 import { changedRange, lineHashes } from "./hashline/index.js";
 export interface UndoEntry {
   content: string;
@@ -148,7 +149,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
             content: [
               {
                 type: "text",
-                text: `[E_UNDO_STALE] cannot undo on ${path}: file no longer exists.`,
+                text: new DomainError("E_UNDO_STALE", { path, reason: "deleted" }).message,
               },
             ],
             isError: true,
@@ -161,7 +162,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
             content: [
               {
                 type: "text",
-                text: `[E_UNDO_STALE] cannot undo on ${path}: file modified after edit — undo would overwrite changes.`,
+                text: new DomainError("E_UNDO_STALE", { path, reason: "modified" }).message,
               },
             ],
             isError: true,

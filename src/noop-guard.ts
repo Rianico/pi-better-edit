@@ -1,10 +1,6 @@
 import { NOOP_LOOP_THRESHOLD } from "./constants.js";
-import {
-  buildRangeServeRows,
-  fmtServedRows,
-  type ResolvedRange,
-  type ServedRow,
-} from "./hashline/served.js";
+import { DomainError, formatWarning } from "./domain-errors.js";
+import { buildRangeServeRows, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { createSessionHandle } from "./served-session/session.js";
 
 type NoopLoopEntry = {
@@ -12,7 +8,17 @@ type NoopLoopEntry = {
   count: number;
 };
 
-const noopLoopTracker = new Map<string, NoopLoopEntry>();
+// WHY: session-keyed slots (`session -> path -> ref -> entry`): serves are
+// WHY: session-keyed (ADR-0002), so one session's counts must never leak into
+// WHY: another session editing the same file. Siblings in one call carry
+// WHY: distinct payloads per `ref`, so a shared key would let each item reset
+// WHY: the other's count and the loop would never trip. Nested maps keep the
+// WHY: slots structurally separate (no separator to collide). Clearing takes
+// WHY: the session first because the session owns the authority: one delete
+// WHY: drops the whole session tracker, and one nested delete drops a single
+// WHY: file's slots. A single-item call carries only `edit[0]`, so its
+// WHY: behaviour is unchanged.
+const noopLoopTracker = new Map<string, Map<string, Map<string, NoopLoopEntry>>>();
 
 function noopPayloadKey(
   absolutePath: string,
@@ -23,15 +29,49 @@ function noopPayloadKey(
   return JSON.stringify([absolutePath, removeFrom, removeTo, replacementText]);
 }
 
-function trackNoopPayload(absolutePath: string, payload: string): number {
-  const existing = noopLoopTracker.get(absolutePath);
+function trackNoopPayload(
+  sessionKey: string,
+  absolutePath: string,
+  ref: string,
+  payload: string,
+): number {
+  let perSession = noopLoopTracker.get(sessionKey);
+  if (perSession === undefined) {
+    perSession = new Map<string, Map<string, NoopLoopEntry>>();
+    noopLoopTracker.set(sessionKey, perSession);
+  }
+  let perPath = perSession.get(absolutePath);
+  if (perPath === undefined) {
+    perPath = new Map<string, NoopLoopEntry>();
+    perSession.set(absolutePath, perPath);
+  }
+  const existing = perPath.get(ref);
   const count = existing && existing.payload === payload ? existing.count + 1 : 1;
-  noopLoopTracker.set(absolutePath, { payload, count });
+  perPath.set(ref, { payload, count });
   return count;
 }
 
-export function clearNoopLoop(absolutePath: string): void {
-  noopLoopTracker.delete(absolutePath);
+export function clearNoopLoop(sessionKey: string, absolutePath?: string): void {
+  if (absolutePath === undefined) {
+    noopLoopTracker.delete(sessionKey);
+    return;
+  }
+  const perSession = noopLoopTracker.get(sessionKey);
+  if (perSession === undefined) {
+    return;
+  }
+  perSession.delete(absolutePath);
+  if (perSession.size === 0) {
+    noopLoopTracker.delete(sessionKey);
+  }
+}
+
+// WHY: test seam only — lets the unit check confirm the per-path
+// WHY: clear releases the session entry once its last path is gone,
+// WHY: so a long-lived process keeps no empty maps. Never used
+// WHY: outside tests; the policy path stays unchanged.
+export function _noopLoopHasSession(sessionKey: string): boolean {
+  return noopLoopTracker.has(sessionKey);
 }
 
 // WHY: NOOP_LOOP_THRESHOLD re-export removed
@@ -54,7 +94,7 @@ export interface NoopPolicyInput {
 export type NoopPolicyOutcome =
   | { action: "proceed"; count: number }
   | { action: "warn"; count: number; notice: string }
-  | { action: "reject"; count: number; message: string; servedRows: ServedRow[] };
+  | { action: "reject"; count: number; error: DomainError<"E_NOOP_LOOP"> };
 
 export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyOutcome> {
   const payload = noopPayloadKey(
@@ -63,7 +103,7 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
     input.removeTo,
     input.replacementText,
   );
-  const count = trackNoopPayload(input.absolutePath, payload);
+  const count = trackNoopPayload(input.sessionKey, input.absolutePath, input.ref, payload);
 
   if (count >= NOOP_LOOP_THRESHOLD) {
     const servedRows = buildRangeServeRows(
@@ -78,16 +118,26 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
       input.hashes.length,
       input.contentHash,
     );
-    const message = input.batch
-      ? `[E_NOOP_LOOP] ${input.ref}: identical edit (${input.removeFrom} → ${input.removeTo}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject the batch. Current range:\n${rendered}`
-      : `[E_NOOP_LOOP] identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) submitted ${count}×, no changes each time. Range already contains this text; resend will reject. Current range:\n${rendered}`;
-    return { action: "reject", count, message, servedRows };
+    const error = new DomainError("E_NOOP_LOOP", {
+      ref: input.ref,
+      removeFrom: input.removeFrom,
+      removeTo: input.removeTo,
+      count,
+      batch: input.batch,
+      servedRows,
+      servedBlock: rendered,
+    });
+    return { action: "reject", count, error };
   }
 
   if (count === 2) {
-    const notice = input.batch
-      ? `[E_NOOP_LOOP] Notice: ${input.ref} — identical edit no-op'd twice; range already has this text. Resend will reject the batch.`
-      : `[E_NOOP_LOOP] Notice: identical edit (${input.removeFrom} → ${input.removeTo} ${input.ref}) no-op'd twice; range already has this text. Resend will reject.`;
+    const notice = formatWarning("W_NOOP", {
+      ref: input.ref,
+      removeFrom: input.removeFrom,
+      removeTo: input.removeTo,
+      batch: input.batch,
+      count,
+    });
     return { action: "warn", count, notice };
   }
 

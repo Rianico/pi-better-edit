@@ -27,7 +27,7 @@ const F2_ONLY = `int f2(int x) {
 
 describe("p0-drift-line-identity probes", () => {
   // Probe E: Full read -> external delete f1 -> edit with deleted f1 anchor psM
-  it("probe E: full read -> external delete f1 -> edit with deleted f1 anchor psM fails closed with E_STALE_RANGE", async () => {
+  it("probe E: full read -> external delete f1 -> edit with deleted f1 anchor psM fails closed with E_TARGET_LOST", async () => {
     await withTempFile("small.cpp", SMALL_CPP, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
@@ -53,13 +53,13 @@ describe("p0-drift-line-identity probes", () => {
         ctx,
       );
 
-      await expect(editPromise).rejects.toThrow(/E_STALE_RANGE/);
+      await expect(editPromise).rejects.toThrow(/E_TARGET_LOST/);
       expect(await readFile(path, "utf-8")).toBe(F2_ONLY);
     });
   });
 
   // Probe A: Partial read -> external delete f1 -> edit with deleted f1 anchor psM
-  it("probe A: partial read -> external delete f1 -> edit with deleted f1 anchor psM fails closed with E_STALE_RANGE", async () => {
+  it("probe A: partial read -> external delete f1 -> edit with deleted f1 anchor psM fails closed with E_TARGET_LOST", async () => {
     await withTempFile("small.cpp", SMALL_CPP, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
@@ -85,7 +85,7 @@ describe("p0-drift-line-identity probes", () => {
         ctx,
       );
 
-      await expect(editPromise).rejects.toThrow(/E_STALE_RANGE/);
+      await expect(editPromise).rejects.toThrow(/E_TARGET_LOST/);
       expect(await readFile(path, "utf-8")).toBe(F2_ONLY);
     });
   });
@@ -305,7 +305,7 @@ describe("p0-drift-line-identity probes", () => {
   });
 
   // Probe K: External swap of two unique functions -> edit either
-  it("probe K: external swap of two unique functions fails closed with E_STALE_RANGE", async () => {
+  it("probe K: external swap of two unique functions fails closed with E_TARGET_LOST", async () => {
     const original = `function alpha() {
   return "alpha";
 } // end alpha
@@ -349,7 +349,7 @@ function alpha() {
         ctx,
       );
 
-      await expect(editPromise).rejects.toThrow(/E_STALE_RANGE/);
+      await expect(editPromise).rejects.toThrow(/E_TARGET_LOST/);
       expect(await readFile(path, "utf-8")).toBe(swapped);
     });
   });

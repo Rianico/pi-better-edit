@@ -1,11 +1,11 @@
 import { abortIf, splitLines } from "../utils.js";
+import { DomainError, formatWarning } from "../domain-errors.js";
 import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
-import { AnchorMismatchError, verifyServedRange, type ResolvedRange } from "./served.js";
+import { verifyServedRange, type ResolvedRange } from "./served.js";
 import {
   findServedHashEcho,
   findServedPrefixMismatches,
-  ServedHashEchoError,
-  buildServedEditMessage,
+  findNeverServedAnchorShapes,
   buildServedEditPrefixNote,
   trackServedEditRefusal,
   LITERAL_BYPASS_NOTICE,
@@ -80,16 +80,14 @@ export interface ApplyVerificationContext {
 
 /**
  * WHY: the served hash echo gate is evidence-only (CONTEXT.md served hash echo,
- * WHY: ADR-0009 revision, `[E_SERVED_ECHO]`): one position-agnostic,
+ * WHY: ADR-0009 revision, `[E_SUSPICIOUS_TEXT]`): one position-agnostic,
  * WHY: content-matched scan over the lines that will be written via the unified
  * WHY: `findServedHashEcho` — never a shape check, so a served prefix with
  * WHY: differing content stays accepted.
  */
 function assertNotEmpty(originalContent: string, result: string): void {
   if (originalContent.length > 0 && result.length === 0) {
-    throw new Error(
-      "[MODEL] [E_EMPTY_RANGE] Cannot empty a non-empty file via edit. Use `write` if you need to clear the file.",
-    );
+    throw new DomainError("E_EMPTY_RANGE", {});
   }
 }
 
@@ -191,6 +189,8 @@ function resolveEdit(
   rebased: boolean;
   /** First row of the served window when `rebased`; `undefined` on the fast/content paths. */
   servedStart: number | undefined;
+  /** The healed swap when the resolved lines ran opposite the slot pair; narrated by the caller. */
+  reversed: { fromHash: string; toHash: string } | undefined;
 } {
   if (served && identity) {
     const leased = resolveLeasedEdit({
@@ -204,15 +204,19 @@ function resolveEdit(
       mismatches: [],
       rebased: leased.status === "rebased",
       servedStart: leased.status === "rebased" ? leased.servedStart : undefined,
+      reversed: leased.reversed,
     };
   }
   // WHY: no seam at all (no mirror, no lease source): the library-level `applyEdit` seam, where
   // WHY: anchor algebra is the only authority. A session edit always carries both, so it can never
   // WHY: reach this branch — lost identity fails closed in the lease seam above.
+  const byContent = resolveEditByContent(edit, { fileHashes, fileLines, filePath }, signal);
   return {
-    ...resolveEditByContent(edit, { fileHashes, fileLines, filePath }, signal),
+    resolved: byContent.resolved,
+    mismatches: byContent.mismatches,
     rebased: false,
     servedStart: undefined,
+    reversed: byContent.reversed,
   };
 }
 export function applyEdit(
@@ -229,6 +233,7 @@ export function applyEdit(
   warnings?: string[];
   noopEdit?: NEdit;
   literalBypass?: boolean;
+  neverServedCount?: number;
 } {
   abortIf(signal);
 
@@ -253,14 +258,17 @@ export function applyEdit(
     resolved,
     mismatches,
     rebased: leaseRebased,
+    reversed,
   } = resolveEdit(prefixFixed, lineIndex.fileLines, fileHashes, filePath, served, identity, signal);
+  if (reversed) {
+    warnings.push(formatWarning("W_REVERSED_ANCHORS", reversed));
+  }
   if (mismatches.length || !resolved) {
-    const { message, servedRows } = fmtMismatchWithServes(mismatches, {
-      fileHashes,
-      fileLines: lineIndex.fileLines,
-      filePath,
+    const anchors = [...new Set(mismatches.map((mismatch) => mismatch.ref.hash))];
+    throw new DomainError("E_UNKNOWN_ANCHOR", {
+      path: filePath ?? "this file",
+      anchors,
     });
-    throw new AnchorMismatchError(message, servedRows);
   }
 
   warnUnicodeEsc(prefixFixed, warnings);
@@ -303,14 +311,14 @@ export function applyEdit(
           anchorTo,
           servedCopy.offendingLine,
         );
-        const msg = buildServedEditMessage({
+        throw new DomainError("E_SUSPICIOUS_TEXT", {
+          target: "edit",
           path: filePath ?? "(unknown file)",
-          k: servedCopy.k,
+          line: servedCopy.k,
           hash: servedCopy.hash,
           servedLine: servedCopy.servedLine,
           count,
         });
-        throw new ServedHashEchoError(msg, []);
       }
     }
     if (!leaseRebased) {
@@ -356,6 +364,19 @@ export function applyEdit(
   // WHY: for that anchor. The bytes are already assembled as-is; the note only
   // WHY: informs the model channel via the warnings seam (rendered by warnBlock),
   // WHY: never alters bytes, never blocks, keeps no state, fires per line.
+  // WHY: soft-hint tier beside it: replacement lines opening with an anchor-shaped
+  // WHY: prefix never served for this session and file. The bytes are already
+  // WHY: assembled as-is with no rewrite; the count states the offending-line
+  // WHY: total and the tool's own row shape, never a remedy. Fires regardless of literal
+  // WHY: declaration (the declaration covers served rows, not never-served shapes),
+  // WHY: never blocks, keeps no state. The per-item count travels as structured
+  // WHY: data (`neverServedCount`); the batch path aggregates across items and
+  // WHY: renders one counted hint per call, never via warning-string matching.
+  let neverServedCount = 0;
+  // WHY: (spec D6) the never-served shape scan is shape-only and pure, so it runs
+  // WHY: against an empty served set when the tracker is missing — the hint must not
+  // WHY: depend on lease state. The served prefix mismatch tier stays evidence-gated
+  // WHY: (`if (served)`): with no served content it reports nothing by construction.
   if (served) {
     const canons = servedCanons ?? [];
     const mismatches = findServedPrefixMismatches(resolved.content_lines, served, canons, 1);
@@ -369,6 +390,10 @@ export function applyEdit(
       );
     }
   }
+  const neverServed = findNeverServedAnchorShapes(resolved.content_lines, served ?? [], 1);
+  if (neverServed.length > 0) {
+    neverServedCount = neverServed.length;
+  }
 
   return {
     content: result,
@@ -377,6 +402,7 @@ export function applyEdit(
     range: resolvedRange(resolved),
     ...(warnings.length ? { warnings } : {}),
     ...(literalBypass ? { literalBypass: true as const } : {}),
+    ...(neverServedCount > 0 ? { neverServedCount } : {}),
   };
 }
 

@@ -1,4 +1,5 @@
 import { SERVED_ROWS_CAP } from "./constants.js";
+import { DomainError } from "./domain-errors.js";
 import { type ServedRow, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { servedPositionsOf } from "./hashline/served.js";
 import { canon } from "./hashline/hash-identity.js";
@@ -42,7 +43,10 @@ function resolveServedRange(input: ComputeDriftInput): {
   rangeTo: number;
 } {
   const range = input.range;
-  if (!range) throw new Error("[MODEL] [E_BAD_PAYLOAD] computeDrift requires range or intervals");
+  if (!range)
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: "computeDrift requires range or intervals",
+    });
   const startPositions = servedPositionsOf(input.served, range.startHash);
   const endPositions = servedPositionsOf(input.served, range.endHash);
   let servedStartIdx: number;

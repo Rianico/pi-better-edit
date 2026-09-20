@@ -136,8 +136,8 @@ describe("chained edit anchors", () => {
         undefined,
         ctx,
       );
-      // The first edit retired beta's line identity, so reusing its anchor is a stale RANGE
-      // (retired/deleted leased line), not a stale anchor (spec §3.1.1 line 89 / §5.3).
+      // The first edit retired beta's line identity, so reusing its anchor is target-lost
+      // (retired leased identity with no live unshifted bound), not a stale anchor (spec §3.1.1 line 89 / §5.3, ADR-0018).
       await expect(
         editTool.execute(
           "e2-stale",
@@ -146,7 +146,7 @@ describe("chained edit anchors", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/\[MODEL\] \[E_STALE_RANGE\]/);
+      ).rejects.toThrow(/\[MODEL\] \[E_TARGET_LOST\]/);
 
       const alphaEdit = await editTool.execute(
         "e3",
@@ -191,7 +191,7 @@ describe("chained edit anchors", () => {
         ctx,
       );
       expect(editResult.content[0].text).toContain("Successfully edited");
-      expect(editResult.content[0].text).toContain("[E_REVERSED_ANCHORS]");
+      expect(editResult.content[0].text).toContain("[USER] [W_REVERSED_ANCHORS]");
 
       const alphaEdit = await editTool.execute(
         "e2",

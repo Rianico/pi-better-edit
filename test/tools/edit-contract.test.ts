@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { Compile } from "typebox/compile";
-import { editToolSchema, assertReq, buildToolDef, resolveMissingPath } from "../../src/edit";
+import { editToolSchema, assertReq, buildToolDef } from "../../src/edit";
+import { createEditTool } from "../../src/edit-tool.js";
 import { normReq } from "../../src/edit-normalize";
 import { lineHashes } from "../../src/hashline";
 import { setupIntegrationTest, withTempFile } from "../support/fixtures";
@@ -111,30 +112,29 @@ describe("edit payload contract", () => {
     });
   });
 
-  it("requires file on the tool surface; legacy inference lives in resolveMissingPath", async () => {
+  it("rejects a null file fail-closed with E_BAD_PAYLOAD", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", path);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-      // null file is rejected by the public schema: pass the file
-      await expect(
-        editTool.execute(
-          "e1",
+      const tool = createEditTool();
+      const error = await tool
+        .execute(
           {
             file: null,
             edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
           },
           undefined,
-          undefined,
           ctx,
-        ),
-      ).rejects.toThrow("E_BAD_PAYLOAD");
-      // legacy anchor inference still resolves internally when only one file matches
-      const resolution = await resolveMissingPath({
-        anchor_from: hashes[0]!,
-        anchor_to: hashes[0]!,
-      });
-      expect(resolution?.file.endsWith("sample.ts")).toBe(true);
+        )
+        .then(
+          () => {
+            throw new Error("expected rejection");
+          },
+          (entry) => entry as Error,
+        );
+      expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
+      expect(String(error.message)).toContain("Edit request must be exactly");
       expect(await readFile(path, "utf8")).toBe("aaa\nbbb\n");
     });
   });

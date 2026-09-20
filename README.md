@@ -34,7 +34,7 @@
 
 > *"The harness — not the model — is the bottleneck."* — Can Bölük, [*The Harness Problem*](https://stencil.so/blog/the-harness-problem)
 >
-> **This is the harness fix.** Content hashes replace line numbers — an edit above never shifts the anchor below. Every range is verified against what the agent actually saw. Stale or unseen lines are hard-rejected with fresh anchors to retry — no `read` needed.
+> **This is the harness fix.** Content hashes replace line numbers — an edit above never shifts the anchor below. Every range is verified against what the agent was actually served. Stale or never-served interior lines are hard-rejected with fresh anchors to retry — no `read` needed. A bound that no longer resolves is served as a fresh read (`[E_UNVERIFIED_RANGE]`) to decide from; only a lost range (`[E_TARGET_LOST]`) requires a full `read` (see Error codes).
 >
 > **3 tool calls vs 6 · -55.8% tokens · 23/23 correctness.** Same external-drift refactor, same correct file (single stochastic run vs OMP; [full method](benchmarks/results/2026-08-17-practical-token-benchmark.md)).
 
@@ -46,7 +46,7 @@
 | --- | --- |
 | Model re-types old code (output billed ~5-6× input) | Sends two 3-char hashes — old text is never echoed |
 | One insert above shifts every number below → wrong line lands silently | Anchors are content addresses → edits above don't move anchors below |
-| No check that the range matches what was shown | Every line verified against served rows; `[E_STALE_RANGE]`/`[E_UNSERVED_RANGE]` reject before any write, then **reject-and-serve** returns fresh `HASH│content` to retry |
+| No check that the range matches what was shown | Every line verified against served rows; `[E_STALE_RANGE]`/`[E_UNVERIFIED_RANGE]` reject before any write, then **reject-and-serve** returns fresh `HASH│content` to retry or decide from |
 
 > [!TIP]
 > **Shining points — honest and measured:**
@@ -54,7 +54,7 @@
 > - **Self-healing, not silent.** External edits never get overwritten — stale ranges are rejected and re-served as fresh `HASH│content` to retry; orphaned serves heal without a full re-read (ADR-0008). Fail-closed, not auto-merge.
 > - **Formatter-tolerant.** ASCII-whitespace-insensitive anchors survive `prettier`/`black`/`eslint --fix` between edits (`formatOnSave`, watcher, CI). Linter-only assumption — whitespace inside string literals is not distinguished (ADR-0005).
 > - **Chained & batched, no re-read ritual.** Anchors for untouched lines stay valid; diff/serve/reject rows count as serves. `edit` batches up to 32 same-file edits atomically — all-or-nothing, `[E_BATCH_ABORT]` only when two items overlap — ~-40% envelope vs `str_replace` on the pinned 12-edit corpus.
-> - **Read guard enforced.** Never edits what it hasn't seen — `[E_UNSERVED_RANGE]`/`[E_STALE_ANCHOR]` reject before any write, then `reject-and-serve`.
+> - **Read guard enforced.** Never edits what it hasn't seen — `[E_UNVERIFIED_RANGE]`/`[E_STALE_ANCHOR]` reject before any write, then `reject-and-serve`.
 > - **Fewer round-trips in practice.** Dated run: **3 calls vs 6** for the OMP wrapper on the same external-drift refactor, same correct file; envelope vs `str_replace` is the durable number — run `pnpm run benchmark:practical` to reproduce (stochastic, single sample). Correctness `23/23` deterministic.
 
 Not for one-line touch-ups (near parity) or brand-new files (`write`). It pays off in long sessions and structural edits — anywhere an edit must not land on the wrong line.
@@ -115,9 +115,7 @@ Chained edits stay cheap — anchors for untouched lines remain valid, diff/serv
 **Correctness, not just brevity.** Every resolved edit range is verified against the
 served rows — what `read`, a post-edit diff, or a rejection serve actually showed the model.
 A line inside the range that changed on disk since it was served, or was never served, is
-hard-rejected before any file I/O: `[E_STALE_RANGE]` / `[E_UNSERVED_RANGE]` /
-`[E_UNSERVED_RANGE]`, and the current range is served as fresh `HASH│content` rows. The
-retry needs no `read`. Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
+hard-rejected before any file I/O: `[E_STALE_RANGE]` (retry with the served rows, no `read` needed), `[E_UNVERIFIED_RANGE]` (a fresh read of the named window to decide from), or `[E_TARGET_LOST]` (no rows — read and re-target). Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
 never validate the main session's edits and vice versa.
 
 **Content-addressed anchors.** Anchors are derived from line content (ASCII-whitespace
@@ -131,7 +129,7 @@ serves all count as serves. `read` is on-demand recovery, not a per-edit ritual.
 
 **Stop the loop.** A no-op edit reports `No changes made` and leaves anchors alone; the
 same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `edit` applies up to 32
-edits atomically — a failing item rejects the whole call and reports its own code (`[E_STALE_RANGE]`, `[E_BAD_ANCHOR]`, …) so the model fixes the actual cause, while `[E_BATCH_ABORT]` is reserved for items whose spans overlap.
+edits atomically — a failing item rejects the whole call and reports its own code (`[E_STALE_RANGE]`, `[E_MALFORMED_ANCHOR]`, …) so the model fixes the actual cause, while `[E_BATCH_ABORT]` is reserved for items whose spans overlap.
 
 ### Token economics: envelope savings
 
@@ -168,7 +166,7 @@ Both engines preserved the external change and produced the expected final file 
 | Tool | What it does |
 | ------ | -------------- |
 | `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
-| `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_UNSERVED_RANGE]` serve on the first edit. |
+| `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_STALE_ANCHOR]` serve on the first edit. |
 | `edit` | An object-root payload `{ "file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, …] }`; `file` names the text file (never a directory). A single item edits one range; several items batch same-file edits atomically (up to 32). Verifies every line of each inclusive range and reject-and-serve returns fresh anchors. |
 | `undo_last_edit` | `{ path }` restores the most recent successful edit with its original content, BOM, line endings, and anchors; persisted across restarts. |
 
@@ -182,21 +180,37 @@ atomically to that one file — one item per call is the norm, several same-file
 | Code | Meaning |
 | --- | --- |
 | `[E_BAD_PAYLOAD]` | The payload is not `{ "file": file, "edits": [{ "anchor_from", "anchor_to", "replace_with" }, …] }`, or a member has an unknown, missing, or wrongly-typed value. |
-| `[E_BAD_ANCHOR]` | An anchor is not a bare 3-char hash, or `replace_with` contains a `HASH│` / diff-preview prefix (`+HASH│`, `-HASH│`). The edit is refused with `[E_BAD_ANCHOR]`; remove the prefix and retry. |
-| `[E_STALE_ANCHOR]` | An anchor does not match any line in the current file; re-read the file and copy the fresh 3-char anchors (the 3 chars before `│`). |
-| `[E_SERVED_ECHO]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line (`E1`). The edit/write is refused; remove the copied anchors and retry. Nothing was written. |
-| `[E_REVERSED_ANCHORS]` | Range start line is after range end line. The `edit` is refused (`[MODEL]`, nothing written — swap `anchor_from`/`anchor_to` and retry), unless the tool heals it: `[USER] [E_REVERSED_ANCHORS] … healed and applied with the range swapped` is returned dimmed on success. |
+| `[E_MALFORMED_ANCHOR]` | An **anchor field** is not a bare 3-char hash: empty, numeric and not 3 chars, multi-line, containing `│`, or carrying a diff-preview marker (`+`/`-`/`HASH│`). Nothing was written; pass the bare 3-char anchor and retry. Anchor fields only — `replace_with` is never refused for its shape; a replacement that reproduces a served row is `[E_SUSPICIOUS_TEXT]`. |
+| `[E_STALE_ANCHOR]` | A served anchor for this session and file no longer resolves to the line identity it was served with (tombstoned boundary), or the call carries no previous hashes. The edit is refused; when the window is identifiable the current range is served as fresh `HASH│content` rows — retry with those rows (no `read` needed). `details.cause` carries the user-facing diagnosis (`tombstone`, `never-served`). |
+| `[E_UNKNOWN_ANCHOR]` | This session holds no lease for the anchor in any file. The edit is refused with no `HASH│content` rows and nothing is leased; carries no remedy. |
+| `[E_FOREIGN_ANCHOR]` | This session holds a lease for the anchor, but for a file other than the one the edit names. The edit is refused with no `HASH│content` rows and nothing is leased; the message names where the anchors were served (capped at 3 plus "and N more"); carries no remedy. |
+| `[E_SUSPICIOUS_TEXT]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line. The edit/write is refused; omit the copied anchors from `replace_with` and retry with the same anchors, or assert the bytes are content with `mode: "literal"`, the sole escape. Nothing was written. Evidence-only: a `HASH│`-shaped line whose anchor was **never served** is written verbatim. |
 | `[E_EMPTY_RANGE]` | An edit would empty a non-empty file; use `write` instead. |
 | `[E_NOT_FOUND]` | The path does not exist. |
 | `[E_ACCESS]` | The path is not readable or writable. |
 | `[E_UNSUPPORTED_FILE]` | The path is a directory, binary file, image, or UTF-16/UTF-32 encoded text; hashline editing only supports text files. |
 | `[E_UNDO_STALE]` | `undo_last_edit` refused: the file was modified or deleted after the last edit. |
 | `[E_UNDO_UNAVAILABLE]` | Undo history could not be persisted to the hash store; the `edit` was refused and the file was left unchanged. |
-| `[E_LARGE_FILE]` | The file exceeds the 238,328-line hashline limit. |
-| `[E_STALE_RANGE]` | A line inside the resolved edit range changed on disk since it was served (read output, diff, or rejection feedback). The edit is refused and the current range is served as fresh `HASH│content` rows; retry with those rows (no `read` needed). |
-| `[E_UNSERVED_RANGE]` | A line inside the resolved range or a boundary anchor was never served (paged reads, truncated output, never-read file). The edit is refused and the current range is served as fresh `HASH│content` rows; `details.unservedKind` is `interior` or `boundary`. |
+| `[E_LARGE_FILE]` | The file exceeds the 238,328-line hashline limit — more than 238,328 lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or anchor space exhausted during allocation (`limitKind: "hash-space"`, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files. |
+| `[E_STALE_RANGE]` | A line inside the resolved edit range changed on disk since it was served — or was never served (paged reads, truncated output). The edit is refused and the current range is served as fresh `HASH│content` rows; retry with those rows (no `read` needed). `details.cause` carries the user-facing diagnosis (`served-range staleness`, `never-served`, `tombstone`). |
+| `[E_TARGET_LOST]` | A leased line identity was deleted or replaced and its range cannot be identified (deleted target, shifted neighbour, re-added text elsewhere, collapsed window). The edit is refused with no `HASH│content` rows and nothing is leased; read the file and re-target. `details.cause` carries the user-facing diagnosis (`retirement`). |
+| `[E_UNVERIFIED_RANGE]` | One bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted (retired lease). The edit is refused and the named window is served as a fresh read under `Current range (fresh read):` with no retry hint — decide from those rows. `details.cause` carries the user-facing diagnosis (`retirement`). |
 | `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is served as fresh `HASH│content` rows. |
-| `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_BAD_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
+| `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_MALFORMED_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
+| `[E_UNKNOWN]` | An unexpected failure that is not a domain rejection (invariant breach, filesystem or store error). Reported with the error name and the first message line only; carries no remedy. |
+
+### Applied warnings
+
+A `[W_*]` line reports an applied mutation; an `[E_*]` line reports a rejection. `[MODEL]` warnings are informational — the bytes were applied, so no retry is needed. `[USER]` warnings render dimmed for the human.
+
+| Code | Meaning |
+| --- | --- |
+| `[W_NEVER_SERVED_SHAPE]` | A `replace_with` line opens with an anchor-shaped token never served for this session and file. Applied verbatim (`[MODEL]`). |
+| `[W_SERVED_PREFIX_MISMATCH]` | A replacement line begins with an anchor served for a different line and the content differs. Applied verbatim (`[MODEL]`). |
+| `[W_REVERSED_ANCHORS]` | `anchor_from`/`anchor_to` were reversed; healed and applied with the range swapped (`[USER]`, dimmed). Reversal always heals — the old reversed-anchor refusal no longer exists. |
+| `[W_UNICODE_LITERAL]` | A literal `\uDDDD` sequence was detected in the replacement; applied verbatim (`[USER]`, dimmed). |
+| `[W_LITERAL_BYPASS]` | The served-row reproduction check was bypassed by an explicit `mode: "literal"` declaration (`[USER]`, dimmed). |
+| `[W_NOOP]` | The exact same edit no-op'd twice; the range already contains the replacement text. A third identical resend is refused as `[E_NOOP_LOOP]` (`[USER]`, dimmed). |
 
 ## Comparison
 
@@ -208,9 +222,9 @@ atomically to that one file — one item per call is the norm, several same-file
 | Address format | `HASH│` — 3-char content hash, no line number | `[path#tag]` — full-file content tag + line numbers |
 | Whitespace-insensitive anchors | ✅ all ASCII whitespace stripped — survives `prettier`/`black`/`eslint --fix` | ~ n/a (anchors are line numbers) |
 | Duplicate lines | ✅ unique per line (collision-resolved); ambiguity → `[E_STALE_ANCHOR]` | ~ position-based — repeats fine, position unverified |
-| Verified against what the model saw | ✅ every resolved line, per session — `[E_STALE_RANGE]`/`[E_UNSERVED_RANGE]` reject before write | ~ seen-lines provenance + file-version tag (H7) |
+| Verified against what the model saw | ✅ every resolved line, per session — `[E_STALE_RANGE]`/`[E_UNVERIFIED_RANGE]` reject before write | ~ seen-lines provenance + file-version tag (H7) |
 | Stale interior | ✅ reject + fresh anchors (`[E_STALE_RANGE]`) | ~ recovery-with-warning, else `MismatchError` |
-| Blind edit — lines never shown | ✅ hard reject (`[E_UNSERVED_RANGE]`) | ~ reject when seen-lines recorded (H7) |
+| Blind edit — lines never shown | ✅ hard reject (`[E_UNVERIFIED_RANGE]` for an unplaceable bound, `[E_STALE_RANGE]` for a never-served interior) | ~ reject when seen-lines recorded (H7) |
 | Batch atomicity | ✅ `edit` multi-item — all-or-nothing with the failing item's own code, `[E_BATCH_ABORT]` for overlap | ✅ multi-section preflight (H8) |
 | Undo (persisted) | ✅ survives restarts | ❌ none |
 | Sub-agent session isolation | ✅ session-keyed served state | ~ |
@@ -240,7 +254,7 @@ remain outside this verified line-range contract.
 
 ### What you get
 
-- **Verified before it writes** — every line of the resolved range is checked against served rows; stale or never-served interiors are hard-rejected (`[E_STALE_RANGE]`/`[E_UNSERVED_RANGE]`) and re-served as fresh anchors.
+- **Verified before it writes** — every line of the resolved range is checked against served rows; stale or never-served interiors are hard-rejected (`[E_STALE_RANGE]`) and re-served as fresh anchors.
 - **Session-keyed** — sub-agent serves never validate the main session's edits and vice versa (ADR-0002).
 - **Drift notices** — served territory outside the range that changed on disk is reported once per episode, not as a warning.
 - **Chained without re-reads** — diff, auto-read, and rejection rows all count as serves.
@@ -259,13 +273,15 @@ each tool does when they hit:
 | File changed on disk after the model's view | Hard reject + fresh anchors served (reject-and-serve); retry needs no `read` | Tag mismatch → refuse **or** best-effort 3-way merge onto unknown current content, with an explicit recovery banner |
 | An edit above shifts the file | Nothing shifts — anchors are content addresses; the diff serves fresh anchors | **Every edit renumbers** — the format's own #1 rule is "re-ground after every edit"; the model carries the bookkeeping |
 | Repeated / identical text | Per-line hashes are unique (collision-resolved); ambiguity → `[E_STALE_ANCHOR]` | Position-based, so repeats don't confuse it — but the position itself is unverified |
-| Lines never shown to the model | `[E_UNSERVED_RANGE]` — hard reject with fresh anchors | Undisplayed hunks rejected when seen-lines are recorded — same reliance on the model knowing what it saw |
+| Lines never shown to the model | `[E_STALE_RANGE]` — hard reject with fresh anchors to retry | Undisplayed hunks rejected when seen-lines are recorded — same reliance on the model knowing what it saw |
 | Multi-edit batch fails mid-way | `edit` multi-item — atomic, all-or-nothing; the failing item is served as fresh serves | Multi-section patches preflighted up front — also atomic |
 
 > The oh-my-pi payload saving is a lighter wire format; the table above is what that format
 > asks the model to hold in its head instead — renumbering, tag-chasing, node choice — the
 > exact component that fails most with replace-style edits. This extension's contract is:
-> a wrong edit cannot land, and any rejection needs no re-read. Measured on the same
+> a wrong edit cannot land; a reject-and-serve retry needs no re-read, only a lost range
+> (`[E_TARGET_LOST]`) requires a full `read`, and a fresh read (`[E_UNVERIFIED_RANGE]`)
+> asks for a decision, not a blind retry. Measured on the same
 > stale-serve scenarios, both engines gate the same guarantee — **stale edits are detected,
 > never silently applied** — with different policies when drift is found (recover-with-
 > warning vs fail-closed rejection).
@@ -391,8 +407,7 @@ from an older version, the previous `hash-store.json` is imported once and renam
 
 ## Troubleshooting
 
-- Stale anchors. `[E_STALE_ANCHOR]` means the file changed since
-  the anchors were read. Call `read` for fresh anchors and retry.
+- Stale anchors. `[E_STALE_ANCHOR]` means a served anchor no longer resolves to the line identity it was served with. Retry with the served rows in the rejection (no `read` needed).
 - Reset the hash store. Anchors live in
   `~/.config/pi-better-edit/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit
   pi, delete those three files, and the store is rebuilt on the next session. Anchor

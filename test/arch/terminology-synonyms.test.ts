@@ -8,8 +8,9 @@ import { describe, it, expect } from "vitest";
  * `served-range staleness`), and `echo` for served feedback rows (canonical only inside
  * `served hash echo`). This guard keeps the rename from creeping back in (#108, #114).
  * #108 freeze is served-qualified only: `findServedHashEcho`, `ServedHashEchoError`,
- * `ServedHashEcho`, `servedHashEchoDenial`, `E_SERVED_ECHO` stay frozen; the
- * surface-qualified `findEditHashEcho` / `EditHashEchoError` are retired (#125).
+ * `ServedHashEcho`, `servedHashEchoDenial` stay frozen; the model-facing refusal
+ * code is `E_SUSPICIOUS_TEXT` (renamed per ADR-0019, no alias); the surface-qualified
+ * `findEditHashEcho` / `EditHashEchoError` are retired (#125).
  */
 function srcFiles(dir = "src", out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -52,7 +53,7 @@ const CANONICAL_TOKENS = [
   "ServedHashEchoError",
   "findServedHashEcho",
   "ServedHashEcho",
-  "E_SERVED_ECHO",
+  "E_SUSPICIOUS_TEXT",
 ];
 
 function stripCanonical(text: string): string {
@@ -64,8 +65,10 @@ function stripCanonical(text: string): string {
   // separated) when it names the canonical error condition.
   out = out.replace(/served[\s\-_]*hash[\s\-_]*echo/gi, "");
   // Allow the mandated literal-declaration human line, which names the served
-  // condition with a hyphen (`served-echo`) and no hash (#125 escape audit).
-  out = out.split("[USER] served-echo check bypassed by literal declaration").join("");
+  // condition with a hyphen (`served-echo`) and no hash (#125 escape audit);
+  // the tier task codes it as `[W_LITERAL_BYPASS]` without changing the wording,
+  // and the registry owns the header so the source holds only the wording.
+  out = out.split("served-echo check bypassed by literal declaration").join("");
   return out;
 }
 
@@ -101,9 +104,100 @@ function testTitleViolations(): string[] {
 // `served hash echo` (via `stripCanonical`) plus the glossary `_Avoid_:` lines
 // themselves (they must name the banned synonym to define the ban, e.g.
 // `_Avoid_: display, show, echo` and `_Avoid_: hash echo ..., anchor echo`);
-// prose naming the canonical condition stays green. No file carve-outs in
-// this scope.
+// prose naming the canonical condition stays green. Accepted records that predate
+// the T-rename keep their original codes as historical quotes (see ADR-0019) and
+// are exempt here per file and per code; `src/` keeps zero tolerance via the src scope.
+//
+// Guard policy B (maintainer decision 2026-09-19: keep the per-file carve-out,
+// recorded and shrink-only):
+// - decisionAuthority: maintainer decision 2026-09-19
+// - reason: accepted records predate the T-rename and retain original codes as
+//   historical quotes, never rewritten (see ADR-0019)
+// - narrowScope: scope 3 binding-docs check only; `src/` keeps zero tolerance;
+//   each listed file is exempt only for its declared retired codes
+// - owner: edit maintainer
+// - reviewTrigger: any proposal to add or widen an entry, or any retirement
+//   that quotes a retired code
+// - removalCondition: delete an entry when its file no longer quotes every
+//   declared retired code; retire the baseline when no entries remain
+// `CONTEXT.md`, `README.md`, `src/`, and `docs/spec/` stay fully checked:
+// no entry may name them. Only the listed records are exempt, and only for
+// the retired codes they declare. Growth without a declared retired code
+// cannot pass: a file outside the baseline gets no stripping, and an entry
+// with an empty code list strips nothing.
+type HistoricalBaselineEntry = {
+  file: string;
+  retiredCodes: string[];
+  retiredBy: string;
+  replacedBy: string[];
+};
+
+const HISTORICAL_BASELINE_POLICY = {
+  decisionAuthority: "maintainer decision 2026-09-19",
+  reason:
+    "accepted records predate the T-rename and retain original codes as historical quotes, never rewritten (see ADR-0019)",
+  narrowScope:
+    "scope 3 binding-docs check only; src/ keeps zero tolerance; each listed file is exempt only for its declared retired codes",
+  owner: "edit maintainer",
+  reviewTrigger:
+    "any proposal to add or widen an entry, or any retirement that quotes a retired code",
+  removalCondition:
+    "delete an entry when its file no longer quotes every declared retired code; retire the baseline when no entries remain",
+};
+
+const HISTORICAL_BASELINE: HistoricalBaselineEntry[] = [
+  {
+    file: "docs/adr/0009-bounded-hash-echo-guard.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
+  },
+  {
+    file: "docs/adr/0010-user-facing-drift-signals.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
+  },
+  {
+    file: "docs/adr/0014-user-model-audience.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
+  },
+  {
+    file: "docs/adr/0015-named-object-edit-payload.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
+  },
+  {
+    file: "docs/adr/0018-region-scoped-rejection-serves.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
+  },
+  {
+    file: "docs/adr/0019-malformed-code-rename.md",
+    retiredCodes: ["E_SERVED_ECHO"],
+    retiredBy: "docs/adr/0019-malformed-code-rename.md",
+    replacedBy: ["E_SUSPICIOUS_TEXT"],
+  },
+];
+
+function baselineByFile(): Map<string, HistoricalBaselineEntry> {
+  return new Map(HISTORICAL_BASELINE.map((entry) => [entry.file, entry]));
+}
+
+function stripBaselineCodes(text: string, codes: string[]): string {
+  let out = text;
+  for (const code of codes) {
+    out = out.split(code).join("");
+  }
+  return out;
+}
+
 function bindingDocsViolations(): string[] {
+  const byFile = baselineByFile();
   const docs = ["CONTEXT.md", ...allFiles("docs/adr", ".md")];
   return docs.filter((file) => {
     const text = readFileSync(file, "utf-8");
@@ -120,7 +214,10 @@ function bindingDocsViolations(): string[] {
       .join("")
       .split("EditHashEchoError")
       .join("");
-    return /echo/i.test(stripCanonical(withoutRetired));
+    const stripped = stripCanonical(withoutRetired);
+    const entry = byFile.get(file);
+    const withoutBaseline = entry ? stripBaselineCodes(stripped, entry.retiredCodes) : stripped;
+    return /echo/i.test(withoutBaseline);
   });
 }
 
@@ -130,7 +227,13 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () =>
   });
 
   it("names no `range staleness`: the canonical term is served-range staleness", () => {
-    expect(matching(/range staleness/i)).toEqual([]);
+    // The canonical `served-range staleness` cause value (CONTEXT.md glossary) is exempt:
+    // only the bare synonym stays banned.
+    const violations = files.filter((file) => {
+      const stripped = readFileSync(file, "utf-8").replace(/served-range staleness/gi, "");
+      return /range staleness/i.test(stripped);
+    });
+    expect(violations).toEqual([]);
   });
 
   it("names served feedback as serve, not the avoided synonym, tree-wide (canonical family stripped)", () => {
@@ -143,7 +246,7 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () =>
 
   it("keeps the canonical served hash echo family and the line-identity rename", () => {
     const apply = readFileSync("src/hashline/apply.ts", "utf-8");
-    expect(apply).toContain("E_SERVED_ECHO");
+    expect(apply).toContain("E_SUSPICIOUS_TEXT");
     expect(apply).toContain("findServedHashEcho");
     expect(apply).not.toContain("findEditHashEcho");
     const index = readFileSync("src/hashline/index.ts", "utf-8");
@@ -163,17 +266,114 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of test titles/
     // Title-only: strip the canonical `served hash echo` family, then assert no
     // `/echo/i` remains on `it`/`test`/`describe` lines. A title calling served
     // rows by the avoided synonym fails here; titles naming the canonical
-    // condition (`E_SERVED_ECHO`, `findServedHashEcho`, `served hash echo`) stay green.
+    // condition (`E_SUSPICIOUS_TEXT`, `findServedHashEcho`, `served hash echo`) stay green.
     expect(testTitleViolations()).toEqual([]);
   });
 });
 
 describe("CONTEXT.md terminology — forbidden synonyms stay out of binding docs/", () => {
   it("keeps the binding domain docs free of the avoided synonym for served feedback (canonical family stripped)", () => {
-    // Whole-file over `CONTEXT.md` + `docs/adr/**.md`: strip the canonical
-    // `served hash echo` family, then assert no `/echo/i` remains. Prose calling
-    // served rows by the avoided synonym fails here; prose naming the canonical
-    // condition stays green. No file carve-outs in this scope.
+    // Whole-file over live binding docs (`CONTEXT.md` + ADRs): strip the
+    // canonical `served hash echo` family, then assert no `/echo/i` remains.
+    // Prose calling served rows by the avoided synonym fails here; prose
+    // naming the canonical condition stays green. Listed records are exempt
+    // per file and per code above (they keep original codes as quotes, never
+    // rewritten); all other files stay fully checked.
     expect(bindingDocsViolations()).toEqual([]);
+  });
+});
+
+describe("terminology baseline stays recorded and shrink-only", () => {
+  it("declares a retired code and a retiring record for every entry", () => {
+    for (const entry of HISTORICAL_BASELINE) {
+      expect(entry.retiredCodes.length).toBeGreaterThan(0);
+      expect(entry.retiredBy.length).toBeGreaterThan(0);
+    }
+  });
+  it("declares the replacement code for every retired quote (keel §6: name what is retired)", () => {
+    for (const entry of HISTORICAL_BASELINE) {
+      expect(entry.replacedBy.length).toBeGreaterThan(0);
+    }
+  });
+  it("keeps every replacement live: each replacing code is still a registry member", () => {
+    const srcText = readFileSync("src/domain-errors.ts", "utf-8");
+    for (const entry of HISTORICAL_BASELINE) {
+      for (const code of entry.replacedBy) {
+        expect(srcText).toContain(`"${code}"`);
+      }
+    }
+  });
+  it("keeps every entry needed: each listed file still quotes each declared retired code", () => {
+    for (const entry of HISTORICAL_BASELINE) {
+      const text = readFileSync(entry.file, "utf-8");
+      for (const code of entry.retiredCodes) {
+        expect(text).toContain(code);
+      }
+      expect(() => readFileSync(entry.retiredBy, "utf-8")).not.toThrow();
+    }
+  });
+
+  it("records the six guard-policy fields and keeps live surfaces fully checked", () => {
+    expect(HISTORICAL_BASELINE_POLICY.decisionAuthority).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.reason).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.narrowScope).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.owner).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.reviewTrigger).not.toBe("");
+    expect(HISTORICAL_BASELINE_POLICY.removalCondition).not.toBe("");
+    const names = HISTORICAL_BASELINE.map((entry) => entry.file);
+    expect(names).not.toContain("CONTEXT.md");
+    expect(names).not.toContain("README.md");
+    expect(names.some((file) => file.startsWith("src/"))).toBe(false);
+    expect(names.some((file) => file.startsWith("docs/spec/"))).toBe(false);
+  });
+});
+
+type AnchorTermBaselineEntry = {
+  term: string;
+  avoids: string[];
+  supersededCode: string;
+  definedIn: string;
+};
+
+const ANCHOR_TERM_BASELINE: AnchorTermBaselineEntry[] = [
+  {
+    term: "reversed anchors",
+    avoids: ["E_REVERSED_ANCHORS"],
+    supersededCode: "W_REVERSED_ANCHORS",
+    definedIn: "CONTEXT.md",
+  },
+  {
+    term: "unknown anchor",
+    avoids: ["unserved anchor", "missing anchor", "stale anchor"],
+    supersededCode: "E_STALE_ANCHOR",
+    definedIn: "CONTEXT.md",
+  },
+  {
+    term: "foreign anchor",
+    avoids: ["cross-file anchor", "wrong-file anchor", "leaked anchor"],
+    supersededCode: "E_STALE_ANCHOR",
+    definedIn: "CONTEXT.md",
+  },
+];
+
+describe("anchor term baseline stays recorded and shrink-only", () => {
+  it("declares avoids and a superseded code for every entry", () => {
+    for (const entry of ANCHOR_TERM_BASELINE) {
+      expect(entry.avoids.length).toBeGreaterThan(0);
+      expect(entry.supersededCode.length).toBeGreaterThan(0);
+      expect(entry.definedIn.length).toBeGreaterThan(0);
+    }
+  });
+
+  it("keeps every entry needed: CONTEXT still defines each term with its Avoid line", () => {
+    for (const entry of ANCHOR_TERM_BASELINE) {
+      const text = readFileSync(entry.definedIn, "utf-8");
+      expect(text).toContain(`**${entry.term}**`);
+      for (const avoid of entry.avoids) {
+        expect(text).toContain(avoid);
+      }
+      const srcText = readFileSync("src/domain-errors.ts", "utf-8");
+      expect(srcText).toContain(entry.supersededCode);
+    }
   });
 });

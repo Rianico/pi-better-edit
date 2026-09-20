@@ -11,7 +11,7 @@
  */
 
 import { HASH_SEP, canon } from "./hash-identity.js";
-import { AnchorMismatchError, type ServedRow } from "./served.js";
+import { DomainError, formatWarning } from "../domain-errors.js";
 
 export interface ServedHashEchoMatch {
   /** SAFETY: 1-based candidate index within the submitted lines. */
@@ -42,6 +42,21 @@ interface ServedAnchorHit {
   candidateCanon: string;
 }
 
+/** Single owner of the anchor-shape parse: optional diff-marker strip, length, separator, class. */
+const ANCHOR_SHAPE_RE = /^[A-Za-z0-9]{3}$/;
+
+function anchorShapeFromLine(line: string): { anchor: string; tail: string } | undefined {
+  let text = line;
+  if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
+    text = text.slice(1);
+  }
+  if (text.length < 4) return undefined;
+  if (text[3] !== HASH_SEP) return undefined;
+  const anchor = text.slice(0, 3);
+  if (!ANCHOR_SHAPE_RE.test(anchor)) return undefined;
+  return { anchor, tail: text.slice(4) };
+}
+
 /**
  * SAFETY: Shared anchor index plus candidate scan for the served hash echo
  * gate and the served prefix mismatch tier. Builds the anchor-to-served
@@ -68,17 +83,11 @@ function collectServedAnchorHits(
   if (byAnchor.size === 0) return [];
   const hits: ServedAnchorHit[] = [];
   for (let index = 0; index < lines.length; index++) {
-    let text = lines[index]!;
-    if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
-      text = text.slice(1);
-    }
-    if (text.length < 4) continue;
-    if (text[3] !== HASH_SEP) continue;
-    const anchor = text.slice(0, 3);
-    if (!/^[A-Za-z0-9]{3}$/.test(anchor)) continue;
-    const entries = byAnchor.get(anchor);
+    const parsed = anchorShapeFromLine(lines[index]!);
+    if (!parsed) continue;
+    const entries = byAnchor.get(parsed.anchor);
     if (!entries) continue;
-    hits.push({ index, anchor, entries, candidateCanon: canon(text.slice(4)) });
+    hits.push({ index, anchor: parsed.anchor, entries, candidateCanon: canon(parsed.tail) });
   }
   return hits;
 }
@@ -111,12 +120,10 @@ export function findServedHashEcho(
   return undefined;
 }
 
-export class ServedHashEchoError extends AnchorMismatchError {
-  constructor(message: string, servedRows: ServedRow[] = []) {
-    super(message, servedRows);
-    this.name = "ServedHashEchoError";
-  }
-}
+// WHY: the ad-hoc `ServedHashEchoError` subclass is retired (spec D1): the edit
+// WHY: and write seams throw `DomainError` with `E_SUSPICIOUS_TEXT` instead, so
+// WHY: `servedRows`, `servedBlock`, `cause`, and `details` keep their shape.
+export { DomainError as ServedHashEchoError };
 
 export interface ServedPrefixMismatch {
   /** SAFETY: 1-based candidate index within the submitted lines. */
@@ -168,6 +175,16 @@ export function findServedPrefixMismatches(
 }
 
 /**
+ * SAFETY: the canonical remedy shared verbatim by both applied-hint builders
+ * (this builder and `buildNeverServedEditHint`): the bytes were applied, so a
+ * retry is knowably safe, and the remedy names the exact failing shape. Pinned
+ * byte-identical by test so the two builders cannot drift.
+ */
+export const ANCHOR_PREFIX_REMEDY =
+  "If the hash anchor prefix was unintended, `undo_last_edit`, then retry " +
+  "with the same `anchor_from`/`anchor_to` and drop the anchor prefix from `replace_with`.";
+
+/**
  * SAFETY: Model note for an applied edit carrying a served prefix mismatch.
  * Applied-only, bytes untouched, never blocks: the post-edit diff already
  * carries the written line, this note only tells the model the prefix
@@ -178,13 +195,11 @@ export function buildServedEditPrefixNote(args: {
   anchor: string;
   servedLine: number;
 }): string {
-  return (
-    `[MODEL] Edit applied with a served anchor prefix: replacement line ${args.k} begins with ` +
-    `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
-    `but its content differs from what was served. ` +
-    `The bytes were written as-is. ` +
-    `If the prefix was unintended, run undo_last_edit and retry without the anchor.`
-  );
+  return `${formatWarning("W_SERVED_PREFIX_MISMATCH", {
+    k: args.k,
+    anchor: args.anchor,
+    servedLine: args.servedLine,
+  })} ${ANCHOR_PREFIX_REMEDY}`;
 }
 
 /**
@@ -197,13 +212,67 @@ export function buildServedWritePrefixNote(args: {
   anchor: string;
   servedLine: number;
 }): string {
-  return (
-    `[MODEL] Write applied with a served anchor prefix: line ${args.line} begins with ` +
-    `the exact ${args.anchor}${HASH_SEP} anchor served for this session and file for line ${args.servedLine}, ` +
-    `but its content differs from what was served. ` +
-    `The bytes were written as-is. ` +
-    `If the prefix was unintended, re-issue the write without the anchor prefix.`
-  );
+  return `${formatWarning("W_SERVED_PREFIX_MISMATCH", {
+    k: args.line,
+    anchor: args.anchor,
+    servedLine: args.servedLine,
+  })} If the prefix was unintended, re-issue the write with the anchor prefix omitted from the written lines.`;
+}
+
+export interface NeverServedAnchorShape {
+  /** SAFETY: 1-based candidate index within the submitted lines. */
+  k: number;
+  /** SAFETY: absolute candidate line (`start + k - 1`); equals `k` when `start` is 1. */
+  line: number;
+  /** SAFETY: the anchor-shaped prefix never served for this session and file. */
+  anchor: string;
+}
+
+/**
+ * SAFETY: Never-served anchor-shaped lines — the soft-hint tier beside the
+ * refusal gate and the served prefix mismatch tier.
+ *
+ * A candidate reports here when it opens with an anchor-shaped prefix
+ * (3 alphanumerics plus the separator, after one optional leading diff marker)
+ * whose anchor was never served for this session and file. Shape-only by design:
+ * the hint never blocks and never rewrites, so evidence gating does not apply.
+ * Served anchors are excluded (the gate and the mismatch tier own them).
+ * Pure with no retained state: fires per occurrence, never suppressed.
+ */
+export function findNeverServedAnchorShapes(
+  lines: readonly string[],
+  served: readonly (string | null)[],
+  start = 1,
+): NeverServedAnchorShape[] {
+  const servedSet = new Set<string>();
+  for (const anchor of served) {
+    if (anchor !== null && anchor !== undefined) servedSet.add(anchor);
+  }
+  const out: NeverServedAnchorShape[] = [];
+  for (let index = 0; index < lines.length; index++) {
+    const parsed = anchorShapeFromLine(lines[index]!);
+    if (!parsed) continue;
+    if (servedSet.has(parsed.anchor)) continue;
+    out.push({ k: index + 1, line: start + index, anchor: parsed.anchor });
+  }
+  return out;
+}
+
+/**
+ * SAFETY: Soft hint for an applied edit carrying never-served anchor-shaped lines.
+ * Applied-only, bytes untouched, never blocks: the bytes were written as-is with
+ * no rewrite. Once per `edit` call however many offending lines it holds — `count`
+ * states how many replacement lines match the tool's own row shape with anchors
+ * never served for this session and file. The trailing conditional clause is deliberate:
+ * gated on `if ... unintended`, it names the affordance that exists in that case
+ * (`undo_last_edit`, then retry without the prefix) — a conditional reference, not an
+ * order, carrying no run prefix. Both applied-hint builders (this one and
+ * `buildServedEditPrefixNote`) carry the clause byte-identically, pinned by
+ * test/core/served-prefix-note.test.ts.
+ * Surfaced through the warnings seam (rendered by warnBlock) on the model-visible channel.
+ */
+export function buildNeverServedEditHint(args: { count: number }): string {
+  return `${formatWarning("W_NEVER_SERVED_SHAPE", { count: args.count })} ${ANCHOR_PREFIX_REMEDY}`;
 }
 
 type RefusalEntry = {
@@ -238,15 +307,7 @@ export function trackServedWriteRefusal(absolutePath: string, offendingLine: str
 }
 
 /** SAFETY: dimmed human line for a literal declaration; never a model retry instruction. */
-export const LITERAL_BYPASS_NOTICE = "[USER] served-echo check bypassed by literal declaration";
-
-function sharpenedTail(count: number): string {
-  if (count < 2) return "";
-  return (
-    ` Identical refusal submitted ${count}× — the bytes still reproduce a served row.` +
-    ` Remove the copied anchors and retry, or declare intent with mode: "literal".`
-  );
-}
+export const LITERAL_BYPASS_NOTICE = formatWarning("W_LITERAL_BYPASS", {});
 
 export function buildServedEditMessage(args: {
   path: string;
@@ -255,13 +316,14 @@ export function buildServedEditMessage(args: {
   servedLine: number;
   count: number;
 }): string {
-  const base =
-    `[MODEL] [E_SERVED_ECHO] Refused edit to ${args.path}: replacement line ${args.k} begins with ` +
-    `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
-    `HASH${HASH_SEP} anchors are tool output, not file content. ` +
-    `Remove the copied anchors and retry, or declare intent with mode: "literal". ` +
-    `Re-read the file for fresh anchors if needed. Nothing was written. (submission ${args.count}×)`;
-  return base + sharpenedTail(args.count);
+  return new DomainError("E_SUSPICIOUS_TEXT", {
+    target: "edit",
+    path: args.path,
+    line: args.k,
+    hash: args.hash,
+    servedLine: args.servedLine,
+    count: args.count,
+  }).message;
 }
 
 export function buildServedWriteMessage(args: {
@@ -271,11 +333,12 @@ export function buildServedWriteMessage(args: {
   servedLine: number;
   count: number;
 }): string {
-  const base =
-    `[MODEL] [E_SERVED_ECHO] Refused write to ${args.path}: line ${args.line} begins with ` +
-    `the exact ${args.hash}${HASH_SEP} anchor served for this session, path, and line ${args.servedLine}. ` +
-    `HASH${HASH_SEP} anchors are tool output, not file content. ` +
-    `Retry with file content only (remove the entire copied anchor chain), or declare intent with mode: "literal". ` +
-    `Re-read the file for fresh anchors if needed. Nothing was written. (submission ${args.count}×)`;
-  return base + sharpenedTail(args.count);
+  return new DomainError("E_SUSPICIOUS_TEXT", {
+    target: "write",
+    path: args.path,
+    line: args.line,
+    hash: args.hash,
+    servedLine: args.servedLine,
+    count: args.count,
+  }).message;
 }

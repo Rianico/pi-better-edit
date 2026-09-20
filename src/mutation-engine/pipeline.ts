@@ -84,6 +84,7 @@ import {
   resEdit,
   resolveLeasedEdit,
   swapReversedRanges,
+  buildNeverServedEditHint,
   type HEdit,
   type LeasedEditResolution,
   type LeaseSpanSource,
@@ -91,16 +92,16 @@ import {
 } from "../hashline/index.js";
 import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import {
-  AnchorMismatchError,
-  ServedRejectionError,
   buildRangeServeRows,
   fmtServedRows,
   type ResolvedRange,
   type ServedRow,
 } from "../hashline/served.js";
+import { DomainError } from "../domain-errors.js";
 import {
   createSessionHandle,
   sessionKeyFor,
+  loadAnchorHomes,
   loadLeases,
   type ServedLease,
 } from "../served-session/session.js";
@@ -244,7 +245,7 @@ interface ApplyOneEditInput {
    * apart. Absent for preview, where no identity map is in flight.
    */
   currentIds?: (number | null)[];
-  onRejected: (error: AnchorMismatchError | ServedRejectionError) => Promise<never>;
+  onRejected: (error: DomainError) => Promise<never>;
 }
 
 type ApplyOneEditOutcome =
@@ -258,6 +259,7 @@ type ApplyOneEditOutcome =
       lastChangedLine: number | undefined;
       anchorWarnings: string[] | undefined;
       literalBypass: boolean;
+      neverServedCount: number;
     }
   | {
       kind: "noop";
@@ -265,6 +267,7 @@ type ApplyOneEditOutcome =
       noopEdit: NEdit | undefined;
       anchorWarnings: string[] | undefined;
       literalBypass: boolean;
+      neverServedCount: number;
     };
 
 /**
@@ -288,6 +291,9 @@ function leaseSpanSource(input: {
   const positions = input.currentIds
     ? identityPositions(input.currentIds)
     : positionsByIdentity(input.store, input.absolutePath, input.content);
+  // WHY: the session-wide home lookup runs on the failure path only: the happy
+  // WHY: path never calls it, so serving one more file costs nothing at edit time.
+  const { store, sessionKey, absolutePath } = input;
   return {
     currentSnapshotHash: snapshotHashFor(input.content),
     leaseFor: (anchor) => {
@@ -302,6 +308,8 @@ function leaseSpanSource(input: {
       };
     },
     rebasedLineOf: (lineId) => positions.get(lineId),
+    anchorHomes: (anchor) =>
+      loadAnchorHomes(store, sessionKey, anchor).filter((home) => home !== absolutePath),
   };
 }
 
@@ -328,7 +336,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       ...(input.mode !== undefined ? { mode: input.mode } : {}),
     });
   } catch (error) {
-    if (error instanceof AnchorMismatchError || error instanceof ServedRejectionError) {
+    if (error instanceof DomainError) {
       await recordRejectionServe({
         error,
         sessionKey: input.sessionKey,
@@ -345,6 +353,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   const anchorWarnings = anchorResult.warnings;
   const nextContent = anchorResult.content;
   const literalBypass = anchorResult.literalBypass === true;
+  const neverServedCount = anchorResult.neverServedCount ?? 0;
   if (nextContent === input.content) {
     return {
       kind: "noop",
@@ -352,13 +361,16 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       noopEdit: anchorResult.noopEdit,
       anchorWarnings,
       literalBypass,
+      neverServedCount,
     };
   }
 
   if (!input.hashes || input.hashes.length === 0)
-    throw new Error(
-      "[MODEL] [E_STALE_ANCHOR] missing previous hashes for stable anchoring. Re-read the full file and copy fresh 3-char anchors (before │), then retry.",
-    );
+    throw new DomainError("E_STALE_ANCHOR", {
+      headline:
+        "missing previous hashes for stable anchoring. Re-read the full file and copy fresh 3-char anchors (before │), then retry.",
+      cause: "never-served",
+    });
   const removedHashes = collectRemovedHashes(input.edit, input.hashes);
   const nextHashes = await defaultHashIdentity.hashesFor(nextContent, {
     path: input.absolutePath,
@@ -381,6 +393,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     lastChangedLine: anchorResult.lastChangedLine,
     anchorWarnings,
     literalBypass,
+    neverServedCount,
   };
 }
 
@@ -469,13 +482,18 @@ interface BaselineSpanContext {
  * sequential mutate loop share it, so a rejection records the same serves whichever one catches it.
  */
 async function recordRejectionServe(args: {
-  error: AnchorMismatchError | ServedRejectionError;
+  error: DomainError;
   sessionKey: string;
   absolutePath: string;
   isPreview: boolean;
   lineCount: number;
   contentHash: string | undefined;
 }): Promise<void> {
+  // WHY: a target-lost rejection carries no rows (seam oracle pins `servedRows: []`), so there is
+  // WHY: nothing to lease — an accidental retry cannot write. Every window that identifies the
+  // WHY: model's range still leases through the rows below. The length check alone owns the
+  // WHY: skip: no code branch is needed because the oracle proves the payload invariant.
+  if (args.error.servedRows.length === 0) return;
   const handle = createSessionHandle(args.sessionKey, args.absolutePath);
   if (args.isPreview) {
     await handle.recordServeFeedback(args.error.servedRows, "preview", args.lineCount);
@@ -492,18 +510,11 @@ const BATCH_ATOMICITY_TRAILER =
   "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
 
 /**
- * The reject-and-serve block every batch-rejection path appends. One renderer means a rejected item
- * reads identically whichever gate caught it: the item's own served rows when its rejection carried
- * them, else the current on-disk range of the item the model retries from.
+ * Strips a leading audience tag so a wrapped rejection carries exactly one `[MODEL]` marker.
+ * The inner diagnostic already names its own code; the outer wrapper owns the single prefix.
  */
-function batchAbortServeBlock(args: {
-  rows: ServedRow[] | undefined;
-  index: number;
-  originalNormalized: string;
-}): string {
-  return args.rows
-    ? ` Current on-disk range for edit[${args.index}] (unchanged — nothing was written):\n${fmtServedRows(args.rows, splitLines(args.originalNormalized))}`
-    : " Call read() to get fresh anchors.";
+function stripModelPrefix(message: string): string {
+  return message.startsWith("[MODEL] ") ? message.slice("[MODEL] ".length) : message;
 }
 
 /**
@@ -513,26 +524,38 @@ function batchAbortServeBlock(args: {
  *
  * The item's OWN error code is propagated untouched — `[E_BATCH_ABORT]` is reserved for overlapping
  * or nested spans, so a malformed anchor or a failed apply reads as the code the model can act on
- * (`[E_BAD_ANCHOR]`, `[E_STALE_RANGE]`, …), with the atomicity trailer instead of a relabel.
+ * (`[E_MALFORMED_ANCHOR]`, `[E_STALE_RANGE]`, …), with the atomicity trailer instead of a relabel.
  */
-function batchAbortFor(args: {
-  error: Error;
-  index: number;
-  edit: HEdit;
-  path: string;
-  originalHashes: string[];
-  originalNormalized: string;
-}): Error {
-  const { error, index, edit, path } = args;
-  const ownRows =
-    error instanceof AnchorMismatchError || error instanceof ServedRejectionError
-      ? error.servedRows
-      : [];
-  const serveRows = ownRows.length > 0 ? ownRows : serveRowsForEdit(edit, args.originalHashes);
-  return new Error(
-    `[MODEL] edit[${index}] (${path}) failed: ${error.message}${batchAbortServeBlock({ rows: serveRows, index, originalNormalized: args.originalNormalized })}\n` +
+function batchAbortFor(args: { error: Error; index: number; path: string }): Error {
+  const { error, index, path } = args;
+  // WHY: the inner rejection already carries its own reject-and-serve rows under `Current range:`,
+  // WHY: so the wrapper must not render them a second time — one serve block per rejection.
+  // WHY: the inner `details.cause` (user-facing diagnosis) is preserved on the wrapper so a
+  // WHY: batched failure still emits it.
+  // WHY: the failing edit's pre-rendered serve block is forwarded too (spec D2): an atomic
+  // WHY: batch abort must preserve the serve block or the retry owes a re-read.
+  const wrapped = new Error(
+    `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}\n` +
       `${BATCH_ATOMICITY_TRAILER} Fix the failing edit (and any later edit that depends on it), then resubmit.`,
   );
+  const details = (error as { details?: { cause: string } }).details;
+  if (details && typeof details.cause === "string") {
+    (wrapped as { details?: { cause: string } }).details = details;
+    (wrapped as { cause?: string }).cause = details.cause;
+  }
+  const code = (error as { code?: string }).code;
+  if (typeof code === "string") {
+    (wrapped as { code?: string }).code = code;
+  }
+  const servedRows = (error as { servedRows?: unknown }).servedRows;
+  if (Array.isArray(servedRows)) {
+    (wrapped as { servedRows?: unknown }).servedRows = servedRows;
+  }
+  const servedBlock = (error as { servedBlock?: unknown }).servedBlock;
+  if (typeof servedBlock === "string" && servedBlock.length > 0) {
+    (wrapped as { servedBlock?: unknown }).servedBlock = servedBlock;
+  }
+  return wrapped;
 }
 
 /**
@@ -553,7 +576,7 @@ async function resolveBaselineSpan(
   const fileLines = splitLines(ctx.originalNormalized);
   const fileHashes = ctx.originalHashes;
   const abort = async (error: unknown): Promise<never> => {
-    if (error instanceof AnchorMismatchError || error instanceof ServedRejectionError) {
+    if (error instanceof DomainError) {
       await recordRejectionServe({
         error,
         sessionKey: ctx.sessionKey,
@@ -565,16 +588,16 @@ async function resolveBaselineSpan(
       throw batchAbortFor({
         error,
         index,
-        edit,
         path: ctx.path,
-        originalHashes: ctx.originalHashes,
-        originalNormalized: ctx.originalNormalized,
       });
     }
     throw error;
   };
-  // WHY: `applyEdit` runs `swapReversedRanges` (its `prepareEdit`) before resolution, so a reversed
-  // WHY: pair is healed rather than tripping the lease seam's own `E_REVERSED_ANCHORS` guard here.
+  // WHY: follow-up — this pre-heal is dead since the lease seam heals a reversed pair
+  // WHY: internally (`resolveLeasedEdit` swaps the resolved lines and narrates
+  // WHY: `[W_REVERSED_ANCHORS]`), and the measured span below is order-proof via
+  // WHY: `Math.min`/`Math.max` either way. Kept (not deleted) pending a cleanup pass
+  // WHY: that removes the redundant swap once the heal path is covered.
   const fixed = swapReversedRanges(edit, fileHashes, []);
   let leased: LeasedEditResolution;
   try {
@@ -611,16 +634,18 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
         // WHY: the rejected batch still owes the model usable anchors (README error-code contract):
         // WHY: the later item's span is served exactly like the sequential anchor-mismatch abort,
         // WHY: so the retry never needs a re-read.
-        const serveBlock = batchAbortServeBlock({
-          rows: serveRowsForEdit(edits[b.index]!, ctx.originalHashes),
-          index: b.index,
-          originalNormalized: ctx.originalNormalized,
+        const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes);
+        throw new DomainError("E_BATCH_ABORT", {
+          earlierIndex: a.index,
+          laterIndex: b.index,
+          earlierStart: a.startLine,
+          earlierEnd: a.endLine,
+          laterStart: b.startLine,
+          laterEnd: b.endLine,
+          path: ctx.path,
+          servedBlock:
+            rows === undefined ? "" : fmtServedRows(rows, splitLines(ctx.originalNormalized)),
         });
-        throw new Error(
-          `[MODEL] [E_BATCH_ABORT] edit[${b.index}] (${ctx.path}) failed: overlapping spans — edit[${a.index}] targets lines ${a.startLine}-${a.endLine} and edit[${b.index}] targets lines ${b.startLine}-${b.endLine} of the same call. Spans in one edits[] call must be disjoint.\n` +
-            `The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.${serveBlock}\n` +
-            `Merge the overlapping ranges into a single edit (or split them into separate edit calls), then resubmit.`,
-        );
       }
     }
   }
@@ -640,13 +665,25 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
       );
     } catch (error) {
       if (items.length === 1) throw error;
-      // WHY: a payload malformation keeps its own code (`[E_BAD_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
+      // WHY: a payload malformation keeps its own code (`[E_MALFORMED_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
       // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
       // WHY: hunt for coordinate overlap.
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(
-        `[MODEL] edit[${index}] (${path}) failed: ${message}\n${BATCH_ATOMICITY_TRAILER}`,
+      const raw = error instanceof Error ? error.message : String(error);
+      const wrapped = new Error(
+        `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(raw)}\n${BATCH_ATOMICITY_TRAILER}`,
       );
+      // WHY: the wrapper carries the inner code and diagnosis as fields so the
+      // WHY: failure envelope keeps the code the model can act on.
+      const code = (error as { code?: string }).code;
+      if (typeof code === "string") {
+        (wrapped as { code?: string }).code = code;
+      }
+      const details = (error as { details?: { cause: string } }).details;
+      if (details && typeof details.cause === "string") {
+        (wrapped as { details?: { cause: string } }).details = details;
+        (wrapped as { cause?: string }).cause = details.cause;
+      }
+      throw wrapped;
     }
   }
   return parsed;
@@ -656,17 +693,25 @@ async function runMutations(
   cwd: string,
   options?: PipelineOptions,
 ): Promise<ProcessedEditFile> {
-  if (request.file === null) {
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Edit request file could not be inferred from anchors.",
-    );
-  }
+  // WHY: the file was answered at admission (assertReq); the narrowed type carries it here.
   const path = request.file;
   const items = request.edits;
   const mode = request.mode ?? "general";
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
   const warnings: string[] = [];
+  // WHY: (#146) the never-served soft hint is once per call: per-item counts
+  // WHY: travel as structured data (`neverServedCount`) and aggregate here, and
+  // WHY: one counted hint is rendered after the loop. No other warning tier is
+  // WHY: capped. A noop writes nothing, so its count is never aggregated.
+  let neverServedTotal = 0;
+  const pushAppliedWarnings = (list: string[] | undefined, hintCount: number): void => {
+    if (list) warnings.push(...list);
+    neverServedTotal += hintCount;
+  };
+  const pushNoopWarnings = (list: string[] | undefined): void => {
+    if (list) warnings.push(...list);
+  };
   abortIf(options?.signal);
 
   const isPreview = options?.noPersist === true;
@@ -788,7 +833,7 @@ async function runMutations(
       currentIds: isPreview ? undefined : currentIds,
       onRejected: async (error) => {
         if (items.length === 1) throw error;
-        throw batchAbortFor({ error, index, edit, path, originalHashes, originalNormalized });
+        throw batchAbortFor({ error, index, path });
       },
     });
 
@@ -807,9 +852,7 @@ async function runMutations(
       noopCount += 1;
       if (outcome.literalBypass) literalDeclarations += 1;
       if (isPreview) {
-        if (outcome.anchorWarnings?.length) {
-          warnings.push(...outcome.anchorWarnings);
-        }
+        pushNoopWarnings(outcome.anchorWarnings);
         continue;
       }
       const decision = await runNoopPolicy({
@@ -818,23 +861,29 @@ async function runMutations(
         removeTo: item.anchor_to,
         replacementText: item.replace_with,
         ref: `edit[${index}] (${path})`,
-        batch: true,
+        batch: items.length > 1,
         range,
         hashes: currentHashes,
         lines: splitLines(currentContent),
         sessionKey,
         contentHash: snapshotHashFor(currentContent),
       });
-      if (decision.action === "reject") throw new Error(decision.message);
+      // WHY: a looping item of a multi-item call rejects through the same
+      // WHY: batch envelope as every other rejection — the failing item, its
+      // WHY: own `[E_NOOP_LOOP]` diagnostic, and the atomicity trailer — so the
+      // WHY: model knows the earlier items were rolled back too. Single-item
+      // WHY: calls keep the direct rejection path.
+      if (decision.action === "reject") {
+        if (items.length === 1) throw decision.error;
+        throw batchAbortFor({ error: decision.error, index, path });
+      }
       if (decision.action === "warn") warnings.push(decision.notice);
       if (items.length > 1) {
         warnings.push(
           `edit[${index}] (${path}) was a noop: the range already contains the replacement text.`,
         );
       }
-      if (outcome.anchorWarnings?.length) {
-        warnings.push(...outcome.anchorWarnings);
-      }
+      pushNoopWarnings(outcome.anchorWarnings);
       continue;
     }
     appliedCount += 1;
@@ -869,10 +918,11 @@ async function runMutations(
         splitLines(outcome.content).length,
       );
     }
-    if (!isPreview) clearNoopLoop(absolutePath);
-    if (outcome.anchorWarnings?.length) {
-      warnings.push(...outcome.anchorWarnings);
-    }
+    pushAppliedWarnings(outcome.anchorWarnings, outcome.neverServedCount);
+  }
+
+  if (neverServedTotal > 0) {
+    warnings.push(buildNeverServedEditHint({ count: neverServedTotal }));
   }
 
   const result = currentContent;
@@ -1004,12 +1054,8 @@ export async function apply(
     };
   }
 
+  // WHY: the file was answered at admission (assertReq); the narrowed type carries it here.
   const path = request.file;
-  if (path === null) {
-    throw new Error(
-      "[MODEL] [E_BAD_PAYLOAD] Edit request file could not be inferred from anchors.",
-    );
-  }
   const absolutePath = toCwd(path, cwd);
   const mutationTargetPath = await resolveTarget(absolutePath);
   const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
@@ -1044,9 +1090,7 @@ export async function apply(
       resultContent: file.result,
     });
     if (!undo.persisted) {
-      throw new Error(
-        `[E_UNDO_UNAVAILABLE] Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. Retry the edit, or use write if the store cannot be recovered.`,
-      );
+      throw new DomainError("E_UNDO_UNAVAILABLE", { path });
     }
     try {
       abortIf(options?.signal);
@@ -1059,6 +1103,11 @@ export async function apply(
       throw error;
     }
     clearServedRefusals(file.absolutePath);
+    // WHY: the noop-loop tracker clears only here, after the bytes are on disk, beside the
+    // WHY: served-refusal tracker — the counters reflect committed reality. An edit that writes
+    // WHY: nothing (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) never reaches this
+    // WHY: site, so its counters survive for the resubmission to trip on.
+    clearNoopLoop(sessionKey, file.absolutePath);
 
     // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4): it is
     // WHY: deliberately deferred to here, after the bytes are on disk, so an edit that writes nothing

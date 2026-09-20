@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **errors:** unify the error and warning contract (E_*/W_* tiers) (#148)
 * **edit:** gate reproduced served rows behind a literal declaration (#134)
 * **edit:** adopt line-identity MVCC with leases
 

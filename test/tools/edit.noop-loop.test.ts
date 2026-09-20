@@ -27,13 +27,14 @@ describe("edit tool noop-loop guard", () => {
       const second = await editTool.execute("e2", payload, undefined, undefined, ctx);
       expect(second.details.classification).toBe("noop");
       expect(getText(second)).toContain("No changes made");
-      expect(getText(second)).toContain("[E_NOOP_LOOP] Notice:");
+      expect(getText(second)).toContain("[USER] [W_NOOP]");
       expect(getText(second)).toContain("no-op'd twice");
 
       const err = (await editTool
         .execute("e3", payload, undefined, undefined, ctx)
         .catch((e: unknown) => e)) as Error;
       expect(err).toBeInstanceOf(Error);
+      expect(err.message).toContain("[MODEL]");
       expect(err.message).toContain("[E_NOOP_LOOP]");
       expect(err.message).toContain("submitted 3×");
       expect(err.message).toContain(`│${NOOP_LINE_1}`);
@@ -149,7 +150,7 @@ describe("edit tool noop-loop guard", () => {
         ctx,
       );
       expect(legacyResend.details.classification).toBe("noop");
-      expect(getText(legacyResend)).toContain("[E_NOOP_LOOP] Notice:");
+      expect(getText(legacyResend)).toContain("[USER] [W_NOOP]");
       expect(getText(legacyResend)).toContain("no-op'd twice");
 
       const err = (await editTool

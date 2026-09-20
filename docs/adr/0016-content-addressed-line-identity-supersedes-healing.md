@@ -4,7 +4,7 @@ Date: 2026-09-12
 
 ## Status
 
-accepted; supersedes [ADR-0008](0008-orphaned-serve-healing.md) (orphaned serves: eager heal and content-disambiguated verification) in full, including its `ServedVerification` deepening amendment.
+accepted; amended by ADR-0018 (recovery clause); supersedes [ADR-0008](0008-orphaned-serve-healing.md) (orphaned serves: eager heal and content-disambiguated verification) in full, including its `ServedVerification` deepening amendment.
 
 ## Context
 
@@ -24,4 +24,4 @@ Line identity is content-addressed and leased, never guessed. Each materialized 
 
 - `CONTEXT.md`: `orphaned serve`, `orphaning re-serve` and `relocated line keeps its hash` describe a state the tool now rejects rather than repairs; coordinate realignment is owned solely by `pairSnapshots` + `line_lineage`.
 - `test/hashline/healing.test.ts` and `test/hashline/healing-policy.test.ts` are deleted; `test/core/served-verification.test.ts` asserts the fail-closed `E_UNSERVED_RANGE` result for un-rebased coordinates, and the auto-rebase path is asserted end-to-end in `test/integration/p0-drift-line-identity.test.ts`.
-- A retired anchor is recoverable only by a re-read (or by `reject-and-serve`'s served rows), which is the intended context cost of never miswriting.
+- A retired anchor is recoverable only by a re-read, which is the intended context cost of never miswriting.

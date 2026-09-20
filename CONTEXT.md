@@ -20,8 +20,16 @@ _Avoid_: —
 The project's core contract: per-line anchors are content-derived with ASCII whitespace (`[ \t\r\n]`) stripped, stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005).
 
 **anchor staleness**:
-An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon`/`tombstone` miss). The model must re-`read` for fresh anchors.
+An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon`/`tombstone` miss). Reported as `[E_STALE_ANCHOR]` with the current rows served; the model retries with those rows (no `read` needed).
 _Avoid_: boundary staleness (use `anchor` for one line, `served range` for span)
+
+**unknown anchor**:
+An anchor this session holds no lease for in any file. Reported as `[E_UNKNOWN_ANCHOR]` with no rows and no remedy — the tool cannot tell a wrong file value from wrong anchors from another session, so it states the fact and the model decides. Distinct from `anchor staleness`, which names a served anchor whose content changed.
+_Avoid_: unserved anchor, missing anchor, stale anchor
+
+**foreign anchor**:
+An anchor this session holds a lease for, but for a file other than the one the edit names. Reported as `[E_FOREIGN_ANCHOR]` with no rows and no remedy — the message names where the anchors were served. Distinct from `anchor staleness`, which names a served anchor whose content changed.
+_Avoid_: cross-file anchor, wrong-file anchor, leaked anchor
 
 **interior**:
 The lines of a resolved range strictly between `anchor_from` and `anchor_to`.
@@ -42,15 +50,23 @@ The model-facing word for the `served span` — the span between `anchor_from` a
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **served-range staleness**:
-The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`). Reported as `[E_STALE_RANGE]` (changed) or `[E_UNSERVED_RANGE]` (never-served). Both do `reject-and-serve`.
+The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`). Reported as `[E_STALE_RANGE]` — for a changed span, or for a never-served interior (interior loop miss: a line strictly between the anchors has no served entry; the remedy is identical — retry with the served rows — so no separate code is kept; retired: `[E_UNSERVED_RANGE]`, see ADR-0020). Every `[E_STALE_RANGE]` does `reject-and-serve`: the retry needs no `read`.
 _Avoid_: range staleness (use `served range` for span)
 
 **never-served**:
-An interior line with no entry in the served record — the model was never shown that line. Reported as `[E_UNSERVED_RANGE]`; the response serves the current range so the model can retry.
+A line with no entry in the served record — the model was never served that line. A user-facing diagnosis carried as `details.cause` on the rejection, never the model remedy (the code alone selects the retry): a never-served interior reports `[E_STALE_RANGE]` (retry with the served rows, no `read` needed); an unplaceable boundary (one bound stale, survivor live and unshifted) reports `[E_UNVERIFIED_RANGE]` (decide from the fresh read); an anchor with no lease at all reports `[E_UNKNOWN_ANCHOR]` (no lease in any file) or `[E_FOREIGN_ANCHOR]` (leased for another file) — both rowless without remedy. `[E_STALE_ANCHOR]` names a served anchor whose identity is dead (rows served, retry with them).
+
+**unverified range**:
+The named window served when one bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted. Reported as `[E_UNVERIFIED_RANGE]`: the rows of the named window are served as a fresh read under the exact heading `Current range (fresh read):`, with no retry hint and no mandate — the model decides from those rows, and the rows are leased through the normal serve seam. One bound stale covers a retired lease with a live unshifted survivor only — a tombstoned boundary reports `[E_STALE_ANCHOR]`, and a boundary anchor with no served position reports `[E_UNKNOWN_ANCHOR]` or `[E_FOREIGN_ANCHOR]`. Retired: `[E_UNSERVED_RANGE]` (see ADR-0020; interior hole → `[E_STALE_RANGE]`, boundary producer → this code).
+_Avoid_: unverified region (the model-facing word is `range`, never `region`)
 
 **reject-and-serve**:
-The staleness policy: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the retry needs no read.
+The staleness policy for a range-matched rejection: reject the edit and return the current range as fresh `HASH│content` rows, which themselves count as serves, so the interior retry needs no read. An `[E_UNVERIFIED_RANGE]` fresh read is leased the same way but carries no retry hint — the model decides from those rows instead of retrying blind. A rejection whose range cannot be identified carries no rows (see `target-lost rejection`).
 _Avoid_: reject-then-reread (the retry must not require a read)
+
+**target-lost rejection**:
+A rejection whose range cannot be identified, so its payload carries no rows and recovery is a re-read. Reported as `[E_TARGET_LOST]` for a retired leased identity with no live unshifted bound (deleted target, shifted neighbour, re-added text elsewhere, collapsed window). Disjoint from the row-carrying codes by payload shape: `[E_STALE_RANGE]` and `[E_UNVERIFIED_RANGE]` always render rows, `[E_STALE_ANCHOR]` renders rows when the window is identifiable (the missing-previous-hashes producer in `src/mutation-engine/pipeline.ts:368-373` carries the headline only), `[E_TARGET_LOST]` never does.
+_Avoid_: context serve (no such operation exists)
 
 **drift**:
 The divergence between the served state and the current file: lines the model was shown whose content has changed on disk since they were served. Detected by comparing served hashes against current hashes.
@@ -61,13 +77,13 @@ The informational section appended to a replace result (applied or noop, not und
 _Avoid_: warning (the operation succeeded; it is information, not a warning)
 
 **model-facing signal**:
-A model-visible signal the tool must include in `content` for correctness (e.g. `anchor staleness`, `served-range staleness`, `E_STALE_*`/`E_UNSERVED_*`, `E_SERVED_ECHO`). The model needs it to retry correctly.
+A model-visible signal the tool must include in `content` for correctness (e.g. `anchor staleness`, `served-range staleness`, `E_STALE_*`/`E_UNVERIFIED_RANGE`, `E_SUSPICIOUS_TEXT`). The model needs it to retry correctly.
 
 **user-facing signal**:
 A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice, Batch drift note). Not in model content.
 
 **orphaned serve**:
-An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_UNSERVED_RANGE]`) and a retired `line_id` rejects `[E_STALE_RANGE]`, rather than being healed onto a twin.
+An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_STALE_ANCHOR]`) and a retired `line_id` rejects `[E_UNVERIFIED_RANGE]` (live unshifted survivor) or `[E_TARGET_LOST]` (otherwise), rather than being healed onto a twin.
 _Avoid_: stale serve (ambiguous with boundary staleness)
 
 **orphaning re-serve**:
@@ -87,7 +103,7 @@ The `served_leases` row that binds a served anchor to the immutable `line_id` it
 _Avoid_: reservation, lock, epoch
 
 **retirement** (`retired_at`):
-Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read (or `reject-and-serve`'s served rows) grants a fresh lease, so a stale anchor rejects `[E_STALE_RANGE]` instead of silently rebinding.
+Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read grants a fresh lease, so a stale anchor rejects `[E_TARGET_LOST]` (no live unshifted survivor) or `[E_UNVERIFIED_RANGE]` (survivor live and unshifted: a fresh read to decide from) instead of silently rebinding.
 _Avoid_: tombstone (the hash-allocation guard, not a lease state)
 
 **lineage** (`line_lineage`):
@@ -123,7 +139,7 @@ The `│` character dividing a served row into `HASH│content`. The model copie
 _Avoid_: pipe, delimiter
 
 **file**:
-The top-level payload field naming the text file to edit — a non-empty string, never a directory. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file. A legacy `null` (anchor-based inference) is still folded in code but untaught.
+The top-level payload field naming the text file to edit — a non-empty string, never a directory. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file. A legacy `null` file is still folded in code but rejected fail-closed with `[E_BAD_PAYLOAD]`.
 _Avoid_: path, optional path
 
 **edit item**:
@@ -135,12 +151,12 @@ A candidate line that begins with the exact served anchor and reproduces the ser
 _Avoid_: hash echo (without served qualification — targets the unqualified condition name), anchor echo; served-qualified identifier (findServedHashEcho) is canonical, surface-qualified one (findEditHashEcho) is not
 
 **literal declaration**:
-The caller's explicit assertion, via `mode: "literal"`, that bytes reproducing served rows are intended file content; the sole escape from `E_SERVED_ECHO`.
+The caller's explicit assertion, via `mode: "literal"`, that bytes reproducing served rows are intended file content; the sole escape from `E_SUSPICIOUS_TEXT`.
 _Avoid_: force, override, bypass
 
-**E_SERVED_ECHO**:
-Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_SERVED_ECHO] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Remove the copied anchors and retry, or reassert under a `literal declaration`. Nothing was written. Deny, not strip — fail-loud, compensable.
-_Avoid_: E_HASH_ECHO (ambiguous)
+**E_SUSPICIOUS_TEXT**:
+Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_SUSPICIOUS_TEXT] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. Evidence-only: it fires only when `replace_with` reproduces a row actually served for this session, path, and line, never for the shape of a line — a `HASH│`-shaped line whose anchor was never served is written verbatim. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Omit the copied anchors from `replace_with` and retry with the same anchors, or reassert under a `literal declaration`, the sole escape. Nothing was written. Deny, not strip — fail-loud, compensable.
+_Avoid_: E_HASH_ECHO (ambiguous), E_SERVED_ECHO (retired name; the refusal is E_SUSPICIOUS_TEXT, see ADR-0019)
 
 **boundary duplication** (historical — removed):
 Former auto-fix that silently stripped replacement lines duplicating lines outside the range (`trailingDups`/`leadingDups` with byte `===`, and `firstNewAfterDups`/`lastNewBeforeDups` with `canon()`+`sectionIsUnique`). Removed as a fix: the tool is now pure `range = hash_bounds, replacement = replace_with`. A true duplicate stays loud in the post-edit diff/drift signal for the model to fix next turn; silent removal is irreversible (brace-balance loss). No new error code — the duplicate is preserved verbatim.
@@ -151,7 +167,7 @@ The invariant that an edit is exactly the resolved range replaced by the exact `
 _Avoid_: smart edit, autocorrection
 
 **tombstone**:
-The per-session (`sessionKey`, `path`) set of hashes freed since the last full `read` — `served.retired` in `src/served-session/session.ts`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(tombstone)` so a freed anchor never re-binds for the session. ADR-0017 keeps it only as the hash-allocation guard, not as a second identity authority. Cleared on `full read` (`isFullRead`), kept on `partial`/`truncated`, pruned with `served` via `SERVED_TTL_MS`. Prevents `S@3 reborn @3` whole-span stale success (`E_STALE_RANGE`).
+The per-session (`sessionKey`, `path`) set of hashes freed since the last full `read` — `served.retired` in `src/served-session/session.ts:804-815`. Allocation (`HashIdentity`) treats `used = bitset(oldHashes) ∪ bitset(tombstone)` so a freed anchor never re-binds for the session (`src/hashline/hash-identity.ts:202-209`, `:348-349`, plumbed via `src/hashline/hash.ts:105-134`). ADR-0017 retains it only as the hash-allocation guard, never as a second identity authority — and the verification job below is a signal, not a lease state, so the `retirement` (`retired_at`) term above still owns lease-terminal state. Its second live job is the verification signal: `src/hashline/served-verification.ts:454-471` rejects a tombstoned boundary hash as `[E_STALE_ANCHOR]` via `throwStaleForTombstone` (`:749-765`, rows served with the retry hint, `details.cause: "tombstone"`), and `:520-544` rejects a tombstoned interior as `[E_STALE_RANGE]` (retry with the served rows, same cause). ADR-0020 decision 2 prescribed the fresh-read heading for the boundary check; as-built `0bc2b65` serves `[E_STALE_ANCHOR]` rows instead (see ADR-0021 decision 3). Cleared on `full read` (`isFullRead`), kept on `partial`/`truncated`, pruned with `served` via `SERVED_TTL_MS`. Prevents `S@3 reborn @3` whole-span stale success.
 _Avoid_: blocked, reserved (lease retirement is the `retired_at` term above; this entry's `served.retired` is a legacy v6 storage shell)
 
 **epoch**:
@@ -169,3 +185,27 @@ _Avoid_: always-strict
 **canon** (canon_at_serve):
 The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`) captured at serve time and persisted parallel to `hashes` in `served.canons`. Used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without `tombstone`.
 _Avoid_: content (byte-level, not canon)
+
+**E_LARGE_FILE**:
+Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 238,328-line ceiling for 3-char anchors, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files.
+_Avoid_: E_TOO_BIG (unclaimed code)
+
+**E_UNKNOWN**:
+The unexpected-error envelope: a throw that is not a `DomainError` (an invariant breach, a filesystem or store failure) is reported through the registry as `[MODEL] [E_UNKNOWN]` carrying only the error name and the first message line — never a scraped bracket token, never the verbatim dump. Carries no remedy by rule: no cause is knowable at all.
+_Avoid_: E_UNSPECIFIED (unclaimed code)
+
+**applied warning** (`W_*`):
+The applied-path diagnostic tier: a `[W_*]` line reports a mutation that was applied, carrying the audience that owns it — `[MODEL]` lines are informational (the bytes were written, so no retry is needed) and `[USER]` lines render dimmed for the human. An `[E_*]` line reports a rejection; an applied mutation never emits one. The six codes are `W_NEVER_SERVED_SHAPE` and `W_SERVED_PREFIX_MISMATCH` (`MODEL`), plus `W_REVERSED_ANCHORS`, `W_UNICODE_LITERAL`, `W_LITERAL_BYPASS`, and `W_NOOP` (`USER`).
+_Avoid_: E-tier code on a success; No action is required (retired sentinel, redundant with the tier)
+
+**reversed anchors**:
+An `anchor_from`/`anchor_to` pair whose resolved lines run opposite the slot order. Anchors carry no order, so reversal is a property of the resolved lines of the slot pair — never of the anchor strings. The tool heals the swapped pair and narrates `[USER] [W_REVERSED_ANCHORS]`; the retired refusal name must not be reused.
+_Avoid_: E_REVERSED_ANCHORS (retired refusal; the healed notice is W_REVERSED_ANCHORS)
+
+**noop**:
+A call whose resolved range already contains the replacement text: nothing changed, so it is not a failure. The first no-op proceeds, the second identical no-op narrates `[USER] [W_NOOP]`, and only the third identical resend refuses as `[E_NOOP_LOOP]` (`NOOP_LOOP_THRESHOLD = 3`, `src/noop-guard.ts:59-99`).
+_Avoid_: E_NOOP (no such code; the warn arm is W_NOOP, the refuse arm is E_NOOP_LOOP)
+
+**remedy-eligibility**:
+Payload text reports facts; a remedy clause may appear only when it is helpful, unharmful and fail-closed AND the evidence pins a single cause. When the intent is ambiguous the payload states the fact and carries no remedy, because an intent-guessing suggestion steers the model's next action. Remedy-free by rule: `E_UNKNOWN`, `E_UNKNOWN_ANCHOR`, `E_FOREIGN_ANCHOR`, `E_UNVERIFIED_RANGE`, `E_NOOP_LOOP` (see ADR-0021 decisions 4 and 5).
+_Avoid_: suggestion (an intent-guessing remedy steers the model's next action)

@@ -64,7 +64,7 @@ describe("regEdit", () => {
     });
   });
 
-  it("refuses a reproduced served row in replace_with with E_SERVED_ECHO (deny, not strip)", async () => {
+  it("refuses a reproduced served row in replace_with with E_SUSPICIOUS_TEXT (deny, not strip)", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -78,7 +78,7 @@ describe("regEdit", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/E_SERVED_ECHO/);
+      ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
       const after = await readFile(path, "utf-8");
       expect(after).toBe(before);
     });
@@ -136,7 +136,7 @@ describe("regEdit", () => {
       );
       expect(result.content[0].text).toContain("Successfully edited");
       expect(result.content[0].text).toContain("Added 1 line(s), removed 2 line(s).");
-      expect(result.content[0].text).toContain("[E_REVERSED_ANCHORS]");
+      expect(result.content[0].text).toContain("[USER] [W_REVERSED_ANCHORS]");
       expect(result.content[0].text).toContain("were reversed");
       expect(result.details?.diff).toContain("X");
     });
@@ -156,7 +156,7 @@ describe("regEdit", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/\[E_BAD_ANCHOR\]/);
+      ).rejects.toThrow(/\[E_MALFORMED_ANCHOR\]/);
     });
   });
 });

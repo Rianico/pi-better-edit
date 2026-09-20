@@ -1,17 +1,23 @@
 import { ANCHOR_LEN, ALPHA_RE, HASH_CLASS } from "./hash-identity.js";
-import { NEW_CONTENT_NOT_STRING_MSG } from "../constants.js";
+import { DomainError } from "../domain-errors.js";
 
 export type Anchor = { hash: string };
 
-function diagRef(ref: string): string {
+function diagPayload(ref: string): { rawAnchor: string; reason: string } {
   const trimmed = ref.trim();
 
   if (!trimmed.length) {
-    return `[MODEL] [E_BAD_ANCHOR] Invalid anchor. Expected a 3-char alphanumeric anchor (e.g. "aB3").`;
+    return {
+      rawAnchor: trimmed,
+      reason: 'Expected a 3-char alphanumeric anchor (e.g. "aB3")',
+    };
   }
 
   if (/^\d+/.test(trimmed)) {
-    return `[MODEL] [E_BAD_ANCHOR] Invalid anchor. Use the hash alone (e.g. "aB3") — no line numbers or trailing content.`;
+    return {
+      rawAnchor: trimmed,
+      reason: 'Use the hash alone (e.g. "aB3") — no line numbers or trailing content',
+    };
   }
 
   if (trimmed.includes("│") && trimmed.includes("\n")) {
@@ -25,13 +31,26 @@ function diagRef(ref: string): string {
     const firstHash = firstMatch?.[0] ?? "wUp";
     const lastHash = lastMatch?.[0] ?? "AU6";
     const preview = first.slice(0, 60);
-    return `[MODEL] [E_BAD_ANCHOR] Invalid anchor — anchor_from must be a single bare 3-char hash (e.g. "wUp"), not a block with HASH│. Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as anchor_from and "${lastHash}" as anchor_to, and put the new content (without HASH│) in replace_with. Nothing was written.`;
+    return {
+      rawAnchor: `${lines.length}-line block starting "${preview}…"`,
+      reason:
+        `anchor_from must be a single bare 3-char hash (e.g. "wUp"), not a block with HASH│. ` +
+        `Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as anchor_from and "${lastHash}" as anchor_to, ` +
+        `and put the new content (without HASH│) in replace_with. Nothing was written.`,
+    };
   }
   if (trimmed.includes("│")) {
-    return `[MODEL] [E_BAD_ANCHOR] Invalid anchor "${trimmed}". anchor_from and anchor_to must contain the 3-char hash only — remove everything from "│" onward. Nothing was written.`;
+    return {
+      rawAnchor: trimmed,
+      reason:
+        'anchor_from and anchor_to must contain the 3-char hash only — remove everything from "│" onward. Nothing was written.',
+    };
   }
 
-  return `[MODEL] [E_BAD_ANCHOR] Invalid anchor "${trimmed}". Expected a 3-char alphanumeric anchor (e.g. "aB3").`;
+  return {
+    rawAnchor: trimmed,
+    reason: 'Expected a 3-char alphanumeric anchor (e.g. "aB3")',
+  };
 }
 
 function parseRef(ref: string): Anchor {
@@ -41,14 +60,17 @@ function parseRef(ref: string): Anchor {
     return { hash: trimmed };
   }
 
-  throw new Error(diagRef(ref));
+  throw new DomainError("E_MALFORMED_ANCHOR", diagPayload(ref));
 }
 
 export const parseHashRef = parseRef;
 
 export function parseText(edit: string): string[] {
   if (typeof edit !== "string") {
-    throw new Error(NEW_CONTENT_NOT_STRING_MSG);
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        '"replace_with" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
+    });
   }
   const normalized = edit.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
   if (normalized === "") return [];

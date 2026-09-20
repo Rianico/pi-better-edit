@@ -1,8 +1,9 @@
 - edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`.
 - edit: payload shape `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` — `file` is the text file (never a directory); `edits` length is the arity (1 = single, >1 = batched atomically to the one file).
 - edit: `anchor_from`/`anchor_to` bound the inclusive range (both lines replaced); when an anchor no longer matches, re-read the file and copy fresh anchors.
-- edit: `replace_with` is plain file content — join lines with `\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused — declare literal intent with `mode: "literal"`.
+- edit: `replace_with` is plain file content — join lines with `\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused.
 - edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.
-- edit: a `[MODEL]` line in `content` is your retry instruction — follow it from the message alone; a dimmed `[USER]` line in `details` is human info, never your error.
+- edit: a `[MODEL] [W_*]` line in `content` is informational — the mutation was applied; a `[MODEL] [E_*]` line is your retry instruction or a rejection — follow it from the message alone; a `[MODEL]` line that presents rows as a fresh read (`Current range (fresh read):`) is not a blind retry — decide from those rows; a dimmed `[USER]` line in `details` is human info, never your error.
 - edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).
 - edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.
+- edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so an anchor copied from another file's served rows is refused; copy `anchor_from`/`anchor_to` only from this file's served rows.

@@ -1,9 +1,9 @@
 import { abortIf, rejectUnknownFields, clipLine } from "../utils.js";
+import { DomainError, formatWarning } from "../domain-errors.js";
 import { HASH_CLASS } from "./hash-identity.js";
 import { parseHashRef, parseText, type Anchor } from "./parse.js";
 import type { ServedRow } from "./served.js";
 import type { FileSnapshotContext } from "./served-verification.js";
-import { NEW_CONTENT_NOT_STRING_MSG } from "../constants.js";
 
 type RAnchor = {
   line: number;
@@ -39,6 +39,15 @@ export interface LeaseSpanSource {
   leaseFor(anchor: string): LeaseIdentityView | undefined;
   /** Current line of a leased `line_id` in `line_lineage(C)`; undefined when deleted/retired (spec §3.1.1 steps 3-4). */
   rebasedLineOf(lineId: number): number | undefined;
+  /**
+   * Other files this session served one anchor for, excluding the file being edited.
+   * Backed by its own `served_leases` query on `(session_id, anchor)`; it runs
+   * on the failure path only, so the happy path pays nothing. A path-level
+   * clear deletes rows, so a previously served anchor then reads as holding
+   * no lease anywhere — re-reading is the correct recovery either way, so no
+   * special case is kept.
+   */
+  anchorHomes?(anchor: string): string[];
 }
 
 /**
@@ -76,7 +85,6 @@ export type LineIdentityDecision = { kind: "line"; line: number } | { kind: "sta
  */
 export function resolveLineIdentity(
   lease: LeaseIdentityView,
-  contentLine: number | undefined,
   source: LeaseSpanSource,
 ): LineIdentityDecision {
   // WHY: a dead lease can never be applied, and a live lease is authoritative about *where* its
@@ -85,12 +93,14 @@ export function resolveLineIdentity(
   // WHY: `retired_at` is set -> `E_STALE_RANGE` even when the anchor string is gone from the content
   // WHY: entirely (spec §3.1.1 line 89 / §5.3): the leased line was retired, so nothing has changed
   // WHY: about *which* line identity is missing, only about whether it still has a coordinate.
+  // WHY: stale coordinates stay lease-derived only (`lease.servedLineNumber`): no content lookup
+  // WHY: ever names the headline or the window for a retired bound (stale-identity D5, Probe P).
   if (lease.retiredAt !== null) {
-    return { kind: "stale", line: contentLine ?? lease.servedLineNumber };
+    return { kind: "stale", line: lease.servedLineNumber };
   }
   const rebased = source.rebasedLineOf(lease.lineId);
   if (rebased === undefined) {
-    return { kind: "stale", line: contentLine ?? lease.servedLineNumber };
+    return { kind: "stale", line: lease.servedLineNumber };
   }
   return { kind: "line", line: rebased };
 }
@@ -197,11 +207,14 @@ function formatNotFound(
   out: string[],
 ): void {
   if (notFound.length === 0) return;
-  const refList = notFound.map((m) => `"${m.ref.hash}"`).join(", ");
+  const distinct = [...new Map(notFound.map((m) => [m.ref.hash, m])).values()];
+  const refList = distinct.map((m) => `"${m.ref.hash}"`).join(", ");
+  // WHY: the body carries no code tag — the registry owns the `[MODEL] [E_*]`
+  // WHY: header when the caller wraps this in a `DomainError`.
   out.push(
-    `[E_STALE_ANCHOR] ${notFound.length} stale anchor${notFound.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
+    `${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
   );
-  for (const m of notFound) {
+  for (const m of distinct) {
     const ctx = m.context;
     if (!ctx) continue;
     const from = Math.max(1, ctx.line - 1);
@@ -227,10 +240,11 @@ function formatAmbiguous(
 ): void {
   if (ambiguous.length === 0) return;
   if (out.length > 0) out.push("");
+  const distinctAmbiguous = [...new Map(ambiguous.map((m) => [m.ref.hash, m])).values()];
   out.push(
-    `[E_STALE_ANCHOR] ${ambiguous.length} ambiguous anchor${ambiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
+    `${distinctAmbiguous.length} ambiguous anchor${distinctAmbiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
   );
-  for (const m of ambiguous) {
+  for (const m of distinctAmbiguous) {
     const sample = (m.candidates ?? []).slice(0, 5);
     const more =
       (m.candidates?.length ?? 0) > sample.length
@@ -292,27 +306,34 @@ function assertItem(edit: Record<string, unknown>): void {
   );
 
   if ("anchor_from" in edit && typeof edit.anchor_from !== "string") {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] Field "anchor_from" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Field "anchor_from" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.',
+    });
   }
   if ("anchor_to" in edit && typeof edit.anchor_to !== "string") {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] Field "anchor_to" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'Field "anchor_to" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.',
+    });
   }
   if (!("replace_with" in edit)) {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] The edit requires a "replace_with" field. Provide the replacement text (use "" to delete). Nothing was written.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'The edit requires a "replace_with" field. Provide the replacement text (use "" to delete). Nothing was written.',
+    });
   }
   if (typeof edit.replace_with !== "string") {
-    throw new Error(NEW_CONTENT_NOT_STRING_MSG);
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        '"replace_with" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
+    });
   }
   if (typeof edit.anchor_from !== "string" || typeof edit.anchor_to !== "string") {
-    throw new Error(
-      `[MODEL] [E_BAD_PAYLOAD] The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.`,
-    );
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.',
+    });
   }
 }
 
@@ -339,22 +360,23 @@ export function resEdit(edit: HTEdit): HEdit {
       const hash = firstHashFromBlock(trimmed);
       if (hash) {
         const lines = trimmed.split("\n").length;
-        throw new Error(
-          `[MODEL] [E_BAD_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time`,
-        );
+        throw new DomainError("E_MALFORMED_ANCHOR", {
+          rawAnchor: `${lines}-line block`,
+          reason: `extracted first hash "${hash}" from a ${lines}-line block — use bare "${hash}" next time`,
+        });
       }
     }
     const match = trimmed.match(ANCHOR_ROW_RE);
     if (match) {
-      let message: string;
+      let reason: string;
       if (match[1] === "+") {
-        message = `[MODEL] [E_BAD_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
+        reason = `anchor carries a diff-preview "+" marker ("${trimmed}"). Nothing was written; pass the bare 3-char anchor and retry.`;
       } else if (match[1] === "-") {
-        message = `[MODEL] [E_BAD_ANCHOR] stripped leading "-" marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.`;
+        reason = `anchor carries a leading "-" marker ("${trimmed}"). Nothing was written; pass the bare 3-char anchor and retry.`;
       } else {
-        message = `[MODEL] [E_BAD_ANCHOR] stripped "HASH│" prefix from anchor_from/anchor_to "${trimmed}". Nothing was written; copy only the 3 chars before │ and retry.`;
+        reason = `anchor carries a "HASH│" prefix ("${trimmed}"). Nothing was written; copy only the 3 chars before │ and retry.`;
       }
-      throw new Error(message);
+      throw new DomainError("E_MALFORMED_ANCHOR", { rawAnchor: trimmed, reason });
     }
     return ref;
   }) as [string, string];
@@ -365,10 +387,9 @@ export function resEdit(edit: HTEdit): HEdit {
 }
 
 function warnUnicodeEsc(edit: HEdit, warnings: string[]): void {
-  if (edit.content_lines.some((line) => /\\uDDDD/i.test(line))) {
-    warnings.push(
-      "Literal \\uDDDD in edit content; no autocorrection applied. Verify whether this is a real Unicode escape or plain text.",
-    );
+  const index = edit.content_lines.findIndex((line) => /\\uDDDD/i.test(line));
+  if (index !== -1) {
+    warnings.push(formatWarning("W_UNICODE_LITERAL", { line: index + 1 }));
   }
 }
 
@@ -384,7 +405,7 @@ export function swapReversedRanges(edit: HEdit, fileHashes: string[], warnings: 
     return edit;
   }
   warnings.push(
-    `[USER] [E_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (${startRef.hash} after ${endRef.hash}); healed and applied with the range swapped.`,
+    formatWarning("W_REVERSED_ANCHORS", { fromHash: startRef.hash, toHash: endRef.hash }),
   );
   return { ...edit, hash_bounds: [endRef, startRef] as [Anchor, Anchor] };
 }
@@ -396,6 +417,7 @@ export function valEdit(
 ): {
   resolved: RHEdit | undefined;
   mismatches: HMismatch[];
+  reversed?: { fromHash: string; toHash: string };
 } {
   const { fileLines, fileHashes } = snapshot;
   assertAligned(fileLines, fileHashes, "valEdit");
@@ -425,10 +447,18 @@ export function valEdit(
     }
     return { resolved: undefined, mismatches };
   }
+  // WHY: heal, then narrate (no `E_*` on a success): the content path heals the same
+  // WHY: way the lease seam does — anchors carry no order, so the swapped pair applies
+  // WHY: with the range swapped and the caller narrates `[W_REVERSED_ANCHORS]`.
   if (startResolved.line > endResolved.line) {
-    throw new Error(
-      `[MODEL] [E_REVERSED_ANCHORS] Refused: range start line ${startResolved.line} is after end line ${endResolved.line} (anchors ${edit.hash_bounds[0].hash} and ${edit.hash_bounds[1].hash}). Nothing was written; swap anchor_from/anchor_to and retry.`,
-    );
+    return {
+      resolved: {
+        content_lines: edit.content_lines,
+        hash_bounds: [endResolved, startResolved],
+      },
+      mismatches,
+      reversed: { fromHash: edit.hash_bounds[0].hash, toHash: edit.hash_bounds[1].hash },
+    };
   }
 
   return {
@@ -452,9 +482,13 @@ export function resolveEditByContent(
   edit: HEdit,
   snapshot: FileSnapshotContext,
   signal: AbortSignal | undefined,
-): { resolved: RHEdit | undefined; mismatches: Parameters<typeof fmtMismatchWithServes>[0] } {
-  const { resolved, mismatches } = valEdit(edit, snapshot, signal);
-  return { resolved, mismatches };
+): {
+  resolved: RHEdit | undefined;
+  mismatches: Parameters<typeof fmtMismatchWithServes>[0];
+  reversed?: { fromHash: string; toHash: string };
+} {
+  const { resolved, mismatches, reversed } = valEdit(edit, snapshot, signal);
+  return { resolved, mismatches, ...(reversed ? { reversed } : {}) };
 }
 
 export { warnUnicodeEsc };
