@@ -18,7 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **edit:** correct formatWarning comment to actual truth
+* **edit:** correct warning and path comments
 * **edit:** centralize file admission in assertReq
 * **edit:** scope noop-loop tracker to session
 * **edit:** remedy-free noop loop, fix ref grammar
@@ -34,7 +34,6 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* **spec:** note resolveMissingPath retirement at null-file sites
 * **readme:** scope interiors to [E_STALE_RANGE]
 * **adr:** accept ADR-0021 error-warning contract
 * add the unified error and warning contract spec
