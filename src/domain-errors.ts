@@ -18,8 +18,10 @@
  * action. The remedy field is absent BY RULE for `E_UNKNOWN` (no cause is
  * knowable at all), `E_UNKNOWN_ANCHOR` and `E_FOREIGN_ANCHOR` (the tool
  * cannot tell a wrong file value from wrong anchors from another session,
- * so any suggestion would steer on a guess) and `E_UNVERIFIED_RANGE`
- * (the model decides from the fresh read).
+ * so any suggestion would steer on a guess), `E_UNVERIFIED_RANGE`
+ * (the model decides from the fresh read), and `E_NOOP_LOOP` (the refusal
+ * pins the fact that the range already contains the text, but not the
+ * model's intent).
  */
 
 export type Audience = "MODEL" | "USER";

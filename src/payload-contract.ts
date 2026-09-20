@@ -18,11 +18,7 @@ export type NormalizedEditRequest = {
   edits: EditItem[];
   mode?: EditMode;
 };
-type PreAdmissionRequest = {
-  file: string;
-  edits: EditItem[];
-  mode?: EditMode;
-};
+type PreAdmissionRequest = NormalizedEditRequest;
 type NormalizedPayload = PreAdmissionRequest & {
   readonly [normalizedEdit]: true;
 };
@@ -259,7 +255,7 @@ export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined
   if (typeof effectivePath !== "string" || sanitized === null || sanitized.length === 0) {
     return undefined;
   }
-  effectivePath = sanitized;
+  const file = sanitized;
   if (!Array.isArray(edits) || edits.length === 0) return undefined;
   const items: EditItem[] = [];
   for (const item of edits) {
@@ -267,8 +263,8 @@ export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined
     if (!normalized) return undefined;
     items.push(normalized);
   }
-  if (mode !== undefined) return { file: effectivePath as string, edits: items, mode };
-  return { file: effectivePath as string, edits: items };
+  if (mode !== undefined) return { file, edits: items, mode };
+  return { file, edits: items };
 }
 
 export function normReq(input: unknown): NormReqResult {
