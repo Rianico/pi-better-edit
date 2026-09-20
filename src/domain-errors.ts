@@ -398,9 +398,11 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     // WHY: the reject arm states the refusal that actually happened — it IS the
     // WHY: rejection, so "resend will reject" misdescribed it.
+    // WHY: the batch arm names no item — `batchAbortFor` already prefixes
+    // WHY: `edit[i] (path) failed:`, so a `${ref}:` here would name it twice.
     format: ({ ref, removeFrom, removeTo, count, batch, servedBlock }) =>
       batch
-        ? `${ref}: identical edit (${removeFrom} → ${removeTo}) submitted ${count}×, no changes each time. ` +
+        ? `identical edit (${removeFrom} → ${removeTo}) submitted ${count}×, no changes each time. ` +
           `Range already contains this text; rejecting the batch. Current range:\n${servedBlock}`
         : `identical edit (${removeFrom} → ${removeTo} ${ref}) submitted ${count}×, no changes each time. ` +
           `Range already contains this text; rejecting. Current range:\n${servedBlock}`,

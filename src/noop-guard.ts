@@ -8,7 +8,13 @@ type NoopLoopEntry = {
   count: number;
 };
 
-const noopLoopTracker = new Map<string, NoopLoopEntry>();
+// WHY: one slot per sibling item (`path -> ref -> entry`): siblings in one call
+// WHY: carry distinct payloads, so a shared path key would let each item reset
+// WHY: the other's count and the loop would never trip. A nested map keeps the
+// WHY: slots structurally separate (no separator to collide) and lets
+// WHY: `clearNoopLoop(path)` drop every slot with one delete. A single-item
+// WHY: call carries only `edit[0]`, so its behaviour is unchanged.
+const noopLoopTracker = new Map<string, Map<string, NoopLoopEntry>>();
 
 function noopPayloadKey(
   absolutePath: string,
@@ -19,10 +25,15 @@ function noopPayloadKey(
   return JSON.stringify([absolutePath, removeFrom, removeTo, replacementText]);
 }
 
-function trackNoopPayload(absolutePath: string, payload: string): number {
-  const existing = noopLoopTracker.get(absolutePath);
+function trackNoopPayload(absolutePath: string, ref: string, payload: string): number {
+  let perPath = noopLoopTracker.get(absolutePath);
+  if (perPath === undefined) {
+    perPath = new Map<string, NoopLoopEntry>();
+    noopLoopTracker.set(absolutePath, perPath);
+  }
+  const existing = perPath.get(ref);
   const count = existing && existing.payload === payload ? existing.count + 1 : 1;
-  noopLoopTracker.set(absolutePath, { payload, count });
+  perPath.set(ref, { payload, count });
   return count;
 }
 
@@ -59,7 +70,7 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
     input.removeTo,
     input.replacementText,
   );
-  const count = trackNoopPayload(input.absolutePath, payload);
+  const count = trackNoopPayload(input.absolutePath, input.ref, payload);
 
   if (count >= NOOP_LOOP_THRESHOLD) {
     const servedRows = buildRangeServeRows(

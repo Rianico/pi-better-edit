@@ -872,7 +872,15 @@ async function runMutations(
         sessionKey,
         contentHash: snapshotHashFor(currentContent),
       });
-      if (decision.action === "reject") throw decision.error;
+      // WHY: a looping item of a multi-item call rejects through the same
+      // WHY: batch envelope as every other rejection — the failing item, its
+      // WHY: own `[E_NOOP_LOOP]` diagnostic, and the atomicity trailer — so the
+      // WHY: model knows the earlier items were rolled back too. Single-item
+      // WHY: calls keep the direct rejection path.
+      if (decision.action === "reject") {
+        if (items.length === 1) throw decision.error;
+        throw batchAbortFor({ error: decision.error, index, path });
+      }
       if (decision.action === "warn") warnings.push(decision.notice);
       if (items.length > 1) {
         warnings.push(

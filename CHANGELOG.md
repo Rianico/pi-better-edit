@@ -18,6 +18,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+* **edit:** route noop-loop rejection through batch envelope per slot
 * **edit:** close batch and diagnostic gaps
 * **edit:** clarify retry wording, structure hints
 * **edit:** tighten rejection seams, add oracle
