@@ -280,30 +280,104 @@ type RefusalEntry = {
   count: number;
 };
 
-const servedRefusalTracker = new Map<string, RefusalEntry>();
+/**
+ * SAFETY: the refusal tally beside the served hash echo gate. Session-keyed slots
+ * (`session -> path -> entry`), mirroring `noopLoopTracker` (`src/noop-guard.ts`): serves are
+ * session-keyed (ADR-0002), so one session's count must never leak into another
+ * session refusing the same path. Nested maps keep the slots structurally separate
+ * (no separator to collide). A session-less caller is not tallied at all — a
+ * constant fallback bucket would recreate exactly the sharing this keying removes.
+ */
+const servedRefusalTracker = new Map<string, Map<string, RefusalEntry>>();
 
-function trackRefusal(absolutePath: string, payload: string): number {
-  const existing = servedRefusalTracker.get(absolutePath);
+/**
+ * SAFETY: the single bound on a long-running process. An entry is otherwise kept
+ * until a committed write clears its path, and no session-end seam exists to release
+ * it (`src/lifecycle-hooks/index.ts`, `src/served-session/session.ts`, and
+ * `src/index.ts` observe no session teardown), while session count is unbounded — so
+ * the cap must sit on the total, never per session. 256 covers any realistic working
+ * set: refusals are rare events and a session holds at most one entry per refused
+ * path. Eviction is FIFO through `Map` insertion order (no clock, no sweeper), so the
+ * newest refusals — the ones being resubmitted — always survive.
+ */
+export const SERVED_REFUSAL_MAX_ENTRIES = 256;
+
+function refusalEntryCount(): number {
+  let total = 0;
+  for (const perSession of servedRefusalTracker.values()) {
+    total += perSession.size;
+  }
+  return total;
+}
+
+/** SAFETY: drops one entry — the oldest by insertion order — and releases a session it empties. */
+function releaseOldestRefusal(): void {
+  for (const [sessionKey, perSession] of servedRefusalTracker) {
+    const oldest = perSession.keys().next();
+    if (oldest.done) continue;
+    perSession.delete(oldest.value);
+    if (perSession.size === 0) servedRefusalTracker.delete(sessionKey);
+    return;
+  }
+}
+
+function trackRefusal(sessionKey: string, absolutePath: string, payload: string): number {
+  let perSession = servedRefusalTracker.get(sessionKey);
+  if (perSession === undefined) {
+    perSession = new Map<string, RefusalEntry>();
+    servedRefusalTracker.set(sessionKey, perSession);
+  }
+  const existing = perSession.get(absolutePath);
   const count = existing && existing.payload === payload ? existing.count + 1 : 1;
-  servedRefusalTracker.set(absolutePath, { payload, count });
+  perSession.set(absolutePath, { payload, count });
+  while (refusalEntryCount() > SERVED_REFUSAL_MAX_ENTRIES) releaseOldestRefusal();
   return count;
 }
 
-export function clearServedRefusals(absolutePath: string): void {
-  servedRefusalTracker.delete(absolutePath);
+/**
+ * SAFETY: the only clear seam — the committed-write sites (`mutation-engine/pipeline.ts`
+ * post-commit, `lifecycle-hooks` post-write) clear the path they just wrote, per session:
+ * another session's tally describes what that session submitted, so this session's write
+ * must not erase it. Clearing a session's last path drops the session key too, the fix
+ * `clearNoopLoop` already carries, so no empty map outlives its last path.
+ */
+export function clearServedRefusals(sessionKey: string, absolutePath: string): void {
+  const perSession = servedRefusalTracker.get(sessionKey);
+  if (perSession === undefined) return;
+  perSession.delete(absolutePath);
+  if (perSession.size === 0) servedRefusalTracker.delete(sessionKey);
+}
+
+/** SAFETY: test seam only — the policy path never reads it. Lets the unit check confirm the total-entry cap holds. */
+export function _servedRefusalEntryCount(): number {
+  return refusalEntryCount();
+}
+
+/** SAFETY: test seam only — the policy path never reads it. Lets the unit check confirm a cleared session releases its slot. */
+export function _servedRefusalHasSession(sessionKey: string): boolean {
+  return servedRefusalTracker.has(sessionKey);
 }
 
 export function trackServedEditRefusal(
+  sessionKey: string,
   absolutePath: string,
   anchorFrom: string,
   anchorTo: string,
   offendingLine: string,
 ): number {
-  return trackRefusal(absolutePath, JSON.stringify([anchorFrom, anchorTo, offendingLine]));
+  return trackRefusal(
+    sessionKey,
+    absolutePath,
+    JSON.stringify([anchorFrom, anchorTo, offendingLine]),
+  );
 }
 
-export function trackServedWriteRefusal(absolutePath: string, offendingLine: string): number {
-  return trackRefusal(absolutePath, JSON.stringify([offendingLine]));
+export function trackServedWriteRefusal(
+  sessionKey: string,
+  absolutePath: string,
+  offendingLine: string,
+): number {
+  return trackRefusal(sessionKey, absolutePath, JSON.stringify([offendingLine]));
 }
 
 /** SAFETY: dimmed human line for a literal declaration; never a model retry instruction. */

@@ -333,6 +333,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     anchorResult = applyEdit(input.content, input.edit, input.signal, input.hashes, {
       filePath: input.filePath,
       absolutePath: input.absolutePath,
+      sessionKey: input.sessionKey,
       served: input.served,
       ...(input.tombstone !== undefined ? { tombstone: input.tombstone } : {}),
       ...(input.servedCanons !== undefined ? { servedCanons: input.servedCanons } : {}),
@@ -1106,7 +1107,7 @@ export async function apply(
       await undo.restore();
       throw error;
     }
-    clearServedRefusals(file.absolutePath);
+    clearServedRefusals(sessionKey, file.absolutePath);
     // WHY: the noop-loop tracker clears only here, after the bytes are on disk, beside the
     // WHY: served-refusal tracker — the counters reflect committed reality. An edit that writes
     // WHY: nothing (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) never reaches this

@@ -70,7 +70,7 @@ export async function servedHashEchoDenial(
   const reproduction = findServedHashEcho(lines, served, canons, 1);
   if (!reproduction) return undefined;
   const offendingLine = lines[reproduction.k - 1] ?? "";
-  const count = trackServedWriteRefusal(absolutePath, offendingLine);
+  const count = trackServedWriteRefusal(sessionKey, absolutePath, offendingLine);
   return buildServedWriteMessage({
     path: rawPath,
     line: reproduction.line,

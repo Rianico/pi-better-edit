@@ -76,6 +76,13 @@ export interface ApplyVerificationContext {
   servedCanons?: (string | null)[];
   identity?: LeaseSpanSource;
   mode?: "general" | "literal";
+  /**
+   * SAFETY: the session that owns the served mirror this edit is verified against.
+   * Omitted only by the library-level `applyEdit` seam, which has no session: its
+   * refusal then carries count 1 and keeps no tally — a shared fallback bucket would
+   * leak one caller's refusals into another's (#132).
+   */
+  sessionKey?: string;
 }
 
 /**
@@ -245,6 +252,7 @@ export function applyEdit(
     servedCanons,
     identity,
     mode = "general",
+    sessionKey,
   } = verification ?? {};
 
   const lineIndex = buildIdx(content);
@@ -305,12 +313,19 @@ export function applyEdit(
         const anchorFrom = edit.hash_bounds[0].hash;
         const anchorTo = edit.hash_bounds[1].hash;
         const counterPath = absolutePath ?? filePath ?? "(unknown file)";
-        const count = trackServedEditRefusal(
-          counterPath,
-          anchorFrom,
-          anchorTo,
-          servedCopy.offendingLine,
-        );
+        // WHY: a session-less caller keeps no tally: count 1 states "no prior
+        // WHY: submission known", where a shared fallback bucket would report
+        // WHY: another caller's refusals (#132).
+        const count =
+          sessionKey === undefined
+            ? 1
+            : trackServedEditRefusal(
+                sessionKey,
+                counterPath,
+                anchorFrom,
+                anchorTo,
+                servedCopy.offendingLine,
+              );
         throw new DomainError("E_SUSPICIOUS_TEXT", {
           target: "edit",
           path: filePath ?? "(unknown file)",
