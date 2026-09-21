@@ -17,7 +17,7 @@ All notable changes to this project will be documented in this file.
 
 ### Documentation
 
-* declare the 2.0 tool-contract break (BREAKING CHANGE)
+* declare the 2.0 tool-contract break (#155) (BREAKING CHANGE)
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 
