@@ -355,7 +355,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 ┌────────────────────────────────────────▼─────────────────────────────────────────┐
 │                                SESSION TIER                                      │
 │  src/served-session/session.ts                                                   │
-│  - Span Authority: served / servedCanons arrays (enforces contiguity)            │
+│  - Span Authority: served_leases (identity & retirement via verifyRebasedSpan)       │
 │  - Identity Authority: served_leases registration & TTL management               │
 │  - Universal Serve Hooks: read, diff, echo, truncated, undo_last_edit            │
 └────────────────────────────────────────┬─────────────────────────────────────────┘
