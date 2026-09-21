@@ -33,8 +33,6 @@ one fresh read.
 
 All notable changes to this project will be documented in this file.
 
-## [Unreleased]
-
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 
 ### Features
