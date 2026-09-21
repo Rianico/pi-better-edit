@@ -176,6 +176,8 @@ export function regEditUndo(pi: ExtensionAPI): void {
         // WHY: its served state to the SAME session key as `read`/`edit` — a literal fallback here
         // WHY: silently wrote leases and served rows under a different session id and forced the
         // WHY: model into the fail-closed retry loop this ticket removes.
+        // SAFETY: the pi context is typed for the extension host, which exposes `sessionManager`
+        // SAFETY: beyond the hook's declared context; a missing manager falls back to the literal key.
         const sessionKeyForUndo = sessionKeyFor(
           ctx as unknown as { sessionManager?: { getSessionId(): string } },
         );

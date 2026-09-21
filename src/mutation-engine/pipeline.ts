@@ -383,6 +383,8 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     snapshotIO: snapshotIOFor(input.store),
     // SAFETY: tombstone passed as ReadonlySet via unknown for HashIdentity compatibility — input.tombstone is already typed, cast preserves immutability
     tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
+    // SAFETY: the options object is typed by HashIdentity's internal parameter shape, which the
+    // SAFETY: caller never sees; every field above is already typed, so the cast widens nothing.
   } as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
   return {
     kind: "applied",

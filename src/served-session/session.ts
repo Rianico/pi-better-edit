@@ -297,6 +297,7 @@ function buildStmts(db: DatabaseSync): ServedStmts {
       });
     },
     snapshotByHash: (...params) => snapshotByHashStmt.get(...params) as LeaseSnapshot | undefined,
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     lineageAnchorsOf: (...params) =>
       lineageAnchorsStmt.all(...params) as unknown as LeaseLineageRow[],
     leaseUpsertMany: (sessionKey, path, snapshotHash, updatedAt, grants) => {
@@ -322,10 +323,12 @@ function buildStmts(db: DatabaseSync): ServedStmts {
       });
     },
     leaseGet: (...params) => leaseGetStmt.get(...params) as ServedLease | undefined,
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     leaseList: (...params) => leaseListStmt.all(...params) as unknown as ServedLease[],
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     leaseCanonHashes: (...params) =>
       leaseListCanonStmt.all(...params) as unknown as Array<{ anchor: string; canon_hash: string }>,
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `file_path`.
     leaseHomes: (sessionKey, anchor) =>
       (leaseHomesStmt.all(sessionKey, anchor) as unknown as Array<{ file_path: string }>).map(
         (row) => row.file_path,
@@ -526,6 +529,8 @@ function dropServedState(store: HashStore, sessionKey: string, path: string): vo
     stmts.leaseDelete(sessionKey, path);
     stmts.metaDelete(sessionKey, path);
   };
+  // SAFETY: `isTransaction` is an internal `node:sqlite` field the public type omits; the read is
+  // SAFETY: a boolean guard, and a missing field leaves `undefined` (treated as not-in-transaction).
   const inTransaction = (store.db as unknown as { isTransaction?: boolean }).isTransaction === true;
   if (inTransaction) drop();
   else withStore(drop);
