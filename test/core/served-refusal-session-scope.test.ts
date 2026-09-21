@@ -108,6 +108,23 @@ describe("served-refusal tally — session scope (#132)", () => {
     // The least recently refused key is the head, and the head is what goes.
     expect(trackServedWriteRefusal(sessionKey, oldest, REFUSED_LINE)).toBe(1);
   });
+
+  it("rejects a NUL delimiter in a session key or a path (composite-key safety)", () => {
+    // The `\0` separator is enforced, never assumed: an input carrying it is refused, so two
+    // scopes can never fuse into one key and silently share a count.
+    expect(() =>
+      trackServedWriteRefusal("sess\0injected", "/tmp/132-nul.txt", REFUSED_LINE),
+    ).toThrow(TypeError);
+    expect(() =>
+      trackServedWriteRefusal("sess-nul", "/tmp/132\0injected.txt", REFUSED_LINE),
+    ).toThrow(/NUL/);
+    expect(() =>
+      trackServedEditRefusal("sess\0injected", "/tmp/132-nul.txt", "Ab3", "Cd4", REFUSED_LINE),
+    ).toThrow(TypeError);
+    expect(() => clearServedRefusals("sess-nul", "/tmp/132\0injected.txt")).toThrow(TypeError);
+    // A rejected scope inserts nothing: the tracker stays empty.
+    expect(_servedRefusalSize()).toBe(0);
+  });
 });
 
 describe("served-refusal tally — two sessions, one path, end to end (#132)", () => {

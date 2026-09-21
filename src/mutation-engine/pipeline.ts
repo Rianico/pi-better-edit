@@ -1107,6 +1107,9 @@ export async function apply(
       await undo.restore();
       throw error;
     }
+    // WHY: the clear side of the tally, separated from verification: the refusal count was
+    // WHY: recorded while the edit was still uncommitted, and only this committed write —
+    // WHY: bytes on disk — retires it, per session, so another session's tally stays its own.
     clearServedRefusals(sessionKey, file.absolutePath);
     // WHY: the noop-loop tracker clears only here, after the bytes are on disk, beside the
     // WHY: served-refusal tracker — the counters reflect committed reality. An edit that writes

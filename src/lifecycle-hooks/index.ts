@@ -209,6 +209,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         resultLineCount: deps.visLines(normalized).length,
         firstChangedLine: 1,
       });
+      // WHY: the clear side of the tally: this runs only after the write's bytes are on disk
+      // WHY: (the auto-read above re-served this session's rows), never on the pre-write
+      // WHY: verification, which must keep the count for a resubmission.
       try {
         clearServedRefusals(sessionKey, absolutePath);
       } catch {
