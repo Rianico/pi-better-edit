@@ -19,6 +19,7 @@
   <a href="#tools">Tools</a> •
   <a href="#comparison">Comparison</a> •
   <a href="#how-anchors-work">How Anchors Work</a> •
+  <a href="#upgrading-from-1x">Upgrading</a> •
   <a href="#development">Development</a> •
   <a href="#acknowledgments">Acknowledgments</a>
 </p>
@@ -423,6 +424,19 @@ from an older version, the previous `hash-store.json` is imported once and renam
 - Package renamed. This fork was renamed from `pi-hashline-edit-pro` to
   `pi-better-edit` (published earlier as `pi-hashline-edit-lsz`); the config directory
   moved to `~/.config/pi-better-edit`. An existing store is not migrated automatically.
+
+## Upgrading from 1.x
+
+2.0 retires the healing era. The heuristics that guessed a target for an ambiguous anchor are deleted, not deprecated — the guess was the bug ([ADR-0016](docs/adr/0016-content-addressed-line-identity-supersedes-healing.md)). Line identity is now an immutable `line_id` bound to the snapshot that was actually served, and lease lineage is the single span-verification authority ([ADR-0023](docs/adr/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md)).
+
+1.x had three codes — `E_STALE_RANGE`, `E_UNSERVED_RANGE`, `E_UNKNOWN` (unbracketed here on purpose: a bracketed code is one the tool emits today). Four things a 1.x prompt, harness, or habit can notice:
+
+- **`E_UNSERVED_RANGE` is retired.** A bound whose identity was retired while the surviving bound is live and unshifted is `[E_UNVERIFIED_RANGE]` ([ADR-0020](docs/adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md)), and the named window comes back as a fresh read. Grep your instructions for the old code.
+- **Stricter acceptance.** An interior that shifted under the same 3-char anchor, or a freed anchor re-used by a byte-identical line, is rejected (`[E_STALE_RANGE]`, `[E_TARGET_LOST]`) with the current range served. 1.x would have healed it — occasionally onto the wrong line.
+- **Rejections explain themselves.** `details.cause` carries the diagnosis (`retirement`, `tombstone`, `never-served`, `served-range staleness`), so a harness branches on a field instead of parsing prose.
+- **Applied mutations are warnings.** `[E_*]` is rejections only; a success with a caveat reports as `[W_*]` ([ADR-0021](docs/adr/0021-unified-error-and-warning-contract.md)). Served rows carry position and hash only — canon text no longer travels with a row.
+
+**Upgrading touches no project file.** The store (`HASH_STORE_VERSION` 6 → 7) migrates additively on open: columns and tables are added, nothing is dropped or rewritten, and a 1.x build can still open it afterward. Anchors served *before* the upgrade have no lease lineage, so the first edit addressed to them is rejected and its current range served — continue from those rows. Deleting the store stays a corruption last resort, never an upgrade step.
 
 ## Development
 
