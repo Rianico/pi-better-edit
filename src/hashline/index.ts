@@ -11,6 +11,7 @@ export {
   _lineHashesPure,
   initHasher,
   canon,
+  canonDigest,
   HashIdentity,
   defaultHashIdentity,
   type HashSnapshotIO,

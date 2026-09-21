@@ -2,8 +2,11 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findServedHashEcho, servedHashEchoDenial, registerWriteHook } from "../../src/write-hook";
-import { initHasher, lineHashes, canon } from "../../src/hashline";
-import { recordServed } from "../../src/served-session/index.js";
+import { initHasher, canonDigest } from "../../src/hashline";
+import { createSessionHandle, recordServed } from "../../src/served-session/index.js";
+import { loadHashStore } from "../../src/hash-store.js";
+import { readNormFile } from "../../src/file-reader.js";
+import { snapshotHashFor } from "../../src/snapshot-store";
 import { withTempDir } from "../support/fixtures";
 import { resolveTarget } from "../../src/fs-write";
 import { toCwd } from "../../src/paths";
@@ -27,8 +30,8 @@ function localIO() {
   };
 }
 
-function canonsForLines(lines: string[]): (string | null)[] {
-  return lines.map((line) => canon(line));
+function canonDigestsForLines(lines: string[]): (string | null)[] {
+  return lines.map((line) => canonDigest(line));
 }
 
 async function servedPreviewForFile(
@@ -37,18 +40,20 @@ async function servedPreviewForFile(
   sessionKey: string,
 ): Promise<string> {
   await initHasher();
-  const content = await readFile(path, "utf-8");
-  const hashes = await lineHashes(content, path);
+  const store = await loadHashStore();
+  const prepared = await readNormFile(path, cwd, { store });
   const { fmtRegion } = await import("../../src/hashline");
-  const lines = splitLines(content);
-  // WHY: the canon travels with the row (issue #149) — the write guard compares the submitted text
-  // WHY: against the canons this serve recorded, with no process-global hash->canon fallback.
-  const rows = hashes.map((hash, idx) => ({
-    position: idx,
-    hash,
-    canon: canon(lines[idx] ?? ""),
-  }));
-  await recordServed(sessionKey, await resolveTarget(path), rows);
+  const lines = splitLines(prepared.normalized);
+  const hashes = prepared.fileHashes;
+  // WHY: the guard's evidence is derived from the leases a serve grants (#151), so the fixture must
+  // WHY: serve through the real read seam — a mirror-only row records no canon and stays silent.
+  await createSessionHandle(sessionKey, prepared.absolutePath, store).recordEpoch({
+    rows: hashes.map((hash, position) => ({ position, hash })),
+    lineCount: hashes.length,
+    fullReadHashes: [...hashes],
+    contentHash: snapshotHashFor(prepared.normalized),
+    isFullRead: true,
+  });
   if (lines.length === 1 && lines[0] === "") {
     return `${hashes[0]}│`;
   }
@@ -58,24 +63,31 @@ async function servedPreviewForFile(
 describe("write served hash guard", () => {
   it("allows clean content and unrelated literal hash-like text", () => {
     const served: (string | null)[] = ["Ab3", "Cd4", null];
-    const canons = canonsForLines(["# Notes", "body", ""]);
-    expect(findServedHashEcho(splitLines("# Notes\nbody\n"), served, canons, 1)).toBeUndefined();
+    const canonDigests = canonDigestsForLines(["# Notes", "body", ""]);
     expect(
-      findServedHashEcho(splitLines("Zz9│literal protocol text\nbody\n"), served, canons, 1),
+      findServedHashEcho(splitLines("# Notes\nbody\n"), served, canonDigests, 1),
     ).toBeUndefined();
     expect(
-      findServedHashEcho(splitLines("prefix Ab3│is ordinary text\nbody\n"), served, canons, 1),
+      findServedHashEcho(splitLines("Zz9│literal protocol text\nbody\n"), served, canonDigests, 1),
+    ).toBeUndefined();
+    expect(
+      findServedHashEcho(
+        splitLines("prefix Ab3│is ordinary text\nbody\n"),
+        served,
+        canonDigests,
+        1,
+      ),
     ).toBeUndefined();
   });
 
   it("refuses a verbatim served row at any position", () => {
     const served: (string | null)[] = ["Ab3", "Cd4"];
-    const canons = canonsForLines(["# Notes", "body"]);
-    const hit = findServedHashEcho(splitLines("Ab3│# Notes\nbody\n"), served, canons, 1);
+    const canonDigests = canonDigestsForLines(["# Notes", "body"]);
+    const hit = findServedHashEcho(splitLines("Ab3│# Notes\nbody\n"), served, canonDigests, 1);
     expect(hit).toMatchObject({ line: 1, hash: "Ab3", servedLine: 1 });
     // served prefix with differing content stays silent
     expect(
-      findServedHashEcho(splitLines("Cd4│wrong line\nAb3│wrong line\n"), served, canons, 1),
+      findServedHashEcho(splitLines("Cd4│wrong line\nAb3│wrong line\n"), served, canonDigests, 1),
     ).toBeUndefined();
   });
 

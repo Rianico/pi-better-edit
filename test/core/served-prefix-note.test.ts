@@ -11,7 +11,7 @@ import {
   ANCHOR_PREFIX_REMEDY,
 } from "../../src/hashline/served-guard";
 import { initHasher, lineHashes } from "../../src/hashline";
-import { HASH_SEP, canon } from "../../src/hashline/hash-identity";
+import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
 
@@ -21,10 +21,10 @@ beforeAll(async () => {
   await initHasher();
 });
 
-function canonsFor(content: string): (string | null)[] {
+function canonDigestsFor(content: string): (string | null)[] {
   if (content === "") return [];
   const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
-  return lines.map((line) => canon(line));
+  return lines.map((line) => canonDigest(line));
 }
 
 describe("served prefix mismatch predicate", () => {
@@ -32,8 +32,13 @@ describe("served prefix mismatch predicate", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
-    const hits = findServedPrefixMismatches([`${hashes[1]}${HASH_SEP}CHANGED`], served, canons, 1);
+    const canonDigests = canonDigestsFor(content);
+    const hits = findServedPrefixMismatches(
+      [`${hashes[1]}${HASH_SEP}CHANGED`],
+      served,
+      canonDigests,
+      1,
+    );
     expect(hits).toHaveLength(1);
     expect(hits[0]).toMatchObject({ k: 1, anchor: hashes[1], servedLine: 2 });
   });
@@ -42,19 +47,21 @@ describe("served prefix mismatch predicate", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
-    expect(findServedPrefixMismatches([`${hashes[1]}${HASH_SEP}two`], served, canons, 1)).toEqual(
-      [],
-    );
+    const canonDigests = canonDigestsFor(content);
+    expect(
+      findServedPrefixMismatches([`${hashes[1]}${HASH_SEP}two`], served, canonDigests, 1),
+    ).toEqual([]);
   });
 
   it("stays silent for a never-served prefix", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     expect(hashes).not.toContain("Zz9");
-    expect(findServedPrefixMismatches([`Zz9${HASH_SEP}literal`], served, canons, 1)).toEqual([]);
+    expect(findServedPrefixMismatches([`Zz9${HASH_SEP}literal`], served, canonDigests, 1)).toEqual(
+      [],
+    );
   });
 
   it("stays silent without canon data", () => {
@@ -72,7 +79,7 @@ describe("applyEdit ambiguous tier", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}CHANGED-beta`],
@@ -80,7 +87,7 @@ describe("applyEdit ambiguous tier", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
     });
     expect(result.content).toBe(`alpha\n${hashes[1]}${HASH_SEP}CHANGED-beta\ngamma`);
     const notes = (result.warnings ?? []).filter((w) => w.startsWith("[MODEL]"));
@@ -98,7 +105,7 @@ describe("applyEdit ambiguous tier", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: ["plain replacement"],
@@ -106,7 +113,7 @@ describe("applyEdit ambiguous tier", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
     });
     expect(result.content).toBe("alpha\nplain replacement\ngamma");
     expect((result.warnings ?? []).filter((w) => w.startsWith("[MODEL]"))).toEqual([]);
@@ -116,7 +123,7 @@ describe("applyEdit ambiguous tier", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
@@ -125,7 +132,7 @@ describe("applyEdit ambiguous tier", () => {
       applyEdit(content, edit, undefined, hashes, {
         filePath: "a.txt",
         served,
-        servedCanons,
+        canonDigests,
       }),
     ).toThrow(/E_SUSPICIOUS_TEXT/);
   });

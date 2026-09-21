@@ -9,6 +9,7 @@ accepted — amends [ADR-0018](0018-region-scoped-rejection-serves.md) decision 
 Amends [ADR-0018 — Region-scoped rejection serves; a retired identity recovers by re-read](0018-region-scoped-rejection-serves.md)
 
 Amends [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md)
+Amended by [ADR-0023 — Lease lineage is the span verification authority; served canons retire](0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md) (decision 1: the canon no longer travels with the row)
 
 ## Context
 

@@ -193,16 +193,27 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
               servedLineNumber: 1,
               retiredAt: null,
             }
-          : anchor === "BBB"
+          : anchor === "m"
             ? {
-                lineId: 3,
+                lineId: 2,
                 canonHash: "0",
                 servedSnapshotHash: "C",
-                servedLineNumber: 3,
+                servedLineNumber: 2,
                 retiredAt: null,
               }
-            : undefined,
-      rebasedLineOf: (lineId: number) => (lineId === 1 ? 1 : lineId === 3 ? 3 : undefined),
+            : anchor === "BBB"
+              ? {
+                  lineId: 3,
+                  canonHash: "0",
+                  servedSnapshotHash: "C",
+                  servedLineNumber: 3,
+                  retiredAt: null,
+                }
+              : undefined,
+      // WHY: the fast path runs the whole-window identity gate (#151), so every served row of the
+      // WHY: span — interior included — must resolve through its own lease.
+      rebasedLineOf: (lineId: number) =>
+        lineId === 1 ? 1 : lineId === 2 ? 2 : lineId === 3 ? 3 : undefined,
     };
     const dupeLines = ["x", "y", "z"];
     const dupeHashes = _lineHashesPure(dupeLines.join("\n"));

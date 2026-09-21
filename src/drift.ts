@@ -2,7 +2,7 @@ import { SERVED_ROWS_CAP } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
 import { type ServedRow, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { servedPositionsOf } from "./hashline/served.js";
-import { canon } from "./hashline/hash-identity.js";
+import { canonDigest } from "./hashline/hash-identity.js";
 import { currentPositionOfDrifted } from "./served-session/drift-helpers.js";
 import { createSessionHandle } from "./served-session/session.js";
 const DRIFT_NOTICE_HEADING = "[USER] drift:";
@@ -20,9 +20,9 @@ export interface ComputeDriftInput {
   intervals?: ResolvedRange[];
   reported: Set<string>;
   cap?: number;
-  /** WHY: parallel to `served`, whitespace-stripped form at serve time.
+  /** WHY: canon digests parallel to `served`, derived from the served rows' leases.
    * Absent/empty preserves legacy hash-equality (existing tests, old DBs). */
-  servedCanons?: (string | null)[];
+  servedCanonDigests?: (string | null)[];
 }
 
 export interface DriftNoticeResult {
@@ -128,26 +128,27 @@ function isInSpans(p: number, spans: Array<{ from: number; to: number }>): boole
  * WHY: #68 hash-rotation vs content loss. Probing + tombstone growth reassign
  * distinct hashes to identical duplicate lines across sequential edits, so a
  * served hash missing from the result set may still survive under a fresh hash.
- * Suppress those (consume one matching canon outside the edited spans); report
- * only canon deficit. Absent/empty servedCanons keeps legacy hash-equality.
+ * Suppress those (consume one matching canon digest outside the edited spans); report
+ * only canon deficit. Absent/empty `servedCanonDigests` keeps legacy hash-equality.
  */
 function buildRotatedSurvivorCheck(
   input: ComputeDriftInput,
   intervals: Array<{ from: number; to: number; delta: number }>,
 ): RotatedSurvivorCheck {
-  const canons = input.servedCanons;
-  if (!canons || !canons.some((c) => c !== null)) return () => false;
+  const digests = input.servedCanonDigests;
+  if (!digests || !digests.some((c) => c !== null)) return () => false;
   const spans = currentEditedSpans(intervals);
   const remaining = new Map<string, number>();
   for (let i = 0; i < input.resultLines.length; i++) {
     if (isInSpans(i, spans)) continue;
-    const c = canon(input.resultLines[i] ?? "");
+    const c = canonDigest(input.resultLines[i] ?? "");
     remaining.set(c, (remaining.get(c) ?? 0) + 1);
   }
   return (_servedHash, servedPos) => {
-    // WHY: only the persisted, file-scoped canon at the served position counts. A hash->canon
-    // WHY: fallback is file-blind and a 3-char collision would silently suppress real drift (#149).
-    const c = canons[servedPos] ?? null;
+    // WHY: only the file-scoped canon digest the lease recorded at the served position counts. A
+    // WHY: hash->canon fallback is file-blind and a 3-char collision would silently suppress real
+    // WHY: drift (#149); the digest is derived, never persisted (#151).
+    const c = digests[servedPos] ?? null;
     if (c === null) return false;
     const left = remaining.get(c) ?? 0;
     if (left <= 0) return false;
@@ -330,24 +331,20 @@ export async function scanDrift(input: {
 }): Promise<string | undefined> {
   const handle = createSessionHandle(input.sessionKey, input.path);
   const reported = await handle.driftReported();
-  const servedCanons = await handle.loadCanons().catch(() => [] as (string | null)[]);
+  const servedCanonDigests = await handle.loadCanonDigests().catch(() => [] as (string | null)[]);
   const driftInput: ComputeDriftInput = {
     served: input.served,
     resultHashes: input.resultHashes,
     resultLines: input.resultLines,
     reported,
-    ...(servedCanons.length > 0 ? { servedCanons } : {}),
+    ...(servedCanonDigests.length > 0 ? { servedCanonDigests } : {}),
     ...(input.intervals ? { intervals: input.intervals } : {}),
     ...(input.range ? { range: input.range } : {}),
   };
   const result = computeDrift(driftInput);
   if (!result || result.allAlreadyReported) return result?.text;
   await handle.recordTruncated(
-    result.rows.map((row) => ({
-      position: row.position,
-      hash: row.hash,
-      canon: canon(row.content),
-    })),
+    result.rows.map((row) => ({ position: row.position, hash: row.hash })),
     input.resultLines.length,
     undefined,
     input.contentHash,

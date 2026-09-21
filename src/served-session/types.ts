@@ -8,12 +8,10 @@
 import type { ServedRow } from "../hashline/served.js";
 
 /**
- * WHY: `canon` travels with the row so the serve writer never needs a hash->canon lookup — a 3-char
- * WHY: hash is unique only within one file, so any process-wide map collides across files (#149).
- * WHY: Optional: a producer with no access to the file's lines records no canon and the position
- * WHY: degrades to hash-equality verification.
+ * SAFETY: one served row's fact for this (session, path) — no canon text: canon evidence is derived
+ * from the leases that carry it (`served_leases.canon_hash`), so nothing here duplicates it (#151).
  */
-export type ServedEntry = { position: number; hash: string | null; canon?: string | null };
+export type ServedEntry = { position: number; hash: string | null };
 
 export type ServeRecordPolicy = "live" | "preview";
 
@@ -37,8 +35,11 @@ export interface SessionHandle {
 
   /** SAFETY: Load served hashes for this (session,path). */
   load(): Promise<(string | null)[]>;
-  /** SAFETY: Load canons parallel to hashes. */
-  loadCanons(): Promise<(string | null)[]>;
+  /**
+   * SAFETY: canon digests parallel to `load()`, derived from the leases of the rows it names. A
+   * position whose anchor holds no lease reads `null`: no lease means no evidence (#151).
+   */
+  loadCanonDigests(): Promise<(string | null)[]>;
   /** SAFETY: Load epoch snapshotId. */
   loadEpochId(): Promise<string | undefined>;
   /** SAFETY: Load tombstone (retired hashes) for this epoch. */
@@ -77,12 +78,11 @@ export interface SessionHandle {
     lineCount?: number,
     contentHash?: string,
   ): Promise<void>;
-  /** SAFETY: Low-level full epoch record (used by read path for atomically persisting hashes+canons+snapshotId+tombstone). */
+  /** SAFETY: Low-level full epoch record (used by read path for atomically persisting hashes+snapshotId+tombstone). */
   recordEpoch(input: {
     rows: ServedEntry[];
     lineCount?: number;
     fullReadHashes?: readonly string[];
-    fullReadCanons?: readonly (string | null)[];
     snapshotId?: string;
     /** Committed `file_snapshots.snapshot_hash` of the content served; binds the leases granted. */
     contentHash?: string;

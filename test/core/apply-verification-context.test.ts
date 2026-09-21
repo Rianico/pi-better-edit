@@ -2,17 +2,17 @@ import { describe, expect, it, beforeAll } from "vitest";
 import { _lineHashesPure } from "../../src/hashline/hash";
 import { applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
-import { HASH_SEP, canon } from "../../src/hashline/hash-identity";
+import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import type { LeaseIdentityView, LeaseSpanSource, HEdit } from "../../src/hashline/resolve";
 
 beforeAll(async () => {
   await initHasher();
 });
 
-function canonsFor(content: string): (string | null)[] {
+function canonDigestsFor(content: string): (string | null)[] {
   const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
   if (content === "") return [];
-  return lines.map((line) => canon(line));
+  return lines.map((line) => canonDigest(line));
 }
 
 describe("applyEdit — verification descriptor (issue #115)", () => {
@@ -28,7 +28,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
       applyEdit(content, edit, undefined, hashes, {
         filePath: "a.txt",
         served,
-        servedCanons: canonsFor(content),
+        canonDigests: canonDigestsFor(content),
       }),
     ).toThrow(ServedHashEchoError);
   });
@@ -44,7 +44,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons: canonsFor(content),
+      canonDigests: canonDigestsFor(content),
     });
     expect(result.content).toBe("alpha\nNEW-beta\ngamma\ndelta");
   });
@@ -58,14 +58,14 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     const leases: Record<string, LeaseIdentityView> = {
       AAA: {
         lineId: 1,
-        canonHash: "z",
+        canonHash: canonDigest("z"),
         servedSnapshotHash: "S",
         servedLineNumber: 1,
         retiredAt: null,
       },
       BBB: {
         lineId: 2,
-        canonHash: "q",
+        canonHash: canonDigest("q"),
         servedSnapshotHash: "S",
         servedLineNumber: 2,
         retiredAt: null,
@@ -83,7 +83,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons: ["z", "q", null],
+      canonDigests: [canonDigest("z"), canonDigest("q"), null],
       identity,
     });
     expect(result.content).toBe("z\nplain\nAAA│BOOM");
@@ -96,14 +96,14 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
     const leases: Record<string, LeaseIdentityView> = {
       AAA: {
         lineId: 1,
-        canonHash: "z",
+        canonHash: canonDigest("z"),
         servedSnapshotHash: "S",
         servedLineNumber: 1,
         retiredAt: null,
       },
       BBB: {
         lineId: 2,
-        canonHash: "q",
+        canonHash: canonDigest("q"),
         servedSnapshotHash: "S",
         servedLineNumber: 2,
         retiredAt: null,
@@ -122,7 +122,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
       applyEdit(content, edit, undefined, hashes, {
         filePath: "a.txt",
         served,
-        servedCanons: ["z", "q", null],
+        canonDigests: [canonDigest("z"), canonDigest("q"), null],
         identity,
       }),
     ).toThrow(/\[E_SUSPICIOUS_TEXT\]/);

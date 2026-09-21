@@ -804,7 +804,7 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
     });
   });
 
-  it("recordEpoch full read clears tombstone and persists canons+snapshotId", async () => {
+  it("recordEpoch full read clears tombstone and persists snapshotId, never a canon", async () => {
     await withTempHome(async () => {
       const { createSessionHandle } = await import("../../src/served-session/session.js");
       const store = await loadHashStore();
@@ -819,16 +819,17 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
         ],
         lineCount: 2,
         fullReadHashes: ["bbb", "ccc"],
-        fullReadCanons: ["b", "c"],
         snapshotId: "v2|/p.ts|1|2|3|4",
       });
       expect(await h.loadTombstone()).toEqual(new Set());
-      expect(await h.loadCanons()).toEqual(["b", "c"]);
+      // WHY: no canon is stored anywhere (#151). A record that granted no lease reports no evidence,
+      // WHY: and the documented absence policy — silence, never a shape refusal — holds.
+      expect(await h.loadCanonDigests()).toEqual([]);
       expect(await h.loadEpochId()).toBe("v2|/p.ts|1|2|3|4");
     });
   });
 
-  it("recordEpoch partial keeps tombstone and merges canons via hash->canon map", async () => {
+  it("recordEpoch partial keeps tombstone and leaves the epoch id pinned", async () => {
     await withTempHome(async () => {
       const { createSessionHandle } = await import("../../src/served-session/session.js");
       const store = await loadHashStore();
@@ -840,7 +841,6 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
         ],
         lineCount: 2,
         fullReadHashes: ["aaa", "bbb"],
-        fullReadCanons: ["a", "b"],
         snapshotId: "snap-1",
         isFullRead: true,
       });
@@ -849,7 +849,6 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
         rows: [{ position: 0, hash: "ccc" }],
         lineCount: 2,
         fullReadHashes: ["ccc", "bbb"],
-        fullReadCanons: ["c", "b"],
         snapshotId: "snap-2",
         isFullRead: false,
       });

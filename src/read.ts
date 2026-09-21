@@ -4,7 +4,6 @@ import { Type } from "typebox";
 import { MAX_HASH_LINES } from "./hashline/index.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
-import { canon } from "./hashline/hash-identity.js";
 import { contentChecksum } from "./hashline/hasher.js";
 import { abortIf, isRec, normalizeFilePath } from "./utils.js";
 import { splitLines, visLines } from "./utils.js";
@@ -103,10 +102,6 @@ export function regRead(pi: ExtensionAPI): void {
       );
       const lineCount = visLines(prepared.normalized).length;
       const isFullRead = params.offset == null && params.limit == null && !prepared.truncation;
-      const lines = visLines(prepared.normalized);
-      const fileCanons: (string | null)[] = prepared.fileHashes.map((_, i) =>
-        canon(lines[i] ?? ""),
-      );
       let snapshotId: string | undefined;
       const contentHash = snapshotHashFor(prepared.normalized);
       try {
@@ -139,12 +134,12 @@ export function regRead(pi: ExtensionAPI): void {
         console.error("Failed to commit read-path snapshot materialization:", error);
       }
       // WHY: mirror-only — the leases already committed in the transaction above, so no
-      // WHY: `contentHash` is passed and no third transaction remains on the read path.
+      // WHY: `contentHash` is passed and no third transaction remains on the read path. Canon
+      // WHY: evidence needs no write at all: it is derived from those leases (#151).
       await session.recordEpoch({
         rows: prepared.served,
         lineCount,
         fullReadHashes: prepared.fileHashes,
-        fullReadCanons: fileCanons,
         snapshotId: isFullRead ? snapshotId : undefined,
         isFullRead,
       });

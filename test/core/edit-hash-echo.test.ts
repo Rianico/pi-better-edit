@@ -2,17 +2,17 @@ import { describe, expect, it, beforeAll } from "vitest";
 import { _lineHashesPure } from "../../src/hashline/hash";
 import { findServedHashEcho, applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
-import { HASH_SEP, canon } from "../../src/hashline/hash-identity";
+import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import type { LeaseIdentityView, LeaseSpanSource, HEdit } from "../../src/hashline/resolve";
 
 beforeAll(async () => {
   await initHasher();
 });
 
-function canonsFor(content: string): (string | null)[] {
+function canonDigestsFor(content: string): (string | null)[] {
   const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
   if (content === "") return [];
-  return lines.map((line) => canon(line));
+  return lines.map((line) => canonDigest(line));
 }
 
 describe("findServedHashEcho — evidence, never shape", () => {
@@ -20,9 +20,9 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     // hash for line 1 placed at candidate 1 with its served content verbatim
-    const hit = findServedHashEcho([`${hashes[0]}${HASH_SEP}one`], served, canons, 1);
+    const hit = findServedHashEcho([`${hashes[0]}${HASH_SEP}one`], served, canonDigests, 1);
     expect(hit).toMatchObject({ k: 1, hash: hashes[0], servedLine: 1 });
   });
 
@@ -30,12 +30,12 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     // rows for lines 1-2 reproduced verbatim, submitted as a chain
     const hit = findServedHashEcho(
       [`${hashes[0]}${HASH_SEP}one`, `${hashes[1]}${HASH_SEP}two`],
       served,
-      canons,
+      canonDigests,
       1,
     );
     expect(hit).toMatchObject({ k: 1, hash: hashes[0], servedLine: 1 });
@@ -45,9 +45,9 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     // line-1 row submitted where line-2 content is expected: position-agnostic
-    const hit = findServedHashEcho([`${hashes[0]}${HASH_SEP}one`], served, canons, 2);
+    const hit = findServedHashEcho([`${hashes[0]}${HASH_SEP}one`], served, canonDigests, 2);
     expect(hit).toMatchObject({ k: 1, hash: hashes[0], servedLine: 1 });
   });
 
@@ -55,9 +55,14 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const content = "one\ntwo";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     for (const marker of ["+", "-", " "]) {
-      const hit = findServedHashEcho([`${marker}${hashes[1]}${HASH_SEP}two`], served, canons, 1);
+      const hit = findServedHashEcho(
+        [`${marker}${hashes[1]}${HASH_SEP}two`],
+        served,
+        canonDigests,
+        1,
+      );
       expect(hit).toMatchObject({ hash: hashes[1], servedLine: 2 });
     }
   });
@@ -66,8 +71,8 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
-    const hit = findServedHashEcho([`${hashes[1]}${HASH_SEP}CHANGED`], served, canons, 1);
+    const canonDigests = canonDigestsFor(content);
+    const hit = findServedHashEcho([`${hashes[1]}${HASH_SEP}CHANGED`], served, canonDigests, 1);
     expect(hit).toBeUndefined();
   });
 
@@ -90,16 +95,16 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const canons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     expect(hashes).not.toContain("Zz9");
-    const hit = findServedHashEcho([`Zz9${HASH_SEP}literal`], served, canons, 1);
+    const hit = findServedHashEcho([`Zz9${HASH_SEP}literal`], served, canonDigests, 1);
     expect(hit).toBeUndefined();
   });
 
   it("returns undefined for empty candidates", () => {
     const hashes = _lineHashesPure("a\nb\nc");
     const served: (string | null)[] = [...hashes];
-    expect(findServedHashEcho([], served, canonsFor("a\nb\nc"), 2)).toBeUndefined();
+    expect(findServedHashEcho([], served, canonDigestsFor("a\nb\nc"), 2)).toBeUndefined();
   });
 });
 
@@ -108,16 +113,16 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
     };
     expect(() =>
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, canonDigests }),
     ).toThrow(ServedHashEchoError);
     expect(() =>
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, canonDigests }),
     ).toThrow(/\[E_SUSPICIOUS_TEXT\]/);
   });
 
@@ -125,7 +130,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const editDenied = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
@@ -134,7 +139,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
       applyEdit(content, editDenied, undefined, hashes, {
         filePath: "a.txt",
         served,
-        servedCanons,
+        canonDigests,
       }),
     ).toThrow(/E_SUSPICIOUS_TEXT/);
     const editClean = {
@@ -144,7 +149,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const result = applyEdit(content, editClean, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
     });
     expect(result.content).toBe("alpha\nNEW-beta\ngamma\ndelta");
   });
@@ -153,7 +158,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}CHANGED-beta`],
@@ -161,7 +166,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
     });
     expect(result.content).toBe(`alpha\n${hashes[1]}${HASH_SEP}CHANGED-beta\ngamma`);
   });
@@ -170,14 +175,14 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}two`],
     };
     const original = content;
     try {
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons });
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, canonDigests });
     } catch (e) {
       expect((e as Error).message).toMatch(/E_SUSPICIOUS_TEXT/);
     }
@@ -188,13 +193,13 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[2]! }] as any,
       content_lines: ["ok", `${hashes[2]}${HASH_SEP}three`],
     };
     try {
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons });
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, canonDigests });
       expect.unreachable();
     } catch (e) {
       const msg = (e as Error).message;
@@ -214,13 +219,13 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
     };
     expect(() =>
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, canonDigests }),
     ).toThrow(/E_SUSPICIOUS_TEXT/);
   });
 
@@ -240,7 +245,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
@@ -248,7 +253,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
       mode: "literal",
     });
     expect(result.content).toBe(`alpha\n${hashes[1]}${HASH_SEP}beta\ngamma`);
@@ -260,13 +265,13 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[2]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
     };
     expect(() =>
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, canonDigests }),
     ).toThrow(/\[E_SUSPICIOUS_TEXT\]/);
   });
 });
@@ -278,14 +283,14 @@ describe("applyEdit — rebased served check stays evidence-only", () => {
   const leases: Record<string, LeaseIdentityView> = {
     AAA: {
       lineId: 1,
-      canonHash: "z",
+      canonHash: canonDigest("z"),
       servedSnapshotHash: "S",
       servedLineNumber: 1,
       retiredAt: null,
     },
     BBB: {
       lineId: 2,
-      canonHash: "q",
+      canonHash: canonDigest("q"),
       servedSnapshotHash: "S",
       servedLineNumber: 2,
       retiredAt: null,
@@ -303,12 +308,12 @@ describe("applyEdit — rebased served check stays evidence-only", () => {
   const applyRebased = (
     edit: HEdit,
     mirror: (string | null)[] = served,
-    canons: (string | null)[] = ["z", "q", null],
+    canonDigests: (string | null)[] = [canonDigest("z"), canonDigest("q"), null],
   ) =>
     applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served: mirror,
-      servedCanons: canons,
+      canonDigests: canonDigests,
       identity: rebasedSource,
     });
 

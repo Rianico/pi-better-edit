@@ -1,10 +1,10 @@
 import { stat } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
-import { contentChecksum, xxh32 } from "../hashline/hasher.js";
+import { contentChecksum } from "../hashline/hasher.js";
 import {
   isValidHashList,
   CANON_VERSION,
-  canon,
+  canonDigest,
   setDefaultHashSnapshotIO,
   type HashSnapshotIO,
   type HashSnapshotUpsertOptions,
@@ -140,15 +140,18 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
   );
   return {
     findSnapshot: (...params) => findStmt.get(...params) as SnapshotRef | undefined,
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `anchor`.
     lineageAnchors: (...params) => lineageStmt.all(...params) as unknown as { anchor: string }[],
     latestSnapshot: (...params) =>
       latestSnapshotStmt.get(...params) as { snapshot_id: number } | undefined,
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     lineageIdentities: (...params) =>
       lineageIdentitiesStmt.all(...params) as unknown as {
         line_number: number;
         line_id: number;
         canon_hash: string;
       }[],
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `path`.
     allPaths: () => allPathsStmt.all() as unknown as { path: string }[],
     deleteSnapshot: (snapshotId) => deleteSnapshotStmt.run(snapshotId),
     deleteByPath: (path) => {
@@ -227,10 +230,6 @@ export function positionsByIdentity(
 
 function cacheKey(checksum: string): string {
   return `${CANON_VERSION}:${checksum}`;
-}
-
-function canonHashOf(line: string): string {
-  return String(xxh32(canon(line)));
 }
 
 export function getSnapshot(
@@ -388,7 +387,7 @@ function pairAgainstLatest(store: HashStore, path: string, lines: string[]): Inh
   }));
   const currLines: LineDescriptor[] = lines.map((line, index) => ({
     lineNumber: index + 1,
-    canonHash: canonHashOf(line),
+    canonHash: canonDigest(line),
   }));
   const byLineNumber = new Map(previous.map((row) => [row.line_number, row.line_id]));
   for (const [prevLine, currLine] of pairSnapshots(prevLines, currLines)) {
@@ -524,7 +523,7 @@ function materializeSnapshot(
           insertedId,
           lineNumber,
           lineId,
-          canonHashOf(lines[i] ?? ""),
+          canonDigest(lines[i] ?? ""),
           hashes[i]!,
         );
       }

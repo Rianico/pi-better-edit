@@ -9,7 +9,7 @@ import {
   ANCHOR_PREFIX_REMEDY,
 } from "../../src/hashline/served-guard";
 import { initHasher } from "../../src/hashline";
-import { HASH_SEP, canon } from "../../src/hashline/hash-identity";
+import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import { EDIT_GUIDELINES } from "../../src/payload-contract.js";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";
 import { lineHashes } from "../../src/hashline";
@@ -22,10 +22,10 @@ beforeAll(async () => {
   await initHasher();
 });
 
-function canonsFor(content: string): (string | null)[] {
+function canonDigestsFor(content: string): (string | null)[] {
   if (content === "") return [];
   const lines = content.endsWith("\n") ? content.slice(0, -1).split("\n") : content.split("\n");
-  return lines.map((line) => canon(line));
+  return lines.map((line) => canonDigest(line));
 }
 
 /** Local hint detector for rendered pipeline warnings (test-only).
@@ -59,7 +59,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     for (const anchor of ["AAA", "BBB", "CCC"]) expect(hashes).not.toContain(anchor);
     const submitted = [`AAA${HASH_SEP}x`, `BBB${HASH_SEP}y`, `CCC${HASH_SEP}z`];
     const edit = {
@@ -69,7 +69,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
     });
     expect(result.content).toBe(`alpha\n${submitted.join("\n")}\ngamma`);
     expect(result.neverServedCount).toBe(3);
@@ -80,7 +80,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     expect(hashes).not.toContain("ZZZ");
     const submitted = `ZZZ${HASH_SEP}alpha`;
     const edit = {
@@ -90,7 +90,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
     });
     expect(result.content).toBe(`alpha\n${submitted}\ngamma`);
     expect(result.neverServedCount).toBe(1);
@@ -101,13 +101,13 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
     };
     expect(() =>
-      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, servedCanons }),
+      applyEdit(content, edit, undefined, hashes, { filePath: "a.txt", served, canonDigests }),
     ).toThrow(/E_SUSPICIOUS_TEXT/);
   });
 
@@ -115,7 +115,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
@@ -123,7 +123,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
       mode: "literal",
     });
     expect(result.content).toBe(`alpha\n${hashes[1]}${HASH_SEP}beta\ngamma`);
@@ -262,7 +262,7 @@ describe("noop edit carries no never-served hint", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const servedCanons = canonsFor(content);
+    const canonDigests = canonDigestsFor(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: ["beta"],
@@ -270,7 +270,7 @@ describe("noop edit carries no never-served hint", () => {
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
       served,
-      servedCanons,
+      canonDigests,
     });
     expect(result.content).toBe(content);
     expect(result.neverServedCount ?? 0).toBe(0);

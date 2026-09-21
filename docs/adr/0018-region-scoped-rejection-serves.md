@@ -14,6 +14,8 @@ Amended by [ADR-0021 — Unified error and warning contract: the accepted record
 
 Amended by [ADR-0022 — Served canons are file-scoped; `[E_STALE_RANGE]` serves a fresh read](0022-file-scoped-canons-and-fresh-read-stale-range.md)
 
+Amended by [ADR-0023 — Lease lineage is the span verification authority; served canons retire](0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md)
+
 ## Context
 
 ADR-0001 founded reject-and-serve: a rejection carries **fresh range content**, its rows **count as serves**, and "the model is never asked to supply verification data or to re-read". The reason is structural, not an optimization — anchors are content-derived, so an external write invalidates the model's entire address vocabulary for that region, and the tool re-mints anchors rather than spending a read. ADR-0016 then layered immutable `line_id`s and leases on those rows and banned content resolution for edits.

@@ -222,19 +222,21 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     // Duplicate canon: `uniqueAnchorLine` cannot place "AAA", yet both leases were served from the
     // snapshot on disk, so the spec predicate (S_from === C ∧ S_to === C ∧ S_from === S_to) holds.
     // The non-spec `=== content` clause used to route this off the fast path into a fail-closed
-    // rebase rejection (spec §3.5).
+    // rebase rejection (spec §3.5). The interior line is leased too (#151): the fast path runs the
+    // same whole-window identity gate, so an interior row the session holds no lease for fails closed.
     const src = source({
       leases: {
         AAA: lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 }),
+        m2: lease({ lineId: 2, servedSnapshotHash: "C", servedLineNumber: 2 }),
         BBB: lease({ lineId: 3, servedSnapshotHash: "C", servedLineNumber: 3 }),
       },
-      positions: { 1: 1, 3: 3 },
+      positions: { 1: 1, 2: 2, 3: 3 },
       currentSnapshotHash: "C",
     });
     const result = resolveLeasedEdit({
       edit,
       snapshot: { fileHashes: ["AAA", "AAA", "BBB"], fileLines: ["a", "a", "b"] },
-      served: ["AAA", "AAA", "BBB"],
+      served: ["AAA", "m2", "BBB"],
       source: src,
     });
     expect(result.status).toBe("fast");
@@ -392,22 +394,25 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     ).toThrow(/E_STALE_RANGE/);
   });
 
-  it("heals reversed rebased anchors and reports the swap for narration", () => {
+  it("heals reversed anchors on the fast path and reports the swap for narration", () => {
     // Anchors carry no order: reversal is a property of the resolved lines of the
     // `anchor_from`/`anchor_to` slot pair, so the lease path swaps the lines and
     // returns the heal for the caller to narrate as `[W_REVERSED_ANCHORS]`.
+    // WHY: the served window is the leases' own record — the served snapshot held the two anchors
+    // WHY: the other way round, so the identity gate runs over the whole window the heal names.
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 }),
+        AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 3 }),
+        Q: lease({ lineId: 3, servedSnapshotHash: "S", servedLineNumber: 2 }),
+        BBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 1 }),
       },
-      positions: { 1: 3, 2: 1 },
+      positions: { 1: 3, 2: 1, 3: 2 },
       currentSnapshotHash: "S",
     });
     const result = resolveLeasedEdit({
       edit,
       snapshot: { fileHashes: ["BBB", "Q", "AAA"], fileLines: ["b", "q", "a"] },
-      served: ["AAA", "BBB"],
+      served: ["BBB", "Q", "AAA"],
       source: src,
     });
     expect(result.status).toBe("fast");
@@ -449,19 +454,22 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
   });
 
   it("heals a lease-resolved reversal and narrates [USER] [W_REVERSED_ANCHORS]", () => {
+    // WHY: the served snapshot held the two anchors in the opposite order (#151): the leases name
+    // WHY: those served window rows, and the identity gate accepts the healed rigid remap.
     const crossed: LeaseSpanSource = {
       currentSnapshotHash: "S",
       leaseFor: (anchor) =>
         anchor === hashes[0]
-          ? lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 })
+          ? lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 2 })
           : anchor === hashes[1]
-            ? lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 })
+            ? lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 1 })
             : undefined,
       rebasedLineOf: (lineId) => (lineId === 1 ? 2 : lineId === 2 ? 1 : undefined),
     };
+    const crossedServed: (string | null)[] = [hashes[1]!, hashes[0]!, hashes[2]!];
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
-      served,
+      served: crossedServed,
       identity: crossed,
     });
     expect(result.content).toBe("X\ngamma");
@@ -628,9 +636,9 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
     expect(err.code).toBe("E_STALE_RANGE");
     expect(err.firstOffendingLine).toBe(2);
     expect(err.servedRows).toEqual([
-      { position: 0, hash: hashes[0], canon: "alpha" },
-      { position: 1, hash: hashes[1], canon: "beta" },
-      { position: 2, hash: hashes[2], canon: "gamma" },
+      { position: 0, hash: hashes[0] },
+      { position: 1, hash: hashes[1] },
+      { position: 2, hash: hashes[2] },
     ]);
     // WHY: the rows are the current on-disk range, so they are served as a fresh read with no
     // WHY: blind-retry mandate (issue #149).

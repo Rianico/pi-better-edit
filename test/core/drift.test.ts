@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { computeDrift } from "../../src/drift";
+import { canonDigest } from "../../src/hashline/hash-identity.js";
 
 describe("computeDrift", () => {
   it("returns undefined when nothing drifted outside the range", () => {
@@ -331,7 +332,7 @@ describe("computeDrift", () => {
   it("suppresses hash-rotated duplicates whose canon survives (#68)", () => {
     const result = computeDrift({
       served: ["h00", "h01", "h02", "h03"],
-      servedCanons: ["a", "b", "c", "c"],
+      servedCanonDigests: [canonDigest("a"), canonDigest("b"), canonDigest("c"), canonDigest("c")],
       resultHashes: ["h00", "X01", "X02", "X03"],
       resultLines: ["a", "b", "c", "c"],
       range: {
@@ -349,7 +350,7 @@ describe("computeDrift", () => {
   it("still drifts on true canon deficit (#68)", () => {
     const result = computeDrift({
       served: ["h00", "h01", "h02", "h03"],
-      servedCanons: ["a", "b", "c", "c"],
+      servedCanonDigests: [canonDigest("a"), canonDigest("b"), canonDigest("c"), canonDigest("c")],
       resultHashes: ["h00", "X01", "X02"],
       resultLines: ["a", "b", "c"],
       range: {
@@ -368,7 +369,7 @@ describe("computeDrift", () => {
   it("stays silent on whitespace-only reformat (ADR-0005, #68)", () => {
     const result = computeDrift({
       served: ["h00", "h01"],
-      servedCanons: ["a", "b"],
+      servedCanonDigests: [canonDigest("a"), canonDigest("b")],
       resultHashes: ["h00", "X01"],
       resultLines: ["a", "b  "],
       range: {

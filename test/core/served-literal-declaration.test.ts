@@ -242,7 +242,7 @@ describe("write served-row gate with declaration", () => {
       const { readFile: rf } = await import("node:fs/promises");
       const path = join(cwd, "notes.md");
       await writeFile(path, "one\ntwo\n", "utf-8");
-      // Use the read tool to serve real rows (populates canons)
+      // Use the read tool to serve real rows (grants the leases canon evidence is derived from)
       const { getTool } = setupIntegrationTest(cwd);
       const rTool = getTool("read");
       const eCtx = { cwd, sessionManager: { getSessionId: () => "sess-w" } } as any;

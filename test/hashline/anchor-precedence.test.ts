@@ -5,6 +5,7 @@ import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import { ServedVerification } from "../../src/hashline/served-verification";
 import { DomainError } from "../../src/domain-errors.js";
 import { initHasher } from "../../src/hashline/hasher";
+import { canonDigest } from "../../src/hashline/hash-identity.js";
 
 beforeAll(async () => {
   await initHasher();
@@ -46,7 +47,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
         fileLines: ["ALPHA", "BETA"],
         filePath: "a.py",
         tombstone: new Set(["AAA"]),
-        servedCanons: ["alpha", "beta"],
+        canonDigests: [canonDigest("alpha"), canonDigest("beta")],
       });
     } catch (error) {
       caught = error;
