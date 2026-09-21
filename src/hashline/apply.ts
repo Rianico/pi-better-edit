@@ -286,10 +286,10 @@ export function applyEdit(
   if (served) {
     // WHY: evidence-only gate (ADR-0009 revision): one position-agnostic scan of
     // WHY: the lines that will be written (`resolved.content_lines`) against the
-    // WHY: served mirror with its canon mirror. Nothing rewrites `content_lines`
+    // WHY: served mirror with its canon digests. Nothing rewrites `content_lines`
     // WHY: between `prepareEdit`/`resolveEdit` and the write, so one view suffices.
     // WHY: No canon data means no evidence, so the scan stays silent — never a shape refusal.
-    // WHY: `leaseRebased` needs no separate current-anchor scan: identity lives in the
+    // WHY: A lease-resolved span needs no separate current-anchor scan: identity lives in the
     // WHY: lease seam, and the served hash echo condition only names served anchors.
     const digests = canonDigests ?? [];
     // WHY: the scan input names that one view explicitly, so a future stage
@@ -385,8 +385,9 @@ export function applyEdit(
   const changed = changedRange(content, result);
 
   // WHY: middle tier beside the gate above: a replacement line opening with a
-  // WHY: served anchor whose remainder canon matches none of the canons served
-  // WHY: for that anchor. The bytes are already assembled as-is; the note only
+  // WHY: served anchor whose remainder canon digest matches none of the digests the
+  // WHY: leases recorded for that anchor's served line. The bytes are already assembled as-is; the
+  // WHY: note only
   // WHY: informs the model channel via the warnings seam (rendered by warnBlock),
   // WHY: never alters bytes, never blocks, keeps no state, fires per line.
   // WHY: soft-hint tier beside it: replacement lines opening with an anchor-shaped
