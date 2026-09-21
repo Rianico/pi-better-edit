@@ -6,6 +6,8 @@ Date: 2026-09-12
 
 accepted; amended by ADR-0018 (recovery clause); supersedes [ADR-0008](0008-orphaned-serve-healing.md) (orphaned serves: eager heal and content-disambiguated verification) in full, including its `ServedVerification` deepening amendment.
 
+Amended by [ADR-0023 — Lease lineage is the span verification authority; served canons retire](0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md)
+
 ## Context
 
 ADR-0008 kept an unresolvable anchor usable: `patchServed` nulled the stale slot eagerly and `verifyServedRange` enumerated content-matching candidate spans, so an external shift silently relocated the model's anchor to whatever line currently carried the same content. That is exactly the upstream P0: after `f1` was deleted from `small.cpp`, the surviving `f2` guard received the freed three-character anchor, and an edit addressed to the deleted `f1` line was healed onto `f2` — a silent miswrite into code the model never read. Content equality cannot disambiguate two byte-identical lines, and no scan over the current file can tell "the line moved" from "a twin now owns the anchor".

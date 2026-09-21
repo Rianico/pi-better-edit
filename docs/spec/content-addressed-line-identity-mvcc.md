@@ -614,9 +614,10 @@ export function pairSnapshots(
                      ▼ S_from === C && S_to === C && S_from === S_to       ▼ Any S !== C || S_from !== S_to
                  FAST PATH (Uniform Snapshot)                          ON-DEMAND REBASE (Mixed Snapshots / Drift):
              Validate Span Contiguity                                  BEGIN IMMEDIATE:
-             in served/servedCanons                                    1. Materialize C if needed
-                     │                                                 2. Query line_lineage(C) for line_ids
-             ┌───────┴───────┐                                         3. Rebase line coordinates to s'
+             in served_leases over the                                  1. Materialize C if needed
+             whole served window                                       2. Query line_lineage(C) for line_ids
+                     │                                                 3. Rebase line coordinates to s'
+             ┌───────┴───────┐
              ▼ Valid         ▼ Torn/Never-Served                                   │
          APPLY EDIT      Throw [E_STALE_RANGE]                         Are leased line_ids in S_current?
                                                                                    │
@@ -638,12 +639,14 @@ export function pairSnapshots(
 When an edit spans multiple anchors, each anchor carries its own `served_snapshot_hash`. In incremental sessions (e.g. following `recordDiff` or partial re-serves), `anchor_from` and `anchor_to` may originate from different snapshots.
 An edit qualifies for the $O(1)$ fast path (direct coordinate application using the served buffer) **if and only if**:
 $$\text{lease}_{from}.\text{served\_snapshot\_hash} == C \quad \land \quad \text{lease}_{to}.\text{served\_snapshot\_hash} == C \quad \land \quad \text{lease}_{from}.\text{served\_snapshot\_hash} == \text{lease}_{to}.\text{served\_snapshot\_hash}$$
-If any anchor originates from a different snapshot, or disk content has drifted ($S \neq C$), the edit **MUST** execute the Dynamic Rebase Path through `line_lineage` to resolve rebased coordinates $s'$ for each leased `line_id`. This prevents mixed-snapshot spans from bypassing per-line identity verification.
+If any anchor originates from a different snapshot, or disk content has drifted ($S \neq C$), the edit **MUST** execute the Dynamic Rebase Path through `line_lineage` to resolve rebased coordinates $s'$ for each leased `line_id`.
+
+The iff selects the coordinate space, never the verification: the fast path is the rigid remap whose rebased coordinates happen to equal the served ones ($rebasedStart = servedStart \land rebasedEnd = servedEnd$), so **both** paths run the same whole-window identity gate in `src/hashline/served-verification.ts` (`verifyRebasedSpan`) before any write. For every row $k$ of the served window the gate requires a served mirror row, a lease for the anchor it names, `retired_at IS NULL`, and `rebasedLineOf(lease.line\_id) = rebasedStart + k$. A mixed-snapshot span therefore cannot bypass per-line identity verification: the gate rejects it on the interior row whose lease is retired or whose `line_id` no longer lives at its expected coordinate, whether or not the current content happens to present the same 3-char anchor.
 
 | Failure Condition | Seam Responsible | Output Error Code | Recovery Action |
 | :--- | :--- | :--- | :--- |
 | Anchor not present in `served_leases` | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_STALE_ANCHOR]` | Echoes current range; model retries |
-| Target span contains unread interior lines | `served-verification.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes unread range; model retries with those rows |
+| Target span contains unread interior lines, an unleased interior anchor, or an interior lease retired / moved | `served-verification.ts` (`verifyRebasedSpan`, both paths) | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries with those rows |
 | Leased `line_id` deleted or retired (Probe `E`, `A`) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_UNVERIFIED_RANGE]` (survivor live and unshifted: fresh read to decide from) or `[MODEL] [E_TARGET_LOST]` (otherwise: read and re-target) | Serves the named window or nothing |
 | External insert strictly inside span (Probe `J`) | `served-verification.ts` | `[MODEL] [E_STALE_RANGE]` | Echoes current range; model retries |
 | External swap/reorder of code blocks (Probe `K`) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`, stale branch — both bounds retired) | `[MODEL] [E_TARGET_LOST]` | No rows; prose names the previously served position | Read and re-target |
@@ -653,11 +656,11 @@ If any anchor originates from a different snapshot, or disk content has drifted 
 | Inverted anchors (`anchor_from` after `anchor_to`) | `resolve.ts` | `[MODEL] [E_REVERSED_ANCHORS]` | Heals or rejects reversed anchors |
 | Dangling lease (snapshot evicted by vacuum) | `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`) | `[MODEL] [E_UNVERIFIED_RANGE]` or `[MODEL] [E_TARGET_LOST]` (boundary rule) | Serves the named window or nothing |
 
-**Tombstone's two live jobs.** `tombstone` is never a lease state and never a second identity authority — ADR-0017 explicitly rejected that; `tryHealOrphanedSpan`, `removedByContent` and epoch/`strictPos` are retired (§3.3). Its first job is the hash-allocation guard: `src/hashline/hash-identity.ts:202-209` (`lineHashesPure`) and `:348-349` (`mapStableHashes`) mark every tombstoned hash used, so a freed anchor never re-binds for the session (plumbed via `src/hashline/hash.ts:105-134`, stored as `served.retired` in `src/served-session/session.ts:804-815`). Its second job is the verification signal: `src/hashline/served-verification.ts:497-518` rejects a tombstoned boundary hash as `[E_UNVERIFIED_RANGE]` (fresh read, `details.cause: "tombstone"`), and `:566-587` rejects a tombstoned interior as `[E_STALE_RANGE]` (retry, same cause).
+**Tombstone's two live jobs.** `tombstone` is never a lease state and never a second identity authority — ADR-0017 explicitly rejected that; `tryHealOrphanedSpan`, `removedByContent` and epoch/`strictPos` are retired (§3.3). Its first job is the hash-allocation guard: `src/hashline/hash-identity.ts:202-209` (`lineHashesPure`) and `:348-349` (`mapStableHashes`) mark every tombstoned hash used, so a freed anchor never re-binds for the session (plumbed via `src/hashline/hash.ts:105-134`, stored as `served.retired` in `src/served-session/session.ts:804-815`). Its second job is the verification signal, and it is now confined to the library-level seam: `src/hashline/served-verification.ts` rejects a tombstoned boundary hash as `[E_UNVERIFIED_RANGE]` (fresh read, `details.cause: "tombstone"`) and a tombstoned interior as `[E_STALE_RANGE]` (retry, same cause) only for a caller that presents a served mirror and **no** lease source. A session edit resolves every span through `served_leases`, where a retired lease supersedes the tombstone with `details.cause: "retirement"` (issue #151).
 
 **Rejection payloads carry `details.cause`.** Every range-family producer emits it as a user-facing diagnosis — never the model remedy, the code alone selects that (`src/mutation-engine/engine.ts:35-47` preserves it onto the failure). As built (`src/hashline/served-verification.ts:36-44`): the `stale` branch reports `retirement` for both its codes (`src/hashline/lease-resolve.ts:216-230`); the tombstone checks report `tombstone` (`served-verification.ts:512,582`); an unleased anchor reports `never-served` (`lease-resolve.ts:130`), as do a never-served interior (`served-verification.ts:734`) and an unplaceable bound (`:790`); drift, length and hash mismatches report `served-range staleness` (`:356,393,561,748,761`); a content-path mismatch reports `anchor staleness` (`src/hashline/apply.ts:266`). `served span` stays a reserved glossary value with no current producer.
 
-Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`, `:148-231`); `valEdit` (`src/hashline/resolve.ts:448-497`) is the pure content-resolution seam for callers with no served mirror and no lease source.
+Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLeasedEdit`, `:148-231`); `valEdit` (`src/hashline/resolve.ts:448-497`) is the pure content-resolution seam for callers with no served mirror and no lease source. Only that library-level seam still reads `verifyServedRange` (`src/hashline/served-verification.ts`) — its mirror-vs-mirror decision table, including the canon-digest and tombstone tiers, is retired from the leased edit path (issue #151).
 
 ---
 
