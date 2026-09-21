@@ -1,6 +1,7 @@
 import type { ServedRow } from "./hashline/served.js";
+import { canon } from "./hashline/hash-identity.js";
 import { genDiff } from "./edit-diff.js";
-import { visLines, clipLine } from "./utils.js";
+import { visLines, clipLine, splitLines } from "./utils.js";
 
 export type EditDetails = {
   path?: string;
@@ -212,9 +213,16 @@ export function buildChanged(input: SuccessInput): TResult {
     addedLines,
     removedLines,
   });
+  // WHY: each dense row carries its own line's canon (issue #149): the serve writer must never look
+  // WHY: a hash up in a file-blind map, or a 3-char collision persists another file's content here.
+  const servedLines = splitLines(result);
   const denseServedRows: typeof diffResult.servedRows = [];
   for (let i = 0; i < resultHashes.length; i++) {
-    denseServedRows.push({ position: i, hash: resultHashes[i]! });
+    denseServedRows.push({
+      position: i,
+      hash: resultHashes[i]!,
+      canon: canon(servedLines[i] ?? ""),
+    });
   }
 
   return {
@@ -300,9 +308,15 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
   for (const s of appliedFiles) {
     const diffResult = genDiff(s.originalNormalized, s.result, 1, s.resultHashes, s.originalHashes);
     diffParts.push(`--- ${s.path} ---\n${diffResult.diff}`);
+    // WHY: canon travels with the row — see `buildChanged` (issue #149).
+    const servedLines = splitLines(s.result);
     const denseRows: typeof diffResult.servedRows = [];
     for (let i = 0; i < s.resultHashes.length; i++) {
-      denseRows.push({ position: i, hash: s.resultHashes[i]! });
+      denseRows.push({
+        position: i,
+        hash: s.resultHashes[i]!,
+        canon: canon(servedLines[i] ?? ""),
+      });
     }
     if (denseRows.length > 0) {
       servedByPath.push({

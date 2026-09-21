@@ -3,7 +3,6 @@ import { DomainError } from "./domain-errors.js";
 import { type ServedRow, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { servedPositionsOf } from "./hashline/served.js";
 import { canon } from "./hashline/hash-identity.js";
-import { globalCanonStore } from "./hashline/hash.js";
 import { currentPositionOfDrifted } from "./served-session/drift-helpers.js";
 import { createSessionHandle } from "./served-session/session.js";
 const DRIFT_NOTICE_HEADING = "[USER] drift:";
@@ -145,8 +144,10 @@ function buildRotatedSurvivorCheck(
     const c = canon(input.resultLines[i] ?? "");
     remaining.set(c, (remaining.get(c) ?? 0) + 1);
   }
-  return (servedHash, servedPos) => {
-    const c = canons[servedPos] ?? globalCanonStore.get(servedHash) ?? null;
+  return (_servedHash, servedPos) => {
+    // WHY: only the persisted, file-scoped canon at the served position counts. A hash->canon
+    // WHY: fallback is file-blind and a 3-char collision would silently suppress real drift (#149).
+    const c = canons[servedPos] ?? null;
     if (c === null) return false;
     const left = remaining.get(c) ?? 0;
     if (left <= 0) return false;
@@ -342,7 +343,11 @@ export async function scanDrift(input: {
   const result = computeDrift(driftInput);
   if (!result || result.allAlreadyReported) return result?.text;
   await handle.recordTruncated(
-    result.rows.map((row) => ({ position: row.position, hash: row.hash })),
+    result.rows.map((row) => ({
+      position: row.position,
+      hash: row.hash,
+      canon: canon(row.content),
+    })),
     input.resultLines.length,
     undefined,
     input.contentHash,

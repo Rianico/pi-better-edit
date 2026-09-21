@@ -110,6 +110,7 @@ export async function runNoopPolicy(input: NoopPolicyInput): Promise<NoopPolicyO
       input.range.startLine,
       input.range.endLine,
       input.hashes,
+      input.lines,
     );
     const rendered = fmtServedRows(servedRows, input.lines);
     await createSessionHandle(input.sessionKey, input.absolutePath).recordServeFeedback(

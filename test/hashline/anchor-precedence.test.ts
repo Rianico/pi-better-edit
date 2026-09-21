@@ -3,7 +3,6 @@ import { resEdit } from "../../src/hashline/resolve";
 import type { LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";
 import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import { ServedVerification } from "../../src/hashline/served-verification";
-import { createCanonStore } from "../../src/hashline/hash";
 import { DomainError } from "../../src/domain-errors.js";
 import { initHasher } from "../../src/hashline/hasher";
 
@@ -37,8 +36,7 @@ function source(args: {
 
 describe("anchor family precedence — one condition reaches exactly one code", () => {
   it("tombstoned boundary with row here resolves to E_STALE_ANCHOR with a served window", () => {
-    const store = createCanonStore();
-    const verifier = new ServedVerification(store);
+    const verifier = new ServedVerification();
     let caught: unknown;
     try {
       verifier.verifyOrThrow({

@@ -628,12 +628,14 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
     expect(err.code).toBe("E_STALE_RANGE");
     expect(err.firstOffendingLine).toBe(2);
     expect(err.servedRows).toEqual([
-      { position: 0, hash: hashes[0] },
-      { position: 1, hash: hashes[1] },
-      { position: 2, hash: hashes[2] },
+      { position: 0, hash: hashes[0], canon: "alpha" },
+      { position: 1, hash: hashes[1], canon: "beta" },
+      { position: 2, hash: hashes[2], canon: "gamma" },
     ]);
-    expect(err.message).toContain("Current range:");
-    expect(err.message).toContain("Retry with these anchors");
+    // WHY: the rows are the current on-disk range, so they are served as a fresh read with no
+    // WHY: blind-retry mandate (issue #149).
+    expect(err.message).toContain("Current range (fresh read):");
+    expect(err.message).not.toContain("Retry with these anchors");
   });
 
   it("caps a large serve block with a pagination hint", () => {

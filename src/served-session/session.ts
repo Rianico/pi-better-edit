@@ -11,7 +11,6 @@
 import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "../hashline/alphabet.js";
-import { globalCanonStore } from "../hashline/hash.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import {
   loadHashStore,
@@ -598,7 +597,7 @@ function writeServeRecord(
   store: HashStore,
   sessionKey: string,
   path: string,
-  rows: Array<{ position: number; hash: string | null }>,
+  rows: ServedEntry[],
   contentHash: string | undefined,
   shape?: TruncatedServeShape,
 ): void {
@@ -616,13 +615,16 @@ function writeServeRecord(
       }
       const disp = displacedHashes(before, updated);
       if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
-      // WHY: Keep canons in sync with hashes for edited rows — needed for canon verification (ADR-0005).
+      // WHY: Keep canons in sync with hashes for edited rows — needed for canon verification
+      // WHY: (ADR-0005). The canon travels WITH the row from the producer that holds the file's
+      // WHY: lines: a hash->canon lookup here would be file-blind and a 3-char collision would
+      // WHY: persist another file's content as this file's served canon (issue #149).
       try {
         const currentCanons = getCanonsInner(store, sessionKey, path);
         const updatedCanons = shape ? shapeMirror(currentCanons, shape) : currentCanons.slice();
         for (const row of rows) {
           while (updatedCanons.length <= row.position) updatedCanons.push(null);
-          const cv = row.hash ? (globalCanonStore.get(row.hash) ?? null) : null;
+          const cv = row.hash ? (row.canon ?? null) : null;
           updatedCanons[row.position] = cv;
         }
         while (updatedCanons.length > 0 && updatedCanons[updatedCanons.length - 1] === null)
@@ -652,7 +654,7 @@ function recordServesInner(
   store: HashStore,
   sessionKey: string,
   path: string,
-  rows: Array<{ position: number; hash: string | null }>,
+  rows: ServedEntry[],
   contentHash?: string,
 ): void {
   if (rows.length === 0) return;
@@ -663,7 +665,7 @@ function recordServesTruncatedInner(
   store: HashStore,
   sessionKey: string,
   path: string,
-  rows: Array<{ position: number; hash: string | null }>,
+  rows: ServedEntry[],
   lineCount: number,
   clearFrom?: number,
   contentHash?: string,
@@ -680,7 +682,7 @@ function grantLeasesForRows(
   store: HashStore,
   sessionKey: string,
   path: string,
-  rows: Array<{ position: number; hash: string | null }>,
+  rows: ServedEntry[],
   contentHash?: string,
 ): void {
   if (!contentHash) return;
@@ -1207,7 +1209,7 @@ export function recordServes(
   store: HashStore,
   sessionKey: string,
   path: string,
-  rows: Array<{ position: number; hash: string | null }>,
+  rows: ServedEntry[],
 ): void {
   recordServesInner(store, sessionKey, path, rows);
 }
@@ -1216,7 +1218,7 @@ export function recordServesTruncated(
   store: HashStore,
   sessionKey: string,
   path: string,
-  rows: Array<{ position: number; hash: string | null }>,
+  rows: ServedEntry[],
   lineCount: number,
   clearFrom?: number,
   contentHash?: string,

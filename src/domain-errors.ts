@@ -19,7 +19,10 @@
  * knowable at all), `E_UNKNOWN_ANCHOR` and `E_FOREIGN_ANCHOR` (the tool
  * cannot tell a wrong file value from wrong anchors from another session,
  * so any suggestion would steer on a guess), `E_UNVERIFIED_RANGE`
- * (the model decides from the fresh read), and `E_NOOP_LOOP` (the refusal
+ * (the model decides from the fresh read), `E_STALE_RANGE` (the served rows
+ * prove the named lines no longer match what was served, but not whether the
+ * model's anchors, the disk, or the tool's own record is wrong — the model
+ * decides from the fresh read), and `E_NOOP_LOOP` (the refusal
  * pins the fact that the range already contains the text, but not the
  * model's intent).
  */
@@ -67,6 +70,13 @@ export type DomainWarningCode =
 export interface ServedRow {
   position: number;
   hash: string;
+  /**
+   * WHY: whitespace-stripped `canon` of the served line, captured at the serve site that holds
+   * WHY: the file's lines. A 3-char hash is unique only inside one file's allocation, so the canon
+   * WHY: must travel WITH the row — a process-wide hash->canon map collides across files and
+   * WHY: poisons the persisted served canons (issue #149). Absent when the producer has no lines.
+   */
+  canon?: string;
 }
 
 // WHY: user-facing diagnosis carried as `details.cause` on range-family
@@ -353,10 +363,11 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_STALE_RANGE: {
     audience: "MODEL",
-    format: ({ headline, servedBlock }) =>
-      `${headline}\nCurrent range:\n${servedBlock}\n${RETRY_HINT}`,
-    // WHY remedy: the served rows prove the named lines no longer match what was served, and `cause` names the drift kind. See ADR-0021.
-    remedy: "Retry with the served rows; no read is needed.",
+    // WHY: the same fresh-read contract as `E_UNVERIFIED_RANGE` (issue #149): the rows served are
+    // WHY: the current on-disk range, but a stale served canon is indistinguishable from real disk
+    // WHY: drift, so the model must inspect them and decide — never a blind retry with the anchors
+    // WHY: that just failed.
+    format: ({ headline, servedBlock }) => `${headline}\n${FRESH_READ_HEADING}\n${servedBlock}`,
   },
   E_TARGET_LOST: {
     audience: "MODEL",

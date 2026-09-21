@@ -7,7 +7,13 @@
 
 import type { ServedRow } from "../hashline/served.js";
 
-export type ServedEntry = { position: number; hash: string | null };
+/**
+ * WHY: `canon` travels with the row so the serve writer never needs a hash->canon lookup — a 3-char
+ * WHY: hash is unique only within one file, so any process-wide map collides across files (#149).
+ * WHY: Optional: a producer with no access to the file's lines records no canon and the position
+ * WHY: degrades to hash-equality verification.
+ */
+export type ServedEntry = { position: number; hash: string | null; canon?: string | null };
 
 export type ServeRecordPolicy = "live" | "preview";
 

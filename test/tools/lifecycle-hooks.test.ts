@@ -215,10 +215,12 @@ describe("lifecycle-hooks", () => {
     expect(recordDiffServes).toHaveBeenCalledWith({
       sessionKey: "sk",
       path: "/tmp/w.txt",
+      // WHY: each row carries its own line's canon (issue #149) — the serve writer records it
+      // WHY: verbatim instead of consulting a file-blind hash->canon map.
       servedRows: [
-        { position: 0, hash: "AA1" },
-        { position: 1, hash: "BB2" },
-        { position: 2, hash: "CC3" },
+        { position: 0, hash: "AA1", canon: "a" },
+        { position: 1, hash: "BB2", canon: "b" },
+        { position: 2, hash: "CC3", canon: "c" },
       ],
       // WHY: the auto-read names the snapshot of the normalized content it just served.
       contentHash: snapshotHashFor("a\nb\nc\n"),

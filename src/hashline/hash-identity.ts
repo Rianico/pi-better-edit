@@ -117,7 +117,6 @@ function nearestNew(candidates: number[], target: number): number {
 
 // SAFETY: large-class — HashIdentity owns hash allocation, canon cache, and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
 export class HashIdentity {
-  private hashToCanon = new Map<string, string>();
   private hashCache = new Map<number, string>();
   private snapshotIO?: HashSnapshotIO;
 
@@ -132,23 +131,6 @@ export class HashIdentity {
   getSnapshotIO(): HashSnapshotIO | undefined {
     return this.snapshotIO;
   }
-
-  rememberHashCanon(hash: string, canonText: string): void {
-    if (!this.hashToCanon.has(hash)) this.hashToCanon.set(hash, canonText);
-  }
-
-  getCanonForHash(hash: string): string | undefined {
-    return this.hashToCanon.get(hash);
-  }
-
-  clearCanon(): void {
-    this.hashToCanon.clear();
-  }
-
-  canonEntries(): IterableIterator<[string, string]> {
-    return this.hashToCanon.entries();
-  }
-
   private idxToHash(idx: number): string {
     let out = "";
     for (let j = 0; j < HASH_LEN; j++) {
@@ -215,7 +197,6 @@ export class HashIdentity {
       const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
       const h = this.assignHash(used, baseIdx, hint);
       hashes[i] = h;
-      this.rememberHashCanon(h, c);
     }
     return hashes;
   }
@@ -312,7 +293,6 @@ export class HashIdentity {
       const newIdx = candidates.splice(pos, 1)[0]!;
       newHashes[newIdx] = entry.hash;
       this.markHashUsed(entry.hash, used, hint);
-      this.rememberHashCanon(entry.hash, getCanon(canonCache, oldLines[entry.index]!));
     }
   }
 
@@ -329,7 +309,6 @@ export class HashIdentity {
       const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
       const h = this.assignHash(used, baseIdx, hint);
       newHashes[i] = h;
-      this.rememberHashCanon(h, c);
     }
   }
   private mapStableHashes(
@@ -488,17 +467,6 @@ export const defaultHashIdentity = new HashIdentity();
 // eslint-disable-next-line @typescript-eslint/no-unused-vars -- SAFETY: retained wrapper for import surface
 function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
   defaultHashIdentity.setSnapshotIO(io);
-}
-// SAFETY: pass-through wrapper — see above.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- SAFETY: retained wrapper for import surface
-function rememberHashCanon(hash: string, canonText: string): void {
-  defaultHashIdentity.rememberHashCanon(hash, canonText);
-}
-
-// SAFETY: pass-through wrapper — retained for external import surface; trivial delegate kept over churn.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- SAFETY: retained wrapper for import surface
-function getCanonForHash(hash: string): string | undefined {
-  return defaultHashIdentity.getCanonForHash(hash);
 }
 
 export function _lineHashesPure(content: string, tombstone?: ReadonlySet<string>): string[] {

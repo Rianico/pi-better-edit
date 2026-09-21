@@ -33,7 +33,9 @@ function assertPayloadPreserved(envelope: RejectionEnvelope, expectedCode: strin
   for (const row of rows) {
     expect(block).toContain(row.hash);
   }
-  expect(envelope.message).toContain("Current range:");
+  // WHY: the range-family codes serve the current on-disk range as a fresh read with no mandate
+  // WHY: (issue #149) — the block is what the model decides from.
+  expect(envelope.message).toContain("Current range (fresh read):");
 }
 
 function plantedEnvelope(args: {
@@ -125,7 +127,7 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
   it("negative control: a dropped servedBlock fails the preservation check", () => {
     const planted = plantedEnvelope({
       code: "E_STALE_RANGE",
-      message: "[MODEL] [E_STALE_RANGE] lines 2-4 differ.\nCurrent range:",
+      message: "[MODEL] [E_STALE_RANGE] lines 2-4 differ.\nCurrent range (fresh read):",
       servedRows: [{ position: 1, hash: "abc" }],
       servedBlock: "",
     });
@@ -136,7 +138,7 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
   it("negative control: rows absent from the block fail the preservation check", () => {
     const planted = plantedEnvelope({
       code: "E_STALE_RANGE",
-      message: "[MODEL] [E_STALE_RANGE] lines 2-4 differ.\nCurrent range:\nabc│beta",
+      message: "[MODEL] [E_STALE_RANGE] lines 2-4 differ.\nCurrent range (fresh read):\nabc│beta",
       servedRows: [{ position: 1, hash: "zzz" }],
       servedBlock: "abc│beta",
     });

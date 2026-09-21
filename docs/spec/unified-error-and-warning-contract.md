@@ -58,8 +58,8 @@ A critical question in error design: **When should a rejection provide reserved 
 
 | Scenario | Line Identity State | Code | Serve Reserved Rows? | Rationale |
 | :--- | :--- | :--- | :--- | :--- |
-| **In-place drift** (file modified externally, line identity intact) | Live & unshifted | `E_STALE_RANGE` | **YES** (`Current range:`) | The tool has authoritative identity for the target lines. Serving rows allows 0-read recovery without miswrite risk. |
-| **Unserved interior hole** (boundary live, gap inside) | Live boundaries | `E_STALE_RANGE` | **YES** (`Current range:`) | The boundary anchors identify the region; interior lines are safely leased on reject. |
+| **In-place drift** (file modified externally, line identity intact) | Live & unshifted | `E_STALE_RANGE` | **YES** (`Current range (fresh read):`) | The tool has authoritative identity for the target lines. Serving rows lets the model decide from current disk state instead of retrying blind (ADR-0022). |
+| **Unserved interior hole** (boundary live, gap inside) | Live boundaries | `E_STALE_RANGE` | **YES** (`Current range (fresh read):`) | The boundary anchors identify the region; interior lines are safely leased on reject. |
 | **One bound stale, other live & unshifted** | Boundary partially live | `E_UNVERIFIED_RANGE` | **YES** (`Current range (fresh read):`) | Region bounded by the live anchor; rows are served under explicit fresh read heading. |
 | **Retired Line Identity** (line deleted/replaced externally) | Dead (`line_id ∉ lineage`) | `E_TARGET_LOST` | **NO** (`servedRows: []`, no serve block) | **Fail Closed**: Historical line numbers now point to unrelated content. Serving rows creates silent miswrites (ADR-0018). |
 | **Malformed Anchor Syntax** | Invalid syntax | `E_MALFORMED_ANCHOR` | **NO** (`servedRows: []`) | Target cannot be located; cannot construct a trustworthy region. |

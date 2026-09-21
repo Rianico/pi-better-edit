@@ -28,6 +28,7 @@ type RemedyFreeCode =
   | "E_UNKNOWN_ANCHOR"
   | "E_FOREIGN_ANCHOR"
   | "E_UNVERIFIED_RANGE"
+  | "E_STALE_RANGE"
   | "E_NOOP_LOOP";
 
 const REMEDY_FREE: RemedyFreeCode[] = [
@@ -35,6 +36,7 @@ const REMEDY_FREE: RemedyFreeCode[] = [
   "E_UNKNOWN_ANCHOR",
   "E_FOREIGN_ANCHOR",
   "E_UNVERIFIED_RANGE",
+  "E_STALE_RANGE",
   "E_NOOP_LOOP",
 ];
 
@@ -46,6 +48,12 @@ const FREE_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K] } = {
     servedRows: [{ position: 0, hash: "abc" }],
     servedBlock: "abc│alpha",
     cause: "retirement",
+  },
+  E_STALE_RANGE: {
+    headline: "line 1 differs from what was served.",
+    servedRows: [{ position: 0, hash: "abc" }],
+    servedBlock: "abc│alpha",
+    cause: "served-range staleness",
   },
   E_NOOP_LOOP: {
     ref: "edit[0] (probe.ts)",

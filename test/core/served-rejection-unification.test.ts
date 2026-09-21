@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll, vi } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
-import { _lineHashesPure, createCanonStore } from "../../src/hashline/hash";
+import { _lineHashesPure } from "../../src/hashline/hash";
 import { DomainError, type ErrorPayloadMap } from "../../src/domain-errors.js";
 import {
   makeServedRejection,
@@ -43,7 +43,8 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     expect(err).toBeInstanceOf(DomainError);
     expect(typeof err.servedBlock).toBe("string");
     expect(err.servedBlock).toContain(`${hashes[1]}│beta`);
-    expect(err.message).toContain("Current range:");
+    expect(err.message).toContain("Current range (fresh read):");
+    expect(err.message).not.toContain("Retry with these anchors");
     expect(err.message).toContain(err.servedBlock);
   });
 
@@ -66,7 +67,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     expect(err.message).toContain(err.servedBlock);
   });
 
-  it("both builders use one formatting contract: prefix, range contract, retry hint, served rows", () => {
+  it("both builders share one formatting contract: prefix, serve block, served rows", () => {
     const lines = ["alpha", "beta", "gamma"];
     const hashes = _lineHashesPure(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
@@ -88,10 +89,14 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     });
     for (const err of [stale, anchor]) {
       expect(err.message).toMatch(/^\[MODEL\] \[E_[A-Z_]+\]/);
-      expect(err.message).toContain("Current range:");
-      expect(err.message).toContain("Retry with these anchors");
       expect(err.servedRows).toHaveLength(3);
     }
+    // WHY: the range-family code serves a fresh read with no mandate; the stale-anchor code keeps the
+    // WHY: retry hint (issue #149 made the two payload shapes deliberately different).
+    expect(stale.message).toContain("Current range (fresh read):");
+    expect(stale.message).not.toContain("Retry with these anchors");
+    expect(anchor.message).toContain("Current range:");
+    expect(anchor.message).toContain("Retry with these anchors");
     expect(stale.servedBlock).toBe(anchor.servedBlock);
   });
 
@@ -100,12 +105,11 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const hashes = _lineHashesPure(lines.join("\n"));
     const served: (string | null)[] = [...hashes];
     const mutatedLines = ["alpha", "BETA", "gamma"];
-    const store = createCanonStore();
-    const verifier = new ServedVerification(store);
+    const verifier = new ServedVerification();
     const result = verifier.verify({
       range: { startHash: hashes[0]!, endHash: hashes[2]!, startLine: 1, endLine: 3 },
       served,
-      fileHashes: _lineHashesPure(mutatedLines.join("\n"), store),
+      fileHashes: _lineHashesPure(mutatedLines.join("\n")),
       fileLines: mutatedLines,
     });
     expect(result.ok).toBe(false);
@@ -291,7 +295,7 @@ describe("range-family cause uniformity: explicit evidence, never a borrowed def
     const causeless = new DomainError("E_TARGET_LOST", {
       servedLine: 2,
     } as unknown as ErrorPayloadMap["E_TARGET_LOST"]);
-    const verifier = new ServedVerification(createCanonStore());
+    const verifier = new ServedVerification();
     const spy = vi.spyOn(verifier, "verifyOrThrow").mockImplementation(() => {
       throw causeless;
     });

@@ -13,7 +13,7 @@ import { cntDiff, visLines, splitLines, errCode, isRec, normalizeFilePath } from
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError } from "./domain-errors.js";
-import { changedRange, lineHashes } from "./hashline/index.js";
+import { canon, changedRange, lineHashes } from "./hashline/index.js";
 export interface UndoEntry {
   content: string;
   bom: string;
@@ -208,9 +208,16 @@ export function regEditUndo(pi: ExtensionAPI): void {
           currentHashes,
         );
         const undoDiff = undoDiffResult.diff;
+        // WHY: the restored rows carry their own canons (issue #149): the serve writer must not look a
+        // WHY: hash up in a file-blind map, or a cross-file collision poisons this file's served canons.
+        const restoredLines = splitLines(undo.content);
         const undoDenseRows: typeof undoDiffResult.servedRows = [];
         for (let i = 0; i < restoredHashes.length; i++) {
-          undoDenseRows.push({ position: i, hash: restoredHashes[i]! });
+          undoDenseRows.push({
+            position: i,
+            hash: restoredHashes[i]!,
+            canon: canon(restoredLines[i] ?? ""),
+          });
         }
         try {
           const curSet = new Set(currentHashes);

@@ -12,6 +12,7 @@ import {
   addReported,
   loadTombstone,
   loadEpochId,
+  loadCanons,
   loadLeases,
 } from "../../src/served-session/index.js";
 import { apply, execEdits } from "../../src/mutation-engine/pipeline.js";
@@ -613,6 +614,32 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const leases = loadLeases(store, SESSION, path);
       expect(leases.map((lease) => lease.anchor)).toEqual(hashes);
       expect(leases.every((lease) => lease.retired_at === null)).toBe(true);
+    });
+  });
+
+  it("scopes served canons per file when two files share one 3-char anchor (#149)", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      const pathA = join(home, "a.ts");
+      const pathB = join(home, "b.ts");
+      const lineA = "} = verification ?? {};";
+      const lineB = "clearServedRefusals(absolutePath);";
+      // File A's own allocation names its anchor; file B is served under the SAME anchor string,
+      // which is the cross-file collision the process-global hash->canon map used to leak through.
+      const anchor = (await lineHashes(lineA, pathA))[0]!;
+
+      await createSessionHandle(SESSION, pathA, store).recordDiff(
+        [{ position: 0, hash: anchor, canon: canon(lineA) }],
+        {},
+      );
+      await createSessionHandle(SESSION, pathB, store).recordDiff(
+        [{ position: 0, hash: anchor, canon: canon(lineB) }],
+        {},
+      );
+
+      expect(await loadCanons(SESSION, pathA)).toEqual([canon(lineA)]);
+      // WHY: pre-#149 this read back file A's line — a false [E_STALE_RANGE] on the next edit of B.
+      expect(await loadCanons(SESSION, pathB)).toEqual([canon(lineB)]);
     });
   });
 

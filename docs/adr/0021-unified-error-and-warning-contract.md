@@ -14,6 +14,8 @@ Amends [ADR-0019 — Rename two model-facing error codes](0019-malformed-code-re
 
 Amends [ADR-0020 — Unverified range replaces unserved range; boundary rule for retired identities](0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md)
 
+Amended by [ADR-0022 — Served canons are file-scoped; `[E_STALE_RANGE]` serves a fresh read](0022-file-scoped-canons-and-fresh-read-stale-range.md)
+
 ## Context
 
 The design record [`unified-error-and-warning-contract.md`](../spec/unified-error-and-warning-contract.md) proposed a closed, two-tier domain model for every rejection and applied-path diagnostic. The batch implemented it in five code commits: `218ad8a` (tagged `DomainError` registry), `0bc2b65` (unknown / foreign anchor split), `354d98b` (`W_*` tier, reversed anchors always heal), `9b7cd27` (batch and diagnostic gap closure), `e73b806` (spec §6 oracles). Review corrected two wordings against as-built behavior instead of absorbing them silently: the content-path tombstoned-boundary check (ADR-0020 decision 2 prescribed the fresh-read heading; as-built `0bc2b65` serves `[E_STALE_ANCHOR]` rows — decision 3 below amends that sentence) and the "always renders rows" shape claim (the missing-previous-hashes producer carries the headline only — decisions 1 and 3 record the hedge with its line trace).
