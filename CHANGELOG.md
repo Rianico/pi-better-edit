@@ -1,23 +1,39 @@
 # Changelog
 
-All notable changes to this project will be documented in this file.
+## [2.0.0](https://github.com/Rianico/pi-better-edit/compare/v1.7.0...v2.0.0) (2026-09-21)
 
-## [Unreleased]
+### ⚠ BREAKING CHANGES
+
+* the tool contract changed for a 1.x consumer. The
+`[E_UNSERVED_RANGE]` code no longer exists: a retired bound with a live,
+unshifted survivor is `[E_UNVERIFIED_RANGE]`. Edits that 1.x silently
+healed -- an interior that shifted under the same 3-char anchor, or a
+freed anchor re-used by a byte-identical line -- are now rejected as
+`[E_STALE_RANGE]` / `[E_TARGET_LOST]` with the current range served as a
+fresh read. A consumer branching on the old code, or relying on a healed
+apply, must branch on the new codes and follow the served rows. No data
+migration is required: the store migrates additively (HASH_STORE_VERSION
+6 to 7) and stays readable by 1.x; anchors served before the upgrade need
+one fresh read.
 
 ### Features
 
-* **hashline:** unify span verification on lease lineage (#154)
-* **errors:** unify the error and warning contract (E_*/W_* tiers) (#148)
-* **edit:** gate reproduced served rows behind a literal declaration (#134)
-* **edit:** adopt line-identity MVCC with leases
+* **edit:** adopt line-identity MVCC with leases ([bd3a8f2](https://github.com/Rianico/pi-better-edit/commit/bd3a8f221cd7e3acf8c410a3d37237dba0c5201b))
+* **edit:** gate reproduced served rows behind a literal declaration ([#134](https://github.com/Rianico/pi-better-edit/issues/134)) ([ba7c8d2](https://github.com/Rianico/pi-better-edit/commit/ba7c8d2ad41262ebf52f402f588f194f18f40323)), closes [#61](https://github.com/Rianico/pi-better-edit/issues/61) [#62](https://github.com/Rianico/pi-better-edit/issues/62) [#63](https://github.com/Rianico/pi-better-edit/issues/63) [#124](https://github.com/Rianico/pi-better-edit/issues/124) [#125](https://github.com/Rianico/pi-better-edit/issues/125) [#126](https://github.com/Rianico/pi-better-edit/issues/126) [#127](https://github.com/Rianico/pi-better-edit/issues/127) [#128](https://github.com/Rianico/pi-better-edit/issues/128) [#129](https://github.com/Rianico/pi-better-edit/issues/129) [#130](https://github.com/Rianico/pi-better-edit/issues/130) [#131](https://github.com/Rianico/pi-better-edit/issues/131)
+* **errors:** unify the error and warning contract (E_*/W_* tiers) ([#148](https://github.com/Rianico/pi-better-edit/issues/148)) ([3b22008](https://github.com/Rianico/pi-better-edit/commit/3b22008f9bbb8dd57f82ad0646ef4680b3f0b4ed)), closes [#136](https://github.com/Rianico/pi-better-edit/issues/136) [#138](https://github.com/Rianico/pi-better-edit/issues/138) [#144](https://github.com/Rianico/pi-better-edit/issues/144) [#145](https://github.com/Rianico/pi-better-edit/issues/145) [#146](https://github.com/Rianico/pi-better-edit/issues/146) [#147](https://github.com/Rianico/pi-better-edit/issues/147)
+* **hashline:** unify span verification on lease lineage ([#154](https://github.com/Rianico/pi-better-edit/issues/154)) ([65af962](https://github.com/Rianico/pi-better-edit/commit/65af96236f7d0e2f15b1775a2eabd6796ac70750)), closes [#151](https://github.com/Rianico/pi-better-edit/issues/151) [pre-#151](https://github.com/Rianico/pre-/issues/151)
 
 ### Bug Fixes
 
-* **hashline:** scope served canons per file and serve fresh read (#152)
+* **hashline:** scope served canons per file and serve fresh read ([#152](https://github.com/Rianico/pi-better-edit/issues/152)) ([47a04f7](https://github.com/Rianico/pi-better-edit/commit/47a04f7ce055d82c517ba00257b8ef921735ad8d)), closes [#149](https://github.com/Rianico/pi-better-edit/issues/149) [#149](https://github.com/Rianico/pi-better-edit/issues/149)
 
 ### Documentation
 
-* declare the 2.0 tool-contract break (#155) (BREAKING CHANGE)
+* declare the 2.0 tool-contract break ([#155](https://github.com/Rianico/pi-better-edit/issues/155)) ([ee74c91](https://github.com/Rianico/pi-better-edit/commit/ee74c912ffe46f33c0debf3962805a410190b4d1)), closes [#154](https://github.com/Rianico/pi-better-edit/issues/154) [#148](https://github.com/Rianico/pi-better-edit/issues/148) [#154](https://github.com/Rianico/pi-better-edit/issues/154)
+
+All notable changes to this project will be documented in this file.
+
+## [Unreleased]
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 
