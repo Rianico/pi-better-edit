@@ -12,11 +12,7 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
-* **hashline:** scope served canons per file and serve fresh read (#149)
-
-### Documentation
-
-* record file-scoped canons and the fresh-read stale range (#149)
+* **hashline:** scope served canons per file and serve fresh read (#152)
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 

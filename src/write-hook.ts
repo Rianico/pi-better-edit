@@ -70,7 +70,10 @@ export async function servedHashEchoDenial(
   const reproduction = findServedHashEcho(lines, served, canons, 1);
   if (!reproduction) return undefined;
   const offendingLine = lines[reproduction.k - 1] ?? "";
-  const count = trackServedWriteRefusal(absolutePath, offendingLine);
+  // WHY: verification side of the tally: this refusal runs pre-dispatch, so no bytes move
+  // WHY: and no clear is due — the clear belongs to the committed write, which re-serves
+  // WHY: the file (`lifecycle-hooks` post-write), never to this gate.
+  const count = trackServedWriteRefusal(sessionKey, absolutePath, offendingLine);
   return buildServedWriteMessage({
     path: rawPath,
     line: reproduction.line,

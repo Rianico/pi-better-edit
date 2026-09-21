@@ -280,30 +280,113 @@ type RefusalEntry = {
   count: number;
 };
 
+/**
+ * SAFETY: the refusal tally beside the served hash echo gate — one flat composite-key
+ * cache (`${sessionKey}\0${absolutePath}`). Serves are session-keyed (ADR-0002), so one
+ * session's count must never leak into another session refusing the same path. The flat
+ * key keeps lookup, size, and eviction O(1) with no per-session scan. The `\0` separator
+ * is enforced, never assumed (`refusalKey` rejects a part carrying one), so two scopes
+ * cannot fuse into one key. A session-less caller is not tallied at all — a constant
+ * fallback bucket would recreate exactly the sharing this keying removes.
+ */
 const servedRefusalTracker = new Map<string, RefusalEntry>();
 
-function trackRefusal(absolutePath: string, payload: string): number {
-  const existing = servedRefusalTracker.get(absolutePath);
+/**
+ * SAFETY: the single bound on a long-running process. An entry is otherwise kept
+ * until a committed write clears its path, and no session-end seam exists to release
+ * it (`src/lifecycle-hooks/index.ts`, `src/served-session/session.ts`, and
+ * `src/index.ts` observe no session teardown), while session count is unbounded — so
+ * the cap must sit on the total, never per session. 256 covers any realistic working
+ * set: refusals are rare events and a session holds at most one entry per refused
+ * path. Eviction is true LRU over `Map` insertion order — a resubmission re-inserts
+ * its key and moves it to the tail, so the least recently refused key is at the head
+ * and no session is drained before another (no clock, no sweeper).
+ */
+export const SERVED_REFUSAL_MAX_ENTRIES = 256;
+
+// WHY: `sessionKey` and `absolutePath` travel as two primitives through `refusalKey`,
+// WHY: `clearServedRefusals`, and both `trackServed*` seams, mirroring the established
+// WHY: `(sessionKey, path)` convention (`createSessionHandle`, `loadServed`,
+// WHY: `clearNoopLoop`): a refusal scope is a pair of already-typed values, so a
+// WHY: `RefusalScope` wrapper would add an allocation per refusal without narrowing the
+// WHY: interface or preventing an argument-order slip.
+/**
+ * SAFETY: the one encoding of a refusal scope. The `\0` separator is enforced, never
+ * assumed: a part carrying one is rejected outright, because two scopes that fused into a
+ * single key would silently share a count — the exact defect #132 removed.
+ */
+function refusalKey(sessionKey: string, absolutePath: string): string {
+  if (sessionKey.includes("\0") || absolutePath.includes("\0")) {
+    throw new TypeError(
+      `Invalid refusal scope: NUL in session key or path (${JSON.stringify(sessionKey)} / ${JSON.stringify(absolutePath)})`,
+    );
+  }
+  return `${sessionKey}\0${absolutePath}`;
+}
+
+function trackRefusal(sessionKey: string, absolutePath: string, payload: string): number {
+  const key = refusalKey(sessionKey, absolutePath);
+  const existing = servedRefusalTracker.get(key);
   const count = existing && existing.payload === payload ? existing.count + 1 : 1;
-  servedRefusalTracker.set(absolutePath, { payload, count });
+  // WHY: `Map.set` on an existing key keeps its original position, so the delete is what
+  // WHY: refreshes recency — a resubmitted refusal moves to the tail and survives eviction.
+  servedRefusalTracker.delete(key);
+  servedRefusalTracker.set(key, { payload, count });
+  // WHY: a `while`, not an `if`: the cap must hold for whatever a future caller inserts in
+  // WHY: one refusal, and evicting after the insert keeps the head invariant obvious — the
+  // WHY: head is always the least recently refused key.
+  while (servedRefusalTracker.size > SERVED_REFUSAL_MAX_ENTRIES) {
+    for (const oldest of servedRefusalTracker.keys()) {
+      servedRefusalTracker.delete(oldest);
+      break;
+    }
+  }
   return count;
 }
 
-export function clearServedRefusals(absolutePath: string): void {
-  servedRefusalTracker.delete(absolutePath);
+/**
+ * SAFETY: the clear side of the tally, separated from verification:
+ * `trackServed*Refusal` records while the edit is still uncommitted, and only a committed
+ * write clears — the two sites (`mutation-engine/pipeline.ts` post-commit,
+ * `lifecycle-hooks` post-write), so a refusal that wrote nothing keeps its count for the
+ * resubmission. Clearing is per session: another session's tally describes what that
+ * session submitted, so this session's write must not erase it. The composite key drops
+ * exactly that session's path.
+ */
+export function clearServedRefusals(sessionKey: string, absolutePath: string): void {
+  servedRefusalTracker.delete(refusalKey(sessionKey, absolutePath));
+}
+
+/** SAFETY: test seam only — the policy path never reads it. Lets the unit check confirm the total-entry cap holds. */
+export function _servedRefusalSize(): number {
+  return servedRefusalTracker.size;
+}
+
+/** SAFETY: test seam only — the policy path never calls it. Empties the module cache so each unit check starts from a known tracker size. */
+export function clearAllServedRefusalsForTest(): void {
+  servedRefusalTracker.clear();
 }
 
 export function trackServedEditRefusal(
+  sessionKey: string,
   absolutePath: string,
   anchorFrom: string,
   anchorTo: string,
   offendingLine: string,
 ): number {
-  return trackRefusal(absolutePath, JSON.stringify([anchorFrom, anchorTo, offendingLine]));
+  return trackRefusal(
+    sessionKey,
+    absolutePath,
+    JSON.stringify([anchorFrom, anchorTo, offendingLine]),
+  );
 }
 
-export function trackServedWriteRefusal(absolutePath: string, offendingLine: string): number {
-  return trackRefusal(absolutePath, JSON.stringify([offendingLine]));
+export function trackServedWriteRefusal(
+  sessionKey: string,
+  absolutePath: string,
+  offendingLine: string,
+): number {
+  return trackRefusal(sessionKey, absolutePath, JSON.stringify([offendingLine]));
 }
 
 /** SAFETY: dimmed human line for a literal declaration; never a model retry instruction. */

@@ -232,8 +232,8 @@ describe("lifecycle-hooks", () => {
   it("clears served refusals on successful write without literal declaration (#129)", async () => {
     const absolutePath = "/tmp/clear-129.txt";
     const offendingLine = "ABC│hello";
-    clearServedRefusals(absolutePath);
-    expect(trackServedWriteRefusal(absolutePath, offendingLine)).toBe(1);
+    clearServedRefusals("sk", absolutePath);
+    expect(trackServedWriteRefusal("sk", absolutePath, offendingLine)).toBe(1);
     const recordDiffServes = vi.fn(async () => {});
     const hooks = createLifecycleHooks({
       resolveTarget: async (p: string) => p,
@@ -258,8 +258,8 @@ describe("lifecycle-hooks", () => {
       { toolName: "write", isError: false, input: { path: absolutePath }, content: [] },
       ctx(),
     );
-    expect(trackServedWriteRefusal(absolutePath, offendingLine)).toBe(1);
-    clearServedRefusals(absolutePath);
+    expect(trackServedWriteRefusal("sk", absolutePath, offendingLine)).toBe(1);
+    clearServedRefusals("sk", absolutePath);
   });
 
   it("onWrite accepts file_path input (#70)", async () => {

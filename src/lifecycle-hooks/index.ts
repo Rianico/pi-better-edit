@@ -161,11 +161,14 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: The bytes are already on disk; each note only informs the model channel,
       // WHY: never alters bytes, never blocks, keeps no state, fires per line.
       let prefixNotes: string[] = [];
+      // WHY: one session key for the whole post-write handler: the literal audit, the
+      // WHY: serve recording it triggers, and the refusal clear all belong to the session
+      // WHY: that wrote the bytes, never to another session sharing the path (#132).
+      const sessionKey = deps.sessionKeyFor(ctx);
       try {
         const rawContent = (event.input as Record<string, unknown> | undefined)?.content;
         const rawMode = (event.input as Record<string, unknown> | undefined)?.mode;
         if (typeof rawContent === "string") {
-          const sessionKey = deps.sessionKeyFor(ctx);
           const handle = createSessionHandle(sessionKey, absolutePath);
           const served = await handle.load();
           let canons: (string | null)[] = [];
@@ -193,7 +196,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       }
       const writtenLines = splitLines(normalized);
       await recordServesBestEffort({
-        sessionKey: deps.sessionKeyFor(ctx),
+        sessionKey,
         path: absolutePath,
         // WHY: stamp each row with its own line's canon (issue #149): the serve writer has no file
         // WHY: lines, and a file-blind hash->canon lookup collides across files.
@@ -206,8 +209,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         resultLineCount: deps.visLines(normalized).length,
         firstChangedLine: 1,
       });
+      // WHY: the clear side of the tally: this runs only after the write's bytes are on disk
+      // WHY: (the auto-read above re-served this session's rows), never on the pre-write
+      // WHY: verification, which must keep the count for a resubmission.
       try {
-        clearServedRefusals(absolutePath);
+        clearServedRefusals(sessionKey, absolutePath);
       } catch {
         // SAFETY: best-effort counter clear — a missed clear only sharpens the next refusal message, never blocks a write.
       }
