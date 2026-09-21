@@ -13,11 +13,13 @@ All notable changes to this project will be documented in this file.
 
 ### Bug Fixes
 
+* **hashline:** report the earliest offending line in the canon tier
 * **hashline:** report the failing condition in the leased-span gate
 * **hashline:** scope served canons per file and serve fresh read (#152)
 
 ### Documentation
 
+* **spec:** name the lease span authority in the architecture map
 * **hashline:** align spec, glossary and ADR-0023 with the split diagnoses
 * **hashline:** record lease-owned span verification in ADR-0023
 
