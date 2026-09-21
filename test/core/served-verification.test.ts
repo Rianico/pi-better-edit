@@ -1,6 +1,7 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
-import { _lineHashesPure, canon } from "../../src/hashline/hash";
+import { _lineHashesPure } from "../../src/hashline/hash";
+import { canonDigest } from "../../src/hashline/hash-identity.js";
 import {
   ServedVerification,
   verifyServedRange,
@@ -259,19 +260,16 @@ describe("ServedVerification deep module — decision table", () => {
     }
   });
 
-  it("stamps each served row with its own file's canon (no hash-keyed cross-file lookup)", () => {
-    const linesA = ["a", "b", "c"];
-    const hashesA = _lineHashesPure(linesA.join("\n"));
-    const rowsA = buildRangeServeRows(1, 3, hashesA, linesA);
-    expect(rowsA.map((row) => row.canon)).toEqual(["a", "b", "c"]);
-
-    // WHY: the same 3-char anchor from another file carries THAT file's canon. A hash-keyed global
-    // WHY: map would hand back the first file's line here (issue #149).
-    const rowsB = buildRangeServeRows(1, 1, [hashesA[0]!], ["x"]);
-    expect(rowsB[0]!.canon).toBe("x");
-
-    // WHY: a caller with only hashes claims no canon rather than guessing one.
-    expect(buildRangeServeRows(1, 1, hashesA)[0]!.canon).toBeUndefined();
+  it("serves rows as position + hash only; canon evidence is never a row attribute", () => {
+    const hashesA = _lineHashesPure("a\nb\nc");
+    const rowsA = buildRangeServeRows(1, 3, hashesA);
+    // WHY: canon evidence is derived from the leases a serve grants (#151), so a row carries no canon
+    // WHY: and a producer holding the file's lines has nothing extra to stamp (issue #149).
+    expect(rowsA).toEqual([
+      { position: 0, hash: hashesA[0] },
+      { position: 1, hash: hashesA[1] },
+      { position: 2, hash: hashesA[2] },
+    ]);
   });
 
   it("global verifyServedRange delegates to deep module and throws a DomainError", () => {
@@ -309,7 +307,7 @@ describe("ServedVerification deep module — decision table", () => {
   it("tombstone boundary serves [E_STALE_ANCHOR] with the current range", () => {
     const servedContent = "a\nb\nc";
     const servedHashes = _lineHashesPure(servedContent);
-    const servedCanons = servedContent.split("\n").map((l) => canon(l));
+    const servedCanonDigests = servedContent.split("\n").map((l) => canonDigest(l));
     // The boundary anchor string is still in the file bytes but its canon changed since serving.
     const fileLines = ["CHANGED", "b", "c"];
     const fileHashes = [...servedHashes];
@@ -322,7 +320,7 @@ describe("ServedVerification deep module — decision table", () => {
         fileHashes,
         fileLines,
         tombstone: new Set([servedHashes[0]!]),
-        servedCanons,
+        canonDigests: servedCanonDigests,
       });
     } catch (error) {
       caught = error;

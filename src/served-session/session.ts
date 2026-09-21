@@ -47,8 +47,6 @@ interface ServedStmts {
     updatedAt: number,
   ) => void;
   servedRetiredClear: (sessionKey: string, updatedAt: number, path: string) => void;
-  servedCanonsUpsert: (sessionKey: string, path: string, canons: string, updatedAt: number) => void;
-  servedCanonsClear: (sessionKey: string, updatedAt: number, path: string) => void;
   servedSnapshotUpsert: (
     sessionKey: string,
     path: string,
@@ -71,6 +69,11 @@ interface ServedStmts {
   ) => void;
   leaseGet: (sessionKey: string, path: string, anchor: string) => ServedLease | undefined;
   leaseList: (sessionKey: string, path: string) => ServedLease[];
+  /** `(anchor, canon_hash)` for every lease on the path — the canon-evidence lookup (#151). */
+  leaseCanonHashes: (
+    sessionKey: string,
+    path: string,
+  ) => Array<{ anchor: string; canon_hash: string }>;
   leaseHomes: (sessionKey: string, anchor: string) => string[];
   leaseRetireAbsent: (now: number, path: string, snapshotId: number) => void;
   leaseDelete: (sessionKey: string, path: string) => void;
@@ -167,7 +170,7 @@ function servedStmts(db: DatabaseSync): ServedStmts {
 
 function buildStmts(db: DatabaseSync): ServedStmts {
   const servedGetStmt = db.prepare(
-    "SELECT hashes, reported, retired, canons, snapshotId FROM served WHERE session_id = ? AND path = ?",
+    "SELECT hashes, reported, retired, snapshotId FROM served WHERE session_id = ? AND path = ?",
   );
   const servedUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, updated_at) VALUES (?, ?, ?, ?) " +
@@ -179,13 +182,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   );
   const servedRetiredClearStmt = db.prepare(
     "UPDATE served SET retired = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
-  );
-  const servedCanonsUpsertStmt = db.prepare(
-    "INSERT INTO served (session_id, path, hashes, canons, updated_at) VALUES (?, ?, '[]', ?, ?) " +
-      "ON CONFLICT(session_id, path) DO UPDATE SET canons = excluded.canons, updated_at = excluded.updated_at",
-  );
-  const servedCanonsClearStmt = db.prepare(
-    "UPDATE served SET canons = NULL, updated_at = ? WHERE session_id = ? AND path = ?",
   );
   const servedSnapshotUpsertStmt = db.prepare(
     "INSERT INTO served (session_id, path, hashes, snapshotId, updated_at) VALUES (?, ?, '[]', ?, ?) " +
@@ -202,6 +198,12 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   // WHY: re-serve contract: a re-served anchor adopts the fresh line_id and clears retired_at.
   const lineageAnchorsStmt = db.prepare(
     "SELECT anchor, line_id, canon_hash FROM line_lineage WHERE snapshot_id = ?",
+  );
+  // WHY: canon evidence is derived here and nowhere else (#151): the lease for the anchor a served
+  // WHY: mirror row names carries the digest the served line's canon produced, so no canon text is
+  // WHY: stored and no process-wide hash->canon map exists (issue #149).
+  const leaseListCanonStmt = db.prepare(
+    "SELECT anchor, canon_hash FROM served_leases WHERE session_id = ? AND file_path = ?",
   );
   const snapshotByHashStmt = db.prepare(
     "SELECT snapshot_id, snapshot_hash FROM file_snapshots " +
@@ -264,16 +266,6 @@ function buildStmts(db: DatabaseSync): ServedStmts {
         servedRetiredClearStmt.run(updatedAt, sessionKey, path);
       });
     },
-    servedCanonsUpsert: (sessionKey, path, canons, updatedAt) => {
-      withBusyRetry(() => {
-        servedCanonsUpsertStmt.run(sessionKey, path, canons, updatedAt);
-      });
-    },
-    servedCanonsClear: (sessionKey, updatedAt, path) => {
-      withBusyRetry(() => {
-        servedCanonsClearStmt.run(updatedAt, sessionKey, path);
-      });
-    },
     servedSnapshotUpsert: (sessionKey, path, snapshotId, updatedAt) => {
       withBusyRetry(() => {
         servedSnapshotUpsertStmt.run(sessionKey, path, snapshotId, updatedAt);
@@ -331,6 +323,8 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     },
     leaseGet: (...params) => leaseGetStmt.get(...params) as ServedLease | undefined,
     leaseList: (...params) => leaseListStmt.all(...params) as unknown as ServedLease[],
+    leaseCanonHashes: (...params) =>
+      leaseListCanonStmt.all(...params) as unknown as Array<{ anchor: string; canon_hash: string }>,
     leaseHomes: (sessionKey, anchor) =>
       (leaseHomesStmt.all(sessionKey, anchor) as unknown as Array<{ file_path: string }>).map(
         (row) => row.file_path,
@@ -384,6 +378,10 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   };
 }
 
+// WHY: the legacy v6 shell keeps its `canons` column: an un-restarted v6 process prepares a
+// WHY: statement naming it at store open, so dropping it would break that process's whole mirror.
+// WHY: Nothing in v7 reads or writes it — canon evidence is derived from `served_leases.canon_hash`
+// WHY: (issue #151).
 export function ensureServedSchema(db: DatabaseSync): void {
   db.exec(
     "CREATE TABLE IF NOT EXISTS served (" +
@@ -409,6 +407,8 @@ export function ensureServedSchema(db: DatabaseSync): void {
     const cols2 = db.prepare("PRAGMA table_info(served)").all() as {
       name: string;
     }[];
+    // WHY: `canons` is deliberately still added here for the same v6-shell reason; nothing in v7
+    // WHY: reads or writes it — canon evidence is derived from `served_leases.canon_hash` (#151).
     if (!cols2.some((c) => c.name === "canons")) {
       db.exec("ALTER TABLE served ADD COLUMN canons TEXT");
     }
@@ -443,15 +443,6 @@ function isValidServedList(value: unknown): value is (string | null)[] {
   for (const entry of value) {
     if (entry === null) continue;
     if (typeof entry !== "string" || !HASH_RE.test(entry)) return false;
-  }
-  return true;
-}
-
-function isValidCanonsList(value: unknown): value is (string | null)[] {
-  if (!Array.isArray(value)) return false;
-  for (const entry of value) {
-    if (entry === null) continue;
-    if (typeof entry !== "string") return false;
   }
   return true;
 }
@@ -587,11 +578,10 @@ function shapeMirror(
 }
 
 /**
- * WHY: the single writer for a serve observation: served mirror, canon synchronization
- * WHY: (ADR-0005), and the lease grant (spec §3.1.2). `shape` is the only difference between the
- * WHY: truncated serve (a suffix was shown, so the mirror is clamped/cleared) and the plain one; a
- * WHY: plain serve with an already-identical mirror leaves early, while a truncated serve still has
- * WHY: its clamped canon mirror to re-align.
+ * WHY: the single writer for a serve observation: the served mirror and the lease grant
+ * WHY: (spec §3.1.2). `shape` is the only difference between the truncated serve (a suffix was
+ * WHY: shown, so the mirror is clamped/cleared) and the plain one. Canon evidence needs no write at
+ * WHY: all: it is derived from the leases this writer grants (#151).
  */
 function writeServeRecord(
   store: HashStore,
@@ -610,36 +600,11 @@ function writeServeRecord(
       if (!isNoOp) {
         servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
       } else if (!shape) {
-        // WHY: a no-op mirror displaces nothing and leaves no canon to re-sync.
+        // WHY: a no-op mirror displaces nothing and leaves no lease to re-grant here.
         return;
       }
       const disp = displacedHashes(before, updated);
       if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
-      // WHY: Keep canons in sync with hashes for edited rows — needed for canon verification
-      // WHY: (ADR-0005). The canon travels WITH the row from the producer that holds the file's
-      // WHY: lines: a hash->canon lookup here would be file-blind and a 3-char collision would
-      // WHY: persist another file's content as this file's served canon (issue #149).
-      try {
-        const currentCanons = getCanonsInner(store, sessionKey, path);
-        const updatedCanons = shape ? shapeMirror(currentCanons, shape) : currentCanons.slice();
-        for (const row of rows) {
-          while (updatedCanons.length <= row.position) updatedCanons.push(null);
-          const cv = row.hash ? (row.canon ?? null) : null;
-          updatedCanons[row.position] = cv;
-        }
-        while (updatedCanons.length > 0 && updatedCanons[updatedCanons.length - 1] === null)
-          updatedCanons.pop();
-        servedStmts(store.db).servedCanonsUpsert(
-          sessionKey,
-          path,
-          JSON.stringify(updatedCanons),
-          Date.now(),
-        );
-      } catch (error) {
-        // SAFETY: best-effort canon sync — the served mirror is already upserted above; a missed
-        // SAFETY: canon degrades to the fail-closed path the next edit would take anyway.
-        console.error("Failed to sync served canons:", error);
-      }
     });
   } catch (error) {
     console.error(`Failed to record ${shape ? "truncated " : ""}served rows:`, error);
@@ -799,17 +764,24 @@ function clearReportedInner(store: HashStore, sessionKey: string, path: string):
   });
 }
 
-function getCanonsInner(store: HashStore, sessionKey: string, path: string): (string | null)[] {
-  const row = servedStmts(store.db).servedGet(sessionKey, path);
-  if (!row || row.canons === null || row.canons === undefined) return [];
-  try {
-    const parsed = JSON.parse(row.canons as string) as unknown;
-    if (!isValidCanonsList(parsed)) throw new TypeError("invalid canons");
-    return parsed;
-  } catch {
-    dropServedState(store, sessionKey, path);
-    return [];
+/**
+ * Canon digests parallel to the served mirror (#151): each position takes the `canon_hash` of the
+ * lease held for the anchor it names. A position with no anchor or no lease reads `null` — absence of
+ * evidence, never a shape refusal. This is the only canon-evidence source; nothing is persisted.
+ */
+function getCanonDigestsInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): (string | null)[] {
+  const served = getServedInner(store, sessionKey, path);
+  if (served.length === 0) return [];
+  const byAnchor = new Map<string, string>();
+  for (const lease of servedStmts(store.db).leaseCanonHashes(sessionKey, path)) {
+    byAnchor.set(lease.anchor, lease.canon_hash);
   }
+  if (byAnchor.size === 0) return [];
+  return served.map((anchor) => (anchor === null ? null : (byAnchor.get(anchor) ?? null)));
 }
 
 function getTombstoneInner(store: HashStore, sessionKey: string, path: string): Set<string> {
@@ -906,9 +878,9 @@ export function createSessionHandle(
       const store = await resolveStore();
       return getServedInner(store, sessionKey, path);
     },
-    async loadCanons(): Promise<(string | null)[]> {
+    async loadCanonDigests(): Promise<(string | null)[]> {
       const store = await resolveStore();
-      return getCanonsInner(store, sessionKey, path);
+      return getCanonDigestsInner(store, sessionKey, path);
     },
     async loadEpochId(): Promise<string | undefined> {
       const store = await resolveStore();
@@ -979,7 +951,6 @@ export function createSessionHandle(
       rows: ServedEntry[];
       lineCount?: number;
       fullReadHashes?: readonly string[];
-      fullReadCanons?: readonly (string | null)[];
       snapshotId?: string;
       contentHash?: string;
       isFullRead?: boolean;
@@ -1020,13 +991,6 @@ export function createSessionHandle(
         }
         if (isFullRead) {
           servedStmts(store.db).servedRetiredClear(sessionKey, Date.now(), path);
-          if (input.fullReadCanons)
-            servedStmts(store.db).servedCanonsUpsert(
-              sessionKey,
-              path,
-              JSON.stringify(input.fullReadCanons),
-              Date.now(),
-            );
           if (isFullRead && input.snapshotId)
             servedStmts(store.db).servedSnapshotUpsert(
               sessionKey,
@@ -1035,30 +999,6 @@ export function createSessionHandle(
               Date.now(),
             );
         } else {
-          if (input.fullReadCanons && input.fullReadHashes) {
-            const canonByHash = new Map<string, string | null>();
-            for (let i = 0; i < input.fullReadHashes.length; i++) {
-              const h = input.fullReadHashes[i]!;
-              const c = input.fullReadCanons[i] ?? null;
-              if (h) canonByHash.set(h, c);
-            }
-            const currentCanons = getCanonsInner(store, sessionKey, path);
-            const updatedCanons = currentCanons.slice();
-            while (updatedCanons.length < (input.lineCount ?? 0)) updatedCanons.push(null);
-            for (const row of input.rows) {
-              while (updatedCanons.length <= row.position) updatedCanons.push(null);
-              const cv = row.hash ? (canonByHash.get(row.hash) ?? null) : null;
-              updatedCanons[row.position] = cv;
-            }
-            while (updatedCanons.length > 0 && updatedCanons[updatedCanons.length - 1] === null)
-              updatedCanons.pop();
-            servedStmts(store.db).servedCanonsUpsert(
-              sessionKey,
-              path,
-              JSON.stringify(updatedCanons),
-              Date.now(),
-            );
-          }
           if (isFullRead && input.snapshotId)
             servedStmts(store.db).servedSnapshotUpsert(
               sessionKey,
@@ -1112,9 +1052,12 @@ export async function loadTombstone(sessionKey: string, path: string): Promise<S
   return getTombstoneInner(store, sessionKey, path);
 }
 
-export async function loadCanons(sessionKey: string, path: string): Promise<(string | null)[]> {
+export async function loadCanonDigests(
+  sessionKey: string,
+  path: string,
+): Promise<(string | null)[]> {
   const store = await loadHashStore();
-  return getCanonsInner(store, sessionKey, path);
+  return getCanonDigestsInner(store, sessionKey, path);
 }
 
 export async function loadEpochId(sessionKey: string, path: string): Promise<string | undefined> {
@@ -1146,6 +1089,15 @@ export function deleteServedByPath(store: HashStore, path: string): void {
 /** Leases for one (session, path), ordered by served line. */
 export function loadLeases(store: HashStore, sessionKey: string, path: string): ServedLease[] {
   return servedStmts(store.db).leaseList(sessionKey, path);
+}
+
+/** `(anchor, canon_hash)` for every lease on the path — the canon-evidence lookup (#151). */
+export function loadLeaseCanonHashes(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+): Array<{ anchor: string; canon_hash: string }> {
+  return servedStmts(store.db).leaseCanonHashes(sessionKey, path);
 }
 
 /** The lease for one served anchor, if this session holds one. */

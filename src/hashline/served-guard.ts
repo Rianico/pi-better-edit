@@ -5,12 +5,12 @@
  * triggers only with evidence — it begins (after one optional leading `+`,
  * `-`, or space diff marker) with an anchor served for this session and path
  * at any position, AND the remainder reproduces the served content for that
- * anchor (`canon(remainder) === canon(content served for that anchor)`). One
+ * anchor (`canonDigest(remainder) === served_leases.canon_hash`). One
  * such row suffices. No canon data means no evidence, so the candidate stays
  * silent — the tool never gates on the shape of a line.
  */
 
-import { HASH_SEP, canon } from "./hash-identity.js";
+import { HASH_SEP, canonDigest } from "./hash-identity.js";
 import { DomainError, formatWarning } from "../domain-errors.js";
 
 export interface ServedHashEchoMatch {
@@ -29,7 +29,8 @@ export interface ServedHashEchoMatch {
 interface ServedAnchorEntry {
   /** SAFETY: 1-based served position that carried the anchor. */
   servedLine: number;
-  canonText: string;
+  /** SAFETY: `served_leases.canon_hash` for this anchor — the served line's canon digest. */
+  canonDigest: string;
 }
 
 interface ServedAnchorHit {
@@ -39,7 +40,8 @@ interface ServedAnchorHit {
   anchor: string;
   /** SAFETY: every served position that carried the anchor, in served order. */
   entries: ServedAnchorEntry[];
-  candidateCanon: string;
+  /** SAFETY: `canonDigest` of the candidate's remainder, ready to compare against the entries. */
+  candidateDigest: string;
 }
 
 /** Single owner of the anchor-shape parse: optional diff-marker strip, length, separator, class. */
@@ -67,16 +69,16 @@ function anchorShapeFromLine(line: string): { anchor: string; tail: string } | u
 function collectServedAnchorHits(
   lines: readonly string[],
   served: readonly (string | null)[],
-  canons: readonly (string | null)[],
+  canonDigests: readonly (string | null)[],
 ): ServedAnchorHit[] {
   const byAnchor = new Map<string, ServedAnchorEntry[]>();
   for (let pos = 0; pos < served.length; pos++) {
     const anchor = served[pos];
     if (anchor === null || anchor === undefined) continue;
-    const canonText = pos < canons.length ? (canons[pos] ?? null) : null;
-    if (canonText === null) continue;
+    const digest = pos < canonDigests.length ? (canonDigests[pos] ?? null) : null;
+    if (digest === null) continue;
     const list = byAnchor.get(anchor);
-    const entry = { servedLine: pos + 1, canonText };
+    const entry = { servedLine: pos + 1, canonDigest: digest };
     if (list) list.push(entry);
     else byAnchor.set(anchor, [entry]);
   }
@@ -87,7 +89,7 @@ function collectServedAnchorHits(
     if (!parsed) continue;
     const entries = byAnchor.get(parsed.anchor);
     if (!entries) continue;
-    hits.push({ index, anchor: parsed.anchor, entries, candidateCanon: canon(parsed.tail) });
+    hits.push({ index, anchor: parsed.anchor, entries, candidateDigest: canonDigest(parsed.tail) });
   }
   return hits;
 }
@@ -96,17 +98,18 @@ function collectServedAnchorHits(
  * SAFETY: The single served hash echo predicate for the edit apply path and
  * the write hook. Position-agnostic and content-matched: `start` only shifts
  * the reported `line` (`line = start + k - 1`) and never narrows matching.
- * Empty or all-null `canons` means no evidence, so the result stays silent.
+ * Empty or all-null `canonDigests` means no evidence, so the result stays silent. The digests are
+ * the session's lease-derived canon hashes (#151): no canon text is stored anywhere.
  */
 export function findServedHashEcho(
   lines: readonly string[],
   served: readonly (string | null)[],
-  canons: readonly (string | null)[],
+  canonDigests: readonly (string | null)[],
   start = 1,
 ): ServedHashEchoMatch | undefined {
-  for (const hit of collectServedAnchorHits(lines, served, canons)) {
+  for (const hit of collectServedAnchorHits(lines, served, canonDigests)) {
     for (const entry of hit.entries) {
-      if (entry.canonText === hit.candidateCanon) {
+      if (entry.canonDigest === hit.candidateDigest) {
         return {
           k: hit.index + 1,
           line: start + hit.index,
@@ -140,9 +143,10 @@ export interface ServedPrefixMismatch {
  * SAFETY: Served prefix mismatch — the middle tier beside the served hash echo gate.
  *
  * A candidate reports here when it opens with an anchor served for this session
- * and file, yet its remainder canon matches none of the canons served for that
- * anchor. Position-agnostic like the gate: `start` only shifts the reported
- * `line` and never narrows matching. Empty or all-null `canons` means no
+ * and file, yet its remainder canon digest matches none of the digests the
+ * leases recorded for that anchor's served line. Position-agnostic like the
+ * gate: `start` only shifts the reported `line` and never narrows matching.
+ * Empty or all-null `canonDigests` means no
  * served content to compare against, so the result stays empty — never a
  * shape-only report. Exact reproductions are excluded (the gate owns them),
  * so callers scan for this tier only after the gate stays silent.
@@ -151,14 +155,14 @@ export interface ServedPrefixMismatch {
 export function findServedPrefixMismatches(
   lines: readonly string[],
   served: readonly (string | null)[],
-  canons: readonly (string | null)[],
+  canonDigests: readonly (string | null)[],
   start = 1,
 ): ServedPrefixMismatch[] {
   const out: ServedPrefixMismatch[] = [];
-  for (const hit of collectServedAnchorHits(lines, served, canons)) {
+  for (const hit of collectServedAnchorHits(lines, served, canonDigests)) {
     let exact = false;
     for (const entry of hit.entries) {
-      if (entry.canonText === hit.candidateCanon) {
+      if (entry.canonDigest === hit.candidateDigest) {
         exact = true;
         break;
       }

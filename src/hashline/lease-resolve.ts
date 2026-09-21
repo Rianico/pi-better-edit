@@ -1,14 +1,16 @@
 /**
  * SAFETY: Edit-path lease resolution — the MVCC identity seam for `edit` (spec §3.1.1, §3.5).
  *
- * Two lease paths, chosen by ONE predicate:
+ * Two lease paths, chosen by ONE predicate, verified by ONE gate:
  *
  *  - **Fast path** (`S_from === C ∧ S_to === C ∧ S_from === S_to`): the anchors were leased from
- *    the content now on disk, so the caller keeps applying at the served coordinates and verifies
- *    contiguity against the served mirror.
+ *    the content now on disk, so the caller keeps applying at the served coordinates.
  *  - **Dynamic rebase path**: the caller resolved each leased `line_id` in `line_lineage(C)` (an
- *    on-demand materialization through `pairSnapshots`) and this module verifies the whole served
- *    span remapped rigidly, then applies at the rebased coordinate.
+ *    on-demand materialization through `pairSnapshots`) and applies at the rebased coordinate.
+ *
+ * Both paths run `verifyRebasedSpan` over the whole served window (#151, spec §3.5): the fast path
+ * is the rigid remap whose rebased coordinates happen to equal the served ones, so per-line lease
+ * identity and retirement are checked identically either way.
  *
  * Resolution is strictly READ-ONLY on `served_leases`: it never re-stamps `line_id` and never
  * writes `retired_at`. The authoritative retirement update belongs to materialization.
@@ -213,30 +215,20 @@ export function resolveLeasedEdit(args: {
     toLine = healed;
   }
 
-  // WHY: the fast path is exactly the spec's predicate (spec §3.5):
-  // WHY: `lease_from.served_snapshot_hash === C ∧ lease_to.served_snapshot_hash === C ∧
-  // WHY: lease_from.served_snapshot_hash === lease_to.served_snapshot_hash`. Content coordinates are
-  // WHY: NOT part of the qualification — a uniform-snapshot lease is authoritative about its own
-  // WHY: coordinate, so an ambiguous/duplicated canon can neither satisfy nor block it.
-  if (isUniformLeaseFastPath(fromLease, toLease, source.currentSnapshotHash)) {
-    // WHY: the fast path applies at the served coordinates the lease itself names, so the edit is
-    // WHY: resolved here too — the caller must never fall back to content resolution for a served
-    // WHY: anchor (the mirror-only `valEdit` fallback this seam replaced).
-    return {
-      status: "fast",
-      resolved: resolvedAt(edit, fileHashes, fromLine, toLine),
-      ...(reversed ? { reversed } : {}),
-    };
-  }
-
-  // WHY: dynamic rebase (spec §3.1.1) — the served window comes from the mirror, falling back to the
-  // WHY: lease's own `served_line_number` when a serve was truncated out of the mirror: the lease is
-  // WHY: the authoritative record of where the anchor was served.
+  // WHY: the served window is the lease's own record of where the two anchors were served: a
+  // WHY: unique mirror position is preferred, and the lease's `served_line_number` covers a serve
+  // WHY: whose mirror rows were truncated away — the lease outlives the mirror (spec §3.1.1).
   const fromServed = uniqueServedPosition(served, fromAnchor) ?? fromLease.servedLineNumber;
   const toServed = uniqueServedPosition(served, toAnchor) ?? toLease.servedLineNumber;
   const servedStart = Math.min(fromServed, toServed);
   const servedEnd = Math.max(fromServed, toServed);
 
+  // WHY: ONE gate for every leased span (#151, spec §3.5): the fast path is a rigid remap that
+  // WHY: happens to be the identity, so it runs the same per-line interior check — a served
+  // WHY: interior line whose lease is retired, unleased, or no longer living at its expected
+  // WHY: coordinate rejects here exactly as it does on the dynamically rebased path. The fast path
+  // WHY: used to lean on the mirror's anchor tier instead, which a same-anchor collision defeats:
+  // WHY: a 3-char anchor is a spelling, not an identity.
   verifyRebasedSpan({
     served,
     servedStart,
@@ -247,6 +239,23 @@ export function resolveLeasedEdit(args: {
     leaseFor: (anchor) => source.leaseFor(anchor),
     rebasedLineOf: (lineId) => source.rebasedLineOf(lineId),
   });
+
+  // WHY: the fast path is exactly the spec's predicate (spec §3.5):
+  // WHY: `lease_from.served_snapshot_hash === C ∧ lease_to.served_snapshot_hash === C ∧
+  // WHY: lease_from.served_snapshot_hash === lease_to.served_snapshot_hash`. Content coordinates
+  // WHY: are NOT part of the qualification — a uniform-snapshot lease is authoritative about its own
+  // WHY: coordinate, so an ambiguous/duplicated canon can neither satisfy nor block it. Qualification
+  // WHY: alone no longer buys an unverified apply: the gate above already ran over the whole span.
+  if (isUniformLeaseFastPath(fromLease, toLease, source.currentSnapshotHash)) {
+    // WHY: the fast path applies at the served coordinates the lease itself names, so the edit is
+    // WHY: resolved here too — the caller must never fall back to content resolution for a served
+    // WHY: anchor (the mirror-only `valEdit` fallback this seam replaced).
+    return {
+      status: "fast",
+      resolved: resolvedAt(edit, fileHashes, fromLine, toLine),
+      ...(reversed ? { reversed } : {}),
+    };
+  }
 
   return {
     status: "rebased",

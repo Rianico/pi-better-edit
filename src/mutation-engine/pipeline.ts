@@ -90,7 +90,7 @@ import {
   type LeaseSpanSource,
   type NEdit,
 } from "../hashline/index.js";
-import { canon, defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
+import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import {
   buildRangeServeRows,
   fmtServedRows,
@@ -151,17 +151,13 @@ function countLineChanges(
   };
 }
 
-function serveRowsForEdit(
-  edit: HEdit,
-  originalHashes: string[],
-  originalLines: string[],
-): ServedRow[] | undefined {
+function serveRowsForEdit(edit: HEdit, originalHashes: string[]): ServedRow[] | undefined {
   const startHash = edit.hash_bounds[0].hash;
   const endHash = edit.hash_bounds[1].hash;
   const s = originalHashes.indexOf(startHash);
   const e = originalHashes.indexOf(endHash);
   if (s < 0 || e < 0) return undefined;
-  return buildRangeServeRows(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes, originalLines);
+  return buildRangeServeRows(Math.min(s, e) + 1, Math.max(s, e) + 1, originalHashes);
 }
 
 interface EditFileSource {
@@ -183,7 +179,7 @@ interface LoadedEditFile {
   absolutePath: string;
   served: (string | null)[];
   tombstone: ReadonlySet<string>;
-  servedCanons: (string | null)[];
+  canonDigests: (string | null)[];
 }
 
 async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
@@ -197,7 +193,7 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
     });
   const served = await createSessionHandle(source.sessionKey, absolutePath).load();
   let tombstone: ReadonlySet<string> = new Set();
-  let servedCanons: (string | null)[] = [];
+  let canonDigests: (string | null)[] = [];
   try {
     const handle = createSessionHandle(source.sessionKey, absolutePath, source.store);
     try {
@@ -207,10 +203,10 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
       tombstone = new Set<string>();
     }
     try {
-      servedCanons = await handle.loadCanons();
+      canonDigests = await handle.loadCanonDigests();
     } catch (error) {
-      console.error("Failed to load served canons for edit:", error);
-      servedCanons = [];
+      console.error("Failed to load served canon digests for edit:", error);
+      canonDigests = [];
     }
   } catch (error) {
     console.error("Failed to load served state for edit:", error);
@@ -224,7 +220,7 @@ async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
     absolutePath,
     served,
     tombstone,
-    servedCanons,
+    canonDigests,
   };
 }
 
@@ -236,7 +232,7 @@ interface ApplyOneEditInput {
   filePath: string;
   served: (string | null)[];
   tombstone?: ReadonlySet<string>;
-  servedCanons?: (string | null)[];
+  canonDigests?: (string | null)[];
   sessionKey: string;
   absolutePath: string;
   store: HashStore;
@@ -336,7 +332,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       sessionKey: input.sessionKey,
       served: input.served,
       ...(input.tombstone !== undefined ? { tombstone: input.tombstone } : {}),
-      ...(input.servedCanons !== undefined ? { servedCanons: input.servedCanons } : {}),
+      ...(input.canonDigests !== undefined ? { canonDigests: input.canonDigests } : {}),
       identity,
       ...(input.mode !== undefined ? { mode: input.mode } : {}),
     });
@@ -640,7 +636,7 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
         // WHY: the later item's span is served exactly like the sequential anchor-mismatch abort,
         // WHY: so the retry never needs a re-read.
         const originalLines = splitLines(ctx.originalNormalized);
-        const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes, originalLines);
+        const rows = serveRowsForEdit(edits[b.index]!, ctx.originalHashes);
         throw new DomainError("E_BATCH_ABORT", {
           earlierIndex: a.index,
           laterIndex: b.index,
@@ -792,12 +788,16 @@ async function runMutations(
   // WHY: with each applied item's removals, so later items still observe earlier removals for
   // WHY: hash-allocation and verification without any store write before `writeAtomic`.
   // WHY: `accumulatedRemoved` is the post-commit payload, retired once after the bytes are on disk.
-  let baseCanons: (string | null)[] = [];
+  let baseCanonDigests: (string | null)[] = [];
   try {
-    baseCanons = await createSessionHandle(sessionKey, absolutePath, hashStore).loadCanons();
+    baseCanonDigests = await createSessionHandle(
+      sessionKey,
+      absolutePath,
+      hashStore,
+    ).loadCanonDigests();
   } catch (error) {
-    console.error("Failed to load served canons for batch:", error);
-    baseCanons = [];
+    console.error("Failed to load served canon digests for batch:", error);
+    baseCanonDigests = [];
   }
   const batchTombstone = new Set<string>();
   try {
@@ -826,7 +826,7 @@ async function runMutations(
       filePath: path,
       served,
       tombstone: batchTombstone,
-      servedCanons: baseCanons,
+      canonDigests: baseCanonDigests,
       sessionKey,
       absolutePath,
       store: hashStore,
@@ -1146,18 +1146,10 @@ export async function apply(
       file.resultHashes,
       file.originalHashes,
     );
-    // WHY: the canon travels with each row (issue #149): a hash->canon lookup in the serve writer is
-    // WHY: file-blind, so a 3-char collision across files would persist another file's content as
-    // WHY: this file's served canon and reject the next edit with a false [E_STALE_RANGE].
-    const resultLines = splitLines(file.result);
-    const denseRows: ServedRow[] = [];
-    for (let i = 0; i < file.resultHashes.length; i++) {
-      denseRows.push({
-        position: i,
-        hash: file.resultHashes[i]!,
-        canon: canon(resultLines[i] ?? ""),
-      });
-    }
+    const denseRows: ServedRow[] = file.resultHashes.map((hash, position) => ({
+      position,
+      hash,
+    }));
     try {
       // WHY: the served diff rows are step 5 of the commit transaction (spec §3.2.4 step 4):
       // WHY: snapshot + lineage + retirement + leases share one `BEGIN IMMEDIATE`, so a lease

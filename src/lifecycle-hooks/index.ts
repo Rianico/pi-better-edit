@@ -7,7 +7,6 @@ import {
   buildServedWritePrefixNote,
   LITERAL_BYPASS_NOTICE,
   clearServedRefusals,
-  canon,
 } from "../hashline/index.js";
 import { splitLines } from "../utils.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
@@ -157,7 +156,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: and append the dimmed human line when the bytes reproduce a served row.
       let literalBypass = false;
       // WHY: middle tier for `write`: a written line opening with a served anchor
-      // WHY: whose remainder canon matches none of the canons served for that anchor.
+      // WHY: whose remainder canon digest matches none of the digests the leases recorded for that
       // WHY: The bytes are already on disk; each note only informs the model channel,
       // WHY: never alters bytes, never blocks, keeps no state, fires per line.
       let prefixNotes: string[] = [];
@@ -171,17 +170,27 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         if (typeof rawContent === "string") {
           const handle = createSessionHandle(sessionKey, absolutePath);
           const served = await handle.load();
-          let canons: (string | null)[] = [];
+          let canonDigests: (string | null)[] = [];
           try {
-            canons = await handle.loadCanons();
+            canonDigests = await handle.loadCanonDigests();
           } catch {
-            canons = [];
+            canonDigests = [];
           }
           if (rawMode === "literal") {
-            const reproduction = findServedHashEcho(splitLines(rawContent), served, canons, 1);
+            const reproduction = findServedHashEcho(
+              splitLines(rawContent),
+              served,
+              canonDigests,
+              1,
+            );
             if (reproduction) literalBypass = true;
           }
-          const mismatches = findServedPrefixMismatches(splitLines(rawContent), served, canons, 1);
+          const mismatches = findServedPrefixMismatches(
+            splitLines(rawContent),
+            served,
+            canonDigests,
+            1,
+          );
           prefixNotes = mismatches.map((mismatch) =>
             buildServedWritePrefixNote({
               line: mismatch.line,
@@ -194,17 +203,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         console.error("Failed to evaluate served prefix notes after write:", error);
         prefixNotes = [];
       }
-      const writtenLines = splitLines(normalized);
       await recordServesBestEffort({
         sessionKey,
         path: absolutePath,
-        // WHY: stamp each row with its own line's canon (issue #149): the serve writer has no file
-        // WHY: lines, and a file-blind hash->canon lookup collides across files.
-        servedRows: fileHashes.map((hash, position) => ({
-          position,
-          hash,
-          canon: canon(writtenLines[position] ?? ""),
-        })),
+        servedRows: fileHashes.map((hash, position) => ({ position, hash })),
         contentHash: snapshotHashFor(normalized),
         resultLineCount: deps.visLines(normalized).length,
         firstChangedLine: 1,

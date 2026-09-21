@@ -12,7 +12,7 @@ import {
   addReported,
   loadTombstone,
   loadEpochId,
-  loadCanons,
+  loadCanonDigests,
   loadLeases,
 } from "../../src/served-session/index.js";
 import { apply, execEdits } from "../../src/mutation-engine/pipeline.js";
@@ -25,7 +25,7 @@ import {
 import { computeDrift, scanDrift } from "../../src/drift";
 import { initHasher, lineHashes } from "../../src/hashline";
 import { getWritableTempRoot } from "../support/fixtures";
-import { canon } from "../../src/hashline/hash-identity.js";
+import { canonDigest } from "../../src/hashline/hash-identity.js";
 import { readNormFile } from "../../src/file-reader.js";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
 
@@ -335,7 +335,6 @@ describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
         rows: [{ position: 1, hash: "BBB" }],
         lineCount: 3,
         fullReadHashes: ["aaa", "BBB", "ccc"],
-        fullReadCanons: ["a", "b", "c"],
         snapshotId: "snap-partial",
         isFullRead: false,
       });
@@ -363,7 +362,6 @@ describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
         ],
         lineCount: 2,
         fullReadHashes: ["aaa", "bbb"],
-        fullReadCanons: ["a", "b"],
         snapshotId: "snap-full",
         isFullRead: true,
       });
@@ -400,8 +398,8 @@ describe("rejected edits — pre-load failures write zero serves (#69)", () => {
   });
 });
 
-describe("sequential edits — rotated serves with surviving canons stay silent (#68)", () => {
-  it("edit, failed edit, partial read, then edit elsewhere reports no drift", async () => {
+describe("sequential edits — an unevidenced rotation is reported, never suppressed (#68, #151)", () => {
+  it("edit, failed edit, partial read, then edit elsewhere reports the rotation as drift", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const absPath = join(home, "dup.ts");
@@ -426,7 +424,6 @@ describe("sequential edits — rotated serves with surviving canons stay silent 
       await writeFile(absPath, startLines.join("\n") + "\n");
       const seed = await readNormFile("dup.ts", home, { store });
       const handle = createSessionHandle("s1", seed.absolutePath, store);
-      const seedCanons = seed.normalized.split("\n").map((line) => canon(line));
       await handle.record(seed.fileHashes.map((hash, position) => ({ position, hash })));
       // WHY: a real `read` names the snapshot it served, so every row is leased (spec §3.1.2). A
       // WHY: hand-seeded mirror row without a contentHash grants no lease and now fails closed with
@@ -435,7 +432,6 @@ describe("sequential edits — rotated serves with surviving canons stay silent 
         rows: seed.fileHashes.map((hash, position) => ({ position, hash })),
         lineCount: seed.fileHashes.length,
         fullReadHashes: [...seed.fileHashes],
-        fullReadCanons: [...seedCanons],
         snapshotId: "snap-e2e-full",
         contentHash: snapshotHashFor(seed.normalized),
         isFullRead: true,
@@ -476,7 +472,6 @@ describe("sequential edits — rotated serves with surviving canons stay silent 
       const curText = await readFile(absPath, "utf8");
       const curLines = curText.split("\n");
       if (curLines.at(-1) === "") curLines.pop();
-      const curCanons = curLines.map((line) => canon(line));
       const curHashes = afterFirst.filter((h): h is string => h !== null);
       await handle.recordEpoch({
         rows: [2, 3, 4, 5].map((position) => ({
@@ -485,7 +480,6 @@ describe("sequential edits — rotated serves with surviving canons stay silent 
         })),
         lineCount: curLines.length,
         fullReadHashes: [...curHashes],
-        fullReadCanons: [...curCanons],
         snapshotId: "snap-e2e-partial",
         isFullRead: false,
       });
@@ -525,7 +519,12 @@ describe("sequential edits — rotated serves with surviving canons stay silent 
       );
       expect(second.appliedCount).toBe(1);
       expect(second.result).toContain("const d = 40;");
-      expect(second.driftNotice).toBeUndefined();
+      // WHY: the injected rotation writes mirror rows whose anchors hold no lease, and canon
+      // WHY: evidence is derived from leases (#151) — with no evidence the scan stays silent and the
+      // WHY: plain hash-equality verdict stands, so the unverifiable rotation is reported, never
+      // WHY: silently suppressed. The suppression rule itself is pinned in `test/core/drift.test.ts`
+      // WHY: with real canon digests ("suppresses hash-rotated duplicates whose canon survives").
+      expect(second.driftNotice).toBeDefined();
       const legacyLines = second.result.split("\n");
       if (legacyLines.at(-1) === "") legacyLines.pop();
       const legacy = computeDrift({
@@ -617,7 +616,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
     });
   });
 
-  it("scopes served canons per file when two files share one 3-char anchor (#149)", async () => {
+  it("scopes canon evidence per file when two files share one 3-char anchor (#149, #151)", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const pathA = join(home, "a.ts");
@@ -627,19 +626,33 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       // File A's own allocation names its anchor; file B is served under the SAME anchor string,
       // which is the cross-file collision the process-global hash->canon map used to leak through.
       const anchor = (await lineHashes(lineA, pathA))[0]!;
+      // WHY: canon evidence is derived from the leases a serve grants (#151), never from a stored canon
+      // WHY: array, so each file is served against the snapshot that actually holds its own line.
+      await upsertSnapshotFor({
+        path: pathA,
+        snapshotHash: snapshotHashFor(lineA),
+        lineCount: 1,
+        hashes: [anchor],
+        content: lineA,
+      });
+      await upsertSnapshotFor({
+        path: pathB,
+        snapshotHash: snapshotHashFor(lineB),
+        lineCount: 1,
+        hashes: [anchor],
+        content: lineB,
+      });
 
-      await createSessionHandle(SESSION, pathA, store).recordDiff(
-        [{ position: 0, hash: anchor, canon: canon(lineA) }],
-        {},
-      );
-      await createSessionHandle(SESSION, pathB, store).recordDiff(
-        [{ position: 0, hash: anchor, canon: canon(lineB) }],
-        {},
-      );
+      await createSessionHandle(SESSION, pathA, store).recordDiff([{ position: 0, hash: anchor }], {
+        contentHash: snapshotHashFor(lineA),
+      });
+      await createSessionHandle(SESSION, pathB, store).recordDiff([{ position: 0, hash: anchor }], {
+        contentHash: snapshotHashFor(lineB),
+      });
 
-      expect(await loadCanons(SESSION, pathA)).toEqual([canon(lineA)]);
+      expect(await loadCanonDigests(SESSION, pathA)).toEqual([canonDigest(lineA)]);
       // WHY: pre-#149 this read back file A's line — a false [E_STALE_RANGE] on the next edit of B.
-      expect(await loadCanons(SESSION, pathB)).toEqual([canon(lineB)]);
+      expect(await loadCanonDigests(SESSION, pathB)).toEqual([canonDigest(lineB)]);
     });
   });
 
@@ -820,7 +833,6 @@ describe("serve hooks grant served_leases (issue #81)", () => {
         rows: hashesA.map((hash, position) => ({ position, hash })),
         lineCount: hashesA.length,
         fullReadHashes: hashesA,
-        fullReadCanons: seed.normalized.split("\n").map((line) => canon(line)),
         isFullRead: true,
         contentHash: snapshotHashFor(contentA),
       });
@@ -881,7 +893,6 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
       rows: seed.fileHashes.map((hash, position) => ({ position, hash })),
       lineCount: seed.fileHashes.length,
       fullReadHashes: seed.fileHashes,
-      fullReadCanons: seed.normalized.split("\n").map((line) => canon(line)),
       isFullRead: true,
       contentHash: snapshotHashFor(ORIGINAL),
     });

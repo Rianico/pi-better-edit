@@ -52,9 +52,12 @@ export interface LeaseSpanSource {
 
 /**
  * The O(1) fast path qualifies **iff** both anchors were leased from the content now on disk —
- * `S_from === C ∧ S_to === C ∧ S_from === S_to` (spec §3.5). Any mixed-snapshot span, any drift
- * (`S !== C`), takes the dynamic rebase path through `line_lineage`, so a stale lease can never be
- * applied at its old coordinates.
+ * `S_from === C ∧ S_to === C ∧ S_from === S_to` (spec §3.5). The predicate selects the coordinate
+ * space the caller applies in — served coordinates, no `line_lineage` remap — and nothing more: it
+ * exempts no span from verification, because `resolveLeasedEdit` runs the same whole-window
+ * `verifyRebasedSpan` gate on both paths (#151). Any mixed-snapshot span, any drift (`S !== C`),
+ * takes the dynamic rebase path through `line_lineage`, so a stale lease can never be applied at
+ * its old coordinates.
  */
 export function isUniformLeaseFastPath(
   from: LeaseIdentityView,

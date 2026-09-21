@@ -76,6 +76,16 @@ export function canon(line: string): string {
   return line.replace(CANON_RE, "");
 }
 
+/**
+ * SAFETY: the canon digest — `String(xxh32(canon(line)))`, the exact value `line_lineage.canon_hash`
+ * and `served_leases.canon_hash` persist. Canon evidence is compared as digests so no canon text is
+ * ever stored twice in the session database (#151): a candidate reproduces a served line iff its
+ * digest equals the digest the lease recorded for that anchor.
+ */
+export function canonDigest(line: string): string {
+  return String(xxh32(canon(line)));
+}
+
 function getCanon(cache: Map<string, string>, line: string): string {
   let v = cache.get(line);
   if (v !== undefined) return v;

@@ -4,8 +4,9 @@ import { join } from "node:path";
 import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
-import { createSessionHandle, recordServes, recordServesTruncated } from "../../src/served-session";
-import { canon, initHasher, lineHashes } from "../../src/hashline";
+import { createSessionHandle, recordServes } from "../../src/served-session";
+import { canonDigest, initHasher, lineHashes } from "../../src/hashline";
+import { snapshotHashFor } from "../../src/snapshot-store";
 import { getWritableTempRoot } from "../support/fixtures";
 
 const SESSION_MODULE = "src/served-session/session.ts";
@@ -69,7 +70,7 @@ async function withTempHome(run: () => Promise<void>): Promise<void> {
   }
 }
 
-describe("serve recording — one shared writer for the mirror, canon sync and lease grant (#103)", () => {
+describe("serve recording — one shared writer for the mirror and the lease grant (#103, #151)", () => {
   const session = readFileSync(SESSION_MODULE, "utf-8");
 
   it("makes both serve paths delegate to a single shared writer", () => {
@@ -79,19 +80,19 @@ describe("serve recording — one shared writer for the mirror, canon sync and l
     expect(shared).toHaveLength(1);
     const writer = shared[0]!;
 
-    // the writer is defined once and owns the whole write: mirror row, canon sync, lease grant
+    // the writer is defined once and owns the whole write: mirror row + lease grant. Canon evidence
+    // needs no step here at all (#151): it is derived from the leases this writer grants.
     expect(session.match(new RegExp(`function ${writer}\\(`, "g"))).toHaveLength(1);
     const writerBody = functionBody(session, writer);
     expect(writerBody).toContain("withStore(");
     expect(writerBody).toContain("patchServed(");
-    expect(writerBody).toContain("servedCanonsUpsert(");
     expect(writerBody).toContain("grantLeasesForRows(");
+    expect(writerBody).not.toContain("canon");
 
     // neither serve path keeps its own copy of those steps
     for (const body of [plain, truncated]) {
       expect(body).not.toContain("withStore");
       expect(body).not.toContain("displacedHashes");
-      expect(body).not.toContain("servedCanonsUpsert");
       expect(body).not.toContain("grantLeasesForRows");
     }
   });
@@ -103,34 +104,25 @@ describe("serve recording — one shared writer for the mirror, canon sync and l
     expect(truncated).toContain("lineCount");
     expect(truncated).toContain("clearFrom");
   });
-
-  it("syncs canon rows from the served rows on both the plain and the truncated path", async () => {
+  it("derives canon evidence from the leases a serve grants, never from a stored canon", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const path = "/serve-seam.ts";
       const lines = ["alpha", "beta", "gamma"];
-      const hashes = await lineHashes(`${lines.join("\n")}\n`, path);
-      // WHY: the canon travels WITH the row (issue #149); there is no hash->canon lookup to fall
-      // WHY: back on, so a row without a canon records none.
-      const rows = hashes.map((hash, position) => ({
-        position,
-        hash,
-        canon: canon(lines[position]!),
-      }));
+      const content = `${lines.join("\n")}\n`;
+      const hashes = await lineHashes(content, path);
+      const rows = hashes.map((hash, position) => ({ position, hash }));
 
-      recordServes(store, "plain", path, rows);
-      recordServesTruncated(store, "truncated", path, rows, rows.length, 0);
+      // A mirror-only serve grants no lease, so no canon evidence exists anywhere. There is nothing
+      // to read back a canon text from: `served.canons` is written by no v7 code path (#151).
+      recordServes(store, "mirror-only", path, rows);
+      expect(await createSessionHandle("mirror-only", path, store).loadCanonDigests()).toEqual([]);
 
-      expect(await createSessionHandle("plain", path, store).loadCanons()).toEqual([
-        "alpha",
-        "beta",
-        "gamma",
-      ]);
-      expect(await createSessionHandle("truncated", path, store).loadCanons()).toEqual([
-        "alpha",
-        "beta",
-        "gamma",
-      ]);
+      // A serve that names its content hash grants the leases the evidence is derived from.
+      const handle = createSessionHandle("leased", path, store);
+      await handle.recordDiff(rows, { contentHash: snapshotHashFor(content) });
+      await handle.recordDiff(rows, { contentHash: snapshotHashFor(content) });
+      expect(await handle.loadCanonDigests()).toEqual(lines.map((line) => canonDigest(line)));
     });
   });
 });

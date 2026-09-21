@@ -73,7 +73,13 @@ export interface ApplyVerificationContext {
   absolutePath?: string;
   served?: (string | null)[];
   tombstone?: ReadonlySet<string>;
-  servedCanons?: (string | null)[];
+  /**
+   * SAFETY: canon digests parallel to `served` — `String(xxh32(canon(line)))`, the value
+   * `served_leases.canon_hash` persists. The session derives them from its leases; a caller with no
+   * digest records no evidence, and an absent array keeps every canon scan silent (never a shape
+   * refusal).
+   */
+  canonDigests?: (string | null)[];
   identity?: LeaseSpanSource;
   mode?: "general" | "literal";
   /**
@@ -176,8 +182,8 @@ function prepareEdit(fileHashes: string[], edit: HEdit, warnings: string[]): { f
  * Anchor resolution seam: lease-first (MVCC, spec §3.1.1) for every edit the session has a lease
  * source for — `served_leases` is looked up before anything else, so an anchor with no lease is
  * `[E_STALE_ANCHOR]` and never re-anchored onto colliding content. The lease path is read-only on
- * `served_leases`; `rebased` marks the returned coordinates as current-content coordinates, which
- * means the served-mirror verification is replaced by the rebased-span gate.
+ * `served_leases`; verification is owned by the lease seam for both its paths (`verifyRebasedSpan`
+ * over the whole served window), so no coordinate the lease path returns is re-checked here.
  *
  * Content resolution is NOT a fallback here: `resolveEditByContent` is only for a caller that
  * presents no seam at all (the library-level `applyEdit`), and a session edit always presents one.
@@ -193,9 +199,6 @@ function resolveEdit(
 ): {
   resolved: RHEdit | undefined;
   mismatches: Parameters<typeof fmtMismatchWithServes>[0];
-  rebased: boolean;
-  /** First row of the served window when `rebased`; `undefined` on the fast/content paths. */
-  servedStart: number | undefined;
   /** The healed swap when the resolved lines ran opposite the slot pair; narrated by the caller. */
   reversed: { fromHash: string; toHash: string } | undefined;
 } {
@@ -209,8 +212,6 @@ function resolveEdit(
     return {
       resolved: leased.resolved,
       mismatches: [],
-      rebased: leased.status === "rebased",
-      servedStart: leased.status === "rebased" ? leased.servedStart : undefined,
       reversed: leased.reversed,
     };
   }
@@ -221,8 +222,6 @@ function resolveEdit(
   return {
     resolved: byContent.resolved,
     mismatches: byContent.mismatches,
-    rebased: false,
-    servedStart: undefined,
     reversed: byContent.reversed,
   };
 }
@@ -249,7 +248,7 @@ export function applyEdit(
     absolutePath,
     served,
     tombstone,
-    servedCanons,
+    canonDigests,
     identity,
     mode = "general",
     sessionKey,
@@ -262,12 +261,15 @@ export function applyEdit(
 
   const prefixFixed = prepareEdit(fileHashes, edit, warnings).fixed;
 
-  const {
-    resolved,
-    mismatches,
-    rebased: leaseRebased,
-    reversed,
-  } = resolveEdit(prefixFixed, lineIndex.fileLines, fileHashes, filePath, served, identity, signal);
+  const { resolved, mismatches, reversed } = resolveEdit(
+    prefixFixed,
+    lineIndex.fileLines,
+    fileHashes,
+    filePath,
+    served,
+    identity,
+    signal,
+  );
   if (reversed) {
     warnings.push(formatWarning("W_REVERSED_ANCHORS", reversed));
   }
@@ -289,11 +291,11 @@ export function applyEdit(
     // WHY: No canon data means no evidence, so the scan stays silent — never a shape refusal.
     // WHY: `leaseRebased` needs no separate current-anchor scan: identity lives in the
     // WHY: lease seam, and the served hash echo condition only names served anchors.
-    const canons = servedCanons ?? [];
+    const digests = canonDigests ?? [];
     // WHY: the scan input names that one view explicitly, so a future stage
     // WHY: cannot re-add a second view silently.
-    const scan = { lines: resolved.content_lines, anchors: served, canons };
-    const hit = findServedHashEcho(scan.lines, scan.anchors, scan.canons, 1);
+    const scan = { lines: resolved.content_lines, anchors: served, digests };
+    const hit = findServedHashEcho(scan.lines, scan.anchors, scan.digests, 1);
     let servedCopy:
       | { k: number; hash: string; servedLine: number; offendingLine: string }
       | undefined;
@@ -340,7 +342,11 @@ export function applyEdit(
         });
       }
     }
-    if (!leaseRebased) {
+    // WHY: the lease seam owns verification for every edit it resolves (#151): the fast path
+    // WHY: and the rebased path both ran the whole-window `verifyRebasedSpan` gate inside
+    // WHY: `resolveLeasedEdit`. Only the library-level seam — a caller with a served mirror and
+    // WHY: no lease source — still verifies the mirrored span against itself here.
+    if (!identity) {
       const startAnchor = resolved.hash_bounds[0];
       const endAnchor = resolved.hash_bounds[1];
       verifyServedRange({
@@ -353,7 +359,7 @@ export function applyEdit(
         fileLines: lineIndex.fileLines,
         filePath,
         tombstone,
-        servedCanons,
+        canonDigests,
       });
     }
   }
@@ -397,8 +403,8 @@ export function applyEdit(
   // WHY: depend on lease state. The served prefix mismatch tier stays evidence-gated
   // WHY: (`if (served)`): with no served content it reports nothing by construction.
   if (served) {
-    const canons = servedCanons ?? [];
-    const mismatches = findServedPrefixMismatches(resolved.content_lines, served, canons, 1);
+    const digests = canonDigests ?? [];
+    const mismatches = findServedPrefixMismatches(resolved.content_lines, served, digests, 1);
     for (const mismatch of mismatches) {
       warnings.push(
         buildServedEditPrefixNote({

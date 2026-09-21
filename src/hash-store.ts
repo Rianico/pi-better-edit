@@ -292,7 +292,10 @@ function buildStore(db: DatabaseSync): void {
   // WHY: complete v6 compatibility shells keep un-restarted v6 sessions and concurrent
   // WHY: worktrees free of missing-table errors and v6 drop-table wipes, while v7 state
   // WHY: stays isolated in v7 tables. Only the ancient pre-session-keyed served shell is
-  // WHY: rebuilt — it is unusable by either version without session_id.
+  // WHY: rebuilt — it is unusable by either version without session_id. The shell keeps its
+  // WHY: `canons` column for the same reason: v6 prepares a statement naming it at store open,
+  // WHY: so a dropped column would break every v6 store operation. v7 never reads or writes it —
+  // WHY: canon evidence is derived from `served_leases.canon_hash` (issue #151).
   if (tableColumns(db, "served").size > 0 && !tableColumns(db, "served").has("session_id")) {
     db.exec("DROP TABLE served");
   }

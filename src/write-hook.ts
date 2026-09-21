@@ -59,15 +59,15 @@ export async function servedHashEchoDenial(
   abortIf(signal);
   const handle = createSessionHandle(sessionKey, absolutePath);
   const served = await handle.load();
-  let canons: (string | null)[] = [];
+  let canonDigests: (string | null)[] = [];
   try {
-    canons = await handle.loadCanons();
+    canonDigests = await handle.loadCanonDigests();
   } catch (error) {
-    console.error("Failed to load served canons for write:", error);
-    canons = [];
+    console.error("Failed to load served canon digests for write:", error);
+    canonDigests = [];
   }
   const lines = splitLines(content);
-  const reproduction = findServedHashEcho(lines, served, canons, 1);
+  const reproduction = findServedHashEcho(lines, served, canonDigests, 1);
   if (!reproduction) return undefined;
   const offendingLine = lines[reproduction.k - 1] ?? "";
   // WHY: verification side of the tally: this refusal runs pre-dispatch, so no bytes move

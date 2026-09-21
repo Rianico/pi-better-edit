@@ -13,7 +13,7 @@ import { cntDiff, visLines, splitLines, errCode, isRec, normalizeFilePath } from
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError } from "./domain-errors.js";
-import { canon, changedRange, lineHashes } from "./hashline/index.js";
+import { changedRange, lineHashes } from "./hashline/index.js";
 export interface UndoEntry {
   content: string;
   bom: string;
@@ -208,17 +208,9 @@ export function regEditUndo(pi: ExtensionAPI): void {
           currentHashes,
         );
         const undoDiff = undoDiffResult.diff;
-        // WHY: the restored rows carry their own canons (issue #149): the serve writer must not look a
-        // WHY: hash up in a file-blind map, or a cross-file collision poisons this file's served canons.
-        const restoredLines = splitLines(undo.content);
-        const undoDenseRows: typeof undoDiffResult.servedRows = [];
-        for (let i = 0; i < restoredHashes.length; i++) {
-          undoDenseRows.push({
-            position: i,
-            hash: restoredHashes[i]!,
-            canon: canon(restoredLines[i] ?? ""),
-          });
-        }
+        const undoDenseRows: typeof undoDiffResult.servedRows = restoredHashes.map(
+          (hash, position) => ({ position, hash }),
+        );
         try {
           const curSet = new Set(currentHashes);
           const restoredSet = new Set(restoredHashes);
@@ -281,9 +273,10 @@ export function regEditUndo(pi: ExtensionAPI): void {
         }
 
         // WHY: undo_last_edit is a serve hook (spec §6 stage 1, path 5): the restored rows are
-        // WHY: presented to the model, so the legacy served mirror (still the authority the current
-        // WHY: `resolve`/`verifyServedRange` path reads, until #85 lands the lease-only seam) is
-        // WHY: (re-)written here. The v7 `served_leases` identities were granted in the restore
+        // WHY: presented to the model, so the served mirror is (re-)written here — it is the record
+        // WHY: the reject paths serve rows from. Lease-only verification was completed by #151, which
+        // WHY: replaced the `verifyServedRange` seam on the leased edit path, so this mirror is no
+        // WHY: longer read for a verdict. The v7 `served_leases` identities were granted in the restore
         // WHY: transaction above.
         try {
           const handle = createSessionHandle(sessionKeyForUndo, mutationTargetPath);

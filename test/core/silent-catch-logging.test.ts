@@ -5,6 +5,7 @@ import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 
 import { initHasher } from "../../src/hashline/hasher.js";
+import { lineHashes } from "../../src/hashline/index.js";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store.js";
 import { createSessionHandle, ensureServedSchema } from "../../src/served-session/session.js";
 import * as snapshotStore from "../../src/snapshot-store";
@@ -64,32 +65,34 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
     expect(String(errorSpy.mock.calls[0]?.[0] ?? "")).toMatch(/served/i);
   });
 
-  it("canon sync failure logs once and keeps the serve (best-effort)", async () => {
+  it("lease grant failure logs once and keeps the serve (best-effort)", async () => {
     await withTempHome(async () => {
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
-      // WHY: the canon sync is the only statement whose failure must stay best-effort. With the
-      // WHY: process-global canon map gone (issue #149), the honest injection point is the SQL
-      // WHY: itself: a trigger aborts only writes that carry a canon.
+      // WHY: the lease grant is the best-effort step of a serve record (#151): the mirror row is
+      // WHY: already committed, so a failed grant must log with context and leave the serve intact.
+      // WHY: The injection point is the SQL itself — a trigger aborts only lease writes.
       const store = await loadHashStore();
       store.db.exec(
-        "CREATE TRIGGER canon_boom_insert BEFORE INSERT ON served " +
-          "WHEN NEW.canons IS NOT NULL BEGIN SELECT RAISE(ABORT, 'canon boom'); END;" +
-          "CREATE TRIGGER canon_boom_update BEFORE UPDATE OF canons ON served " +
-          "WHEN NEW.canons IS NOT NULL BEGIN SELECT RAISE(ABORT, 'canon boom'); END;",
+        "CREATE TRIGGER lease_boom BEFORE INSERT ON served_leases " +
+          "BEGIN SELECT RAISE(ABORT, 'lease boom'); END;",
       );
-      const handle = createSessionHandle("sess-canon-121", "/canon-121.ts", store);
-      const rows = [
-        { position: 0, hash: "abc", canon: "alpha" },
-        { position: 1, hash: "def", canon: "beta" },
-      ];
-      await expect(handle.record(rows)).resolves.toBeUndefined();
-      expect(await handle.load()).toEqual(["abc", "def"]);
-      const canonLogs = errorSpy.mock.calls.filter((call) =>
+      const path = "/lease-121.ts";
+      const content = "alpha\nbeta\n";
+      const hashes = await lineHashes(content, path);
+      const handle = createSessionHandle("sess-lease-121", path, store);
+      await expect(
+        handle.recordDiff(
+          hashes.map((hash, position) => ({ position, hash })),
+          { contentHash: snapshotStore.snapshotHashFor(content) },
+        ),
+      ).resolves.toBeUndefined();
+      expect(await handle.load()).toEqual(hashes);
+      const leaseLogs = errorSpy.mock.calls.filter((call) =>
         String(call[0] ?? "")
           .toLowerCase()
-          .includes("canon"),
+          .includes("lease"),
       );
-      expect(canonLogs).toHaveLength(1);
+      expect(leaseLogs).toHaveLength(1);
     });
   });
 

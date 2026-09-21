@@ -66,17 +66,14 @@ export type DomainWarningCode =
   | "W_LITERAL_BYPASS"
   | "W_NOOP";
 
-/** SAFETY: one served row — position is 0-based, hash is the 3-char anchor. */
+/**
+ * SAFETY: one served row — position is 0-based, hash is the 3-char anchor. Canon evidence is not a
+ * row attribute: it is derived on demand from `served_leases.canon_hash`, so no canon text is ever
+ * stored (issue #151).
+ */
 export interface ServedRow {
   position: number;
   hash: string;
-  /**
-   * WHY: whitespace-stripped `canon` of the served line, captured at the serve site that holds
-   * WHY: the file's lines. A 3-char hash is unique only inside one file's allocation, so the canon
-   * WHY: must travel WITH the row — a process-wide hash->canon map collides across files and
-   * WHY: poisons the persisted served canons (issue #149). Absent when the producer has no lines.
-   */
-  canon?: string;
 }
 
 // WHY: user-facing diagnosis carried as `details.cause` on range-family
