@@ -50,7 +50,7 @@ The model-facing word for the `served span` — the span between `anchor_from` a
 _Avoid_: range (use `served range` for verified span, `range` for current file run)
 
 **served-range staleness**:
-The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`). Reported as `[E_STALE_RANGE]` — for a changed span, or for a never-served interior (interior loop miss: a line strictly between the anchors has no served entry; the remedy is identical — a fresh read of the current range — so no separate code is kept; retired: `[E_UNSERVED_RANGE]`, see ADR-0020). Every `[E_STALE_RANGE]` does `reject-and-serve`: the current range is served under the exact heading `Current range (fresh read):` with no retry hint and no mandate — the rows prove served state and disk disagree, not that the same anchors are the right retry, so the model decides from them instead of retrying blind (ADR-0022).
+The condition where the `served range` (span between anchors) cannot be reconciled with served state: interior `served span` vs `current span` mismatch (`hash`/`canon`/`tombstone`/`len`), or a mirror row a serve truncated away while its lease still lives (issue #151). Reported as `[E_STALE_RANGE]` — for a changed span, or for a never-served interior (interior loop miss: a line strictly between the anchors has no served entry; the remedy is identical — a fresh read of the current range — so no separate code is kept; retired: `[E_UNSERVED_RANGE]`, see ADR-0020). Every `[E_STALE_RANGE]` does `reject-and-serve`: the current range is served under the exact heading `Current range (fresh read):` with no retry hint and no mandate — the rows prove served state and disk disagree, not that the same anchors are the right retry, so the model decides from them instead of retrying blind (ADR-0022).
 _Avoid_: range staleness (use `served range` for span)
 
 **never-served**:
@@ -103,7 +103,7 @@ The `served_leases` row that binds a served anchor to the immutable `line_id` it
 _Avoid_: reservation, lock, epoch
 
 **retirement** (`retired_at`):
-Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read grants a fresh lease, so a stale anchor rejects `[E_TARGET_LOST]` (no live unshifted survivor) or `[E_UNVERIFIED_RANGE]` (survivor live and unshifted: a fresh read to decide from) instead of silently rebinding.
+Marking a lease terminal: after a snapshot commits, every `served_leases` row whose `line_id` is absent from that snapshot's `line_lineage` gets `retired_at` set. A retired identity is gone until a re-read grants a fresh lease, so a stale anchor rejects `[E_TARGET_LOST]` (no live unshifted survivor) or `[E_UNVERIFIED_RANGE]` (survivor live and unshifted: a fresh read to decide from) instead of silently rebinding. An interior row whose lease is terminal rejects `[E_STALE_RANGE]` with `details.cause: "retirement"` (the leased-span gate), the same diagnosis the boundary rule reports.
 _Avoid_: tombstone (the hash-allocation guard, not a lease state)
 
 **lineage** (`line_lineage`):
