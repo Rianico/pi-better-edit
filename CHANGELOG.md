@@ -6,6 +6,7 @@ All notable changes to this project will be documented in this file.
 
 ### Features
 
+* **hashline:** unify span verification on lease lineage
 * **errors:** unify the error and warning contract (E_*/W_* tiers) (#148)
 * **edit:** gate reproduced served rows behind a literal declaration (#134)
 * **edit:** adopt line-identity MVCC with leases
@@ -13,6 +14,10 @@ All notable changes to this project will be documented in this file.
 ### Bug Fixes
 
 * **hashline:** scope served canons per file and serve fresh read (#152)
+
+### Documentation
+
+* **hashline:** record lease-owned span verification in ADR-0023
 
 ## [1.7.0](https://github.com/Rianico/pi-better-edit/compare/v1.6.0...v1.7.0) (2026-09-09)
 
