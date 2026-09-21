@@ -1097,15 +1097,6 @@ export function loadLeases(store: HashStore, sessionKey: string, path: string): 
   return servedStmts(store.db).leaseList(sessionKey, path);
 }
 
-/** `(anchor, canon_hash)` for every lease on the path — the canon-evidence lookup (#151). */
-export function loadLeaseCanonHashes(
-  store: HashStore,
-  sessionKey: string,
-  path: string,
-): Array<{ anchor: string; canon_hash: string }> {
-  return servedStmts(store.db).leaseCanonHashes(sessionKey, path);
-}
-
 /** The lease for one served anchor, if this session holds one. */
 export function loadLease(
   store: HashStore,

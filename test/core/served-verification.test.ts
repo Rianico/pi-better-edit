@@ -2,6 +2,7 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
 import { _lineHashesPure } from "../../src/hashline/hash";
 import { canonDigest } from "../../src/hashline/hash-identity.js";
+import { DomainError } from "../../src/domain-errors.js";
 import {
   ServedVerification,
   verifyServedRange,
@@ -337,6 +338,64 @@ describe("ServedVerification deep module — decision table", () => {
     expect(err.message).toContain("Retry with these anchors");
     expect(err.details?.cause).toBe("tombstone");
     expect(err.servedRows.length).toBeGreaterThan(0);
+  });
+
+  it("interior tombstone mismatch reports cause tombstone, not plain digest drift", () => {
+    // WHY: the general digest clause subsumes the tombstone one, so ordering decides which cause
+    // WHY: reaches the payload (spec §5.3: the tombstone check reports `tombstone`). The specific
+    // WHY: check therefore runs first — this pins that its cause is reachable at all.
+    const servedContent = "alpha\nbeta\ngamma";
+    const hashes = _lineHashesPure(servedContent);
+    const canonDigests = servedContent.split("\n").map((line) => canonDigest(line));
+    // The freed anchor is still in the file bytes, but something else now carries it.
+    const fileLines = ["alpha", "BETA", "gamma"];
+    const verifier = new ServedVerification();
+    let caught: unknown;
+    try {
+      verifier.verifyOrThrow({
+        range: { startHash: hashes[0]!, endHash: hashes[2]!, startLine: 1, endLine: 3 },
+        served: [...hashes],
+        fileHashes: [...hashes],
+        fileLines,
+        tombstone: new Set([hashes[1]!]),
+        canonDigests,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    const err = caught as DomainError;
+    expect(err.code).toBe("E_STALE_RANGE");
+    expect(err.firstOffendingLine).toBe(2);
+    expect(err.details.cause).toBe("tombstone");
+  });
+
+  it("interior digest drift keeps the fresh-read remedy and leaks no digest numbers", () => {
+    const servedContent = "alpha\nbeta\ngamma";
+    const hashes = _lineHashesPure(servedContent);
+    const canonDigests = servedContent.split("\n").map((line) => canonDigest(line));
+    const fileLines = ["alpha", "BETA", "gamma"];
+    const verifier = new ServedVerification();
+    let caught: unknown;
+    try {
+      verifier.verifyOrThrow({
+        range: { startHash: hashes[0]!, endHash: hashes[2]!, startLine: 1, endLine: 3 },
+        served: [...hashes],
+        fileHashes: [...hashes],
+        fileLines,
+        canonDigests,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    const err = caught as DomainError;
+    expect(err.code).toBe("E_STALE_RANGE");
+    expect(err.firstOffendingLine).toBe(2);
+    expect(err.details.cause).toBe("served-range staleness");
+    // WHY: a canon digest is a 32-bit number that names nothing the model can act on, so the
+    // WHY: headline states the fact and the fresh read carries the remedy.
+    expect(err.message).toContain("line 2 differs from what was served.");
+    expect(err.message).not.toMatch(/expected|vs actual/);
+    expect(err.message).toContain("Current range (fresh read):");
   });
 
   it("servedPositionsOf / buildRangeServeRows / fmtServedRows remain accessible", () => {

@@ -262,10 +262,12 @@ export function makeStaleAnchorRejection(opts: {
  *
  *  - a different window length means an external insert/delete landed strictly inside the range
  *    (Probe J) -> `E_STALE_RANGE`;
- *  - a served line with no mirror row or no lease -> `E_STALE_RANGE` (never-served interior:
- *    the remedy is identical — retry with the served rows — so no separate code is kept);
- *  - a served line whose lease is retired, or whose `line_id` no longer lives at its expected
- *    rebased coordinate, -> `E_STALE_RANGE` (Probes A/E/K: never apply at a coordinate whose
+ *  - a served line whose mirror row was truncated away, or a slot the mirror explicitly cleared, or
+ *    an anchor holding no lease -> `E_STALE_RANGE` (the diagnosis separates the three: the served
+ *    record cannot be reconciled, never-served, and no served identity);
+ *  - a served line whose lease is retired -> `E_STALE_RANGE` with `details.cause: "retirement"`, and
+ *    a live lease whose `line_id` no longer lives at its expected rebased coordinate -> the same code
+ *    with `cause: "served-range staleness"` (Probes A/E/K: never apply at a coordinate whose
  *    immutable `line_id` is not the one leased).
  *
  * No canon data is consulted: identity comes from the mirror row's lease, so a same-anchor collision
@@ -311,7 +313,23 @@ export function verifyRebasedSpan(args: {
   for (let k = 0; k < servedLen; k++) {
     const servedAnchor = served[servedStart - 1 + k];
     const currentLine = rebasedStart + k;
-    if (servedAnchor === null || servedAnchor === undefined) {
+    // WHY: the served window can come from the leases' own `served_line_number` because a truncated
+    // WHY: serve dropped the mirror rows it no longer covers (spec §3.1.1): the lease outlives the
+    // WHY: mirror. An absent slot is that missing record, never "this line was never served", so the
+    // WHY: span fails closed on the truth (the served record cannot be reconciled) and the current
+    // WHY: range is served for a fresh read.
+    if (servedAnchor === undefined) {
+      throw makeServedRejection({
+        code: "E_STALE_RANGE",
+        headline: `line ${currentLine}${where} has no served mirror row left; the served window was truncated.`,
+        startLine: rebasedStart,
+        endLine: rebasedEnd,
+        snapshot,
+        firstOffendingLine: currentLine,
+        cause: "served-range staleness",
+      });
+    }
+    if (servedAnchor === null) {
       throw makeServedRejection({
         code: "E_STALE_RANGE",
         headline: `line ${currentLine}${where} was never served.`,
@@ -334,7 +352,22 @@ export function verifyRebasedSpan(args: {
         cause: "never-served",
       });
     }
-    if (lease.retiredAt !== null || rebasedLineOf(lease.lineId) !== currentLine) {
+    // WHY: two distinct diagnoses, one per condition (spec §5.3): a terminal lease is a
+    // WHY: `retirement` — the identity is gone and only a re-read revives it — while a live lease
+    // WHY: whose `line_id` no longer sits at its expected coordinate is drift between the served
+    // WHY: record and the rebased span.
+    if (lease.retiredAt !== null) {
+      throw makeServedRejection({
+        code: "E_STALE_RANGE",
+        headline: `line ${currentLine}${where} no longer resolves to the line identity it was served with.`,
+        startLine: rebasedStart,
+        endLine: rebasedEnd,
+        snapshot,
+        firstOffendingLine: currentLine,
+        cause: "retirement",
+      });
+    }
+    if (rebasedLineOf(lease.lineId) !== currentLine) {
       throw makeServedRejection({
         code: "E_STALE_RANGE",
         headline: `line ${currentLine}${where} no longer resolves to the line identity it was served with.`,
@@ -497,48 +530,40 @@ export class ServedVerification {
       });
     }
 
-    // WHY: Canon check for same-pos different content (collision)
+    // WHY: two canon-tier verdicts over the same span, specific condition first: a tombstoned
+    // WHY: interior hash whose content no longer digests to the served canon is a `tombstone` — the
+    // WHY: anchor was freed and something else now carries it — while any other digest difference is
+    // WHY: plain drift from the served record. Ordering matters: the general clause subsumes the
+    // WHY: tombstone one, so running it first would make the tombstone cause unreachable.
     if (canonDigests && from !== undefined && to !== undefined) {
       const servedLen = to - from + 1;
       for (let k = 0; k < servedLen; k++) {
-        const expected = canonDigests[from + k];
-        if (expected !== null && expected !== undefined) {
-          const actual = canonDigest(fileLines[startLine - 1 + k] ?? "");
-          if (expected !== actual) {
-            this.throwStale({
-              headline: `line ${startLine + k}${where} differs from what was served (expected "${expected}" vs actual "${actual}").`,
-              firstOffendingLine: startLine + k,
-              servedRows,
-              rendered,
-              cause: "served-range staleness",
-            });
-          }
-        }
-      }
-      // WHY: Tombstone interior check (whole-span) — gated on canon-digest inequality (fail-closed
-      // WHY: only for a different canon digest)
-      for (let k = 0; k < servedLen; k++) {
         const h = fileHashes[startLine - 1 + k];
-        if (h && tombstone.has(h)) {
-          const expectedCanon = canonDigests?.[from + k] ?? undefined;
-          const actualCanon = canonDigest(fileLines[startLine - 1 + k] ?? "");
-          if (
-            expectedCanon !== undefined &&
-            expectedCanon !== null &&
-            expectedCanon !== actualCanon
-          ) {
-            // WHY: unified with the canon-mismatch clause above: ONE clause plus
-            // WHY: cause, keeping the first mismatching line (expected vs actual)
-            // WHY: and dropping the per-line anchor-changed narration. The cause
-            // WHY: (`tombstone`) is what distinguishes the signal.
-            this.throwStale({
-              headline: `line ${startLine + k}${where} differs from what was served (expected "${expectedCanon}" vs actual "${actualCanon}").`,
-              firstOffendingLine: startLine + k,
-              servedRows,
-              rendered,
-              cause: "tombstone",
-            });
-          }
+        if (!h || !tombstone.has(h)) continue;
+        const expectedCanon = canonDigests[from + k];
+        if (expectedCanon === null || expectedCanon === undefined) continue;
+        if (expectedCanon === canonDigest(fileLines[startLine - 1 + k] ?? "")) continue;
+        this.throwStale({
+          headline: `line ${startLine + k}${where} differs from what was served.`,
+          firstOffendingLine: startLine + k,
+          servedRows,
+          rendered,
+          cause: "tombstone",
+        });
+      }
+      for (let k = 0; k < servedLen; k++) {
+        const expected = canonDigests[from + k];
+        if (expected === null || expected === undefined) continue;
+        // WHY: the digests themselves stay out of the headline (issue #151): a 32-bit number names
+        // WHY: nothing the model can act on, and the remedy is the fresh read either way.
+        if (expected !== canonDigest(fileLines[startLine - 1 + k] ?? "")) {
+          this.throwStale({
+            headline: `line ${startLine + k}${where} differs from what was served.`,
+            firstOffendingLine: startLine + k,
+            servedRows,
+            rendered,
+            cause: "served-range staleness",
+          });
         }
       }
     }

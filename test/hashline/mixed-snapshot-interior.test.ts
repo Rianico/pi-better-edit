@@ -4,6 +4,7 @@ import { applyEdit } from "../../src/hashline/apply";
 import { _lineHashesPure } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 import type { HEdit, LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";
+import { verifyRebasedSpan } from "../../src/hashline/served-verification";
 import { DomainError } from "../../src/domain-errors.js";
 
 beforeAll(async () => {
@@ -95,6 +96,78 @@ describe("mixed-snapshot interior under a same-anchor collision (#151)", () => {
     expect(err.code).toBe("E_STALE_RANGE");
     expect(err.message).toMatch(/\[MODEL\] \[E_STALE_RANGE\]/);
     expect(err.message).toContain("Current range (fresh read):");
+    // WHY: the interior lease is terminal, so the diagnosis is `retirement` — the same cause the
+    // WHY: boundary rule reports for a retired bound (spec §5.3), not a drift verdict.
+    expect(err.details.cause).toBe("retirement");
+  });
+});
+
+describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 review)", () => {
+  const servedLines = ["row 1", "row 2", "row 3"];
+  const hashes = _lineHashesPure(servedLines.join("\n"));
+  const snapshot = { fileHashes: hashes, fileLines: servedLines };
+  const positions: Record<number, number> = { 1: 1, 2: 2, 3: 3 };
+
+  function span(overrides: {
+    served: (string | null)[];
+    leasedRetired?: number;
+    moved?: number;
+  }): DomainError {
+    const leases = new Map<string, LeaseIdentityView>();
+    for (let i = 0; i < 3; i++) {
+      leases.set(
+        hashes[i]!,
+        lease({
+          lineId: i + 1,
+          servedSnapshotHash: "S",
+          servedLineNumber: i + 1,
+          retiredAt: overrides.leasedRetired === i + 1 ? 7 : null,
+        }),
+      );
+    }
+    let caught: unknown;
+    try {
+      verifyRebasedSpan({
+        served: overrides.served,
+        servedStart: 1,
+        servedEnd: 3,
+        rebasedStart: 1,
+        rebasedEnd: 3,
+        snapshot,
+        leaseFor: (anchor) => leases.get(anchor),
+        rebasedLineOf: (lineId) => (overrides.moved === lineId ? lineId + 1 : positions[lineId]),
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(DomainError);
+    return caught as DomainError;
+  }
+
+  it("reports a truncated mirror row as an unreconcilable record, never 'was never served'", () => {
+    const err = span({ served: [hashes[0]!, hashes[1]!] });
+    expect(err.code).toBe("E_STALE_RANGE");
+    expect(err.details.cause).toBe("served-range staleness");
+    expect(err.message).toContain("no served mirror row left");
+    expect(err.message).not.toContain("was never served");
+  });
+
+  it("reports an explicitly cleared mirror slot as never-served", () => {
+    const err = span({ served: [hashes[0]!, null, hashes[2]!] });
+    expect(err.code).toBe("E_STALE_RANGE");
+    expect(err.details.cause).toBe("never-served");
+    expect(err.message).toContain("was never served");
+  });
+
+  it("reports a retired interior lease as retirement", () => {
+    const err = span({ served: [...hashes], leasedRetired: 2 });
+    expect(err.code).toBe("E_STALE_RANGE");
+    expect(err.details.cause).toBe("retirement");
+  });
+
+  it("reports a live lease that moved off its coordinate as drift", () => {
+    const err = span({ served: [...hashes], moved: 2 });
+    expect(err.code).toBe("E_STALE_RANGE");
     expect(err.details.cause).toBe("served-range staleness");
   });
 });
