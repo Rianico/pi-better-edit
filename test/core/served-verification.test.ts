@@ -398,6 +398,36 @@ describe("ServedVerification deep module — decision table", () => {
     expect(err.message).toContain("Current range (fresh read):");
   });
 
+  it("reports the earliest offending line when drift precedes a tombstoned interior line", () => {
+    // WHY: one canon-tier scan, so the cause is chosen per offending line instead of by tier. Two
+    // WHY: ordered scans would let a later tombstoned line mask an earlier plain drift and point the
+    // WHY: model at the wrong line.
+    const servedContent = "alpha\nbeta\ngamma";
+    const hashes = _lineHashesPure(servedContent);
+    const canonDigests = servedContent.split("\n").map((line) => canonDigest(line));
+    // Line 1 drifted without a freed anchor; line 2 is tombstoned and also drifted.
+    const fileLines = ["ALPHA", "BETA", "gamma"];
+    const verifier = new ServedVerification();
+    let caught: unknown;
+    try {
+      verifier.verifyOrThrow({
+        range: { startHash: hashes[0]!, endHash: hashes[2]!, startLine: 1, endLine: 3 },
+        served: [...hashes],
+        fileHashes: [...hashes],
+        fileLines,
+        tombstone: new Set([hashes[1]!]),
+        canonDigests,
+      });
+    } catch (error) {
+      caught = error;
+    }
+    const err = caught as DomainError;
+    expect(err.code).toBe("E_STALE_RANGE");
+    expect(err.firstOffendingLine).toBe(1);
+    expect(err.details.cause).toBe("served-range staleness");
+    expect(err.message).toContain("line 1 differs from what was served.");
+  });
+
   it("servedPositionsOf / buildRangeServeRows / fmtServedRows remain accessible", () => {
     const hashes = ["aaa", "bbb", "ccc"];
     const lines = ["a", "b", "c"];

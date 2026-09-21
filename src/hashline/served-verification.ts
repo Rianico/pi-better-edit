@@ -530,39 +530,26 @@ export class ServedVerification {
       });
     }
 
-    // WHY: two canon-tier verdicts over the same span, specific condition first: a tombstoned
-    // WHY: interior hash whose content no longer digests to the served canon is a `tombstone` — the
-    // WHY: anchor was freed and something else now carries it — while any other digest difference is
-    // WHY: plain drift from the served record. Ordering matters: the general clause subsumes the
-    // WHY: tombstone one, so running it first would make the tombstone cause unreachable.
+    // WHY: one canon-tier pass, earliest offending line wins: a tombstoned interior hash whose
+    // WHY: content no longer digests to the served canon is a `tombstone` — the anchor was freed and
+    // WHY: something else now carries it — while any other digest difference is plain drift from the
+    // WHY: served record. Selecting the cause inside a single scan, rather than in two ordered scans,
+    // WHY: keeps the specific diagnosis without letting a later line mask an earlier one.
     if (canonDigests && from !== undefined && to !== undefined) {
       const servedLen = to - from + 1;
-      for (let k = 0; k < servedLen; k++) {
-        const h = fileHashes[startLine - 1 + k];
-        if (!h || !tombstone.has(h)) continue;
-        const expectedCanon = canonDigests[from + k];
-        if (expectedCanon === null || expectedCanon === undefined) continue;
-        if (expectedCanon === canonDigest(fileLines[startLine - 1 + k] ?? "")) continue;
-        this.throwStale({
-          headline: `line ${startLine + k}${where} differs from what was served.`,
-          firstOffendingLine: startLine + k,
-          servedRows,
-          rendered,
-          cause: "tombstone",
-        });
-      }
       for (let k = 0; k < servedLen; k++) {
         const expected = canonDigests[from + k];
         if (expected === null || expected === undefined) continue;
         // WHY: the digests themselves stay out of the headline (issue #151): a 32-bit number names
         // WHY: nothing the model can act on, and the remedy is the fresh read either way.
         if (expected !== canonDigest(fileLines[startLine - 1 + k] ?? "")) {
+          const h = fileHashes[startLine - 1 + k];
           this.throwStale({
             headline: `line ${startLine + k}${where} differs from what was served.`,
             firstOffendingLine: startLine + k,
             servedRows,
             rendered,
-            cause: "served-range staleness",
+            cause: h !== undefined && tombstone.has(h) ? "tombstone" : "served-range staleness",
           });
         }
       }
