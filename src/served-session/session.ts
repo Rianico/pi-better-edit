@@ -323,6 +323,7 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     },
     leaseGet: (...params) => leaseGetStmt.get(...params) as ServedLease | undefined,
     leaseList: (...params) => leaseListStmt.all(...params) as unknown as ServedLease[],
+    // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     leaseCanonHashes: (...params) =>
       leaseListCanonStmt.all(...params) as unknown as Array<{ anchor: string; canon_hash: string }>,
     leaseHomes: (sessionKey, anchor) =>
