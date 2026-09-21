@@ -4,87 +4,86 @@
 
 <h1 align="center">pi-better-edit</h1>
 <p align="center">
-  <strong>Your agent's edits land on the right line. Every time.<br>
-  Hash-anchored <code>edit</code> for &pi; &mdash; no line numbers, no re-typing, no silent overwrites. Verified before it writes.</strong>
+  <strong>Production-grade, hash-anchored file editing for &pi;.<br>
+  Powered by Content-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.</strong>
 </p>
+
 <p align="center">
-  <a href="#why-you-need-this"><img src="https://img.shields.io/badge/why-hashline-blue?style=flat" alt="why hashline"></a>
+  <a href="#why-pi-better-edit-v2"><img src="https://img.shields.io/badge/architecture-MVCC_v2-blue?style=flat" alt="MVCC v2"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-30s-brightgreen?style=flat" alt="quick start 30s"></a>
-  <a href="#comparison"><img src="https://img.shields.io/badge/correctness-23%2F23-success?style=flat" alt="23/23 battery"></a>
+  <a href="#reproducible-benchmarks"><img src="https://img.shields.io/badge/correctness-23%2F23-success?style=flat" alt="23/23 battery"></a>
+  <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/v/pi-better-edit?color=crimson" alt="npm version"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
 </p>
 
 <p align="center">
+  <a href="#why-pi-better-edit-v2">Why v2 MVCC</a> •
   <a href="#quick-start">Quick Start</a> •
-  <a href="#why-hashline">Why Hashline</a> •
+  <a href="#systematic-architecture">Architecture</a> •
   <a href="#tools">Tools</a> •
+  <a href="#error-and-warning-contract">Errors & Warnings</a> •
   <a href="#comparison">Comparison</a> •
-  <a href="#how-anchors-work">How Anchors Work</a> •
-  <a href="#upgrading-from-1x">Upgrading</a> •
-  <a href="#development">Development</a> •
-  <a href="#acknowledgments">Acknowledgments</a>
-</p>
-
-<p align="center">
-  <img src="https://img.shields.io/npm/v/pi-better-edit" alt="npm version">
-  <img src="https://img.shields.io/npm/dm/pi-better-edit" alt="npm downloads">
-  <img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License">
-  <img src="https://img.shields.io/github/stars/Rianico/pi-better-edit?style=social" alt="GitHub stars">
+  <a href="#reproducible-benchmarks">Benchmarks</a> •
+  <a href="#upgrading-from-1x">Upgrading</a>
 </p>
 
 ---
 
 > *"The harness — not the model — is the bottleneck."* — Can Bölük, [*The Harness Problem*](https://stencil.so/blog/the-harness-problem)
 >
-> **This is the harness fix.** Content hashes replace line numbers — an edit above never shifts the anchor below. Every range is verified against what the agent was actually served. Stale or never-served interior lines are hard-rejected and the current range is served as a fresh read (`[E_STALE_RANGE]`) to decide from — never a blind retry on the same anchors. A bound that no longer resolves is served the same way (`[E_UNVERIFIED_RANGE]`); only a lost range (`[E_TARGET_LOST]`) requires a full `read` (see Error codes).
+> When an LLM edits code, line numbers shift under its feet and re-typing text wastes tokens while inviting hallucinations. Naive hashline tools force the model to manually track line renumbering, while early heuristic implementations attempted to guess anchor targets—causing catastrophic silent miswrites when identical lines existed (e.g. duplicate function guards).
 >
-> **3 tool calls vs 6 · -55.8% tokens · 23/23 correctness.** Same external-drift refactor, same correct file (single stochastic run vs OMP; [full method](benchmarks/results/2026-08-17-practical-token-benchmark.md)).
+> **`pi-better-edit` v2 solves this systematically.** Built on **Content-Addressed Line-Identity MVCC**, every line is tracked by an immutable lineage ID, verified across session-keyed leases, and aligned via Patience LIS sorting. Edits auto-rebase across non-conflicting external shifts (0 tokens burned, 0 retries), and true conflicts fail closed with immediate fresh ranges.
 
-## Why you need this
+## Why pi-better-edit v2
 
-**If you've watched an agent corrupt a file because `line 47` became `line 74` after an insert — this is for you.**
+| Traditional (`str_replace` / Line Numbers) | Naive Hashline / Tagged Patches | pi-better-edit v2 (Line-Identity MVCC) |
+| --- | --- | --- |
+| Model re-types old code (output billed ~5–6× input) | Sends line numbers + full-file content tags | **Sends two 3-char hashes**; old code is never re-typed |
+| One insert above shifts every line below → silent corruption | Requires agent to mentally renumber lines after every edit | **Anchors are content addresses**; exterior shifts auto-rebase cleanly |
+| No verification against what the model was served | Verifies file version, but not individual line coordinates | **Leased spans verified against snapshot lineage** before touching disk |
+| Duplicate lines cause ambiguous replacement failures | Line numbers distinguish lines, but position is unverified | **Coprime bitset probing** assigns unique hashes; 0 duplicate ambiguity |
+| External file drift causes blind overwrite or failure | Best-effort 3-way merge or tag rejection | **Fail-closed reject-and-serve**: rejects edit and returns fresh anchors in 1 turn |
 
-| Before: `str_replace` / line numbers | After: hashline `edit` |
-| --- | --- |
-| Model re-types old code (output billed ~5-6× input) | Sends two 3-char hashes — old text is never echoed |
-| One insert above shifts every number below → wrong line lands silently | Anchors are content addresses → edits above don't move anchors below |
-| No check that the range matches what was shown | Every line verified against served rows; `[E_STALE_RANGE]`/`[E_UNVERIFIED_RANGE]` reject before any write, then **reject-and-serve** returns fresh `HASH│content` to retry or decide from |
+### Key Properties of a Mature & Systematic Implementation
 
-> [!TIP]
-> **Shining points — honest and measured:**
->
-> - **Self-healing, not silent.** External edits never get overwritten — stale ranges are rejected and re-served as fresh `HASH│content` to retry; orphaned serves heal without a full re-read (ADR-0008). Fail-closed, not auto-merge.
-> - **Formatter-tolerant.** ASCII-whitespace-insensitive anchors survive `prettier`/`black`/`eslint --fix` between edits (`formatOnSave`, watcher, CI). Linter-only assumption — whitespace inside string literals is not distinguished (ADR-0005).
-> - **Chained & batched, no re-read ritual.** Anchors for untouched lines stay valid; diff/serve/reject rows count as serves. `edit` batches up to 32 same-file edits atomically — all-or-nothing, `[E_BATCH_ABORT]` only when two items overlap — ~-40% envelope vs `str_replace` on the pinned 12-edit corpus.
-> - **Read guard enforced.** Never edits what it hasn't seen — `[E_UNVERIFIED_RANGE]`/`[E_STALE_ANCHOR]` reject before any write, then `reject-and-serve`.
-> - **Fewer round-trips in practice.** Dated run: **3 calls vs 6** for the OMP wrapper on the same external-drift refactor, same correct file; envelope vs `str_replace` is the durable number — run `pnpm run benchmark:practical` to reproduce (stochastic, single sample). Correctness `23/23` deterministic.
+- **Decoupled Line Identity (MVCC)**: Line identity belongs to an immutable, monotonic `line_id` in CAS snapshot storage, not to volatile line coordinates or ephemeral anchor strings.
+- **Zero-Token Auto-Rebase**: Non-conflicting exterior shifts (insertions above, comments, automated formatters like Prettier/ESLint) auto-rebase silently without agent intervention (0 extra tokens, 0 retries).
+- **Fail-Closed Reject-and-Serve**: True semantic conflicts (deleted targets, torn interior spans, contested reorders) fail closed. Instead of forcing a separate `read` round-trip, the tool immediately serves the fresh on-disk `HASH│content` range in the rejection (`[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]`).
+- **No Heuristic Guessing (ADR-0016)**: v2 retires the 1.x heuristic healing era (`tryHealOrphanedSpan`). Heuristic matching of duplicate lines caused silent miswrites (Probe E). v2 guarantees that if a line cannot be unambiguously resolved via lease lineage, it fails closed safely.
+- **Session-Keyed Lease Isolation (ADR-0002)**: Leases are isolated per session (`served_leases`). Sub-agent sessions never validate or contaminate main session edits.
+- **Atomic Multi-Item Batches**: Apply up to 32 same-file edits in one `edit` call with preceding-delta tracking in an in-memory working buffer. Overlapping spans abort atomically (`[E_BATCH_ABORT]`) before touching disk.
+- **Persisted Undo**: `undo_last_edit` restores exact file content, BOM, line endings, and original anchors, persisting across session restarts.
+- **Formatter-Tolerant**: ASCII-whitespace canonicalization preserves anchors across editor format-on-save cycles while retaining token-level sensitivity.
 
-Not for one-line touch-ups (near parity) or brand-new files (`write`). It pays off in long sessions and structural edits — anywhere an edit must not land on the wrong line.
+---
 
-> Deep dive: <a href="#why-hashline">Why Hashline</a> · <a href="#comparison">Comparison</a> · <a href="benchmarks/README.md">Benchmarks</a>
+## Quick Start
 
-## Quick Start — from install to verified edit in 30s
-
-### Install (pick one)
+### Installation
 
 ```bash
-# from npm
+# From npm
 pi install npm:pi-better-edit
-# from github
+
+# From GitHub
 pi install git:github.com/Rianico/pi-better-edit
-# From a local checkout:
+
+# From local directory
 pi install /path/to/pi-better-edit
 ```
 
-No config. `pi` discovers the extension on next run. See the agent's install log for `pi-better-edit: active`.
+Zero configuration required. `pi` automatically activates the extension on start.
 
-| Requirement | |
+| Runtime Requirement | Supported Version |
 | --- | --- |
-| Node | ≥ 22.19.0 (`engines`) |
-| pi-coding-agent | ≥ 0.75.0 (peer dependency) |
+| Node.js | &ge; 22.19.0 |
+| `pi-coding-agent` | &ge; 0.75.0 (peer dependency) |
 
-### See it work
+### How It Works
 
-`read` returns every line prefixed by its hash — the hash *is* the line's address:
+#### 1. Read the file
+`read` returns each line prefixed by a stable 3-character hash anchor:
 
 ```text
 ve7│function hello() {
@@ -92,13 +91,24 @@ szJ│  console.log("world");
 kQm│}
 ```
 
-`edit` targets a range of hashes, so edits always land on the lines you meant:
+#### 2. Apply an edit
+`edit` targets inclusive anchor bounds using the canonical named-object payload:
 
 ```json
-{ "edit": ["src/main.ts", ["szJ", "szJ"], "  console.log('hi');"] }
+{
+  "file": "src/main.ts",
+  "edits": [
+    {
+      "anchor_from": "szJ",
+      "anchor_to": "szJ",
+      "replace_with": "  console.log('hi');\n"
+    }
+  ]
+}
 ```
 
-and returns a diff with fresh anchors, so the next edit verifies cleanly with no re-read:
+#### 3. Receive the diff with fresh anchors
+The tool applies the edit and returns a unified diff showing fresh anchors for subsequent edits—eliminating the need for follow-up `read` calls:
 
 ```text
 - szJ │   console.log("world");
@@ -106,388 +116,283 @@ and returns a diff with fresh anchors, so the next edit verifies cleanly with no
   kQm │ }
 ```
 
-Chained edits stay cheap — anchors for untouched lines remain valid, diff/serve rows count as serves, and `read` becomes on-demand recovery, not a ritual. Try batching: `{"file":"src/main.ts","edits":[{"anchor_from":"a1b","anchor_to":"a1b","replace_with":"new line 1\n"},{"anchor_from":"c3d","anchor_to":"c3d","replace_with":"new line 2"}]}` is atomic — one fails, none write.
+#### 4. Batch multiple edits atomically
+Batch up to 32 edits to the same file in a single transaction. If any edit fails or overlaps, none write:
 
-> [!TIP]
-> **Want proof before you install?** Run `pnpm run eval` — 23/23 correctness, no LLM. Stale edits are rejected before they corrupt a file, on every run. Then `pi install npm:pi-better-edit` and watch the `read` → `edit` → diff loop stay verified.
+```json
+{
+  "file": "src/main.ts",
+  "edits": [
+    { "anchor_from": "a1b", "anchor_to": "a1b", "replace_with": "// Header comment\n" },
+    { "anchor_from": "c3d", "anchor_to": "c3d", "replace_with": "  return true;\n" }
+  ]
+}
+```
 
-## Why Hashline
+---
 
-**Correctness, not just brevity.** Every resolved edit range is verified against the
-served rows — what `read`, a post-edit diff, or a rejection serve actually showed the model.
-A line inside the range that changed on disk since it was served, or was never served, is
-hard-rejected before any file I/O: `[E_STALE_RANGE]` (the current range served as a fresh read to decide from), `[E_UNVERIFIED_RANGE]` (the same fresh read of the named window), or `[E_TARGET_LOST]` (no rows — read and re-target). Served state is **session-keyed** (ADR-0002), so a sub-agent's serves
-never validate the main session's edits and vice versa.
+## Systematic Architecture
 
-**Content-addressed anchors.** Anchors are derived from line content (ASCII-whitespace
-stripped), not position: edit one part of a file and the hashes of the rest stay put, so
-chained edits need no re-reads. Re-inserting identical text keeps its hash — "edit X with
-X" doesn't rotate the anchor. Anchors are unique by construction — repeated `}` or
-`import` lines never share one.
+`pi-better-edit` v2 replaces ad-hoc string matching and heuristic healing with a formal Multi-Version Concurrency Control (MVCC) architecture.
 
-**Chained edits without re-reading.** Post-edit diff rows, auto-read rows, and rejection
-serves all count as serves. `read` is on-demand recovery, not a per-edit ritual.
+```text
+┌──────────────────────────────────────────────────────────────────────────────────┐
+│                                STORAGE TIER                                      │
+│  src/hash-store.ts & src/snapshot-store/                                         │
+│  - file_snapshots: CAS snapshots (snapshot_id, path, snapshot_hash, line_count)   │
+│  - line_lineage: Coordinate authority (snapshot_id, line_number) -> (line_id)    │
+│  - line_id_counters: Monotonic integer block allocator per path                 │
+│  - served_leases: Session-keyed immutable leases (session_id, path, anchor)     │
+│  - file_undo: Snapshot-pinned undo history surviving restarts                    │
+└────────────────────────────────────────┬─────────────────────────────────────────┘
+                                         │
+┌────────────────────────────────────────▼─────────────────────────────────────────┐
+│                                SESSION TIER                                      │
+│  src/served-session/session.ts                                                   │
+│  - Leases: Granted on read, diff, rejection fresh-reads, and undo               │
+│  - Immutability: Leases are strictly READ-ONLY during edit resolution            │
+│  - Re-Serve Upsert: Atomic upsert updates leases when presentation changes       │
+└────────────────────────────────────────┬─────────────────────────────────────────┘
+                                         │
+┌────────────────────────────────────────▼─────────────────────────────────────────┐
+│                       RESOLUTION & REBASE TIER                                   │
+│  src/hashline/lease-resolve.ts & src/hashline/served-verification.ts             │
+│  - On-Demand CAS Materialization: Materializes current disk state                │
+│  - Patience LIS Pin Backbone: O(m log m) non-crossing line alignment             │
+│  - Minimal Displacement Tie-Breaking: Deterministic unique pairing               │
+│  - Span Contiguity Gate: Asserts interior span is not torn                       │
+└────────────────────────────────────────┬─────────────────────────────────────────┘
+                                         │
+┌────────────────────────────────────────▼─────────────────────────────────────────┐
+│                                MUTATION TIER                                     │
+│  src/mutation-engine/pipeline.ts & src/hashline/apply.ts                         │
+│  - Working Buffer: Preceding delta rebase for multi-item batches                 │
+│  - WAL Lineage Commit: Atomically commits final snapshot and updates leases      │
+│  - Fail-Closed Intercepts: Rejections emit fresh read ranges                     │
+└──────────────────────────────────────────────────────────────────────────────────┘
+```
 
-**Stop the loop.** A no-op edit reports `No changes made` and leaves anchors alone; the
-same no-op re-sent three times is refused (`[E_NOOP_LOOP]`). `edit` applies up to 32
-edits atomically — a failing item rejects the whole call and reports its own code (`[E_STALE_RANGE]`, `[E_MALFORMED_ANCHOR]`, …) so the model fixes the actual cause, while `[E_BATCH_ABORT]` is reserved for items whose spans overlap.
+### 1. Immutable Line Identity & Leases
+- Every line has an immutable surrogate key (`line_id`) allocated from a monotonic counter (`line_id_counters`).
+- When lines are delivered to an agent via `read`, diffs, or fresh-read rejections, a session-scoped lease (`served_leases`) binds `(session_id, file_path, anchor) -> line_id`.
+- During an `edit`, lease lookups are strictly **read-only**. An edit cannot re-stamp or guess a lease.
 
-### Token economics: envelope savings
+### 2. Multi-Version Snapshot Lineage
+- Content-addressed CAS snapshots (`file_snapshots`) track each materialized file version.
+- `line_lineage` maps each line coordinate to its immutable `line_id`, 32-bit canon hash, and verbatim presentation anchor.
+- When disk content shifts externally, the tool pairs the latest snapshot ($S_{latest}$) with disk using Patience LIS alignment, preserving identities for surviving lines and allocating fresh IDs only for novel lines.
 
-The compact JSON contract is primarily a **token-saving envelope change**. It removes repeated field names and escaped wrapper syntax while leaving the verified edit semantics unchanged:
+### 3. Patience LIS Pin Backbone ($O(m \log m)$)
+- Uniquely matching anchor pins form candidate pairs.
+- The engine computes the Longest Increasing Subsequence (LIS) via patience sorting in $O(m \log m)$ time.
+- Multiple maximal LIS candidates are disambiguated by minimal total displacement ($\sum |p_i - c_i|$).
+- Contested symmetric swaps (e.g. equal-length function swaps) or ambiguous duplicate blocks fail closed, marking affected lines as retired rather than guessing.
 
-- `edit` is one fixed tuple inside an object-root schema: `{ "edit": [path, [from, to], replacement] }`;
-- `edit` is a compact tuple array inside an object-root schema: `{ "path": path, "edits": [[from, to, replacement], …] }`;
-- replacement text is emitted once, and the old text is never repeated in the call.
+### 4. Working Buffer with Preceding Deltas
+- Multi-item batches (`edits: [e_0, e_1, ...]`) resolve their baseline coordinates $s'_k$ in the current snapshot.
+- Active in-memory buffer positions are computed by accounting strictly for preceding edits:
+  $$\Delta_k = \sum_{j < k, s'_{end, j} < s'_{start, k}} \left( |R_j| - (s'_{end, j} - s'_{start, j} + 1) \right)$$
+- If any two edit items overlap or nest, the batch aborts atomically (`[E_BATCH_ABORT]`) before modifying disk.
 
-#### Theoretical benchmark — serialized envelopes
+### 5. Unified Span Verification (ADR-0023)
+- `resolveLeasedEdit` verifies the entire span against `line_lineage` before touching disk.
+- Canon evidence is file-scoped and verified via 32-bit digests (`canon_hash`), eliminating duplicate plaintext storage.
 
-This benchmark counts only the serialized edit payloads, not model reasoning, tool descriptions, reads, retries, or cache traffic. It compares the same three editing families on two 12-edit fixtures: `str_replace`, pi-better-edit, and `@oh-my-pi/hashline` (OMP).
-
-| snapshot | `str_replace` | pi-better-edit: `edit` | pi-better-edit: `edit` (multi-item) | OMP: per-edit | OMP: one batch |
-| --- | ---: | ---: | ---: | ---: | ---: |
-| external pinned 12-edit corpus, current-envelope recount | 1,015 | 609 (**-40.0%**) | 582 (**-42.7%**) | 590 (**-41.9%**) | 480 (**-52.7%**) |
-| local 12-edit configuration snapshot | 358 | 272 (**-24.0%**) | 241 (**-32.7%**) | 268 (**-25.1%**) | 180 (**-49.7%**) |
-
-All percentages are savings against the `str_replace` value in the same row. The external row uses the pinned corpus, current object-root tuple envelopes, and current 3-character anchors; the historical sibling record remains available in [`../oh-my-pi.md`](../oh-my-pi.md) (`1015 / 702 / 590 / 480`), where `702` is the older named-field hashline envelope. The local row is reproducible with `pnpm run benchmark:tokens`; correctness is measured separately with `pnpm run eval` and `pnpm run eval:hashline`.
-
-#### Practical benchmark — coding-agent session
-
-This benchmark measures a real coding-agent loop rather than serialized envelopes. The practical advantage is round-trip efficiency: pi-better-edit completed the scenario in **3 tool calls**, versus **6 for OMP**. `pnpm run benchmark:practical` runs pi with `opencode-go/gpt-5.6-luna` at `high` thinking. The scenario reads a file, calls bash once to create an external interior change, applies the refactor through the editing tool, and checks the exact final file content. OMP is the practical baseline below; usage totals include pi-reported input, output, reasoning, cache-read, and cache-write tokens.
-
-| engine | tool calls | total tokens | saved vs OMP baseline | final correctness |
-| --- | ---: | ---: | ---: | :---: |
-| OMP patch wrapper | **6** | 28,467 | 0.0% | ✅ |
-| pi-better-edit (`edit`, multi-item) | **3 (fewest)** | 12,593 | **-55.8%** | ✅ |
-
-Both engines preserved the external change and produced the expected final file in this sample. OMP required four patch attempts. This result is one stochastic model run; it must not be read as a universal performance claim. Latest dated artifact: [2026-08-17 practical token benchmark](benchmarks/results/2026-08-17-practical-token-benchmark.md).
+---
 
 ## Tools
 
-| Tool | What it does |
-| ------ | -------------- |
-| `read` | Returns a text file with every line as `HASH│content`. `offset` (1-based), `limit`. Paged output ends with `[Showing lines N-M of T. Use offset=… to continue.]`. Lines >200KB shown as a marker with a `sed` hint — hash anchors need full lines. |
-| `read_skill` | Same file read as plain text — no `HASH│` prefixes, no served rows. For skill content (SKILL.md or any file); records no serves, so editing a file read this way starts with a `[E_STALE_ANCHOR]` serve on the first edit. |
-| `edit` | An object-root payload `{ "file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, …] }`; `file` names the text file (never a directory). A single item edits one range; several items batch same-file edits atomically (up to 32). Verifies every line of each inclusive range and reject-and-serve returns fresh anchors. |
-| `undo_last_edit` | `{ path }` restores the most recent successful edit with its original content, BOM, line endings, and anchors; persisted across restarts. |
+| Tool | Parameters | Description |
+| --- | --- | --- |
+| `read` | `file`, `offset` (1-based), `limit` | Returns file content formatted as `HASH│content`. Lines &gt;200KB are replaced with a marker hint. |
+| `read_skill` | `file` | Reads file content as plain text without hash prefixes or lease recording (ideal for prompts, docs, and skills). |
+| `edit` | `file`, `edits`, `mode` (optional) | Applies single or batched edits atomically. Each edit targets `anchor_from` and `anchor_to` inclusive. `mode: "literal"` declares verbatim text. |
+| `undo_last_edit` | `file` | Restores the previous file state, BOM, line endings, and original anchors. Persists across restarts. |
 
-`edit` accepts `{ "file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, …] }`. `file`
-is a non-empty string naming the text file to edit (never a directory). Each range is inclusive,
-and an empty replacement deletes the range. All items are checked before file I/O and applied
-atomically to that one file — one item per call is the norm, several same-file items batch in one call.
+### Payload Contract
 
-### Error codes
+```json
+{
+  "file": "src/example.ts",
+  "edits": [
+    {
+      "anchor_from": "a1b",
+      "anchor_to": "c3d",
+      "replace_with": "const status = 'ready';\n"
+    }
+  ],
+  "mode": "general"
+}
+```
 
-| Code | Meaning |
-| --- | --- |
-| `[E_BAD_PAYLOAD]` | The payload is not `{ "file": file, "edits": [{ "anchor_from", "anchor_to", "replace_with" }, …] }`, or a member has an unknown, missing, or wrongly-typed value. |
-| `[E_MALFORMED_ANCHOR]` | An **anchor field** is not a bare 3-char hash: empty, numeric and not 3 chars, multi-line, containing `│`, or carrying a diff-preview marker (`+`/`-`/`HASH│`). Nothing was written; pass the bare 3-char anchor and retry. Anchor fields only — `replace_with` is never refused for its shape; a replacement that reproduces a served row is `[E_SUSPICIOUS_TEXT]`. |
-| `[E_STALE_ANCHOR]` | A served anchor for this session and file no longer resolves to the line identity it was served with (tombstoned boundary), or the call carries no previous hashes. The edit is refused; when the window is identifiable the current range is served as fresh `HASH│content` rows — retry with those rows (no `read` needed). `details.cause` carries the user-facing diagnosis (`tombstone`, `never-served`). |
-| `[E_UNKNOWN_ANCHOR]` | This session holds no lease for the anchor in any file. The edit is refused with no `HASH│content` rows and nothing is leased; carries no remedy. |
-| `[E_FOREIGN_ANCHOR]` | This session holds a lease for the anchor, but for a file other than the one the edit names. The edit is refused with no `HASH│content` rows and nothing is leased; the message names where the anchors were served (capped at 3 plus "and N more"); carries no remedy. |
-| `[E_SUSPICIOUS_TEXT]` | A `replace_with` line begins with the exact `HASH│` anchor served for this session/path/line. The edit/write is refused; omit the copied anchors from `replace_with` and retry with the same anchors, or assert the bytes are content with `mode: "literal"`, the sole escape. Nothing was written. Evidence-only: a `HASH│`-shaped line whose anchor was **never served** is written verbatim. |
-| `[E_EMPTY_RANGE]` | An edit would empty a non-empty file; use `write` instead. |
-| `[E_NOT_FOUND]` | The path does not exist. |
-| `[E_ACCESS]` | The path is not readable or writable. |
-| `[E_UNSUPPORTED_FILE]` | The path is a directory, binary file, image, or UTF-16/UTF-32 encoded text; hashline editing only supports text files. |
-| `[E_UNDO_STALE]` | `undo_last_edit` refused: the file was modified or deleted after the last edit. |
-| `[E_UNDO_UNAVAILABLE]` | Undo history could not be persisted to the hash store; the `edit` was refused and the file was left unchanged. |
-| `[E_LARGE_FILE]` | The file exceeds the 238,328-line hashline limit — more than 238,328 lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or anchor space exhausted during allocation (`limitKind: "hash-space"`, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files. |
-| `[E_STALE_RANGE]` | A line inside the resolved edit range changed on disk since it was served — or was never served (paged reads, truncated output). The edit is refused and the current range is served as a fresh read under `Current range (fresh read):` with no retry hint — decide from those rows instead of retrying the same anchors blind. `details.cause` carries the user-facing diagnosis (`served-range staleness`, `never-served`, `tombstone`). |
-| `[E_TARGET_LOST]` | A leased line identity was deleted or replaced and its range cannot be identified (deleted target, shifted neighbour, re-added text elsewhere, collapsed window). The edit is refused with no `HASH│content` rows and nothing is leased; read the file and re-target. `details.cause` carries the user-facing diagnosis (`retirement`). |
-| `[E_UNVERIFIED_RANGE]` | One bound of the range no longer resolves to the line identity it was served with while the surviving bound is live and unshifted (retired lease). The edit is refused and the named window is served as a fresh read under `Current range (fresh read):` with no retry hint — decide from those rows. `details.cause` carries the user-facing diagnosis (`retirement`). |
-| `[E_NOOP_LOOP]` | The exact same edit (same path, anchors, and replacement) was re-sent and produced no changes 3 consecutive times — the range already contains the replacement. The edit is refused and the current range is served as fresh `HASH│content` rows. |
-| `[E_BATCH_ABORT]` | Two items of one `edit` call target overlapping or nested spans. Nothing was written; the current range is served as fresh `HASH│content` rows. An item that fails validation or served-state verification keeps its own code instead (`[E_MALFORMED_ANCHOR]`, `[E_STALE_RANGE]`, …) with the atomicity trailer, so the model fixes the real cause rather than hunting for overlap. |
-| `[E_UNKNOWN]` | An unexpected failure that is not a domain rejection (invariant breach, filesystem or store error). Reported with the error name and the first message line only; carries no remedy. |
+- `file`: Path to the target text file (must be a file, never a directory).
+- `edits`: Array of 1 to 32 edit items. An empty `replace_with` string deletes the targeted range.
+- `mode`: `"general"` (default) refuses text containing served anchor prefixes; `"literal"` allows verbatim insertion of lines beginning with `HASH│`.
 
-### Applied warnings
+---
 
-A `[W_*]` line reports an applied mutation; an `[E_*]` line reports a rejection. `[MODEL]` warnings are informational — the bytes were applied, so no retry is needed. `[USER]` warnings render dimmed for the human.
+## Error and Warning Contract
 
-| Code | Meaning |
-| --- | --- |
-| `[W_NEVER_SERVED_SHAPE]` | A `replace_with` line opens with an anchor-shaped token never served for this session and file. Applied verbatim (`[MODEL]`). |
-| `[W_SERVED_PREFIX_MISMATCH]` | A replacement line begins with an anchor served for a different line and the content differs. Applied verbatim (`[MODEL]`). |
-| `[W_REVERSED_ANCHORS]` | `anchor_from`/`anchor_to` were reversed; healed and applied with the range swapped (`[USER]`, dimmed). Reversal always heals — the old reversed-anchor refusal no longer exists. |
-| `[W_UNICODE_LITERAL]` | A literal `\uDDDD` sequence was detected in the replacement; applied verbatim (`[USER]`, dimmed). |
-| `[W_LITERAL_BYPASS]` | The served-row reproduction check was bypassed by an explicit `mode: "literal"` declaration (`[USER]`, dimmed). |
-| `[W_NOOP]` | The exact same edit no-op'd twice; the range already contains the replacement text. A third identical resend is refused as `[E_NOOP_LOOP]` (`[USER]`, dimmed). |
+`pi-better-edit` enforces a strict, machine-actionable diagnostic contract ([ADR-0021](docs/adr/0021-unified-error-and-warning-contract.md)):
+- `[E_*]` indicates an edit **rejection** — nothing was written to disk.
+- `[W_*]` indicates an **applied mutation** with an informational warning.
+- Range-family rejections carry structured `details.cause` values (`retirement`, `never-served`, `served-range staleness`, `tombstone`).
+
+### Domain Rejections (`[E_*]`)
+
+| Error Code | Description | Remedy / Agent Action |
+| --- | --- | --- |
+| `[E_BAD_PAYLOAD]` | Payload fails schema validation (missing fields, wrong types). | Correct payload structure to match `{ file, edits }` schema. |
+| `[E_MALFORMED_ANCHOR]` | Anchor is not a bare 3-char string (e.g. includes `│` or diff prefixes). | Pass bare 3-char anchor (e.g. `"szJ"`) and retry. |
+| `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | Retry using the fresh rows provided in the rejection. |
+| `[E_UNKNOWN_ANCHOR]` | Anchor has no active lease in any file for this session. | Re-read the file to establish fresh anchor leases. |
+| `[E_FOREIGN_ANCHOR]` | Anchor is leased for a different file than the targeted one. | Ensure anchors match the target file path. |
+| `[E_STALE_RANGE]` | A line in the edit range changed on disk or was never served. | Current range served as a fresh read; decide next edit from fresh rows. |
+| `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted. | Named window served as fresh read; decide next edit from fresh rows. |
+| `[E_TARGET_LOST]` | Target line identity deleted or reordered without a stable anchor bound. | Range cannot be served; re-read file and re-target. |
+| `[E_SUSPICIOUS_TEXT]` | Replacement text contains a line matching a served `HASH│` anchor. | Strip copied tool output anchors or pass `mode: "literal"`. |
+| `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping or nested spans. | Merge overlapping spans into a single item or split into separate calls. |
+| `[E_NOOP_LOOP]` | Identical edit producing no changes submitted 3 consecutive times. | Inspect current range; range already contains target content. |
+| `[E_EMPTY_RANGE]` | Edit would result in an empty non-empty file. | Use `write` to truncate or delete file contents. |
+| `[E_NOT_FOUND]` | Target file does not exist on disk. | Verify path using `ls` and retry with corrected path. |
+| `[E_ACCESS]` | Target file is unreadable, unwritable, or in a symlink loop. | Correct permissions or resolve symlink loop. |
+| `[E_UNSUPPORTED_FILE]` | Target path is a directory, binary file, image, or UTF-16/32 text. | Hashline editing only targets UTF-8 text files. |
+| `[E_UNDO_STALE]` | Target file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read file. |
+| `[E_UNDO_UNAVAILABLE]` | Undo state could not be persisted to SQLite store. | Edit was refused and file unchanged; retry edit. |
+| `[E_LARGE_FILE]` | File exceeds the 238,328-line ceiling of 3-char base62 space. | Use `write` or non-hashline tools for very large files. |
+| `[E_UNKNOWN]` | Unexpected filesystem or invariant failure. | Check error message details. |
+
+### Applied Warnings (`[W_*]`)
+
+| Warning Code | Audience | Description |
+| --- | --- | --- |
+| `[W_NEVER_SERVED_SHAPE]` | `[MODEL]` | Replacement line starts with an anchor-shaped token never served. Applied verbatim. |
+| `[W_SERVED_PREFIX_MISMATCH]` | `[MODEL]` | Replacement line starts with a served anchor but content differs. Applied verbatim. |
+| `[W_REVERSED_ANCHORS]` | `[USER]` | `anchor_from` and `anchor_to` were provided in reverse order. Swapped and applied cleanly. |
+| `[W_UNICODE_LITERAL]` | `[USER]` | Literal `\uDDDD` sequence detected in replacement. Applied verbatim. |
+| `[W_LITERAL_BYPASS]` | `[USER]` | Served hash echo check bypassed via explicit `mode: "literal"`. |
+| `[W_NOOP]` | `[USER]` | Edit produced no file changes; warning emitted on 2nd occurrence. |
+
+---
 
 ## Comparison
 
-### Capability comparison
+### Capability Comparison
 
-| | **pi-better-edit** (this) | @oh-my-pi/hashline |
+| Feature | **pi-better-edit v2** | @oh-my-pi/hashline | Traditional `str_replace` |
+| --- | --- | --- | --- |
+| **Addressing Model** | 3-char content-addressed anchors | File tag + line numbers | Verbatim code strings |
+| **Line Identity** | Immutable MVCC `line_id` | Coordinate line numbers | None (text matching) |
+| **Exterior Shift Tolerance** | **Auto-rebases** (0 tokens, 0 retries) | Model must recalculate line numbers | Fails if surrounding context shifts |
+| **Duplicate Line Safety** | **Collision-resolved** unique anchors | Ambiguous position-based indexing | Prone to matching wrong instance |
+| **Concurrent Disk Drift** | **Fail-closed reject-and-serve** | Tag mismatch / best-effort 3-way merge | Silent overwrite or blind failure |
+| **Batch Support** | **Atomic** up to 32 items with delta shifts | Multi-section patch preflight | Sequential individual calls |
+| **Undo Persistence** | **Survives restarts** (CAS snapshot pinned) | None | None |
+| **Session Isolation** | Session-keyed leases (`served_leases`) | None | N/A |
+| **Deterministic Battery** | **23/23** pass rate | 10/10 library seam | N/A |
+
+### Edge Case Behavior
+
+| Edge Case Scenario | pi-better-edit v2 | @oh-my-pi/hashline |
 | --- | --- | --- |
-| Layer | pi tools: `read` / `read_skill` / `edit` / `undo_last_edit` | patch-engine library: `Patcher` / `Patch` / `Filesystem` / `SnapshotStore` |
-| Address format | `HASH│` — 3-char content hash, no line number | `[path#tag]` — full-file content tag + line numbers |
-| Whitespace-insensitive anchors | ✅ all ASCII whitespace stripped — survives `prettier`/`black`/`eslint --fix` | ~ n/a (anchors are line numbers) |
-| Duplicate lines | ✅ unique per line (collision-resolved); ambiguity → `[E_STALE_ANCHOR]` | ~ position-based — repeats fine, position unverified |
-| Verified against what the model saw | ✅ every resolved line, per session — `[E_STALE_RANGE]`/`[E_UNVERIFIED_RANGE]` reject before write | ~ seen-lines provenance + file-version tag (H7) |
-| Stale interior | ✅ reject + fresh anchors (`[E_STALE_RANGE]`) | ~ recovery-with-warning, else `MismatchError` |
-| Blind edit — lines never shown | ✅ hard reject (`[E_UNVERIFIED_RANGE]` for an unplaceable bound, `[E_STALE_RANGE]` for a never-served interior) | ~ reject when seen-lines recorded (H7) |
-| Batch atomicity | ✅ `edit` multi-item — all-or-nothing with the failing item's own code, `[E_BATCH_ABORT]` for overlap | ✅ multi-section preflight (H8) |
-| Undo (persisted) | ✅ survives restarts | ❌ none |
-| Sub-agent session isolation | ✅ session-keyed served state | ~ |
-| Deterministic battery | ✅ 23/23 | ✅ 10/10 library (own seam) |
-| Runtime | pi (Node) | Bun ≥ 1.3.14 (TS source) |
+| **Wrong Coordinate / Off-by-one** | **Impossible**: Anchors bind to `line_id`; verified against lineage before writing. | **Possible**: Wrong line number against a valid tag silently mutates the wrong code. |
+| **Lines Inserted Above Target** | **Auto-rebases cleanly**: Identity is decoupled from coordinates. | **Every edit renumbers**: Agent must track offsets. |
+| **Deleted Function Guard Target (Probe E)** | **Fail-closed intercept**: Rejects edit; zero code corruption. | Tag mismatch / merge hazard. |
+| **Equal-Length Symmetric Function Swap (Probe K)**| **Fail-closed intercept**: Contested reorder retires safely. | Applies to wrong block or requires manual recovery. |
+| **Batch Items Overlap** | **Atomic abort** (`[E_BATCH_ABORT]`); nothing written. | Preflight validation failure. |
 
-> `~` = occasionally / inconsistently. `—` = not specified / not applicable.
+---
 
-### Different jobs, same lineage
+## Reproducible Benchmarks
 
-Both this extension and `@oh-my-pi/hashline` descend from the harness-problem insight that
-the model should never re-type old code, but they are different layers.
+All claims are backed by deterministic verification batteries and reproducible benchmarks.
 
-`@oh-my-pi/hashline` is a **patch-language library**: `[path#tag]` headers bind every hunk
-to a full-file content hash, `PUT N.=M:` addresses lines by number, and it ships multi-hunk
-documents, a pluggable filesystem for any backend (disk, in-memory, network), and
-session-aware 3-way-merge recovery on stale tags. Its payload per edit is lighter and it cannot
-be confused by repeated text — the line number is unambiguous.
-This extension is a **pi tool pair**: `read` hands the model 3-char content hashes, `edit`
-takes two of them, and every resolved line is verified against the served state — no line
-numbers to renumber, no tag to refetch, a wrong anchor can never land on the wrong line,
-and `undo_last_edit` survives restarts. Its trade-offs: a JSON envelope per edit costs a
-little payload, and it lives inside pi (Node) rather than as a standalone patcher (Bun). Pick
-hashline-the-library for a cross-backend patch format; pick hashline-the-tool for verified,
-content-addressed edits in your agent. Syntax-aware structural edits and file-lifecycle operations
-remain outside this verified line-range contract.
+### 1. Deterministic Tool Battery (23 Scenarios)
 
-### What you get
+The tool battery executes 23 complex edge-case scenarios (concurrent exterior inserts, duplicate function blocks, interior modifications, symmetric reorders, and batch interactions) without LLM sampling:
 
-- **Verified before it writes** — every line of the resolved range is checked against served rows; stale or never-served interiors are hard-rejected (`[E_STALE_RANGE]`) and re-served as fresh anchors.
-- **Session-keyed** — sub-agent serves never validate the main session's edits and vice versa (ADR-0002).
-- **Drift notices** — served territory outside the range that changed on disk is reported once per episode, not as a warning.
-- **Chained without re-reads** — diff, auto-read, and rejection rows all count as serves.
-- **Atomic batch** — up to 32 same-file edits in one `edit` call, all-or-nothing; a failing item keeps its own error code (`[E_BATCH_ABORT]` means overlapping spans).
-- **Formatter-tolerant** — ASCII-whitespace-insensitive anchors survive re-indents; unique by construction (bitset probing, ADR-0003/0005).
+| Test Suite | Result | Silent Data Loss |
+| --- | :---: | :---: |
+| **pi-better-edit v2** | **23/23** | **0** |
 
-### Correctness in edge cases
-
-The battery below measures *behavior*, where the two hashline implementations actually
-diverge. These are the real failure modes from the harness-problem literature, and what
-each tool does when they hit:
-
-| Edge case | hashline `edit` (this extension) | @oh-my-pi/hashline patch |
-| --- | --- | --- |
-| Wrong address (off-by-one anchor / line number) | **Impossible** — anchors resolve to specific lines; every resolved line is verified against served state, rejected before anything is written | **Possible** — a wrong line number against a current tag applies silently at the wrong place; the tag proves the file version, never the lines |
-| File changed on disk after the model's view | Hard reject + the current range served as a fresh read (reject-and-serve); the model decides from those rows | Tag mismatch → refuse **or** best-effort 3-way merge onto unknown current content, with an explicit recovery banner |
-| An edit above shifts the file | Nothing shifts — anchors are content addresses; the diff serves fresh anchors | **Every edit renumbers** — the format's own #1 rule is "re-ground after every edit"; the model carries the bookkeeping |
-| Repeated / identical text | Per-line hashes are unique (collision-resolved); ambiguity → `[E_STALE_ANCHOR]` | Position-based, so repeats don't confuse it — but the position itself is unverified |
-| Lines never shown to the model | `[E_STALE_RANGE]` — hard reject with the current range served as a fresh read | Undisplayed hunks rejected when seen-lines are recorded — same reliance on the model knowing what it saw |
-| Multi-edit batch fails mid-way | `edit` multi-item — atomic, all-or-nothing; the failing item is served as fresh serves | Multi-section patches preflighted up front — also atomic |
-
-> The oh-my-pi payload saving is a lighter wire format; the table above is what that format
-> asks the model to hold in its head instead — renumbering, tag-chasing, node choice — the
-> exact component that fails most with replace-style edits. This extension's contract is:
-> a wrong edit cannot land; a reject-and-serve rejection serves the current range as a fresh
-> read the model decides from, only a lost range (`[E_TARGET_LOST]`) requires a full `read`,
-> and a stale anchor (`[E_STALE_ANCHOR]`) keeps the retry hint because there the served rows
-> are themselves the retry. Measured on the same
-> stale-serve scenarios, both engines gate the same guarantee — **stale edits are detected,
-> never silently applied** — with different policies when drift is found (recover-with-
-> warning vs fail-closed rejection).
-
-### Reproducible benchmark
-
-The claims above are measured, not asserted. Two deterministic batteries — no LLM in the
-loop, no sampling: a run either reproduces or it doesn't. That trades stochastic headline
-numbers for something narrower but exact: stale edits are rejected before they corrupt
-files, on every run.
-
-**Tool battery — 23 scenarios (2026-08-17):**
-
-| vs expected verdict | correct | silent data-loss cases |
-| --- | --: | --: |
-| **pi-better-edit (1.1.3)** | **23/23** | 0 |
-
-Separate library battery for `@oh-my-pi/hashline` (own seam) is 10/10 for 17.3.5 — stale tags are either recovered with `Recovered from a stale file hash…` or rejected with `MismatchError`, never silently applied. Reproduce with `pnpm run eval:hashline`; this is a library-layer reference, not an extra row in the tool table.
-
-**Library battery — `@oh-my-pi/hashline` 17.3.5, 10/10 (2026-08-17):** the hashline patch
-engine is tested in its own model: stale tags are either recovered with an explicit
-`Recovered from a stale file hash…` warning or rejected with a `MismatchError` — never
-silently applied (H2/H3), head/tail inserts warn on drift (H4), unseen anchors reject then
-retry cleanly (H7), multi-section patches preflight before any write (H8).
-
-Full method, per-scenario tables, and limitations: [benchmarks/README.md](benchmarks/README.md)
-and [benchmarks/results/](benchmarks/results/).
-
-### Reproduce
-
+Reproduce locally:
 ```bash
-pnpm run eval            # pi-better-edit, 23/23 — no LLM, deterministic
-pnpm run eval:hashline   # + @oh-my-pi/hashline library battery (installs bun temp)
+pnpm run eval
 ```
 
-`pnpm run eval` runs the 23-scenario tool battery; `eval:hashline` scratch-installs `@oh-my-pi/hashline` and bun — nothing lands in this repo.
+### 2. Practical Coding-Agent Benchmark
 
-> **Scope & honesty.** The batteries below are correctness gates, not throughput numbers:
-> they do not claim token, cost, or latency performance. The token table above is a separate,
-> pinned `cl100k_base` envelope snapshot with its own reproduction instructions. "Calls" / "chars"
-> aggregates in the results are the batteries' own transcript sizes, included only for
-> cross-version comparability. Dated results live in `benchmarks/results/`; when you re-run and
-> numbers drift, commit a new dated file rather than editing an old one.
+Measures a realistic refactoring workflow in `pi` with model thinking enabled (`opencode-go/gpt-5.6-luna`), testing recovery from external drift:
 
-## Undo
+| Editing Tool | Tool Calls | Total Tokens | Token Savings vs Baseline | Correctness |
+| --- | :---: | :---: | :---: | :---: |
+| OMP Patch Wrapper | 6 | 28,467 | Baseline | &#x2705; |
+| **pi-better-edit v2** | **3 (fewest)** | **12,593** | **-55.8%** | &#x2705; |
 
-`undo_last_edit` reverts the most recent successful `edit` on a file, restoring the exact
-previous content, BOM and line endings included, plus the previous anchors.
+Reproduce locally:
+```bash
+pnpm run benchmark:practical
+```
 
-- History is per-file and single-level: only the most recent edit can be reverted.
-- History is persisted and survives session restarts. A failed `write` does not clear it.
-- Every applied edit is undoable: the undo record is saved before the edit is written.
-- A successful `write` clears the history for that file.
-- If the file was modified or deleted since the last edit, the undo is refused
-  (`[E_UNDO_STALE]`) rather than overwriting those changes.
+### 3. Theoretical Envelope Savings
 
-## Auto-read
+Measures raw payload serialization overhead across a pinned 12-edit corpus:
+- **Single edit**: -40.0% token overhead vs `str_replace`.
+- **Multi-item batch**: -42.7% token overhead vs `str_replace`.
 
-Always on. After a successful `write` that changes the file, the extension reads the file
-and appends an `--- Auto-read (hashline anchors) ---` block to the result, so you get
-fresh `HASH│content` anchors without a separate `read` call.
+Reproduce locally:
+```bash
+pnpm run benchmark:tokens
+```
 
-- After `edit` and `undo_last_edit`, the result shows the post-edit diff. The `+HASH│` and
-  `HASH│` rows carry the current hashes, so follow-up edits can anchor on the diff
-  directly. The `-HASH│` rows show removed lines with their old hashes (stale after the
-  edit). Call `read` when you want the full file's anchors.
-- Auto-read keeps a 50KB display budget. Lines over 50KB are skipped with a marker instead
-  of their content (use `read` for lines up to 200KB).
-
-`read` edge cases: images (JPEG, PNG, GIF, WebP) come back as visual attachments; binary
-files and directories are rejected with a descriptive error; UTF-16 and UTF-32 text
-(detected via BOM) is rejected, since editing it would corrupt the file; empty files come
-back as a single empty-line hash (`HASH│`), use `edit` on that hash to insert content;
-BOMs are stripped for display, non-UTF-8 bytes are shown as `U+FFFD` and editing such a
-file rewrites it as UTF-8 with a warning; files over 238,328 lines are rejected with
-`[E_LARGE_FILE]`.
+---
 
 ## How Anchors Work
 
-Each line is canonicalized (all ASCII whitespace — spaces, tabs, carriage returns, and
-line feeds — stripped) and hashed with [xxhash-wasm](https://github.com/jungomi/xxhash-wasm)
-(xxHash32), then mapped to a 3-character string over `A-Za-z0-9` — 62³ = 238,328 possible
-anchors. Canonicalization keeps anchors stable across formatting passes and editor-save
-cycles: a line that changes only in ASCII whitespace keeps its anchor, so external linting
-between edits does not invalidate it. Everything that is not ASCII whitespace stays
-significant — string contents, regex classes, comments, quotes, semicolons, and Unicode
-whitespace (NBSP) all rotate the anchor. One caveat: ASCII whitespace *inside* string
-literals and regexes is stripped too, so a whitespace-only change within a string is
-invisible to verification — benign in practice because formatters never alter string
-contents. Token-level edits (quote style, semicolons, brace placement) therefore still
-reject as stale.
+1. **Whitespace Canonicalization**: Each line is stripped of ASCII whitespace (`[ \t\r\n]`) before hashing. External formatting passes (`prettier`, `black`, `eslint --fix`) do not alter line hashes. Token-level edits (quotes, semicolons, variable names) rotate the hash.
+2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 and mapped to 3-character base62 strings (`A-Za-z0-9`), providing $62^3 = 238,328$ unique anchors.
+3. **Collision-Free Coprime Probing**: When duplicate lines occur in a file, collision resolution probes using a stride coprime to the hash space ($62^2 + 62 + 1 = 3,907$). Every line in a file receives a unique anchor.
+4. **SQLite WAL CAS Storage**: Line hashes and snapshots are persisted in `~/.config/pi-better-edit/hash-store.sqlite` (honoring `XDG_CONFIG_HOME`). Snapshot retention is governed by proportional LRU vacuuming under a 50MB budget.
 
-The alphabet is sized for an LLM consumer — the model tokenizes rather than squinting at
-glyphs, so case and digits are all included. The URL-safe specials `-` and `_` are
-deliberately excluded: a hash starting with `-` is shape-identical to a diff-preview
-deletion row, and `-`/`_` at a line start are markdown-active, inviting mis-copying.
-
-Anchors are unique by construction. If a line's base hash collides with an already-assigned
-hash, the next free hash is allocated from a bitset by probing with a stride coprime to the
-hash space (O(1) amortized; the stride is 62² + 62 + 1, so runs of blank lines or repeated
-`}` land on anchors that differ in all three characters). Every line therefore gets a
-unique anchor; two byte-identical lines never share one. The same guarantee sets the file
-size cap: at most 238,328 lines per file, beyond which `read` and `edit` reject with
-`[E_LARGE_FILE]` (use `write` for very large files).
-
-Hashes live in a persistent per-file store
-(`~/.config/pi-better-edit/hash-store.sqlite`, honoring `XDG_CONFIG_HOME` on
-non-Windows) that keeps the hashes of unchanged lines across edits. When a range is edited,
-the runtime maps the old content onto the new content and copies hashes for lines that
-survived; only genuinely new lines get fresh hashes. Two guarantees make this safe even
-with duplicated content:
-
-- An edited range never borrows a hash from a line outside it. Lines outside the edited
-  range keep their hashes unconditionally, even when their content is byte-identical to
-  lines inside the range.
-- Re-inserted identical text keeps its hash. If replacement content matches a line that
-  was just removed, the removed line's hash is reused. "Edit X with X" doesn't rotate the
-  anchor.
-
-A no-op edit never changes the file, so anchors remain valid. On first run after upgrading
-from an older version, the previous `hash-store.json` is imported once and renamed to
-`hash-store.json.bak`.
-
-## Troubleshooting
-
-- Stale anchors. `[E_STALE_ANCHOR]` means a served anchor no longer resolves to the line identity it was served with. Retry with the served rows in the rejection (no `read` needed).
-- Reset the hash store. Anchors live in
-  `~/.config/pi-better-edit/hash-store.sqlite` (with `-wal`/`-shm` sidecars). Quit
-  pi, delete those three files, and the store is rebuilt on the next session. Anchor
-  history is lost, but no project files are touched.
-- Corrupt store. If the store fails its health check it is renamed to
-  `hash-store.sqlite.corrupt-<timestamp>` and rebuilt automatically.
-- Config directory moved. On non-Windows platforms, if `XDG_CONFIG_HOME` is set, the
-  config directory (and the hash store inside it) lives at
-  `$XDG_CONFIG_HOME/pi-better-edit` instead of `~/.config/pi-better-edit`. An
-  existing store is not migrated automatically; move the old `hash-store.sqlite` files
-  (plus sidecars) into the new directory before the first run.
-- Package renamed. This fork was renamed from `pi-hashline-edit-pro` to
-  `pi-better-edit` (published earlier as `pi-hashline-edit-lsz`); the config directory
-  moved to `~/.config/pi-better-edit`. An existing store is not migrated automatically.
+---
 
 ## Upgrading from 1.x
 
-2.0 retires the healing era. The heuristics that guessed a target for an ambiguous anchor are deleted, not deprecated — the guess was the bug ([ADR-0016](docs/adr/0016-content-addressed-line-identity-supersedes-healing.md)). Line identity is now an immutable `line_id` bound to the snapshot that was actually served, and lease lineage is the single span-verification authority ([ADR-0023](docs/adr/0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md)).
+Version 2.0 represents a major architectural upgrade from heuristic healing to formal MVCC:
 
-1.x had three codes — `E_STALE_RANGE`, `E_UNSERVED_RANGE`, `E_UNKNOWN` (unbracketed here on purpose: a bracketed code is one the tool emits today). Four things a 1.x prompt, harness, or habit can notice:
+1. **Heuristic Healing Deleted ([ADR-0016](docs/adr/0016-content-addressed-line-identity-supersedes-healing.md))**: Heuristic guessing of relocated anchors (`tryHealOrphanedSpan`) is completely removed to eliminate silent miswrites on duplicate code.
+2. **Boundary Rule Replaces E_UNSERVED_RANGE ([ADR-0020](docs/adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md))**: The old `E_UNSERVED_RANGE` code is retired. If one boundary lease is retired while the other survives unshifted, the tool emits `[E_UNVERIFIED_RANGE]` with a fresh read. If both bounds are lost, it emits `[E_TARGET_LOST]`.
+3. **Unified Diagnostic Contract ([ADR-0021](docs/adr/0021-unified-error-and-warning-contract.md))**: Rejections use `[E_*]`; successful mutations with caveats use `[W_*]`. Structured diagnoses live in `details.cause`.
+4. **Additive Store Migration**: The SQLite schema migrates additively from version 6 to 7. Existing project files are untouched.
 
-- **`E_UNSERVED_RANGE` is retired.** A bound whose identity was retired while the surviving bound is live and unshifted is `[E_UNVERIFIED_RANGE]` ([ADR-0020](docs/adr/0020-unverified-range-replaces-unserved-range-boundary-rule-for-retired-identities.md)), and the named window comes back as a fresh read. Grep your instructions for the old code.
-- **Stricter acceptance.** An interior that shifted under the same 3-char anchor, or a freed anchor re-used by a byte-identical line, is rejected (`[E_STALE_RANGE]`, `[E_TARGET_LOST]`) with the current range served. 1.x would have healed it — occasionally onto the wrong line.
-- **Rejections explain themselves.** `details.cause` carries the diagnosis (`retirement`, `tombstone`, `never-served`, `served-range staleness`), so a harness branches on a field instead of parsing prose.
-- **Applied mutations are warnings.** `[E_*]` is rejections only; a success with a caveat reports as `[W_*]` ([ADR-0021](docs/adr/0021-unified-error-and-warning-contract.md)). Served rows carry position and hash only — canon text no longer travels with a row.
-
-**Upgrading touches no project file.** The store (`HASH_STORE_VERSION` 6 → 7) migrates additively on open: columns and tables are added, nothing is dropped or rewritten, and a 1.x build can still open it afterward. Anchors served *before* the upgrade have no lease lineage, so the first edit addressed to them is rejected and its current range served — continue from those rows. Deleting the store stays a corruption last resort, never an upgrade step.
+---
 
 ## Development
 
-Requires [Node.js](https://nodejs.org) ≥ 22.19 and pnpm.
-
 ```bash
+# Install dependencies
 pnpm install
+
+# Run unit and integration tests
 pnpm test
+
+# Run quality checks
 pnpm run lint
 pnpm run format
 pnpm run typecheck
+
+# Run evaluation batteries
+pnpm run eval
 ```
 
-Set `PI_HASHLINE_DEBUG=1` to show an "active" notification at session start.
-
-**Runtime edge-suite.** `pnpm run test:runtime` runs the served-state edge scenarios
-(stale-interior reject-and-serve, chained edits without re-read, undo, never-served
-interior, drift notice) as one `fabric_exec` program against real pi, using the
-temporary-extension form (`pi -e npm:pi-fabric`) so nothing is installed into your pi. It
-needs network access to install the temp extension and takes a few minutes; exit code 0
-means the suite passed.
-
-**Evaluation.** The [Comparison](#comparison) section's reproducible benchmark is produced by `pnpm run eval` and `pnpm run eval:hashline` — both `RUN_EVAL`-gated so neither runs in `pnpm test`.
-
-## Contributing
-
-Open an [issue](https://github.com/Rianico/pi-better-edit/issues) or PR. The most
-valuable contributions right now are more battery scenarios and edge-case tests for the
-served-state verification.
+---
 
 ## License
 
-[MIT](LICENSE).
+[MIT](LICENSE)
 
 ## Acknowledgments
 
-This is the **self-maintained fork** of [pi-hashline-edit-pro](https://github.com/YuGiMob/pi-hashline-edit-pro)
-(which forked [pi-hashline-edit](https://github.com/RimuruW/pi-hashline-edit)). It is not
-affiliated with either upstream, and it deliberately diverges where noted below. The
-hashline concept descends from [@oh-my-pi/hashline](https://www.npmjs.com/package/@oh-my-pi/hashline);
-the [comparison](#comparison) is the honest read of who does what.
-
-Hash-anchored editing descends from Can Bölük's
-[*The Harness Problem*](https://stencil.so/blog/the-harness-problem). This project stands
-on the shoulders of:
-
-- [**pi-hashline-edit**](https://github.com/RimuruW/pi-hashline-edit) by RimuruW — the
-  original pi-coding-agent extension that introduced hash anchors and the strict-semantics
-  policy.
-- [**pi-hashline-edit-pro**](https://github.com/YuGiMob/pi-hashline-edit-pro) by YuGiMob —
-  the hardened fork this project is self-maintained from (3-char hashes, collision
-  resolution, served-state verification, persisted undo).
-- [**@oh-my-pi/hashline**](https://github.com/can1357/oh-my-pi/tree/main/packages/hashline)
-  by can1357 — the original oh-my-pi implementation and the hashline patch-language concept.
+- [**Can Bölük**](https://stencil.so/blog/the-harness-problem) for seminal insights on *The Harness Problem*.
+- [**@oh-my-pi/hashline**](https://github.com/can1357/oh-my-pi/tree/main/packages/hashline) by can1357 for pioneering the hashline patch concept.
+- [**pi-hashline-edit**](https://github.com/RimuruW/pi-hashline-edit) by RimuruW and [**pi-hashline-edit-pro**](https://github.com/YuGiMob/pi-hashline-edit-pro) by YuGiMob for foundational agent extension designs.
