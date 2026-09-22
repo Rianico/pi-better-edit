@@ -1,4 +1,5 @@
 import { open as fsOpen, stat as fsStat } from "node:fs/promises";
+import type { Stats } from "node:fs";
 import { fileTypeFromBuffer } from "file-type";
 import { MAX_BYTES, SNIFF_BYTES } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
@@ -52,10 +53,19 @@ function mimeToLFile(mime: string | undefined): LFile | undefined {
   return { kind: "binary", description: mime };
 }
 
+export interface LFileText {
+  kind: "text";
+  text: string;
+  // WHY: the load path already stat'd this path; handing the result to the caller keeps the read
+  // WHY: path at one `stat` syscall per file instead of re-stat'ing for the snapshot id.
+  stats?: Stats;
+  hadUtf8DecodeErrors?: true;
+}
+
 export type LFile =
   | { kind: "directory" }
   | { kind: "image"; mimeType: string }
-  | { kind: "text"; text: string; hadUtf8DecodeErrors?: true }
+  | LFileText
   | { kind: "binary"; description: string };
 
 export interface LoadFileOptions {
@@ -89,7 +99,7 @@ export async function loadFileKindAndText(
     const buffer = Buffer.alloc(SNIFF_BYTES);
     const { bytesRead } = await fileHandle.read(buffer, 0, SNIFF_BYTES, 0);
     if (bytesRead === 0) {
-      return { kind: "text", text: "" };
+      return { kind: "text", text: "", stats: pathStat };
     }
 
     const sample = buffer.subarray(0, bytesRead);
@@ -146,6 +156,7 @@ export async function loadFileKindAndText(
     return {
       kind: "text",
       text: parts.join(""),
+      stats: pathStat,
       ...(hadUtf8DecodeErrors ? { hadUtf8DecodeErrors: true as const } : {}),
     };
   } finally {

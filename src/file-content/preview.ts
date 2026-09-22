@@ -4,13 +4,13 @@ import {
   DEFAULT_MAX_LINES,
   type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
-import { MAX_READ_LINE_BYTES } from "../constants.js";
+import { MAX_READ_LINE_BYTES, MAX_READ_WINDOWS } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "../hashline/index.js";
 import type { ServedRow } from "../hashline/served.js";
 import { visLines } from "../utils.js";
 
-function normPosInt(value: number | undefined, name: "offset" | "limit"): number | undefined {
+function normPosInt(value: number | undefined, name: string): number | undefined {
   if (value === undefined) {
     return undefined;
   }
@@ -20,6 +20,46 @@ function normPosInt(value: number | undefined, name: "offset" | "limit"): number
     });
   }
   return value;
+}
+
+/** One requested line range of a multi-window read. */
+export interface ReadWindow {
+  offset: number;
+  limit: number;
+}
+
+function normReqInt(value: unknown, name: string): number {
+  const normalized = normPosInt(value as number | undefined, name);
+  if (normalized === undefined) {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: `Read request field "${name}" must be a positive integer.`,
+    });
+  }
+  return normalized;
+}
+
+/**
+ * Validates a `windows` request. `undefined` and `[]` both mean "no windows": the caller falls back
+ * to the single-window `offset`/`limit` contract, so an empty array stays backward compatible.
+ */
+function normWindows(windows: ReadWindow[] | undefined): ReadWindow[] | undefined {
+  if (windows === undefined || windows.length === 0) return undefined;
+  if (windows.length > MAX_READ_WINDOWS) {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: `Read request accepts at most ${MAX_READ_WINDOWS} windows.`,
+    });
+  }
+  return windows.map((window, index) => {
+    if (window === null || typeof window !== "object") {
+      throw new DomainError("E_BAD_PAYLOAD", {
+        message: `Read request field "windows[${index}]" must be an object with offset and limit.`,
+      });
+    }
+    return {
+      offset: normReqInt(window.offset, `windows[${index}].offset`),
+      limit: normReqInt(window.limit, `windows[${index}].limit`),
+    };
+  });
 }
 
 function formatPaginationHint(
@@ -112,20 +152,25 @@ function buildOversizedPreview(params: {
   };
 }
 
-function buildNormalPreview(
-  formatted: string,
-  startLine: number,
-  endIdx: number,
-  totalLines: number,
-  maxBytes: number,
-  maxTruncLines: number,
-  selectedHashes: string[],
-): {
+function buildNormalPreview(params: {
+  formatted: string;
+  startLine: number;
+  endIdx: number;
+  totalLines: number;
+  maxBytes: number;
+  maxTruncLines: number;
+  selectedHashes: string[];
+  // WHY: an entry of an explicit `windows` request is a bounded ask, not a page: the caller named
+  // WHY: exactly these lines, so a trailing "use offset=N to continue" would invent intent.
+  hintRemainder?: boolean;
+}): {
   preview: string;
   nextOffset?: number;
   truncation: ReturnType<typeof truncateHead>;
   served: ServedRow[];
 } {
+  const { formatted, startLine, endIdx, totalLines, maxBytes, maxTruncLines, selectedHashes } =
+    params;
   const truncation = truncateHead(formatted, { maxBytes, maxLines: maxTruncLines });
   let preview = truncation.content;
   let nextOffset: number | undefined;
@@ -136,7 +181,7 @@ function buildNormalPreview(
       preview += `\n\n${formatPaginationHint(startLine, endLineDisplay, totalLines, nextOffset)}`;
     else
       preview += `\n\n${formatPaginationHint(startLine, endLineDisplay, totalLines, nextOffset, truncation.maxBytes)}`;
-  } else if (endIdx < totalLines) {
+  } else if (params.hintRemainder !== false && endIdx < totalLines) {
     nextOffset = endIdx + 1;
     preview += `\n\n${formatPaginationHint(startLine, endIdx, totalLines, nextOffset)}`;
   }
@@ -146,9 +191,137 @@ function buildNormalPreview(
   return { preview, nextOffset, truncation, served };
 }
 
+function windowHeader(startLine: number, endLine: number, totalLines: number): string {
+  return `=== Lines ${startLine}-${endLine} of ${totalLines} ===`;
+}
+
+/**
+ * Renders one window through the same oversized/truncation pipeline a single-window read uses, so a
+ * window inside a multi-window request degrades exactly like the same range read alone.
+ */
+function buildWindowSection(params: {
+  rowSizes: { lineNumber: number; bytes: number }[];
+  selected: string[];
+  selectedHashes: string[];
+  startLine: number;
+  endIdx: number;
+  totalLines: number;
+  maxBytes: number;
+  maxTruncLines: number;
+}): { text: string; truncation?: TruncationResult; nextOffset?: number; served: ServedRow[] } {
+  const {
+    rowSizes,
+    selected,
+    selectedHashes,
+    startLine,
+    endIdx,
+    totalLines,
+    maxBytes,
+    maxTruncLines,
+  } = params;
+  if (rowSizes.some((row) => row.bytes > maxBytes)) {
+    return buildOversizedPreview({
+      rowSizes,
+      selected,
+      selectedHashes,
+      startLine,
+      totalLines,
+      maxBytes,
+      maxTruncLines,
+    });
+  }
+  const normal = buildNormalPreview({
+    formatted: fmtRegion(selectedHashes, selected),
+    startLine,
+    endIdx,
+    totalLines,
+    maxBytes,
+    maxTruncLines,
+    selectedHashes,
+    hintRemainder: false,
+  });
+  return {
+    text: normal.preview,
+    truncation: normal.truncation,
+    ...(normal.nextOffset !== undefined ? { nextOffset: normal.nextOffset } : {}),
+    served: normal.served,
+  };
+}
+
+/**
+ * Multi-window read (one tool result, several disjoint ranges). Sections render in the caller's
+ * order — the order is part of the request, so it is never sorted — while every window draws on ONE
+ * shared byte/line budget so N windows cannot multiply the auto-read budget by N. Rows are served
+ * only for the lines actually shown, and overlapping windows collapse to one served row per line.
+ */
+function buildWindowedPreview(params: {
+  windows: ReadWindow[];
+  allLines: string[];
+  allHashes: string[];
+  totalLines: number;
+  maxBytes: number;
+  maxTruncLines: number;
+}): { text: string; truncation?: TruncationResult; nextOffset?: number; served: ServedRow[] } {
+  const { windows, allLines, allHashes, totalLines, maxBytes, maxTruncLines } = params;
+  const sections: string[] = [];
+  const hashByPosition = new Map<number, string>();
+  let truncation: TruncationResult | undefined;
+  let nextOffset: number | undefined;
+  let remainingBytes = maxBytes;
+  let remainingLines = maxTruncLines;
+
+  for (const window of windows) {
+    if (window.offset > totalLines) {
+      sections.push(
+        `${windowHeader(window.offset, window.offset, totalLines)}\nOffset ${window.offset} is beyond end of file (${totalLines} lines total). Use offset=1 to read from the start, or offset=${totalLines} to read the last line.`,
+      );
+      continue;
+    }
+    const endIdx = Math.min(window.offset - 1 + window.limit, totalLines);
+    const header = windowHeader(window.offset, endIdx, totalLines);
+    if (remainingBytes <= 0 || remainingLines <= 0) {
+      sections.push(
+        `${header}\n[Read budget exhausted; this window is not shown. Re-read it on its own.]`,
+      );
+      continue;
+    }
+    const selected = allLines.slice(window.offset - 1, endIdx);
+    const selectedHashes = allHashes.slice(window.offset - 1, endIdx);
+    const rowSizes = selected.map((line, index) => ({
+      lineNumber: window.offset + index,
+      bytes: Buffer.byteLength(`${selectedHashes[index]}${HASH_SEP}${line}`, "utf-8"),
+    }));
+    const built = buildWindowSection({
+      rowSizes,
+      selected,
+      selectedHashes,
+      startLine: window.offset,
+      endIdx,
+      totalLines,
+      maxBytes: remainingBytes,
+      maxTruncLines: remainingLines,
+    });
+    sections.push(`${header}\n${built.text}`);
+    for (const row of built.served) hashByPosition.set(row.position, row.hash);
+    remainingLines -= built.text === "" ? 0 : built.text.split("\n").length;
+    remainingBytes -= Buffer.byteLength(`${built.text}${header}`, "utf-8");
+    if (truncation === undefined && built.truncation) truncation = built.truncation;
+    if (nextOffset === undefined && built.nextOffset !== undefined) nextOffset = built.nextOffset;
+  }
+
+  return {
+    text: sections.join("\n\n"),
+    ...(truncation ? { truncation } : {}),
+    ...(nextOffset !== undefined ? { nextOffset } : {}),
+    served: [...hashByPosition.entries()]
+      .sort((left, right) => left[0] - right[0])
+      .map(([position, hash]) => ({ position, hash })),
+  };
+}
+
 export async function fmtReadPreview(
   text: string,
-  options: { offset?: number; limit?: number },
+  options: { offset?: number; limit?: number; windows?: ReadWindow[] },
   precomputedHashes?: string[],
   path?: string,
   maxLineBytes = MAX_READ_LINE_BYTES,
@@ -162,7 +335,27 @@ export async function fmtReadPreview(
   const allLines = visLines(text);
   const totalLines = allLines.length;
   const startLine = normPosInt(options.offset, "offset") ?? 1;
-  if (totalLines === 0) return emptyFilePreview(startLine, text, precomputedHashes, path, HASH_SEP);
+  const windows = normWindows(options.windows);
+  if (totalLines === 0)
+    return emptyFilePreview(
+      windows?.[0]?.offset ?? startLine,
+      text,
+      precomputedHashes,
+      path,
+      HASH_SEP,
+    );
+  if (windows) {
+    const allHashes =
+      precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+    return buildWindowedPreview({
+      windows,
+      allLines,
+      allHashes,
+      totalLines,
+      maxBytes: maxLineBytes,
+      maxTruncLines,
+    });
+  }
   if (startLine > totalLines) {
     return {
       text: `Offset ${startLine} is beyond end of file (${totalLines} lines total). Use offset=1 to read from the start, or offset=${totalLines} to read the last line.`,
@@ -193,7 +386,7 @@ export async function fmtReadPreview(
     });
   }
 
-  const normal = buildNormalPreview(
+  const normal = buildNormalPreview({
     formatted,
     startLine,
     endIdx,
@@ -201,7 +394,7 @@ export async function fmtReadPreview(
     maxBytes,
     maxTruncLines,
     selectedHashes,
-  );
+  });
   return {
     text: normal.preview,
     truncation: normal.truncation.truncated ? normal.truncation : undefined,
