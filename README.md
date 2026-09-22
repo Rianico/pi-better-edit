@@ -206,7 +206,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 | Tool | Parameters | Description |
 | --- | --- | --- |
-| `read` | `file`, `offset` (1-based), `limit` | Returns file content formatted as `HASH│content`. Lines &gt;200KB are replaced with a marker hint. |
+| `read` | `file`, `offset` (1-based), `limit`, `windows` (optional) | Returns file content formatted as `HASH│content`. Lines &gt;200KB are replaced with a marker hint. `windows: [{offset, limit}, …]` reads up to 16 disjoint ranges in one turn: each renders under `=== Lines A-B of N ===` and every shown line is leased, so anchors from all of them work in one `edit`. |
 | `read_skill` | `file` | Reads file content as plain text without hash prefixes or lease recording (ideal for prompts, docs, and skills). |
 | `edit` | `file`, `edits`, `mode` (optional) | Applies single or batched edits atomically. Each edit targets `anchor_from` and `anchor_to` inclusive. `mode: "literal"` declares verbatim text. |
 | `undo_last_edit` | `file` | Restores the previous file state, BOM, line endings, and original anchors. Persists across restarts. |
