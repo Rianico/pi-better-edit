@@ -1,17 +1,19 @@
 # Changelog
 
-## [Unreleased]
+## [2.1.0](https://github.com/Rianico/pi-better-edit/compare/v2.0.0...v2.1.0) (2026-09-22)
 
 ### Features
 
-* ship a pre-bundled dist/index.js to cut extension startup latency (#160)
-* **mutation-engine:** aggregate multi-edit batch errors instead of failing fast on first error (#159)
-* **errors:** diagnose numeric anchors in E_UNKNOWN_ANCHOR to steer away from line numbers (#158)
+* **errors:** diagnose numeric anchors in E_UNKNOWN_ANCHOR to steer away from line numbers ([#158](https://github.com/Rianico/pi-better-edit/issues/158)) ([33ccb0d](https://github.com/Rianico/pi-better-edit/commit/33ccb0da0ce524bd9aeffa6413d3912434c431ab))
+* **mutation-engine:** aggregate multi-edit batch errors instead of failing fast on first error ([#159](https://github.com/Rianico/pi-better-edit/issues/159)) ([2217810](https://github.com/Rianico/pi-better-edit/commit/2217810c4f57e9f799ae8954b1b6181b3d0cd05d))
+* ship a pre-bundled dist/index.js to cut extension startup latency ([#160](https://github.com/Rianico/pi-better-edit/issues/160)) ([8cdc716](https://github.com/Rianico/pi-better-edit/commit/8cdc7163d6eeb3c7da314c583b6acbbcba866605)), closes [#157](https://github.com/Rianico/pi-better-edit/issues/157) [#156](https://github.com/Rianico/pi-better-edit/issues/156) [#157](https://github.com/Rianico/pi-better-edit/issues/157) [#156](https://github.com/Rianico/pi-better-edit/issues/156) [GH#157](https://github.com/Rianico/GH/issues/157)
 
 ### Documentation
 
-* add independent explicit edit benchmark section
-* **readme:** rewrite for v2 line-identity mvcc architecture
+* add independent explicit edit benchmark section ([2db15fc](https://github.com/Rianico/pi-better-edit/commit/2db15fc9c155e4d89d3ed71cd7ea75fc4f34ac3e))
+* **readme:** rewrite for v2 line-identity mvcc architecture ([b4bd3cb](https://github.com/Rianico/pi-better-edit/commit/b4bd3cb2a49998d8965425a1876623499aad40aa))
+
+## [Unreleased]
 
 ## [2.0.0](https://github.com/Rianico/pi-better-edit/compare/v1.7.0...v2.0.0) (2026-09-21)
 
