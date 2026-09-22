@@ -11,7 +11,7 @@
 <p align="center">
   <a href="#why-pi-better-edit-v2"><img src="https://img.shields.io/badge/architecture-MVCC_v2-blue?style=flat" alt="MVCC v2"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-30s-brightgreen?style=flat" alt="quick start 30s"></a>
-  <a href="#reproducible-benchmarks"><img src="https://img.shields.io/badge/correctness-23%2F23-success?style=flat" alt="23/23 battery"></a>
+  <a href="#reproducible-benchmarks"><img src="https://img.shields.io/badge/correctness-27%2F27-success?style=flat" alt="27/27 battery"></a>
   <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/v/pi-better-edit?color=crimson" alt="npm version"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
 </p>
@@ -289,7 +289,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 | **Batch Support** | **Atomic** up to 32 items with delta shifts | Multi-section patch preflight | Sequential individual calls |
 | **Undo Persistence** | **Survives restarts** (CAS snapshot pinned) | None | None |
 | **Session Isolation** | Session-keyed leases (`served_leases`) | None | N/A |
-| **Deterministic Battery** | **23/23** pass rate | 10/10 library seam | N/A |
+| **Deterministic Battery** | **27/27** pass rate | 10/10 library seam | N/A |
 
 ### Edge Case Behavior
 
@@ -307,13 +307,13 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 All claims are backed by deterministic verification batteries and reproducible benchmarks.
 
-### 1. Deterministic Tool Battery (23 Scenarios)
+### 1. Deterministic Tool Battery (27 Scenarios)
 
-The tool battery executes 23 complex edge-case scenarios (concurrent exterior inserts, duplicate function blocks, interior modifications, symmetric reorders, and batch interactions) without LLM sampling:
+The tool battery executes 27 complex edge-case scenarios (concurrent exterior inserts, duplicate function blocks, interior modifications, symmetric reorders, foreign-anchor isolation, BOM preservation, and batch interactions) without LLM sampling:
 
 | Test Suite | Result | Silent Data Loss |
 | --- | :---: | :---: |
-| **pi-better-edit v2** | **23/23** | **0** |
+| **pi-better-edit v2** | **27/27** | **0** |
 
 Reproduce locally:
 ```bash

@@ -48,6 +48,22 @@ const EXPECTED = {
   "B20 main-and-sub-agent-both-edit": { outcome: "success" },
   "B21 same-session-restart-keeps-served-state": { outcome: "success" },
   "B22 sub-agent-serves-not-visible-to-main": { outcome: "rejected" },
+  "B23 duplicate-canon silent-miswrite prevention (Probe E / #61)": {
+    outcome: "rejected",
+    preserve: "int f2",
+  },
+  "B24 symmetric contested-swap fail-closed (Probe K)": {
+    outcome: "rejected",
+    preserve: "function beta",
+  },
+  "B25 foreign-anchor cross-file isolation (#145)": {
+    outcome: "rejected",
+    preserve: "charlie\ndelta\n",
+  },
+  "B26 UTF-8 BOM preservation across edit (#23/#60)": {
+    outcome: "success",
+    preserve: "\uFEFFfirst\nSECOND\nthird\n",
+  },
 };
 
 function run(cmd, cwd = root) {

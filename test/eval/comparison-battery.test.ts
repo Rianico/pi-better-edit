@@ -65,6 +65,11 @@ function setupTarget(
   const tools = new Map<string, unknown>();
   const pi = {
     registerTool(t: any) {
+      const origExecute = t.execute;
+      t.execute = function (callId: string, params: any, signal: any, onUpdate: any, ctx: any) {
+        const adapted = target.adaptEditParams ? target.adaptEditParams(t.name, params) : params;
+        return origExecute.call(this, callId, adapted, signal, onUpdate, ctx);
+      };
       tools.set(t.name, t);
     },
     registerCommand() {},
@@ -973,6 +978,156 @@ describeGate("EVAL comparison battery", () => {
           replace_with: "B",
         },
         mainCtx,
+      );
+      rec.outcome = e1.ok ? "success" : "rejected";
+      rec.code = e1.code;
+      rec.finalContent = await readFile(path, "utf-8");
+      results.push(rec);
+    });
+
+    const B23_SMALL_CPP =
+      "int f1(int x) {\n\tif (x > 0) {\n\t\treturn x;\n\t}\n\treturn -x;\n}\n\nint f2(int x) {\n\tif (x > 0) {\n\t\treturn x;\n\t}\n\treturn -x;\n}\n";
+    const B23_F2_ONLY = "int f2(int x) {\n\tif (x > 0) {\n\t\treturn x;\n\t}\n\treturn -x;\n}\n";
+
+    await withTempFile("b23.cpp", B23_SMALL_CPP, async ({ cwd, path }) => {
+      const rec: ScenarioResult = {
+        scenario: "B23 duplicate-canon silent-miswrite prevention (Probe E / #61)",
+        outcome: "success",
+        calls: [],
+        finalContent: "",
+      };
+      const { ctx, getTool } = setupTarget(cwd, target);
+      const r1 = await call(
+        rec,
+        getTool(target.toolNames.read),
+        target.toolNames.read,
+        { path: "b23.cpp" },
+        ctx,
+      );
+      const line2Hash = readAnchor(r1.text, "│\tif (x > 0) {");
+      await writeFile(path, B23_F2_ONLY, "utf-8");
+      const e1 = await call(
+        rec,
+        getTool(target.toolNames.edit),
+        target.toolNames.edit,
+        {
+          path: "b23.cpp",
+          anchor_from: line2Hash,
+          anchor_to: line2Hash,
+          replace_with: "\tif (x > 100) {",
+        },
+        ctx,
+      );
+      rec.outcome = e1.ok ? "success" : "rejected";
+      rec.code = e1.code;
+      rec.finalContent = await readFile(path, "utf-8");
+      results.push(rec);
+    });
+
+    const B24_ORIGINAL =
+      'function alpha() {\n  return "alpha";\n} // end alpha\n\nfunction beta() {\n  return "beta";\n} // end beta\n';
+    const B24_SWAPPED =
+      'function beta() {\n  return "beta";\n} // end beta\n\nfunction alpha() {\n  return "alpha";\n} // end alpha\n';
+
+    await withTempFile("b24.js", B24_ORIGINAL, async ({ cwd, path }) => {
+      const rec: ScenarioResult = {
+        scenario: "B24 symmetric contested-swap fail-closed (Probe K)",
+        outcome: "success",
+        calls: [],
+        finalContent: "",
+      };
+      const { ctx, getTool } = setupTarget(cwd, target);
+      const r1 = await call(
+        rec,
+        getTool(target.toolNames.read),
+        target.toolNames.read,
+        { path: "b24.js" },
+        ctx,
+      );
+      const a = readAnchor(r1.text, "│function alpha() {");
+      const b = readAnchor(r1.text, "│} // end alpha");
+      await writeFile(path, B24_SWAPPED, "utf-8");
+      const e1 = await call(
+        rec,
+        getTool(target.toolNames.edit),
+        target.toolNames.edit,
+        {
+          path: "b24.js",
+          anchor_from: a,
+          anchor_to: b,
+          replace_with: "function alpha() {\n  return 'alpha-modified';\n} // end alpha",
+        },
+        ctx,
+      );
+      rec.outcome = e1.ok ? "success" : "rejected";
+      rec.code = e1.code;
+      rec.finalContent = await readFile(path, "utf-8");
+      results.push(rec);
+    });
+
+    await withTempFile("b25a.ts", "alpha\nbravo\n", async ({ cwd }) => {
+      const pathB = join(cwd, "b25b.ts");
+      await writeFile(pathB, "charlie\ndelta\n", "utf-8");
+      const rec: ScenarioResult = {
+        scenario: "B25 foreign-anchor cross-file isolation (#145)",
+        outcome: "success",
+        calls: [],
+        finalContent: "",
+      };
+      const { ctx, getTool } = setupTarget(cwd, target);
+      const r1 = await call(
+        rec,
+        getTool(target.toolNames.read),
+        target.toolNames.read,
+        { path: "b25a.ts" },
+        ctx,
+      );
+      const anchorBravo = readAnchor(r1.text, "│bravo");
+      const e1 = await call(
+        rec,
+        getTool(target.toolNames.edit),
+        target.toolNames.edit,
+        {
+          path: "b25b.ts",
+          anchor_from: anchorBravo,
+          anchor_to: anchorBravo,
+          replace_with: "MODIFIED",
+        },
+        ctx,
+      );
+      rec.outcome = e1.ok ? "success" : "rejected";
+      rec.code = e1.code;
+      rec.finalContent = await readFile(pathB, "utf-8");
+      results.push(rec);
+    });
+
+    await withTempFile("b26.txt", "\uFEFFfirst\nsecond\nthird\n", async ({ cwd, path }) => {
+      const rec: ScenarioResult = {
+        scenario: "B26 UTF-8 BOM preservation across edit (#23/#60)",
+        outcome: "success",
+        calls: [],
+        finalContent: "",
+      };
+      const { ctx, getTool } = setupTarget(cwd, target);
+      const r1 = await call(
+        rec,
+        getTool(target.toolNames.read),
+        target.toolNames.read,
+        { path: "b26.txt" },
+        ctx,
+      );
+      const anchor = readAnchor(r1.text, "│second");
+      const e1 = await call(
+        rec,
+        getTool(target.toolNames.edit),
+        target.toolNames.edit,
+        {
+          path: "b26.txt",
+          anchor_from: anchor,
+          anchor_to: anchor,
+          replace_with: "SECOND",
+        },
+        ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
       rec.code = e1.code;

@@ -5,7 +5,7 @@ cover the two layers of the stack:
 
 - **Tool battery** (`test/eval/comparison-battery.test.ts`, `scripts/eval-compare.mjs`)
   drives the pi extension tools (`read` / `edit` / `undo_last_edit`) through
-  the same 23 scenarios against this fork and against published upstream
+  the same 27 scenarios against this fork and against published upstream
   versions of `pi-hashline-edit-pro`.
 - **Library battery** (`hashline-compare.mjs`, `hashline-battery.mts`) drives
   the [`@oh-my-pi/hashline`](https://www.npmjs.com/package/@oh-my-pi/hashline)
@@ -60,15 +60,15 @@ npm run eval:compare -- local pi-hashline-edit-pro@2.5.0   # override targets
 battery, prints a per-scenario correctness table plus aggregate call/
 character counts, then restores
 
-### Results (2026-08-17, Node 22, macOS arm64)
+### Results (2026-09-22, Node 26, macOS arm64)
 
 | vs expected verdict | correct | silent data-loss cases |
 | --- | --: | --: |
-| **this fork (1.1.3)** | **23/23** | 0 |
-| `pi-hashline-edit-pro@2.4.1` (fork base) | 17/23 | 5 (B3, B7, B8, B10, B15) + B22 cross-session serve leak |
-| `pi-hashline-edit-pro@2.5.3` (latest) | 21/23 | 0 (B8 blind-edit hole, B22 cross-session serve leak) |
+| **this repo (2.0.0)** | **27/27** | 0 |
+| `pi-hashline-edit-pro@2.4.1` (fork base) | 19/27 | 7 (B3, B7, B8, B10, B15, B23, B24) + B22 cross-session serve leak |
+| `pi-hashline-edit-pro@2.5.3` (latest) | 23/27 | 3 (B8 blind-edit hole, B23 duplicate collision, B24 contested swap) + B22 cross-session serve leak |
 
-Per-scenario table: [results/2026-08-17-tool-battery.md](results/2026-08-17-tool-battery.md).
+Per-scenario table: [results/2026-09-22-tool-battery.md](results/2026-09-22-tool-battery.md). Historical 23-scenario baseline: [results/2026-08-17-tool-battery.md](results/2026-08-17-tool-battery.md).
 
 The scenarios with a `WRONG` verdict for 2.4.1 (B3, B7, B10, B15) are the
 "interior drift must-not-silently-overwrite" family: the file changed inside
@@ -76,6 +76,8 @@ the edit range after it was read, and the upstream applied the edit anyway,
 overwriting the drifted lines. B8 and B22 (both versions) are the
 never-served / cross-session serve holes, where an edit anchored on lines the
 model was never shown — or was shown in another session — still landed.
+B23 (Probe E / #61) and B24 (Probe K) in upstream versions lack content-addressed
+line-identity MVCC, silently miswriting duplicated identical lines or contested swaps.
 
 ## Library battery (@oh-my-pi/hashline)
 
@@ -131,7 +133,7 @@ Per-scenario table: [results/2026-08-17-hashline-library.md](results/2026-08-17-
 
 | Battery | Verdict source | What it gates |
 |---------|----------------|---------------|
-| Tool battery B1–B22 | outcome + `preserve`/`equals` content checks | every `edit`/`undo` scenario: stale interiors, never-served ranges, noops, empty files, autocorrects, session isolation, undo |
+| Tool battery B1–B26 | outcome + `preserve`/`equals` content checks | every `edit`/`undo` scenario: stale interiors, never-served ranges, noops, empty files, autocorrects, session isolation, undo, duplicate function disambiguation, contested swaps, cross-file isolation, BOM preservation |
 | Library battery H1–H10 | outcome + content checks + warning presence | valid apply, stale-tag recovery vs rejection, head/tail drift, noop, empty-file insert, unseen-anchor guard, batch atomicity, cut/paste, missing tag |
 
 ## Prerequisites
