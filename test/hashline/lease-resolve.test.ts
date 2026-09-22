@@ -199,7 +199,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect((caught as DomainError).servedRows).toEqual([]);
   });
 
-  it("reports [E_STALE_RANGE] for a never-served interior line of a rebased span", () => {
+  it("applies an unread interior between two leased boundaries (ADR-0024)", () => {
     const src = source({
       leases: {
         AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
@@ -208,14 +208,14 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
       positions: { 1: 1, 2: 3 },
       currentSnapshotHash: "C",
     });
-    expect(() =>
-      resolveLeasedEdit({
-        edit,
-        snapshot: { fileHashes: ["AAA", "X", "BBB"], fileLines: ["a", "x", "b"] },
-        served: ["AAA", null, "BBB"],
-        source: src,
-      }),
-    ).toThrow(/\[E_STALE_RANGE\]/);
+    const result = resolveLeasedEdit({
+      edit,
+      snapshot: { fileHashes: ["AAA", "X", "BBB"], fileLines: ["a", "x", "b"] },
+      served: ["AAA", null, "BBB"],
+      source: src,
+    });
+    expect(result.status).toBe("rebased");
+    expect(result.resolved.hash_bounds.map((bound) => bound.line)).toEqual([1, 3]);
   });
 
   it("takes the O(1) fast path on a uniform snapshot even when the content anchor is ambiguous", () => {
@@ -560,7 +560,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
     ).toThrow(/E_STALE_RANGE/);
   });
 
-  it("reports E_STALE_RANGE for a never-served interior line", () => {
+  it("reports E_STALE_RANGE for a never-served boundary row (a two-line window is all boundary)", () => {
     expect(() =>
       verifyRebasedSpan({
         served: ["AAA", null],
@@ -570,6 +570,44 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
         rebasedEnd: 2,
         snapshot: { fileHashes: hashes, fileLines },
         leaseFor: () => lease({ lineId: 1 }),
+        rebasedLineOf: (lineId) => lineId,
+      }),
+    ).toThrow(/E_STALE_RANGE/);
+  });
+
+  it("accepts an unread interior row between two leased boundaries (ADR-0024)", () => {
+    const leases = new Map([
+      ["AAA", lease({ lineId: 1 })],
+      [hashes[2]!, lease({ lineId: 3 })],
+    ]);
+    expect(() =>
+      verifyRebasedSpan({
+        served: ["AAA", null, hashes[2]!],
+        servedStart: 1,
+        servedEnd: 3,
+        rebasedStart: 1,
+        rebasedEnd: 3,
+        snapshot: { fileHashes: hashes, fileLines },
+        leaseFor: (anchor) => leases.get(anchor),
+        rebasedLineOf: (lineId) => lineId,
+      }),
+    ).not.toThrow();
+  });
+
+  it("still rejects an unread boundary row of a three-line window (ADR-0024)", () => {
+    const leases = new Map([
+      [hashes[1]!, lease({ lineId: 2 })],
+      [hashes[2]!, lease({ lineId: 3 })],
+    ]);
+    expect(() =>
+      verifyRebasedSpan({
+        served: [null, hashes[1]!, hashes[2]!],
+        servedStart: 1,
+        servedEnd: 3,
+        rebasedStart: 1,
+        rebasedEnd: 3,
+        snapshot: { fileHashes: hashes, fileLines },
+        leaseFor: (anchor) => leases.get(anchor),
         rebasedLineOf: (lineId) => lineId,
       }),
     ).toThrow(/E_STALE_RANGE/);

@@ -206,7 +206,49 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     });
   });
 
-  it("interior gap rejects [E_STALE_RANGE] with the current window", async () => {
+  it("drifted interior rejects [E_STALE_RANGE] with the current window", async () => {
+    const content = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
+    await withTempFile("sample.ts", content, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const text = getText(first);
+      const l3Ref = extractHash(text.split("\n").find((l) => l.includes("│l3"))!);
+      const l7Ref = extractHash(text.split("\n").find((l) => l.includes("│l7"))!);
+
+      // Every row of the window was served; one interior line then drifts on disk. ADR-0024 keeps this
+      // fail-closed — it accepts only interior rows no serve ever covered.
+      const drifted = content.replace("l5\n", "L5X\n");
+      await writeFile(path, drifted, "utf-8");
+
+      let caught: unknown;
+      try {
+        await editTool.execute(
+          "e1",
+          { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
+          undefined,
+          undefined,
+          ctx,
+        );
+      } catch (error) {
+        caught = error;
+      }
+      const msg = (caught as Error).message;
+      expect(msg).toMatch(/E_STALE_RANGE/);
+      expect(await readFile(path, "utf-8")).toBe(drifted);
+      // Rebased window 3-7 from the two served bounds; every row in it was served, so the diagnosis is
+      // the identity one — never `never-served` (ADR-0024).
+      expect(msg).toContain("Current range (fresh read):");
+      expect(msg).not.toContain("Retry with these anchors");
+      expect((caught as { details?: { cause: string } }).details?.cause).not.toBe("never-served");
+      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      expect(servedLines).toHaveLength(5);
+      const diskHashes = await currentHashes(drifted);
+      const diskLines = drifted.trimEnd().split("\n");
+      expect(servedLines).toEqual([2, 3, 4, 5, 6].map((i) => `${diskHashes[i]}│${diskLines[i]}`));
+    });
+  });
+
+  it("unread interior between served bounds no longer rejects (ADR-0024)", async () => {
     const content = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -234,31 +276,16 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
           .split("\n")
           .find((l) => l.includes("│l7"))!,
       );
-      let caught: unknown;
-      try {
-        await editTool.execute(
-          "e1",
-          { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
-          undefined,
-          undefined,
-          ctx,
-        );
-      } catch (error) {
-        caught = error;
-      }
-      const msg = (caught as Error).message;
-      expect(msg).toMatch(/E_STALE_RANGE/);
-      expect(await readFile(path, "utf-8")).toBe(content);
-      // Rebased window 3-7 from the two served bounds; interior 4-6 were never served.
-      // The rows are served as a fresh read the model decides from (issue #149).
-      expect(msg).toContain("Current range (fresh read):");
-      expect(msg).not.toContain("Retry with these anchors");
-      expect((caught as { details?: { cause: string } }).details?.cause).toBe("never-served");
-      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
-      expect(servedLines).toHaveLength(5);
-      const diskHashes = await currentHashes(content);
-      const diskLines = content.trimEnd().split("\n");
-      expect(servedLines).toEqual([2, 3, 4, 5, 6].map((i) => `${diskHashes[i]}│${diskLines[i]}`));
+
+      const applied = await editTool.execute(
+        "e1",
+        { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(getText(applied)).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toBe("l1\nl2\nX\nl8\nl9\n");
     });
   });
 

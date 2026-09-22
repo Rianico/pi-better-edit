@@ -151,7 +151,7 @@ describe("compPreview — served-state staleness surfacing", () => {
     });
   });
 
-  it("returns [E_STALE_RANGE] for a never-served interior after a paged read", async () => {
+  it("returns a diff for an unread interior after a paged read (ADR-0024)", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute(
@@ -174,10 +174,8 @@ describe("compPreview — served-state staleness surfacing", () => {
         { path: "sample.ts", edits: [[hashes[0]!, hashes[3]!, "X"]] },
         cwd,
       );
-      expect(preview).toHaveProperty("error");
-      const errorText = (preview as { error: string }).error;
-      expect(errorText).toMatch(/\[E_STALE_RANGE\] line 2 in sample.ts/);
-      expect(errorText).toContain("Current range (fresh read):");
+      expect(preview).toHaveProperty("diff");
+      expect(preview).not.toHaveProperty("error");
     });
   });
 

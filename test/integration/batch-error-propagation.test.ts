@@ -121,28 +121,21 @@ describe("multi-item edit error propagation", () => {
 
 describe("batch abort serve-block preservation and isolation (spec D2, section 3.4)", () => {
   const nineLines = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
+  const driftedLines = nineLines.replace("l5\n", "L5X\n");
 
-  /** Reads lines 1-3 and 7-9, leaving the interior 4-6 never served. */
-  async function partialServe(
+  /** Serves the whole file, then drifts one interior line on disk — the failing item's own diagnosis. */
+  async function serveThenDrift(
     ctx: unknown,
     readTool: any,
     name: string,
+    path: string,
   ): Promise<{ l1Ref: string; l3Ref: string; l7Ref: string }> {
-    const first = await readTool.execute("r1", { path: name, limit: 3 }, undefined, undefined, ctx);
-    const firstText = getText(first);
-    const second = await readTool.execute(
-      "r2",
-      { path: name, offset: 7 },
-      undefined,
-      undefined,
-      ctx,
-    );
-    const secondText = getText(second);
-    return {
-      l1Ref: extractHash(firstText.split("\n").find((l) => l.includes("│l1"))!),
-      l3Ref: extractHash(firstText.split("\n").find((l) => l.includes("│l3"))!),
-      l7Ref: extractHash(secondText.split("\n").find((l) => l.includes("│l7"))!),
-    };
+    const served = await readTool.execute("r1", { path: name }, undefined, undefined, ctx);
+    const servedText = getText(served);
+    const ref = (line: string): string =>
+      extractHash(servedText.split("\n").find((l: string) => l.includes(`│${line}`))!);
+    await writeFile(path, driftedLines, "utf-8");
+    return { l1Ref: ref("l1"), l3Ref: ref("l3"), l7Ref: ref("l7") };
   }
 
   type Caught = Error & {
@@ -155,7 +148,7 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
   it("preserves the failing item's servedBlock and rows across the abort", async () => {
     await withTempFile("batch-serve.txt", nineLines, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const { l1Ref, l3Ref, l7Ref } = await partialServe(ctx, readTool, "batch-serve.txt");
+      const { l1Ref, l3Ref, l7Ref } = await serveThenDrift(ctx, readTool, "batch-serve.txt", path);
       const rejection = (await editTool
         .execute(
           "e1",
@@ -191,18 +184,23 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
         expect(rejection.servedBlock).toContain(`${row.hash}│`);
       }
       // The block renders the failing item's window (lines 3-7), content-exact.
-      expect(blockLines.map((line) => line.split("│")[1])).toEqual(["l3", "l4", "l5", "l6", "l7"]);
+      expect(blockLines.map((line) => line.split("│")[1])).toEqual(["l3", "l4", "L5X", "l6", "l7"]);
       // The batch envelope keeps the failing item's own diagnosis.
-      expect(rejection.details?.cause).toBe("never-served");
+      expect(rejection.details?.cause).toBe("retirement");
       // Atomicity: the clean sibling reached only the buffer.
-      expect(await readFile(path, "utf-8")).toBe(nineLines);
+      expect(await readFile(path, "utf-8")).toBe(driftedLines);
     });
   });
 
   it("reports only the failing item with no sibling state leaking in", async () => {
     await withTempFile("batch-isolated.txt", nineLines, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const { l1Ref, l3Ref, l7Ref } = await partialServe(ctx, readTool, "batch-isolated.txt");
+      const { l1Ref, l3Ref, l7Ref } = await serveThenDrift(
+        ctx,
+        readTool,
+        "batch-isolated.txt",
+        path,
+      );
       const rejection = (await editTool
         .execute(
           "e1",
@@ -228,10 +226,10 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
       const blockLines = (rejection.servedBlock ?? "")
         .split("\n")
         .filter((line) => /^[A-Za-z0-9]{3}│/.test(line));
-      expect(blockLines.map((line) => line.split("│")[1])).toEqual(["l3", "l4", "l5", "l6", "l7"]);
+      expect(blockLines.map((line) => line.split("│")[1])).toEqual(["l3", "l4", "L5X", "l6", "l7"]);
       expect(blockLines.join("\n")).not.toContain("L1");
       expect(rejection.message).not.toContain("│L1");
-      expect(await readFile(path, "utf-8")).toBe(nineLines);
+      expect(await readFile(path, "utf-8")).toBe(driftedLines);
     });
   });
 });

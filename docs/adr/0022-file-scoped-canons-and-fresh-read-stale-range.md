@@ -10,6 +10,7 @@ Amends [ADR-0018 — Region-scoped rejection serves; a retired identity recovers
 
 Amends [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md)
 Amended by [ADR-0023 — Lease lineage is the span verification authority; served canons retire](0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md) (decision 1: the canon no longer travels with the row)
+Extended by [ADR-0024 — Narrow informed destruction to the boundaries; cap the applied diff's removals](0024-narrow-p2-interior-exposure-cap-removed-diffs.md) (the same principle — a rejection may not mandate what the tool cannot back — applied to the interior exposure gate; this record's payload contract is unchanged)
 
 ## Context
 
