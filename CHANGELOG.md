@@ -4,6 +4,7 @@
 
 ### Features
 
+* ship a pre-bundled dist/index.js to cut extension startup latency (#160)
 * **mutation-engine:** aggregate multi-edit batch errors instead of failing fast on first error (#159)
 * **errors:** diagnose numeric anchors in E_UNKNOWN_ANCHOR to steer away from line numbers (#158)
 
