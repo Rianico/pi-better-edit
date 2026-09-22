@@ -17,11 +17,18 @@
 
 ### Features
 
+* **read:** add multi-window reads and consolidate the read path's stats
 * **edit:** accept unread interior rows and cap applied-diff removals
+
+### Bug Fixes
+
+* **read:** drop the ambiguous root pagination offset from multi-window reads
+* **read:** refine multi-window contracts, budget truncation, and stat decoupling
 
 ### Documentation
 
-* **adr:** record ADR-0024 on interior exposure and diff caps
+* **changelog:** sync the unreleased section
+* **readme:** document the read tool's windows parameter
 
 ## [2.0.0](https://github.com/Rianico/pi-better-edit/compare/v1.7.0...v2.0.0) (2026-09-21)
 
