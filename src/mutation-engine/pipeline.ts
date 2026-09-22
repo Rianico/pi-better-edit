@@ -569,8 +569,9 @@ function batchAbortFor(args: { error: Error; index: number; path: string }): Err
  *
  * Field aggregation (spec D2 — the envelope must stay actionable):
  * - `code`: every item keeps its own `[E_*]` inline in the message; the envelope carries the
- *   shared code when all items agree, else the first item's code so `toFailure` still routes the
- *   typed path (and keeps this full message) instead of rewriting it as `E_UNKNOWN`.
+ * - `code`: every item keeps its own `[E_*]` inline in the message; the envelope carries the
+ *   first item's domain code so `toFailure` still routes the typed path (and keeps this full
+ *   message) instead of rewriting it as `E_UNKNOWN`.
  * - `details`/`cause`: carried only when every failing item agrees on one diagnosis; a mixed
  *   batch states each cause inline instead of promoting one.
  * - `servedRows`: the union of every failing item's rows (each item's retry leases were already
@@ -697,6 +698,8 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
       failures.push({ error, index });
     }
   }
+  // WHY: anchor failures mask overlap reporting — without valid anchors there are no coordinates
+  // WHY: to compare, so validation rejections throw before the overlap scan below.
   if (failures.length === 1) {
     const only = failures[0]!;
     throw batchAbortFor({ error: only.error, index: only.index, path: ctx.path });

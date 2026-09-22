@@ -551,7 +551,7 @@ describe("edit multi-item batch error aggregation", () => {
     });
   });
 
-  it("aggregates mixed span failures and preserves the union of serve rows", async () => {
+  it("pins mixed error codes: first item's domain code, suppressed details, unioned serve rows", async () => {
     await withTempFile(
       "sample.ts",
       "alpha\nbeta\ngamma\ndelta\nepsilon\n",
@@ -579,6 +579,7 @@ describe("edit multi-item batch error aggregation", () => {
           )
           .catch((error: unknown) => error)) as Error & {
           code?: unknown;
+          details?: unknown;
           servedRows?: { position: number; hash: string }[];
           servedBlock?: unknown;
         };
@@ -590,6 +591,8 @@ describe("edit multi-item batch error aggregation", () => {
         expect(rejection.code).toBe("E_UNVERIFIED_RANGE");
         expect(rejection.message).toContain("[E_UNVERIFIED_RANGE]");
         expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
+        // Disagreeing diagnoses suppress details — neither item's cause is promoted to the envelope.
+        expect(rejection.details).toBeUndefined();
         // The stale range's retry rows survive aggregation (union, in item order).
         expect(Array.isArray(rejection.servedRows) && rejection.servedRows.length > 0).toBe(true);
         expect(typeof rejection.servedBlock === "string" && rejection.servedBlock.length > 0).toBe(
