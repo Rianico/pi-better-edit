@@ -4,6 +4,7 @@
 
 ### Features
 
+* **errors:** diagnose numeric anchors in E_UNKNOWN_ANCHOR to steer away from line numbers (#158)
 * **mutation-engine:** aggregate multi-edit batch errors instead of failing fast on first error
 
 ### Documentation
