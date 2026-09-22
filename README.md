@@ -238,7 +238,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 `pi-better-edit` enforces a strict, machine-actionable diagnostic contract ([ADR-0021](docs/adr/0021-unified-error-and-warning-contract.md)):
 - `[E_*]` indicates an edit **rejection** — nothing was written to disk.
 - `[W_*]` indicates an **applied mutation** with an informational warning.
-- Range-family rejections carry structured `details.cause` values (`retirement`, `never-served`, `served-range staleness`, `tombstone`).
+- Range-family rejections carry structured `details.cause` values (`retirement`, `never-served`, `served-range staleness`, `tombstone`) — `never-served` on a leased span means a **boundary** row, because an unread interior between two leased boundaries is accepted ([ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)).
 
 ### Domain Rejections (`[E_*]`)
 
@@ -249,7 +249,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 | `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | Retry using the fresh rows provided in the rejection. |
 | `[E_UNKNOWN_ANCHOR]` | Anchor has no active lease in any file for this session. | Re-read the file to establish fresh anchor leases. |
 | `[E_FOREIGN_ANCHOR]` | Anchor is leased for a different file than the targeted one. | Ensure anchors match the target file path. |
-| `[E_STALE_RANGE]` | A line in the edit range changed on disk or was never served. | Current range served as a fresh read; decide next edit from fresh rows. |
+| `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a **boundary** line was never served (an unread interior between leased boundaries applies, [ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)). | Current range served as a fresh read; decide next edit from fresh rows. |
 | `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted. | Named window served as fresh read; decide next edit from fresh rows. |
 | `[E_TARGET_LOST]` | Target line identity deleted or reordered without a stable anchor bound. | Range cannot be served; re-read file and re-target. |
 | `[E_SUSPICIOUS_TEXT]` | Replacement text contains a line matching a served `HASH│` anchor. | Strip copied tool output anchors or pass `mode: "literal"`. |

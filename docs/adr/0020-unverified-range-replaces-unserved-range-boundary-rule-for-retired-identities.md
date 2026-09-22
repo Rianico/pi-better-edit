@@ -11,6 +11,7 @@ Amends [ADR-0018 — Region-scoped rejection serves; a retired identity recovers
 Amends [ADR-0014 — User/Model audience split and glossary-aligned error codes](0014-user-model-audience.md)
 
 Amended by [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md)
+Amended by [ADR-0024 — Narrow informed destruction to the boundaries; cap the applied diff's removals](0024-narrow-p2-interior-exposure-cap-removed-diffs.md) (decision 2: the interior-hole producer is accepted, not collapsed into `[E_STALE_RANGE]`)
 
 ## Context
 

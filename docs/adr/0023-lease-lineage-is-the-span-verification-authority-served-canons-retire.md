@@ -12,6 +12,7 @@ Amends [ADR-0018 — Region-scoped rejection serves; a retired identity recovers
 
 Amends [ADR-0022 — Served canons are file-scoped; `[E_STALE_RANGE]` serves a fresh read](0022-file-scoped-canons-and-fresh-read-stale-range.md) decision 1 (a canon no longer travels with the row: it is derived on demand from the lease)
 
+Amended by [ADR-0024 — Narrow informed destruction to the boundaries; cap the applied diff's removals](0024-narrow-p2-interior-exposure-cap-removed-diffs.md) (the gate's interior coverage is the rows the mirror did serve; an unserved interior row carries no identity and is accepted)
 
 ## Context
 

@@ -15,6 +15,7 @@ Amended by [ADR-0021 — Unified error and warning contract: the accepted record
 Amended by [ADR-0022 — Served canons are file-scoped; `[E_STALE_RANGE]` serves a fresh read](0022-file-scoped-canons-and-fresh-read-stale-range.md)
 
 Amended by [ADR-0023 — Lease lineage is the span verification authority; served canons retire](0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md)
+Amended by [ADR-0024 — Narrow informed destruction to the boundaries; cap the applied diff's removals](0024-narrow-p2-interior-exposure-cap-removed-diffs.md) (Context: the decision inputs a serve must refresh are the lines the model named, not every line its replacement discards)
 
 ## Context
 
