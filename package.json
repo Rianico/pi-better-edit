@@ -28,6 +28,7 @@
     "url": "git+https://github.com/Rianico/pi-better-edit.git"
   },
   "files": [
+    "dist",
     "index.ts",
     "src",
     "prompts",
@@ -35,8 +36,11 @@
     "LICENSE"
   ],
   "type": "module",
-  "main": "index.ts",
+  "main": "dist/index.js",
   "scripts": {
+    "build": "tsdown",
+    "verify:dist": "node scripts/verify-dist.mjs",
+    "prepack": "pnpm run build && pnpm run verify:dist",
     "test": "vitest run",
     "test:watch": "vitest",
     "test:coverage": "vitest run --coverage --coverage.thresholds.lines=85 --coverage.thresholds.statements=85 --coverage.thresholds.functions=85 --coverage.thresholds.branches=80",
@@ -77,7 +81,9 @@
     "husky": "^9.1.7",
     "oxfmt": "^0.66.0",
     "oxlint": "^1.81.0",
+    "publint": "^0.3.24",
     "semantic-release": "^25.0.9",
+    "tsdown": "~0.23.0",
     "typescript": "^7.0.0",
     "vite": "^8.2.2",
     "vitest": "^4.1.8"
@@ -98,7 +104,7 @@
   },
   "pi": {
     "extensions": [
-      "./index.ts"
+      "./dist/index.js"
     ]
   }
 }

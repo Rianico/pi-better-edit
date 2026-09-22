@@ -4,12 +4,11 @@
 
 ### Features
 
+* **mutation-engine:** aggregate multi-edit batch errors instead of failing fast on first error (#159)
 * **errors:** diagnose numeric anchors in E_UNKNOWN_ANCHOR to steer away from line numbers (#158)
-* **mutation-engine:** aggregate multi-edit batch errors instead of failing fast on first error
 
 ### Documentation
 
-* **mutation-engine:** remove duplicated code field line in batchAbortForMany docstring
 * **readme:** rewrite for v2 line-identity mvcc architecture
 
 ## [2.0.0](https://github.com/Rianico/pi-better-edit/compare/v1.7.0...v2.0.0) (2026-09-21)
