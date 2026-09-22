@@ -13,6 +13,8 @@
   <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-30s-brightgreen?style=flat" alt="quick start 30s"></a>
   <a href="#reproducible-benchmarks"><img src="https://img.shields.io/badge/correctness-27%2F27-success?style=flat" alt="27/27 battery"></a>
   <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/v/pi-better-edit?color=crimson" alt="npm version"></a>
+  <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/dm/pi-better-edit?color=blue" alt="npm downloads"></a>
+  <a href="https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-better-edit%40latest"><img src="https://img.shields.io/endpoint?url=https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark/resolve/main/badges/pi-better-edit.json&style=flat" alt="Explicit Edit Benchmark (1.7.0 arm)"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-MIT-green.svg" alt="MIT License"></a>
 </p>
 
@@ -344,6 +346,23 @@ Reproduce locally:
 ```bash
 pnpm run benchmark:tokens
 ```
+
+### 4. Independent Benchmark: Explicit Edit Benchmark
+
+[**Explicit Edit Benchmark**](https://github.com/alexshpunt/explicit-edit-benchmark) is an independent, community-run dataset that scores harnesses and Pi editing extensions on the same 226 byte-exact edit tasks (replacements, insertions, deletions, moves, copies, unicode, large files). It is maintained by [alexshpunt](https://github.com/alexshpunt), not by this project, and every observation ships with its configuration.
+
+| Published `pi-better-edit` arm | Value |
+| --- | --- |
+| Quality score | **95.9%** |
+| First-attempt exact | 94.7% |
+| Exact after recovery | 99.6% |
+| Coverage | 226 tasks · Pi 0.85.1 · `gpt-5.6-luna`, low reasoning |
+
+> **Scope.** That arm is pinned to **`pi-better-edit@1.7.0`** — the retired 1.x heuristic era — so the score describes the predecessor architecture, not the MVCC v2 line. It updates here when the benchmark pin moves to 2.x.
+
+- [Explorer, filtered to `pi-better-edit`](https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-better-edit%40latest)
+- [Raw observations](https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark)
+- [Contribute a run](https://github.com/alexshpunt/explicit-edit-benchmark#run-and-publish): `npm run benchmark:extension:submit -- --extension pi-better-edit --auth-file ~/.pi/agent/auth.json`
 
 ---
 

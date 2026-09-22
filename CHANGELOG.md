@@ -10,6 +10,7 @@
 
 ### Documentation
 
+* add independent explicit edit benchmark section
 * **readme:** rewrite for v2 line-identity mvcc architecture
 
 ## [2.0.0](https://github.com/Rianico/pi-better-edit/compare/v1.7.0...v2.0.0) (2026-09-21)
