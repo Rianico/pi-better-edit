@@ -569,7 +569,6 @@ function batchAbortFor(args: { error: Error; index: number; path: string }): Err
  *
  * Field aggregation (spec D2 — the envelope must stay actionable):
  * - `code`: every item keeps its own `[E_*]` inline in the message; the envelope carries the
- * - `code`: every item keeps its own `[E_*]` inline in the message; the envelope carries the
  *   first item's domain code so `toFailure` still routes the typed path (and keeps this full
  *   message) instead of rewriting it as `E_UNKNOWN`.
  * - `details`/`cause`: carried only when every failing item agrees on one diagnosis; a mixed
