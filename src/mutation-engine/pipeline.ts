@@ -97,7 +97,7 @@ import {
   type ResolvedRange,
   type ServedRow,
 } from "../hashline/served.js";
-import { DomainError } from "../domain-errors.js";
+import { DomainError, isDomainErrorCode } from "../domain-errors.js";
 import {
   createSessionHandle,
   sessionKeyFor,
@@ -560,7 +560,64 @@ function batchAbortFor(args: { error: Error; index: number; path: string }): Err
   }
   return wrapped;
 }
-
+/**
+ * Wraps MULTIPLE rejected items of a multi-item call for the model. Sibling of `batchAbortFor`:
+ * one aggregated rejection naming every failing item (`edit[1] …; edit[3] …`) so a single
+ * resubmission can fix them all instead of burning one turn per failure. The batch is still
+ * all-or-nothing — the atomicity trailer is identical — and each item keeps its own diagnostic
+ * (and code) inline, so the model can act on every failure without a re-read.
+ *
+ * Field aggregation (spec D2 — the envelope must stay actionable):
+ * - `code`: every item keeps its own `[E_*]` inline in the message; the envelope carries the
+ *   first item's domain code so `toFailure` still routes the typed path (and keeps this full
+ *   message) instead of rewriting it as `E_UNKNOWN`.
+ * - `details`/`cause`: carried only when every failing item agrees on one diagnosis; a mixed
+ *   batch states each cause inline instead of promoting one.
+ * - `servedRows`: the union of every failing item's rows (each item's retry leases were already
+ *   recorded on its own rejection path).
+ * - `servedBlock`: every failing item's block, in item order.
+ */
+function batchAbortForMany(args: {
+  failures: { error: Error; index: number }[];
+  path: string;
+}): Error {
+  const { failures, path } = args;
+  const parts = failures.map(
+    ({ error, index }) => `edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}`,
+  );
+  const wrapped = new Error(
+    `[MODEL] ${parts.join("; ")}\n` +
+      `${BATCH_ATOMICITY_TRAILER} Fix the failing edits (and any later edits that depend on them), then resubmit.`,
+  );
+  const codes = failures.map((f) => (f.error as { code?: unknown }).code);
+  const firstCode = codes.find((code): code is string => typeof code === "string");
+  if (firstCode !== undefined && isDomainErrorCode(firstCode)) {
+    (wrapped as { code?: string }).code = firstCode;
+  }
+  const causes = failures.map((f) => (f.error as { details?: { cause?: unknown } }).details?.cause);
+  const firstCause = causes[0];
+  if (typeof firstCause === "string" && causes.every((cause) => cause === firstCause)) {
+    (wrapped as { details?: { cause: string } }).details = { cause: firstCause };
+    (wrapped as { cause?: string }).cause = firstCause;
+  }
+  const servedRows: unknown[] = [];
+  for (const { error } of failures) {
+    const rows = (error as { servedRows?: unknown }).servedRows;
+    if (Array.isArray(rows)) servedRows.push(...rows);
+  }
+  if (servedRows.length > 0) {
+    (wrapped as { servedRows?: unknown }).servedRows = servedRows;
+  }
+  const blocks: string[] = [];
+  for (const { error } of failures) {
+    const block = (error as { servedBlock?: unknown }).servedBlock;
+    if (typeof block === "string" && block.length > 0) blocks.push(block);
+  }
+  if (blocks.length > 0) {
+    (wrapped as { servedBlock?: unknown }).servedBlock = blocks.join("\n");
+  }
+  return wrapped;
+}
 /**
  * Resolves one edit's baseline span (`s'_start .. s'_end`) in the pre-batch snapshot through the same
  * seam the apply path resolves it with (spec §3.2.1): every edit goes through `resolveLeasedEdit`, so
@@ -578,6 +635,10 @@ async function resolveBaselineSpan(
 ): Promise<BaselineSpan> {
   const fileLines = splitLines(ctx.originalNormalized);
   const fileHashes = ctx.originalHashes;
+  // WHY: the span gate aggregates per-item rejections in `assertBatchSpansDisjoint`, so this seam
+  // WHY: records the reject-and-serve rows each failing edit owes and rethrows the RAW diagnostic —
+  // WHY: the `edit[i] (path) failed:` envelope is applied once at aggregation time. A non-domain
+  // WHY: throw is unexpected (not an item failure) and aborts immediately.
   const abort = async (error: unknown): Promise<never> => {
     if (error instanceof DomainError) {
       await recordRejectionServe({
@@ -587,11 +648,6 @@ async function resolveBaselineSpan(
         isPreview: ctx.isPreview,
         lineCount: ctx.originalHashes.length,
         contentHash: ctx.isPreview ? undefined : snapshotHashFor(ctx.originalNormalized),
-      });
-      throw batchAbortFor({
-        error,
-        index,
-        path: ctx.path,
       });
     }
     throw error;
@@ -626,8 +682,29 @@ async function resolveBaselineSpan(
 async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext): Promise<void> {
   if (edits.length < 2) return;
   const spans: BaselineSpan[] = [];
+  // WHY: span validation aggregates instead of failing fast — every item resolves against the same
+  // WHY: pre-batch snapshot through a pure seam, so one failing edit cannot mask another and the
+  // WHY: model fixes all of them in one resubmission. Each failure's reject-and-serve rows are
+  // WHY: already recorded inside `resolveBaselineSpan`; a non-domain throw is unexpected and aborts
+  // WHY: immediately. Atomicity is untouched: the gate runs before the first mutation, so an
+  // WHY: aggregated rejection still writes zero bytes.
+  const failures: { error: DomainError; index: number }[] = [];
   for (let index = 0; index < edits.length; index++) {
-    spans.push(await resolveBaselineSpan(edits[index]!, index, ctx));
+    try {
+      spans.push(await resolveBaselineSpan(edits[index]!, index, ctx));
+    } catch (error) {
+      if (!(error instanceof DomainError)) throw error;
+      failures.push({ error, index });
+    }
+  }
+  // WHY: anchor failures mask overlap reporting — without valid anchors there are no coordinates
+  // WHY: to compare, so validation rejections throw before the overlap scan below.
+  if (failures.length === 1) {
+    const only = failures[0]!;
+    throw batchAbortFor({ error: only.error, index: only.index, path: ctx.path });
+  }
+  if (failures.length > 1) {
+    throw batchAbortForMany({ failures, path: ctx.path });
   }
   for (let i = 0; i < spans.length; i++) {
     for (let j = i + 1; j < spans.length; j++) {
@@ -654,8 +731,38 @@ async function assertBatchSpansDisjoint(edits: HEdit[], ctx: BaselineSpanContext
   }
 }
 
+/**
+ * Wraps one malformed payload item of a multi-item call for the model. Single-failure arm of
+ * `parseEdits` — the envelope reads exactly as before; multi-failure batches route to
+ * `batchAbortForMany` instead so every malformed item is reported together.
+ */
+function wrapParseFailure(error: Error, index: number, path: string): Error {
+  // WHY: a payload malformation keeps its own code (`[E_MALFORMED_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
+  // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
+  // WHY: hunt for coordinate overlap.
+  const wrapped = new Error(
+    `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}\n${BATCH_ATOMICITY_TRAILER}`,
+  );
+  // WHY: the wrapper carries the inner code and diagnosis as fields so the
+  // WHY: failure envelope keeps the code the model can act on.
+  const code = (error as { code?: string }).code;
+  if (typeof code === "string") {
+    (wrapped as { code?: string }).code = code;
+  }
+  const details = (error as { details?: { cause: string } }).details;
+  if (details && typeof details.cause === "string") {
+    (wrapped as { details?: { cause: string } }).details = details;
+    (wrapped as { cause?: string }).cause = details.cause;
+  }
+  return wrapped;
+}
+
 function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[] {
   const parsed: HEdit[] = [];
+  // WHY: payload parsing aggregates like the span gate — one malformed item must not mask another,
+  // WHY: so the model fixes every malformed item in a single resubmission. Parsing is pure (no
+  // WHY: mutation runs before it), so collecting every failure preserves atomicity trivially.
+  const failures: { error: Error; index: number }[] = [];
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
     try {
@@ -668,26 +775,15 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
       );
     } catch (error) {
       if (items.length === 1) throw error;
-      // WHY: a payload malformation keeps its own code (`[E_MALFORMED_ANCHOR]`, `[E_BAD_PAYLOAD]`, …) — the
-      // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
-      // WHY: hunt for coordinate overlap.
-      const raw = error instanceof Error ? error.message : String(error);
-      const wrapped = new Error(
-        `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(raw)}\n${BATCH_ATOMICITY_TRAILER}`,
-      );
-      // WHY: the wrapper carries the inner code and diagnosis as fields so the
-      // WHY: failure envelope keeps the code the model can act on.
-      const code = (error as { code?: string }).code;
-      if (typeof code === "string") {
-        (wrapped as { code?: string }).code = code;
-      }
-      const details = (error as { details?: { cause: string } }).details;
-      if (details && typeof details.cause === "string") {
-        (wrapped as { details?: { cause: string } }).details = details;
-        (wrapped as { cause?: string }).cause = details.cause;
-      }
-      throw wrapped;
+      failures.push({ error: error instanceof Error ? error : new Error(String(error)), index });
     }
+  }
+  if (failures.length === 1) {
+    const only = failures[0]!;
+    throw wrapParseFailure(only.error, only.index, path);
+  }
+  if (failures.length > 1) {
+    throw batchAbortForMany({ failures, path });
   }
   return parsed;
 }

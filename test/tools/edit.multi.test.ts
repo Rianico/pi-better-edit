@@ -449,7 +449,192 @@ describe("edit multi-item tool", () => {
     });
   });
 });
+describe("edit multi-item batch error aggregation", () => {
+  it("reports every failing span together instead of failing fast on the first", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\neee\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\nddd\neee\n", path);
+      await doRead(ctx, readTool, "sample.ts");
 
+      const rejection = (await editTool
+        .execute(
+          "e1",
+          {
+            path: "sample.ts",
+            edits: [
+              [hashes[0]!, hashes[0]!, "AAA"],
+              ["ZZZ", "ZZZ", "xx"],
+              [hashes[2]!, hashes[2]!, "CCC"],
+              ["QQQ", "QQQ", "yy"],
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        )
+        .catch((error: unknown) => error)) as Error;
+
+      // Both invalid items are named in ONE rejection — no fix-one-resubmit-and-fail-again turn.
+      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
+      expect(rejection.message).toContain("edit[3] (sample.ts) failed");
+      expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
+      expect(rejection.message).not.toContain("edit[0] (sample.ts) failed");
+      expect(rejection.message).not.toContain("edit[2] (sample.ts) failed");
+      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      // Uniform code is preserved on the envelope so the failure keeps its typed route.
+      expect((rejection as { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
+      // Atomicity: zero bytes written.
+      expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\nddd\neee\n");
+    });
+  });
+
+  it("keeps the single-failure envelope unchanged when only one item fails", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
+      await doRead(ctx, readTool, "sample.ts");
+
+      const rejection = (await editTool
+        .execute(
+          "e1",
+          {
+            path: "sample.ts",
+            edits: [
+              [hashes[0]!, hashes[0]!, "AAA"],
+              ["ZZZ", "ZZZ", "xx"],
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        )
+        .catch((error: unknown) => error)) as Error;
+
+      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
+      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      // Exactly one failing item — no aggregation separator for a second item.
+      expect((rejection.message.match(/\(sample\.ts\) failed/g) ?? []).length).toBe(1);
+      expect(rejection.message).not.toContain("; edit[");
+      expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
+    });
+  });
+
+  it("aggregates multiple malformed anchors with each code inline", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
+      await doRead(ctx, readTool, "sample.ts");
+
+      const rejection = (await editTool
+        .execute(
+          "e1",
+          {
+            path: "sample.ts",
+            edits: [
+              [hashes[0]!, hashes[0]!, "AAA"],
+              ["!!", "!!", "xx"],
+              ["##", "##", "yy"],
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        )
+        .catch((error: unknown) => error)) as Error;
+
+      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
+      expect(rejection.message).toContain("edit[2] (sample.ts) failed");
+      expect((rejection.message.match(/\[E_MALFORMED_ANCHOR\]/g) ?? []).length).toBe(2);
+      expect(rejection.message).toContain(ATOMICITY_TRAILER);
+      expect((rejection as { code?: unknown }).code).toBe("E_MALFORMED_ANCHOR");
+      expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
+    });
+  });
+
+  it("pins mixed error codes: first item's domain code, suppressed details, unioned serve rows", async () => {
+    await withTempFile(
+      "sample.ts",
+      "alpha\nbeta\ngamma\ndelta\nepsilon\n",
+      async ({ cwd, path }) => {
+        const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+        const hashes = await lineHashes("alpha\nbeta\ngamma\ndelta\nepsilon\n", path);
+        await doRead(ctx, readTool, "sample.ts");
+
+        await writeFile(path, "alpha\nBETA\ngamma\ndelta\nepsilon\n", "utf-8");
+
+        const rejection = (await editTool
+          .execute(
+            "e1",
+            {
+              path: "sample.ts",
+              edits: [
+                [hashes[0]!, hashes[0]!, "ALPHA"],
+                [hashes[1]!, hashes[2]!, "BETA\ngamma"],
+                ["ZZZ", "ZZZ", "xx"],
+              ],
+            },
+            undefined,
+            undefined,
+            ctx,
+          )
+          .catch((error: unknown) => error)) as Error & {
+          code?: unknown;
+          details?: unknown;
+          servedRows?: { position: number; hash: string }[];
+          servedBlock?: unknown;
+        };
+
+        expect(rejection.message).toContain("edit[1] (sample.ts) failed");
+        expect(rejection.message).toContain("edit[2] (sample.ts) failed");
+        expect(rejection.message).toContain(ATOMICITY_TRAILER);
+        // First failure's code routes the envelope; every item keeps its own code inline.
+        expect(rejection.code).toBe("E_UNVERIFIED_RANGE");
+        expect(rejection.message).toContain("[E_UNVERIFIED_RANGE]");
+        expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
+        // Disagreeing diagnoses suppress details — neither item's cause is promoted to the envelope.
+        expect(rejection.details).toBeUndefined();
+        // The stale range's retry rows survive aggregation (union, in item order).
+        expect(Array.isArray(rejection.servedRows) && rejection.servedRows.length > 0).toBe(true);
+        expect(typeof rejection.servedBlock === "string" && rejection.servedBlock.length > 0).toBe(
+          true,
+        );
+        expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\ndelta\nepsilon\n");
+      },
+    );
+  });
+
+  it("names both conflicting ranges when spans overlap", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
+      await doRead(ctx, readTool, "sample.ts");
+
+      const rejection = (await editTool
+        .execute(
+          "e1",
+          {
+            path: "sample.ts",
+            edits: [
+              [hashes[0]!, hashes[1]!, "X"],
+              [hashes[1]!, hashes[2]!, "Y"],
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        )
+        .catch((error: unknown) => error)) as Error;
+
+      expect(rejection.message).toContain("[E_BATCH_ABORT]");
+      expect(rejection.message).toContain("edit[0]");
+      expect(rejection.message).toContain("edit[1]");
+      // Both conflicting intervals are shown so the caller sees the overlap.
+      expect(rejection.message).toContain("lines 1-2");
+      expect(rejection.message).toContain("lines 2-3");
+      expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
+    });
+  });
+});
 describe("prepareEditArguments normalization", () => {
   it("keeps the canonical object-root payload unchanged", () => {
     const args = {
