@@ -117,6 +117,9 @@ function buildOversizedPreview(params: {
   totalLines: number;
   maxBytes: number;
   maxTruncLines: number;
+  // WHY: a window is a bounded ask, so its section must not advertise a page it never owed
+  // WHY: (mirrors buildNormalPreview); a genuinely truncated window still keeps its own hint.
+  hintRemainder?: boolean;
 }): { text: string; truncation?: TruncationResult; nextOffset?: number; served: ServedRow[] } {
   const { rowSizes, selected, selectedHashes, startLine, totalLines, maxBytes, maxTruncLines } =
     params;
@@ -134,9 +137,12 @@ function buildOversizedPreview(params: {
   const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; content not shown because hashline anchors require full lines. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
   let preview = skippedTruncation.content;
   let nextOffset: number | undefined;
-  if (shownRowCount > 0 && (skippedTruncation.truncated || lastShownLine < totalLines)) {
+  if (shownRowCount > 0 && skippedTruncation.truncated) {
     nextOffset = lastShownLine + 1;
-    preview += `\n\n${warning}\n${formatPaginationHint(startLine, lastShownLine, totalLines, nextOffset, skippedTruncation.truncated ? skippedTruncation.maxBytes : undefined)}`;
+    preview += `\n\n${warning}\n${formatPaginationHint(startLine, lastShownLine, totalLines, nextOffset, skippedTruncation.maxBytes)}`;
+  } else if (shownRowCount > 0 && params.hintRemainder !== false && lastShownLine < totalLines) {
+    nextOffset = lastShownLine + 1;
+    preview += `\n\n${warning}\n${formatPaginationHint(startLine, lastShownLine, totalLines, nextOffset)}`;
   } else {
     preview += `\n\n${warning}`;
   }
@@ -228,6 +234,7 @@ function buildWindowSection(params: {
       totalLines,
       maxBytes,
       maxTruncLines,
+      hintRemainder: false,
     });
   }
   const normal = buildNormalPreview({
@@ -242,7 +249,7 @@ function buildWindowSection(params: {
   });
   return {
     text: normal.preview,
-    truncation: normal.truncation,
+    truncation: normal.truncation.truncated ? normal.truncation : undefined,
     ...(normal.nextOffset !== undefined ? { nextOffset: normal.nextOffset } : {}),
     served: normal.served,
   };
@@ -273,20 +280,27 @@ function buildWindowedPreview(params: {
   for (const window of windows) {
     if (window.offset > totalLines) {
       sections.push(
-        `${windowHeader(window.offset, window.offset, totalLines)}\nOffset ${window.offset} is beyond end of file (${totalLines} lines total). Use offset=1 to read from the start, or offset=${totalLines} to read the last line.`,
+        `Offset ${window.offset} is beyond end of file (${totalLines} lines total). Use offset=1 to read from the start, or offset=${totalLines} to read the last line.`,
       );
       continue;
     }
     const endIdx = Math.min(window.offset - 1 + window.limit, totalLines);
     const header = windowHeader(window.offset, endIdx, totalLines);
+    const selected = allLines.slice(window.offset - 1, endIdx);
+    const selectedHashes = allHashes.slice(window.offset - 1, endIdx);
     if (remainingBytes <= 0 || remainingLines <= 0) {
       sections.push(
         `${header}\n[Read budget exhausted; this window is not shown. Re-read it on its own.]`,
       );
+      // WHY: `metrics.truncated` must be honest when the shared budget cut a window away, so the
+      // WHY: same function that reports truncation elsewhere derives it from the budget actually spent.
+      const skipped = truncateHead(fmtRegion(selectedHashes, selected), {
+        maxBytes: Math.max(0, remainingBytes),
+        maxLines: Math.max(0, remainingLines),
+      });
+      if (truncation === undefined && skipped.truncated) truncation = skipped;
       continue;
     }
-    const selected = allLines.slice(window.offset - 1, endIdx);
-    const selectedHashes = allHashes.slice(window.offset - 1, endIdx);
     const rowSizes = selected.map((line, index) => ({
       lineNumber: window.offset + index,
       bytes: Buffer.byteLength(`${selectedHashes[index]}${HASH_SEP}${line}`, "utf-8"),

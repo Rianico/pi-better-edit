@@ -2,6 +2,7 @@ import { readFile } from "node:fs/promises";
 import { describe, expect, it } from "vitest";
 import { MAX_READ_WINDOWS } from "../../src/constants";
 import { fmtReadPreview } from "../../src/read";
+import { sessionFromContext } from "../../src/served-session/index";
 import {
   extractHash,
   getText,
@@ -85,6 +86,8 @@ describe("fmtReadPreview — windows", () => {
     );
     expect(result.text).toContain("=== Lines 11-12 of 12 ===");
     expect(result.served.map((row) => row.position)).toEqual([10, 11]);
+    // WHY: a window that fit the shared budget is not a truncated result, so no metadata is owed.
+    expect(result.truncation).toBeUndefined();
   });
 
   it("reports a window past end of file without serving it", async () => {
@@ -100,6 +103,8 @@ describe("fmtReadPreview — windows", () => {
       home.testPath,
     );
     expect(result.text).toContain("Offset 99 is beyond end of file (12 lines total)");
+    // WHY: a window past EOF has no line range to name, so its section carries the message alone.
+    expect(result.text).not.toContain("=== Lines 99");
     expect(result.served.map((row) => row.position)).toEqual([0]);
   });
 
@@ -119,11 +124,41 @@ describe("fmtReadPreview — windows", () => {
     );
     expect(result.text).toContain("[Read budget exhausted; this window is not shown.");
     expect(result.served.map((row) => row.position)).toEqual([0, 1, 2]);
+    // WHY: the budget really did cut a requested window away, so the tool owes truncated: true.
+    expect(result.truncation?.truncated).toBe(true);
   });
 
   it("treats an empty windows array as no windows", async () => {
     const result = await fmtReadPreview(TWELVE, { windows: [] }, undefined, home.testPath);
     expect(result.served).toHaveLength(12);
+  });
+
+  it("keeps an oversized window from leaking a continuation hint", async () => {
+    const content = `${"x".repeat(500)}\nshort two\nshort three\nshort four\n`;
+    const windowed = await fmtReadPreview(
+      content,
+      { windows: [{ offset: 1, limit: 2 }] },
+      undefined,
+      home.testPath,
+      200,
+      100,
+    );
+    expect(windowed.text).toContain("exceeds 200B");
+    expect(windowed.text).toContain("│short two");
+    // WHY: the window named lines 1-2; "use offset=3 to continue" would offer a page it never asked for.
+    expect(windowed.text).not.toContain("to continue");
+    expect(windowed.nextOffset).toBeUndefined();
+
+    // The same range read alone IS a page, so the hint is still owed there.
+    const single = await fmtReadPreview(
+      content,
+      { offset: 1, limit: 2 },
+      undefined,
+      home.testPath,
+      200,
+      100,
+    );
+    expect(single.text).toContain("to continue");
   });
 
   it("prefers windows over offset/limit when both are given", async () => {
@@ -216,6 +251,34 @@ describe("read tool — windows", () => {
       expect(getText(edited)).toContain("Successfully edited");
       const expected = ["line 1", "X", ...TWELVE.trimEnd().split("\n").slice(3)].join("\n") + "\n";
       expect(await readFile(path, "utf-8")).toBe(expected);
+    });
+  });
+
+  it("treats windows: [] as a full read and a partial read as not", async () => {
+    await withTempFile("empty-windows.ts", TWELVE, async ({ cwd, path }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const session = sessionFromContext(ctx, path);
+
+      await session.markDriftReported(["abc"]);
+      await readTool.execute(
+        "r1",
+        { path: "empty-windows.ts", windows: [] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      // An empty array falls back to a full read, so it owes the full-read contract: drift cleared.
+      expect(await session.driftReported()).toEqual(new Set());
+
+      await session.markDriftReported(["abc"]);
+      await readTool.execute(
+        "r2",
+        { path: "empty-windows.ts", offset: 1, limit: 2 },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(await session.driftReported()).toEqual(new Set(["abc"]));
     });
   });
 

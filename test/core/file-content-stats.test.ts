@@ -1,5 +1,5 @@
 import { stat } from "node:fs/promises";
-import type { Stats } from "node:fs";
+import type { FileStats } from "../../src/file-content/detection";
 import { describe, expect, it } from "vitest";
 import { loadFileKindAndText } from "../../src/file-content/detection";
 import { prepareFile } from "../../src/file-content/index";
@@ -29,13 +29,23 @@ describe("file-content — stat consolidation", () => {
 
   it("snapshots from preloaded stats without re-stat'ing the file", async () => {
     await withTempFile("snap.txt", "alpha\nbeta\n", async ({ path }) => {
-      const preloaded = { ino: 4242, mtimeMs: 1, ctimeMs: 2, size: 999 } as unknown as Stats;
+      const preloaded: FileStats = { ino: 4242, mtimeMs: 1, ctimeMs: 2, size: 999 };
       const snap = await fileSnap(path, "checksum", preloaded);
       // A real `stat` would report this file's own inode and size; these are the caller's numbers.
       expect(snap.ino).toBe(4242);
       expect(snap.size).toBe(999);
       expect(snap.mtimeMs).toBe(1);
       expect(snap.snapshotId).toContain("|4242|1|2|999|checksum");
+    });
+  });
+
+  it("accepts a real fs.Stats as-is", async () => {
+    await withTempFile("snap-real.txt", "alpha\n", async ({ path }) => {
+      const actual = await stat(path);
+      const snap = await fileSnap(path, undefined, actual);
+      // The loader hands its own `fs.Stats` over, so the domain type must accept it structurally.
+      expect(snap.ino).toBe(actual.ino);
+      expect(snap.size).toBe(actual.size);
     });
   });
 

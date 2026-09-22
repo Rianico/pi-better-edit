@@ -1,5 +1,4 @@
 import { open as fsOpen, stat as fsStat } from "node:fs/promises";
-import type { Stats } from "node:fs";
 import { fileTypeFromBuffer } from "file-type";
 import { MAX_BYTES, SNIFF_BYTES } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
@@ -53,12 +52,22 @@ function mimeToLFile(mime: string | undefined): LFile | undefined {
   return { kind: "binary", description: mime };
 }
 
+// WHY: narrowing `fs.Stats` to the fields this codebase reasons about keeps `node:fs` out of the
+// WHY: domain types, so callers — tests included — can hand over a plain object, not a `Stats` fixture.
+/** Snapshot identity and size: the only `fs.Stats` fields this codebase reads. */
+export interface FileStats {
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+}
+
 export interface LFileText {
   kind: "text";
   text: string;
   // WHY: the load path already stat'd this path; handing the result to the caller keeps the read
   // WHY: path at one `stat` syscall per file instead of re-stat'ing for the snapshot id.
-  stats?: Stats;
+  stats?: FileStats;
   hadUtf8DecodeErrors?: true;
 }
 

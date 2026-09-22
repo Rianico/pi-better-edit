@@ -1,7 +1,7 @@
-import { constants, type Stats } from "node:fs";
+import { constants } from "node:fs";
 import { stat } from "node:fs/promises";
 import { defaultHashIdentity } from "../hashline/hash-identity.js";
-import { loadFileKindAndText, type LFile } from "./detection.js";
+import { loadFileKindAndText, type FileStats, type LFile } from "./detection.js";
 import { resolveTarget } from "../fs-write.js";
 import { toCwd } from "../paths.js";
 import { detectEnding, toLF, stripBOM } from "../edit-diff.js";
@@ -34,13 +34,13 @@ function fmtSnapId(
 export async function fileSnap(
   absolutePath: string,
   checksum?: string,
-  preloadedStats?: Stats,
+  preloadedStats?: FileStats,
 ): Promise<SnapInfo> {
   const canonicalPath = await resolveTarget(absolutePath);
   // WHY: the load path stat'd this same canonical path to size the file and reject directories, so
   // WHY: its `Stats` is authoritative for the snapshot id; re-stat'ing could only disagree with the
   // WHY: bytes the caller has already read and hashed.
-  const stats = preloadedStats ?? (await stat(canonicalPath));
+  const stats: FileStats = preloadedStats ?? (await stat(canonicalPath));
   // WHY: P1: include content checksum in snapshotId for stronger epoch (ADR-0013)
   // WHY: Checksum is optional for backward compat; when provided, epoch distinguishes same-size whitespace changes.
   const effectiveChecksum = checksum ?? undefined;

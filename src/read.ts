@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { MAX_READ_WINDOWS } from "./constants.js";
 import { MAX_HASH_LINES } from "./hashline/index.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
@@ -64,6 +65,7 @@ export function regRead(pi: ExtensionAPI): void {
             }),
           }),
           {
+            maxItems: MAX_READ_WINDOWS,
             description:
               "Optional array of disjoint line windows to read in a single turn; every window's rows are served, so anchors from all of them are usable in one edit",
           },
@@ -122,11 +124,12 @@ export function regRead(pi: ExtensionAPI): void {
         prepared.absolutePath,
       );
       const lineCount = visLines(prepared.normalized).length;
+      // WHY: `windows: []` falls back to a full read in the preview, so the full-read contract has to
+      // WHY: follow the same rule — otherwise an empty array silently withholds the snapshot id and
+      // WHY: skips the drift clear that a full read owes.
+      const hasWindows = Array.isArray(params.windows) && params.windows.length > 0;
       const isFullRead =
-        params.offset == null &&
-        params.limit == null &&
-        params.windows === undefined &&
-        !prepared.truncation;
+        params.offset == null && params.limit == null && !hasWindows && !prepared.truncation;
       let snapshotId: string | undefined;
       const contentHash = snapshotHashFor(prepared.normalized);
       try {

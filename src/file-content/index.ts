@@ -8,7 +8,7 @@
  * truncation). Callers cross one seam: prepare().
  */
 
-import { constants, type Stats } from "node:fs";
+import { constants } from "node:fs";
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { AUTO_READ_MAX } from "../constants.js";
 import { MAX_HASH_LINES } from "../hashline/index.js";
@@ -17,13 +17,13 @@ import { toCwd } from "../paths.js";
 import { valAccess } from "../validation.js";
 import { abortIf } from "../utils.js";
 import { visLines } from "../utils.js";
-import { loadFileKindAndText, type LFile } from "./detection.js";
+import { loadFileKindAndText, type FileStats, type LFile } from "./detection.js";
 import { readNormFile, fileSnap } from "./loader.js";
 import { fmtReadPreview, type ReadWindow } from "./preview.js";
 import type { ServedRow } from "../hashline/served.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 
-export type { LFile, LoadFileOptions } from "./detection.js";
+export type { FileStats, LFile, LoadFileOptions } from "./detection.js";
 export { loadFileKindAndText } from "./detection.js";
 export {
   readNormFile,
@@ -50,7 +50,7 @@ export interface PrepareResult {
   mimeType?: string;
   // WHY: the loader already stat'd this path; the read path hands that `Stats` to `fileSnap`, so a
   // WHY: read costs one `stat` per file instead of one per seam.
-  stats?: Stats;
+  stats?: FileStats;
 }
 
 export interface PrepareOptions {
