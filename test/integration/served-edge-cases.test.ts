@@ -12,7 +12,7 @@ import {
 const home = useTestHome();
 
 describe("served-state edge cases for edit", () => {
-  it("rejects [E_STALE_RANGE] for a range spanning paged-read gaps, then applies on retry", async () => {
+  it("applies a range spanning a paged-read gap without a handshake (ADR-0024)", async () => {
     const content = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -37,36 +37,17 @@ describe("served-state edge cases for edit", () => {
       const secondText = getText(second);
       const l7Ref = extractHash(secondText.split("\n").find((l) => l.includes("│l7"))!);
 
-      let rejected: Error | undefined;
-      try {
-        await editTool.execute(
-          "e1",
-          { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
-          undefined,
-          undefined,
-          ctx,
-        );
-      } catch (error) {
-        rejected = error as Error;
-      }
-      expect(rejected).toBeDefined();
-      expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 4/);
-      expect(await readFile(path, "utf-8")).toBe(content);
-
-      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
-      expect(servedLines).toHaveLength(5);
-
-      const retryFrom = servedLines[0]!.split("│")[0]!;
-      const retryTo = servedLines[4]!.split("│")[0]!;
-      const retry = await editTool.execute(
-        "e2",
-        { path: "sample.ts", edits: [[retryFrom, retryTo, "X\nY"]] },
+      // The interior 4-6 were never served: the two leased bounds pin the span, so it applies as-is
+      // (ADR-0024) instead of paying a rejection-and-resend round trip.
+      const applied = await editTool.execute(
+        "e1",
+        { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
         undefined,
         undefined,
         ctx,
       );
-      expect(getText(retry)).toContain("Successfully edited");
-      expect(await readFile(path, "utf-8")).toBe("l1\nl2\nX\nY\nl8\nl9\n");
+      expect(getText(applied)).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toBe("l1\nl2\nX\nl8\nl9\n");
     });
   });
 

@@ -336,7 +336,7 @@ describeGate("EVAL comparison battery", () => {
       Array.from({ length: 9 }, (_, i) => `l${i + 1}`).join("\n"),
       async ({ cwd, path }) => {
         const rec: ScenarioResult = {
-          scenario: "B7 never-served interior paged-read-gap",
+          scenario: "B7 unread interior paged-read-gap now applies (ADR-0024)",
           outcome: "success",
           calls: [],
           finalContent: "",

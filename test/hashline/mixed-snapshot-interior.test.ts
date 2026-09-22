@@ -108,11 +108,11 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
   const snapshot = { fileHashes: hashes, fileLines: servedLines };
   const positions: Record<number, number> = { 1: 1, 2: 2, 3: 3 };
 
-  function span(overrides: {
+  function run(overrides: {
     served: (string | null)[];
     leasedRetired?: number;
     moved?: number;
-  }): DomainError {
+  }): DomainError | undefined {
     const leases = new Map<string, LeaseIdentityView>();
     for (let i = 0; i < 3; i++) {
       leases.set(
@@ -125,7 +125,6 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
         }),
       );
     }
-    let caught: unknown;
     try {
       verifyRebasedSpan({
         served: overrides.served,
@@ -137,9 +136,18 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
         leaseFor: (anchor) => leases.get(anchor),
         rebasedLineOf: (lineId) => (overrides.moved === lineId ? lineId + 1 : positions[lineId]),
       });
+      return undefined;
     } catch (error) {
-      caught = error;
+      return error as DomainError;
     }
+  }
+
+  function span(overrides: {
+    served: (string | null)[];
+    leasedRetired?: number;
+    moved?: number;
+  }): DomainError {
+    const caught = run(overrides);
     expect(caught).toBeInstanceOf(DomainError);
     return caught as DomainError;
   }
@@ -152,11 +160,8 @@ describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 re
     expect(err.message).not.toContain("was never served");
   });
 
-  it("reports an explicitly cleared mirror slot as never-served", () => {
-    const err = span({ served: [hashes[0]!, null, hashes[2]!] });
-    expect(err.code).toBe("E_STALE_RANGE");
-    expect(err.details.cause).toBe("never-served");
-    expect(err.message).toContain("was never served");
+  it("accepts an explicitly cleared interior mirror slot — no identity to verify (ADR-0024)", () => {
+    expect(run({ served: [hashes[0]!, null, hashes[2]!] })).toBeUndefined();
   });
 
   it("reports a retired interior lease as retirement", () => {

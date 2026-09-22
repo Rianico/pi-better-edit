@@ -262,9 +262,13 @@ export function makeStaleAnchorRejection(opts: {
  *
  *  - a different window length means an external insert/delete landed strictly inside the range
  *    (Probe J) -> `E_STALE_RANGE`;
- *  - a served line whose mirror row was truncated away, or a slot the mirror explicitly cleared, or
- *    an anchor holding no lease -> `E_STALE_RANGE` (the diagnosis separates the three: the served
- *    record cannot be reconciled, never-served, and no served identity);
+ *  - a served line whose mirror row was truncated away, or an anchor holding no lease -> `E_STALE_RANGE`
+ *    (the diagnosis separates the two: the served record cannot be reconciled, and no served identity);
+ *  - an interior row the mirror never served (`null`) -> **accepted** (ADR-0024): it carries no identity
+ *    to verify, and the span's extent is already pinned by the two boundary leases this gate verifies
+ *    plus the window-length check above. Only rows `0` and `servedLen - 1` — the anchors the model
+ *    named — stay fail-closed on a `null`, because with no served row there is nothing to verify them
+ *    against;
  *  - a served line whose lease is retired -> `E_STALE_RANGE` with `details.cause: "retirement"`, and
  *    a live lease whose `line_id` no longer lives at its expected rebased coordinate -> the same code
  *    with `cause: "served-range staleness"` (Probes A/E/K: never apply at a coordinate whose
@@ -330,15 +334,22 @@ export function verifyRebasedSpan(args: {
       });
     }
     if (servedAnchor === null) {
-      throw makeServedRejection({
-        code: "E_STALE_RANGE",
-        headline: `line ${currentLine}${where} was never served.`,
-        startLine: rebasedStart,
-        endLine: rebasedEnd,
-        snapshot,
-        firstOffendingLine: currentLine,
-        cause: "never-served",
-      });
+      // WHY: ADR-0024 narrows informed destruction to the boundaries: an unread interior row has no
+      // WHY: identity to check, and the two verified boundary leases already fix the span's extent, so
+      // WHY: refusing it only taxed a correct edit. A `null` boundary is the named anchor itself —
+      // WHY: unverifiable by construction — so it keeps the fail-closed diagnosis.
+      if (k === 0 || k === servedLen - 1) {
+        throw makeServedRejection({
+          code: "E_STALE_RANGE",
+          headline: `line ${currentLine}${where} was never served.`,
+          startLine: rebasedStart,
+          endLine: rebasedEnd,
+          snapshot,
+          firstOffendingLine: currentLine,
+          cause: "never-served",
+        });
+      }
+      continue;
     }
     const lease = leaseFor(servedAnchor);
     if (lease === undefined) {

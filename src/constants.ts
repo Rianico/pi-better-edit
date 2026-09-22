@@ -17,4 +17,12 @@ export const DEFERRED_STORE_SYNC_WARNING =
   "Store synchronization deferred: the file was written to disk, but the post-write snapshot commit failed. The next call re-materializes the file from disk.";
 
 export const SERVED_ROWS_CAP = 150;
+
+// WHY: ADR-0024 — the applied diff's removed-line cap, the mirror of SERVED_ROWS_CAP on the refusal
+// WHY: side: a range deletion renders head + tail with an exact omitted count instead of every removed
+// WHY: row. The omitted rows still advance the render cursor, so every surviving row keeps its exact
+// WHY: old line number and hash.
+export const DIFF_REMOVED_CAP = 6;
+export const DIFF_REMOVED_EDGE = 2;
+
 export const NOOP_LOOP_THRESHOLD = 3;

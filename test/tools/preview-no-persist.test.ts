@@ -151,7 +151,7 @@ describe("compPreview no-persist guarantee", () => {
     });
   });
 
-  it("previewing over never-served lines does not make them served — the same edit still rejects", async () => {
+  it("previewing over never-served lines does not make them served — their anchors still hold no lease", async () => {
     const content = "alpha\nbeta\ngamma\ndelta\n";
     await withTempFile("sample.txt", content, async ({ cwd }) => {
       const absolutePath = await (
@@ -174,22 +174,25 @@ describe("compPreview no-persist guarantee", () => {
       );
       const hashes = await lineHashes(content, absolutePath);
 
+      // Lines 2-3 are unserved; the interior gap renders a diff instead of a rejection (ADR-0024), so
+      // the persistence detector moves to the interior anchors themselves.
       const preview = await compPreview(
         { path: "sample.txt", edits: [[hashes[0]!, hashes[3]!, "X"]] },
         cwd,
       );
-      expect(preview).toHaveProperty("error");
-      expect((preview as { error: string }).error).toMatch(/\[E_STALE_RANGE\]/);
+      expect(preview).toHaveProperty("diff");
 
+      // Had the preview served its hypothetical rows, lines 2-3 would now carry leases and this edit
+      // would resolve. They must not, so the anchors stay unleased and the rejection carries no rows.
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.txt", edits: [[hashes[0]!, hashes[3]!, "X"]] },
+          { path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "X"]] },
           undefined,
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/\[E_STALE_RANGE\]/);
+      ).rejects.toThrow(/\[E_UNKNOWN_ANCHOR\]/);
     });
   });
 });

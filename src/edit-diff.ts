@@ -1,4 +1,5 @@
 import * as Diff from "diff";
+import { DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE } from "./constants.js";
 import { ANCHOR_LEN, HASH_SEP, defaultHashIdentity } from "./hashline/hash-identity.js";
 import type { ServedRow } from "./hashline/served.js";
 
@@ -60,11 +61,22 @@ function pushRemovedLines(
   oldLineNum: { value: number },
   output: string[],
 ): void {
-  for (let k = 0; k < displayLines.length; k++) {
+  const emit = (line: string): void => {
     const hash = oldContentHashes?.[oldLineNum.value - 1];
-    output.push(fmtDiffLine("-", displayLines[k]!, hash));
+    output.push(fmtDiffLine("-", line, hash));
     oldLineNum.value++;
+  };
+  if (displayLines.length <= DIFF_REMOVED_CAP) {
+    for (const line of displayLines) emit(line);
+    return;
   }
+  const omitted = displayLines.length - DIFF_REMOVED_EDGE * 2;
+  for (const line of displayLines.slice(0, DIFF_REMOVED_EDGE)) emit(line);
+  // WHY: ADR-0024 — the model sees the deletion's head, tail, and exact size; the omitted rows still
+  // WHY: advance the cursor so every later row keeps its exact old line number and hash.
+  output.push(` - ... [${omitted} lines omitted] ...`);
+  oldLineNum.value += omitted;
+  for (const line of displayLines.slice(-DIFF_REMOVED_EDGE)) emit(line);
 }
 function contextLinesToShow(
   displayLines: string[],
