@@ -126,6 +126,24 @@ describe("fmtReadPreview — windows", () => {
     expect(result.served.map((row) => row.position)).toEqual([0, 1, 2]);
     // WHY: the budget really did cut a requested window away, so the tool owes truncated: true.
     expect(result.truncation?.truncated).toBe(true);
+    // WHY: windows are discrete slices, so no root offset can paginate the request as one stream.
+    expect(result.nextOffset).toBeUndefined();
+  });
+
+  it("reports a truncated window without offering a root pagination offset", async () => {
+    const result = await fmtReadPreview(
+      TWELVE,
+      { windows: [{ offset: 1, limit: 6 }] },
+      undefined,
+      home.testPath,
+      400,
+      2,
+    );
+    expect(result.truncation?.truncated).toBe(true);
+    // The window keeps its own continuation cue...
+    expect(result.text).toContain("to continue");
+    // ...but the request is not one stream, so no scalar offset is offered for it.
+    expect(result.nextOffset).toBeUndefined();
   });
 
   it("treats an empty windows array as no windows", async () => {

@@ -1,8 +1,7 @@
 import { stat } from "node:fs/promises";
-import type { FileStats } from "../../src/file-content/detection";
 import { describe, expect, it } from "vitest";
 import { loadFileKindAndText } from "../../src/file-content/detection";
-import { prepareFile } from "../../src/file-content/index";
+import { prepareFile, type FileStats } from "../../src/file-content/index";
 import { fileSnap } from "../../src/file-content/loader";
 import { withTempFile } from "../support/fixtures";
 

@@ -214,7 +214,7 @@ function buildWindowSection(params: {
   totalLines: number;
   maxBytes: number;
   maxTruncLines: number;
-}): { text: string; truncation?: TruncationResult; nextOffset?: number; served: ServedRow[] } {
+}): { text: string; truncation?: TruncationResult; served: ServedRow[] } {
   const {
     rowSizes,
     selected,
@@ -250,7 +250,6 @@ function buildWindowSection(params: {
   return {
     text: normal.preview,
     truncation: normal.truncation.truncated ? normal.truncation : undefined,
-    ...(normal.nextOffset !== undefined ? { nextOffset: normal.nextOffset } : {}),
     served: normal.served,
   };
 }
@@ -268,12 +267,11 @@ function buildWindowedPreview(params: {
   totalLines: number;
   maxBytes: number;
   maxTruncLines: number;
-}): { text: string; truncation?: TruncationResult; nextOffset?: number; served: ServedRow[] } {
+}): { text: string; truncation?: TruncationResult; served: ServedRow[] } {
   const { windows, allLines, allHashes, totalLines, maxBytes, maxTruncLines } = params;
   const sections: string[] = [];
   const hashByPosition = new Map<number, string>();
   let truncation: TruncationResult | undefined;
-  let nextOffset: number | undefined;
   let remainingBytes = maxBytes;
   let remainingLines = maxTruncLines;
 
@@ -320,13 +318,14 @@ function buildWindowedPreview(params: {
     remainingLines -= built.text === "" ? 0 : built.text.split("\n").length;
     remainingBytes -= Buffer.byteLength(`${built.text}${header}`, "utf-8");
     if (truncation === undefined && built.truncation) truncation = built.truncation;
-    if (nextOffset === undefined && built.nextOffset !== undefined) nextOffset = built.nextOffset;
   }
 
   return {
     text: sections.join("\n\n"),
     ...(truncation ? { truncation } : {}),
-    ...(nextOffset !== undefined ? { nextOffset } : {}),
+    // WHY: a multi-window request is N discrete slices, not one stream, so the result carries no root
+    // WHY: `nextOffset`: a scalar would invite `offset = nextOffset` and silently re-read a window the
+    // WHY: caller never asked to continue. A truncated window says so in its own section text.
     served: [...hashByPosition.entries()]
       .sort((left, right) => left[0] - right[0])
       .map(([position, hash]) => ({ position, hash })),
