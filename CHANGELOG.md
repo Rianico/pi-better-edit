@@ -1,5 +1,12 @@
 # Changelog
 
+## [2.2.0](https://github.com/Rianico/pi-better-edit/compare/v2.1.0...v2.2.0) (2026-09-22)
+
+### Features
+
+* **edit:** accept unread interior rows and cap applied-diff removals ([2e93732](https://github.com/Rianico/pi-better-edit/commit/2e93732e02f4af9d8ec99de1eeae4585ae3782e5)), closes [#149](https://github.com/Rianico/pi-better-edit/issues/149)
+* **read:** add multi-window reads and consolidate the read path's stats ([2334352](https://github.com/Rianico/pi-better-edit/commit/2334352206adcf2c5c2cb0d3beaa1eae7ea8f0c4))
+
 ## [2.1.0](https://github.com/Rianico/pi-better-edit/compare/v2.0.0...v2.1.0) (2026-09-22)
 
 ### Features
@@ -14,21 +21,6 @@
 * **readme:** rewrite for v2 line-identity mvcc architecture ([b4bd3cb](https://github.com/Rianico/pi-better-edit/commit/b4bd3cb2a49998d8965425a1876623499aad40aa))
 
 ## [Unreleased]
-
-### Features
-
-* **read:** add multi-window reads and consolidate the read path's stats
-* **edit:** accept unread interior rows and cap applied-diff removals
-
-### Bug Fixes
-
-* **read:** drop the ambiguous root pagination offset from multi-window reads
-* **read:** refine multi-window contracts, budget truncation, and stat decoupling
-
-### Documentation
-
-* **changelog:** sync the unreleased section
-* **readme:** document the read tool's windows parameter
 
 ## [2.0.0](https://github.com/Rianico/pi-better-edit/compare/v1.7.0...v2.0.0) (2026-09-21)
 
