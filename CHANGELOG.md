@@ -2,6 +2,14 @@
 
 ## [Unreleased]
 
+### Features
+
+* **errors:** diagnose numeric anchors in E_UNKNOWN_ANCHOR to steer away from line numbers
+
+### Bug Fixes
+
+* **errors:** use declarative phrasing in numeric-anchor note per ADR-0021
+
 ### Documentation
 
 * **readme:** rewrite for v2 line-identity mvcc architecture
