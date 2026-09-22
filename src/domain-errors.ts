@@ -302,15 +302,33 @@ function staleAnchorFormat(payload: ErrorPayloadMap["E_STALE_ANCHOR"]): string {
   return `${payload.headline}\nCurrent range:\n${payload.servedBlock}\n${RETRY_HINT}`;
 }
 
+// WHY: an all-digit anchor is shape evidence pinned to the anchor string itself
+// WHY: (ADR-0021 decision 4) — not a guess about path versus session — so the note
+// WHY: states the shape fact in declarative terms. No imperative, no remedy field.
+const NUMERIC_ANCHOR_RE = /^\d+$/;
+
+function numericAnchorNote(anchors: string[]): string {
+  const numeric = anchors.filter((anchor) => NUMERIC_ANCHOR_RE.test(anchor));
+  if (numeric.length === 0) return "";
+  const quoted = numeric.map((anchor) => `"${anchor}"`).join(", ");
+  const noun = numeric.length === 1 ? `anchor ${quoted}` : `anchors ${quoted}`;
+  const verb = numeric.length === 1 ? "consists" : "consist";
+  const resemblance = numeric.length === 1 ? "resembles a line number" : "resemble line numbers";
+  return (
+    ` Note: ${noun} ${verb} only of digits and ${resemblance}. ` +
+    `Edit anchors are 3-character alphanumeric content hashes (e.g. "aB3") served by the read tool, not line numbers.`
+  );
+}
+
 function unknownAnchorFormat(payload: ErrorPayloadMap["E_UNKNOWN_ANCHOR"]): string {
   const anchors = payload.anchors;
   if (anchors.length === 1) {
-    return `${payload.path} has not served the anchor "${anchors[0]}"; nothing was written.`;
+    return `${payload.path} has not served the anchor "${anchors[0]}"; nothing was written.${numericAnchorNote(anchors)}`;
   }
   if (anchors.length === 0) {
     return `${payload.path} has not served an anchor; nothing was written.`;
   }
-  return `${payload.path} has not served the anchors ${anchors.map((a) => `"${a}"`).join(", ")}; nothing was written.`;
+  return `${payload.path} has not served the anchors ${anchors.map((a) => `"${a}"`).join(", ")}; nothing was written.${numericAnchorNote(anchors)}`;
 }
 
 function foreignHomesDisplay(homes: string[]): string {

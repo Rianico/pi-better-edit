@@ -140,7 +140,9 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     expect(err.servedRows).toEqual([]);
     expect(err.servedBlock).toBe("");
     expect(err.message).toBe(
-      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchors "ZZZ", "733"; nothing was written.',
+      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchors "ZZZ", "733"; nothing was written.' +
+        ' Note: anchor "733" consists only of digits and resembles a line number.' +
+        ' Edit anchors are 3-character alphanumeric content hashes (e.g. "aB3") served by the read tool, not line numbers.',
     );
   });
 
