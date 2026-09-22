@@ -52,10 +52,29 @@ function mimeToLFile(mime: string | undefined): LFile | undefined {
   return { kind: "binary", description: mime };
 }
 
+// WHY: narrowing `fs.Stats` to the fields this codebase reasons about keeps `node:fs` out of the
+// WHY: domain types, so callers — tests included — can hand over a plain object, not a `Stats` fixture.
+/** Snapshot identity and size: the only `fs.Stats` fields this codebase reads. */
+export interface FileStats {
+  ino: number;
+  size: number;
+  mtimeMs: number;
+  ctimeMs: number;
+}
+
+export interface LFileText {
+  kind: "text";
+  text: string;
+  // WHY: the load path already stat'd this path; handing the result to the caller keeps the read
+  // WHY: path at one `stat` syscall per file instead of re-stat'ing for the snapshot id.
+  stats?: FileStats;
+  hadUtf8DecodeErrors?: true;
+}
+
 export type LFile =
   | { kind: "directory" }
   | { kind: "image"; mimeType: string }
-  | { kind: "text"; text: string; hadUtf8DecodeErrors?: true }
+  | LFileText
   | { kind: "binary"; description: string };
 
 export interface LoadFileOptions {
@@ -89,7 +108,7 @@ export async function loadFileKindAndText(
     const buffer = Buffer.alloc(SNIFF_BYTES);
     const { bytesRead } = await fileHandle.read(buffer, 0, SNIFF_BYTES, 0);
     if (bytesRead === 0) {
-      return { kind: "text", text: "" };
+      return { kind: "text", text: "", stats: pathStat };
     }
 
     const sample = buffer.subarray(0, bytesRead);
@@ -146,6 +165,7 @@ export async function loadFileKindAndText(
     return {
       kind: "text",
       text: parts.join(""),
+      stats: pathStat,
       ...(hadUtf8DecodeErrors ? { hadUtf8DecodeErrors: true as const } : {}),
     };
   } finally {

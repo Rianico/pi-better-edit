@@ -1,7 +1,7 @@
 import type { LineEnding } from "../edit-diff.js";
 import type { LFile } from "./detection.js";
 
-export type { LFile, LoadFileOptions } from "./detection.js";
+export type { FileStats, LFile, LoadFileOptions } from "./detection.js";
 
 export interface NormFile {
   absolutePath: string;

@@ -1,1 +1,2 @@
 - read: call only when you need information the tool never served you — a page you never saw, content past the auto-read diff.
+- read: need several blocks, or both boundaries of one replacement? put every range in ONE call: `windows: [{offset, limit}, ...]` — each listed window is served in that turn, so its anchors are usable in the same edit.

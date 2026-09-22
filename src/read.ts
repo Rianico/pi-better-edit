@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
+import { MAX_READ_WINDOWS } from "./constants.js";
 import { MAX_HASH_LINES } from "./hashline/index.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
@@ -51,6 +52,25 @@ export function regRead(pi: ExtensionAPI): void {
           description: "Maximum number of lines to read",
         }),
       ),
+      windows: Type.Optional(
+        Type.Array(
+          Type.Object({
+            offset: Type.Integer({
+              minimum: 1,
+              description: "Line number to start reading from (1-indexed)",
+            }),
+            limit: Type.Integer({
+              minimum: 1,
+              description: "Maximum number of lines to read",
+            }),
+          }),
+          {
+            maxItems: MAX_READ_WINDOWS,
+            description:
+              "Optional array of disjoint line windows to read in a single turn; every window's rows are served, so anchors from all of them are usable in one edit",
+          },
+        ),
+      ),
     }),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
@@ -65,6 +85,7 @@ export function regRead(pi: ExtensionAPI): void {
         signal,
         offset: params.offset,
         limit: params.limit,
+        windows: params.windows,
         maxLines: MAX_HASH_LINES,
         store: await loadHashStore(),
         noPersist: true,
@@ -80,6 +101,8 @@ export function regRead(pi: ExtensionAPI): void {
           onUpdate: typeof _onUpdate,
           context: typeof ctx,
         ) => ReturnType<typeof builtinRead.execute>;
+        // WHY: an image has no line address space, so `windows` is meaningless here; the delegated
+        // WHY: builtin read ignores fields it does not read and returns the image itself.
         return executeBuiltinRead(_toolCallId, params, signal, _onUpdate, ctx);
       }
       if (prepared.kind !== "text") {
@@ -101,12 +124,22 @@ export function regRead(pi: ExtensionAPI): void {
         prepared.absolutePath,
       );
       const lineCount = visLines(prepared.normalized).length;
-      const isFullRead = params.offset == null && params.limit == null && !prepared.truncation;
+      // WHY: `windows: []` falls back to a full read in the preview, so the full-read contract has to
+      // WHY: follow the same rule — otherwise an empty array silently withholds the snapshot id and
+      // WHY: skips the drift clear that a full read owes.
+      const hasWindows = Array.isArray(params.windows) && params.windows.length > 0;
+      const isFullRead =
+        params.offset == null && params.limit == null && !hasWindows && !prepared.truncation;
       let snapshotId: string | undefined;
       const contentHash = snapshotHashFor(prepared.normalized);
       try {
-        snapshotId = (await fileSnap(prepared.absolutePath, contentChecksum(prepared.normalized)))
-          .snapshotId;
+        snapshotId = (
+          await fileSnap(
+            prepared.absolutePath,
+            contentChecksum(prepared.normalized),
+            prepared.stats,
+          )
+        ).snapshotId;
       } catch {
         snapshotId = undefined;
       }

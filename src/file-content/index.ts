@@ -17,13 +17,13 @@ import { toCwd } from "../paths.js";
 import { valAccess } from "../validation.js";
 import { abortIf } from "../utils.js";
 import { visLines } from "../utils.js";
-import { loadFileKindAndText, type LFile } from "./detection.js";
+import { loadFileKindAndText, type FileStats, type LFile } from "./detection.js";
 import { readNormFile, fileSnap } from "./loader.js";
-import { fmtReadPreview } from "./preview.js";
+import { fmtReadPreview, type ReadWindow } from "./preview.js";
 import type { ServedRow } from "../hashline/served.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 
-export type { LFile, LoadFileOptions } from "./detection.js";
+export type { FileStats, LFile, LoadFileOptions } from "./detection.js";
 export { loadFileKindAndText } from "./detection.js";
 export {
   readNormFile,
@@ -33,6 +33,7 @@ export {
   type ReadNormOptions,
 } from "./loader.js";
 export { fmtReadPreview } from "./preview.js";
+export type { ReadWindow } from "./preview.js";
 
 export interface PrepareResult {
   kind: LFile["kind"];
@@ -47,12 +48,16 @@ export interface PrepareResult {
   nextOffset?: number;
   description?: string;
   mimeType?: string;
+  // WHY: the loader already stat'd this path; the read path hands that `Stats` to `fileSnap`, so a
+  // WHY: read costs one `stat` per file instead of one per seam.
+  stats?: FileStats;
 }
 
 export interface PrepareOptions {
   signal?: AbortSignal;
   offset?: number;
   limit?: number;
+  windows?: ReadWindow[];
   maxLines?: number;
   accessMode?: number;
   maxLineBytes?: number;
@@ -129,7 +134,7 @@ export async function prepareFile(
 
   const preview = await fmtReadPreview(
     norm.normalized,
-    { offset: options?.offset, limit: options?.limit },
+    { offset: options?.offset, limit: options?.limit, windows: options?.windows },
     norm.fileHashes,
     norm.absolutePath,
     options?.maxLineBytes ?? DEFAULT_MAX_BYTES,
@@ -146,6 +151,7 @@ export async function prepareFile(
     absolutePath: norm.absolutePath,
     bom: norm.bom,
     fileHashes: norm.fileHashes,
+    ...(file.stats ? { stats: file.stats } : {}),
     hadUtf8DecodeErrors: norm.hadUtf8DecodeErrors,
     preview: previewText,
     served: preview.served,
