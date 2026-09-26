@@ -19,7 +19,14 @@ describe("extension registration", () => {
 
     expect(toolNames.sort()).toEqual(["edit", "read", "read_skill", "undo_last_edit"]);
 
-    expect(eventNames.sort()).toEqual(["session_start", "tool_call", "tool_result"]);
+    // WHY: (#165) two session_start listeners: regEdit captures the session for the preview pane,
+    // WHY: the lifecycle hook handles session resets.
+    expect(eventNames.sort()).toEqual([
+      "session_start",
+      "session_start",
+      "tool_call",
+      "tool_result",
+    ]);
   });
 });
 

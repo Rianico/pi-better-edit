@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, testSessionManager } from "../support/fixtures";
 
 const minimalPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -18,6 +18,7 @@ describe("read_skill tool", () => {
 
       const result = await tool.execute("r1", { path: "SKILL.md" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
 
       const text = result.content[0].text;
@@ -36,6 +37,7 @@ describe("read_skill tool", () => {
 
       const result = await tool.execute("r1", { path: "notes.txt" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
 
       const text = result.content[0].text;
@@ -53,6 +55,7 @@ describe("read_skill tool", () => {
 
       const result = await tool.execute("r1", { file_path: "SKILL.md" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
 
       expect(result.content[0].text).toContain("content");
@@ -70,6 +73,7 @@ describe("read_skill tool", () => {
 
       const result = await tool.execute("r1", { path: "test.png" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
 
       expect(result.content.some((entry: { type: string }) => entry.type === "image")).toBe(true);
@@ -85,6 +89,7 @@ describe("read_skill tool", () => {
       await expect(
         tool.execute("r1", { path: "missing.md" }, undefined, undefined, {
           cwd,
+          sessionManager: testSessionManager,
         } as any),
       ).rejects.toThrow("E_NOT_FOUND");
     });

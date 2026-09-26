@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { withTempFile, getText, extractHash } from "../support/fixtures";
+import { withTempFile, getText, extractHash, testSessionManager } from "../support/fixtures";
 
 type ToolResultEvent = {
   toolName: string;
@@ -49,7 +49,7 @@ describe("diff rows serve chained edits", () => {
         ctx: ToolResultCtx,
       ) => Promise<any>;
       expect(toolResultHandler).toBeDefined();
-      const ctx = { cwd };
+      const ctx = { cwd, sessionManager: testSessionManager };
 
       const firstRead = await readTool.execute(
         "r1",
@@ -105,7 +105,7 @@ describe("diff rows serve chained edits", () => {
       const { getTool } = makeSeamPi();
       const readTool = getTool("read");
       const editTool = getTool("edit");
-      const ctx = { cwd };
+      const ctx = { cwd, sessionManager: testSessionManager };
 
       const firstRead = await readTool.execute(
         "r1",

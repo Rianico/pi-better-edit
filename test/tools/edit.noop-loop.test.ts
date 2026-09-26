@@ -207,6 +207,7 @@ describe("edit tool noop-loop guard", () => {
         const preview = await compPreview(
           { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, NOOP_LINE_1]] },
           cwd,
+          ctx,
         );
         expect("error" in preview ? preview.error : "no error").toContain("No changes made");
       }

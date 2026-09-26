@@ -6,7 +6,7 @@ import {
   isMutationSuccess,
   isMutationFailure,
 } from "../../src/mutation-engine/index.js";
-import { withTempFile, setupIntegrationTest } from "../support/fixtures.js";
+import { withTempFile, setupIntegrationTest, TEST_SESSION_ID } from "../support/fixtures.js";
 import { lineHashes } from "../../src/hashline/index.js";
 import { initHasher } from "../../src/hashline/index.js";
 import { useTestHome } from "../support/fixtures.js";
@@ -28,6 +28,7 @@ describe("MutationEngine — deep seam", () => {
       const result = await execute(
         { file: "sample.txt", edits: [{ anchor_from: from, anchor_to: to, replace_with: "x\ny" }] },
         cwd,
+        { sessionKey: TEST_SESSION_ID },
       );
       expect(isMutationSuccess(result)).toBe(true);
       if (isMutationSuccess(result)) {
@@ -51,6 +52,7 @@ describe("MutationEngine — deep seam", () => {
           edits: [{ anchor_from: from, anchor_to: from, replace_with: "replaced" }],
         },
         cwd,
+        { sessionKey: TEST_SESSION_ID },
       );
       expect(isMutationSuccess(result)).toBe(true);
       if (isMutationSuccess(result)) {
@@ -71,6 +73,7 @@ describe("MutationEngine — deep seam", () => {
           edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
         },
         cwd,
+        { sessionKey: TEST_SESSION_ID },
       );
       expect(isMutationFailure(result)).toBe(true);
       if (isMutationFailure(result)) {
@@ -97,6 +100,7 @@ describe("MutationEngine — deep seam", () => {
           ],
         },
         cwd,
+        { sessionKey: TEST_SESSION_ID },
       );
       expect(isMutationSuccess(result)).toBe(true);
       if (isMutationSuccess(result)) {

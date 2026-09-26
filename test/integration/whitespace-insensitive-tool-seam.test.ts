@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile, readFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { withTempFile, getText, extractHash } from "../support/fixtures";
+import { withTempFile, getText, extractHash, testSessionManager } from "../support/fixtures";
 
 type ToolResultEvent = {
   toolName: string;
@@ -94,7 +94,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
         ctx: ToolResultCtx,
       ) => Promise<any>;
       expect(toolResultHandler).toBeDefined();
-      const ctx = { cwd };
+      const ctx = { cwd, sessionManager: testSessionManager };
       const abs = join(cwd, "render.ts");
 
       const refs = await hashRefs(readTool, "render.ts", ctx, ["out.push(it.name);"]);
@@ -152,7 +152,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
       const { getTool } = makeSeamPi();
       const readTool = getTool("read");
       const editTool = getTool("edit");
-      const ctx = { cwd };
+      const ctx = { cwd, sessionManager: testSessionManager };
       const abs = join(cwd, "f.ts");
 
       const refs = await hashRefs(readTool, "f.ts", ctx, ["func hello()"]);
@@ -193,7 +193,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
           ctx: ToolResultCtx,
         ) => Promise<any>;
         expect(toolResultHandler).toBeDefined();
-        const ctx = { cwd };
+        const ctx = { cwd, sessionManager: testSessionManager };
         const abs = join(cwd, "sample.ts");
 
         const refs = await hashRefs(readTool, "sample.ts", ctx, ["const beta = 2;"]);

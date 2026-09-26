@@ -140,8 +140,14 @@ export async function makeTempDir(prefix: string): Promise<string> {
   return dir;
 }
 
+// WHY: (#165) tool contexts must carry a session — sessionKeyFor fails loud without one — so the
+// WHY: shared fixture ctx supplies this fixed session to keep read/preview/execute agreeing.
+export const TEST_SESSION_ID = "fixture-session";
+export const testSessionManager = { getSessionId: () => TEST_SESSION_ID };
+
 export function makeFakePiRegistry() {
   const tools = new Map<string, any>();
+  const sessionStartHandlers: Array<(event: unknown, ctx: unknown) => unknown> = [];
   return {
     pi: {
       registerTool(tool: any) {
@@ -171,7 +177,14 @@ export function makeFakePiRegistry() {
         tools.set(tool.name, tool);
       },
       registerCommand() {},
-      on() {},
+      on(event: string, handler: (event: unknown, ctx: unknown) => unknown) {
+        if (event === "session_start") sessionStartHandlers.push(handler);
+      },
+      startSession(ctx: unknown) {
+        for (const handler of sessionStartHandlers) {
+          void handler({ type: "session_start", reason: "startup" }, ctx);
+        }
+      },
     } as any,
     getTool(name: string) {
       const tool = tools.get(name);
@@ -198,7 +211,7 @@ export function makeFakeEditRegistry() {
 export function setupIntegrationTest(cwd: string) {
   const { pi, getTool } = makeFakePiRegistry();
   register(pi);
-  const ctx = { cwd, ui: { notify() {} } } as any;
+  const ctx = { cwd, ui: { notify() {} }, sessionManager: testSessionManager } as any;
   return {
     pi,
     getTool,
@@ -212,7 +225,7 @@ export function setupIntegrationTest(cwd: string) {
 export function setupReadTest(cwd: string) {
   const { pi, getTool } = makeFakePiRegistry();
   register(pi);
-  return { readTool: getTool("read"), ctx: { cwd } as any };
+  return { readTool: getTool("read"), ctx: { cwd, sessionManager: testSessionManager } as any };
 }
 
 export function getText(result: { content: Array<{ text?: string }> }): string {

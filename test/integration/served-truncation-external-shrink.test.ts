@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { withTempFile, getText, extractHash } from "../support/fixtures";
+import { withTempFile, getText, extractHash, testSessionManager } from "../support/fixtures";
 import { loadHashStore } from "../../src/hash-store";
 import { getServed, sessionKeyFor } from "../../src/served-session/index.js";
 
@@ -48,7 +48,7 @@ describe("served-state truncation survives an external shrink (issue #27)", () =
       const { getTool } = makeSeamPi();
       const readTool = getTool("read");
       const editTool = getTool("edit");
-      const ctx = { cwd };
+      const ctx = { cwd, sessionManager: testSessionManager };
       const abs = join(cwd, "sample.ts");
 
       const read = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);

@@ -20,7 +20,7 @@ import {
   editModeSchema,
   assertReq,
 } from "./payload-contract.js";
-import { createEditTool } from "./edit-tool.js";
+import { createEditTool, type PreviewContext } from "./edit-tool.js";
 import { createTuiPresenter } from "./tui-presenter.js";
 import { loadP, loadGuide } from "./prompts.js";
 import {
@@ -64,22 +64,30 @@ export function execEdits(
   return pipelineExecEdits(request, cwd, options);
 }
 
-export async function compPreview(request: unknown, cwd: string): Promise<RPreview> {
+export async function compPreview(
+  request: unknown,
+  cwd: string,
+  ctx: PreviewContext,
+): Promise<RPreview> {
   const tool = createEditTool();
-  return tool.preview(request, cwd);
+  return tool.preview(request, cwd, ctx);
 }
 
 type ToolDef = ToolDefinition<TSchema, EditDetails, RRState> & {
   renderShell?: "default" | "self";
 };
 
-export function buildToolDef(): ToolDef {
+export function buildToolDef(
+  getSessionManager?: () => { getSessionId(): string } | undefined,
+): ToolDef {
   const E_DESC = loadP("../prompts/edit.md");
   const E_SNIPPET = loadP("../prompts/edit-snippet.md");
   const E_GUIDE = loadGuide("../prompts/edit-guidelines.md");
   const parameters = editToolSchema;
   const tool = createEditTool();
-  const presenter = createTuiPresenter((req, cwd) => tool.preview(req, cwd));
+  const presenter = createTuiPresenter((req, cwd) =>
+    tool.preview(req, cwd, { sessionManager: getSessionManager?.() }),
+  );
   return {
     name: "edit",
     label: "Edit",
@@ -108,5 +116,12 @@ export function buildToolDef(): ToolDef {
 }
 
 export function regEdit(pi: ExtensionAPI): void {
-  pi.registerTool(buildToolDef());
+  // WHY: (#165) pi's ToolRenderContext carries no session, so the preview pane's session is
+  // WHY: captured from the session_start ctx — the same session reads serve anchors to.
+  // WHY: session_start fires for startup/reload/new/resume/fork, so the capture tracks switches.
+  let sessionManager: { getSessionId(): string } | undefined;
+  pi.on("session_start", (_event, ctx) => {
+    sessionManager = ctx.sessionManager;
+  });
+  pi.registerTool(buildToolDef(() => sessionManager));
 }

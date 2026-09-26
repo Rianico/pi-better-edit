@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { assertReq, buildToolDef } from "../../src/edit";
 import { normReq } from "../../src/edit-normalize";
+import { testSessionManager } from "../support/fixtures";
 
 describe("assertReq", () => {
   it("throws for non-object payloads", () => {
@@ -51,7 +52,7 @@ describe("anchor validation order", () => {
         { path: "does-not-exist.ts", edits: [["abcd", "abcd", "x"]] },
         undefined,
         undefined,
-        { cwd: "/tmp" } as any,
+        { cwd: "/tmp", sessionManager: testSessionManager } as any,
       ),
     ).rejects.toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });

@@ -100,7 +100,6 @@ import {
 import { DomainError, isDomainErrorCode } from "../domain-errors.js";
 import {
   createSessionHandle,
-  sessionKeyFor,
   loadAnchorHomes,
   loadLeases,
   type ServedLease,
@@ -787,6 +786,16 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
   }
   return parsed;
 }
+// WHY: (#165) the pipeline never mints a session key: a key that was never served anything makes
+// WHY: every lease lookup miss and surfaces a misleading E_UNKNOWN_ANCHOR. Missing sessions fail
+// WHY: here, at the boundary, with the real cause.
+function requireSessionKey(sessionKey: string | undefined): string {
+  if (!sessionKey) {
+    throw new Error("edit pipeline requires options.sessionKey — entrypoints must carry a session");
+  }
+  return sessionKey;
+}
+
 async function runMutations(
   request: NormalizedEditRequest,
   cwd: string,
@@ -797,7 +806,7 @@ async function runMutations(
   const items = request.edits;
   const mode = request.mode ?? "general";
   const hashStore = options?.store ?? (await loadHashStore());
-  const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
+  const sessionKey = requireSessionKey(options?.sessionKey);
   const warnings: string[] = [];
   // WHY: (#146) the never-served soft hint is once per call: per-item counts
   // WHY: travel as structured data (`neverServedCount`) and aggregate here, and
@@ -1161,7 +1170,7 @@ export async function apply(
   const path = request.file;
   const absolutePath = toCwd(path, cwd);
   const mutationTargetPath = await resolveTarget(absolutePath);
-  const sessionKey = options?.sessionKey ?? sessionKeyFor(undefined);
+  const sessionKey = requireSessionKey(options?.sessionKey);
 
   return withFileMutationQueue(mutationTargetPath, async () => {
     abortIf(options?.signal);

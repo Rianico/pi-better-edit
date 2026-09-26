@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { makeFakePiRegistry, withTempFile } from "../support/fixtures";
+import { makeFakePiRegistry, withTempFile, testSessionManager } from "../support/fixtures";
 
 const minimalPng = Buffer.from(
   "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==",
@@ -21,6 +21,7 @@ describe("read tool image delegation", () => {
 
       const result = await readTool.execute("r1", { path: "test.png" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
 
       expect(result.content).toBeDefined();
@@ -41,6 +42,7 @@ describe("read tool image delegation", () => {
 
       const result = await readTool.execute("r1", { path: fileName }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
 
       expect(result.content).toBeDefined();
