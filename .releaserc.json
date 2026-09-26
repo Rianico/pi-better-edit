@@ -2,37 +2,19 @@
   "branches": ["main"],
   "plugins": [
     "@semantic-release/commit-analyzer",
-    [
-      "@semantic-release/release-notes-generator",
-      {
-        "preset": "conventionalcommits",
-        "presetConfig": {
-          "types": [
-            { "type": "feat", "section": "Features" },
-            { "type": "fix", "section": "Bug Fixes" },
-            { "type": "perf", "section": "Performance Improvements" },
-            { "type": "revert", "section": "Reverts" },
-            { "type": "docs", "section": "Documentation", "hidden": false },
-            { "type": "style", "section": "Styles", "hidden": true },
-            { "type": "chore", "section": "Miscellaneous Chores", "hidden": true },
-            { "type": "refactor", "section": "Code Refactoring", "hidden": true },
-            { "type": "test", "section": "Tests", "hidden": true },
-            { "type": "build", "section": "Build System", "hidden": true },
-            { "type": "ci", "section": "Continuous Integration", "hidden": true }
-          ]
-        }
-      }
-    ],
-    [
-      "@semantic-release/changelog",
-      { "changelogFile": "CHANGELOG.md", "changelogTitle": "# Changelog" }
-    ],
+    ["./scripts/release-changelog.mjs", { "changelogFile": "CHANGELOG.md" }],
     ["@semantic-release/npm", { "npmPublish": false }],
     "@semantic-release/github",
     [
       "@semantic-release/git",
       {
-        "assets": ["CHANGELOG.md", "package.json", "pnpm-lock.yaml"],
+        "assets": [
+          "CHANGELOG.md",
+          "package.json",
+          "pnpm-lock.yaml",
+          ".config/changelog-unattributed-baseline.txt",
+          ".config/basedpyright-baseline.txt"
+        ],
         "message": "chore(release): ${nextRelease.version}\n\n${nextRelease.notes}"
       }
     ]

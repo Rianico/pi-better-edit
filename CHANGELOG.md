@@ -1,5 +1,11 @@
 # Changelog
 
+## [Unreleased]
+
+### Miscellaneous Chores
+
+* **scaffold:** refresh the git contract to the current generation
+
 ## [2.2.0](https://github.com/Rianico/pi-better-edit/compare/v2.1.0...v2.2.0) (2026-09-22)
 
 ### Features
@@ -19,12 +25,6 @@
 
 * add independent explicit edit benchmark section ([2db15fc](https://github.com/Rianico/pi-better-edit/commit/2db15fc9c155e4d89d3ed71cd7ea75fc4f34ac3e))
 * **readme:** rewrite for v2 line-identity mvcc architecture ([b4bd3cb](https://github.com/Rianico/pi-better-edit/commit/b4bd3cb2a49998d8965425a1876623499aad40aa))
-
-## [Unreleased]
-
-### Bug Fixes
-
-* **package:** resolve the extension from index.ts
 
 ## [2.0.0](https://github.com/Rianico/pi-better-edit/compare/v1.7.0...v2.0.0) (2026-09-21)
 

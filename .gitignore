@@ -172,10 +172,12 @@ Temporary Items
 
 # Test temp directories
 .tmp/
-.lsz/
 
 
 # Scaffold deterministic — pi-better-edit
 .pi/
 .agents/
 coverage/
+.lsz/*
+!.lsz/config.yaml
+__pycache__/
