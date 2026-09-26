@@ -4,7 +4,7 @@
 
 ### Miscellaneous Chores
 
-* **scaffold:** refresh the git contract to the current generation
+* **scaffold:** refresh the git contract to the current generation (#167)
 
 ## [2.2.0](https://github.com/Rianico/pi-better-edit/compare/v2.1.0...v2.2.0) (2026-09-22)
 
