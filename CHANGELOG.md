@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 
-### Fixed
+### Bug Fixes
 
 * verify preview against the session that served the anchors (#168)
 ### Miscellaneous Chores
