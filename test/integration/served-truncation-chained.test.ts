@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { withTempFile, getText, extractHash } from "../support/fixtures";
+import { withTempFile, getText, extractHash, testSessionManager } from "../support/fixtures";
 
 type ToolResultEvent = {
   toolName: string;
@@ -66,7 +66,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
         ctx: ToolResultCtx,
       ) => Promise<any>;
       expect(toolResultHandler).toBeDefined();
-      const ctx = { cwd };
+      const ctx = { cwd, sessionManager: testSessionManager };
 
       const refs = await hashRefs(readTool, "sample.ts", ctx, ["a", "c", "d", "e"]);
 
@@ -115,7 +115,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
         ctx: ToolResultCtx,
       ) => Promise<any>;
       expect(toolResultHandler).toBeDefined();
-      const ctx = { cwd };
+      const ctx = { cwd, sessionManager: testSessionManager };
 
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
@@ -145,7 +145,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
         ctx: ToolResultCtx,
       ) => Promise<any>;
       expect(toolResultHandler).toBeDefined();
-      const ctx = { cwd };
+      const ctx = { cwd, sessionManager: testSessionManager };
 
       const refs = await hashRefs(readTool, "sample.ts", ctx, ["a", "c", "d", "e"]);
 

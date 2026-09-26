@@ -92,6 +92,7 @@ describe("edit admission gate — single structural hint", () => {
           edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
         },
         cwd,
+        ctx,
       );
       expect("error" in result).toBe(true);
       if ("error" in result) {

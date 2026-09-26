@@ -2,7 +2,12 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { editToolSchema } from "../../src/edit";
-import { setupIntegrationTest, withTempFile, useTestHome } from "../support/fixtures";
+import {
+  setupIntegrationTest,
+  withTempFile,
+  useTestHome,
+  testSessionManager,
+} from "../support/fixtures";
 const home = useTestHome();
 
 describe("editToolSchema", () => {
@@ -24,14 +29,17 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, {
+        cwd,
+        sessionManager: testSessionManager,
+      } as any);
 
       const result = await editTool.execute(
         "e1",
         { path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         undefined,
         undefined,
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       expect(result.content[0].text).toContain("Successfully edited");
@@ -43,14 +51,17 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, {
+        cwd,
+        sessionManager: testSessionManager,
+      } as any);
 
       const result = await editTool.execute(
         "e1",
         { path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "BBB\nCCC"]] },
         undefined,
         undefined,
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       expect(result.content[0].text).toContain("Successfully edited");
@@ -62,14 +73,17 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, {
+        cwd,
+        sessionManager: testSessionManager,
+      } as any);
 
       const result = await editTool.execute(
         "e1",
         { path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, ""]] },
         undefined,
         undefined,
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       expect(result.content[0].text).toContain("Successfully edited");
@@ -81,14 +95,17 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, {
+        cwd,
+        sessionManager: testSessionManager,
+      } as any);
 
       const result = await editTool.execute(
         "e1",
         { path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
         undefined,
         undefined,
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       expect(result.content[0].text).toContain("No changes made");
@@ -106,7 +123,7 @@ describe("regEdit", () => {
           { path: "sample.txt", edits: [["ZZZ", "ZZZ", "x"]] },
           undefined,
           undefined,
-          { cwd } as any,
+          { cwd, sessionManager: testSessionManager } as any,
         ),
       ).rejects.toThrow(/E_UNKNOWN_ANCHOR/);
     });
@@ -116,7 +133,10 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, {
+        cwd,
+        sessionManager: testSessionManager,
+      } as any);
 
       await expect(
         editTool.execute(
@@ -124,7 +144,7 @@ describe("regEdit", () => {
           { path: "sample.txt", edits: [[hashes[0]!, hashes[1]!, ""]] },
           undefined,
           undefined,
-          { cwd } as any,
+          { cwd, sessionManager: testSessionManager } as any,
         ),
       ).rejects.toThrow(/E_EMPTY_RANGE/);
     });
@@ -134,7 +154,10 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, {
+        cwd,
+        sessionManager: testSessionManager,
+      } as any);
 
       await expect(
         editTool.execute(
@@ -148,7 +171,7 @@ describe("regEdit", () => {
           } as any,
           undefined,
           undefined,
-          { cwd } as any,
+          { cwd, sessionManager: testSessionManager } as any,
         ),
       ).rejects.toThrow(/E_BAD_PAYLOAD/);
     });
@@ -158,14 +181,17 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, {
+        cwd,
+        sessionManager: testSessionManager,
+      } as any);
 
       const result = await editTool.execute(
         "e1",
         { path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         undefined,
         undefined,
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       expect(result.details.metrics.edits_attempted).toBe(1);
@@ -177,14 +203,17 @@ describe("regEdit", () => {
     await withTempFile("crlf.txt", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
-      await readTool.execute("r1", { path: "crlf.txt" }, undefined, undefined, { cwd } as any);
+      await readTool.execute("r1", { path: "crlf.txt" }, undefined, undefined, {
+        cwd,
+        sessionManager: testSessionManager,
+      } as any);
 
       await editTool.execute(
         "e1",
         { path: "crlf.txt", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
         undefined,
         undefined,
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       const content = await readFile(path, "utf-8");

@@ -3,7 +3,7 @@ import { rm, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { shutdownHashStore } from "../../src/hash-store";
-import { makeTempDir, withHome } from "../support/fixtures";
+import { makeTempDir, withHome, testSessionManager } from "../support/fixtures";
 async function cleanupCwd(cwd: string): Promise<void> {
   shutdownHashStore();
   await rm(cwd, { recursive: true, force: true });
@@ -25,6 +25,7 @@ type ToolResultHandler = (
   ctx: {
     cwd: string;
     signal?: AbortSignal;
+    sessionManager?: { getSessionId(): string };
   },
 ) => Promise<
   | {
@@ -81,7 +82,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(writeResult).toBeDefined();
@@ -115,7 +116,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(writeResult).toBeDefined();
@@ -151,7 +152,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: true,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(writeResult).toBeUndefined();
@@ -176,7 +177,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(readResult).toBeUndefined();
@@ -201,7 +202,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(writeResult).toBeUndefined();
@@ -234,7 +235,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(writeResult).toBeDefined();
@@ -269,7 +270,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(writeResult).toBeDefined();
@@ -319,7 +320,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(writeResult).toBeDefined();
@@ -352,7 +353,7 @@ describe("auto-read after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(writeResult).toBeDefined();
@@ -393,7 +394,7 @@ describe("auto-read after write", () => {
           details: { diff, metrics: { classification: "applied" } },
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(editResult).toBeDefined();
@@ -422,7 +423,7 @@ describe("auto-read after write", () => {
           details: { diff, metrics: { classification: "applied" } },
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(undoResult).toBeDefined();
@@ -456,7 +457,7 @@ describe("auto-read after write — non-text files", () => {
           details: undefined,
           isError: false,
         },
-        { cwd },
+        { cwd, sessionManager: testSessionManager },
       );
 
       expect(result).toBeUndefined();

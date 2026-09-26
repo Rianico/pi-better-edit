@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { useTestHome, withTempDir } from "../support/fixtures";
+import { useTestHome, withTempDir, testSessionManager } from "../support/fixtures";
 
 useTestHome();
 function makeFakePi() {
@@ -48,7 +48,7 @@ describe("auto-read handler", () => {
           input: { path: "test.txt" },
           content: [{ type: "text", text: "File written." }],
         },
-        { cwd: dir },
+        { cwd: dir, sessionManager: testSessionManager },
       );
 
       expect(result).toBeDefined();
@@ -77,7 +77,7 @@ describe("auto-read handler", () => {
         input: { path: "test.txt" },
         content: [],
       },
-      { cwd: "/tmp" },
+      { cwd: "/tmp", sessionManager: testSessionManager },
     );
 
     expect(result).toBeUndefined();
@@ -97,7 +97,7 @@ describe("auto-read handler", () => {
         input: { path: "test.txt" },
         content: [],
       },
-      { cwd: "/tmp" },
+      { cwd: "/tmp", sessionManager: testSessionManager },
     );
 
     expect(result).toBeUndefined();
@@ -117,7 +117,7 @@ describe("auto-read handler", () => {
         input: {},
         content: [],
       },
-      { cwd: "/tmp" },
+      { cwd: "/tmp", sessionManager: testSessionManager },
     );
 
     expect(result).toBeUndefined();
@@ -141,7 +141,7 @@ describe("auto-read handler", () => {
           input: { path: "empty.txt" },
           content: [{ type: "text", text: "File written." }],
         },
-        { cwd: dir },
+        { cwd: dir, sessionManager: testSessionManager },
       );
 
       expect(result).toBeDefined();
@@ -171,7 +171,7 @@ describe("auto-read handler", () => {
           details: { metrics: { classification: "noop" } },
           content: [{ type: "text", text: "No changes made to noop.txt" }],
         },
-        { cwd: dir },
+        { cwd: dir, sessionManager: testSessionManager },
       );
 
       expect(result).toBeUndefined();
@@ -192,7 +192,7 @@ describe("auto-read handler", () => {
         input: { path: "nonexistent.txt" },
         content: [{ type: "text", text: "File written." }],
       },
-      { cwd: "/tmp" },
+      { cwd: "/tmp", sessionManager: testSessionManager },
     );
 
     expect(result).toBeDefined();
@@ -223,7 +223,7 @@ describe("auto-read handler", () => {
           input: { path: "session.txt" },
           content: [{ type: "text", text: "File written." }],
         },
-        { cwd: dir },
+        { cwd: dir, sessionManager: testSessionManager },
       );
 
       expect(result).toBeDefined();
@@ -253,7 +253,7 @@ describe("auto-read handler", () => {
         },
         content: [{ type: "text", text: "Edited." }],
       },
-      { cwd: "/tmp" },
+      { cwd: "/tmp", sessionManager: testSessionManager },
     );
     expect(result).toBeDefined();
     const content = (result as { content: Array<{ type: string; text: string }> }).content;
@@ -281,7 +281,7 @@ describe("auto-read handler", () => {
         },
         content: [{ type: "text", text: "Undone." }],
       },
-      { cwd: "/tmp" },
+      { cwd: "/tmp", sessionManager: testSessionManager },
     );
     expect(result).toBeDefined();
     const content = (result as { content: Array<{ type: string; text: string }> }).content;
@@ -307,7 +307,7 @@ describe("auto-read handler", () => {
           input: { path: "big.txt" },
           content: [{ type: "text", text: "File written." }],
         },
-        { cwd: dir },
+        { cwd: dir, sessionManager: testSessionManager },
       );
 
       const text = (result as { content: Array<{ type: string; text: string }> }).content[1].text;
@@ -348,7 +348,7 @@ describe("edit diff in model-visible text", () => {
             },
           ],
         },
-        { cwd: dir },
+        { cwd: dir, sessionManager: testSessionManager },
       );
 
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
@@ -382,7 +382,7 @@ describe("edit diff in model-visible text", () => {
           },
           content: [{ type: "text", text: summary }],
         },
-        { cwd: dir },
+        { cwd: dir, sessionManager: testSessionManager },
       );
 
       const text = (result as { content: Array<{ type: string; text: string }> }).content[0].text;
@@ -407,7 +407,7 @@ describe("edit diff in model-visible text", () => {
         details: { metrics: { classification: "applied" } },
         content: [{ type: "text", text: "Successfully edited in nodiff.txt." }],
       },
-      { cwd: "/tmp" },
+      { cwd: "/tmp", sessionManager: testSessionManager },
     );
 
     expect(result).toBeUndefined();
@@ -441,7 +441,7 @@ describe("edit diff in model-visible text", () => {
             },
           ],
         },
-        { cwd: dir },
+        { cwd: dir, sessionManager: testSessionManager },
       );
 
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
@@ -465,7 +465,7 @@ describe("edit diff in model-visible text", () => {
         details: { metrics: { classification: "applied" } },
         content: [{ type: "text", text: "Undone last edit on undonodiff.txt." }],
       },
-      { cwd: "/tmp" },
+      { cwd: "/tmp", sessionManager: testSessionManager },
     );
 
     expect(result).toBeUndefined();

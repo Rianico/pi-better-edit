@@ -7,7 +7,13 @@ import { getSnapshot } from "../../src/snapshot-store";
 import * as undoStoreModule from "../../src/undo-store";
 import * as fsWriteModule from "../../src/fs-write";
 import * as editUndoModule from "../../src/edit-undo";
-import { withTempFile, setupIntegrationTest, useTestHome, getText } from "../support/fixtures";
+import {
+  withTempFile,
+  setupIntegrationTest,
+  useTestHome,
+  getText,
+  testSessionManager,
+} from "../support/fixtures";
 import register from "../../index";
 
 const home = useTestHome();
@@ -631,6 +637,7 @@ describe("undo cleared after write", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       await tools.get("read")!.execute("r1", { path: "sample.ts" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
 
       await editTool.execute(
@@ -638,7 +645,7 @@ describe("undo cleared after write", () => {
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         undefined,
         undefined,
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       const handler = handlers.get("tool_result")!;
@@ -651,11 +658,12 @@ describe("undo cleared after write", () => {
           details: undefined,
           isError: false,
         },
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
       expect(undoResult.isError).toBe(true);
       expect(getText(undoResult)).toMatch(/no undo history/i);
@@ -671,6 +679,7 @@ describe("undo cleared after write", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       await tools.get("read")!.execute("r1", { path: "sample.ts" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
 
       await editTool.execute(
@@ -678,7 +687,7 @@ describe("undo cleared after write", () => {
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         undefined,
         undefined,
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       const handler = handlers.get("tool_result")!;
@@ -691,11 +700,12 @@ describe("undo cleared after write", () => {
           details: undefined,
           isError: true,
         },
-        { cwd } as any,
+        { cwd, sessionManager: testSessionManager } as any,
       );
 
       const undoResult = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, {
         cwd,
+        sessionManager: testSessionManager,
       } as any);
       expect(undoResult.isError).toBeFalsy();
       expect(getText(undoResult)).toMatch(/undone last edit/i);

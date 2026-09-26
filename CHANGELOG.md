@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* verify preview against the session that served the anchors (#168)
 ### Miscellaneous Chores
 
 * **scaffold:** refresh the git contract to the current generation (#167)

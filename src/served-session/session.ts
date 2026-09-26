@@ -8,7 +8,6 @@
  * is injected (SQLite in prod, MemoryStore in tests) — local-substitutable.
  */
 
-import { randomUUID } from "node:crypto";
 import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "../hashline/alphabet.js";
 import { SERVED_TTL_MS } from "../constants.js";
@@ -27,13 +26,16 @@ import type { ServedRow } from "../hashline/served.js";
 import type { ServeRecordPolicy, ServedEntry } from "./types.js";
 
 // WHY: --- sessionKey authority (kept here; served-state re-exports for compat) ---
-let fallbackSessionKey: string | undefined;
 
+// WHY: (#165) there is deliberately no fallback key: a minted key that was never served anything
+// WHY: makes every lease lookup miss and surfaces a misleading E_UNKNOWN_ANCHOR. Entrypoints
+// WHY: without a session fail here, at the boundary, with the real cause.
 export function sessionKeyFor(ctx?: { sessionManager?: { getSessionId(): string } }): string {
   const fromSession = ctx?.sessionManager?.getSessionId();
   if (fromSession) return fromSession;
-  fallbackSessionKey ??= randomUUID();
-  return fallbackSessionKey;
+  throw new Error(
+    "sessionKeyFor: tool context carries no session — entrypoints must supply pi's ctx.sessionManager",
+  );
 }
 
 // WHY: --- SQLite stmts (private to deep module) ---

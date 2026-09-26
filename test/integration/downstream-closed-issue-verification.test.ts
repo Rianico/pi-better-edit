@@ -274,30 +274,21 @@ describe("closed #23/#60 — BOM and encoding handling", () => {
 });
 
 describe("multi-session — session key authority", () => {
-  it("falls back to one in-process key when the context carries no sessionManager", async () => {
-    await withTempFile("fallback.txt", "alpha\n", async ({ cwd, path }) => {
-      const { readTool, editTool } = setupIntegrationTest(cwd);
+  it("fails loudly at the boundary when the context carries no sessionManager", async () => {
+    await withTempFile("fallback.txt", "alpha\n", async ({ cwd }) => {
+      const { readTool } = setupIntegrationTest(cwd);
       const bareA = { cwd }; // no sessionManager
       const bareB = { cwd }; // a second context, also without one
 
-      // Documented fallback: `sessionKeyFor` memoizes ONE process-wide key, so such contexts are a
-      // single logical session. pi always supplies `sessionManager`; this pin keeps the fallback
-      // from ever reading as per-context isolation.
-      expect(sessionKeyFor(bareA as never)).toBe(sessionKeyFor(bareB as never));
+      // WHY: (#165) the removed fallback memoized ONE process-wide key that had never served
+      // WHY: anything, so lease lookups missed and surfaced a misleading E_UNKNOWN_ANCHOR.
+      // WHY: Session-less entrypoints now fail at the boundary with the real cause.
+      expect(() => sessionKeyFor(bareA as never)).toThrow(/no session/);
+      expect(() => sessionKeyFor(bareB as never)).toThrow(/no session/);
 
-      const served = rows(
-        getText(
-          await readTool.execute("r1", { path: "fallback.txt" }, undefined, undefined, bareA),
-        ),
-      );
-      await editTool.execute(
-        "e1",
-        { path: "fallback.txt", edits: [[served[0]!.hash, served[0]!.hash, "ALPHA"]] },
-        undefined,
-        undefined,
-        bareB,
-      );
-      expect(await readFile(path, "utf-8")).toBe("ALPHA\n");
+      await expect(
+        readTool.execute("r1", { path: "fallback.txt" }, undefined, undefined, bareA),
+      ).rejects.toThrow(/no session/i);
     });
   });
 });

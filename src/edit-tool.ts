@@ -22,6 +22,10 @@ export type EditToolContext = {
   sessionManager?: { getSessionId(): string };
 };
 
+export type PreviewContext = {
+  sessionManager?: { getSessionId(): string };
+};
+
 export type PreviewResult = { diff: string } | { error: string };
 
 export interface EditTool {
@@ -34,8 +38,8 @@ export interface EditTool {
     content: Array<{ type: "text"; text: string }>;
     details: unknown;
   }>;
-  /** SAFETY: Preview without persisting — mirrors pi's compPreview(request, cwd) */
-  preview(request: unknown, cwd: string): Promise<PreviewResult>;
+  /** SAFETY: Preview without persisting — mirrors pi's compPreview(request, cwd, ctx). The ctx must carry the session whose serves the anchors came from (#165). */
+  preview(request: unknown, cwd: string, ctx: PreviewContext): Promise<PreviewResult>;
 }
 
 export function createEditTool(): EditTool {
@@ -73,13 +77,17 @@ export function createEditTool(): EditTool {
       }
       throw failure;
     },
-    async preview(request, cwd) {
+    async preview(request, cwd, ctx) {
       try {
         const normalized = normReq(request);
         assertReq(normalized);
         // SAFETY: normalized is validated NormalizedEditRequest after assertReq
+        // WHY: (#165) preview verifies against the SAME session the anchors were served to —
+        // WHY: without a session, sessionKeyFor fails loud here instead of minting a key whose
+        // WHY: lease lookups all miss as a misleading E_UNKNOWN_ANCHOR.
         const result = await enginePreview(normalized as NormalizedEditRequest, cwd, {
           accessMode: constants.R_OK,
+          sessionKey: sessionKeyFor(ctx),
         });
         if (!isMutationSuccess(result)) {
           return { error: result.message };

@@ -15,8 +15,8 @@ describe("compPreview no-persist guarantee", () => {
       const absolutePath = await (
         await import("../../src/fs-write")
       ).resolveTarget(await (await import("../../src/paths")).toCwd("sample.txt", cwd));
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
 
       const hashes = await lineHashes(content, absolutePath);
 
@@ -27,7 +27,11 @@ describe("compPreview no-persist guarantee", () => {
       const bHash = hashes[1]!;
       const cHash = hashes[2]!;
 
-      const preview = await compPreview({ path: "sample.txt", edits: [[bHash, cHash, "B"]] }, cwd);
+      const preview = await compPreview(
+        { path: "sample.txt", edits: [[bHash, cHash, "B"]] },
+        cwd,
+        ctx,
+      );
       expect(preview).toHaveProperty("diff");
 
       const storeAfter = await loadHashStore();
@@ -43,12 +47,16 @@ describe("compPreview no-persist guarantee", () => {
       const absolutePath = await (
         await import("../../src/fs-write")
       ).resolveTarget(await (await import("../../src/paths")).toCwd("sample.txt", cwd));
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
 
       const hashes = await lineHashes(content, absolutePath);
 
-      await compPreview({ path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "X\nY"]] }, cwd);
+      await compPreview(
+        { path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "X\nY"]] },
+        cwd,
+        ctx,
+      );
 
       const store = await loadHashStore();
       expect(getSnapshot(store, absolutePath, content)).toEqual(hashes);
@@ -61,14 +69,15 @@ describe("compPreview no-persist guarantee", () => {
       const absolutePath = await (
         await import("../../src/fs-write")
       ).resolveTarget(await (await import("../../src/paths")).toCwd("sample.txt", cwd));
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
 
       const hashes = await lineHashes(content, absolutePath);
 
       const preview = await compPreview(
         { path: "sample.txt", edits: [[hashes[0]!, hashes[2]!, "x"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
 
@@ -83,8 +92,8 @@ describe("compPreview no-persist guarantee", () => {
       const absolutePath = await (
         await import("../../src/fs-write")
       ).resolveTarget(await (await import("../../src/paths")).toCwd("sample.txt", cwd));
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const hashes = await lineHashes(content, absolutePath);
       const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
       db.prepare(
@@ -100,6 +109,7 @@ describe("compPreview no-persist guarantee", () => {
       const preview = await compPreview(
         { path: "sample.txt", edits: [[hashes[0]!, hashes[1]!, "X"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
 
@@ -135,6 +145,7 @@ describe("compPreview no-persist guarantee", () => {
       const preview = await compPreview(
         { path: "sample.txt", edits: [[alphaRef, gammaRef, "X"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("error");
 
@@ -179,6 +190,7 @@ describe("compPreview no-persist guarantee", () => {
       const preview = await compPreview(
         { path: "sample.txt", edits: [[hashes[0]!, hashes[3]!, "X"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
 

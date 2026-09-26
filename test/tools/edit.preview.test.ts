@@ -11,6 +11,7 @@ import {
   withTempFile,
   setupIntegrationTest,
   useTestHome,
+  testSessionManager,
 } from "../support/fixtures";
 
 const home = useTestHome();
@@ -19,12 +20,13 @@ describe("compPreview", () => {
   it("returns a diff for strict hashline edits before execution", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
       expect((preview as any).diff).toContain("BBB");
@@ -34,12 +36,13 @@ describe("compPreview", () => {
   it("returns a diff for a hash-anchored edit before execution", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
       expect((preview as any).diff).toContain("BETA");
@@ -49,12 +52,13 @@ describe("compPreview", () => {
   it("still computes a preview diff for read-only files", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
     });
@@ -63,12 +67,13 @@ describe("compPreview", () => {
   it("uses the shared text loader for preview instead of classifying then re-reading text", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
     });
@@ -77,12 +82,13 @@ describe("compPreview", () => {
   it("does not let a delayed preview resurrect after a settled result", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
     });
@@ -91,14 +97,15 @@ describe("compPreview", () => {
   it("preview rejects a bulk changes array", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
         {
           path: "sample.ts",
           changes: [[null, [hashes[1]!, hashes[1]!], "BBB"]],
         },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("error");
       expect((preview as { error: string }).error).toMatch(/\[E_BAD_PAYLOAD\]/);
@@ -108,14 +115,52 @@ describe("compPreview", () => {
   it("preview still accepts flat-format requests", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
       expect((preview as { diff: string }).diff).toContain("BBB");
+    });
+  });
+});
+
+describe("issue #165 — session-backed preview", () => {
+  it("previews anchors that a session-backed read served", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      const preview = await compPreview(
+        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        cwd,
+        ctx,
+      );
+      expect(preview).toHaveProperty("diff");
+      expect((preview as { diff: string }).diff).toContain("BBB");
+    });
+  });
+
+  it("fails loudly at the boundary when no session backs the preview", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+
+      const preview = await compPreview(
+        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        cwd,
+        {
+          cwd,
+          ui: { notify() {} },
+        } as any,
+      );
+      expect(preview).toHaveProperty("error");
+      const errorText = (preview as { error: string }).error;
+      expect(errorText).not.toMatch(/E_UNKNOWN_ANCHOR/);
+      expect(errorText).toMatch(/session/i);
     });
   });
 });
@@ -141,6 +186,7 @@ describe("compPreview — served-state staleness surfacing", () => {
       const preview = await compPreview(
         { path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("error");
       const errorText = (preview as { error: string }).error;
@@ -173,6 +219,7 @@ describe("compPreview — served-state staleness surfacing", () => {
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[0]!, hashes[3]!, "X"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
       expect(preview).not.toHaveProperty("error");
@@ -181,10 +228,12 @@ describe("compPreview — served-state staleness surfacing", () => {
 
   it("returns [E_STALE_ANCHOR] for never-served boundary anchors", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
+      const { ctx } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "X"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("error");
       const errorText = (preview as { error: string }).error;
@@ -202,6 +251,7 @@ describe("compPreview — served-state staleness surfacing", () => {
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "BBB"]] },
         cwd,
+        ctx,
       );
       expect(preview).toHaveProperty("diff");
       expect("error" in preview).toBe(false);
@@ -245,10 +295,11 @@ describe("renderCall preview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
       register(pi);
+      pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const harness = makeHarness(cwd);
       tool.renderCall(
@@ -267,9 +318,10 @@ describe("renderCall preview", () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { pi, getTool } = makeFakePiRegistry();
       register(pi);
+      pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
@@ -290,10 +342,11 @@ describe("renderCall preview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
       register(pi);
+      pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const harness = makeHarness(cwd);
       tool.renderCall(
@@ -314,10 +367,11 @@ describe("renderCall preview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
       register(pi);
+      pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       vi.useFakeTimers();
       try {
@@ -351,11 +405,12 @@ describe("compPreview — noop", () => {
   it("returns a noop error when the edit produces identical content", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      const { readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, { cwd } as any);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
         { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
         cwd,
+        ctx,
       );
       expect(preview).toEqual({
         error: "No changes made to sample.ts. The edit produced identical content.",
