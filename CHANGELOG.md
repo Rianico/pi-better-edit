@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Features
+
+* **edit-diff:** formalize the single-projection contract with counted span markers (#174)
+
 ### Bug Fixes
 
 * verify preview against the session that served the anchors (#168)
