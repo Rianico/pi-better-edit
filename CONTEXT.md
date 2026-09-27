@@ -212,3 +212,11 @@ _Avoid_: E_NOOP (no such code; the warn arm is W_NOOP, the refuse arm is E_NOOP_
 **remedy-eligibility**:
 Payload text reports facts; a remedy clause may appear only when it is helpful, unharmful and fail-closed AND the evidence pins a single cause. When the intent is ambiguous the payload states the fact and carries no remedy, because an intent-guessing suggestion steers the model's next action. Remedy-free by rule: `E_UNKNOWN`, `E_UNKNOWN_ANCHOR`, `E_FOREIGN_ANCHOR`, `E_UNVERIFIED_RANGE`, `E_STALE_RANGE`, `E_NOOP_LOOP` (see ADR-0021 decisions 4 and 5).
 _Avoid_: suggestion (an intent-guessing remedy steers the model's next action)
+
+**source of truth**:
+The file bytes on disk plus the lease store (`served_leases`, snapshots, `line_lineage`) — the sole authority for retry coordinates. Rendered diff text is never the source of truth; coordinates resolve through leases, never by re-reading a projection.
+_Avoid_: machine diff (a projection, not the table)
+
+**projection**:
+The single shared rendered diff — preview, applied, and human display render the same text with different context params — derived from the source of truth under a stated collapse contract. Informational only: hidden spans come in two kinds, each with a unified counted marker whose count equals its hidden span — untouched-span (middle gap; ` ... [N lines untouched] ...`, every hidden row stays lease-covered, both cursors advance) and deleted-span (removed run; ` - ... [N lines deleted] ...`, the count drives the old-side cursor); added spans are never hidden (the collapse invariant). The model path never consumes projection text as coordinate input.
+_Avoid_: view (unqualified — name the audience), second diff (there is only one rendering), middle-gap marker (think spans, not gaps)

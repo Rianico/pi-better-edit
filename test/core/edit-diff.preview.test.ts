@@ -69,10 +69,14 @@ describe("genDiff", () => {
 
     expect(diffLines.length).toBeLessThan(50);
 
-    const ellipsisCount = diffLines.filter((l: string) => l.trim() === "...").length;
+    const ellipsisCount = diffLines.filter((l: string) =>
+      /^ \.\.\. \[\d+ lines untouched\] \.\.\.$/.test(l),
+    ).length;
     expect(ellipsisCount).toBe(1);
 
-    const ellipsisIdx = diffLines.findIndex((l: string) => l.trim() === "...");
+    const ellipsisIdx = diffLines.findIndex((l: string) =>
+      /^ \.\.\. \[\d+ lines untouched\] \.\.\.$/.test(l),
+    );
     expect(ellipsisIdx).toBeGreaterThan(0);
     expect(ellipsisIdx).toBeLessThan(diffLines.length - 1);
 
@@ -154,7 +158,7 @@ describe("genDiff — applied removal cap (ADR-0024)", () => {
     expect(lines).toHaveLength(5);
     expect(lines[0]).toBe("-H1│line 1");
     expect(lines[1]).toBe("-H2│line 2");
-    expect(lines[2]).toBe(" - ... [16 lines omitted] ...");
+    expect(lines[2]).toBe(" - ... [16 lines deleted] ...");
     expect(lines[3]).toBe("-H19│line 19");
     expect(lines[4]).toBe("-H20│line 20");
   });
@@ -163,7 +167,7 @@ describe("genDiff — applied removal cap (ADR-0024)", () => {
     const content = Array.from({ length: 6 }, (_, i) => `line ${i + 1}`).join("\n");
     const { diff } = genDiff(content, "", 0);
     expect(diff.split("\n")).toHaveLength(6);
-    expect(diff).not.toContain("omitted");
+    expect(diff).not.toContain("lines deleted");
   });
 
   it("caps at one row past the threshold", () => {
@@ -171,6 +175,6 @@ describe("genDiff — applied removal cap (ADR-0024)", () => {
     const { diff } = genDiff(content, "", 0);
     const lines = diff.split("\n");
     expect(lines).toHaveLength(5);
-    expect(lines[2]).toBe(" - ... [3 lines omitted] ...");
+    expect(lines[2]).toBe(" - ... [3 lines deleted] ...");
   });
 });
