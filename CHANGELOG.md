@@ -5,6 +5,8 @@
 ### Bug Fixes
 
 * verify preview against the session that served the anchors (#168)
+* **edit-diff:** render small middle gaps whole, keep anchors aligned (#172)
+
 ### Miscellaneous Chores
 
 * **scaffold:** refresh the git contract to the current generation (#167)
