@@ -92,7 +92,9 @@ function contextLinesToShow(
     skipStart = Math.max(0, displayLines.length - contextLines);
     linesToShow = displayLines.slice(skipStart);
   } else if (nextPartIsChange && displayLines.length > contextLines * 2) {
-    const tail = displayLines.slice(-contextLines);
+    // WHY: #170 — slice(-0) returns the whole array, so at context 0 the tail is taken
+    // WHY: explicitly; the gap then renders marker-only with the count covering the full span.
+    const tail = contextLines === 0 ? [] : displayLines.slice(-contextLines);
     linesToShow = [...displayLines.slice(0, contextLines), UNTOUCHED_MARKER, ...tail];
     skipMiddle = displayLines.length - contextLines * 2;
   } else if (!nextPartIsChange && linesToShow.length > contextLines) {
@@ -111,7 +113,8 @@ function contextLinesToShow(
  *   they stay addressable through the served leases), and ` - ... [N lines deleted] ...`
  *   advances the old cursor past N deleted rows (cursor-exact).
  * - collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172);
- *   bare ` ...` appears only at leading/trailing edges; added spans are never collapsed.
+ *   at context 0 every non-empty middle gap collapses to a single counted untouched
+ *   marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed.
  * - servedRows mirror exactly the rendered context/addition rows (position + hash).
  */
 export function genDiff(
