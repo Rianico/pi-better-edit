@@ -2,19 +2,7 @@
 
 ## [Unreleased]
 
-### Features
-
-* **edit-diff:** formalize the single-projection contract with counted span markers (#174)
-
-### Bug Fixes
-
-* verify preview against the session that served the anchors (#168)
-* **edit-diff:** render small middle gaps whole, keep anchors aligned (#172)
-* **edit-diff:** render ctx-0 middle gaps marker-only with correct skip (#175)
-
-### Miscellaneous Chores
-
-* **scaffold:** refresh the git contract to the current generation (#167)
+## [2.3.0] - 2026-09-27
 
 ## [2.2.0](https://github.com/Rianico/pi-better-edit/compare/v2.1.0...v2.2.0) (2026-09-22)
 
