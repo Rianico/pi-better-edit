@@ -93,6 +93,34 @@ describe("genDiff gap trimming (#166)", () => {
     expect(servedRows.some((r) => r.position === 11 && r.hash === hashes[11])).toBe(true);
   });
 
+  it("renders a middle gap marker-only at context 0 with exact skip accounting (#170)", () => {
+    const gap = ["g1", "g2", "g3", "g4", "g5"];
+    const oldContent = ["a", "b", ...gap, "c", "d"].join("\n") + "\n";
+    const newContent = ["a", "B", ...gap, "C", "d"].join("\n") + "\n";
+    const newHashes = _lineHashesPure(newContent);
+    const oldHashes = _lineHashesPure(oldContent);
+
+    const { diff, servedRows } = genDiff(oldContent, newContent, 0, newHashes, oldHashes);
+
+    expect(diff).toBe(
+      [
+        " ...",
+        `-${oldHashes[1]}│b`,
+        `+${newHashes[1]}│B`,
+        " ... [5 lines untouched] ...",
+        `-${oldHashes[7]}│c`,
+        `+${newHashes[7]}│C`,
+      ].join("\n"),
+    );
+    // No context row may leak into the collapsed gap, and the trailing edge stays silent.
+    gap.forEach((line) => expect(rowFor(diff, line)).toBeUndefined());
+    expect(rowFor(diff, "d")).toBeUndefined();
+    expect(servedRows).toEqual([
+      { position: 1, hash: newHashes[1] },
+      { position: 7, hash: newHashes[7] },
+    ]);
+  });
+
   it("trims a trailing gap to contextLines without any marker", () => {
     const tail = ["t1", "t2", "t3", "t4", "t5", "t6"];
     const oldContent = ["a", ...tail].join("\n") + "\n";

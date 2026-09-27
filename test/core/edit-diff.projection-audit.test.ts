@@ -49,6 +49,37 @@ function auditProjection(oldContent: string, newContent: string, contextLines: n
   const rows = diff.split("\n");
   rows.forEach((line, idx) => {
     const at = `context=${contextLines} row ${idx} ${JSON.stringify(line)}`;
+    if (line === " ...") {
+      // Leading-edge silent trim (#169 exception): the bare ellipsis hides an uncounted span.
+      // Recover its length by matching the next anchored row against the true hashes, and
+      // require the hidden span to be identical untouched context on both sides.
+      expect(idx, `${at}: bare ellipsis away from the leading edge`).toBe(0);
+      const next = rows[idx + 1];
+      if (next === undefined) expect.fail(`${at}: ellipsis without a following row`);
+      const nextPrefix = next[0];
+      const nextHash = next.slice(1, 1 + ANCHOR_LEN);
+      const nextText = next.slice(1 + ANCHOR_LEN + HASH_SEP.length);
+      const onNewSide = nextPrefix === " " || nextPrefix === "+";
+      const hashes = onNewSide ? newHashes : oldHashes;
+      const lines = onNewSide ? newLines : oldLines;
+      const pos = onNewSide ? newPos : oldPos;
+      let jump = 1;
+      while (
+        jump < lines.length &&
+        !(lines[pos + jump] === nextText && hashes[pos + jump] === nextHash)
+      ) {
+        jump++;
+      }
+      expect(lines[pos + jump], `${at}: ellipsis hides no anchorable row`).toBe(nextText);
+      for (let k = 0; k < jump; k++) {
+        expect(oldLines[oldPos + k], `${at}: ellipsis hides a changed row`).toBe(
+          newLines[newPos + k],
+        );
+      }
+      newPos += jump;
+      oldPos += jump;
+      return;
+    }
     const untouched = UNTOUCHED_MARKER.exec(line);
     if (untouched) {
       // The hidden span must be lease-covered and exact: the audit advances both cursors by
@@ -89,16 +120,26 @@ function auditProjection(oldContent: string, newContent: string, contextLines: n
     expect.fail(`${at}: unrecognised projection row`);
   });
 
-  // Cursors walking the projection must land exactly at each file's end: any marker count that
-  // disagrees with its hidden span, or any desynced anchor, lands short or overshoots.
-  expect(newPos, `context=${contextLines}: new cursor`).toBe(newLines.length);
-  expect(oldPos, `context=${contextLines}: old cursor`).toBe(oldLines.length);
+  // Cursors walking the projection must land exactly at each file's end, or stop short by the
+  // same untouched trailing span (the trailing-edge silent trim exception): any marker count
+  // that disagrees with its hidden span, or any desynced anchor, lands short or overshoots.
+  const newShort = newLines.length - newPos;
+  const oldShort = oldLines.length - oldPos;
+  expect(oldShort, `context=${contextLines}: old cursor`).toBe(newShort);
+  expect(newShort, `context=${contextLines}: new cursor past the file end`).toBeGreaterThanOrEqual(
+    0,
+  );
+  for (let k = 0; k < newShort; k++) {
+    expect(oldLines[oldPos + k], `context=${contextLines}: trailing trim hides a change`).toBe(
+      newLines[newPos + k],
+    );
+  }
   expect(servedRows, `context=${contextLines}: servedRows`).toEqual(renderedRows);
   return diff;
 }
 
-describe("projection contract audit — middle-gap corpus (#169)", () => {
-  for (const contextLines of [1, 2, 4]) {
+describe("projection contract audit — middle-gap corpus (#169/#170)", () => {
+  for (const contextLines of [0, 1, 2, 4]) {
     const boundary = 2 * contextLines;
     const corpus = [
       { gap: boundary, whole: true },
@@ -147,9 +188,9 @@ describe("projection contract audit — middle-gap corpus (#169)", () => {
   });
 });
 
-describe("projection contract audit — deleted-run corpus (#169)", () => {
-  // Context 0 is excluded: its leading/trailing edge trim is the separate #170 defect.
-  for (const contextLines of [1, 2]) {
+describe("projection contract audit — deleted-run corpus (#169/#170)", () => {
+  // Context 0 exercises the leading/trailing edge trims alongside the deleted-span markers.
+  for (const contextLines of [0, 1, 2]) {
     for (const run of [7, 12, 40]) {
       it(`deleted run ${run} at context ${contextLines} keeps old-side anchors aligned`, () => {
         const { oldContent, newContent } = deletedRunCase(run);
