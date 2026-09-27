@@ -10,6 +10,7 @@
 
 * verify preview against the session that served the anchors (#168)
 * **edit-diff:** render small middle gaps whole, keep anchors aligned (#172)
+* **edit-diff:** render ctx-0 middle gaps marker-only with correct skip (#175)
 
 ### Miscellaneous Chores
 
