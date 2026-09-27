@@ -38,8 +38,8 @@ function fmtDiffLine(prefix: " " | "+" | "-", line: string, hash: string | undef
   return `${prefix}${hash}${HASH_SEP}${line}`;
 }
 
-const ELLIPSIS_MARKER: unique symbol = Symbol("ellipsis");
-const isEllipsisMarker = (line: string | symbol): line is symbol => line === ELLIPSIS_MARKER;
+const UNTOUCHED_MARKER: unique symbol = Symbol("untouched");
+const isUntouchedMarker = (line: string | symbol): line is symbol => line === UNTOUCHED_MARKER;
 
 function pushAddedLines(
   displayLines: string[],
@@ -72,9 +72,10 @@ function pushRemovedLines(
   }
   const omitted = displayLines.length - DIFF_REMOVED_EDGE * 2;
   for (const line of displayLines.slice(0, DIFF_REMOVED_EDGE)) emit(line);
-  // WHY: ADR-0024 — the model sees the deletion's head, tail, and exact size; the omitted rows still
+  // WHY: ADR-0024 — the model sees the deletion's head, tail, and exact size; the hidden rows still
   // WHY: advance the cursor so every later row keeps its exact old line number and hash.
-  output.push(` - ... [${omitted} lines omitted] ...`);
+  // WHY: #169 — the marker's count is the exact deleted span and uses the unified `lines deleted` diction.
+  output.push(` - ... [${omitted} lines deleted] ...`);
   oldLineNum.value += omitted;
   for (const line of displayLines.slice(-DIFF_REMOVED_EDGE)) emit(line);
 }
@@ -92,7 +93,7 @@ function contextLinesToShow(
     linesToShow = displayLines.slice(skipStart);
   } else if (nextPartIsChange && displayLines.length > contextLines * 2) {
     const tail = displayLines.slice(-contextLines);
-    linesToShow = [...displayLines.slice(0, contextLines), ELLIPSIS_MARKER, ...tail];
+    linesToShow = [...displayLines.slice(0, contextLines), UNTOUCHED_MARKER, ...tail];
     skipMiddle = displayLines.length - contextLines * 2;
   } else if (!nextPartIsChange && linesToShow.length > contextLines) {
     // WHY: #166 — only trailing gaps may be sliced away silently; a middle gap renders whole
@@ -101,6 +102,18 @@ function contextLinesToShow(
   }
   return { linesToShow, skipStart, skipMiddle };
 }
+/**
+ * genDiff is the single diff projection (#169). Return contract:
+ * - every emitted row's anchor equals the true new-file line content hash at that
+ *   position; removed rows carry the true old-file hash when old hashes are provided.
+ * - every emitted marker's count equals the span it hides:
+ *   ` ... [N lines untouched] ...` advances both cursors past N hidden rows (lease-covered,
+ *   they stay addressable through the served leases), and ` - ... [N lines deleted] ...`
+ *   advances the old cursor past N deleted rows (cursor-exact).
+ * - collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172);
+ *   bare ` ...` appears only at leading/trailing edges; added spans are never collapsed.
+ * - servedRows mirror exactly the rendered context/addition rows (position + hash).
+ */
 export function genDiff(
   oldContent: string,
   newContent: string,
@@ -158,8 +171,10 @@ export function genDiff(
         oldLineNum += skipStart;
       }
       for (const line of linesToShow) {
-        if (isEllipsisMarker(line)) {
-          output.push(" ...");
+        if (isUntouchedMarker(line)) {
+          // WHY: #169 — a hidden middle span is a counted `lines untouched` marker; both cursors
+          // WHY: advance past the exact hidden count, so anchors after it stay aligned.
+          output.push(` ... [${skipMiddle} lines untouched] ...`);
           newLineNum += skipMiddle;
           oldLineNum += skipMiddle;
           continue;

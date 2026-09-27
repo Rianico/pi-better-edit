@@ -9,7 +9,14 @@ beforeAll(async () => {
 const rowFor = (diff: string, text: string): string | undefined =>
   diff.split("\n").find((line) => line.endsWith(`│${text}`));
 
-const markers = (diff: string): number => diff.split("\n").filter((line) => line === " ...").length;
+const isUntouchedMarker = (line: string): boolean =>
+  /^ \.\.\. \[\d+ lines untouched\] \.\.\.$/.test(line);
+const isDeletedMarker = (line: string): boolean =>
+  /^ - \.\.\. \[\d+ lines deleted\] \.\.\.$/.test(line);
+const markers = (diff: string): number =>
+  diff
+    .split("\n")
+    .filter((line) => line === " ..." || isUntouchedMarker(line) || isDeletedMarker(line)).length;
 
 describe("genDiff gap trimming (#166)", () => {
   it("renders a 6-line middle gap whole at context 4 with true anchors after the gap", () => {
@@ -68,6 +75,7 @@ describe("genDiff gap trimming (#166)", () => {
     const { diff, servedRows } = genDiff(oldContent, newContent, 4, hashes);
 
     expect(markers(diff)).toBe(1);
+    expect(diff.split("\n")).toContain(" ... [1 lines untouched] ...");
     expect(rowFor(diff, "g1")).toBe(` ${hashes[2]}│g1`);
     expect(rowFor(diff, "g4")).toBe(` ${hashes[5]}│g4`);
     expect(rowFor(diff, "g5")).toBeUndefined();
