@@ -9,7 +9,7 @@
 </p>
 
 <p align="center">
-  <a href="#why-pi-better-edit-v2"><img src="https://img.shields.io/badge/architecture-MVCC_v2-blue?style=flat" alt="MVCC v2"></a>
+  <a href="#systematic-architecture"><img src="https://img.shields.io/badge/architecture-MVCC_v2-blue?style=flat" alt="MVCC v2"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-30s-brightgreen?style=flat" alt="quick start 30s"></a>
   <a href="#reproducible-benchmarks"><img src="https://img.shields.io/badge/correctness-27%2F27-success?style=flat" alt="27/27 battery"></a>
   <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/v/pi-better-edit?color=crimson" alt="npm version"></a>
@@ -19,44 +19,59 @@
 </p>
 
 <p align="center">
-  <a href="#why-pi-better-edit-v2">Why v2 MVCC</a> •
+  <a href="#why-you-need-it">Why You Need It</a> •
+  <a href="#core-pillars">Core Pillars</a> •
   <a href="#quick-start">Quick Start</a> •
   <a href="#systematic-architecture">Architecture</a> •
   <a href="#tools">Tools</a> •
   <a href="#error-and-warning-contract">Errors & Warnings</a> •
   <a href="#comparison">Comparison</a> •
-  <a href="#reproducible-benchmarks">Benchmarks</a> •
-  <a href="#upgrading-from-1x">Upgrading</a>
+  <a href="#reproducible-benchmarks">Benchmarks</a>
 </p>
 
 ---
 
-> *"The harness — not the model — is the bottleneck."* — Can Bölük, [*The Harness Problem*](https://stencil.so/blog/the-harness-problem)
+> **What is `pi-better-edit`?**
+> A high-precision file editing extension for [`pi-coding-agent`](https://github.com/can1357/oh-my-pi) that replaces volatile line numbers and token-wasting code echoes with immutable, content-addressed 3-character line hashes (`szJ│code`).
 >
-> When an LLM edits code, line numbers shift under its feet and re-typing text wastes tokens while inviting hallucinations. Naive hashline tools force the model to manually track line renumbering, while early heuristic implementations attempted to guess anchor targets—causing catastrophic silent miswrites when identical lines existed (e.g. duplicate function guards).
->
-> **`pi-better-edit` v2 solves this systematically.** Built on **Content-Addressed Line-Identity MVCC**, every line is tracked by an immutable lineage ID, verified across session-keyed leases, and aligned via Patience LIS sorting. Edits auto-rebase across non-conflicting external shifts (0 tokens burned, 0 retries), and true conflicts fail closed with immediate fresh ranges.
+> **Core Philosophy:** Local compute is free; **the model's context window is the most precious resource**. By shifting verification, snapshotting, and alignment to the host, `pi-better-edit` slashes output tokens by 40–60%, auto-rebases external file drift (e.g., Prettier, Git), and eliminates silent miswrites without forcing full-file re-reads.
 
-## Why pi-better-edit v2
+---
 
-| Traditional (`str_replace` / Line Numbers) | Naive Hashline / Tagged Patches | pi-better-edit v2 (Line-Identity MVCC) |
+## Why You Need It
+
+### The 3 Fatal Editing Traps of Autonomous Coding Agents
+
+File editing is the #1 point of failure for autonomous agents. Traditional tools break down in three distinct ways:
+
+| Fatal Trap in Traditional Tools | Why It Breaks Agents | How `pi-better-edit` Solves It |
 | --- | --- | --- |
-| Model re-types old code (output billed ~5–6× input) | Sends line numbers + full-file content tags | **Sends two 3-char hashes**; old code is never re-typed |
-| One insert above shifts every line below → silent corruption | Requires agent to mentally renumber lines after every edit | **Anchors are content addresses**; exterior shifts auto-rebase cleanly |
-| No verification against what the model was served | Verifies file version, but not individual line coordinates | **Leased spans verified against snapshot lineage** before touching disk |
-| Duplicate lines cause ambiguous replacement failures | Line numbers distinguish lines, but position is unverified | **Coprime bitset probing** assigns unique hashes; 0 duplicate ambiguity |
-| External file drift causes blind overwrite or failure | Best-effort 3-way merge or tag rejection | **Fail-closed reject-and-serve**: rejects edit and returns fresh anchors in 1 turn |
+| **`str_replace` Token Bleed** | Must re-type 30+ lines of unchanged code just to change 1 line ($O(S+R)$), burning expensive output tokens (billed ~5–6× input). | **$O(R)$ Payloads**: Sends only two 3-char hashes (`anchor_from`, `anchor_to`) + replacement. Cuts output tokens by 40–60%. |
+| **Line-Number Coordinate Rot** | Inserting 1 line shifts all line numbers below it. Agents suffer off-by-one errors or must repeatedly re-read the file. | **Position-Independent Anchors**: Line hashes follow content, not line coordinates. Exterior shifts auto-rebase cleanly. |
+| **Silent Miswrites & Drift** | Duplicate lines match the wrong function; external formatters (Prettier) or git updates cause blind overwrites or fatal errors. | **Line-Identity MVCC**: Unique anchors via coprime probing; format-tolerant whitespace hashing; fail-closed reject-and-serve. |
 
-### Key Properties of a Mature & Systematic Implementation
+---
 
-- **Decoupled Line Identity (MVCC)**: Line identity belongs to an immutable, monotonic `line_id` in CAS snapshot storage, not to volatile line coordinates or ephemeral anchor strings.
-- **Zero-Token Auto-Rebase**: Non-conflicting exterior shifts (insertions above, comments, automated formatters like Prettier/ESLint) auto-rebase silently without agent intervention (0 extra tokens, 0 retries).
-- **Fail-Closed Reject-and-Serve**: True semantic conflicts (deleted targets, torn interior spans, contested reorders) fail closed. Instead of forcing a separate `read` round-trip, the tool immediately serves the fresh on-disk `HASH│content` range in the rejection (`[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]`).
-- **No Heuristic Guessing (ADR-0016)**: v2 retires the 1.x heuristic healing era (`tryHealOrphanedSpan`). Heuristic matching of duplicate lines caused silent miswrites (Probe E). v2 guarantees that if a line cannot be unambiguously resolved via lease lineage, it fails closed safely.
-- **Session-Keyed Lease Isolation (ADR-0002)**: Leases are isolated per session (`served_leases`). Sub-agent sessions never validate or contaminate main session edits.
-- **Atomic Multi-Item Batches**: Apply up to 32 same-file edits in one `edit` call with preceding-delta tracking in an in-memory working buffer. Overlapping spans abort atomically (`[E_BATCH_ABORT]`) before touching disk.
+## Core Pillars
+
+### 1. 🪙 Token Economics (40–60% Context Savings)
+- **$O(R)$ Edit Payloads**: The model emits only `{ "anchor_from": "a1b", "anchor_to": "c3d", "replace_with": "..." }`, never regurgitating existing code.
+- **Self-Serving Diffs**: Every applied edit returns fresh anchors in the post-edit diff — zero re-read roundtrips to chain edits.
+- **Disjoint Multi-Window Reads**: Query up to 16 disjoint slices (`windows: [{offset, limit}, ...]`) in one turn instead of dumping 2,000 lines into context.
+- **Zero-Token Auto-Rebase**: Non-conflicting shifts resolve locally via $O(m \log m)$ Patience LIS alignment — 0 tokens, 0 retries.
+- **Atomic Multi-Item Batches**: Apply up to 32 same-file edits in one tool call; overlapping spans abort atomically before touching disk.
+
+### 2. 🛡️ Resistance to External Writes (Drift & Concurrency)
+- **Auto-Formatter Immunity**: Strips ASCII whitespace before hashing. Prettier, Black, and ESLint format-on-save passes never rotate anchors.
+- **Exterior Shift Auto-Rebase**: External edits, git checkouts, or background processes outside the edit span rebase seamlessly without agent intervention.
+- **Fail-Closed Reject-and-Serve**: Contested interior spans fail closed without disk corruption and immediately return fresh on-disk rows in the error (`[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]`) — recovering in **exactly 1 turn**.
+- **Session-Keyed Leases**: Leases are isolated per session (`served_leases`), preventing cross-agent race conditions or state pollution.
+
+### 3. 🎯 Zero Silent Miswrites (Formal MVCC)
+- **Decoupled Line Identity**: Every line is tracked by an immutable, monotonic `line_id` in CAS snapshot storage, not ephemeral coordinates.
+- **Collision-Free Anchors**: Coprime bitset probing ensures duplicate lines in a file receive distinct, unambiguous 3-character hashes.
+- **No Heuristic Guessing (ADR-0016)**: Retires fuzzy matching. If an anchor cannot be unambiguously resolved via lease lineage, it fails closed safely.
 - **Persisted Undo**: `undo_last_edit` restores exact file content, BOM, line endings, and original anchors, persisting across session restarts.
-- **Formatter-Tolerant**: ASCII-whitespace canonicalization preserves anchors across editor format-on-save cycles while retaining token-level sensitivity.
 
 ---
 
@@ -141,17 +156,17 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 ┌──────────────────────────────────────────────────────────────────────────────────┐
 │                                STORAGE TIER                                      │
 │  src/hash-store.ts & src/snapshot-store/                                         │
-│  - file_snapshots: CAS snapshots (snapshot_id, path, snapshot_hash, line_count)   │
+│  - file_snapshots: CAS snapshots (snapshot_id, path, snapshot_hash, line_count)  │
 │  - line_lineage: Coordinate authority (snapshot_id, line_number) -> (line_id)    │
-│  - line_id_counters: Monotonic integer block allocator per path                 │
-│  - served_leases: Session-keyed immutable leases (session_id, path, anchor)     │
+│  - line_id_counters: Monotonic integer block allocator per path                  │
+│  - served_leases: Session-keyed immutable leases (session_id, path, anchor)      │
 │  - file_undo: Snapshot-pinned undo history surviving restarts                    │
 └────────────────────────────────────────┬─────────────────────────────────────────┘
                                          │
 ┌────────────────────────────────────────▼─────────────────────────────────────────┐
 │                                SESSION TIER                                      │
 │  src/served-session/session.ts                                                   │
-│  - Leases: Granted on read, diff, rejection fresh-reads, and undo               │
+│  - Leases: Granted on read, diff, rejection fresh-reads, and undo                │
 │  - Immutability: Leases are strictly READ-ONLY during edit resolution            │
 │  - Re-Serve Upsert: Atomic upsert updates leases when presentation changes       │
 └────────────────────────────────────────┬─────────────────────────────────────────┘
