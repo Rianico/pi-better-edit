@@ -9,7 +9,7 @@ import { resolveTarget, writeAtomic } from "./fs-write.js";
 import { toCwd } from "./paths.js";
 import { DEFERRED_STORE_SYNC_WARNING } from "./constants.js";
 import { toLF, stripBOM, genDiff, restoreEndings, type LineEnding } from "./edit-diff.js";
-import { cntDiff, visLines, splitLines, errCode, isRec, normalizeFilePath } from "./utils.js";
+import { visLines, splitLines, errCode, isRec, normalizeFilePath } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError } from "./domain-errors.js";
@@ -198,9 +198,23 @@ export function regEditUndo(pi: ExtensionAPI): void {
           console.error("Failed to load anchors for undo restore:", error);
         }
         const currentHashes = await lineHashes(currentNormalized, mutationTargetPath);
-        const diffResult = genDiff(undo.content, currentNormalized, 0, undefined, undo.hashes);
-        const linesAddedByEdit = cntDiff(diffResult.diff, "+");
-        const linesRemovedByEdit = cntDiff(diffResult.diff, "-");
+        // WHY: #173 — the summary counts come from the source line multisets, never from the
+        // WHY: rendered projection: a deleted run past DIFF_REMOVED_CAP collapses behind a marker
+        // WHY: row at context 0, so counting `-` rows underreported the restored lines (#169
+        // WHY: projection-purity rule). A line the edit added is one present in the current file
+        // WHY: beyond its occurrence count in `undo.content`; a line it removed is the converse.
+        const remainingUndoCounts = new Map<string, number>();
+        for (const line of visLines(undo.content)) {
+          remainingUndoCounts.set(line, (remainingUndoCounts.get(line) ?? 0) + 1);
+        }
+        let linesAddedByEdit = 0;
+        for (const line of visLines(currentNormalized)) {
+          const remaining = remainingUndoCounts.get(line) ?? 0;
+          if (remaining > 0) remainingUndoCounts.set(line, remaining - 1);
+          else linesAddedByEdit++;
+        }
+        let linesRemovedByEdit = 0;
+        for (const remaining of remainingUndoCounts.values()) linesRemovedByEdit += remaining;
         const restoredRange = changedRange(currentNormalized, undo.content);
         const undoDiffResult = genDiff(
           currentNormalized,
