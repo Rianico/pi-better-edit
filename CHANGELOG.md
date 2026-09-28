@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **edit-undo:** derive undo-summary counts from source inputs, not rendered rows (#9)
+
 ## [2.3.0] - 2026-09-27
 
 ## [2.2.0](https://github.com/Rianico/pi-better-edit/compare/v2.1.0...v2.2.0) (2026-09-22)
