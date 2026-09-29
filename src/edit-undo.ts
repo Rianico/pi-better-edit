@@ -185,7 +185,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
         const restoredContentHash = undo.snapshotHash ?? snapshotHashFor(undo.content);
         const restoredLineCount = splitLines(undo.content).length;
         // WHY: the pinned snapshot is the authority for the restored rows (spec §3.1.4 step 4:
-        // WHY: presentation anchors are never re-derived). The retired ADR-0013 tombstone path used
+        // WHY: presentation anchors are never re-derived). The retired ADR-0013 blocked-hashes path used
         // WHY: to mint fresh anchors for lines the edit had displaced — anchors absent from the
         // WHY: adopted lineage, so no `served_leases` row could ever reference them and the model
         // WHY: was forced into a `read` before it could edit again (Probe §7.2.9).

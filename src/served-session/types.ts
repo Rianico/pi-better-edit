@@ -42,9 +42,9 @@ export interface SessionHandle {
   loadCanonDigests(): Promise<(string | null)[]>;
   /** SAFETY: Load epoch snapshotId. */
   loadEpochId(): Promise<string | undefined>;
-  /** SAFETY: Load tombstone (retired hashes) for this epoch. */
-  loadTombstone(): Promise<Set<string>>;
-  /** SAFETY: Retire hashes (add to tombstone). */
+  /** SAFETY: Load blocked hashes (retired hashes) for this epoch. */
+  loadBlockedHashes(): Promise<Set<string>>;
+  /** SAFETY: Retire hashes (add to the blocked hashes). */
   retire(hashes: Iterable<string>): Promise<void>;
   /** SAFETY: Record arbitrary served rows (position → hash). */
   record(rows: ServedEntry[]): Promise<void>;
@@ -78,7 +78,7 @@ export interface SessionHandle {
     lineCount?: number,
     contentHash?: string,
   ): Promise<void>;
-  /** SAFETY: Low-level full epoch record (used by read path for atomically persisting hashes+snapshotId+tombstone). */
+  /** SAFETY: Low-level full epoch record (used by read path for atomically persisting hashes+snapshotId+blockedHashes set). */
   recordEpoch(input: {
     rows: ServedEntry[];
     lineCount?: number;

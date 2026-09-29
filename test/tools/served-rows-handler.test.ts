@@ -172,7 +172,7 @@ describe("served-rows tool_result handler", () => {
 
       // Re-served unchanged anchors must re-lease against the restored snapshot (a cache hit),
       // not the newest materialization the pre-undo edit produced. The middle anchor is not
-      // asserted here: the undo tombstone rotates it (undo usability is #82's slice).
+      // asserted here: the undo blocked-hash rotation rotates it (undo usability is #82's slice).
       const unchanged = [originalHashes[0]!, originalHashes[2]!];
       const restored = loadLeases(store, "test-session", filePath).filter((lease) =>
         unchanged.includes(lease.anchor),

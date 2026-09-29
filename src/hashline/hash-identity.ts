@@ -64,7 +64,7 @@ export interface HashOptions {
   prior?: HashPrior;
   persist?: boolean;
   snapshotIO?: HashSnapshotIO;
-  tombstone?: ReadonlySet<string>;
+  blockedHashes?: ReadonlySet<string>;
   /** Passed to `HashSnapshotIO.upsert`; see `HashSnapshotUpsertOptions`. Defaults to `false`. */
   retireLeases?: boolean;
 }
@@ -208,14 +208,14 @@ export class HashIdentity {
     return this.hashAt(nextIdx);
   }
 
-  private lineHashesPure(content: string, tombstone?: ReadonlySet<string>): string[] {
+  private lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
     const lines = splitLines(content);
     const hashes = new Array<string>(lines.length);
     const used = new Uint32Array(BITSET_WORDS);
     const hint = { value: 0 };
     const canonCache = new Map<string, string>();
-    if (tombstone) {
-      for (const h of tombstone) this.markHashUsed(h, used, hint);
+    if (blockedHashes) {
+      for (const h of blockedHashes) this.markHashUsed(h, used, hint);
     }
     for (let i = 0; i < lines.length; i++) {
       const c = getCanon(canonCache, lines[i]!);
@@ -341,7 +341,7 @@ export class HashIdentity {
     oldHashes: string[],
     newContent: string,
     removedHashes?: Set<string>,
-    tombstone?: ReadonlySet<string>,
+    blockedHashes?: ReadonlySet<string>,
   ): string[] {
     const oldLines = splitLines(oldContent);
     const newLines = splitLines(newContent);
@@ -351,8 +351,8 @@ export class HashIdentity {
     const hint = { value: 0 };
     const removed = removedHashes ?? new Set<string>();
     const oldHashIndex = this.buildOldHashIndex(oldHashes, used);
-    if (tombstone) {
-      for (const h of tombstone) this.markHashUsed(h, used, hint);
+    if (blockedHashes) {
+      for (const h of blockedHashes) this.markHashUsed(h, used, hint);
     }
     const removedIndexes = this.collectRemovedIndexes(removed, oldHashIndex);
     const { spanEnd, shiftAfterSpan } = this.computeSpan(
@@ -394,10 +394,10 @@ export class HashIdentity {
           prior.hashes,
           content,
           prior.removedHashes,
-          options?.tombstone,
+          options?.blockedHashes,
         );
       }
-      return this.lineHashesPure(content, options?.tombstone);
+      return this.lineHashesPure(content, options?.blockedHashes);
     }
 
     if (prior) {
@@ -406,7 +406,7 @@ export class HashIdentity {
         prior.hashes,
         content,
         prior.removedHashes,
-        options?.tombstone,
+        options?.blockedHashes,
       );
       if (persist && snapshotIO) {
         try {
@@ -458,7 +458,7 @@ export class HashIdentity {
       return cached;
     }
 
-    const newHashes = this.lineHashesPure(content, options?.tombstone);
+    const newHashes = this.lineHashesPure(content, options?.blockedHashes);
     if (persist && snapshotIO) {
       try {
         await snapshotIO.upsert(
@@ -477,8 +477,8 @@ export class HashIdentity {
     return newHashes;
   }
 
-  hashesForSync(content: string, tombstone?: ReadonlySet<string>): string[] {
-    return this.lineHashesPure(content, tombstone);
+  hashesForSync(content: string, blockedHashes?: ReadonlySet<string>): string[] {
+    return this.lineHashesPure(content, blockedHashes);
   }
 
   static create(snapshotIO?: HashSnapshotIO): HashIdentity {
@@ -494,8 +494,8 @@ function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
   defaultHashIdentity.setSnapshotIO(io);
 }
 
-export function _lineHashesPure(content: string, tombstone?: ReadonlySet<string>): string[] {
-  return defaultHashIdentity.hashesForSync(content, tombstone);
+export function _lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
+  return defaultHashIdentity.hashesForSync(content, blockedHashes);
 }
 
 export async function lineHashes(
@@ -504,13 +504,13 @@ export async function lineHashes(
   previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
   io?: HashSnapshotIO,
   persist?: boolean,
-  tombstone?: ReadonlySet<string>,
+  blockedHashes?: ReadonlySet<string>,
 ): Promise<string[]> {
   return defaultHashIdentity.hashesFor(content, {
     path,
     prior: previous,
     persist: persist ?? true,
     snapshotIO: io,
-    tombstone,
+    blockedHashes,
   });
 }

@@ -134,7 +134,7 @@ interface ApplyOneEditInput {
   signal?: AbortSignal;
   filePath: string;
   served: (string | null)[];
-  tombstone?: ReadonlySet<string>;
+  blockedHashes?: ReadonlySet<string>;
   canonDigests?: (string | null)[];
   sessionKey: string;
   absolutePath: string;
@@ -191,7 +191,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       absolutePath: input.absolutePath,
       sessionKey: input.sessionKey,
       served: input.served,
-      ...(input.tombstone !== undefined ? { tombstone: input.tombstone } : {}),
+      ...(input.blockedHashes !== undefined ? { blockedHashes: input.blockedHashes } : {}),
       ...(input.canonDigests !== undefined ? { canonDigests: input.canonDigests } : {}),
       identity,
       ...(input.mode !== undefined ? { mode: input.mode } : {}),
@@ -241,8 +241,8 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     // WHY: that wrote nothing retire every anchor the session still validly held.
     persist: false,
     snapshotIO: snapshotIOFor(input.store),
-    // SAFETY: tombstone passed as ReadonlySet via unknown for HashIdentity compatibility — input.tombstone is already typed, cast preserves immutability
-    tombstone: input.tombstone as unknown as ReadonlySet<string> | undefined,
+    // SAFETY: blockedHashes passed as ReadonlySet via unknown for HashIdentity compatibility — input.blockedHashes is already typed, cast preserves immutability
+    blockedHashes: input.blockedHashes as unknown as ReadonlySet<string> | undefined,
     // SAFETY: the options object is typed by HashIdentity's internal parameter shape, which the
     // SAFETY: caller never sees; every field above is already typed, so the cast widens nothing.
   } as unknown as Parameters<typeof defaultHashIdentity.hashesFor>[1]);
@@ -413,7 +413,7 @@ async function runMutations(
   const editedIntervals: ResolvedRange[] = [];
   let lastApplied: { content: string; hashes: string[]; removedHashes: Set<string> } | undefined;
   // WHY: (#117, spec §3.2.4 step 4) the legacy v6 `served.retired` mirror is read-only
-  // WHY: in-memory during the batch. `batchTombstone` starts from the store snapshot and grows
+  // WHY: in-memory during the batch. `batchBlockedHashes` starts from the store snapshot and grows
   // WHY: with each applied item's removals, so later items still observe earlier removals for
   // WHY: hash-allocation and verification without any store write before `writeAtomic`.
   // WHY: `accumulatedRemoved` is the post-commit payload, retired once after the bytes are on disk.
@@ -428,17 +428,17 @@ async function runMutations(
     console.error("Failed to load served canon digests for batch:", error);
     baseCanonDigests = [];
   }
-  const batchTombstone = new Set<string>();
+  const batchBlockedHashes = new Set<string>();
   try {
     for (const hash of await createSessionHandle(
       sessionKey,
       absolutePath,
       hashStore,
-    ).loadTombstone()) {
-      batchTombstone.add(hash);
+    ).loadBlockedHashes()) {
+      batchBlockedHashes.add(hash);
     }
   } catch (error) {
-    console.error("Failed to load legacy tombstone for batch:", error);
+    console.error("Failed to load legacy blocked hashes for batch:", error);
   }
   const accumulatedRemoved = new Set<string>();
 
@@ -454,7 +454,7 @@ async function runMutations(
       signal: options?.signal,
       filePath: path,
       served,
-      tombstone: batchTombstone,
+      blockedHashes: batchBlockedHashes,
       canonDigests: baseCanonDigests,
       sessionKey,
       absolutePath,
@@ -530,11 +530,11 @@ async function runMutations(
     totalAddedLines += added;
     totalRemovedLines += removed;
     // WHY: (#117, spec §3.2.4 step 4) no store mutation before `writeAtomic`. The removed hashes
-    // WHY: accumulate in-memory for the post-commit legacy retire; `batchTombstone` keeps later
+    // WHY: accumulate in-memory for the post-commit legacy retire; `batchBlockedHashes` keeps later
     // WHY: items observing earlier removals without touching the store, so a failed batch retires
     // WHY: nothing.
     for (const hash of outcome.removedHashes) {
-      batchTombstone.add(hash);
+      batchBlockedHashes.add(hash);
       accumulatedRemoved.add(hash);
     }
     lastApplied = {
@@ -735,7 +735,7 @@ export async function apply(
     // WHY: the working buffer while saveUndo/writeAtomic can still fail.
     // WHY: (#117) the legacy v6 `served.retired` mirror retires once here, after the bytes are on
     // WHY: disk, from the batch's in-memory accumulation. A failed batch never reaches this point,
-    // WHY: so it tombstones nothing. Best-effort with context on failure: the bytes already
+    // WHY: so it retires no blocked hashes. Best-effort with context on failure: the bytes already
     // WHY: committed, so the edit succeeds with a deferred-sync warning, never a silent swallow.
     if (file.removedHashes.size > 0) {
       try {
@@ -745,7 +745,7 @@ export async function apply(
             : createSessionHandle(sessionKey, file.absolutePath, options.store);
         await legacyHandle.retire(file.removedHashes);
       } catch (error) {
-        console.error("Failed to retire legacy tombstones after write:", error);
+        console.error("Failed to retire legacy blocked hashes after write:", error);
         file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
       }
     }

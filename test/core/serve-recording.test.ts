@@ -10,7 +10,7 @@ import {
   upsertServed,
   getReported,
   addReported,
-  loadTombstone,
+  loadBlockedHashes,
   loadEpochId,
   loadCanonDigests,
   loadLeases,
@@ -300,7 +300,7 @@ describe("write then edit — same-session drift-free (#70)", () => {
 });
 
 describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
-  it("partial merges window rows without touching snapshotId, tombstone, or reported", async () => {
+  it("partial merges window rows without touching snapshotId, blockedHashes, or reported", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "f.txt");
@@ -322,11 +322,11 @@ describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
       expect(getServed(store, "s1", path)).toEqual(["aaa", "BBB", "ccc"]);
       expect(await loadEpochId("s1", path)).toBeUndefined();
       expect(getReported(store, "s1", path)).toEqual(new Set(["bbb"]));
-      expect([...(await loadTombstone("s1", path))]).toContain("zzz");
+      expect([...(await loadBlockedHashes("s1", path))]).toContain("zzz");
     });
   });
 
-  it("full stores snapshotId and clears tombstone", async () => {
+  it("full stores snapshotId and clears the blocked hashes", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "f.txt");
@@ -347,7 +347,7 @@ describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
         isFullRead: true,
       });
       expect(await loadEpochId("s1", path)).toBe("snap-full");
-      expect([...(await loadTombstone("s1", path))]).toEqual([]);
+      expect([...(await loadBlockedHashes("s1", path))]).toEqual([]);
     });
   });
 });

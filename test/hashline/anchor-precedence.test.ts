@@ -36,7 +36,7 @@ function source(args: {
 }
 
 describe("anchor family precedence — one condition reaches exactly one code", () => {
-  it("tombstoned boundary with row here resolves to E_STALE_ANCHOR with a served window", () => {
+  it("blocked-hash boundary with row here resolves to E_STALE_ANCHOR with a served window", () => {
     const verifier = new ServedVerification();
     let caught: unknown;
     try {
@@ -46,7 +46,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
         fileHashes: ["AAA", "BBB"],
         fileLines: ["ALPHA", "BETA"],
         filePath: "a.py",
-        tombstone: new Set(["AAA"]),
+        blockedHashes: new Set(["AAA"]),
         canonDigests: [canonDigest("alpha"), canonDigest("beta")],
       });
     } catch (error) {

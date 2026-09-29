@@ -36,7 +36,7 @@ export interface LoadedEditFile {
   hadUtf8DecodeErrors: boolean;
   absolutePath: string;
   served: (string | null)[];
-  tombstone: ReadonlySet<string>;
+  blockedHashes: ReadonlySet<string>;
   canonDigests: (string | null)[];
 }
 
@@ -50,15 +50,15 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
       noPersist: source.noPersist,
     });
   const served = await createSessionHandle(source.sessionKey, absolutePath).load();
-  let tombstone: ReadonlySet<string> = new Set();
+  let blockedHashes: ReadonlySet<string> = new Set();
   let canonDigests: (string | null)[] = [];
   try {
     const handle = createSessionHandle(source.sessionKey, absolutePath, source.store);
     try {
-      tombstone = await handle.loadTombstone();
+      blockedHashes = await handle.loadBlockedHashes();
     } catch (error) {
-      console.error("Failed to load legacy tombstone for edit:", error);
-      tombstone = new Set<string>();
+      console.error("Failed to load legacy blocked hashes for edit:", error);
+      blockedHashes = new Set<string>();
     }
     try {
       canonDigests = await handle.loadCanonDigests();
@@ -77,7 +77,7 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
     hadUtf8DecodeErrors,
     absolutePath,
     served,
-    tombstone,
+    blockedHashes,
     canonDigests,
   };
 }

@@ -3,7 +3,7 @@
  *
  * The redesign scopes its whole identity authority to `(session_id, file_path, anchor)`: leases are
  * granted at serve time and resolved read-only at edit time, and the served mirror, the retired set
- * and the tombstone are per session. That makes multi-session behaviour a first-class invariant, not
+ * and the blocked hashes are per session. That makes multi-session behaviour a first-class invariant, not
  * an edge case — and none of the existing suites drive two live sessions against one store.
  *
  * Each `it` pins one isolation property:

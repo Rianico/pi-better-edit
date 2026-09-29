@@ -48,8 +48,8 @@ export function canon(line: string): string {
   return line.replace(CANON_RE, "");
 }
 
-export function _lineHashesPure(content: string, tombstone?: ReadonlySet<string>): string[] {
-  return _defaultHI.hashesForSync(content, tombstone);
+export function _lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
+  return _defaultHI.hashesForSync(content, blockedHashes);
 }
 
 async function _lineHashes(
@@ -58,13 +58,13 @@ async function _lineHashes(
   previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
   io?: HashSnapshotIO,
   persist?: boolean,
-  tombstone?: ReadonlySet<string>,
+  blockedHashes?: ReadonlySet<string>,
 ): Promise<string[]> {
   return _defaultHI.hashesFor(content, {
     path,
     prior: previous,
     persist: persist ?? true,
     snapshotIO: io as any,
-    tombstone,
+    blockedHashes,
   });
 }

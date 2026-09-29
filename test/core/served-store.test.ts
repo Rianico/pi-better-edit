@@ -780,7 +780,7 @@ describe("hash-store — recordServesTruncated", () => {
   });
 });
 
-describe("served state — tombstone epoch (ADR-0013)", () => {
+describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)", () => {
   it("retires displaced hashes on record and keeps them per session", async () => {
     await withTempHome(async () => {
       const { createSessionHandle } = await import("../../src/served-session/session.js");
@@ -792,24 +792,24 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
         { position: 2, hash: "ghi" },
       ]);
       await handle.record([{ position: 0, hash: "xyz" }]);
-      const tomb = await handle.loadTombstone();
-      expect(tomb.has("abc")).toBe(true);
-      expect(tomb.has("def")).toBe(false);
-      expect(tomb.has("ghi")).toBe(false);
+      const blocked = await handle.loadBlockedHashes();
+      expect(blocked.has("abc")).toBe(true);
+      expect(blocked.has("def")).toBe(false);
+      expect(blocked.has("ghi")).toBe(false);
       // other session not affected
       const other = createSessionHandle("sessionB", "/p.ts", store);
-      expect(await other.loadTombstone()).toEqual(new Set());
+      expect(await other.loadBlockedHashes()).toEqual(new Set());
     });
   });
 
-  it("recordEpoch full read clears tombstone and persists snapshotId, never a canon", async () => {
+  it("recordEpoch full read clears the blocked hashes and persists snapshotId, never a canon", async () => {
     await withTempHome(async () => {
       const { createSessionHandle } = await import("../../src/served-session/session.js");
       const store = await loadHashStore();
       const h = createSessionHandle("sessionA", "/p.ts", store);
       await h.record([{ position: 0, hash: "aaa" }]);
       await h.retire(["aaa"]);
-      expect(await h.loadTombstone()).toEqual(new Set(["aaa"]));
+      expect(await h.loadBlockedHashes()).toEqual(new Set(["aaa"]));
       await h.recordEpoch({
         rows: [
           { position: 0, hash: "bbb" },
@@ -819,7 +819,7 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
         fullReadHashes: ["bbb", "ccc"],
         snapshotId: "v2|/p.ts|1|2|3|4",
       });
-      expect(await h.loadTombstone()).toEqual(new Set());
+      expect(await h.loadBlockedHashes()).toEqual(new Set());
       // WHY: no canon is stored anywhere (#151). A record that granted no lease reports no evidence,
       // WHY: and the documented absence policy — silence, never a shape refusal — holds.
       expect(await h.loadCanonDigests()).toEqual([]);
@@ -827,7 +827,7 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
     });
   });
 
-  it("recordEpoch partial keeps tombstone and leaves the epoch id pinned", async () => {
+  it("recordEpoch partial keeps the blocked hashes and leaves the epoch id pinned", async () => {
     await withTempHome(async () => {
       const { createSessionHandle } = await import("../../src/served-session/session.js");
       const store = await loadHashStore();
@@ -850,8 +850,8 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
         snapshotId: "snap-2",
         isFullRead: false,
       });
-      const tomb = await h.loadTombstone();
-      expect(tomb.has("aaa")).toBe(true);
+      const blocked = await h.loadBlockedHashes();
+      expect(blocked.has("aaa")).toBe(true);
       expect(await h.loadEpochId()).toBe("snap-1");
     });
   });
@@ -886,7 +886,7 @@ describe("served state — tombstone epoch (ADR-0013)", () => {
       // snapshots should be gone - check via snapshot store
       const { getSnapshot: _getSnapshot } = await import("../../src/snapshot-store");
       // we didn't create snapshot, but ensure no crash
-      expect(await h2.loadTombstone()).toEqual(new Set());
+      expect(await h2.loadBlockedHashes()).toEqual(new Set());
     });
   });
 });

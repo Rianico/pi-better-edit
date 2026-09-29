@@ -43,7 +43,7 @@ export interface ProcessedEditFile {
    */
   resultLineIds: (number | null)[];
   /**
-   * Legacy v6 tombstone payload for this batch: the union of every applied item's removed
+   * Legacy v6 blocked-hashes payload for this batch: the union of every applied item's removed
    * hashes. Applied once, after `writeAtomic` succeeds (spec §3.2.4 step 4), so a batch that
    * writes nothing retires nothing. In-memory only until the post-write commit persists it.
    */

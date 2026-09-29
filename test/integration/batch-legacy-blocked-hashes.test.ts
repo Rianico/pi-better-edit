@@ -16,8 +16,8 @@ async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<
     .map(extractHash);
 }
 
-describe("batch legacy tombstone atomicity (#117)", () => {
-  it("a batch that fails on a later item leaves the legacy tombstone set unchanged", async () => {
+describe("batch legacy blocked-hashes atomicity (#117)", () => {
+  it("a batch that fails on a later item leaves the legacy blocked-hashes set unchanged", async () => {
     const content = "alpha\nbeta\ngamma\n";
     await withTempFile("legacy-fail.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -26,7 +26,7 @@ describe("batch legacy tombstone atomicity (#117)", () => {
       const sessionKey = sessionKeyFor(
         ctx as unknown as { sessionManager?: { getSessionId(): string } },
       );
-      const before = await createSessionHandle(sessionKey, path, store).loadTombstone();
+      const before = await createSessionHandle(sessionKey, path, store).loadBlockedHashes();
       expect([...before]).toEqual([]);
 
       const rejection = (await editTool
@@ -49,12 +49,12 @@ describe("batch legacy tombstone atomicity (#117)", () => {
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
       expect(await readFile(path, "utf-8")).toBe(content);
 
-      const after = await createSessionHandle(sessionKey, path, store).loadTombstone();
+      const after = await createSessionHandle(sessionKey, path, store).loadBlockedHashes();
       expect([...after].sort()).toEqual([...before].sort());
     });
   });
 
-  it("a successful batch retires the removed hashes into the legacy tombstone set", async () => {
+  it("a successful batch retires the removed hashes into the legacy blocked-hashes set", async () => {
     const content = "alpha\nbeta\ngamma\n";
     await withTempFile("legacy-ok.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -81,9 +81,9 @@ describe("batch legacy tombstone atomicity (#117)", () => {
       const sessionKey = sessionKeyFor(
         ctx as unknown as { sessionManager?: { getSessionId(): string } },
       );
-      const tombstone = await createSessionHandle(sessionKey, path, store).loadTombstone();
-      expect(tombstone.has(removedFirst)).toBe(true);
-      expect(tombstone.has(removedLast)).toBe(true);
+      const blockedHashes = await createSessionHandle(sessionKey, path, store).loadBlockedHashes();
+      expect(blockedHashes.has(removedFirst)).toBe(true);
+      expect(blockedHashes.has(removedLast)).toBe(true);
     });
   });
 });
