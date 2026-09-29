@@ -6,6 +6,7 @@ describe("extension registration", () => {
   it("registers the read and edit tools", () => {
     const toolNames: string[] = [];
     const eventNames: string[] = [];
+    const commandNames: string[] = [];
     const pi = {
       registerTool(tool: { name: string }) {
         toolNames.push(tool.name);
@@ -13,11 +14,15 @@ describe("extension registration", () => {
       on(name: string) {
         eventNames.push(name);
       },
+      registerCommand(name: string) {
+        commandNames.push(name);
+      },
     } as any;
 
     register(pi);
 
     expect(toolNames.sort()).toEqual(["edit", "read", "read_skill", "undo_last_edit"]);
+    expect(commandNames).toEqual(["pi-better-edit"]);
 
     // WHY: (#165) two session_start listeners: regEdit captures the session for the preview pane,
     // WHY: the lifecycle hook handles session resets.
