@@ -14,6 +14,8 @@ Amends [ADR-0022 — Served canons are file-scoped; `[E_STALE_RANGE]` serves a f
 
 Amended by [ADR-0024 — Narrow informed destruction to the boundaries; cap the applied diff's removals](0024-narrow-p2-interior-exposure-cap-removed-diffs.md) (the gate's interior coverage is the rows the mirror did serve; an unserved interior row carries no identity and is accepted)
 
+Clarified by [ADR-0027 — The pi-lens mutation bridge stays unintegrated; adoption deferred](0027-pi-lens-mutation-bridge-unintegrated-adoption-deferred.md) (when an external report is ever recorded it stays advisory: lease lineage remains the only authority that can reject an edit)
+
 ## Context
 
 Two live defects, both reachable only with canon evidence in hand.
