@@ -29,5 +29,10 @@ export function currentPositionOfDrifted(
   if (below !== undefined) return currentPositions.get(served[below]!)! + 1;
   const above = nearestSurvivingPosition(served, surviving, servedIndex, "above");
   if (above !== undefined) return currentPositions.get(served[above]!)! - 1;
+  // WHY: ADR-0023 position-fallback — no served anchor survived to pin a current coordinate,
+  // WHY: so the position degrades to line-number arithmetic (`servedIndex + delta`). The
+  // WHY: tiers above are themselves anchor-spelling heuristics ("nearest surviving hash in
+  // WHY: served order") — judgment aids for the drift notice's window, not identity claims;
+  // WHY: the episode key derived from the result (`driftEpisodeKey`) inherits this floor.
   return servedIndex + delta;
 }

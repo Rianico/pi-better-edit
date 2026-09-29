@@ -23,11 +23,16 @@ export const DEFERRED_STORE_SYNC_WARNING =
 
 export const SERVED_ROWS_CAP = 150;
 
-// WHY: ADR-0024 — the applied diff's removed-line cap, the mirror of SERVED_ROWS_CAP on the refusal
-// WHY: side: a range deletion renders head + tail with an exact omitted count instead of every removed
-// WHY: row. The omitted rows still advance the render cursor, so every surviving row keeps its exact
-// WHY: old line number and hash.
+// WHY: ADR-0024 (#174 diction) — the applied diff's removed-line cap, the mirror of SERVED_ROWS_CAP
+// WHY: on the refusal side: a range deletion renders head + tail with an exact deleted count
+// WHY: (` - ... [N lines deleted] ...`) instead of every removed row. The hidden rows still advance
+// WHY: the render cursor, so every surviving row keeps its exact old line number and hash.
 export const DIFF_REMOVED_CAP = 6;
 export const DIFF_REMOVED_EDGE = 2;
+
+// WHY: #174 single-projection contract — the context parameter of the preview projection: the
+// WHY: preview pane renders the same `genDiff` text as the applied diff, just with wider context.
+// WHY: Owned by the engine's `preview` seam so the display path never re-projects.
+export const DIFF_PREVIEW_CONTEXT = 4;
 
 export const NOOP_LOOP_THRESHOLD = 3;

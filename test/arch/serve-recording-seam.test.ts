@@ -76,18 +76,40 @@ describe("serve recording — one shared writer for the mirror and the lease gra
   it("makes both serve paths delegate to a single shared writer", () => {
     const plain = functionBody(session, "recordServesInner");
     const truncated = functionBody(session, "recordServesTruncatedInner");
+
+    // both serve paths delegate their write to exactly one shared writer, `writeServeRecord`
     const shared = calledHelpers(plain).filter((name) => calledHelpers(truncated).includes(name));
-    expect(shared).toHaveLength(1);
+    expect(shared).toEqual(["writeServeRecord"]);
     const writer = shared[0]!;
 
-    // the writer is defined once and owns the whole write: mirror row + lease grant. Canon evidence
-    // needs no step here at all (#151): it is derived from the leases this writer grants.
+    // the writer is defined once and owns the whole write: the mirror half + the lease grant. Canon
+    // evidence needs no step here at all (#151): it is derived from the leases this writer grants.
     expect(session.match(new RegExp(`function ${writer}\\(`, "g"))).toHaveLength(1);
     const writerBody = functionBody(session, writer);
     expect(writerBody).toContain("withStore(");
-    expect(writerBody).toContain("patchServed(");
-    expect(writerBody).toContain("grantLeasesForRows(");
     expect(writerBody).not.toContain("canon");
+
+    // the one mirror writer (#103), now one level deeper: the mirror steps — `patchServed(` and
+    // displaced-hash retirement via `displacedHashes(`/`addRetiredAnchors(` — live in exactly one
+    // body, `writeServeMirrorInner`, which BOTH `writeServeRecord` and the in-transaction seam
+    // `recordServedMirrorInTransaction` call.
+    expect(session.match(/function writeServeMirrorInner\(/g)).toHaveLength(1);
+    const mirrorBody = functionBody(session, "writeServeMirrorInner");
+    const seamBody = functionBody(session, "recordServedMirrorInTransaction");
+    expect(writerBody).toContain("writeServeMirrorInner(");
+    expect(seamBody).toContain("writeServeMirrorInner(");
+    const mirrorOwners = [plain, truncated, writerBody, seamBody, mirrorBody].filter(
+      (body) =>
+        body.includes("patchServed(") &&
+        body.includes("displacedHashes(") &&
+        body.includes("addRetiredAnchors("),
+    );
+    expect(mirrorOwners).toEqual([mirrorBody]);
+
+    // the lease grant happens only in `writeServeRecord`, never in the shared mirror half or the seam
+    expect(writerBody).toContain("grantLeasesForRows(");
+    expect(mirrorBody).not.toContain("grantLeasesForRows");
+    expect(seamBody).not.toContain("grantLeasesForRows");
 
     // neither serve path keeps its own copy of those steps
     for (const body of [plain, truncated]) {

@@ -7,6 +7,8 @@ import {
   isMutationFailure,
 } from "../../src/mutation-engine/index.js";
 import { withTempFile, setupIntegrationTest, TEST_SESSION_ID } from "../support/fixtures.js";
+import { genDiff } from "../../src/edit-diff.js";
+import { DIFF_PREVIEW_CONTEXT } from "../../src/constants.js";
 import { lineHashes } from "../../src/hashline/index.js";
 import { initHasher } from "../../src/hashline/index.js";
 import { useTestHome } from "../support/fixtures.js";
@@ -60,6 +62,40 @@ describe("MutationEngine — deep seam", () => {
         const persisted = await readFile(`${cwd}/sample.txt`, "utf-8");
         expect(persisted).toBe("a\nb\nc\n");
       }
+    });
+  });
+
+  it("preview result.diff is the genDiff projection itself (#174 single projection)", async () => {
+    await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("a\nb\nc\n", home.testPath);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      const from = hashes[0]!;
+      const result = await preview(
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: from, anchor_to: from, replace_with: "replaced" }],
+        },
+        cwd,
+        { sessionKey: TEST_SESSION_ID },
+      );
+      expect(isMutationSuccess(result)).toBe(true);
+      if (!isMutationSuccess(result)) return;
+      const file = result.raw;
+      // WHY: pin the single-projection claim: the preview result's diff text equals what
+      // WHY: `genDiff` produces for the same inputs at the preview pane's context — no
+      // WHY: synthesized empty diff is left behind the projection.
+      const projected = genDiff(
+        file.originalNormalized,
+        file.result,
+        DIFF_PREVIEW_CONTEXT,
+        file.resultHashes,
+        file.originalHashes,
+      ).diff;
+      expect(result.diff).toBe(projected);
+      expect(result.diff).toContain("replaced");
+      expect(result.toolResult.details.diff).toBe(projected);
+      expect(result.toolResult.content[0]!.text).toBe(projected);
     });
   });
 

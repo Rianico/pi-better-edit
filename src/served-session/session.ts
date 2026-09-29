@@ -504,7 +504,7 @@ function applySingleServedEntry(
 
 function patchServed(
   updated: (string | null)[],
-  entries: Array<{ position: number; hash: string | null }>,
+  entries: ReadonlyArray<{ position: number; hash: string | null }>,
 ): void {
   const index = buildServedHashIndex(updated);
   for (const entry of entries) {
@@ -586,6 +586,34 @@ function shapeMirror(
 }
 
 /**
+ * The shared transaction body of every serve-mirror write (CAND-3): read the current mirror,
+ * apply the truncated-serve `shape` and the served `rows`, upsert unless the result is a no-op,
+ * and add any displaced anchors to the legacy retired set. Runs inside the caller's already-open
+ * transaction; an early return on a no-op unshaped mirror skips both the upsert and the
+ * displacement retirement. Empty-row filtering stays at the callers, whose contracts differ.
+ */
+function writeServeMirrorInner(
+  store: HashStore,
+  sessionKey: string,
+  path: string,
+  rows: ReadonlyArray<{ position: number; hash: string | null }>,
+  shape?: TruncatedServeShape,
+): void {
+  const before = getServedInner(store, sessionKey, path);
+  const updated = shape ? shapeMirror(before, shape) : [...before];
+  patchServed(updated, rows);
+  const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
+  if (!isNoOp) {
+    servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
+  } else if (!shape) {
+    // WHY: a no-op mirror displaces nothing and leaves no lease to re-grant here.
+    return;
+  }
+  const disp = displacedHashes(before, updated);
+  if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
+}
+
+/**
  * WHY: the single writer for a serve observation: the served mirror and the lease grant
  * WHY: (spec §3.1.2). `shape` is the only difference between the truncated serve (a suffix was
  * WHY: shown, so the mirror is clamped/cleared) and the plain one. Canon evidence needs no write at
@@ -601,18 +629,7 @@ function writeServeRecord(
 ): void {
   try {
     withStore(() => {
-      const before = getServedInner(store, sessionKey, path);
-      const updated = shape ? shapeMirror(before, shape) : [...before];
-      patchServed(updated, rows);
-      const isNoOp = before.length === updated.length && before.every((v, i) => v === updated[i]);
-      if (!isNoOp) {
-        servedStmts(store.db).servedUpsert(sessionKey, path, JSON.stringify(updated), Date.now());
-      } else if (!shape) {
-        // WHY: a no-op mirror displaces nothing and leaves no lease to re-grant here.
-        return;
-      }
-      const disp = displacedHashes(before, updated);
-      if (disp.size > 0) addRetiredAnchors(store, sessionKey, path, disp);
+      writeServeMirrorInner(store, sessionKey, path, rows, shape);
     });
   } catch (error) {
     console.error(`Failed to record ${shape ? "truncated " : ""}served rows:`, error);
@@ -730,6 +747,39 @@ export function retireAbsentLeases(
   now: number = Date.now(),
 ): void {
   servedStmts(db).leaseRetireAbsent(now, filePath, snapshotId);
+}
+
+/**
+ * The in-transaction half of the serve-record write (CAND-3): the served mirror — optionally in
+ * its truncated-serve shape — plus any explicitly displaced anchors added to the legacy retired
+ * set, written on the caller's already-open `BEGIN IMMEDIATE` via the shared
+ * `writeServeMirrorInner`. The two things the materialization owns stay outside: no `withStore`
+ * (the caller opened the transaction) and no lease grant (the grant step binds the same rows to
+ * the snapshot this transaction commits). A failure propagates, so leases and the served mirror
+ * commit or roll back as one unit — the torn states (lease-without-mirror, mirror-without-lease)
+ * become structurally unreachable on the post-write commit.
+ */
+export function recordServedMirrorInTransaction(
+  db: DatabaseSync,
+  sessionKey: string,
+  path: string,
+  rows: ReadonlyArray<{ position: number; hash: string | null }>,
+  options?: {
+    /** Truncated-serve mirror shape: clamp to `lineCount`, clear from `clearFrom`. */
+    shape?: { lineCount: number; clearFrom?: number };
+    /** Anchors added to the legacy retired set in this transaction (undo's displaced cleanup). */
+    retireAnchors?: readonly string[];
+  },
+): void {
+  const store: HashStore = { db, engine: "node:sqlite" };
+  // WHY: displaced anchors retire even for an empty serve, matching the pre-CAND-3 retire-then-record order.
+  if (options?.retireAnchors && options.retireAnchors.length > 0) {
+    addRetiredAnchors(store, sessionKey, path, options.retireAnchors);
+  }
+  // WHY: `recordDiff`/`recordTruncated` early-return on an empty serve, skipping the mirror write
+  // AND its displaced retirement — mirrored here.
+  if (rows.length === 0) return;
+  writeServeMirrorInner(store, sessionKey, path, rows, options?.shape);
 }
 
 function getReportedInner(store: HashStore, sessionKey: string, path: string): Set<string> {
@@ -854,7 +904,7 @@ async function retireAnchorsInner(
 }
 
 // WHY: helpers for handle
-function planServeRecording(input: {
+export function planServeRecording(input: {
   resultLineCount?: number;
   firstChangedLine?: number;
 }): { mode: "plain" } | { mode: "truncated"; lineCount: number; clearFrom: number } {

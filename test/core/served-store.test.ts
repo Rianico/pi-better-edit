@@ -9,7 +9,6 @@ import {
   getServed,
   upsertServed,
   recordServesTruncated,
-  recordServedTruncated,
   getReported,
   addReported,
   clearReported,
@@ -758,7 +757,7 @@ describe("hash-store — recordServesTruncated", () => {
     });
   });
 
-  it("records through the async sibling recordServedTruncated", async () => {
+  it("records through the async sibling recordTruncated on the handle", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
@@ -767,9 +766,8 @@ describe("hash-store — recordServesTruncated", () => {
         { position: 2, hash: "ccc" },
         { position: 3, hash: "ddd" },
       ]);
-      await recordServedTruncated(
-        "sessionA",
-        "/p.ts",
+      const { createSessionHandle } = await import("../../src/served-session/session.js");
+      await createSessionHandle("sessionA", "/p.ts").recordTruncated(
         [
           { position: 0, hash: "aaa" },
           { position: 1, hash: "bbb" },

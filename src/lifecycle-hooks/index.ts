@@ -9,6 +9,7 @@ import {
   clearServedRefusals,
 } from "../hashline/index.js";
 import { splitLines } from "../utils.js";
+import { denseServeRows } from "../hashline/served.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
 import {
@@ -206,7 +207,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       await recordServesBestEffort({
         sessionKey,
         path: absolutePath,
-        servedRows: fileHashes.map((hash, position) => ({ position, hash })),
+        servedRows: denseServeRows(fileHashes),
         contentHash: snapshotHashFor(normalized),
         resultLineCount: deps.visLines(normalized).length,
         firstChangedLine: 1,

@@ -17,6 +17,7 @@ export class DebouncedPreview {
   constructor(
     private readonly compute: PreviewCompute,
     private readonly debounceMs: number = PREVIEW_DEBOUNCE_MS,
+    private readonly getSessionId?: () => string | undefined,
   ) {}
 
   renderCall(host: PreviewHost, args: unknown): void {
@@ -32,8 +33,18 @@ export class DebouncedPreview {
     state.argsKey = argsKey;
     const previewGeneration = (state.previewGeneration ?? 0) + 1;
     state.previewGeneration = previewGeneration;
+    // WHY: (#168-class) the compute's session is bound at arm time: if the serving session
+    // WHY: changed before the timer fires, verifying these anchors against the new session
+    // WHY: would mint a false E_UNKNOWN_ANCHOR, so the stale compute is dropped (cancelled)
+    // WHY: and the next renderCall re-arms against the session that actually serves anchors.
+    const armedSessionId = this.getSessionId?.();
     state.previewTimer = setTimeout(() => {
       state.previewTimer = undefined;
+      if (this.getSessionId && this.getSessionId() !== armedSessionId) {
+        this.cancel(state);
+        host.invalidate();
+        return;
+      }
       this.compute(args, host.cwd)
         .then((preview) => {
           if (state.argsKey === argsKey && state.previewGeneration === previewGeneration) {

@@ -9,6 +9,7 @@
 export {
   verifyServedRange,
   buildRangeServeRows,
+  denseServeRows,
   fmtServedRows,
   servedPositionsOf,
   makeServedRejection,

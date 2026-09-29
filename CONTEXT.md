@@ -80,7 +80,7 @@ _Avoid_: warning (the operation succeeded; it is information, not a warning)
 A model-visible signal the tool must include in `content` for correctness (e.g. `anchor staleness`, `served-range staleness`, `E_STALE_*`/`E_UNVERIFIED_RANGE`, `E_SUSPICIOUS_TEXT`). The model needs it to retry correctly.
 
 **user-facing signal**:
-A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice, Batch drift note). Not in model content.
+A model-visible signal informative for the human only, emitted in `details`/`warnings` and rendered collapsed in TUI (e.g. drift notice). Not in model content.
 
 **orphaned serve**:
 An entry in served state whose hash no longer matches the current file at that position — the mirror retained a hash that the file has moved or removed elsewhere. Contrast with never-served. An orphan is drift, but at a single position rather than a range. Superseded by ADR-0016: an anchor with no lease now rejects fail-closed (`[E_STALE_ANCHOR]`) and a retired `line_id` rejects `[E_UNVERIFIED_RANGE]` (live unshifted survivor) or `[E_TARGET_LOST]` (otherwise), rather than being healed onto a twin.
@@ -218,5 +218,5 @@ The file bytes on disk plus the lease store (`served_leases`, snapshots, `line_l
 _Avoid_: machine diff (a projection, not the table)
 
 **projection**:
-The single shared rendered diff — preview, applied, and human display render the same text with different context params — derived from the source of truth under a stated collapse contract. Informational only: hidden spans come in two kinds, each with a unified counted marker whose count equals its hidden span — untouched-span (middle gap; ` ... [N lines untouched] ...`, every hidden row stays lease-covered, both cursors advance) and deleted-span (removed run; ` - ... [N lines deleted] ...`, the count drives the old-side cursor); added spans are never hidden (the collapse invariant). The model path never consumes projection text as coordinate input.
+The single shared rendered diff — preview, applied, and human display render the same text with different context params — derived from the source of truth under a stated collapse contract. Informational only: hidden spans come in two kinds, each with a unified counted marker whose count equals its hidden span — untouched-span (middle gap; ` ... [N lines untouched] ...`, both cursors advance so following anchors stay at their true positions; hidden rows are addressable only through the leases the carrying serve grants) and deleted-span (removed run; ` - ... [N lines deleted] ...`, the count drives the old-side cursor); added spans are never hidden (the collapse invariant). The model path never consumes projection text as coordinate input.
 _Avoid_: view (unqualified — name the audience), second diff (there is only one rendering), middle-gap marker (think spans, not gaps)

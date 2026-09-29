@@ -8,6 +8,7 @@ import {
   verifyServedRange,
   verifyServedRangeResult as _verifyServedRangeResult,
   buildRangeServeRows,
+  denseServeRows,
   fmtServedRows,
   servedPositionsOf,
 } from "../../src/hashline/served-verification";
@@ -439,5 +440,19 @@ describe("ServedVerification deep module — decision table", () => {
     expect(rows[0]!.hash).toBe("aaa");
     const formatted = fmtServedRows(rows, lines);
     expect(formatted).toContain("aaa│a");
+  });
+});
+
+describe("denseServeRows — the sole owner of the dense serve-row projection", () => {
+  it("projects one row per hash with 0-based positions aligned to array order", () => {
+    expect(denseServeRows(["aaa", "bbb", "ccc"])).toEqual([
+      { position: 0, hash: "aaa" },
+      { position: 1, hash: "bbb" },
+      { position: 2, hash: "ccc" },
+    ]);
+  });
+
+  it("empty hashes project to empty rows", () => {
+    expect(denseServeRows([])).toEqual([]);
   });
 });

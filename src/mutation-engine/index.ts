@@ -24,8 +24,6 @@ export { isMutationSuccess, isMutationFailure } from "./types.js";
 // WHY: Deep seam — small interface.
 export { execute, preview } from "./engine.js";
 
-// WHY: Re-export pipeline legacy names for callers that still import from
-// WHY: `edit-pipeline.ts` facade — keeps import surface stable during cutover.
 // WHY: Prefer `execute`/`preview` with `MutationResult` for new code.
 export { previewEdits, apply, execEdits } from "./pipeline.js";
 export type { ProcessedEditFile as PipelineFile } from "./pipeline.js";
