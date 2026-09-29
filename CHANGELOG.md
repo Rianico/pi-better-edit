@@ -24,7 +24,7 @@
 
 ### Tests
 
-* **edit:** pin the payload wire shape against pi-lens' third-party shape adapters
+* **edit:** pin the payload wire shape against pi-lens' third-party shape adapters (#31)
 
 ### Code Refactoring
 
