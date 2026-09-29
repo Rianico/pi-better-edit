@@ -11,7 +11,7 @@
 ### Code Refactoring
 
 * **identity:** rename tombstone vocabulary to blockedHashes, cause contract to blocked-hash (#18)
-* **identity:** retire the unused blocked-hash library-seam signal (no live callers), keeping the allocation guard
+* **identity:** retire the unused blocked-hash library-seam signal (no live callers), keeping the allocation guard (#25)
 
 ## [2.3.0] - 2026-09-27
 
