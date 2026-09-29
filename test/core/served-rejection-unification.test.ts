@@ -239,10 +239,10 @@ describe("range-family cause uniformity: explicit evidence, never a borrowed def
       startLine: 1,
       endLine: 2,
       snapshot,
-      cause: "tombstone",
+      cause: "blocked-hash",
     });
-    expect(explicit.details.cause).toBe("tombstone");
-    expect(explicit.cause).toBe("tombstone");
+    expect(explicit.details.cause).toBe("blocked-hash");
+    expect(explicit.cause).toBe("blocked-hash");
     // SAFETY: the cast omits the required cause to pin that no default is invented.
     const omitted = makeStaleAnchorRejection({
       headline: "anchor missing.",

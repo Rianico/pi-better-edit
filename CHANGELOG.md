@@ -8,6 +8,9 @@
 * commit the edit and undo store state in one transaction, so a store failure can no longer leave the leases and the served mirror disagreeing (#16)
 * **preview:** keep the debounced preview bound to the session that armed it across a session switch (#16)
 * **drift:** key drift-notice episodes on the drifted line's position, so distinct lines sharing an anchor are no longer collapsed into one silent notice (#16)
+### Code Refactoring
+
+* **identity:** rename tombstone vocabulary to blockedHashes, cause contract to blocked-hash (#18)
 
 ## [2.3.0] - 2026-09-27
 

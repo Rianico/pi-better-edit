@@ -416,7 +416,7 @@ export interface VerificationInput {
   fileHashes: string[];
   fileLines: string[];
   filePath?: string;
-  tombstone?: ReadonlySet<string>;
+  blockedHashes?: ReadonlySet<string>;
   /**
    * SAFETY: canon digests parallel to `served` — `String(xxh32(canon(line)))`, the value the served
    * line's lease recorded. Absent means no evidence, so every canon comparison stays silent.
@@ -484,10 +484,10 @@ export class ServedVerification {
       fileHashes,
       fileLines,
       filePath,
-      tombstone: inputTombstone,
+      blockedHashes: inputBlockedHashes,
       canonDigests: inputCanonDigests,
     } = input;
-    const tombstone = inputTombstone ?? new Set<string>();
+    const blockedHashes = inputBlockedHashes ?? new Set<string>();
     const canonDigests = inputCanonDigests;
     const where = filePath ? ` in ${filePath}` : "";
     const { startHash, endHash, startLine, endLine } = range;
@@ -499,20 +499,20 @@ export class ServedVerification {
     );
     const currentLen = endLine - startLine + 1;
 
-    // WHY: Early tombstone boundary check (whole-span S@3==S@3) — gated on canon-digest inequality
-    // WHY: to avoid a false positive on a same-line re-read. A tombstoned boundary hash is exactly
+    // WHY: Early blocked-hashes boundary check (whole-span S@3==S@3) — gated on canon-digest inequality
+    // WHY: to avoid a false positive on a same-line re-read. A blocked-hash boundary hash is exactly
     // WHY: what cannot be trusted: the lease is terminal for this window, so the rejection serves the
     // WHY: current range for a retry.
-    if ((tombstone.has(startHash) || tombstone.has(endHash)) && canonDigests) {
-      const tombstonedHash = tombstone.has(startHash) ? startHash : endHash;
-      const pos = fileHashes.indexOf(tombstonedHash);
+    if ((blockedHashes.has(startHash) || blockedHashes.has(endHash)) && canonDigests) {
+      const blockedHashedHash = blockedHashes.has(startHash) ? startHash : endHash;
+      const pos = fileHashes.indexOf(blockedHashedHash);
       if (pos >= 0) {
-        const servedIdx = served.indexOf(tombstonedHash);
+        const servedIdx = served.indexOf(blockedHashedHash);
         const expected = servedIdx >= 0 ? canonDigests[servedIdx] : undefined;
         const actual = canonDigest(fileLines[pos] ?? "");
         if (expected !== undefined && expected !== null && expected !== actual) {
-          this.throwStaleForTombstone({
-            tombstonedHash,
+          this.throwStaleForBlockedHash({
+            blockedHashedHash,
             startLine,
             endLine,
             snapshot: { fileHashes, fileLines, ...(filePath !== undefined ? { filePath } : {}) },
@@ -548,8 +548,8 @@ export class ServedVerification {
       });
     }
 
-    // WHY: one canon-tier pass, earliest offending line wins: a tombstoned interior hash whose
-    // WHY: content no longer digests to the served canon is a `tombstone` — the anchor was freed and
+    // WHY: one canon-tier pass, earliest offending line wins: a blocked-hash interior hash whose
+    // WHY: content no longer digests to the served canon is a `blocked-hash` — the anchor was freed and
     // WHY: something else now carries it — while any other digest difference is plain drift from the
     // WHY: served record. Selecting the cause inside a single scan, rather than in two ordered scans,
     // WHY: keeps the specific diagnosis without letting a later line mask an earlier one.
@@ -567,7 +567,8 @@ export class ServedVerification {
             firstOffendingLine: startLine + k,
             servedRows,
             rendered,
-            cause: h !== undefined && tombstone.has(h) ? "tombstone" : "served-range staleness",
+            cause:
+              h !== undefined && blockedHashes.has(h) ? "blocked-hash" : "served-range staleness",
           });
         }
       }
@@ -755,8 +756,8 @@ export class ServedVerification {
     });
   }
 
-  private throwStaleForTombstone(args: {
-    tombstonedHash: string;
+  private throwStaleForBlockedHash(args: {
+    blockedHashedHash: string;
     startLine: number;
     endLine: number;
     snapshot: FileSnapshotContext;
@@ -764,12 +765,12 @@ export class ServedVerification {
   }): never {
     throw makeStaleAnchorRejection({
       headline:
-        `anchor "${args.tombstonedHash}" no longer resolves to the line identity ` +
+        `anchor "${args.blockedHashedHash}" no longer resolves to the line identity ` +
         `it was served with; nothing was written.`,
       startLine: args.startLine,
       endLine: args.endLine,
       snapshot: args.snapshot,
-      cause: "tombstone",
+      cause: "blocked-hash",
     });
   }
 
@@ -805,7 +806,7 @@ export function verifyServedRange(args: {
   fileHashes: string[];
   fileLines: string[];
   filePath?: string;
-  tombstone?: ReadonlySet<string>;
+  blockedHashes?: ReadonlySet<string>;
   canonDigests?: (string | null)[];
 }): void {
   defaultVerifier.verifyOrThrow({
@@ -819,7 +820,7 @@ export function verifyServedRange(args: {
     fileHashes: args.fileHashes,
     fileLines: args.fileLines,
     filePath: args.filePath,
-    tombstone: args.tombstone,
+    blockedHashes: args.blockedHashes,
     canonDigests: args.canonDigests,
   });
 }

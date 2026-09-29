@@ -72,7 +72,7 @@ export interface ApplyVerificationContext {
   filePath?: string;
   absolutePath?: string;
   served?: (string | null)[];
-  tombstone?: ReadonlySet<string>;
+  blockedHashes?: ReadonlySet<string>;
   /**
    * SAFETY: canon digests parallel to `served` — `String(xxh32(canon(line)))`, the value
    * `served_leases.canon_hash` persists. The session derives them from its leases; a caller with no
@@ -247,7 +247,7 @@ export function applyEdit(
     filePath,
     absolutePath,
     served,
-    tombstone,
+    blockedHashes,
     canonDigests,
     identity,
     mode = "general",
@@ -358,7 +358,7 @@ export function applyEdit(
         fileHashes,
         fileLines: lineIndex.fileLines,
         filePath,
-        tombstone,
+        blockedHashes,
         canonDigests,
       });
     }

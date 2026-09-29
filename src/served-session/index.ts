@@ -27,7 +27,7 @@ export {
   recordServes,
   recordServesTruncated,
   planServeRecording,
-  loadTombstone,
+  loadBlockedHashes,
   loadCanonDigests,
   loadEpochId,
   retireAnchors,

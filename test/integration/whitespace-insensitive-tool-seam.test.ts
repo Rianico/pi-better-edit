@@ -125,7 +125,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
       await writeFile(abs, RENDER_LINTED, "utf-8");
 
-      // Post-fix: external whitespace-only rewrite invalidates the old anchor (tombstone + fresh hash).
+      // Post-fix: external whitespace-only rewrite invalidates the old anchor (blocked hash + fresh hash).
       // Re-read to get the fresh anchor for the same line, then edit with it.
       const freshRefs = await hashRefs(readTool, "render.ts", ctx, ["out.push(it.name);"]);
       const freshPushRef = freshRefs["out.push(it.name);"]!;

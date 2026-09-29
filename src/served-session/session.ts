@@ -842,7 +842,7 @@ function getCanonDigestsInner(
   return served.map((anchor) => (anchor === null ? null : (byAnchor.get(anchor) ?? null)));
 }
 
-function getTombstoneInner(store: HashStore, sessionKey: string, path: string): Set<string> {
+function getBlockedHashesInner(store: HashStore, sessionKey: string, path: string): Set<string> {
   const row = servedStmts(store.db).servedGet(sessionKey, path);
   if (!row || row.retired === null || row.retired === undefined) return new Set();
   try {
@@ -869,7 +869,7 @@ function addRetiredAnchors(
 ): void {
   const additions = [...hashes];
   if (additions.length === 0) return;
-  const retired = getTombstoneInner(store, sessionKey, path);
+  const retired = getBlockedHashesInner(store, sessionKey, path);
   for (const hash of additions) {
     if (!HASH_RE.test(hash)) throw new TypeError(`Invalid retired hash: ${hash}`);
     retired.add(hash);
@@ -944,9 +944,9 @@ export function createSessionHandle(
       const store = await resolveStore();
       return getEpochIdInner(store, sessionKey, path);
     },
-    async loadTombstone(): Promise<Set<string>> {
+    async loadBlockedHashes(): Promise<Set<string>> {
       const store = await resolveStore();
-      return getTombstoneInner(store, sessionKey, path);
+      return getBlockedHashesInner(store, sessionKey, path);
     },
     async retire(hashes: Iterable<string>): Promise<void> {
       const store = await resolveStore();
@@ -1105,9 +1105,9 @@ export async function wipeSession(sessionKey: string): Promise<void> {
   wipeServed(store, sessionKey);
 }
 
-export async function loadTombstone(sessionKey: string, path: string): Promise<Set<string>> {
+export async function loadBlockedHashes(sessionKey: string, path: string): Promise<Set<string>> {
   const store = await loadHashStore();
-  return getTombstoneInner(store, sessionKey, path);
+  return getBlockedHashesInner(store, sessionKey, path);
 }
 
 export async function loadCanonDigests(

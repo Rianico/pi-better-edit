@@ -21,7 +21,7 @@ function isAllowed(rawValue) {
 const MESSAGE =
   "Comments must use allowlist prefix: SAFETY:, WHY:, Invariant:, See ADR-, via https://, TODO(#<digits>):, HACK:, or Gherkin (Given/When/Then/And/But/Feature/Scenario). " +
   "Prefer extraction/rename until code explains what/how; use tag only for why/invariant/warning/regex/hack/ADR link with provenance. " +
-  "Examples: // SAFETY: cast validated by ... | // WHY: tombstone union needed for ... | // See ADR-0013 | // TODO(#123):. " +
+  "Examples: // SAFETY: cast validated by ... | // WHY: blockedHashes union needed for ... | // See ADR-0013 | // TODO(#123):. " +
   "Otherwise fix code. Files with 50+ hits use overrides to disable rule per ADR ladder (shrink-only).";
 
 const rule = {

@@ -81,7 +81,7 @@ export interface ServedRow {
 // WHY: Values are CONTEXT.md glossary terms.
 export type RangeCause =
   | "retirement"
-  | "tombstone"
+  | "blocked-hash"
   | "never-served"
   | "served-range staleness"
   | "anchor staleness"
@@ -93,7 +93,7 @@ export type RangeCause =
 // WHY: a non-registry string is an unknown diagnosis, never a typed one.
 const RANGE_CAUSES: readonly RangeCause[] = [
   "retirement",
-  "tombstone",
+  "blocked-hash",
   "never-served",
   "served-range staleness",
   "anchor staleness",

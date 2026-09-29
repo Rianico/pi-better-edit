@@ -159,7 +159,7 @@ function isInSpans(p: number, spans: Array<{ from: number; to: number }>): boole
 }
 
 /**
- * WHY: #68 hash-rotation vs content loss. Probing + tombstone growth reassign
+ * WHY: #68 hash-rotation vs content loss. Probing + blocked-hashes growth reassign
  * distinct hashes to identical duplicate lines across sequential edits, so a
  * served hash missing from the result set may still survive under a fresh hash.
  * Suppress those (consume one matching canon digest outside the edited spans); report

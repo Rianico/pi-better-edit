@@ -306,7 +306,7 @@ describe("ServedVerification deep module — decision table", () => {
     ).toThrow(/E_STALE_RANGE/);
   });
 
-  it("tombstone boundary serves [E_STALE_ANCHOR] with the current range", () => {
+  it("blocked-hashes boundary serves [E_STALE_ANCHOR] with the current range", () => {
     const servedContent = "a\nb\nc";
     const servedHashes = _lineHashesPure(servedContent);
     const servedCanonDigests = servedContent.split("\n").map((l) => canonDigest(l));
@@ -321,7 +321,7 @@ describe("ServedVerification deep module — decision table", () => {
         served: [...servedHashes],
         fileHashes,
         fileLines,
-        tombstone: new Set([servedHashes[0]!]),
+        blockedHashes: new Set([servedHashes[0]!]),
         canonDigests: servedCanonDigests,
       });
     } catch (error) {
@@ -337,13 +337,13 @@ describe("ServedVerification deep module — decision table", () => {
     expect(err.message).toMatch(/\[MODEL\] \[E_STALE_ANCHOR\]/);
     expect(err.message).toContain("Current range:");
     expect(err.message).toContain("Retry with these anchors");
-    expect(err.details?.cause).toBe("tombstone");
+    expect(err.details?.cause).toBe("blocked-hash");
     expect(err.servedRows.length).toBeGreaterThan(0);
   });
 
-  it("interior tombstone mismatch reports cause tombstone, not plain digest drift", () => {
-    // WHY: the general digest clause subsumes the tombstone one, so ordering decides which cause
-    // WHY: reaches the payload (spec §5.3: the tombstone check reports `tombstone`). The specific
+  it("interior blocked-hash mismatch reports cause blocked-hash, not plain digest drift", () => {
+    // WHY: the general digest clause subsumes the blocked-hash one, so ordering decides which cause
+    // WHY: reaches the payload (spec §5.3: the blocked-hash check reports `blocked-hash`). The specific
     // WHY: check therefore runs first — this pins that its cause is reachable at all.
     const servedContent = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(servedContent);
@@ -358,7 +358,7 @@ describe("ServedVerification deep module — decision table", () => {
         served: [...hashes],
         fileHashes: [...hashes],
         fileLines,
-        tombstone: new Set([hashes[1]!]),
+        blockedHashes: new Set([hashes[1]!]),
         canonDigests,
       });
     } catch (error) {
@@ -367,7 +367,7 @@ describe("ServedVerification deep module — decision table", () => {
     const err = caught as DomainError;
     expect(err.code).toBe("E_STALE_RANGE");
     expect(err.firstOffendingLine).toBe(2);
-    expect(err.details.cause).toBe("tombstone");
+    expect(err.details.cause).toBe("blocked-hash");
   });
 
   it("interior digest drift keeps the fresh-read remedy and leaks no digest numbers", () => {
@@ -399,14 +399,14 @@ describe("ServedVerification deep module — decision table", () => {
     expect(err.message).toContain("Current range (fresh read):");
   });
 
-  it("reports the earliest offending line when drift precedes a tombstoned interior line", () => {
+  it("reports the earliest offending line when drift precedes a blocked-hash interior line", () => {
     // WHY: one canon-tier scan, so the cause is chosen per offending line instead of by tier. Two
-    // WHY: ordered scans would let a later tombstoned line mask an earlier plain drift and point the
+    // WHY: ordered scans would let a later blocked-hash line mask an earlier plain drift and point the
     // WHY: model at the wrong line.
     const servedContent = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(servedContent);
     const canonDigests = servedContent.split("\n").map((line) => canonDigest(line));
-    // Line 1 drifted without a freed anchor; line 2 is tombstoned and also drifted.
+    // Line 1 drifted without a freed anchor; line 2 has a blocked hash and also drifted.
     const fileLines = ["ALPHA", "BETA", "gamma"];
     const verifier = new ServedVerification();
     let caught: unknown;
@@ -416,7 +416,7 @@ describe("ServedVerification deep module — decision table", () => {
         served: [...hashes],
         fileHashes: [...hashes],
         fileLines,
-        tombstone: new Set([hashes[1]!]),
+        blockedHashes: new Set([hashes[1]!]),
         canonDigests,
       });
     } catch (error) {
