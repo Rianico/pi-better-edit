@@ -11,6 +11,7 @@ import { splitLines, visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { prepareFile } from "./file-content/index.js";
 import { DomainError } from "./domain-errors.js";
+import { notifyServedSpans, servedRowsToSpans } from "./served-spans.js";
 import { fileSnap } from "./file-reader.js";
 import { snapshotHashFor, upsertSnapshotFor } from "./snapshot-store";
 // WHY: Facade re-export for callers still importing preview directly
@@ -177,6 +178,13 @@ export function regRead(pi: ExtensionAPI): void {
         isFullRead,
       });
       if (isFullRead) await session.clearDrift();
+      // WHY: fire-and-forget by design — the seam snapshots its observers and isolates each one, so
+      // WHY: this read's return value and timing are unchanged whether or not an observer is attached.
+      notifyServedSpans({
+        filePath: prepared.absolutePath,
+        spans: servedRowsToSpans(prepared.served),
+        source: "read",
+      });
       return {
         content: [{ type: "text", text: prepared.preview }],
         details: {

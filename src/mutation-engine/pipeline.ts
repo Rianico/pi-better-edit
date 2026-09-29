@@ -66,6 +66,7 @@ import {
 import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import { denseServeRows, type ResolvedRange } from "../hashline/served.js";
 import { DomainError } from "../domain-errors.js";
+import { notifyServedSpans, servedRowsToSpans } from "../served-spans.js";
 import { createSessionHandle } from "../served-session/session.js";
 import { scanDrift } from "../drift.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
@@ -277,6 +278,15 @@ async function recordRejectionServe(args: {
   // WHY: model's range still leases through the rows below. The length check alone owns the
   // WHY: skip: no code branch is needed because the oracle proves the payload invariant.
   if (args.error.servedRows.length === 0) return;
+  // WHY: a preview is a containment boundary — its served rows are a rehearsal of the same edit, so
+  // WHY: mirroring them would let an edit that was never applied satisfy the read guard.
+  if (!args.isPreview) {
+    notifyServedSpans({
+      filePath: args.absolutePath,
+      spans: servedRowsToSpans(args.error.servedRows),
+      source: "reject-and-serve",
+    });
+  }
   const handle = createSessionHandle(args.sessionKey, args.absolutePath);
   if (args.isPreview) {
     await handle.recordServeFeedback(args.error.servedRows, "preview", args.lineCount);

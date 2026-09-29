@@ -2,12 +2,25 @@
 
 ## [Unreleased]
 
+### Features
+
+* **lens:** report served rows to pi-lens' read bridge through a domain-neutral observer seam
+* **lens:** add the /pi-better-edit lens command and the .pi/agents/pi-better-edit.json config with env, project and global precedence
+* **lens:** ship schemas/pi-better-edit.json for editor validation of the config
+
 ### Bug Fixes
+
+* **lifecycle:** resolve the write tool's target from file before path and file_path
 
 * **edit-undo:** derive undo-summary counts from source inputs, not rendered rows (#9)
 * commit the edit and undo store state in one transaction, so a store failure can no longer leave the leases and the served mirror disagreeing (#16)
 * **preview:** keep the debounced preview bound to the session that armed it across a session switch (#16)
 * **drift:** key drift-notice episodes on the drifted line's position, so distinct lines sharing an anchor are no longer collapsed into one silent notice (#16)
+### Documentation
+
+* **readme:** record pi-lens interoperability and the read-expansion contract
+* **prompts:** note that served rows may cover an expanded window without naming a provider
+
 ### Code Refactoring
 
 * **identity:** rename tombstone vocabulary to blockedHashes, cause contract to blocked-hash (#18)

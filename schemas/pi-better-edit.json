@@ -1,0 +1,17 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://github.com/Rianico/pi-better-edit/schemas/pi-better-edit.json",
+  "title": "pi-better-edit configuration",
+  "type": "object",
+  "properties": {
+    "$schema": { "type": "string" },
+    "lens": {
+      "type": "object",
+      "properties": {
+        "bridge": { "type": "string", "enum": ["auto", "on", "off"], "default": "auto" }
+      },
+      "additionalProperties": true
+    }
+  },
+  "additionalProperties": true
+}
