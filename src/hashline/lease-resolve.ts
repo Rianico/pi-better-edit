@@ -29,8 +29,9 @@
  * decides which), a retired identity with no live unshifted survivor and no identifiable window
  * carries no rows, and the one-bound-retired survivor-live-and-unshifted case serves a fresh
  * read to decide from, never a content question.
- * A never-served interior line strictly between the anchors is caught by the span gates
- * (`[E_STALE_RANGE]`, spec §5.3).
+ * An unread (never-served) interior line strictly between the anchors is accepted (ADR-0024): it
+ * carries no identity to verify, and the boundary leases plus the window-length gate pin the span;
+ * a never-served BOUNDARY row keeps the fail-closed diagnosis (`[E_STALE_RANGE]`, spec §5.3).
  */
 import {
   isUniformLeaseFastPath,
@@ -123,7 +124,8 @@ function throwUnknownOrForeign(args: {
  *
  * The caller (`apply.ts`) routes every edit that has a served mirror and a lease source here — a
  * boundary anchor with no lease is lost identity (`[E_STALE_ANCHOR]`), never a content question; a
- * never-served interior line is caught by the span gates (`[E_STALE_RANGE]`, spec §5.3).
+ * never-served interior line between the anchors is accepted (ADR-0024) — it carries no identity to
+ * verify, and only a never-served boundary row rejects `[E_STALE_RANGE]`.
  */
 export function resolveLeasedEdit(args: {
   edit: HEdit;

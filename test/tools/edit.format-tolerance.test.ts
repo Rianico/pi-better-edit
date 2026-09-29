@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { writeFile, readFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
 import { lineHashes } from "../../src/hashline";
-import { recordDiffServes, sessionKeyFor } from "../../src/served-session/index.js";
+import { createSessionHandle, sessionKeyFor } from "../../src/served-session/index.js";
 
 const CLEAN = "function hello() {\n  const x = 1;\n  return x;\n}\n";
 
@@ -48,14 +48,14 @@ describe("format-tolerance across edits (whitespace-only external reformat)", ()
       expect(plusHashes.length).toBeGreaterThan(0);
       const anchor = plusHashes[0]!;
 
-      await recordDiffServes({
-        sessionKey: sessionKeyFor(ctx),
-        path,
-        servedRows: first.details?.servedRows as any,
-        contentHash: (first.details as { contentHash?: string } | undefined)?.contentHash ?? "",
-        resultLineCount: first.details?.resultLineCount,
-        firstChangedLine: first.details?.firstChangedLine,
-      });
+      await createSessionHandle(sessionKeyFor(ctx), path).recordDiff(
+        first.details?.servedRows as any,
+        {
+          contentHash: (first.details as { contentHash?: string } | undefined)?.contentHash ?? "",
+          resultLineCount: first.details?.resultLineCount,
+          firstChangedLine: first.details?.firstChangedLine,
+        },
+      );
 
       await writeFile(path, REFORMATTED, "utf-8");
 

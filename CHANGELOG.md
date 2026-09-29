@@ -2,6 +2,13 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+
+* **edit-undo:** derive undo-summary counts from source inputs, not rendered rows (#9)
+* commit the edit and undo store state in one transaction, so a store failure can no longer leave the leases and the served mirror disagreeing (#16)
+* **preview:** keep the debounced preview bound to the session that armed it across a session switch (#16)
+* **drift:** key drift-notice episodes on the drifted line's position, so distinct lines sharing an anchor are no longer collapsed into one silent notice (#16)
+
 ## [2.3.0] - 2026-09-27
 
 ## [2.2.0](https://github.com/Rianico/pi-better-edit/compare/v2.1.0...v2.2.0) (2026-09-22)

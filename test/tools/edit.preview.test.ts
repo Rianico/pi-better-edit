@@ -363,6 +363,50 @@ describe("renderCall preview", () => {
     });
   });
 
+  // WHY: (#168-class) the compute must never verify anchors against a session that did not
+  // WHY: serve them. A session_start switching the global manager inside the debounce window
+  // WHY: must discard the pending preview (cancel semantics), not re-target the new session.
+  it("discards a pending preview when the session switches during the debounce window", async () => {
+    let previewError = "";
+    let previewSet = false;
+    let argsKeySet = false;
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { pi, getTool } = makeFakePiRegistry();
+      register(pi);
+      pi.startSession({ sessionManager: testSessionManager });
+      const tool = getTool("edit");
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+
+      const harness = makeHarness(cwd);
+      vi.useFakeTimers();
+      try {
+        tool.renderCall(
+          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+          harness.theme,
+          harness.context,
+        );
+        // resume/fork/switch inside the 150 ms window installs a different serving session
+        pi.startSession({ sessionManager: { getSessionId: () => "switched-session" } });
+        await vi.advanceTimersByTimeAsync(600);
+      } finally {
+        vi.useRealTimers();
+      }
+      // WHY: the fake registry fires session_start handlers without awaiting them and the
+      // wrong-session verify is real fs I/O; let everything settle before sampling state
+      // and before the temp-dir cleanup removes the store.
+      await new Promise((resolve) => setTimeout(resolve, 250));
+      previewSet = harness.state.preview !== undefined;
+      previewError = (harness.state.preview as { error?: string } | undefined)?.error ?? "";
+      argsKeySet = harness.state.argsKey !== undefined;
+    });
+    expect(previewError).not.toMatch(/E_UNKNOWN_ANCHOR/);
+    expect(previewSet).toBe(false);
+    // the armed slot was cancelled, so a later renderCall may re-arm against the new session
+    expect(argsKeySet).toBe(false);
+  });
+
   it("debounces preview computation until args settle", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();

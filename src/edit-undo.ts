@@ -4,16 +4,17 @@ import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { readUndo, writeUndo, removeUndo, type UndoRecord } from "./undo-store.js";
 import { adoptPinnedSnapshotFor, anchorsForSnapshotHash, snapshotHashFor } from "./snapshot-store";
-import { createSessionHandle, sessionKeyFor } from "./served-session/session.js";
+import { sessionKeyFor } from "./served-session/session.js";
 import { resolveTarget, writeAtomic } from "./fs-write.js";
 import { toCwd } from "./paths.js";
 import { DEFERRED_STORE_SYNC_WARNING } from "./constants.js";
 import { toLF, stripBOM, genDiff, restoreEndings, type LineEnding } from "./edit-diff.js";
-import { cntDiff, visLines, splitLines, errCode, isRec, normalizeFilePath } from "./utils.js";
+import { visLines, splitLines, errCode, isRec, normalizeFilePath } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError } from "./domain-errors.js";
 import { changedRange, lineHashes } from "./hashline/index.js";
+import { denseServeRows } from "./hashline/served.js";
 export interface UndoEntry {
   content: string;
   bom: string;
@@ -198,9 +199,23 @@ export function regEditUndo(pi: ExtensionAPI): void {
           console.error("Failed to load anchors for undo restore:", error);
         }
         const currentHashes = await lineHashes(currentNormalized, mutationTargetPath);
-        const diffResult = genDiff(undo.content, currentNormalized, 0, undefined, undo.hashes);
-        const linesAddedByEdit = cntDiff(diffResult.diff, "+");
-        const linesRemovedByEdit = cntDiff(diffResult.diff, "-");
+        // WHY: #173 — the summary counts come from the source line multisets, never from the
+        // WHY: rendered projection: a deleted run past DIFF_REMOVED_CAP collapses behind a marker
+        // WHY: row at context 0, so counting `-` rows underreported the restored lines (#169
+        // WHY: projection-purity rule). A line the edit added is one present in the current file
+        // WHY: beyond its occurrence count in `undo.content`; a line it removed is the converse.
+        const remainingUndoCounts = new Map<string, number>();
+        for (const line of visLines(undo.content)) {
+          remainingUndoCounts.set(line, (remainingUndoCounts.get(line) ?? 0) + 1);
+        }
+        let linesAddedByEdit = 0;
+        for (const line of visLines(currentNormalized)) {
+          const remaining = remainingUndoCounts.get(line) ?? 0;
+          if (remaining > 0) remainingUndoCounts.set(line, remaining - 1);
+          else linesAddedByEdit++;
+        }
+        let linesRemovedByEdit = 0;
+        for (const remaining of remainingUndoCounts.values()) linesRemovedByEdit += remaining;
         const restoredRange = changedRange(currentNormalized, undo.content);
         const undoDiffResult = genDiff(
           currentNormalized,
@@ -210,27 +225,14 @@ export function regEditUndo(pi: ExtensionAPI): void {
           currentHashes,
         );
         const undoDiff = undoDiffResult.diff;
-        const undoDenseRows: typeof undoDiffResult.servedRows = restoredHashes.map(
-          (hash, position) => ({ position, hash }),
-        );
-        try {
-          const curSet = new Set(currentHashes);
-          const restoredSet = new Set(restoredHashes);
-          const toRetire = [...curSet].filter((h) => !restoredSet.has(h));
-          if (toRetire.length > 0) {
-            try {
-              await createSessionHandle(sessionKeyForUndo, mutationTargetPath).retire(toRetire);
-            } catch (error) {
-              // SAFETY: best-effort retire — displaced-anchor cleanup failed; the file is still
-              // SAFETY: restored and the next edit fails closed if it must.
-              console.error("Failed to retire displaced anchors during undo:", error);
-            }
-          }
-        } catch (error) {
-          // SAFETY: best-effort displaced-anchor computation — Set/filter failed (defensive);
-          // SAFETY: the file restore proceeds; a missed retire degrades to fail-closed.
-          console.error("Failed to compute displaced anchors during undo:", error);
-        }
+        const undoDenseRows = denseServeRows(restoredHashes);
+        // WHY: CAND-3 (#117 discipline): displaced-anchor retirement is a store mutation, so it
+        // WHY: must not run before `writeAtomic` — a restore that never committed bytes must
+        // WHY: retire nothing. The set difference below is pure computation; the retirement
+        // WHY: itself rides the single restore transaction after the write, like everything else.
+        const curSet = new Set(currentHashes);
+        const restoredSet = new Set(restoredHashes);
+        const displacedAnchors: string[] = [...curSet].filter((h) => !restoredSet.has(h));
 
         const deferredSyncWarnings: string[] = [];
 
@@ -240,13 +242,14 @@ export function regEditUndo(pi: ExtensionAPI): void {
         );
 
         try {
-          // WHY: the undo revert is ONE store transaction (spec §3.1.2): the pinned-snapshot adopt,
-          // WHY: the authoritative `served_leases.retired_at` writer (spec §3.1.3: `UPDATE
+          // WHY: the undo revert is ONE store transaction (spec §3.1.2, CAND-3): the pinned-snapshot
+          // WHY: adopt, the authoritative `served_leases.retired_at` writer (spec §3.1.3: `UPDATE
           // WHY: served_leases SET retired_at = :now WHERE file_path = :path AND retired_at IS NULL
-          // WHY: AND line_id NOT IN (...)`) and the restored-line lease upsert share a single
-          // WHY: `BEGIN IMMEDIATE` / `withBusyRetry`. Splitting them left adopted lineage (or
-          // WHY: retired leases) committed for content that was already on disk whenever the later
-          // WHY: step failed.
+          // WHY: AND line_id NOT IN (...)`), the restored-line lease upsert, the served mirror
+          // WHY: write (the old `recordTruncated` — same clamp/clear/patch, same displaced
+          // WHY: retirement) and the displaced-anchor retire all share a single `BEGIN IMMEDIATE` /
+          // WHY: `withBusyRetry`. Splitting them left lease-without-mirror or mirror-without-lease
+          // WHY: states whenever a later step failed; one failure now means one full rollback.
           // WHY: Naming the `file_undo.snapshot_hash` pin still adopts the canonical snapshot
           // WHY: verbatim on the cache hit — zero `line_id_counters` allocations — rather than
           // WHY: re-deriving the cache key, and the restored lines are re-leased with
@@ -264,6 +267,16 @@ export function regEditUndo(pi: ExtensionAPI): void {
               // WHY: the restored rows are the serve this hook owes the model (spec §6 path 5): the
               // WHY: leases bind to the snapshot actually served, so the pin is named, not `S_latest`.
               leases: { sessionKey: sessionKeyForUndo, rows: undoDenseRows },
+              // WHY: undo_last_edit is a serve hook (spec §6 stage 1, path 5): the restored rows are
+              // WHY: presented to the model, so the served mirror is (re-)written here — it is the
+              // WHY: record the reject paths serve rows from. The mirror shape reproduces the old
+              // WHY: `recordTruncated(undoDenseRows, restoredLineCount, 0)` call exactly.
+              servedMirror: {
+                sessionKey: sessionKeyForUndo,
+                rows: undoDenseRows,
+                shape: { lineCount: restoredLineCount, clearFrom: 0 },
+                retireAnchors: displacedAnchors,
+              },
             },
           );
         } catch (error) {
@@ -274,20 +287,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
           deferredSyncWarnings.push(DEFERRED_STORE_SYNC_WARNING);
         }
 
-        // WHY: undo_last_edit is a serve hook (spec §6 stage 1, path 5): the restored rows are
-        // WHY: presented to the model, so the served mirror is (re-)written here — it is the record
-        // WHY: the reject paths serve rows from. Lease-only verification was completed by #151, which
-        // WHY: replaced the `verifyServedRange` seam on the leased edit path, so this mirror is no
-        // WHY: longer read for a verdict. The v7 `served_leases` identities were granted in the restore
-        // WHY: transaction above.
-        try {
-          const handle = createSessionHandle(sessionKeyForUndo, mutationTargetPath);
-          await handle.recordTruncated(undoDenseRows, restoredLineCount, 0);
-        } catch (error) {
-          // SAFETY: best-effort serve recording after undo — the file is restored and the diff rows are valid; a missed serve degrades to the fail-closed path the next edit would take anyway.
-          console.error("Failed to record undo serves:", error);
-        }
-
         await clearUndo(mutationTargetPath);
 
         const parts: string[] = [`Undone last edit on ${path}.`];
@@ -296,7 +295,14 @@ export function regEditUndo(pi: ExtensionAPI): void {
             `Removed ${linesAddedByEdit} line(s) that were added and restored ${linesRemovedByEdit} line(s) that were removed.`,
           );
         }
-        parts.push("File reverted; diff rows carry fresh anchors for follow-up edits.");
+        // WHY: CAND-3 truthful degradation: the success claim is byte-identical; when the restore
+        // WHY: transaction failed, the diff rows were NOT served (mirror and leases rolled back
+        // WHY: together), so the claim names the warning instead of overstating fresh anchors.
+        parts.push(
+          deferredSyncWarnings.length > 0
+            ? "File reverted; store synchronization is deferred (see the warning below), so the diff rows are not anchored for follow-up edits until the next read."
+            : "File reverted; diff rows carry fresh anchors for follow-up edits.",
+        );
         parts.push(...deferredSyncWarnings);
 
         const details: EditDetails = {

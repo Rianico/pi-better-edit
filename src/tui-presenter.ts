@@ -3,7 +3,7 @@
 import { Markdown, Text } from "@earendil-works/pi-tui";
 import type { ToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { TSchema } from "typebox";
-import { DebouncedPreview } from "./preview-controller.js";
+import { DebouncedPreview, PREVIEW_DEBOUNCE_MS } from "./preview-controller.js";
 import {
   buildAppliedText,
   mkMdTheme,
@@ -114,8 +114,9 @@ export interface TuiPresenter {
 
 export function createTuiPresenter(
   previewFn: (request: unknown, cwd: string) => Promise<RPreview>,
+  getSessionId?: () => string | undefined,
 ): TuiPresenter {
-  const preview = new DebouncedPreview(previewFn);
+  const preview = new DebouncedPreview(previewFn, PREVIEW_DEBOUNCE_MS, getSessionId);
   const renderCall = makeRenderCall(preview);
   const renderResult = makeRenderResult(preview);
   return {

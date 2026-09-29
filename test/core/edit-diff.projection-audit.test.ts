@@ -186,6 +186,21 @@ describe("projection contract audit — middle-gap corpus (#169/#170)", () => {
     expect(rows[markerIdx - 1]).toBe(` ${hashes[3]}│g2`);
     expect(rows[markerIdx + 1]).toBe(` ${hashes[279]}│g278`);
   });
+
+  it("gate 3: a ctx-0 middle-gap marker count equals the hidden span and the next anchors carry the true hashes at the advanced positions (#175)", () => {
+    // Negative control for the renderer-guarantee half of the contract: a perturbed hidden
+    // count changes the marker text and desyncs the anchors that follow it — both fail here.
+    const { oldContent, newContent } = gapCase(5);
+    const diff = auditProjection(oldContent, newContent, 0);
+    const rows = diff.split("\n");
+    const markerIdx = rows.findIndex((line) => UNTOUCHED_MARKER.test(line));
+    expect(rows[markerIdx]).toBe(" ... [5 lines untouched] ...");
+    const newHashes = _lineHashesPure(newContent);
+    const oldHashes = _lineHashesPure(oldContent);
+    // Both cursors land on `c`/`C` at index 2+5: the next emitted anchors are their true hashes.
+    expect(rows[markerIdx + 1]).toBe(`-${oldHashes[7]}│c`);
+    expect(rows[markerIdx + 2]).toBe(`+${newHashes[7]}│C`);
+  });
 });
 
 describe("projection contract audit — deleted-run corpus (#169/#170)", () => {

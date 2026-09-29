@@ -3,9 +3,34 @@ import { DomainError } from "./domain-errors.js";
 import { type ServedRow, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
 import { servedPositionsOf } from "./hashline/served.js";
 import { canonDigest } from "./hashline/hash-identity.js";
+import { ALPHA, HASH_LEN } from "./hashline/alphabet.js";
 import { currentPositionOfDrifted } from "./served-session/drift-helpers.js";
 import { createSessionHandle } from "./served-session/session.js";
 const DRIFT_NOTICE_HEADING = "[USER] drift:";
+
+/**
+ * WHY (CAND-9, ADR-0023): the drift-notice episode identity is the drifted line's rebased
+ * position in the CURRENT file — not its anchor string. An anchor is a spelling, not an
+ * identity: one reported entry for a hash shared by two distinct lines silenced both
+ * (duplicate-hash collapse), and a lease rotation renamed the mirror anchor of an
+ * already-reported line, spuriously re-noticing it. The session's reported-set keeps storing
+ * strings (schema unchanged); this 3-char base-62 encoding of the position is the KEY VALUE.
+ * Positions are bounded by `MAX_HASH_LINES` (= |ALPHA|^HASH_LEN, files larger cannot be
+ * hashed), so the encoding is injective over every reachable position. An out-of-file
+ * position (never shown, never marked) keys on "" — not a valid stored entry, always
+ * "not yet reported", matching the legacy behavior for unshown drift.
+ */
+export function driftEpisodeKey(position: number): string {
+  const space = ALPHA.length ** HASH_LEN;
+  if (!Number.isInteger(position) || position < 0 || position >= space) return "";
+  let idx = position;
+  let out = "";
+  for (let j = 0; j < HASH_LEN; j++) {
+    out = ALPHA[idx % ALPHA.length]! + out;
+    idx = Math.floor(idx / ALPHA.length);
+  }
+  return out;
+}
 
 interface DriftRow extends ServedRow {
   content: string;
@@ -18,6 +43,7 @@ export interface ComputeDriftInput {
   resultLines: string[];
   range?: ResolvedRange;
   intervals?: ResolvedRange[];
+  /** Episode keys (`driftEpisodeKey`) of already-reported drifted lines — see CAND-9 WHY above. */
   reported: Set<string>;
   cap?: number;
   /** WHY: canon digests parallel to `served`, derived from the served rows' leases.
@@ -54,6 +80,11 @@ function resolveServedRange(input: ComputeDriftInput): {
     servedStartIdx = startPositions[0]!;
     servedEndIdx = endPositions[0]!;
   } else {
+    // WHY: ADR-0023 position-fallback — an anchor is a spelling, not an identity. When the
+    // WHY: served hash names zero or several mirror positions there is no unambiguous
+    // WHY: anchor lookup, so the window degrades to the line-number coordinates the range
+    // WHY: carries — a judgment aid, not an identity claim; drift inside the window is
+    // WHY: excluded, drift near a mis-located boundary may over- or under-report lines.
     servedStartIdx = range.startLine - 1;
     servedEndIdx = range.endLine - 1;
   }
@@ -80,6 +111,9 @@ function resolveIntervals(
       s = startPositions[0]!;
       e = endPositions[0]!;
     } else {
+      // WHY: ADR-0023 position-fallback — same degradation as `resolveServedRange`: an
+      // WHY: ambiguous (0 or >1 hits) anchor is a spelling, not an identity, so the interval
+      // WHY: falls back to the range's line-number coordinates.
       s = r.startLine - 1;
       e = r.endLine - 1;
     }
@@ -181,7 +215,6 @@ function collectDrifted(
     if (resultHashSet.has(servedHash)) continue;
     if (isRotatedSurvivor(servedHash, p)) continue;
     total++;
-    if (!input.reported.has(servedHash)) anyNotReported = true;
     const delta = input.range?.delta ?? 0;
     const currentPos = currentPositionOfDrifted(
       input.served,
@@ -190,6 +223,7 @@ function collectDrifted(
       p,
       delta,
     );
+    if (!input.reported.has(driftEpisodeKey(currentPos))) anyNotReported = true;
     if (
       currentPos >= 0 &&
       currentPos < input.resultHashes.length &&
@@ -224,7 +258,6 @@ function collectDriftedIntervals(
     if (resultHashSet.has(servedHash)) continue;
     if (isRotatedSurvivor(servedHash, p)) continue;
     total++;
-    if (!input.reported.has(servedHash)) anyNotReported = true;
     const delta = deltaBefore(p, intervals);
     const currentPos = currentPositionOfDrifted(
       input.served,
@@ -233,6 +266,7 @@ function collectDriftedIntervals(
       p,
       delta,
     );
+    if (!input.reported.has(driftEpisodeKey(currentPos))) anyNotReported = true;
     if (
       currentPos >= 0 &&
       currentPos < input.resultHashes.length &&
@@ -349,6 +383,10 @@ export async function scanDrift(input: {
     undefined,
     input.contentHash,
   );
-  await handle.markDriftReported(result.rows.filter((row) => row.drifted).map((row) => row.hash));
+  // WHY: CAND-9 — the episode key is the drifted row's rebased position, not its anchor hash
+  // WHY: (see `driftEpisodeKey`). The handle keeps its string[] storage contract unchanged.
+  await handle.markDriftReported(
+    result.rows.filter((row) => row.drifted).map((row) => driftEpisodeKey(row.position)),
+  );
   return result.text;
 }

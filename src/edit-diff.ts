@@ -109,9 +109,11 @@ function contextLinesToShow(
  * - every emitted row's anchor equals the true new-file line content hash at that
  *   position; removed rows carry the true old-file hash when old hashes are provided.
  * - every emitted marker's count equals the span it hides:
- *   ` ... [N lines untouched] ...` advances both cursors past N hidden rows (lease-covered,
- *   they stay addressable through the served leases), and ` - ... [N lines deleted] ...`
- *   advances the old cursor past N deleted rows (cursor-exact).
+ *   ` ... [N lines untouched] ...` advances both cursors past N hidden rows, keeping every FOLLOWING
+ *   emitted anchor at its true file position; whether the hidden rows are addressable is a property
+ *   of the serve that carries this projection (rows rendered through serve paths are leased there),
+ *   not of this renderer, and ` - ... [N lines deleted] ...` advances the old cursor past
+ *   N deleted rows (cursor-exact).
  * - collapse invariant: a middle gap smaller than 2×context renders whole (#166/#172);
  *   at context 0 every non-empty middle gap collapses to a single counted untouched
  *   marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed.

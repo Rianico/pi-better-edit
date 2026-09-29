@@ -11,38 +11,29 @@
  */
 
 import { apply as pipelineApply, previewEdits as pipelinePreview } from "./pipeline.js";
+import { genDiff } from "../edit-diff.js";
+import { DIFF_PREVIEW_CONTEXT } from "../constants.js";
 import type { PipelineOptions } from "./types.js";
 import type { MutationResult } from "./types.js";
 import type { NormalizedEditRequest } from "../payload-contract.js";
-import { DomainError, isDomainErrorCode } from "../domain-errors.js";
-import type { ServedRow } from "../domain-errors.js";
+import { DomainError, type DomainErrorCode } from "../domain-errors.js";
+import { readEnvelope, type ErrorEnvelope } from "../error-envelope.js";
 
-function failureFromFields(args: {
-  code: string;
+function failureFromEnvelope(args: {
+  code: DomainErrorCode;
   message: string;
-  fields: {
-    servedRows?: unknown;
-    servedBlock?: unknown;
-    cause?: unknown;
-    details?: unknown;
-  };
+  env: ErrorEnvelope;
 }): MutationResult {
-  const { servedRows, servedBlock, cause, details } = args.fields;
+  const { code, message, env } = args;
   return {
     ok: false,
-    code: args.code,
-    message: args.message,
-    ...(Array.isArray(servedRows) && servedRows.length > 0
-      ? { servedRows: servedRows as ServedRow[] }
+    code,
+    message,
+    ...(env.servedRows !== undefined && env.servedRows.length > 0
+      ? { servedRows: env.servedRows }
       : {}),
-    ...(typeof servedBlock === "string" && servedBlock.length > 0 ? { servedBlock } : {}),
-    ...(typeof cause === "string" ? { cause } : {}),
-    ...(details !== null &&
-    typeof details === "object" &&
-    "cause" in details &&
-    typeof (details as { cause: unknown }).cause === "string"
-      ? { details: details as { cause: string } }
-      : {}),
+    ...(env.servedBlock !== undefined ? { servedBlock: env.servedBlock } : {}),
+    ...(env.cause !== undefined ? { cause: env.cause, details: { code, cause: env.cause } } : {}),
   };
 }
 
@@ -51,25 +42,22 @@ function toFailure(error: unknown): MutationResult {
   // WHY: fields — the code is read, never scraped from the message, so a
   // WHY: `[MODEL]`-only message can never surface as `code: "MODEL"`.
   if (error instanceof DomainError) {
-    return failureFromFields({ code: error.code, message: error.message, fields: error });
+    return failureFromEnvelope({
+      code: error.code,
+      message: error.message,
+      env: readEnvelope(error) ?? {},
+    });
   }
-  const fields = error as
-    | {
-        code?: unknown;
-        servedRows?: unknown;
-        servedBlock?: unknown;
-        cause?: unknown;
-        details?: unknown;
-      }
-    | null
-    | undefined;
   const message = error instanceof Error ? error.message : String(error);
   // WHY: the batch-abort wrapper preserves the failing item's own code as a
   // WHY: plain field — a registry member routes the typed path, while
   // WHY: errno-style codes (ENOENT) and unexpected throws fall through to
-  // WHY: `E_UNKNOWN` instead of leaking a scraped token as the code.
-  if (fields !== null && typeof fields === "object" && isDomainErrorCode(fields.code)) {
-    return failureFromFields({ code: fields.code, message, fields });
+  // WHY: `E_UNKNOWN` instead of leaking a scraped token as the code. The
+  // WHY: envelope reader owns that validation: a non-registry code reads back
+  // WHY: as no code at all, which is exactly the fall-through condition.
+  const env = readEnvelope(error);
+  if (env !== undefined && env.code !== undefined) {
+    return failureFromEnvelope({ code: env.code, message, env });
   }
   // WHY: unexpected errors emit `E_UNKNOWN` through the registry: the first
   // WHY: message line only, never the verbatim `String(error)` dump.
@@ -77,7 +65,11 @@ function toFailure(error: unknown): MutationResult {
     errorName: error instanceof Error ? error.name : typeof error,
     message,
   });
-  return failureFromFields({ code: unknown.code, message: unknown.message, fields: unknown });
+  return failureFromEnvelope({
+    code: unknown.code,
+    message: unknown.message,
+    env: readEnvelope(unknown) ?? {},
+  });
 }
 
 /**
@@ -128,15 +120,19 @@ export async function preview(
     // WHY: pipelinePreview does not persist and does not write undo — but still
     // WHY: runs the full mutate→finalize→drift path.
     const file = await pipelinePreview(request, cwd, options);
-    // WHY: Build a success shape matching execute's contract without persist.
-    // WHY: `file` is ProcessedEditFile; synthesize diff/metrics via the same
-    // WHY: helpers the pipeline's `apply` would use — but for preview we can
-    // WHY: return minimal success (raw is the file, diff is empty if noop).
-    // WHY: To avoid duplicating buildBatchResult logic, delegate to a thin
-    // WHY: conversion: if applied, callers can diff via raw; otherwise noop.
-    // WHY: Here we surface raw + a synthetic success — callers that need diff
-    // WHY: should use `execute` or rely on `raw.result` vs `raw.originalNormalized`.
-    const diff = ""; // WHY: preview diff is available via file.result vs file.originalNormalized; kept empty to avoid duplicating genDiff here
+    // WHY: #174 single-projection contract — the preview diff IS the `genDiff` projection,
+    // WHY: produced here at the same seam that returns execute's projected `diff`, with the
+    // WHY: preview pane's context (`DIFF_PREVIEW_CONTEXT`). The display path (`edit-tool
+    // WHY: preview` → preview-controller → edit-render) consumes this text and never
+    // WHY: re-projects; `file` already carries everything `genDiff` needs, so no side
+    // WHY: decision of an empty diff is synthesized here.
+    const diff = genDiff(
+      file.originalNormalized,
+      file.result,
+      DIFF_PREVIEW_CONTEXT,
+      file.resultHashes,
+      file.originalHashes,
+    ).diff;
     const metrics: import("../edit-response.js").RMetrics = {
       classification: (file.appliedCount > 0 ? "applied" : "noop") as "applied" | "noop",
       edits_attempted: file.appliedCount + file.noopCount,

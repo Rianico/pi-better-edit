@@ -23,11 +23,6 @@ import {
 import { createEditTool, type PreviewContext } from "./edit-tool.js";
 import { createTuiPresenter } from "./tui-presenter.js";
 import { loadP, loadGuide } from "./prompts.js";
-import {
-  execEdits as pipelineExecEdits,
-  type PipelineOptions,
-  type ProcessedEditFile,
-} from "./edit-pipeline.js";
 import type { EditDetails } from "./edit-response.js";
 import type { RPreview, RRState } from "./edit-render.js";
 
@@ -54,16 +49,6 @@ export type EditParams = {
 
 export type EditRequest = NormalizedEditRequest;
 
-export type ExecPipelineOptions = PipelineOptions;
-
-export function execEdits(
-  request: NormalizedEditRequest,
-  cwd: string,
-  options?: ExecPipelineOptions,
-): Promise<ProcessedEditFile> {
-  return pipelineExecEdits(request, cwd, options);
-}
-
 export async function compPreview(
   request: unknown,
   cwd: string,
@@ -85,8 +70,11 @@ export function buildToolDef(
   const E_GUIDE = loadGuide("../prompts/edit-guidelines.md");
   const parameters = editToolSchema;
   const tool = createEditTool();
-  const presenter = createTuiPresenter((req, cwd) =>
-    tool.preview(req, cwd, { sessionManager: getSessionManager?.() }),
+  const presenter = createTuiPresenter(
+    // SAFETY: fire-time read is paired with the arm-time getSessionId below; DebouncedPreview
+    // SAFETY: drops the compute if the serving session changed between arming and firing.
+    (req, cwd) => tool.preview(req, cwd, { sessionManager: getSessionManager?.() }),
+    () => getSessionManager?.()?.getSessionId(),
   );
   return {
     name: "edit",
@@ -119,6 +107,10 @@ export function regEdit(pi: ExtensionAPI): void {
   // WHY: (#165) pi's ToolRenderContext carries no session, so the preview pane's session is
   // WHY: captured from the session_start ctx — the same session reads serve anchors to.
   // WHY: session_start fires for startup/reload/new/resume/fork, so the capture tracks switches.
+  // WHY: (#168-class) tracking a switch is only safe if the *pending* compute re-checks it:
+  // WHY: buildToolDef below exposes getSessionId so DebouncedPreview binds the serving session
+  // WHY: at arm time and drops (cancels) a compute whose session changed before the timer fires,
+  // WHY: instead of verifying anchors against a session that never served them.
   let sessionManager: { getSessionId(): string } | undefined;
   pi.on("session_start", (_event, ctx) => {
     sessionManager = ctx.sessionManager;

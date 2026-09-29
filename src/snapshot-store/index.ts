@@ -23,6 +23,7 @@ import { deleteUndo } from "../undo-store.js";
 import {
   deleteServedByPath,
   grantLeasesInTransaction,
+  recordServedMirrorInTransaction,
   retireAbsentLeases,
 } from "../served-session/session.js";
 import { pairSnapshots, type LineDescriptor } from "../hashline/patience-pairing.js";
@@ -307,6 +308,7 @@ export function upsertSnapshot(
   materializeSnapshot(store, descriptor, {
     retireLeases: options?.retireLeases === true,
     ...(options?.leases !== undefined ? { leases: options.leases } : {}),
+    ...(options?.servedMirror !== undefined ? { servedMirror: options.servedMirror } : {}),
   });
 }
 
@@ -322,7 +324,9 @@ export interface LeaseGrant {
 }
 
 /**
- * Adoption options: `retireLeases` plus the served rows to lease in the same transaction.
+ * Adoption options: `retireLeases`, the served rows to lease in the same transaction, and the
+ * served mirror write (`servedMirror`) that belongs with them — CAND-3 makes the whole post-write
+ * commit (snapshot + lineage + retirement + lease grant + mirror) one `BEGIN IMMEDIATE` unit.
  */
 export type SnapshotAdoptOptions = HashSnapshotUpsertOptions;
 
@@ -335,6 +339,8 @@ export type SnapshotAdoptOptions = HashSnapshotUpsertOptions;
  *
  * `options.leases` makes the adoption the WHOLE restore transaction: the authoritative
  * retirement update and the served-line lease upsert commit or roll back together with it.
+ * `options.servedMirror` folds the served mirror write (and undo's displaced-anchor retirement)
+ * into that same transaction, so no torn lease/mirror state can survive a mid-commit failure.
  */
 export async function adoptPinnedSnapshotFor(
   descriptor: SnapshotDescriptor,
@@ -344,6 +350,7 @@ export async function adoptPinnedSnapshotFor(
   materializeSnapshot(store, descriptor, {
     retireLeases: options?.retireLeases === true,
     ...(options?.leases !== undefined ? { leases: options.leases } : {}),
+    ...(options?.servedMirror !== undefined ? { servedMirror: options.servedMirror } : {}),
   });
 }
 
@@ -397,10 +404,28 @@ function pairAgainstLatest(store: HashStore, path: string, lines: string[]): Inh
   return { inherited };
 }
 
-/** The one transaction's own options: retirement is authoritative-only, `leases` adds the grant. */
+/** The one transaction's own options: retirement is authoritative-only, `leases` adds the grant, `servedMirror` the mirror write. */
 interface MaterializePlan {
   retireLeases: boolean;
   leases?: LeaseGrant;
+  servedMirror?: HashSnapshotUpsertOptions["servedMirror"];
+}
+
+/**
+ * The served-mirror step of the materialization transaction (CAND-3): writes the served mirror —
+ * and the displaced-anchor retirement the record owns — on the caller's open `BEGIN IMMEDIATE`,
+ * so the `served_leases` grant above and the mirror rows commit or roll back as one unit.
+ */
+function recordMaterializedMirror(
+  db: DatabaseSync,
+  mirror: HashSnapshotUpsertOptions["servedMirror"],
+  path: string,
+): void {
+  if (!mirror) return;
+  recordServedMirrorInTransaction(db, mirror.sessionKey, path, mirror.rows, {
+    ...(mirror.shape !== undefined ? { shape: mirror.shape } : {}),
+    ...(mirror.retireAnchors !== undefined ? { retireAnchors: mirror.retireAnchors } : {}),
+  });
 }
 
 /**
@@ -466,7 +491,7 @@ function materializeSnapshot(
   isConflictRetry = false,
 ): number | undefined {
   const { path, snapshotHash, lineCount, hashes, content } = descriptor;
-  const { retireLeases, leases } = plan;
+  const { retireLeases, leases, servedMirror } = plan;
   const lines = splitLines(content);
   // WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4 step
   // WHY: 4): the default is `false` so in-memory working-buffer snapshots — and any content that has
@@ -487,6 +512,7 @@ function materializeSnapshot(
           retireAbsentLeases(store.db, path, existing.snapshot_id, Date.now());
         }
         grantMaterializedLeases(store.db, leases, path, snapshotHash);
+        recordMaterializedMirror(store.db, servedMirror, path);
         store.db.exec("COMMIT");
         return existing.snapshot_id;
       }
@@ -538,6 +564,10 @@ function materializeSnapshot(
       // WHY: lineage back instead of leaving committed identity without leases for content
       // WHY: already served (read window, edit diff) or already on disk (undo restore).
       grantMaterializedLeases(store.db, leases, path, snapshotHash);
+      // WHY: CAND-3: the served mirror is step 6 of the same transaction — the lease grant above
+      // WHY: and the mirror rows commit or roll back as one unit, so a torn store state
+      // WHY: (lease-without-mirror, mirror-without-lease) is structurally unreachable.
+      recordMaterializedMirror(store.db, servedMirror, path);
       store.db.exec("COMMIT");
       return insertedId;
     } catch (error) {

@@ -23,7 +23,7 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import register from "../../index";
 import { withTempFile, withTempBytes, setupIntegrationTest, getText } from "../support/fixtures";
-import { loadServed } from "../../src/served-session";
+import { createSessionHandle } from "../../src/served-session";
 import { sessionKeyFor } from "../../src/served-session/session";
 
 function ctxFor(cwd: string, id = "closed-issues"): unknown {
@@ -130,7 +130,7 @@ describe("closed #53 — served refresh after a multi-entry batch", () => {
       expect(getText(batch)).toContain("Successfully edited");
 
       const after = (await readFile(path, "utf-8")).split("\n");
-      const mirror = await loadServed(sessionKeyFor(ctx as never), path);
+      const mirror = await createSessionHandle(sessionKeyFor(ctx as never), path).load();
       // denseness: the whole file stays served (never a hole inside the length)
       expect(mirror.slice(0, after.length - 1).every((h) => h !== null)).toBe(true);
 
@@ -166,7 +166,7 @@ describe("closed #48 — full re-read after an external change", () => {
         getText(await readTool.execute("r2", { path: "shift.txt" }, undefined, undefined, ctx)),
       );
       expect(reread.map((r) => r.text)).toEqual(["a", "b", "c", "d", "e", "f"]);
-      const mirror = await loadServed(sessionKeyFor(ctx as never), path);
+      const mirror = await createSessionHandle(sessionKeyFor(ctx as never), path).load();
       expect(mirror).toHaveLength(6);
       expect(mirror.every((h) => h !== null)).toBe(true);
 
