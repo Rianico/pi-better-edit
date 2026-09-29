@@ -246,6 +246,15 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 - `edits`: Array of 1 to 32 edit items. An empty `replace_with` string deletes the targeted range.
 - `mode`: `"general"` (default) refuses text containing served anchor prefixes; `"literal"` allows verbatim insertion of lines beginning with `HASH│`.
 
+### Interoperability with pi-lens
+
+`pi-better-edit` composes with [`pi-lens`](https://github.com/Rianico/pi-lens) diagnostics, formatting, and its read-before-edit guard:
+
+- **Read expansion**: pi-lens may widen small reads (`limit <= 100`) to the enclosing symbol. Anchors always describe the rows actually served — no action needed.
+- **Guard compatibility**: every served row (reads, multi-window reads, `reject-and-serve` payloads, post-edit diffs) is reported to pi-lens through its read bridge, so retries and chained edits satisfy the read-before-edit guard without manual re-reads.
+- Overlapping reports are merged by pi-lens and are expected, not a bug.
+- Opt-in: `/pi-better-edit lens` (`auto` by default when pi-lens is detected, else off; override via `PI_BETTER_EDIT_LENS_BRIDGE=auto|on|off`). Core editing never depends on pi-lens — with the bridge off or absent, behavior is unchanged.
+
 ---
 
 ## Error and Warning Contract
