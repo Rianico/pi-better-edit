@@ -20,6 +20,7 @@
 
 * **readme:** record pi-lens interoperability and the read-expansion contract (#29)
 * **prompts:** note that served rows may cover an expanded window without naming a provider (#29)
+* **readme:** name the read-expansion workarounds and the deferred format interaction (#30)
 
 ### Code Refactoring
 
