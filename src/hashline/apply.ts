@@ -1,7 +1,7 @@
 import { abortIf, splitLines } from "../utils.js";
 import { DomainError, formatWarning } from "../domain-errors.js";
 import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
-import { verifyServedRange, type ResolvedRange } from "./served.js";
+import { type ResolvedRange } from "./served.js";
 import {
   findServedHashEcho,
   findServedPrefixMismatches,
@@ -72,7 +72,6 @@ export interface ApplyVerificationContext {
   filePath?: string;
   absolutePath?: string;
   served?: (string | null)[];
-  blockedHashes?: ReadonlySet<string>;
   /**
    * SAFETY: canon digests parallel to `served` — `String(xxh32(canon(line)))`, the value
    * `served_leases.canon_hash` persists. The session derives them from its leases; a caller with no
@@ -247,7 +246,6 @@ export function applyEdit(
     filePath,
     absolutePath,
     served,
-    blockedHashes,
     canonDigests,
     identity,
     mode = "general",
@@ -342,26 +340,10 @@ export function applyEdit(
         });
       }
     }
-    // WHY: the lease seam owns verification for every edit it resolves (#151): the fast path
-    // WHY: and the rebased path both ran the whole-window `verifyRebasedSpan` gate inside
-    // WHY: `resolveLeasedEdit`. Only the library-level seam — a caller with a served mirror and
-    // WHY: no lease source — still verifies the mirrored span against itself here.
-    if (!identity) {
-      const startAnchor = resolved.hash_bounds[0];
-      const endAnchor = resolved.hash_bounds[1];
-      verifyServedRange({
-        served,
-        startHash: startAnchor.hash,
-        endHash: endAnchor.hash,
-        startLine: startAnchor.line,
-        endLine: endAnchor.line,
-        fileHashes,
-        fileLines: lineIndex.fileLines,
-        filePath,
-        blockedHashes,
-        canonDigests,
-      });
-    }
+    // WHY: no span verification happens here: the lease seam owns verification for every
+    // WHY: edit it resolves (#151, `verifyRebasedSpan` inside `resolveLeasedEdit`), and the
+    // WHY: library-level mirror branch that verified a served mirror against itself has no
+    // WHY: live caller and is retired (#10).
   }
 
   const spanResult = resToSpan(resolved, content, lineIndex);

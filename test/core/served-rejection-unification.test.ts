@@ -1,13 +1,12 @@
-import { describe, it, expect, beforeAll, vi } from "vitest";
+import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
 import { _lineHashesPure } from "../../src/hashline/hash";
-import { DomainError, type ErrorPayloadMap } from "../../src/domain-errors.js";
+import { DomainError } from "../../src/domain-errors.js";
 import {
   makeServedRejection,
   makeStaleAnchorRejection,
   makeTargetLostRejection,
   verifyRebasedSpan,
-  ServedVerification,
   type FileSnapshotContext,
 } from "../../src/hashline/served-verification";
 import { fmtMismatchWithServes, resEdit, valEdit } from "../../src/hashline/resolve";
@@ -98,27 +97,6 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     expect(anchor.message).toContain("Current range:");
     expect(anchor.message).toContain("Retry with these anchors");
     expect(stale.servedBlock).toBe(anchor.servedBlock);
-  });
-
-  it("verify() returns the typed servedBlock without a fallback rebuild", () => {
-    const lines = ["alpha", "beta", "gamma"];
-    const hashes = _lineHashesPure(lines.join("\n"));
-    const served: (string | null)[] = [...hashes];
-    const mutatedLines = ["alpha", "BETA", "gamma"];
-    const verifier = new ServedVerification();
-    const result = verifier.verify({
-      range: { startHash: hashes[0]!, endHash: hashes[2]!, startLine: 1, endLine: 3 },
-      served,
-      fileHashes: _lineHashesPure(mutatedLines.join("\n")),
-      fileLines: mutatedLines,
-    });
-    expect(result.ok).toBe(false);
-    if (!result.ok) {
-      expect(result.code).toBe("E_STALE_RANGE");
-      expect(typeof result.servedBlock).toBe("string");
-      expect(result.servedBlock).toContain("BETA");
-      expect(result.message).toContain(result.servedBlock);
-    }
   });
 
   it("FileSnapshotContext threads through fmtMismatchWithServes", () => {
@@ -239,10 +217,10 @@ describe("range-family cause uniformity: explicit evidence, never a borrowed def
       startLine: 1,
       endLine: 2,
       snapshot,
-      cause: "blocked-hash",
+      cause: "never-served",
     });
-    expect(explicit.details.cause).toBe("blocked-hash");
-    expect(explicit.cause).toBe("blocked-hash");
+    expect(explicit.details.cause).toBe("never-served");
+    expect(explicit.cause).toBe("never-served");
     // SAFETY: the cast omits the required cause to pin that no default is invented.
     const omitted = makeStaleAnchorRejection({
       headline: "anchor missing.",
@@ -297,30 +275,5 @@ describe("range-family cause uniformity: explicit evidence, never a borrowed def
     }
     expect(stale.details.cause).toBe("served-range staleness");
     expect(anchor.details.cause).toBe("never-served");
-  });
-
-  it("verify() rethrows a causeless range rejection instead of inventing a cause", () => {
-    // SAFETY: the cast builds the causeless rejection the type now forbids, pinning the
-    // SAFETY: adapter: a missing cause is a builder defect and must surface loud, never as
-    // SAFETY: an invented "served-range staleness".
-    const causeless = new DomainError("E_TARGET_LOST", {
-      servedLine: 2,
-    } as unknown as ErrorPayloadMap["E_TARGET_LOST"]);
-    const verifier = new ServedVerification();
-    const spy = vi.spyOn(verifier, "verifyOrThrow").mockImplementation(() => {
-      throw causeless;
-    });
-    try {
-      expect(() =>
-        verifier.verify({
-          range: { startHash: "AAA", endHash: "BBB", startLine: 1, endLine: 2 },
-          served: ["AAA", "BBB"],
-          fileHashes: ["AAA", "BBB"],
-          fileLines: ["a", "b"],
-        }),
-      ).toThrow(causeless);
-    } finally {
-      spy.mockRestore();
-    }
   });
 });

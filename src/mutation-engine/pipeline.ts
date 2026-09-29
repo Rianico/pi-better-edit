@@ -191,7 +191,6 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
       absolutePath: input.absolutePath,
       sessionKey: input.sessionKey,
       served: input.served,
-      ...(input.blockedHashes !== undefined ? { blockedHashes: input.blockedHashes } : {}),
       ...(input.canonDigests !== undefined ? { canonDigests: input.canonDigests } : {}),
       identity,
       ...(input.mode !== undefined ? { mode: input.mode } : {}),

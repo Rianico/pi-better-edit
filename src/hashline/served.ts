@@ -1,13 +1,13 @@
 /**
- * SAFETY: served — thin facade over ServedVerification deep module.
- *
- * All verification logic lives in served-verification.ts (decision-table branching, orphan
- * healing, serve-block building). This file re-exports the
- * public surface so existing importers (`from "./served.js"`) remain stable and so
- * ServedRejectionError identity is singular (defined in served-verification).
+ * SAFETY: served — facade fronting the reject-and-serve payload builders, the
+ * serve-row/formatting helpers, and their shared types. Verification itself
+ * lives in served-verification.ts, where the only live entry point is the
+ * lease seam's `verifyRebasedSpan` (#151, imported directly by lease-resolve);
+ * the mirror-seam verification surface (`ServedVerification`,
+ * `verifyServedRange`) is retired (#10). This file re-exports the
+ * public surface so existing importers (`from "./served.js"`) remain stable.
  */
 export {
-  verifyServedRange,
   buildRangeServeRows,
   denseServeRows,
   fmtServedRows,

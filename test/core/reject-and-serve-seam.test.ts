@@ -1,7 +1,6 @@
 import { describe, expect, it, vi, beforeAll } from "vitest";
 import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
-import { DomainError } from "../../src/domain-errors.js";
 import { finalizeToolResult } from "../../src/edit-response";
 import { createSessionHandle } from "../../src/served-session/index.js";
 import { applyEdit, _lineHashesPure, type HEdit } from "../../src/hashline";
@@ -40,30 +39,6 @@ describe("recordServeFeedback — serve-record policy", () => {
   });
 });
 
-describe("applyEdit — stale range beats would-empty", () => {
-  it("rejects E_STALE_RANGE before E_EMPTY_RANGE when both apply", () => {
-    const content = "aaa\nbbb\nccc";
-    const hashes = _lineHashesPure(content);
-    const served = [hashes[0]!, "S1", hashes[2]!];
-    let error: unknown;
-    try {
-      applyEdit(
-        content,
-        {
-          hash_bounds: [{ hash: hashes[0]! }, { hash: hashes[2]! }],
-          content_lines: [],
-        },
-        undefined,
-        hashes,
-        { filePath: "a.ts", served },
-      );
-    } catch (caught) {
-      error = caught;
-    }
-    expect(error).toBeInstanceOf(DomainError);
-    expect((error as DomainError).code).toBe("E_STALE_RANGE");
-  });
-});
 describe("finalizeToolResult", () => {
   it("assembles diff, warnings, and drift notice and returns served rows", () => {
     const result = finalizeToolResult({

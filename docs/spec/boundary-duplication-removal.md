@@ -27,7 +27,7 @@ Delete the auto-fix entirely. `valEdit → verifyServed → resToSpan` with no s
 1. **Delete helpers** in `src/hashline/resolve.ts`: `trailingDups`, `leadingDups`, `firstNewAfterDups`, `lastNewBeforeDups`, `findNewEdge`, `canonCounts`, `sectionIsUnique`, `collectBoundaryDups`, types `BDup`/`AutoFix`, `boundaryDups` field on `valEdit` return, and the `canonLines` memo. `valEdit` returns `{ resolved, mismatches }` only.
 2. **Delete splice** in `src/hashline/apply.ts`: remove `boundaryDups` handling, `AutoFix`/`BDup` imports, `correctedEdit` clone + `splice` + second `valEdit`, and `autoFixes` on the result. `valEdit → verifyServed → resToSpan` directly. `resToSpan`/`assemble` already handle the verbatim replacement.
 3. **Narrow public surface** in `src/hashline/index.ts`: stop re-exporting `BDup`, `AutoFix`, `findNewEdge`. `mutation-engine/pipeline.ts` drops `removedAutoFixes`/`autoFixes` bookkeeping (metrics count `edit.content_lines.length` directly).
-4. **No new code** — pure deletion. `prepareEdit` (`swapReversedRanges → stripBare → stripDiff`) and `verifyServedRange`/`findEditHashEcho` remain the only pre-splice steps.
+4. **No new code** — pure deletion. `prepareEdit` (`swapReversedRanges → stripBare → stripDiff`) and `verifyServedRange`/`findEditHashEcho` remain the only pre-splice steps (`verifyServedRange` has since been retired from that set, #10).
 5. **Fix semantics** — `fix(hashline): remove boundary-dup auto-fix` (patch), not `feat!`. Restores `pure edit` invariant documented in `CONTEXT.md`.
 
 ## Testing Decisions

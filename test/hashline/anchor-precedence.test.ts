@@ -2,10 +2,8 @@ import { describe, it, expect, beforeAll } from "vitest";
 import { resEdit } from "../../src/hashline/resolve";
 import type { LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";
 import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
-import { ServedVerification } from "../../src/hashline/served-verification";
 import { DomainError } from "../../src/domain-errors.js";
 import { initHasher } from "../../src/hashline/hasher";
-import { canonDigest } from "../../src/hashline/hash-identity.js";
 
 beforeAll(async () => {
   await initHasher();
@@ -36,27 +34,6 @@ function source(args: {
 }
 
 describe("anchor family precedence — one condition reaches exactly one code", () => {
-  it("blocked-hash boundary with row here resolves to E_STALE_ANCHOR with a served window", () => {
-    const verifier = new ServedVerification();
-    let caught: unknown;
-    try {
-      verifier.verifyOrThrow({
-        range: { startHash: "AAA", endHash: "BBB", startLine: 1, endLine: 2 },
-        served: ["AAA", "BBB"],
-        fileHashes: ["AAA", "BBB"],
-        fileLines: ["ALPHA", "BETA"],
-        filePath: "a.py",
-        blockedHashes: new Set(["AAA"]),
-        canonDigests: [canonDigest("alpha"), canonDigest("beta")],
-      });
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught).toBeInstanceOf(DomainError);
-    expect((caught as DomainError).code).toBe("E_STALE_ANCHOR");
-    expect((caught as DomainError).servedRows.length).toBeGreaterThan(0);
-  });
-
   it("retired without a live unshifted survivor stays fail-closed with no rows", () => {
     const dead = lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 6 });
     const shifted = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 });

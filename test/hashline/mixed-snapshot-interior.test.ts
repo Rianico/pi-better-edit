@@ -25,7 +25,7 @@ describe("mixed-snapshot interior under a same-anchor collision (#151)", () => {
   /**
    * The reproducer from #151 scoping note §1. Paged reads leave a served mirror whose interior
    * belongs to an older snapshot than its boundaries, and the externally rewritten interior line
-   * happens to hash to the same 3-char anchor — so the hash tier of `verifyServedRange` cannot see
+   * happens to hash to the same 3-char anchor — so the mirror hash tier (retired, #10) could not see
    * the drift. Before #151 the canon tier was the only thing rejecting this span, which is why the
    * span must still reject with NO canon evidence at all: the interior check is a lease-identity
    * question, not a content question.
