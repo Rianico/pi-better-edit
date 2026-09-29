@@ -22,6 +22,10 @@
 * **prompts:** note that served rows may cover an expanded window without naming a provider (#29)
 * **readme:** name the read-expansion workarounds and the deferred format interaction (#30)
 
+### Tests
+
+* **edit:** pin the payload wire shape against pi-lens' third-party shape adapters (#31)
+
 ### Code Refactoring
 
 * **identity:** rename tombstone vocabulary to blockedHashes, cause contract to blocked-hash (#18)

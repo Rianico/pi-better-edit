@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { Compile } from "typebox/compile";
 import { editToolSchema, assertReq, buildToolDef } from "../../src/edit";
+import { editItemSchema } from "../../src/payload-contract.js";
 import { createEditTool } from "../../src/edit-tool.js";
 import { normReq } from "../../src/edit-normalize";
 import { lineHashes } from "../../src/hashline";
@@ -52,6 +53,55 @@ describe("edit payload contract", () => {
         edits: [{ remove_from: "aB3", remove_to: "cD4", replacement_text: "new" }],
       }),
     ).toBe(false);
+  });
+
+  it("pins the wire-shape key set against third-party shape adapters", () => {
+    // WHY: pi-lens ships a shape-adapter registry over third-party edit tools
+    // WHY: (`dist/clients/mutating-tool.js`): it recognizes `set_line` / `replace_lines`,
+    // WHY: `operations` / `ops` batches and `remove_from` + `remove_to` + `replacement_lines`,
+    // WHY: and it resolves bare 3-char anchors through a content-hash port
+    // WHY: (`dist/clients/hashline-anchor.js`). Our payload matches none of those shapes, which is
+    // WHY: exactly what keeps its read-guard inert for our edits (`reasonKind: "no_line_info"`);
+    // WHY: its path resolver takes `path` / `filePath` / `file_path`, never our `file`.
+    // WHY: Adding one of those keys — or renaming ours — would arm that adapter and let it judge
+    // WHY: MVCC line identity with a divergent scheme, producing false "stale" and "out of range"
+    // WHY: verdicts on edits our own verification accepts. Change this list deliberately, never
+    // WHY: casually: the coupling is the consequence.
+    const root = editToolSchema as unknown as {
+      properties: Record<string, unknown>;
+      additionalProperties?: unknown;
+    };
+    const item = editItemSchema as unknown as {
+      properties: Record<string, unknown>;
+      additionalProperties?: unknown;
+    };
+
+    expect(Object.keys(root.properties).sort()).toEqual(["edits", "file", "mode"]);
+    expect(Object.keys(item.properties).sort()).toEqual([
+      "anchor_from",
+      "anchor_to",
+      "replace_with",
+    ]);
+    expect(root.additionalProperties).toBe(false);
+    expect(item.additionalProperties).toBe(false);
+
+    const aliases = [
+      "path",
+      "filePath",
+      "file_path",
+      "set_line",
+      "replace_lines",
+      "operations",
+      "ops",
+      "remove_from",
+      "remove_to",
+      "replacement_lines",
+      "replacement_text",
+    ];
+    for (const alias of aliases) {
+      expect(Object.keys(root.properties)).not.toContain(alias);
+      expect(Object.keys(item.properties)).not.toContain(alias);
+    }
   });
 
   it("normalizes modern { file, edits } objects and folds legacy shapes", () => {
