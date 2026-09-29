@@ -10,6 +10,7 @@ import {
 } from "../hashline/index.js";
 import { splitLines } from "../utils.js";
 import { denseServeRows } from "../hashline/served.js";
+import { notifyServedSpans, servedRowsToSpans } from "../served-spans.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
 import {
@@ -117,7 +118,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     ctx: ToolContext,
   ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {
     const rawInput = event.input as Record<string, unknown> | undefined;
-    const writtenPath = rawInput?.path ?? rawInput?.file_path;
+    const writtenPath = rawInput?.file ?? rawInput?.path ?? rawInput?.file_path;
     if (typeof writtenPath === "string") {
       try {
         await deps.clearUndo(await deps.resolveTarget(deps.toCwd(writtenPath, ctx.cwd)));
@@ -204,13 +205,21 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         console.error("Failed to evaluate served prefix notes after write:", error);
         prefixNotes = [];
       }
+      const resultLineCount = deps.visLines(normalized).length;
       await recordServesBestEffort({
         sessionKey,
         path: absolutePath,
         servedRows: denseServeRows(fileHashes),
         contentHash: snapshotHashFor(normalized),
-        resultLineCount: deps.visLines(normalized).length,
+        resultLineCount,
         firstChangedLine: 1,
+      });
+      // WHY: an auto-read re-serves the whole file, so one full-file span is the honest shape here;
+      // WHY: a zero-line result sends empty spans, which notifies nobody.
+      notifyServedSpans({
+        filePath: absolutePath,
+        spans: resultLineCount > 0 ? [{ startLine: 1, lineCount: resultLineCount }] : [],
+        source: "auto-read",
       });
       // WHY: the clear side of the tally: this runs only after the write's bytes are on disk
       // WHY: (the auto-read above re-served this session's rows), never on the pre-write
@@ -278,9 +287,18 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           resultLineCount: entry.resultLineCount,
           firstChangedLine: entry.firstChangedLine,
         });
+        notifyServedSpans({
+          filePath: resolvedPath,
+          spans:
+            entry.resultLineCount !== undefined && entry.resultLineCount > 0
+              ? [{ startLine: 1, lineCount: entry.resultLineCount }]
+              : servedRowsToSpans(entry.servedRows),
+          source: "diff",
+        });
       }
     } else if (servedRows && servedRows.length > 0) {
-      const rawPath = (event.input as Record<string, unknown> | undefined)?.path;
+      const rawInput = event.input as Record<string, unknown> | undefined;
+      const rawPath = rawInput?.file ?? rawInput?.path;
       if (typeof rawPath === "string") {
         const resolvedPath = await deps.resolveTarget(deps.toCwd(rawPath, ctx.cwd));
         await recordServesBestEffort({
@@ -293,6 +311,14 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           contentHash: details.contentHash ?? "",
           resultLineCount: details.resultLineCount,
           firstChangedLine: details.firstChangedLine,
+        });
+        notifyServedSpans({
+          filePath: resolvedPath,
+          spans:
+            details.resultLineCount !== undefined && details.resultLineCount > 0
+              ? [{ startLine: 1, lineCount: details.resultLineCount }]
+              : servedRowsToSpans(servedRows),
+          source: "diff",
         });
       }
     }

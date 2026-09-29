@@ -5,6 +5,8 @@ import { regRead } from "./src/read.js";
 import { regReadSkill } from "./src/read-skill.js";
 import { registerWriteHook } from "./src/write-hook.js";
 import { createLifecycleHooks } from "./src/lifecycle-hooks/index.js";
+import { registerLensCommand } from "./src/integrations/pi-lens/command.js";
+import { attachReadBridgeAdapter } from "./src/integrations/pi-lens/read-bridge-adapter.js";
 
 export { createLifecycleHooks, registerLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 
@@ -15,6 +17,10 @@ export default function (pi: ExtensionAPI): void {
   regEdit(pi);
   regEditUndo(pi);
   registerWriteHook(pi);
+  registerLensCommand(pi);
+  // WHY: the adapter subscribes before any tool can serve a row, so the first read or edit of the
+  // WHY: session is already mirrored whenever a bridge is present.
+  attachReadBridgeAdapter();
 
   const hooks = createLifecycleHooks();
 

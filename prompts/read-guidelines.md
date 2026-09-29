@@ -1,2 +1,3 @@
 - read: call only when you need information the tool never served you — a page you never saw, content past the auto-read diff.
 - read: need several blocks, or both boundaries of one replacement? put every range in ONE call: `windows: [{offset, limit}, ...]` — each listed window is served in that turn, so its anchors are usable in the same edit.
+- read: served rows may cover an expanded window when AST symbol expansion is active (small reads widen to the enclosing symbol) — anchors always match the rows shown, so copy them from this response.
