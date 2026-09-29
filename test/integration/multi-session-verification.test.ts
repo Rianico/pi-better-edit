@@ -17,7 +17,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
-import { loadServed } from "../../src/served-session";
+import { createSessionHandle } from "../../src/served-session";
 
 const SMALL_CPP = Array.from({ length: 6 }, (_, i) => {
   const n = i + 1;
@@ -103,9 +103,9 @@ describe("multi-session — lease isolation", () => {
       expect(bRows.map((r) => r.hash)).toEqual(aRows.map((r) => r.hash));
 
       // B's read must not invalidate A's served mirror
-      expect((await loadServed("session-A2", path)).filter((h) => h !== null)).toHaveLength(
-        aRows.length,
-      );
+      expect(
+        (await createSessionHandle("session-A2", path).load()).filter((h) => h !== null),
+      ).toHaveLength(aRows.length);
 
       await editTool.execute(
         "b2",
@@ -184,7 +184,7 @@ describe("multi-session — restart semantics", () => {
       const pre = rows(
         getText(await readTool.execute("r1", { path: "small.cpp" }, undefined, undefined, before)),
       );
-      expect(await loadServed("boot-1", path)).toContain(pre[8]!.hash);
+      expect(await createSessionHandle("boot-1", path).load()).toContain(pre[8]!.hash);
 
       // pasted-history anchor from the previous session
       await expect(

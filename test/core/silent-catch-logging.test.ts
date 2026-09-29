@@ -9,7 +9,6 @@ import { lineHashes } from "../../src/hashline/index.js";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store.js";
 import { createSessionHandle, ensureServedSchema } from "../../src/served-session/session.js";
 import * as snapshotStore from "../../src/snapshot-store";
-import * as sessionModule from "../../src/served-session/session.js";
 import {
   getWritableTempRoot,
   setupIntegrationTest,
@@ -141,16 +140,16 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
     });
   });
 
-  it("undo retire failure logs and still restores the file", async () => {
+  it("undo restore-transaction failure logs and still restores the file", async () => {
     const original = "one\ntwo\nthree\n";
-    await withTempFile("undo-retire-121.txt", original, async ({ cwd }) => {
+    await withTempFile("undo-restore-121.txt", original, async ({ cwd }) => {
       const { ctx, readTool, editTool, getTool } = setupIntegrationTest(cwd);
       const undoTool = getTool("undo_last_edit");
       const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const r1 = await readTool.execute(
         "r1",
-        { path: "undo-retire-121.txt" },
+        { path: "undo-restore-121.txt" },
         undefined,
         undefined,
         ctx,
@@ -159,42 +158,39 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
       const anchor = lines[1]?.split("│")[0] ?? "";
       await editTool.execute(
         "e1",
-        { path: "undo-retire-121.txt", edits: [[anchor, anchor, "TWO"]] },
+        { path: "undo-restore-121.txt", edits: [[anchor, anchor, "TWO"]] },
         undefined,
         undefined,
         ctx,
       );
 
-      const realCreate = sessionModule.createSessionHandle;
-      vi.spyOn(sessionModule, "createSessionHandle").mockImplementation(((
-        sessionKey: string,
-        path: string,
-        store?: never,
-      ) => {
-        const handle = realCreate(sessionKey, path, store);
-        return {
-          ...handle,
-          retire: async () => {
-            throw new Error("retire boom");
-          },
-        };
-      }) as typeof sessionModule.createSessionHandle);
-
-      const result = await undoTool.execute(
-        "u1",
-        { path: "undo-retire-121.txt" },
-        undefined,
-        undefined,
-        ctx,
+      // WHY: CAND-3 folded the undo's retire/adopt/mirror writes into one restore transaction; the
+      // injection aborts the mirror UPDATE so the whole transaction (and its log) exercises that path.
+      const store = await loadHashStore();
+      store.db.exec(
+        "CREATE TRIGGER undo_mirror_boom BEFORE UPDATE OF hashes ON served " +
+          "BEGIN SELECT RAISE(ABORT, 'undo mirror boom'); END;",
       );
-      expect(result.isError).toBeFalsy();
-      expect(await readFile(join(cwd, "undo-retire-121.txt"), "utf-8")).toBe(original);
-      const retireLogs = errorSpy.mock.calls.filter((call) =>
-        String(call[0] ?? "")
-          .toLowerCase()
-          .includes("retire"),
-      );
-      expect(retireLogs.length).toBeGreaterThanOrEqual(1);
+      try {
+        const result = await undoTool.execute(
+          "u1",
+          { path: "undo-restore-121.txt" },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(result.isError).toBeFalsy();
+        expect(await readFile(join(cwd, "undo-restore-121.txt"), "utf-8")).toBe(original);
+        expect(getText(result)).toContain("Store synchronization deferred");
+        const restoreLogs = errorSpy.mock.calls.filter((call) =>
+          String(call[0] ?? "")
+            .toLowerCase()
+            .includes("undo restore transaction"),
+        );
+        expect(restoreLogs.length).toBeGreaterThanOrEqual(1);
+      } finally {
+        store.db.exec("DROP TRIGGER IF EXISTS undo_mirror_boom");
+      }
     });
   });
 });

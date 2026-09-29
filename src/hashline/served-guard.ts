@@ -310,7 +310,7 @@ export const SERVED_REFUSAL_MAX_ENTRIES = 256;
 
 // WHY: `sessionKey` and `absolutePath` travel as two primitives through `refusalKey`,
 // WHY: `clearServedRefusals`, and both `trackServed*` seams, mirroring the established
-// WHY: `(sessionKey, path)` convention (`createSessionHandle`, `loadServed`,
+// WHY: `(sessionKey, path)` convention (`createSessionHandle`,
 // WHY: `clearNoopLoop`): a refusal scope is a pair of already-typed values, so a
 // WHY: `RefusalScope` wrapper would add an allocation per refusal without narrowing the
 // WHY: interface or preventing an argument-order slip.

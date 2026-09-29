@@ -6,6 +6,7 @@
  *  - length mismatch and never-served checks
  *  - rebased-span contiguity gate for the MVCC dynamic rebase path (spec §3.1.1 / Probe J)
  *  - serve-block building (buildRangeServeRows/fmtServedRows/paginationHint)
+ *  - the dense serve-row projection (denseServeRows) — the single owner of the serve-record row shape
  *  - E_RANGE_* branching via decision table
  *
  * ADR-0008 heuristic canon healing is retired (spec §3.3): un-rebased coordinates reject
@@ -93,6 +94,12 @@ export function buildRangeServeRows(
     rows.push({ position, hash });
   }
   return rows;
+}
+
+// WHY: the serve-record shape has no owner; this is it — the dense projection of a file's whole
+// WHY: hash array to serve rows: position is the 0-based array index, hash the anchor at that index.
+export function denseServeRows(hashes: readonly string[]): ServedRow[] {
+  return hashes.map((hash, position) => ({ position, hash }));
 }
 
 export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {

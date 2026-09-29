@@ -24,6 +24,21 @@ export interface HashSnapshotUpsertOptions {
     sessionKey: string;
     rows: ReadonlyArray<{ position: number; hash: string | null }>;
   };
+  /**
+   * CAND-3: the served mirror write for the same rows, committed inside the materialization's
+   * own `BEGIN IMMEDIATE` (via `recordServedMirrorInTransaction`), so the `served_leases` grant
+   * and the mirror rows commit or roll back as one unit — lease-without-mirror and
+   * mirror-without-lease become structurally unreachable on the post-write commit. Absent on
+   * paths that write the mirror separately (the read path records serves through its own seam).
+   */
+  servedMirror?: {
+    sessionKey: string;
+    rows: ReadonlyArray<{ position: number; hash: string | null }>;
+    /** Truncated-serve mirror shape: clamp to `lineCount`, clear from `clearFrom`. */
+    shape?: { lineCount: number; clearFrom?: number };
+    /** Anchors added to the legacy retired set in this transaction (undo's displaced cleanup). */
+    retireAnchors?: readonly string[];
+  };
 }
 
 export interface HashSnapshotIO {

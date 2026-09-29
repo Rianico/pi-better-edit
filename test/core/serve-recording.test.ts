@@ -17,11 +17,7 @@ import {
 } from "../../src/served-session/index.js";
 import { apply, execEdits } from "../../src/mutation-engine/pipeline.js";
 import type { NormalizedEditRequest } from "../../src/payload-contract.js";
-import {
-  planServeRecording,
-  recordDiffServes,
-  recordRejectionServes,
-} from "../../src/served-session/index.js";
+import { planServeRecording } from "../../src/served-session/index.js";
 import { computeDrift, scanDrift } from "../../src/drift";
 import { initHasher, lineHashes } from "../../src/hashline";
 import { getWritableTempRoot } from "../support/fixtures";
@@ -72,7 +68,7 @@ describe("planServeRecording — pure recording policy", () => {
   });
 });
 
-describe("recordDiffServes — persistence through served-state", () => {
+describe("recordDiff — persistence through served-state", () => {
   // WHY: these fake rows have no materialized snapshot; "" names none, so no lease is granted
   // WHY: and the assertions stay about the legacy served mirror.
   const NO_SNAPSHOT = snapshotHashFor("");
@@ -85,11 +81,8 @@ describe("recordDiffServes — persistence through served-state", () => {
         { position: 1, hash: "bbb" },
         { position: 2, hash: "ccc" },
       ]);
-      await recordDiffServes({
-        sessionKey: "s1",
-        path,
+      await createSessionHandle("s1", path).recordDiff([{ position: 1, hash: "BET" }], {
         contentHash: NO_SNAPSHOT,
-        servedRows: [{ position: 1, hash: "BET" }],
       });
       expect(getServed(store, "s1", path)).toEqual(["aaa", "BET", "ccc"]);
     });
@@ -106,18 +99,14 @@ describe("recordDiffServes — persistence through served-state", () => {
         { position: 3, hash: "ddd" },
         { position: 4, hash: "eee" },
       ]);
-      await recordDiffServes({
-        sessionKey: "s1",
-        path,
-        contentHash: NO_SNAPSHOT,
-        servedRows: [
+      await createSessionHandle("s1", path).recordDiff(
+        [
           { position: 0, hash: "aaa" },
           { position: 1, hash: "BET" },
           { position: 2, hash: "ccc" },
         ],
-        resultLineCount: 3,
-        firstChangedLine: 2,
-      });
+        { contentHash: NO_SNAPSHOT, resultLineCount: 3, firstChangedLine: 2 },
+      );
       expect(getServed(store, "s1", path)).toEqual(["aaa", "BET", "ccc"]);
     });
   });
@@ -131,16 +120,13 @@ describe("recordDiffServes — persistence through served-state", () => {
         { position: 1, hash: "bbb" },
         { position: 2, hash: "ccc" },
       ]);
-      await recordDiffServes({
-        sessionKey: "s1",
-        path,
-        contentHash: NO_SNAPSHOT,
-        servedRows: [
+      await createSessionHandle("s1", path).recordDiff(
+        [
           { position: 0, hash: "AAA" },
           { position: 1, hash: "BBB" },
         ],
-        resultLineCount: 2,
-      });
+        { contentHash: NO_SNAPSHOT, resultLineCount: 2 },
+      );
       expect(getServed(store, "s1", path)).toEqual(["AAA", "BBB"]);
     });
   });
@@ -156,17 +142,14 @@ describe("recordDiffServes — persistence through served-state", () => {
         { position: 3, hash: "bbb" },
         { position: 4, hash: "ddd" },
       ]);
-      await recordDiffServes({
-        sessionKey: "s1",
-        path,
-        contentHash: NO_SNAPSHOT,
-        servedRows: [
+      await createSessionHandle("s1", path).recordDiff(
+        [
           { position: 0, hash: "bbb" },
           { position: 1, hash: "ddd" },
           { position: 2, hash: "eee" },
         ],
-        resultLineCount: 3,
-      });
+        { contentHash: NO_SNAPSHOT, resultLineCount: 3 },
+      );
       expect(getServed(store, "s1", path)).toEqual(["bbb", "ddd", "eee"]);
     });
   });
@@ -175,11 +158,8 @@ describe("recordDiffServes — persistence through served-state", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "f.txt");
-      await recordDiffServes({
-        sessionKey: "s1",
-        path,
+      await createSessionHandle("s1", path).recordDiff([], {
         contentHash: NO_SNAPSHOT,
-        servedRows: [],
         resultLineCount: 3,
         firstChangedLine: 1,
       });
@@ -188,7 +168,7 @@ describe("recordDiffServes — persistence through served-state", () => {
   });
 });
 
-describe("recordRejectionServes — truncation after an external shrink (issue #27)", () => {
+describe("recordServeFeedback — truncation after an external shrink (issue #27)", () => {
   it("truncates the served array to the current line count when the count is provided", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
@@ -203,9 +183,7 @@ describe("recordRejectionServes — truncation after an external shrink (issue #
         { position: 6, hash: "ggg" },
         { position: 7, hash: "hhh" },
       ]);
-      await recordRejectionServes(
-        "s1",
-        path,
+      await createSessionHandle("s1", path).recordServeFeedback(
         [
           { position: 0, hash: "fff" },
           { position: 1, hash: "ggg" },
@@ -222,7 +200,10 @@ describe("recordRejectionServes — truncation after an external shrink (issue #
       const store = await loadHashStore();
       const path = join(home, "f.txt");
       upsertServed(store, "s1", path, [{ position: 0, hash: "aaa" }]);
-      await recordRejectionServes("s1", path, [{ position: 1, hash: "bbb" }], "live");
+      await createSessionHandle("s1", path).recordServeFeedback(
+        [{ position: 1, hash: "bbb" }],
+        "live",
+      );
       expect(getServed(store, "s1", path)).toEqual(["aaa", "bbb"]);
     });
   });

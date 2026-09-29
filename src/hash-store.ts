@@ -3,8 +3,7 @@ import { existsSync } from "node:fs";
 import { rename, mkdir } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { homedir } from "node:os";
-import { isAbsolute, resolve as resolvePath, join, dirname } from "node:path";
-import { DomainError } from "./domain-errors.js";
+import { join, dirname } from "node:path";
 import { errCode } from "./utils.js";
 import { initHasher } from "./hashline/hasher.js";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
@@ -40,30 +39,6 @@ export function legacyHashStorePath(): string {
 
 export function hashStoreDir(): string {
   return dirname(hashStorePath());
-}
-
-function expand(filePath: string): string {
-  const home = homeBase();
-  if (filePath === "~") return home;
-  if (filePath.startsWith("~/")) return home + filePath.slice(1);
-  return filePath;
-}
-
-export function toCwd(filePath: string, cwd: string): string {
-  if (filePath.includes("\0"))
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: "Path contains null byte. Pass a plain file string and retry.",
-    });
-  const expanded = expand(filePath);
-  if (expanded.includes("\0"))
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: "Path contains null byte. Pass a plain file string and retry.",
-    });
-  // SAFETY: cwd is trusted (ctx.cwd), expand resolves "~" via homedir/XDG and resolvePath normalizes ".."; editing scope intentionally allows any absolute path — OS permissions enforced by valAccess downstream; guard ensures null-byte free and absolute result.
-  const resolved = isAbsolute(expanded) ? expanded : resolvePath(cwd, expanded);
-  if (!isAbsolute(resolved))
-    throw new DomainError("E_BAD_PAYLOAD", { message: "Resolved path must be absolute" });
-  return resolved;
 }
 
 export function isCorruptionError(error: unknown): boolean {

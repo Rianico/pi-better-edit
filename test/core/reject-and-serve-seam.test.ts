@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { DomainError } from "../../src/domain-errors.js";
 import { finalizeToolResult } from "../../src/edit-response";
-import { loadServed, recordRejectionServes } from "../../src/served-session/index.js";
+import { createSessionHandle } from "../../src/served-session/index.js";
 import { applyEdit, _lineHashesPure, type HEdit } from "../../src/hashline";
 import { shutdownHashStore } from "../../src/hash-store";
 import { initHasher } from "../../src/hashline/hasher";
@@ -13,28 +13,29 @@ beforeAll(async () => {
   await initHasher();
 });
 
-describe("recordRejectionServes — serve-record policy", () => {
+describe("recordServeFeedback — serve-record policy", () => {
   it("records rejection serves when the policy is live", async () => {
     await withTempHome(async () => {
       const path = "/a.ts";
-      await recordRejectionServes(
-        "sessionA",
-        path,
+      await createSessionHandle("sessionA", path).recordServeFeedback(
         [
           { position: 0, hash: "h00" },
           { position: 1, hash: "X01" },
         ],
         "live",
       );
-      expect(await loadServed("sessionA", path)).toEqual(["h00", "X01"]);
+      expect(await createSessionHandle("sessionA", path).load()).toEqual(["h00", "X01"]);
     });
   });
 
   it("records nothing when the policy is preview", async () => {
     await withTempHome(async () => {
       const path = "/a.ts";
-      await recordRejectionServes("sessionA", path, [{ position: 0, hash: "h00" }], "preview");
-      expect(await loadServed("sessionA", path)).toEqual([]);
+      await createSessionHandle("sessionA", path).recordServeFeedback(
+        [{ position: 0, hash: "h00" }],
+        "preview",
+      );
+      expect(await createSessionHandle("sessionA", path).load()).toEqual([]);
     });
   });
 });

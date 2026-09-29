@@ -10,6 +10,8 @@ import type { ResolvedRange } from "../hashline/served.js";
 import type { HashStore } from "../hash-store.js";
 import type { BatchSection, EditDetails, RMetrics } from "../edit-response.js";
 import type { NormalizedEditRequest } from "../payload-contract.js";
+import type { DomainErrorCode, RangeCause } from "../domain-errors.js";
+import type { ServedRow } from "../domain-errors.js";
 
 // WHY: Re-export pipeline-facing options — validated once at admission (edit.ts),
 // WHY: trusted inside the engine. No `any`.
@@ -22,8 +24,7 @@ export interface PipelineOptions {
 }
 
 // WHY: Internal: the engine's view of one file's mutation outcome.
-// WHY: Mirrors `ProcessedEditFile` from the old pipeline — kept here as the
-// WHY: engine's owned fact. `edit-pipeline.ts` re-exports this for compat.
+// WHY: Mirrors `ProcessedEditFile` from the old pipeline — kept here as the engine's owned fact.
 export interface ProcessedEditFile {
   path: string;
   absolutePath: string;
@@ -80,16 +81,20 @@ export interface MutationSuccess {
 
 export interface MutationFailure {
   ok: false;
-  /** SAFETY: Machine code, e.g. E_BATCH_ABORT, E_STALE_ANCHOR, E_STALE_RANGE, E_SUSPICIOUS_TEXT, E_NOOP_LOOP, E_EMPTY_RANGE */
-  code: string;
+  /**
+   * SAFETY: Machine code — a registry member (`DomainErrorCode`). `toFailure` validates every
+   * caught code through the envelope reader (`src/error-envelope.ts`): non-registry strings
+   * (errno pass-through included) route to `E_UNKNOWN`, so the union is honest.
+   */
+  code: DomainErrorCode;
   /** SAFETY: Human message — model-facing signal when applicable. */
   message: string;
   /** SAFETY: Fresh served block for retry when available (reject-and-serve). */
   servedBlock?: string;
-  servedRows?: import("../hashline/served.js").ServedRow[];
+  servedRows?: ServedRow[];
   /** SAFETY: User-facing diagnosis, never a model remedy — a CONTEXT.md glossary term. */
-  cause?: string;
-  details?: { cause: string };
+  cause?: RangeCause;
+  details?: { code: DomainErrorCode; cause: RangeCause };
 }
 
 export type MutationResult = MutationSuccess | MutationFailure;

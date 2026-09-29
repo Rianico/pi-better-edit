@@ -222,7 +222,12 @@ describe("lease grant inside the materialization transaction (#116)", () => {
     });
   });
 
-  it("edit leases survive a serve-mirror failure: no third transaction on the edit path", async () => {
+  it("edit serve-mirror failure rolls the whole commit back: leases and mirror are one transaction", async () => {
+    // CAND-3: the served mirror write moved INTO the materialization transaction. Before, a
+    // mirror failure left the diff leases committed without their mirror (false E_STALE_RANGE
+    // at the boundary gate); the test pinned that torn survivor state. Now the failure aborts
+    // the one `BEGIN IMMEDIATE`, so snapshot, lineage, leases and mirror roll back together and
+    // the edit reports deferred store synchronization instead.
     await withTempFile("lease_edit_notx3.txt", ORIGINAL, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
@@ -236,9 +241,10 @@ describe("lease grant inside the materialization transaction (#116)", () => {
 
       const store = await loadHashStore();
       store.db.exec(
-        "CREATE TRIGGER lease_edit_notx3_fail BEFORE INSERT ON served " +
+        "CREATE TRIGGER lease_edit_notx3_fail BEFORE UPDATE OF hashes ON served " +
           "BEGIN SELECT RAISE(ABORT, 'induced mirror failure'); END",
       );
+      let text = "";
       try {
         const res = await editTool.execute(
           "e1",
@@ -247,17 +253,17 @@ describe("lease grant inside the materialization transaction (#116)", () => {
           undefined,
           ctx,
         );
-        expect(getText(res)).toContain("Successfully edited");
+        text = getText(res);
       } finally {
         store.db.exec("DROP TRIGGER lease_edit_notx3_fail");
       }
       expect(await readFile(path, "utf-8")).toBe(EDITED);
+      expect(text).toContain("Successfully edited");
+      expect(text).toContain("Store synchronization deferred");
 
-      const leases = leasesForSnapshot(store, sessionKeyFor(ctx), path, EDITED);
-      expect(leases.length).toBe(3);
-      for (const lease of leases) {
-        expect(lease.retired_at).toBeNull();
-      }
+      // The mirror failure rolled the grant back with it: no leases without their mirror rows.
+      expect(leasesForSnapshot(store, sessionKeyFor(ctx), path, EDITED)).toEqual([]);
+      expect(snapshotExists(store, path, EDITED)).toBe(false);
     });
   });
 

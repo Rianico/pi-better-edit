@@ -3,18 +3,28 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 
 import {
-  loadServed,
-  recordServed,
-  driftReported,
-  markDriftReported,
-  clearDriftReported,
-  wipeServedState,
+  createSessionHandle,
+  wipeSession,
   servedPositionsOf,
   currentPositionOfDrifted,
 } from "../../src/served-session/index.js";
+import type { ServedEntry } from "../../src/served-session/types.js";
 import { shutdownHashStore } from "../../src/hash-store";
 import { initHasher } from "../../src/hashline/hasher";
 import { getWritableTempRoot } from "../support/fixtures";
+
+// WHY: test-local shims over the SessionHandle seam (the compat wrappers were deleted from the module).
+const loadServed = (sessionKey: string, path: string) =>
+  createSessionHandle(sessionKey, path).load();
+const recordServed = (sessionKey: string, path: string, rows: ServedEntry[]) =>
+  createSessionHandle(sessionKey, path).record(rows);
+const driftReported = (sessionKey: string, path: string) =>
+  createSessionHandle(sessionKey, path).driftReported();
+const markDriftReported = (sessionKey: string, path: string, hashes: string[]) =>
+  createSessionHandle(sessionKey, path).markDriftReported(hashes);
+const clearDriftReported = (sessionKey: string, path: string) =>
+  createSessionHandle(sessionKey, path).clearDrift();
+const wipeServedState = (sessionKey: string) => wipeSession(sessionKey);
 
 let tmpHome: string;
 beforeAll(async () => {

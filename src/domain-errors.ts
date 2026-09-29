@@ -87,6 +87,23 @@ export type RangeCause =
   | "anchor staleness"
   | "served span";
 
+// WHY: the runtime companion of the `RangeCause` union, mirroring `isDomainErrorCode`:
+// WHY: the envelope reader (`src/error-envelope.ts`) validates diagnosis values so
+// WHY: `MutationFailure.cause` stays honest to its union. Values are registry-owned —
+// WHY: a non-registry string is an unknown diagnosis, never a typed one.
+const RANGE_CAUSES: readonly RangeCause[] = [
+  "retirement",
+  "tombstone",
+  "never-served",
+  "served-range staleness",
+  "anchor staleness",
+  "served span",
+];
+
+export function isRangeCause(value: unknown): value is RangeCause {
+  return typeof value === "string" && (RANGE_CAUSES as readonly string[]).includes(value);
+}
+
 export interface ErrorPayloadMap {
   E_BAD_PAYLOAD: {
     message: string;

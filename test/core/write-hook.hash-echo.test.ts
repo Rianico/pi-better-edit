@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findServedHashEcho, servedHashEchoDenial, registerWriteHook } from "../../src/write-hook";
 import { initHasher, canonDigest } from "../../src/hashline";
-import { createSessionHandle, recordServed } from "../../src/served-session/index.js";
+import { createSessionHandle } from "../../src/served-session/index.js";
 import { loadHashStore } from "../../src/hash-store.js";
 import { readNormFile } from "../../src/file-reader.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
@@ -182,7 +182,7 @@ describe("write served hash guard", () => {
       const path = join(cwd, "doc.md");
       await writeFile(path, "hello\n", "utf-8");
       const abs = await resolveTarget(path);
-      await recordServed("s1", abs, [{ position: 0, hash: "Ab3" }]);
+      await createSessionHandle("s1", abs).record([{ position: 0, hash: "Ab3" }]);
       await expect(
         servedHashEchoDenial(io, path, "Zz9│literal text\n", cwd, "s1"),
       ).resolves.toBeUndefined();

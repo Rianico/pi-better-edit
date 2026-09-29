@@ -15,7 +15,7 @@ import { sessionKeyFor } from "./served-session/session.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "./payload-contract.js";
 import { execute as engineExecute, preview as enginePreview } from "./mutation-engine/engine.js";
 import { isMutationSuccess } from "./mutation-engine/types.js";
-import { genDiff } from "./edit-diff.js";
+import { attachEnvelope } from "./error-envelope.js";
 
 export type EditToolContext = {
   cwd: string;
@@ -67,14 +67,15 @@ export function createEditTool(): EditTool {
       }
       // WHY: every range-family producer emits `details.cause` (user-facing diagnosis) —
       // WHY: carry it on the thrown error so callers catching the message still see the cause.
+      // WHY: the whole failure envelope (code, diagnosis, rows, block) is stamped through the
+      // WHY: envelope assembler (src/error-envelope.ts) — this seam never hand-copies fields.
       const failure = new Error(result.message);
-      (failure as { code?: string }).code = result.code;
-      (failure as { servedRows?: unknown }).servedRows = result.servedRows ?? [];
-      (failure as { servedBlock?: string }).servedBlock = result.servedBlock ?? "";
-      if (result.details && typeof result.details.cause === "string") {
-        (failure as { details?: { cause: string } }).details = result.details;
-        (failure as { cause?: string }).cause = result.details.cause;
-      }
+      attachEnvelope(failure, {
+        code: result.code,
+        ...(result.cause !== undefined ? { cause: result.cause } : {}),
+        servedRows: result.servedRows ?? [],
+        servedBlock: result.servedBlock ?? "",
+      });
       throw failure;
     },
     async preview(request, cwd, ctx) {
@@ -99,13 +100,10 @@ export function createEditTool(): EditTool {
           };
         }
         return {
-          diff: genDiff(
-            file.originalNormalized,
-            file.result,
-            4,
-            file.resultHashes,
-            file.originalHashes,
-          ).diff,
+          // WHY: #174 single projection — the engine's `preview` seam already produced the
+          // WHY: `genDiff` text with the pane's context; this display path renders it and
+          // WHY: never re-projects.
+          diff: result.diff,
         };
       } catch (error: unknown) {
         return { error: error instanceof Error ? error.message : String(error) };
