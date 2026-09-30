@@ -119,7 +119,7 @@ importers:
         specifier: ^21.3.0
         version: 21.3.4(supports-color@7.2.0)
       typebox:
-        specifier: ^1.3.7
+        specifier: '*'
         version: 1.3.27
       xxhash-wasm:
         specifier: ^1.1.0

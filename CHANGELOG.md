@@ -17,6 +17,7 @@
 * commit the edit and undo store state in one transaction, so a store failure can no longer leave the leases and the served mirror disagreeing (#16)
 * **preview:** keep the debounced preview bound to the session that armed it across a session switch (#16)
 * **drift:** key drift-notice episodes on the drifted line's position, so distinct lines sharing an anchor are no longer collapsed into one silent notice (#16)
+* **packaging:** declare typebox as a peer dependency so host-provided copies cannot bypass the extension loader (#34)
 ### Documentation
 
 * **readme:** record pi-lens interoperability and the read-expansion contract (#29)
