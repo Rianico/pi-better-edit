@@ -248,7 +248,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 ### Interoperability with pi-lens
 
-`pi-better-edit` composes with [`pi-lens`](https://github.com/Rianico/pi-lens) diagnostics, formatting, and its read-before-edit guard:
+`pi-better-edit` composes with [`pi-lens`](https://github.com/apmantza/pi-lens) diagnostics, formatting, and its read-before-edit guard:
 
 - **Read expansion**: pi-lens widens a partial read (`limit <= 100`) to the enclosing symbol or markdown heading section (cap 300 lines, 200 ms budget, disabled by `--no-lsp`); a read without `limit` is never widened. Anchors always describe the rows actually served, so failure triage counts served rows rather than the requested window. To keep the requested window, pass `limit > 100`, read the whole file, or start pi with `--no-lsp`.
 - **Format and autofix**: pi-lens' deferred `agent_end` format and autofix passes rewrite files outside the model's turn. A whitespace-only rewrite is absorbed by the whitespace-insensitive canon ([ADR-0005](docs/adr/0005-whitespace-insensitive-anchors.md)), so anchors survive; a real fix rotates the affected anchors, and the next edit fails closed with `[E_STALE_RANGE]` or `[E_TARGET_LOST]` and serves the current rows.
