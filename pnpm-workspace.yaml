@@ -1,3 +1,6 @@
+overrides:
+  undici: 8.10.2
+
 allowBuilds:
   "@google/genai": true
   esbuild: true
