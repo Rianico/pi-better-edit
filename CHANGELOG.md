@@ -7,6 +7,7 @@
 * **lens:** report served rows to pi-lens' read bridge through a domain-neutral observer seam (#29)
 * **lens:** add the /pi-better-edit lens command and the .pi/agents/pi-better-edit.json config with env, project and global precedence (#29)
 * **lens:** ship schemas/pi-better-edit.json for editor validation of the config (#29)
+* **lens:** mirror landed mutations (edit, write, undo) to pi-lens' mutation bridge through a domain-neutral mutated-file seam (#33)
 
 ### Bug Fixes
 
@@ -25,6 +26,7 @@
 ### Tests
 
 * **edit:** pin the payload wire shape against pi-lens' third-party shape adapters (#31)
+* **lens:** pin the mutation-bridge entry shape, the drop accounting and the write-only notification invariant (#33)
 
 ### Code Refactoring
 

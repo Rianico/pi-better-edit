@@ -44,12 +44,14 @@ describe("lens bridge boundary", () => {
     expect(entry).toContain('from "./src/integrations/pi-lens/read-bridge-adapter.js"');
     expect(entry).toContain("registerLensCommand(pi)");
     expect(entry).toContain("attachReadBridgeAdapter()");
+    expect(entry).toContain("attachMutationBridgeAdapter()");
   });
 
-  it("keeps the integration surface to the three settled modules", () => {
+  it("keeps the integration surface to the four settled modules", () => {
     expect(walkSources(INTEGRATION_DIR).sort()).toEqual([
       join(INTEGRATION_DIR, "command.ts"),
       join(INTEGRATION_DIR, "config.ts"),
+      join(INTEGRATION_DIR, "mutation-bridge-adapter.ts"),
       join(INTEGRATION_DIR, "read-bridge-adapter.ts"),
     ]);
   });

@@ -308,6 +308,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
         const details: EditDetails = {
           diff: undoDiff,
           firstChangedLine: restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine,
+          lastChangedLine: restoredRange?.lastChangedLine ?? undoDiffResult.lastChangedLine,
           resultLineCount: visLines(undo.content).length,
           servedRows: undoDenseRows,
           contentHash: restoredContentHash,

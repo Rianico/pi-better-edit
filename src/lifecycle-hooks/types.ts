@@ -43,6 +43,7 @@ export type LifecycleDeps = {
     contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;
+    lastChangedLine?: number;
   }) => Promise<void>;
   sessionKeyFor: (ctx?: { sessionManager?: { getSessionId(): string } }) => string;
   finalizeToolResult: (details: EditDetails) => {

@@ -969,7 +969,12 @@ export function createSessionHandle(
     },
     async recordDiff(
       servedRows: ServedRow[],
-      opts: { contentHash?: string; resultLineCount?: number; firstChangedLine?: number },
+      opts: {
+        contentHash?: string;
+        resultLineCount?: number;
+        firstChangedLine?: number;
+        lastChangedLine?: number;
+      },
     ): Promise<void> {
       if (servedRows.length === 0) return;
       const store = await resolveStore();

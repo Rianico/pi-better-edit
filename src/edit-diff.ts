@@ -118,6 +118,10 @@ function contextLinesToShow(
  *   at context 0 every non-empty middle gap collapses to a single counted untouched
  *   marker (#170); bare ` ...` appears only at leading/trailing edges; added spans are never collapsed.
  * - servedRows mirror exactly the rendered context/addition rows (position + hash).
+ * - `firstChangedLine`/`lastChangedLine` bracket the changed new-content lines (1-indexed,
+ *   `lastChangedLine >= firstChangedLine` whenever either is set); a pure deletion names the
+ *   position where the removed text sat, so an end-of-file deletion may name one line past the
+ *   last new line — exactly as `firstChangedLine` already can, and both are absent on a no-op.
  */
 export function genDiff(
   oldContent: string,
@@ -128,6 +132,7 @@ export function genDiff(
 ): {
   diff: string;
   firstChangedLine: number | undefined;
+  lastChangedLine: number | undefined;
   servedRows: ServedRow[];
 } {
   const effectiveNewHashes = newContentHashes ?? defaultHashIdentity.hashesForSync(newContent);
@@ -139,6 +144,7 @@ export function genDiff(
   let oldLineNum = 1;
   let lastWasChange = false;
   let firstChangedLine: number | undefined;
+  let lastChangedLine: number | undefined;
 
   for (let i = 0; i < parts.length; i++) {
     const part = parts[i]!;
@@ -152,10 +158,18 @@ export function genDiff(
         const n = { value: newLineNum };
         pushAddedLines(displayLines, effectiveNewHashes, n, output, servedRows);
         newLineNum = n.value;
+        lastChangedLine = newLineNum - 1;
       } else {
         const o = { value: oldLineNum };
         pushRemovedLines(displayLines, oldContentHashes, o, output);
         oldLineNum = o.value;
+        lastChangedLine = newLineNum;
+      }
+      // WHY: a pure deletion names the position where the removed text sat, and an added part can
+      // WHY: push nothing; clamping to `firstChangedLine` keeps last >= first for every consumer
+      // WHY: that pairs them.
+      if (lastChangedLine < (firstChangedLine ?? lastChangedLine)) {
+        lastChangedLine = firstChangedLine;
       }
       lastWasChange = true;
       continue;
@@ -199,5 +213,5 @@ export function genDiff(
     lastWasChange = false;
   }
 
-  return { diff: output.join("\n"), firstChangedLine, servedRows };
+  return { diff: output.join("\n"), firstChangedLine, lastChangedLine, servedRows };
 }
