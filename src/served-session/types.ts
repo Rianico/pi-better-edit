@@ -69,6 +69,7 @@ export interface SessionHandle {
       contentHash?: string;
       resultLineCount?: number;
       firstChangedLine?: number;
+      lastChangedLine?: number;
     },
   ): Promise<void>;
   /** SAFETY: Serve-feedback recording — preview is no-op per policy (keel: recovery stays inside). */

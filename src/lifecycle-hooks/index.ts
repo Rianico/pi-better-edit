@@ -10,7 +10,8 @@ import {
 } from "../hashline/index.js";
 import { splitLines } from "../utils.js";
 import { denseServeRows } from "../hashline/served.js";
-import { notifyServedSpans, servedRowsToSpans } from "../served-spans.js";
+import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served-spans.js";
+import { notifyMutatedFile } from "../mutated-files.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
 import {
@@ -26,11 +27,13 @@ async function defaultRecordDiffServes(input: {
   contentHash: string;
   resultLineCount?: number;
   firstChangedLine?: number;
+  lastChangedLine?: number;
 }): Promise<void> {
   await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, {
     contentHash: input.contentHash,
     resultLineCount: input.resultLineCount,
     firstChangedLine: input.firstChangedLine,
+    lastChangedLine: input.lastChangedLine,
   });
 }
 import { readNormFile as defaultReadNormFile } from "../file-reader.js";
@@ -65,6 +68,21 @@ function defaultDeps(): LifecycleDeps {
   };
 }
 
+/**
+ * The changed line span of one mutated file, or an empty list meaning "whole file".
+ *
+ * WHY empty means whole file: the mutation-bridge adapter treats an empty list as whole-file
+ * authorship, omits the range fields, and the bridge resolves an omitted range the same way — so an
+ * unnamed span stays honest instead of inventing a line. WHY the validation: a non-integer, a zero,
+ * or an inverted pair would be refused downstream (`isValidRange`, `clients/mutation-bridge.ts`) or
+ * would name lines the file never had.
+ */
+function toChangedRanges(first: number | undefined, last: number | undefined): ServedSpan[] {
+  if (first === undefined || last === undefined) return [];
+  if (!Number.isInteger(first) || !Number.isInteger(last) || first < 1 || last < first) return [];
+  return [{ startLine: first, lineCount: last - first + 1 }];
+}
+
 export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   onSessionStart: (event: unknown, ctx: ToolContext) => Promise<void>;
   onToolResult: (
@@ -89,6 +107,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;
+    lastChangedLine?: number;
   }): Promise<void> {
     if (input.servedRows.length === 0) return;
     try {
@@ -221,6 +240,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         spans: resultLineCount > 0 ? [{ startLine: 1, lineCount: resultLineCount }] : [],
         source: "auto-read",
       });
+      // WHY: the bytes are on disk and the auto-read re-served the whole file, so the honest shape
+      // WHY: is whole-file authorship: an empty range list makes the adapter omit the range fields
+      // WHY: entirely, which keeps this hot path free of any line counting.
+      notifyMutatedFile({ filePath: absolutePath, kind: "write", ranges: [], sourceTool: "write" });
       // WHY: the clear side of the tally: this runs only after the write's bytes are on disk
       // WHY: (the auto-read above re-served this session's rows), never on the pre-write
       // WHY: verification, which must keep the count for a resubmission.
@@ -286,6 +309,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           contentHash: entry.contentHash,
           resultLineCount: entry.resultLineCount,
           firstChangedLine: entry.firstChangedLine,
+          lastChangedLine: entry.lastChangedLine,
         });
         notifyServedSpans({
           filePath: resolvedPath,
@@ -294,6 +318,15 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               ? [{ startLine: 1, lineCount: entry.resultLineCount }]
               : servedRowsToSpans(entry.servedRows),
           source: "diff",
+        });
+        // WHY: a served diff means the bytes changed on disk, and the committed span is this
+        // WHY: file's changed range. A `reject-and-serve` payload never reaches here (it carries an
+        // WHY: error, not a diff), so a read-only refusal can never be reported as a mutation.
+        notifyMutatedFile({
+          filePath: resolvedPath,
+          kind: "edit",
+          ranges: toChangedRanges(entry.firstChangedLine, entry.lastChangedLine),
+          sourceTool: event.toolName === "undo_last_edit" ? "undo_last_edit" : "edit",
         });
       }
     } else if (servedRows && servedRows.length > 0) {
@@ -311,6 +344,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           contentHash: details.contentHash ?? "",
           resultLineCount: details.resultLineCount,
           firstChangedLine: details.firstChangedLine,
+          lastChangedLine: details.lastChangedLine,
         });
         notifyServedSpans({
           filePath: resolvedPath,
@@ -319,6 +353,14 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               ? [{ startLine: 1, lineCount: details.resultLineCount }]
               : servedRowsToSpans(servedRows),
           source: "diff",
+        });
+        // WHY: same contract as the servedByPath branch: the undo or edit landed on disk, and the
+        // WHY: details' first/last changed lines bound the changed span (empty when unnamed).
+        notifyMutatedFile({
+          filePath: resolvedPath,
+          kind: "edit",
+          ranges: toChangedRanges(details.firstChangedLine, details.lastChangedLine),
+          sourceTool: event.toolName === "undo_last_edit" ? "undo_last_edit" : "edit",
         });
       }
     }

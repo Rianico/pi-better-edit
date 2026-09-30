@@ -10,6 +10,7 @@ export type EditDetails = {
   path?: string;
   diff: string;
   firstChangedLine?: number;
+  lastChangedLine?: number;
   resultLineCount?: number;
   snapshotId?: string;
   classification?: "noop";
@@ -22,6 +23,7 @@ export type EditDetails = {
     contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;
+    lastChangedLine?: number;
   }>;
   /** Committed `file_snapshots.snapshot_hash` of the single served file, when only one was served. */
   contentHash?: string;
@@ -221,6 +223,7 @@ export function buildChanged(input: SuccessInput): TResult {
       path,
       diff: diffResult.diff,
       firstChangedLine: editMeta.firstChangedLine ?? diffResult.firstChangedLine,
+      lastChangedLine: editMeta.lastChangedLine ?? diffResult.lastChangedLine,
       resultLineCount: resultLines.length,
       snapshotId,
       metrics,
@@ -252,7 +255,11 @@ export type BatchSection = {
    * WHY: `firstChangedLine`; carrying it here keeps genDiff at one render per commit — the
    * WHY: model-visible text and `servedByPath.firstChangedLine` come from that same render.
    */
-  renderedDiff?: { diff: string; firstChangedLine: number | undefined };
+  renderedDiff?: {
+    diff: string;
+    firstChangedLine: number | undefined;
+    lastChangedLine: number | undefined;
+  };
 };
 
 type _BatchDetails = EditDetails;
@@ -298,6 +305,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
     contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;
+    lastChangedLine?: number;
   }> = [];
   const diffParts: string[] = [];
   for (const s of appliedFiles) {
@@ -315,6 +323,7 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
         contentHash: s.resultHash,
         resultLineCount: visLines(s.result).length,
         firstChangedLine: diffResult.firstChangedLine,
+        lastChangedLine: diffResult.lastChangedLine,
       });
     }
   }
