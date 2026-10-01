@@ -103,7 +103,29 @@ function assertNotEmpty(originalContent: string, result: string): void {
   }
 }
 
+/**
+ * The zero-width insertion splice (ticket-01): `before` lands between the preceding newline and
+ * the span's first line, `after` lands after the span's last line's content and before the
+ * existing separator — including at EOF with no trailing newline. Inserting at least one line
+ * always changes the bytes, so an insertion never reaches the noop comparison.
+ */
+function insertionSpan(edit: RHEdit, lineIndex: LIdx): RESpan {
+  const { fileLines, lineStarts } = lineIndex;
+  const inserted = edit.content_lines.join("\n");
+  if (edit.placement === "before") {
+    const start = lineStarts[edit.hash_bounds[0].line - 1]!;
+    return { kind: "replace", start, end: start, replacement: `${inserted}\n` };
+  }
+  const endLine = edit.hash_bounds[1].line;
+  const end = lineStarts[endLine - 1]! + fileLines[endLine - 1]!.length;
+  return { kind: "replace", start: end, end, replacement: `\n${inserted}` };
+}
+
 function resToSpan(edit: RHEdit, content: string, lineIndex: LIdx): RESpan | NoopSpan {
+  if (edit.placement === "before" || edit.placement === "after") {
+    return insertionSpan(edit, lineIndex);
+  }
+
   const { fileLines, lineStarts } = lineIndex;
 
   const startLine = edit.hash_bounds[0].line;
@@ -416,6 +438,21 @@ export function applyEdit(
 
 function resolvedRange(resolved: RHEdit): ResolvedRange {
   const [start, end] = resolved.hash_bounds;
+  if (resolved.placement === "before" || resolved.placement === "after") {
+    // WHY: an insertion is zero-width: it lands after line `pointLine` (`before` targets the line
+    // WHY: below the point, `after` the line above). The empty-range form (startLine = point + 1,
+    // WHY: endLine = point) is what lets identity bookkeeping keep every existing line — a width-1
+    // WHY: range would drop the target line's `line_id`.
+    const targetLine = resolved.placement === "before" ? start.line : end.line;
+    const pointLine = resolved.placement === "before" ? targetLine - 1 : targetLine;
+    return {
+      startLine: pointLine + 1,
+      endLine: pointLine,
+      startHash: start.hash,
+      endHash: end.hash,
+      delta: resolved.content_lines.length,
+    };
+  }
   return {
     startLine: start.line,
     endLine: end.line,

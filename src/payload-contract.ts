@@ -13,13 +13,32 @@ export type EditItem = {
 
 export type EditMode = "general" | "literal";
 
+/**
+ * Internal normalized vocabulary owned by the admission boundary (ticket-01). The wire never
+ * names these shapes: `normReq` builds them once from the validated payload and everything
+ * downstream consumes the union — the engine switches on `payload.kind` exhaustively.
+ */
+export type Placement = "replace" | "before" | "after";
+
+export type SpanRef = { anchor_from: string; anchor_to: string };
+
+export type DesiredText = { kind: "hand-written"; text: string } | { kind: "none" };
+
+export type NormalizedEditItem = { target: SpanRef; at: Placement; payload: DesiredText };
+
 export type NormalizedEditRequest = {
+  file: string;
+  edits: NormalizedEditItem[];
+  mode?: EditMode;
+};
+
+/** The wire-folded request (`editRequestFrom`'s view): canonical keys, pre-union. */
+type PreAdmissionRequest = {
   file: string;
   edits: EditItem[];
   mode?: EditMode;
 };
-type PreAdmissionRequest = NormalizedEditRequest;
-type NormalizedPayload = PreAdmissionRequest & {
+type NormalizedPayload = NormalizedEditRequest & {
   readonly [normalizedEdit]: true;
 };
 
@@ -267,14 +286,26 @@ export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined
   return { file, edits: items };
 }
 
+function normalizedItemFrom(item: EditItem): NormalizedEditItem {
+  return {
+    target: { anchor_from: item.anchor_from, anchor_to: item.anchor_to },
+    at: "replace",
+    payload:
+      item.replace_with === ""
+        ? { kind: "none" }
+        : { kind: "hand-written", text: item.replace_with },
+  };
+}
+
 export function normReq(input: unknown): NormReqResult {
   const valid = editRequestFrom(input);
   // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
   if (!valid) return input as NormReqResult;
-  const record: Record<string, unknown> & { file: string; edits: EditItem[] } =
+  const items = valid.edits.map(normalizedItemFrom);
+  const record: Record<string, unknown> & { file: string; edits: NormalizedEditItem[] } =
     valid.mode !== undefined
-      ? { file: valid.file, edits: valid.edits, mode: valid.mode }
-      : { file: valid.file, edits: valid.edits };
+      ? { file: valid.file, edits: items, mode: valid.mode }
+      : { file: valid.file, edits: items };
   Object.defineProperty(record, normalizedEdit, {
     value: true,
     enumerable: false,
@@ -315,6 +346,20 @@ export function getPreviewInput(args: unknown): { file: string; edits: EditItem[
 
 const ROOT_KS = new Set(["file", "edits", "mode"]);
 
+const PLACEMENTS: readonly string[] = ["replace", "before", "after"];
+
+function isNormalizedEditItem(value: unknown): value is NormalizedEditItem {
+  if (!isRec(value)) return false;
+  const { target, at, payload } = value;
+  if (!isRec(target)) return false;
+  if (typeof target.anchor_from !== "string" || typeof target.anchor_to !== "string") return false;
+  if (typeof at !== "string" || !PLACEMENTS.includes(at)) return false;
+  if (!isRec(payload)) return false;
+  if (payload.kind === "none") return true;
+  if (payload.kind === "hand-written") return typeof payload.text === "string";
+  return false;
+}
+
 export function assertReq(request: unknown): asserts request is NormalizedEditRequest {
   if (!isNormalizedEdit(request)) {
     throw new DomainError("E_BAD_PAYLOAD", {
@@ -348,12 +393,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
   }
 
   for (let index = 0; index < request.edits.length; index++) {
-    const item = request.edits[index]!;
-    if (
-      typeof item.anchor_from !== "string" ||
-      typeof item.anchor_to !== "string" ||
-      typeof item.replace_with !== "string"
-    ) {
+    if (!isNormalizedEditItem(request.edits[index])) {
       throw new DomainError("E_BAD_PAYLOAD", {
         message: `Edit request edits[${index}] must be { anchor_from, anchor_to, replace_with }: two bare 3-char anchors and the replacement text.`,
       });

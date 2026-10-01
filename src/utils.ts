@@ -98,6 +98,10 @@ export function firstNonEmpty(lines: string[]): string | undefined {
   return idx >= 0 ? lines[idx] : undefined;
 }
 
+export function assertNever(value: never): never {
+  throw new Error(`Unexpected value: ${JSON.stringify(value)}`);
+}
+
 export function clipLine(line: string, maxLen = 200): string {
   const flat = line.replace(/\n/g, "\\n");
   return flat.length > maxLen ? `${flat.slice(0, maxLen)}...` : flat;

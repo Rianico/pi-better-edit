@@ -103,6 +103,13 @@ function resolveIntervals(
     return [{ from: rangeFrom, to: rangeTo, delta: input.range!.delta }];
   }
   return intervals.map((r) => {
+    if (r.startLine > r.endLine) {
+      // WHY: zero-width insertion interval (ticket-01): it edits no served line, so the interval
+      // WHY: stays empty (`from > to` is never matched by `isInIntervals`) instead of degrading to
+      // WHY: a width-1 window that would mask the untouched neighbour lines. `deltaBefore` still
+      // WHY: shifts every served line after the insertion point by the inserted line count.
+      return { from: r.startLine - 1, to: r.endLine - 1, delta: r.delta };
+    }
     const startPositions = servedPositionsOf(input.served, r.startHash);
     const endPositions = servedPositionsOf(input.served, r.endHash);
     let s: number;

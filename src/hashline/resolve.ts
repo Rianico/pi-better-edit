@@ -150,10 +150,23 @@ export function uniqueServedPosition(
   return uniqueItemPosition(served, anchor);
 }
 
-export type HEdit = { content_lines: string[]; hash_bounds: [Anchor, Anchor] };
+/**
+ * Internal placement of a resolved span's mutation. `"replace"` (also the default when absent)
+ * rewrites the span's bytes; `"before"`/`"after"` splice at a zero-width point adjacent to the
+ * span. The wire cannot express it yet — only the admission boundary's normalized items and
+ * library-level `applyEdit` callers set it.
+ */
+export type EditPlacement = "replace" | "before" | "after";
+
+export type HEdit = {
+  content_lines: string[];
+  hash_bounds: [Anchor, Anchor];
+  placement?: EditPlacement;
+};
 export type RHEdit = {
   content_lines: string[];
   hash_bounds: [RAnchor, RAnchor];
+  placement?: EditPlacement;
 };
 
 interface HMismatch {
@@ -172,6 +185,7 @@ export type HTEdit = {
   replace_with: string;
   anchor_from: string;
   anchor_to: string;
+  placement?: EditPlacement;
 };
 
 function resAnchorFromMap(ref: Anchor, hashIndex: Map<string, number[]>): RAnchor | HMismatch {
@@ -298,7 +312,7 @@ export function fmtMismatchWithServes(
   return { message: out.join("\n"), servedRows };
 }
 
-const ITEM_KS = new Set(["replace_with", "anchor_from", "anchor_to"]);
+const ITEM_KS = new Set(["replace_with", "anchor_from", "anchor_to", "placement"]);
 
 function assertItem(edit: Record<string, unknown>): void {
   rejectUnknownFields(
@@ -336,6 +350,16 @@ function assertItem(edit: Record<string, unknown>): void {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
         'The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.',
+    });
+  }
+  if (
+    "placement" in edit &&
+    edit.placement !== "replace" &&
+    edit.placement !== "before" &&
+    edit.placement !== "after"
+  ) {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: 'Field "placement" must be "replace", "before" or "after". Nothing was written.',
     });
   }
 }
@@ -386,6 +410,7 @@ export function resEdit(edit: HTEdit): HEdit {
   return {
     content_lines: editLines,
     hash_bounds: [parseHashRef(bounds[0]), parseHashRef(bounds[1])],
+    ...(edit.placement !== undefined ? { placement: edit.placement } : {}),
   };
 }
 
@@ -458,6 +483,7 @@ export function valEdit(
       resolved: {
         content_lines: edit.content_lines,
         hash_bounds: [endResolved, startResolved],
+        ...(edit.placement !== undefined ? { placement: edit.placement } : {}),
       },
       mismatches,
       reversed: { fromHash: edit.hash_bounds[0].hash, toHash: edit.hash_bounds[1].hash },
@@ -468,6 +494,7 @@ export function valEdit(
     resolved: {
       content_lines: edit.content_lines,
       hash_bounds: [startResolved, endResolved],
+      ...(edit.placement !== undefined ? { placement: edit.placement } : {}),
     },
     mismatches,
   };

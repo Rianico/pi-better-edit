@@ -13,9 +13,22 @@ describe("normReq", () => {
       file: "src/main.ts",
       edits: [
         {
-          anchor_from: "aB3",
-          anchor_to: "cD4",
-          replace_with: "new",
+          target: { anchor_from: "aB3", anchor_to: "cD4" },
+          at: "replace",
+          payload: { kind: "hand-written", text: "new" },
+        },
+      ],
+    });
+  });
+
+  it("folds an empty replace_with to a none payload", () => {
+    expect(normReq({ file: "src/main.ts", edits: [["aB3", "cD4", ""]] })).toMatchObject({
+      file: "src/main.ts",
+      edits: [
+        {
+          target: { anchor_from: "aB3", anchor_to: "cD4" },
+          at: "replace",
+          payload: { kind: "none" },
         },
       ],
     });

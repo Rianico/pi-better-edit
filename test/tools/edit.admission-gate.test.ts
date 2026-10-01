@@ -2,7 +2,7 @@ import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { createEditTool } from "../../src/edit-tool.js";
-import { assertReq, normReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
+import { assertReq, normReq } from "../../src/payload-contract.js";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
 const STRUCTURAL_PREFIX =
@@ -137,11 +137,12 @@ describe("edit admission gate — single structural hint", () => {
   });
 
   it("the narrowed request carries a string file (null is unrepresentable)", () => {
-    const typed: NormalizedEditRequest = {
+    const wire = {
       file: "sample.ts",
       edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }],
     };
-    expect(typed.file).toBe("sample.ts");
-    expect(() => assertReq(normReq(typed))).not.toThrow();
+    const narrowed = normReq(wire);
+    assertReq(narrowed);
+    expect(narrowed.file).toBe("sample.ts");
   });
 });

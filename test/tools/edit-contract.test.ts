@@ -113,17 +113,23 @@ describe("edit payload contract", () => {
       file: "sample.ts",
       edits: [
         {
-          anchor_from: "aB3",
-          anchor_to: "cD4",
-          replace_with: "new",
+          target: { anchor_from: "aB3", anchor_to: "cD4" },
+          at: "replace",
+          payload: { kind: "hand-written", text: "new" },
         },
       ],
     });
     expect(() => assertReq(normalized)).not.toThrow();
-    // legacy tuple items fold to objects
+    // legacy tuple items fold to normalized items
     expect(normReq({ file: "sample.ts", edits: [["aB3", "cD4", "new"]] })).toMatchObject({
       file: "sample.ts",
-      edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+      edits: [
+        {
+          target: { anchor_from: "aB3", anchor_to: "cD4" },
+          at: "replace",
+          payload: { kind: "hand-written", text: "new" },
+        },
+      ],
     });
     // legacy root key and legacy item keys fold
     expect(
@@ -133,7 +139,13 @@ describe("edit payload contract", () => {
       }),
     ).toMatchObject({
       file: "sample.ts",
-      edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+      edits: [
+        {
+          target: { anchor_from: "aB3", anchor_to: "cD4" },
+          at: "replace",
+          payload: { kind: "hand-written", text: "new" },
+        },
+      ],
     });
     expect(() => assertReq(["sample.ts", ["aB3", "cD4"], "new"])).toThrow("exactly");
     expect(() =>

@@ -7,11 +7,20 @@ import {
   isMutationFailure,
 } from "../../src/mutation-engine/index.js";
 import { withTempFile, setupIntegrationTest, TEST_SESSION_ID } from "../support/fixtures.js";
+import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
 import { genDiff } from "../../src/edit-diff.js";
 import { DIFF_PREVIEW_CONTEXT } from "../../src/constants.js";
 import { lineHashes } from "../../src/hashline/index.js";
 import { initHasher } from "../../src/hashline/index.js";
 import { useTestHome } from "../support/fixtures.js";
+
+// WHY: the engine seam's input is the admission-normalized request (ticket-01 union) — these
+// WHY: fixtures hand the wire payload through the same admission boundary the tool uses.
+function req(input: unknown): NormalizedEditRequest {
+  const normalized = normReq(input);
+  assertReq(normalized);
+  return normalized;
+}
 
 const home = useTestHome();
 
@@ -28,7 +37,10 @@ describe("MutationEngine — deep seam", () => {
       const from = hashes[0]!;
       const to = hashes[1]!;
       const result = await execute(
-        { file: "sample.txt", edits: [{ anchor_from: from, anchor_to: to, replace_with: "x\ny" }] },
+        req({
+          file: "sample.txt",
+          edits: [{ anchor_from: from, anchor_to: to, replace_with: "x\ny" }],
+        }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
       );
@@ -49,10 +61,10 @@ describe("MutationEngine — deep seam", () => {
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const result = await preview(
-        {
+        req({
           file: "sample.txt",
           edits: [{ anchor_from: from, anchor_to: from, replace_with: "replaced" }],
-        },
+        }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
       );
@@ -72,10 +84,10 @@ describe("MutationEngine — deep seam", () => {
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const result = await preview(
-        {
+        req({
           file: "sample.txt",
           edits: [{ anchor_from: from, anchor_to: from, replace_with: "replaced" }],
-        },
+        }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
       );
@@ -104,10 +116,10 @@ describe("MutationEngine — deep seam", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
-        {
+        req({
           file: "sample.txt",
           edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
-        },
+        }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
       );
@@ -128,13 +140,13 @@ describe("MutationEngine — deep seam", () => {
       const h2 = hashes[2]!;
       const h3 = hashes[3]!;
       const result = await execute(
-        {
+        req({
           file: "sample.txt",
           edits: [
             { anchor_from: h0, anchor_to: h0, replace_with: "A" },
             { anchor_from: h2, anchor_to: h3, replace_with: "C" },
           ],
-        },
+        }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
       );

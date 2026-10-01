@@ -52,7 +52,7 @@
 
 import { constants } from "node:fs";
 import { genDiff, restoreEndings } from "../edit-diff.js";
-import { abortIf, splitLines, visLines } from "../utils.js";
+import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { loadHashStore } from "../hash-store.js";
 import { snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
@@ -96,6 +96,11 @@ export type { PipelineOptions, ProcessedEditFile };
 
 function collectRemovedHashes(edit: HEdit, originalHashes: string[]): Set<string> {
   const removedHashes = new Set<string>();
+  // WHY: an insertion removes no line — treating its target span as removed would retire the
+  // WHY: identity of a line that survives byte-identical next to the splice point.
+  if (edit.placement === "before" || edit.placement === "after") {
+    return removedHashes;
+  }
   const startHash = edit.hash_bounds[0].hash;
   const endHash = edit.hash_bounds[1].hash;
   const startLine = originalHashes.indexOf(startHash);
@@ -116,6 +121,10 @@ function countLineChanges(
   isNoop: boolean,
 ): { totalAddedLines: number; totalRemovedLines: number } {
   if (isNoop) return { totalAddedLines: 0, totalRemovedLines: 0 };
+  if (edit.placement === "before" || edit.placement === "after") {
+    // WHY: an insertion adds its lines and removes none (see `collectRemovedHashes`).
+    return { totalAddedLines: edit.content_lines.length, totalRemovedLines: 0 };
+  }
   let totalRemovedLines = 0;
   const startLine = originalHashes.indexOf(edit.hash_bounds[0].hash);
   const endLine = originalHashes.indexOf(edit.hash_bounds[1].hash);
@@ -304,11 +313,38 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
   for (let index = 0; index < items.length; index++) {
     const item = items[index]!;
     try {
+      const payload = item.payload;
+      let replace_with: string;
+      switch (payload.kind) {
+        case "hand-written":
+          // WHY: the `hand-written` arm owns its invariant at the one place the union is parsed
+          // WHY: into engine lines: it must carry at least one line.
+          if (payload.text.length === 0) {
+            throw new DomainError("E_BAD_PAYLOAD", {
+              message:
+                'A "hand-written" payload must carry at least one line. Nothing was written.',
+            });
+          }
+          replace_with = payload.text;
+          break;
+        case "none":
+          if (item.at !== "replace") {
+            throw new DomainError("E_BAD_PAYLOAD", {
+              message:
+                'An insertion ("before"/"after") requires "hand-written" text. Nothing was written.',
+            });
+          }
+          replace_with = "";
+          break;
+        default:
+          assertNever(payload);
+      }
       parsed.push(
         resEdit({
-          anchor_from: item.anchor_from,
-          anchor_to: item.anchor_to,
-          replace_with: item.replace_with,
+          anchor_from: item.target.anchor_from,
+          anchor_to: item.target.anchor_to,
+          replace_with,
+          ...(item.at !== "replace" ? { placement: item.at } : {}),
         }),
       );
     } catch (error) {
@@ -500,9 +536,9 @@ async function runMutations(
       }
       const decision = await runNoopPolicy({
         absolutePath,
-        removeFrom: item.anchor_from,
-        removeTo: item.anchor_to,
-        replacementText: item.replace_with,
+        removeFrom: item.target.anchor_from,
+        removeTo: item.target.anchor_to,
+        replacementText: item.payload.kind === "hand-written" ? item.payload.text : "",
         ref: `edit[${index}] (${path})`,
         batch: items.length > 1,
         range,
