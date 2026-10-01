@@ -23,7 +23,7 @@ describe("task-147 rejection diagnostics", () => {
     const lines = ["alpha", "beta"];
     const hashes = _lineHashesPure(lines.join("\n"));
     const snapshot = { fileHashes: hashes, fileLines: lines, filePath: "sample.ts" };
-    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "ZZZ", replace_with: "x" });
+    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "x" });
     const { mismatches } = valEdit(edit, snapshot, undefined);
     const { message } = fmtMismatchWithServes(mismatches, snapshot);
     expect(message).toContain("1 stale anchor in sample.ts");
@@ -40,7 +40,7 @@ describe("task-147 rejection diagnostics", () => {
     let caught: Error | undefined;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "AAA", replace_with: "x" }),
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "AAA", text: "x" }),
         snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"], filePath: "sample.ts" },
         served: [],
         source: emptySource,

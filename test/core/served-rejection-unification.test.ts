@@ -102,7 +102,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
   it("FileSnapshotContext threads through fmtMismatchWithServes", () => {
     const lines = ["a", "b"];
     const hashes = _lineHashesPure(lines.join("\n"));
-    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", replace_with: "X" });
+    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", text: "X" });
     const { mismatches } = valEdit(edit, snapshotFor(lines, hashes), undefined);
     const snapshot = snapshotFor(lines, hashes);
     const { message, servedRows } = fmtMismatchWithServes(mismatches, snapshot);
@@ -114,7 +114,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const lines = ["a", "b", "c"];
     const hashes = _lineHashesPure(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
-    const edit = resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, replace_with: "X" });
+    const edit = resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "X" });
     const { resolved, mismatches } = valEdit(edit, snapshot, undefined);
     expect(mismatches).toHaveLength(0);
     expect(resolved?.hash_bounds[0].line).toBe(1);
@@ -196,7 +196,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const dupeLines = ["x", "y", "z"];
     const dupeHashes = _lineHashesPure(dupeLines.join("\n"));
     const dupeSnapshot = snapshotFor(dupeLines, dupeHashes);
-    const dupeEdit = resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" });
+    const dupeEdit = resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" });
     const resolved = resolveLeasedEdit({
       edit: dupeEdit,
       snapshot: dupeSnapshot,

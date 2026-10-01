@@ -87,7 +87,7 @@ async function runStep(
   const edit = resEdit({
     anchor_from: hashes[s - 1]!,
     anchor_to: hashes[e - 1]!,
-    replace_with: replToContent(repl),
+    text: replToContent(repl),
   });
   let result;
   try {

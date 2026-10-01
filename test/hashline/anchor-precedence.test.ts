@@ -45,7 +45,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
         snapshot: {
           fileHashes: ["Q", "Q", "BBB"],
           fileLines: ["q", "q", "b"],
@@ -73,7 +73,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
         snapshot: {
           fileHashes: ["AAA", "BBB"],
           fileLines: ["a", "b"],
@@ -99,7 +99,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "ZZZ", anchor_to: "733", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "ZZZ", anchor_to: "733", text: "X" }),
         snapshot: {
           fileHashes: ["AAA", "BBB"],
           fileLines: ["a", "b"],
@@ -124,7 +124,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
   });
 
   it("bad syntax resolves to E_MALFORMED_ANCHOR", () => {
-    expect(() => resEdit({ anchor_from: "wUp│x", anchor_to: "BBB", replace_with: "X" })).toThrow(
+    expect(() => resEdit({ anchor_from: "wUp│x", anchor_to: "BBB", text: "X" })).toThrow(
       /E_MALFORMED_ANCHOR/,
     );
   });
@@ -140,7 +140,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
         snapshot: {
           fileHashes: ["AAA", "BBB"],
           fileLines: ["a", "b"],

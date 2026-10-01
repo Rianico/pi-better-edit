@@ -131,7 +131,7 @@ describe("anchor position helpers", () => {
 });
 
 describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
-  const edit: HEdit = resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" });
+  const edit: HEdit = resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" });
 
   it("rejects an unleased anchor with [E_UNKNOWN_ANCHOR] — content never satisfies a served anchor", () => {
     const src = source({ leases: { AAA: lease({ lineId: 1 }) }, positions: { 1: 1 } });
@@ -184,7 +184,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     let caught: Error | undefined;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", text: "X" }),
         snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"] },
         served: [],
         source: src,
@@ -700,7 +700,7 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
 });
 
 describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reject-and-serve D1/D5/D6)", () => {
-  const editBoth = resEdit({ anchor_from: "AAA", anchor_to: "AAA", replace_with: "X" });
+  const editBoth = resEdit({ anchor_from: "AAA", anchor_to: "AAA", text: "X" });
 
   it("emits [E_TARGET_LOST] with no rows and no retry hint when both bounds share one dead anchor", () => {
     const dead = lease({ lineId: 7, servedSnapshotHash: "S", servedLineNumber: 3, retiredAt: 9 });
@@ -734,7 +734,7 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "BBB", anchor_to: "BBB", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "BBB", anchor_to: "BBB", text: "X" }),
         // The retired text re-appears at line 4, but the payload must not place a window there.
         snapshot: { fileHashes: ["A1", "A2", "A3", "BBB"], fileLines: ["a1", "a2", "a3", "beta"] },
         served: ["A1", "BBB"],
@@ -762,7 +762,7 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
         snapshot: { fileHashes: ["QQQ", "BBB"], fileLines: ["q", "b"] },
         served: ["AAA", "BBB"],
         source: src,
@@ -792,7 +792,7 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
         snapshot: { fileHashes: ["Q", "Q", "BBB"], fileLines: ["q", "q", "b"] },
         served: ["AAA", "BBB"],
         source: src,
@@ -818,7 +818,7 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
         snapshot: { fileHashes: ["a", "b", "c", "d"], fileLines: ["a", "b", "c", "d"] },
         served: ["AAA", "BBB"],
         source: src,

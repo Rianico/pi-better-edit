@@ -59,7 +59,7 @@ describe("E_UNKNOWN_ANCHOR numeric-anchor diagnosis", () => {
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "833", anchor_to: "834", replace_with: "X" }),
+        edit: resEdit({ anchor_from: "833", anchor_to: "834", text: "X" }),
         snapshot: {
           fileHashes: ["AAA", "BBB"],
           fileLines: ["a", "b"],

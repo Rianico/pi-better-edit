@@ -10,7 +10,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[3]!, anchor_to: hashes[1]!, replace_with: "X" }),
+      resEdit({ anchor_from: hashes[3]!, anchor_to: hashes[1]!, text: "X" }),
     );
     expect(result.content).toBe("a\nX\ne");
     expect(result.warnings?.[0]).toMatch(/\[USER\] \[W_REVERSED_ANCHORS\].*were reversed/);
@@ -22,7 +22,7 @@ describe("applyEdit — recovery scenarios", () => {
     expect(() =>
       applyEdit(
         content,
-        resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[1]!, replace_with: "X\nY" }),
+        resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[1]!, text: "X\nY" }),
         undefined,
         ["STALE", "STALE", "STALE", "STALE", "STALE"],
       ),
@@ -35,10 +35,7 @@ describe("applyEdit — recovery scenarios", () => {
     const staleStart = "ZZZ";
     let caught: Error | undefined;
     try {
-      applyEdit(
-        content,
-        resEdit({ anchor_from: staleStart, anchor_to: hashes[2]!, replace_with: "X" }),
-      );
+      applyEdit(content, resEdit({ anchor_from: staleStart, anchor_to: hashes[2]!, text: "X" }));
     } catch (error) {
       caught = error as Error;
     }
@@ -53,10 +50,7 @@ describe("applyEdit — recovery scenarios", () => {
     const staleEnd = "ZZZ";
     let caught: Error | undefined;
     try {
-      applyEdit(
-        content,
-        resEdit({ anchor_from: hashes[0]!, anchor_to: staleEnd, replace_with: "X" }),
-      );
+      applyEdit(content, resEdit({ anchor_from: hashes[0]!, anchor_to: staleEnd, text: "X" }));
     } catch (error) {
       caught = error as Error;
     }
@@ -69,7 +63,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     let caught: Error | undefined;
     try {
-      applyEdit(content, resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", replace_with: "X" }));
+      applyEdit(content, resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", text: "X" }));
     } catch (error) {
       caught = error as Error;
     }
@@ -84,7 +78,7 @@ describe("applyEdit — recovery scenarios", () => {
     expect(() =>
       applyEdit(
         content,
-        resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "X" }),
+        resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "X" }),
         undefined,
         forgedHashes,
       ),
@@ -92,33 +86,33 @@ describe("applyEdit — recovery scenarios", () => {
   });
 
   it("rejects unknown fields in edit items", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", replace_with: "x", extra: true } as any;
+    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "x", extra: true } as any;
     expect(() => resEdit(edit)).toThrow(/unknown or unsupported fields/);
   });
 
-  it("rejects missing replace_with", () => {
+  it("rejects missing text", () => {
     const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ" } as any;
     expect(() => resEdit(edit)).toThrow(/requires a "replace_with" field/);
   });
 
-  it("rejects null replace_with", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", replace_with: null } as any;
+  it("rejects null text", () => {
+    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", text: null } as any;
     expect(() => resEdit(edit)).toThrow(/must be a string with \\n line separators, not an array/);
   });
 
-  it("rejects array replace_with", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", replace_with: ["hello", "world"] } as any;
+  it("rejects array text", () => {
+    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", text: ["hello", "world"] } as any;
     expect(() => resEdit(edit)).toThrow(/must be a string with \\n line separators, not an array/);
   });
 
-  it("accepts string replace_with with line separators", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", replace_with: "hello\nworld\n" } as any;
+  it("accepts string text with line separators", () => {
+    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "hello\nworld\n" } as any;
     const resolved = resEdit(edit);
     expect(resolved.content_lines).toEqual(["hello", "world", ""]);
   });
 
   it("rejects malformed hash_bounds", () => {
-    const edit = { anchor_from: "not-valid", anchor_to: "not-valid", replace_with: "x" };
+    const edit = { anchor_from: "not-valid", anchor_to: "not-valid", text: "x" };
     expect(() => resEdit(edit)).toThrow(/Invalid anchor/);
   });
 
@@ -130,7 +124,7 @@ describe("applyEdit — recovery scenarios", () => {
       resEdit({
         anchor_from: hashes[1]!,
         anchor_to: hashes[2]!,
-        replace_with: `${hashes[1]!}│b\nX`,
+        text: `${hashes[1]!}│b\nX`,
       }),
     );
     expect(result.content).toBe(`a\n${hashes[1]!}│b\nX\nd\ne`);
@@ -145,7 +139,7 @@ describe("applyEdit — recovery scenarios", () => {
       resEdit({
         anchor_from: hashes[1]!,
         anchor_to: hashes[1]!,
-        replace_with: `+${hashes[1]!}│B`,
+        text: `+${hashes[1]!}│B`,
       }),
     );
     expect(result.content).toBe(`a\n+${hashes[1]!}│B\nc`);
@@ -157,7 +151,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "\\uDDDD" }),
+      resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "\\uDDDD" }),
     );
     expect(result.warnings).toBeDefined();
     expect(result.warnings![0]).toContain("\\uDDDD");
@@ -168,7 +162,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, replace_with: "\t\treplaced" }),
+      resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "\t\treplaced" }),
     );
     expect(result.content).toBe("a\nb\n\t\treplaced");
   });
@@ -178,7 +172,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, replace_with: "\t\treplaced" }),
+      resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "\t\treplaced" }),
     );
     expect(result.content).toContain("\t\treplaced");
   });
@@ -188,7 +182,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "b" }),
+      resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "b" }),
     );
     expect(result.noopEdit).toBeDefined();
   });
@@ -198,7 +192,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, replace_with: "b\nc" }),
+      resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "b\nc" }),
     );
     expect(result.noopEdit).toBeDefined();
   });
@@ -208,7 +202,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "world" }),
+      resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "world" }),
     );
     expect(result.content).toBe("world");
   });
@@ -218,7 +212,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "b\nc" }),
+      resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "b\nc" }),
     );
     expect(result.content).toBe("a\nb\nc");
   });
@@ -228,7 +222,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "" }),
+      resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "" }),
     );
     expect(result.content).toBe("b\nc");
   });
@@ -238,7 +232,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, replace_with: "" }),
+      resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "" }),
     );
     expect(result.content).toBe("a\nb");
   });
@@ -248,7 +242,7 @@ describe("applyEdit — recovery scenarios", () => {
     const hashes = await lineHashes(content, home.testPath);
     const result = applyEdit(
       content,
-      resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, replace_with: "x\ny" }),
+      resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "x\ny" }),
     );
     expect(result.content).toBe("x\ny");
   });

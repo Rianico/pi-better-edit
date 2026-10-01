@@ -586,45 +586,45 @@ describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
 });
 
 describe("applyEdit — trailing blank lines (no trailing-newline special case)", () => {
-  it("preserves a trailing blank line when replace_with mirrors it with a trailing newline", async () => {
+  it("preserves a trailing blank line when text mirrors it with a trailing newline", async () => {
     const content = "def a():\n    pass\n\ndef b():\n    pass\n";
     const edit = resEdit({
       anchor_from: (await makeTag(content, 1, home.testPath)).hash,
       anchor_to: (await makeTag(content, 3, home.testPath)).hash,
-      replace_with: "def a():\n    return 1\n",
+      text: "def a():\n    return 1\n",
     });
     const result = applyEdit(content, edit);
     expect(result.content).toBe("def a():\n    return 1\n\ndef b():\n    pass\n");
   });
 
-  it("preserves two trailing blank lines when replace_with mirrors them", async () => {
+  it("preserves two trailing blank lines when text mirrors them", async () => {
     const content = "def a():\n    pass\n\n\ndef b():\n";
     const edit = resEdit({
       anchor_from: (await makeTag(content, 1, home.testPath)).hash,
       anchor_to: (await makeTag(content, 4, home.testPath)).hash,
-      replace_with: "def a():\n    return 1\n\n",
+      text: "def a():\n    return 1\n\n",
     });
     const result = applyEdit(content, edit);
     expect(result.content).toBe("def a():\n    return 1\n\n\ndef b():\n");
   });
 
-  it("drops a trailing blank line when replace_with does not mirror it", async () => {
+  it("drops a trailing blank line when text does not mirror it", async () => {
     const content = "def a():\n    pass\n\ndef b():\n";
     const edit = resEdit({
       anchor_from: (await makeTag(content, 1, home.testPath)).hash,
       anchor_to: (await makeTag(content, 3, home.testPath)).hash,
-      replace_with: "def a():\n    return 1",
+      text: "def a():\n    return 1",
     });
     const result = applyEdit(content, edit);
     expect(result.content).toBe("def a():\n    return 1\ndef b():\n");
   });
 
-  it("adds a trailing blank line for a normal range when replace_with ends with a newline", async () => {
+  it("adds a trailing blank line for a normal range when text ends with a newline", async () => {
     const content = "aaa\nbbb\nccc\n";
     const edit = resEdit({
       anchor_from: (await makeTag(content, 2, home.testPath)).hash,
       anchor_to: (await makeTag(content, 2, home.testPath)).hash,
-      replace_with: "X\n",
+      text: "X\n",
     });
     const result = applyEdit(content, edit);
     expect(result.content).toBe("aaa\nX\n\nccc\n");

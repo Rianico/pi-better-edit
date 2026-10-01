@@ -345,7 +345,7 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
     const item = items[index]!;
     try {
       const payload = item.payload;
-      let replace_with: string;
+      let text: string;
       let source: { anchor_from: string; anchor_to: string; retire: boolean } | undefined;
       switch (payload.kind) {
         case "hand-written":
@@ -357,7 +357,7 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
                 'A "hand-written" payload must carry at least one line. Nothing was written.',
             });
           }
-          replace_with = payload.text;
+          text = payload.text;
           break;
         case "span-ref":
           // WHY: the copied lines are content the caller does not hold — `applyEdit` materializes
@@ -368,7 +368,7 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
             anchor_to: payload.span.anchor_to,
             retire: payload.retireSource,
           };
-          replace_with = "";
+          text = "";
           break;
         case "none":
           if (item.at !== "replace") {
@@ -377,7 +377,7 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
                 'An insertion ("before"/"after") requires "hand-written" text. Nothing was written.',
             });
           }
-          replace_with = "";
+          text = "";
           break;
         default:
           assertNever(payload);
@@ -386,7 +386,7 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
         resEdit({
           anchor_from: item.target.anchor_from,
           anchor_to: item.target.anchor_to,
-          replace_with,
+          text,
           ...(item.at !== "replace" ? { placement: item.at } : {}),
           ...(source ? { source } : {}),
         }),

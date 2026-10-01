@@ -190,7 +190,7 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-  replace_with: string;
+  text: string;
   anchor_from: string;
   anchor_to: string;
   placement?: EditPlacement;
@@ -321,7 +321,7 @@ export function fmtMismatchWithServes(
   return { message: out.join("\n"), servedRows };
 }
 
-const ITEM_KS = new Set(["replace_with", "anchor_from", "anchor_to", "placement", "source"]);
+const ITEM_KS = new Set(["text", "anchor_from", "anchor_to", "placement", "source"]);
 
 function assertItem(edit: Record<string, unknown>): void {
   rejectUnknownFields(
@@ -343,13 +343,13 @@ function assertItem(edit: Record<string, unknown>): void {
         'Field "anchor_to" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.',
     });
   }
-  if (!("replace_with" in edit)) {
+  if (!("text" in edit)) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
         'The edit requires a "replace_with" field. Provide the replacement text (use "" to delete). Nothing was written.',
     });
   }
-  if (typeof edit.replace_with !== "string") {
+  if (typeof edit.text !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
         '"replace_with" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
@@ -408,7 +408,7 @@ function firstHashFromBlock(block: string): string | undefined {
 export function resEdit(edit: HTEdit): HEdit {
   assertItem(edit as Record<string, unknown>);
 
-  const editLines = parseText(edit.replace_with);
+  const editLines = parseText(edit.text);
   const bounds = [edit.anchor_from, edit.anchor_to].map((ref) => {
     const trimmed = ref.trim();
     if (trimmed.includes("\n")) {
