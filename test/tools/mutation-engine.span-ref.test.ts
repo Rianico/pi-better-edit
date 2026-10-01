@@ -92,6 +92,35 @@ describe("MutationEngine — span-ref move", () => {
     });
   });
 
+  // WHY: (ticket-02d P1) `splitLines("")` is one empty line, so a legal degenerate move
+  // WHY: (source [1,1], retire, target [1,1]) assembles to [""] and the terminator clause-2
+  // WHY: misfired on it: the head commit wrote "\n" to disk where its parent was an honest
+  // WHY: noop. Assert the disk bytes before AND after — a noop that throws nothing while
+  // WHY: writing "\n" IS the P1.
+  it("the empty file's touching move stays an honest noop — disk bytes unchanged", async () => {
+    await withTempFile("empty.txt", "", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const h = await lineHashes("", home.testPath);
+      await readTool.execute("r1", { path: "empty.txt" }, undefined, undefined, ctx);
+      await expect(readFile(`${cwd}/empty.txt`, "utf-8")).resolves.toBe("");
+      for (const at of ["before", "after"] as const) {
+        const result = await execute(
+          {
+            file: "empty.txt",
+            edits: [spanRefItem([h[0]!, h[0]!], [h[0]!, h[0]!], true, at)],
+          },
+          cwd,
+          { sessionKey: TEST_SESSION_ID },
+        );
+        expect(isMutationSuccess(result)).toBe(true);
+        if (!isMutationSuccess(result)) return;
+        expect(result.result).toBe("");
+        await expect(readFile(`${cwd}/empty.txt`, "utf-8")).resolves.toBe("");
+        expect(result.metrics.classification).toBe("noop");
+      }
+    });
+  });
+
   it("refuses a retired source that overlaps its own target — E_BAD_PAYLOAD, bytes unchanged", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);

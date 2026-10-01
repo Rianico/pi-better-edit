@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { _lineHashesPure } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
-import { applyEdit } from "../../src/hashline/apply";
+import { applyEdit, serializeLineList } from "../../src/hashline/apply";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import { splitLines } from "../../src/utils";
 import type { HEdit, LeaseSpanSource } from "../../src/hashline/resolve";
@@ -137,6 +137,26 @@ describe("applyEdit — span-ref move (source retired)", () => {
     ] as const) {
       const result = applyEdit(FILE, spanRefEdit([line, line], [3, 4], true, at));
       expect(result.content).toBe(FILE);
+      expect(result.noopEdit).toBeDefined();
+    }
+  });
+
+  it("the empty file keeps its honest noop on the touching spellings (ticket-02d P1)", () => {
+    // WHY: `splitLines("") = [""]` — one empty line — so a touching degenerate move has
+    // WHY: `retired.s2 = 1 = fileLines.length` and an empty last line in `out`: the terminator clause
+    // WHY: must NOT fire on the empty body. The bytes are pinned to `""` absolutely (not just
+    // WHY: call-vs-call equality — two calls can agree on the wrong value), matching the parent's
+    // WHY: honest noop.
+    const h = _lineHashesPure("");
+    for (const at of ["before", "after"] as const) {
+      const move: HEdit = {
+        content_lines: [],
+        hash_bounds: [{ hash: h[0]! }, { hash: h[0]! }],
+        placement: at,
+        source: { bounds: [{ hash: h[0]! }, { hash: h[0]! }], retire: true },
+      } as HEdit;
+      const result = applyEdit("", move, undefined, h);
+      expect(result.content).toBe("");
       expect(result.noopEdit).toBeDefined();
     }
   });
@@ -291,16 +311,20 @@ describe("applyEdit — span-ref resolution and evidence", () => {
 // WHY: (ticket-02c F3) the permanent two-path fence. `applyEdit` ships TWO assembly paths for one
 // WHY: logical edit — the hand-written byte splice (`resToSpan`) and the span-ref line-coordinate
 // WHY: assembly (`assembleLines`). F1 was exactly one path's serialization shadowing the other's
-// WHY: pinned convention; this fence is the test that makes that class unfalsifiable-by-accident:
-// WHY: any future edit to either path that moves its bytes fails here, at the shipped seam, across
-// WHY: every mode and every shape class — including the F1 identity-target shape.
+// WHY: pinned convention. Coverage claim, narrowed per REVIEW-ticket-02c §9 (the blanket promise
+// WHY: was overstated — ticket-02c moved bytes on the unlisted empty-file class and this fence
+// WHY: stayed green): a future edit that moves either path's bytes ON ONE OF THE LISTED SHAPE
+// WHY: CLASSES, in one of the three modes, fails here. The absolute-byte pins for the
+// WHY: serialization itself are the F1 test and the direct tuple table, not this fence.
 describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte)", () => {
   // WHY: shape classes mandated by the ticket: first line, last line, EOF without a trailing
   // WHY: newline, the pinned empty-preceding-line (F1) shapes, CRLF (both endings), multi-line
   // WHY: spans, single-line files both ways, the `"\n"`-only file, trailing blank lines,
-  // WHY: duplicate text (position-salted hashes make every pair anchor-resolvable), and the
-  // WHY: equal-text-target noop shape.
+  // WHY: duplicate text (position-salted hashes make every pair anchor-resolvable), the
+  // WHY: equal-text-target noop shape, and — newly, by ticket-02d — the EMPTY FILE, the one
+  // WHY: shape class the clause's proxy predicate misfired on.
   const FENCE_FILES = [
+    "",
     "a\nb\nc\n",
     "a\nb\nc",
     "a\n\nb",
@@ -453,5 +477,29 @@ describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte
         }
       }
     }
+  });
+});
+
+// WHY: (ticket-02d P3, REVIEW-ticket-02c P3) the direct tuple table on the serialization helper —
+// WHY: assembly-independent, one tuple per clause, so every mutation of the terminator rule that
+// WHY: the review enumerated (M1 pre-fix rejoin, M2 drop `out[last] === ""`, M3 drop
+// WHY: `retired.s2 === fileLines.length`, M4 drop the retirement link) turns this table RED. The
+// WHY: fence and the sweep each pin only part of the clause set; M3 was caught by nothing before
+// WHY: this table existed.
+describe("serializeLineList — direct tuple table", () => {
+  it("pins every terminator clause with one tuple", () => {
+    // clause-2 fires: the pinned empty-preceding-line EOF arm, asserted as absolute bytes.
+    expect(serializeLineList("b\n\nb", ["b", "", "b"], { s1: 3, s2: 3 }, ["b", ""])).toBe("b\n\n");
+    // clause-2 controls: no surviving empty final line, or no retirement reaching EOF.
+    expect(serializeLineList("b\n\nb", ["b", "", "b"], { s1: 3, s2: 3 }, ["b"])).toBe("b");
+    expect(serializeLineList("a\nb\nc", ["a", "b", "c"], { s1: 3, s2: 3 }, ["a", "b"])).toBe(
+      "a\nb",
+    );
+    // kills M3: retirement present but NOT reaching EOF (s2=1 != n=3) — no terminator.
+    expect(serializeLineList("\n\na", ["", "", "a"], { s1: 1, s2: 1 }, ["", ""])).toBe("\n");
+    // kills M1/M4 and pins the ticket-02d P1 guard: the empty body never takes the terminator.
+    // WHY: the review's table lists "\n" as the CURRENT (buggy) value of this tuple; this row
+    // WHY: asserts the fixed expectation, so it is red before the guard and green after it.
+    expect(serializeLineList("", [""], { s1: 1, s2: 1 }, [""])).toBe("");
   });
 });

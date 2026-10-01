@@ -239,10 +239,12 @@ function assembleLines(
  * HERE and nowhere else: a retirement reaching EOF in a file with no trailing newline keeps a
  * surviving empty line's own terminator — the empty-preceding-line arm of `resToSpan`'s EOF
  * deletion, byte-asserted in `test/core/hashline.apply.test.ts` ("EOF deletion preserves an empty
- * preceding line"). `out`'s last line is empty with no original trailing newline exactly when
- * that arm fired: a no-trailing file's own final line is non-empty, and a copied span ending at
- * EOF can never end empty — so the two assembly paths agree on every pure-deletion-equivalent
- * shape (ticket-02c F1: the byte convention is canonical, the line path conforms).
+ * preceding line"). For a non-empty file with at least one surviving line, `out`'s last line is
+ * empty without an original trailing newline only when that arm fired (ticket-02c F1: the byte
+ * convention is canonical, the line path conforms). The empty file is the shape that arm cannot
+ * describe: `splitLines("")` is one empty line, so a degenerate retirement of it assembles
+ * `out = [""]` without the arm ever firing — `content.length > 0` keeps that spelling the honest
+ * noop its parent commit wrote (ticket-02d P1).
  */
 export function serializeLineList(
   content: string,
@@ -252,7 +254,10 @@ export function serializeLineList(
 ): string {
   const terminator =
     content.endsWith("\n") ||
-    (retired !== undefined && retired.s2 === fileLines.length && out[out.length - 1] === "")
+    (content.length > 0 &&
+      retired !== undefined &&
+      retired.s2 === fileLines.length &&
+      out[out.length - 1] === "")
       ? "\n"
       : "";
   return out.join("\n") + terminator;
