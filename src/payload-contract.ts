@@ -22,7 +22,10 @@ export type Placement = "replace" | "before" | "after";
 
 export type SpanRef = { anchor_from: string; anchor_to: string };
 
-export type DesiredText = { kind: "hand-written"; text: string } | { kind: "none" };
+export type DesiredText =
+  | { kind: "hand-written"; text: string }
+  | { kind: "span-ref"; span: SpanRef; retireSource: boolean }
+  | { kind: "none" };
 
 export type NormalizedEditItem = { target: SpanRef; at: Placement; payload: DesiredText };
 
@@ -357,6 +360,14 @@ function isNormalizedEditItem(value: unknown): value is NormalizedEditItem {
   if (!isRec(payload)) return false;
   if (payload.kind === "none") return true;
   if (payload.kind === "hand-written") return typeof payload.text === "string";
+  if (payload.kind === "span-ref") {
+    return (
+      isRec(payload.span) &&
+      typeof payload.span.anchor_from === "string" &&
+      typeof payload.span.anchor_to === "string" &&
+      typeof payload.retireSource === "boolean"
+    );
+  }
   return false;
 }
 

@@ -28,6 +28,7 @@ export {
   type RHEdit,
   type HTEdit,
   type NEdit,
+  type SpanSourceRef,
   type LeaseIdentityView,
   type LeaseSpanSource,
   resEdit,

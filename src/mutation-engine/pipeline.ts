@@ -74,7 +74,7 @@ import { clearServedRefusals } from "../hashline/served-guard.js";
 import { saveUndo } from "../edit-undo.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
 import { toCwd } from "../paths.js";
-import type { NormalizedEditRequest } from "../payload-contract.js";
+import type { DesiredText, NormalizedEditRequest } from "../payload-contract.js";
 import {
   batchAbortFor,
   batchAbortForMany,
@@ -96,21 +96,24 @@ export type { PipelineOptions, ProcessedEditFile };
 
 function collectRemovedHashes(edit: HEdit, originalHashes: string[]): Set<string> {
   const removedHashes = new Set<string>();
+  const addSpan = (startHash: string, endHash: string): void => {
+    const startLine = originalHashes.indexOf(startHash);
+    const endLine = originalHashes.indexOf(endHash);
+    if (startLine >= 0 && endLine >= 0) {
+      for (let i = Math.min(startLine, endLine); i <= Math.max(startLine, endLine); i++) {
+        removedHashes.add(originalHashes[i]!);
+      }
+    }
+  };
   // WHY: an insertion removes no line — treating its target span as removed would retire the
   // WHY: identity of a line that survives byte-identical next to the splice point.
-  if (edit.placement === "before" || edit.placement === "after") {
-    return removedHashes;
+  if (edit.placement !== "before" && edit.placement !== "after") {
+    addSpan(edit.hash_bounds[0].hash, edit.hash_bounds[1].hash);
   }
-  const startHash = edit.hash_bounds[0].hash;
-  const endHash = edit.hash_bounds[1].hash;
-  const startLine = originalHashes.indexOf(startHash);
-  const endLine = originalHashes.indexOf(endHash);
-  if (startLine >= 0 && endLine >= 0) {
-    const firstLine = Math.min(startLine, endLine);
-    const lastLine = Math.max(startLine, endLine);
-    for (let i = firstLine; i <= lastLine; i++) {
-      removedHashes.add(originalHashes[i]!);
-    }
+  // WHY: (ticket-02, invariant 7) a move's retired source span joins the removed-hash union
+  // WHY: regardless of the target's placement; a copy (retire false) removes nothing.
+  if (edit.source?.retire) {
+    addSpan(edit.source.bounds[0].hash, edit.source.bounds[1].hash);
   }
   return removedHashes;
 }
@@ -173,6 +176,11 @@ type ApplyOneEditOutcome =
       anchorWarnings: string[] | undefined;
       literalBypass: boolean;
       neverServedCount: number;
+      /** Span-ref move: the retired source span in pre-item coordinates. */
+      sourceRange: ResolvedRange | undefined;
+      /** Span-ref item: the mutated line regions the identity splice must apply. */
+      mutationSpans: { startLine: number; endLine: number; inserted: number }[] | undefined;
+      mutationStats: { addedLines: number; removedLines: number } | undefined;
     }
   | {
       kind: "noop";
@@ -266,6 +274,9 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     anchorWarnings,
     literalBypass,
     neverServedCount,
+    sourceRange: anchorResult.sourceRange,
+    mutationSpans: anchorResult.mutationSpans,
+    mutationStats: anchorResult.mutationStats,
   };
 }
 
@@ -304,6 +315,26 @@ async function recordRejectionServe(args: {
   await handle.recordServeFeedback(args.error.servedRows, "live", args.lineCount, args.contentHash);
 }
 
+/**
+ * WHY: (ticket-01 hardening) the single exhaustive view of the payload union for text consumers —
+ * WHY: the noop-loop tracker discriminates its noop episodes with this. A new union arm must add
+ * WHY: a case here or `assertNever` fails `pnpm run typecheck`. The `span-ref` arm renders as its
+ * WHY: span's anchors, never a placeholder empty text: the copied content is not known here, and
+ * WHY: collapsing every non-hand-written arm to "" would fuse distinct noop episodes into one count.
+ */
+function replacementTextForPayload(payload: DesiredText): string {
+  switch (payload.kind) {
+    case "hand-written":
+      return payload.text;
+    case "span-ref":
+      return `span:${payload.span.anchor_from}..${payload.span.anchor_to}:${payload.retireSource ? "move" : "copy"}`;
+    case "none":
+      return "";
+    default:
+      return assertNever(payload);
+  }
+}
+
 function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[] {
   const parsed: HEdit[] = [];
   // WHY: payload parsing aggregates like the span gate — one malformed item must not mask another,
@@ -315,6 +346,7 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
     try {
       const payload = item.payload;
       let replace_with: string;
+      let source: { anchor_from: string; anchor_to: string; retire: boolean } | undefined;
       switch (payload.kind) {
         case "hand-written":
           // WHY: the `hand-written` arm owns its invariant at the one place the union is parsed
@@ -326,6 +358,17 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
             });
           }
           replace_with = payload.text;
+          break;
+        case "span-ref":
+          // WHY: the copied lines are content the caller does not hold — `applyEdit` materializes
+          // WHY: them from the resolved source span before any gate or splice runs, so the parse
+          // WHY: seam carries the span, never a placeholder text.
+          source = {
+            anchor_from: payload.span.anchor_from,
+            anchor_to: payload.span.anchor_to,
+            retire: payload.retireSource,
+          };
+          replace_with = "";
           break;
         case "none":
           if (item.at !== "replace") {
@@ -345,6 +388,7 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
           anchor_to: item.target.anchor_to,
           replace_with,
           ...(item.at !== "replace" ? { placement: item.at } : {}),
+          ...(source ? { source } : {}),
         }),
       );
     } catch (error) {
@@ -517,14 +561,20 @@ async function runMutations(
     });
 
     const range = outcome.range;
-    editedIntervals.push(range);
-    if (range.startLine < unionStartLine) {
-      unionStartLine = range.startLine;
-      unionStartHash = range.startHash;
-    }
-    if (range.endLine > unionEndLine) {
-      unionEndLine = range.endLine;
-      unionEndHash = range.endHash;
+    // WHY: (ticket-02) a move's retired source is an edited interval too: the drift scan must
+    // WHY: see its negative delta, and the union must cover the lines it removed.
+    const coveredRanges: ResolvedRange[] =
+      outcome.kind === "applied" && outcome.sourceRange ? [range, outcome.sourceRange] : [range];
+    editedIntervals.push(...coveredRanges);
+    for (const covered of coveredRanges) {
+      if (covered.startLine < unionStartLine) {
+        unionStartLine = covered.startLine;
+        unionStartHash = covered.startHash;
+      }
+      if (covered.endLine > unionEndLine) {
+        unionEndLine = covered.endLine;
+        unionEndHash = covered.endHash;
+      }
     }
 
     if (outcome.kind === "noop") {
@@ -538,7 +588,7 @@ async function runMutations(
         absolutePath,
         removeFrom: item.target.anchor_from,
         removeTo: item.target.anchor_to,
-        replacementText: item.payload.kind === "hand-written" ? item.payload.text : "",
+        replacementText: replacementTextForPayload(item.payload),
         ref: `edit[${index}] (${path})`,
         batch: items.length > 1,
         range,
@@ -567,11 +617,13 @@ async function runMutations(
     }
     appliedCount += 1;
     if (outcome.literalBypass) literalDeclarations += 1;
-    const { totalAddedLines: added, totalRemovedLines: removed } = countLineChanges(
-      edit,
-      originalHashes,
-      false,
-    );
+    // WHY: (ticket-02, invariant 8) a span-ref item reports its own honest counts — inserted
+    // WHY: lines and retired-source-plus-replaced-target removals — because `countLineChanges`
+    // WHY: can only see the target span.
+    const stats = outcome.mutationStats;
+    const { totalAddedLines: added, totalRemovedLines: removed } = stats
+      ? { totalAddedLines: stats.addedLines, totalRemovedLines: stats.removedLines }
+      : countLineChanges(edit, originalHashes, false);
     totalAddedLines += added;
     totalRemovedLines += removed;
     // WHY: (#117, spec §3.2.4 step 4) no store mutation before `writeAtomic`. The removed hashes
@@ -590,12 +642,27 @@ async function runMutations(
     currentContent = outcome.content;
     currentHashes = outcome.hashes;
     if (!isPreview) {
-      currentIds = spliceWorkingBufferIds(
-        currentIds,
-        range.startLine,
-        range.endLine,
-        splitLines(outcome.content).length,
-      );
+      if (outcome.mutationSpans) {
+        // WHY: (ticket-02) a span-ref item mutates up to two regions of the same pre-item buffer
+        // WHY: (target, retired source), so each is spliced into the identity map in descending
+        // WHY: start order — every region's coordinates then still name the pre-item lines, and a
+        // WHY: region the item skipped as a noop never shifts the map.
+        for (const span of [...outcome.mutationSpans].sort((a, b) => b.startLine - a.startLine)) {
+          currentIds = spliceWorkingBufferIds(
+            currentIds,
+            span.startLine,
+            span.endLine,
+            currentIds.length - (span.endLine - span.startLine + 1) + span.inserted,
+          );
+        }
+      } else {
+        currentIds = spliceWorkingBufferIds(
+          currentIds,
+          range.startLine,
+          range.endLine,
+          splitLines(outcome.content).length,
+        );
+      }
     }
     pushAppliedWarnings(outcome.anchorWarnings, outcome.neverServedCount);
   }

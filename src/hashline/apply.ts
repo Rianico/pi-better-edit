@@ -190,9 +190,35 @@ function resToSpan(edit: RHEdit, content: string, lineIndex: LIdx): RESpan | Noo
   };
 }
 
-function assemble(content: string, span: RESpan, signal: AbortSignal | undefined): string {
+/**
+ * WHY: (ticket-02) both splices of a span-ref item derive from the SAME pre-item buffer, so the
+ * WHY: zero-width insertion point of an adjacent move can land inside the retirement span. The
+ * WHY: clamp re-parks such a point at the retirement start — byte-wise the insertion commutes
+ * WHY: through the removal of the region it sits in — leaving a sorted non-overlapping fold.
+ */
+function clampInsertionsIntoSpans(spans: RESpan[]): void {
+  for (const ins of spans) {
+    if (ins.start !== ins.end) continue;
+    for (const other of spans) {
+      if (other === ins || other.start === other.end) continue;
+      if (ins.start >= other.start && ins.start <= other.end) {
+        ins.start = other.start;
+        ins.end = other.start;
+      }
+    }
+  }
+}
+
+function assembleSpans(content: string, spans: RESpan[], signal: AbortSignal | undefined): string {
   abortIf(signal);
-  return content.slice(0, span.start) + span.replacement + content.slice(span.end);
+  const ordered = [...spans].sort((a, b) => a.start - b.start || a.end - b.end);
+  let out = "";
+  let cursor = 0;
+  for (const sp of ordered) {
+    out += content.slice(cursor, sp.start) + sp.replacement;
+    cursor = sp.end;
+  }
+  return out + content.slice(cursor);
 }
 
 function prepareEdit(fileHashes: string[], edit: HEdit, warnings: string[]): { fixed: HEdit } {
@@ -261,6 +287,16 @@ export function applyEdit(
   noopEdit?: NEdit;
   literalBypass?: boolean;
   neverServedCount?: number;
+  /** Present when a span-ref move retires its source: the retired span in pre-item coordinates. */
+  sourceRange?: ResolvedRange;
+  /**
+   * Present for span-ref items: every line region the item actually mutates, in pre-item
+   * coordinates, with the number of lines written there. The caller's identity bookkeeping
+   * splices exactly these regions, so a target skipped as a noop can never shift the map.
+   */
+  mutationSpans?: { startLine: number; endLine: number; inserted: number }[];
+  /** Present for span-ref items: honest per-item line counts (invariant 8). */
+  mutationStats?: { addedLines: number; removedLines: number };
 } {
   abortIf(signal);
 
@@ -299,6 +335,52 @@ export function applyEdit(
       path: filePath ?? "this file",
       anchors,
     });
+  }
+
+  // WHY: (ticket-02) the span-ref arm resolves its source through the SAME seam and authority as
+  // WHY: the target — same lease-first path, same fail-closed rejections, so an unresolvable
+  // WHY: source records reject-and-serve rows exactly like a rejected target. Both spans are then
+  // WHY: measured on this one pre-item `lineIndex`; nothing re-resolves after assembly.
+  let resolvedSource: RHEdit | undefined;
+  if (edit.source) {
+    const sourceEdit: HEdit = { content_lines: [], hash_bounds: edit.source.bounds };
+    const fixedSource = prepareEdit(fileHashes, sourceEdit, warnings).fixed;
+    const source = resolveEdit(
+      fixedSource,
+      lineIndex.fileLines,
+      fileHashes,
+      filePath,
+      served,
+      identity,
+      signal,
+    );
+    if (source.reversed) {
+      warnings.push(formatWarning("W_REVERSED_ANCHORS", source.reversed));
+    }
+    if (!source.resolved || source.mismatches.length) {
+      const anchors = [...new Set(source.mismatches.map((mismatch) => mismatch.ref.hash))];
+      throw new DomainError("E_UNKNOWN_ANCHOR", {
+        path: filePath ?? "this file",
+        anchors,
+      });
+    }
+    resolvedSource = source.resolved;
+    const s1 = resolvedSource.hash_bounds[0].line;
+    const s2 = resolvedSource.hash_bounds[1].line;
+    if (edit.source.retire && resolved.placement === undefined) {
+      const t1 = resolved.hash_bounds[0].line;
+      const t2 = resolved.hash_bounds[1].line;
+      if (Math.max(t1, s1) <= Math.min(t2, s2)) {
+        throw new DomainError("E_BAD_PAYLOAD", {
+          message:
+            `A move's retired source (lines ${s1}-${s2}) overlaps its target (lines ${t1}-${t2}). ` +
+            "Nothing was written: keep the retired span disjoint from the target (touching is fine), or copy without retiring.",
+        });
+      }
+    }
+    // WHY: materialize before the evidence scan so every gate runs on the lines that will be
+    // WHY: written (invariant 9): copied and hand-written text are the same kind of input.
+    resolved.content_lines = lineIndex.fileLines.slice(s1 - 1, s2);
   }
 
   warnUnicodeEsc(prefixFixed, warnings);
@@ -368,8 +450,30 @@ export function applyEdit(
     // WHY: live caller and is retired (#10).
   }
 
+  // WHY: (ticket-02) dual-splice assembly: the target splice and the retired-source splice both
+  // WHY: derive from this SAME pre-item buffer (`lineIndex`), so an anchor made ambiguous by one
+  // WHY: splice can never change what the other removes, and one sorted fold applies both at once.
+  const spans: RESpan[] = [];
+  const mutationSpans: { startLine: number; endLine: number; inserted: number }[] = [];
+  let sourceRange: ResolvedRange | undefined;
+  if (edit.source?.retire && resolvedSource) {
+    const deletion: RHEdit = { content_lines: [], hash_bounds: resolvedSource.hash_bounds };
+    const retired = resolvedRange(deletion);
+    sourceRange = retired;
+    mutationSpans.push({ startLine: retired.startLine, endLine: retired.endLine, inserted: 0 });
+    const span = resToSpan(deletion, content, lineIndex);
+    if (span.kind === "noop") {
+      // WHY: unreachable — the noop arm needs the original range to be empty, and a resolved
+      // WHY: span is never empty; kept as a fail-closed guard rather than a silent cast.
+      throw new DomainError("E_BAD_PAYLOAD", {
+        message: "A move's retired source resolved to an empty range.",
+      });
+    }
+    spans.push(span);
+  }
+
   const spanResult = resToSpan(resolved, content, lineIndex);
-  if (spanResult.kind === "noop") {
+  if (spanResult.kind === "noop" && spans.length === 0) {
     return {
       content,
       firstChangedLine: undefined,
@@ -383,9 +487,49 @@ export function applyEdit(
       },
     };
   }
+  let targetRange = resolvedRange(resolved);
+  if (spanResult.kind === "replace") {
+    spans.push(spanResult);
+    if (edit.source) {
+      mutationSpans.push({
+        startLine: targetRange.startLine,
+        endLine: targetRange.endLine,
+        inserted: resolved.content_lines.length,
+      });
+    }
+  } else if (edit.source) {
+    // WHY: a target already carrying the copied text contributes no splice — the retirement
+    // WHY: still applies, so the target range honestly reports zero delta.
+    targetRange = { ...targetRange, delta: 0 };
+  }
 
-  const result = assemble(content, spanResult, signal);
+  clampInsertionsIntoSpans(spans);
+  const result = assembleSpans(content, spans, signal);
   assertNotEmpty(content, result);
+
+  // WHY: (ticket-02 invariant 10) a degenerate move — an insertion point that clamps onto its
+  // WHY: own retirement span — computes to byte identity. It rides the noop path: no write,
+  // WHY: no double-apply, one honest `noopEdit`.
+  if (edit.source && result === content) {
+    return {
+      content,
+      firstChangedLine: undefined,
+      lastChangedLine: undefined,
+      range: { ...targetRange, delta: 0 },
+      ...(warnings.length ? { warnings } : {}),
+      ...(literalBypass ? { literalBypass: true as const } : {}),
+      noopEdit: {
+        loc: resolved.hash_bounds[0].hash,
+        currentContent: resolved.content_lines.join("\n"),
+      },
+    };
+  }
+  const mutationStats = edit.source
+    ? {
+        addedLines: mutationSpans.reduce((n, span) => n + span.inserted, 0),
+        removedLines: mutationSpans.reduce((n, span) => n + (span.endLine - span.startLine + 1), 0),
+      }
+    : undefined;
   const changed = changedRange(content, result);
 
   // WHY: middle tier beside the gate above: a replacement line opening with a
@@ -429,10 +573,13 @@ export function applyEdit(
     content: result,
     firstChangedLine: changed?.firstChangedLine,
     lastChangedLine: changed?.lastChangedLine,
-    range: resolvedRange(resolved),
+    range: targetRange,
     ...(warnings.length ? { warnings } : {}),
     ...(literalBypass ? { literalBypass: true as const } : {}),
     ...(neverServedCount > 0 ? { neverServedCount } : {}),
+    ...(sourceRange ? { sourceRange } : {}),
+    ...(edit.source ? { mutationSpans } : {}),
+    ...(mutationStats ? { mutationStats } : {}),
   };
 }
 

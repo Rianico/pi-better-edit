@@ -158,10 +158,18 @@ export function uniqueServedPosition(
  */
 export type EditPlacement = "replace" | "before" | "after";
 
+/**
+ * The same-file line span a span-ref payload copies from (ticket-02). `retire` marks a move:
+ * the source's own span is deleted in the same single-pass assembly, computed against the same
+ * pre-item buffer as the target splice.
+ */
+export type SpanSourceRef = { bounds: [Anchor, Anchor]; retire: boolean };
+
 export type HEdit = {
   content_lines: string[];
   hash_bounds: [Anchor, Anchor];
   placement?: EditPlacement;
+  source?: SpanSourceRef;
 };
 export type RHEdit = {
   content_lines: string[];
@@ -186,6 +194,7 @@ export type HTEdit = {
   anchor_from: string;
   anchor_to: string;
   placement?: EditPlacement;
+  source?: { anchor_from: string; anchor_to: string; retire: boolean };
 };
 
 function resAnchorFromMap(ref: Anchor, hashIndex: Map<string, number[]>): RAnchor | HMismatch {
@@ -312,7 +321,7 @@ export function fmtMismatchWithServes(
   return { message: out.join("\n"), servedRows };
 }
 
-const ITEM_KS = new Set(["replace_with", "anchor_from", "anchor_to", "placement"]);
+const ITEM_KS = new Set(["replace_with", "anchor_from", "anchor_to", "placement", "source"]);
 
 function assertItem(edit: Record<string, unknown>): void {
   rejectUnknownFields(
@@ -361,6 +370,25 @@ function assertItem(edit: Record<string, unknown>): void {
     throw new DomainError("E_BAD_PAYLOAD", {
       message: 'Field "placement" must be "replace", "before" or "after". Nothing was written.',
     });
+  }
+  if ("source" in edit) {
+    const source = edit.source;
+    if (
+      typeof source !== "object" ||
+      source === null ||
+      Array.isArray(source) ||
+      !("anchor_from" in (source as object)) ||
+      !("anchor_to" in (source as object)) ||
+      !("retire" in (source as object)) ||
+      typeof (source as { anchor_from?: unknown }).anchor_from !== "string" ||
+      typeof (source as { anchor_to?: unknown }).anchor_to !== "string" ||
+      typeof (source as { retire?: unknown }).retire !== "boolean"
+    ) {
+      throw new DomainError("E_BAD_PAYLOAD", {
+        message:
+          'Field "source" must be { anchor_from, anchor_to, retire }: two bare 3-char anchors bounding the same-file span and a boolean. Nothing was written.',
+      });
+    }
   }
 }
 
@@ -411,6 +439,17 @@ export function resEdit(edit: HTEdit): HEdit {
     content_lines: editLines,
     hash_bounds: [parseHashRef(bounds[0]), parseHashRef(bounds[1])],
     ...(edit.placement !== undefined ? { placement: edit.placement } : {}),
+    ...(edit.source !== undefined
+      ? {
+          source: {
+            bounds: [
+              parseHashRef(edit.source.anchor_from),
+              parseHashRef(edit.source.anchor_to),
+            ] as [Anchor, Anchor],
+            retire: edit.source.retire,
+          },
+        }
+      : {}),
   };
 }
 

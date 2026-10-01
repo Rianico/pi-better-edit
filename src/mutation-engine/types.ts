@@ -53,6 +53,13 @@ export interface ProcessedEditFile {
   totalAddedLines: number;
   totalRemovedLines: number;
   driftNotice: string | undefined;
+  /**
+   * Union of the call's edited intervals. A lone insertion publishes the zero-width inverted
+   * form (`startLine = point + 1 > endLine = point`, the ticket-01 drift contract): do NOT
+   * normalize it to a width-1 range — an insertion mutates no line, and fabricating a width
+   * would claim a target line that survives byte-identical, which the identity bookkeeping
+   * and the drift `deltaBefore` arithmetic both rely on.
+   */
   range: ResolvedRange;
   editedIntervals: ResolvedRange[];
   literalDeclarations: number;
