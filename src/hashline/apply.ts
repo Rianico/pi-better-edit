@@ -229,8 +229,33 @@ function assembleLines(
     }
     if (placement === "after" && i === t2) out.push(...copied);
   }
-  if (out.length === 0) return "";
-  return out.join("\n") + (content.endsWith("\n") ? "\n" : "");
+  return serializeLineList(content, fileLines, retired, out);
+}
+
+/**
+ * SAFETY: one serialization rule for a line list produced by span-ref assembly — shared by
+ * `assembleLines` and the sweep's reference oracle (`test/core/hashline.span-ref-sweep.test.ts`)
+ * so the two can never silently fork it (ticket-02c F4). The pinned EOF-deletion convention lives
+ * HERE and nowhere else: a retirement reaching EOF in a file with no trailing newline keeps a
+ * surviving empty line's own terminator — the empty-preceding-line arm of `resToSpan`'s EOF
+ * deletion, byte-asserted in `test/core/hashline.apply.test.ts` ("EOF deletion preserves an empty
+ * preceding line"). `out`'s last line is empty with no original trailing newline exactly when
+ * that arm fired: a no-trailing file's own final line is non-empty, and a copied span ending at
+ * EOF can never end empty — so the two assembly paths agree on every pure-deletion-equivalent
+ * shape (ticket-02c F1: the byte convention is canonical, the line path conforms).
+ */
+export function serializeLineList(
+  content: string,
+  fileLines: string[],
+  retired: { s1: number; s2: number } | undefined,
+  out: string[],
+): string {
+  const terminator =
+    content.endsWith("\n") ||
+    (retired !== undefined && retired.s2 === fileLines.length && out[out.length - 1] === "")
+      ? "\n"
+      : "";
+  return out.join("\n") + terminator;
 }
 
 function prepareEdit(fileHashes: string[], edit: HEdit, warnings: string[]): { fixed: HEdit } {
@@ -408,6 +433,15 @@ export function applyEdit(
     }
     // WHY: materialize before the evidence scan so every gate runs on the lines that will be
     // WHY: written (invariant 9): copied and hand-written text are the same kind of input.
+    // SAFETY: (ticket-02c AP4 ledger) no fail-closed guard stands here for a degenerate/empty
+    // SAFETY: retirement (the deleted `slice(s1 - 1, s2).length === 0` throw): no input reaches
+    // SAFETY: it. Both resolution seams heal a reversed pair before returning (`valEdit` in
+    // SAFETY: `resolve.ts` swaps when the resolved lines cross, `resolveLeasedEdit` swaps too),
+    // SAFETY: so `s1 <= s2`; and resolved coordinates only ever name lines this buffer has —
+    // SAFETY: content resolution reads `fileHashes`, the lease seam rebases `line_id`s through
+    // SAFETY: current-content positions and `verifyRebasedSpan` refuses anything else with
+    // SAFETY: `E_STALE_RANGE`. Hence `s2 <= fileLines.length` and the slice is never empty
+    // SAFETY: (suite-wide instrumentation at 67a5812: 6,346 source-arm executions, 0 degenerate).
     resolved.content_lines = lineIndex.fileLines.slice(s1 - 1, s2);
   }
 

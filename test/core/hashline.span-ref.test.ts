@@ -3,6 +3,7 @@ import { _lineHashesPure } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 import { applyEdit } from "../../src/hashline/apply";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
+import { splitLines } from "../../src/utils";
 import type { HEdit, LeaseSpanSource } from "../../src/hashline/resolve";
 
 beforeAll(async () => {
@@ -140,6 +141,31 @@ describe("applyEdit — span-ref move (source retired)", () => {
     }
   });
 
+  it("an identity-target move whose retirement reaches EOF matches the pinned deletion bytes (F1)", () => {
+    // WHY: (ticket-02c F1) the target already carries the copied text, so the item's net effect IS
+    // WHY: the deletion of the retired line — and the EOF deletion in a file with no trailing
+    // WHY: newline is a pinned, byte-asserted contract (`hashline.apply.test.ts`, "EOF deletion
+    // WHY: preserves an empty preceding line"): `"b\n\nb"` → `"b\n\n"`. The line-coordinate
+    // WHY: rejoin must conform to that convention, never shadow it with `join("\n")`.
+    for (const [content, expected] of [
+      ["b\n\nb", "b\n\n"],
+      ["c\n\nc", "c\n\n"],
+    ] as const) {
+      const h = _lineHashesPure(content);
+      const move: HEdit = {
+        content_lines: [],
+        hash_bounds: [{ hash: h[0]! }, { hash: h[0]! }],
+        source: { bounds: [{ hash: h[2]! }, { hash: h[2]! }], retire: true },
+      } as HEdit;
+      const deletion: HEdit = {
+        content_lines: [],
+        hash_bounds: [{ hash: h[2]! }, { hash: h[2]! }],
+      } as HEdit;
+      expect(applyEdit(content, deletion, undefined, h).content).toBe(expected);
+      expect(applyEdit(content, move, undefined, h).content).toBe(expected);
+    }
+  });
+
   it("a copy (no retire) may overlap the target — overlap only matters when retiring", () => {
     const result = applyEdit(FILE, spanRefEdit([3, 4], [4, 5], false));
     expect(result.content).toBe("a\nb\nY\nc\nc\n");
@@ -259,5 +285,173 @@ describe("applyEdit — span-ref resolution and evidence", () => {
     } as HEdit;
     const control = applyEdit(file2, controlEdit, undefined, h2, verification);
     expect(control.content).toBe(`delta\nbeta\n${bh[2]}${HASH_SEP}gamma\ndelta`);
+  });
+});
+
+// WHY: (ticket-02c F3) the permanent two-path fence. `applyEdit` ships TWO assembly paths for one
+// WHY: logical edit — the hand-written byte splice (`resToSpan`) and the span-ref line-coordinate
+// WHY: assembly (`assembleLines`). F1 was exactly one path's serialization shadowing the other's
+// WHY: pinned convention; this fence is the test that makes that class unfalsifiable-by-accident:
+// WHY: any future edit to either path that moves its bytes fails here, at the shipped seam, across
+// WHY: every mode and every shape class — including the F1 identity-target shape.
+describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte)", () => {
+  // WHY: shape classes mandated by the ticket: first line, last line, EOF without a trailing
+  // WHY: newline, the pinned empty-preceding-line (F1) shapes, CRLF (both endings), multi-line
+  // WHY: spans, single-line files both ways, the `"\n"`-only file, trailing blank lines,
+  // WHY: duplicate text (position-salted hashes make every pair anchor-resolvable), and the
+  // WHY: equal-text-target noop shape.
+  const FENCE_FILES = [
+    "a\nb\nc\n",
+    "a\nb\nc",
+    "a\n\nb",
+    "b\n\nb",
+    "c\n\nc",
+    "a\r\nb\r\nc\r\n",
+    "a\r\nb\r\nc",
+    "a\n",
+    "a",
+    "\n",
+    "x\n\n\n",
+    "a\na\na\n",
+    "a\nb\nb\nc\n",
+  ];
+
+  function outcome(run: () => string): string {
+    try {
+      return `OK:${run()}`;
+      // WHY: codes compared, never messages: the envelope is presentation, the refusal is the fact.
+    } catch (error) {
+      return `ERR:${(error as { code?: string }).code ?? "(no code)"}`;
+    }
+  }
+
+  function spanRefPair(
+    h: string[],
+    t1: number,
+    t2: number,
+    s1: number,
+    s2: number,
+    retire: boolean,
+    placement?: HEdit["placement"],
+  ): HEdit {
+    return {
+      content_lines: [],
+      hash_bounds: [{ hash: h[t1 - 1]! }, { hash: h[t2 - 1]! }],
+      ...(placement === undefined ? {} : { placement }),
+      source: { bounds: [{ hash: h[s1 - 1]! }, { hash: h[s2 - 1]! }], retire },
+    } as HEdit;
+  }
+
+  function handPair(
+    h: string[],
+    t1: number,
+    t2: number,
+    text: string[],
+    placement?: HEdit["placement"],
+  ): HEdit {
+    return {
+      content_lines: text,
+      hash_bounds: [{ hash: h[t1 - 1]! }, { hash: h[t2 - 1]! }],
+      ...(placement === undefined ? {} : { placement }),
+    } as HEdit;
+  }
+
+  function fenceVerification(
+    h: string[],
+    lines: string[],
+    mode: "general" | "literal" | undefined,
+  ) {
+    return {
+      filePath: "fence.txt",
+      served: [...h],
+      canonDigests: lines.map((line) => canonDigest(line)),
+      ...(mode === undefined ? {} : { mode }),
+    };
+  }
+
+  it("every span-ref copy equals the hand-written payload carrying the same lines", () => {
+    for (const mode of [undefined, "general", "literal"] as const) {
+      for (const content of FENCE_FILES) {
+        const lines = splitLines(content);
+        const h = _lineHashesPure(content);
+        const verification = fenceVerification(h, lines, mode);
+        for (let s1 = 1; s1 <= lines.length; s1++) {
+          for (let s2 = s1; s2 <= lines.length; s2++) {
+            const copied = lines.slice(s1 - 1, s2);
+            for (let t1 = 1; t1 <= lines.length; t1++) {
+              for (let t2 = t1; t2 <= lines.length; t2++) {
+                for (const placement of [undefined, "before", "after"] as const) {
+                  const spanRef = outcome(
+                    () =>
+                      applyEdit(
+                        content,
+                        spanRefPair(h, t1, t2, s1, s2, false, placement),
+                        undefined,
+                        h,
+                        verification,
+                      ).content,
+                  );
+                  const hand = outcome(
+                    () =>
+                      applyEdit(
+                        content,
+                        handPair(h, t1, t2, copied, placement),
+                        undefined,
+                        h,
+                        verification,
+                      ).content,
+                  );
+                  const label = JSON.stringify({ content, mode, s1, s2, t1, t2, placement });
+                  expect(hand, label).toBe(spanRef);
+                }
+              }
+            }
+          }
+        }
+      }
+    }
+  });
+
+  it("every identity-target move equals the hand-written deletion of its retired lines", () => {
+    // WHY: the F1 class generalized: when the target already carries the copied lines, the move's
+    // WHY: net effect IS the retirement, so its bytes must equal the pinned deletion path's bytes
+    // WHY: for the same retired span — at every shape, in every mode.
+    for (const mode of [undefined, "general", "literal"] as const) {
+      for (const content of FENCE_FILES) {
+        const lines = splitLines(content);
+        const h = _lineHashesPure(content);
+        const verification = fenceVerification(h, lines, mode);
+        for (let s1 = 1; s1 <= lines.length; s1++) {
+          for (let s2 = s1; s2 <= lines.length; s2++) {
+            for (let t1 = 1; t1 <= lines.length; t1++) {
+              const t2 = t1 + (s2 - s1);
+              if (t2 > lines.length) continue;
+              // WHY: an overlapping move refuses (`E_BAD_PAYLOAD`) and is not equivalent to a
+              // WHY: bare deletion of the source; only the disjoint equal-text pairs are.
+              if (Math.max(t1, s1) <= Math.min(t2, s2)) continue;
+              const moved = lines.slice(t1 - 1, t2);
+              const copied = lines.slice(s1 - 1, s2);
+              if (!moved.every((line, i) => line === copied[i])) continue;
+              const move = outcome(
+                () =>
+                  applyEdit(
+                    content,
+                    spanRefPair(h, t1, t2, s1, s2, true),
+                    undefined,
+                    h,
+                    verification,
+                  ).content,
+              );
+              const deletion = outcome(
+                () =>
+                  applyEdit(content, handPair(h, s1, s2, []), undefined, h, verification).content,
+              );
+              const label = JSON.stringify({ content, mode, s1, s2, t1, t2 });
+              expect(deletion, label).toBe(move);
+            }
+          }
+        }
+      }
+    }
   });
 });
