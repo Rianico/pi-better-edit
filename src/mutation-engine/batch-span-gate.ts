@@ -239,7 +239,10 @@ export async function assertBatchSpansDisjoint(
       const a = spans[i]!;
       const b = spans[j]!;
       // WHY: a move's target and its own retired source are one item: their overlap is that item's
-      // WHY: question (rejected in `applyEdit` with `E_BAD_PAYLOAD`), never a batch conflict.
+      // WHY: question, never a batch conflict. `applyEdit` rejects it with `E_BAD_PAYLOAD` under the
+      // WHY: placement-aware rule — for a replacement the spans must not intersect, for an
+      // WHY: insertion (`before`/`after`) only a point strictly inside the retired lines overlaps;
+      // WHY: the four touching spellings stay legal as honest noops (ticket-02b P1-B).
       if (a.index === b.index) continue;
       if (a.startLine <= b.endLine && b.startLine <= a.endLine) {
         // WHY: the rejected batch still owes the model usable anchors (README error-code contract):

@@ -3,7 +3,7 @@ import { _lineHashesPure } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 import { applyEdit } from "../../src/hashline/apply";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
-import type { HEdit } from "../../src/hashline/resolve";
+import type { HEdit, LeaseSpanSource } from "../../src/hashline/resolve";
 
 beforeAll(async () => {
   await initHasher();
@@ -112,6 +112,32 @@ describe("applyEdit — span-ref move (source retired)", () => {
   it("refuses a retired source that overlaps the target with E_BAD_PAYLOAD", () => {
     expectErrorCode(() => applyEdit(FILE, spanRefEdit([3, 4], [4, 5], true)), "E_BAD_PAYLOAD");
     expectErrorCode(() => applyEdit(FILE, spanRefEdit([3, 3], [3, 4], true)), "E_BAD_PAYLOAD");
+    // WHY: (ticket-02b P1-B) the pinned predicate is placement-aware: an insertion point strictly
+    // WHY: inside the retired lines overlaps it — `before` when s1 < T <= s2, `after` when
+    // WHY: s1 <= T < s2. Both spellings refuse; today they wrote corrupt bytes.
+    expectErrorCode(
+      () => applyEdit(FILE, spanRefEdit([3, 3], [3, 4], true, "after")),
+      "E_BAD_PAYLOAD",
+    );
+    expectErrorCode(
+      () => applyEdit(FILE, spanRefEdit([4, 4], [3, 4], true, "before")),
+      "E_BAD_PAYLOAD",
+    );
+  });
+
+  it("the four touching spellings stay legal — refusing one alias would refuse its twin", () => {
+    // Positive control for the refusal above: the positions OUTSIDE the retired lines are legal and
+    // WHY: must all compute the input bytes (invariant 10's honest noop, both alias pairs).
+    for (const [at, line] of [
+      ["before", 3],
+      ["after", 2],
+      ["after", 4],
+      ["before", 5],
+    ] as const) {
+      const result = applyEdit(FILE, spanRefEdit([line, line], [3, 4], true, at));
+      expect(result.content).toBe(FILE);
+      expect(result.noopEdit).toBeDefined();
+    }
   });
 
   it("a copy (no retire) may overlap the target — overlap only matters when retiring", () => {
@@ -130,11 +156,77 @@ describe("applyEdit — span-ref resolution and evidence", () => {
     expectErrorCode(() => applyEdit(FILE, withBadSource), "E_UNKNOWN_ANCHOR");
   });
 
-  it("a reversed source bound pair heals like any other span", () => {
+  it("a reversed SOURCE bound pair heals like any other span", () => {
     const edit = spanRefEdit([1, 1], [4, 3], true);
     const result = applyEdit(FILE, edit);
     expect(result.content).toBe("X\nY\nb\nc\n");
     expect(result.warnings?.some((w) => w.includes("W_REVERSED_ANCHORS"))).toBe(true);
+  });
+
+  it("a lease-crossed source pair narrates its own W_REVERSED_ANCHORS (source branch executes)", () => {
+    // WHY: the pre-heal on `fileHashes` cannot see this reversal — the content occurrences run
+    // WHY: from-to ascending — only the LEASE resolutions cross (spec §3.1.1). The source arm must
+    // WHY: narrate its own heal: exactly one notice, and the move still applies on the healed span.
+    const content = "alpha\nbeta\ngamma";
+    const h = _lineHashesPure(content);
+    const lease = (lineId: number, servedLineNumber: number) => ({
+      canonHash: "0",
+      servedSnapshotHash: "S",
+      servedLineNumber,
+      retiredAt: null,
+      lineId,
+    });
+    const crossed: LeaseSpanSource = {
+      currentSnapshotHash: "S",
+      leaseFor: (anchor) =>
+        anchor === h[0]
+          ? lease(1, 2)
+          : anchor === h[1]
+            ? lease(2, 1)
+            : anchor === h[2]
+              ? lease(3, 3)
+              : undefined,
+      rebasedLineOf: (lineId) =>
+        lineId === 1 ? 2 : lineId === 2 ? 1 : lineId === 3 ? 3 : undefined,
+    };
+    const edit: HEdit = {
+      content_lines: [],
+      hash_bounds: [{ hash: h[2]! }, { hash: h[2]! }],
+      source: { bounds: [{ hash: h[0]! }, { hash: h[1]! }], retire: true },
+    } as HEdit;
+    const result = applyEdit(content, edit, undefined, h, {
+      filePath: "f.txt",
+      served: [h[1]!, h[0]!, h[2]!],
+      identity: crossed,
+    });
+    expect(result.content).toBe("alpha\nbeta");
+    expect(result.sourceRange).toEqual({
+      startLine: 1,
+      endLine: 2,
+      startHash: h[0]!,
+      endHash: h[1]!,
+      delta: -2,
+    });
+    expect((result.warnings ?? []).filter((w) => w.includes("W_REVERSED_ANCHORS"))).toHaveLength(1);
+  });
+
+  it("a target already carrying the copied lines suppresses its splice (F5 branch)", () => {
+    // WHY: `b` at line 2 and line 3 hash apart (per-line salt), so the move is legal adjacency with
+    // WHY: an equal-text target: only the retirement mutates — one mutationSpan, added 0 / removed 1,
+    // WHY: and the target range's zero delta is inherent (equal-width replacement), not patched.
+    const file2 = "a\nb\nb\nc\n";
+    const h2 = _lineHashesPure(file2);
+    const edit: HEdit = {
+      content_lines: [],
+      hash_bounds: [{ hash: h2[2]! }, { hash: h2[2]! }],
+      source: { bounds: [{ hash: h2[1]! }, { hash: h2[1]! }], retire: true },
+    } as HEdit;
+    const result = applyEdit(file2, edit, undefined, h2);
+    expect(result.content).toBe("a\nb\nc\n");
+    expect(result.noopEdit).toBeUndefined();
+    expect(result.mutationSpans).toEqual([{ startLine: 2, endLine: 2, inserted: 0 }]);
+    expect(result.mutationStats).toEqual({ addedLines: 0, removedLines: 1 });
+    expect(result.range.delta).toBe(0);
   });
 
   it("the served hash echo gate runs on copied lines, with a clean control beside it", () => {

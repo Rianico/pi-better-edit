@@ -190,35 +190,47 @@ function resToSpan(edit: RHEdit, content: string, lineIndex: LIdx): RESpan | Noo
   };
 }
 
-/**
- * WHY: (ticket-02) both splices of a span-ref item derive from the SAME pre-item buffer, so the
- * WHY: zero-width insertion point of an adjacent move can land inside the retirement span. The
- * WHY: clamp re-parks such a point at the retirement start — byte-wise the insertion commutes
- * WHY: through the removal of the region it sits in — leaving a sorted non-overlapping fold.
- */
-function clampInsertionsIntoSpans(spans: RESpan[]): void {
-  for (const ins of spans) {
-    if (ins.start !== ins.end) continue;
-    for (const other of spans) {
-      if (other === ins || other.start === other.end) continue;
-      if (ins.start >= other.start && ins.start <= other.end) {
-        ins.start = other.start;
-        ins.end = other.start;
-      }
-    }
-  }
+function assemble(content: string, sp: RESpan, signal: AbortSignal | undefined): string {
+  abortIf(signal);
+  return content.slice(0, sp.start) + sp.replacement + content.slice(sp.end);
 }
 
-function assembleSpans(content: string, spans: RESpan[], signal: AbortSignal | undefined): string {
-  abortIf(signal);
-  const ordered = [...spans].sort((a, b) => a.start - b.start || a.end - b.end);
-  let out = "";
-  let cursor = 0;
-  for (const sp of ordered) {
-    out += content.slice(cursor, sp.start) + sp.replacement;
-    cursor = sp.end;
+/**
+ * WHY: (ticket-02b P1-A) span-ref items assemble from LINE coordinates on the pre-item buffer: an
+ * WHY: insertion point is a position BETWEEN lines, so the four legal touching spellings of one
+ * WHY: position (`before T=s1` ≡ `after T=s1-1`, `after T=s2` ≡ `before T=s2+1`) compute the same
+ * WHY: line list — a degenerate adjacent move is byte identity BY CONSTRUCTION, which the
+ * WHY: byte-level clamp could not promise because `before`/`after` replacements carry opposite
+ * WHY: newline shapes and never commute through a removal that eats a newline (falsified at
+ * WHY: 108/189 clamp firings; the falsifying tests are the alias matrix in
+ * WHY: `test/tools/mutation-engine.span-ref.test.ts` and the sweep in
+ * WHY: `test/core/hashline.span-ref-sweep.test.ts`).
+ */
+function assembleLines(
+  content: string,
+  fileLines: string[],
+  retired: { s1: number; s2: number } | undefined,
+  placement: RHEdit["placement"],
+  t1: number,
+  t2: number,
+  copied: string[],
+): string {
+  const out: string[] = [];
+  for (let i = 1; i <= fileLines.length; i++) {
+    if (placement === "before" && i === t1) out.push(...copied);
+    const insideSource = retired !== undefined && i >= retired.s1 && i <= retired.s2;
+    if (insideSource) {
+      // WHY: a retired line contributes nothing, but the `after` point beside it still emits:
+      // WHY: `after T=s2` is the legal alias of `before T=s2+1`.
+    } else if (placement === undefined && i >= t1 && i <= t2) {
+      if (i === t1) out.push(...copied);
+    } else {
+      out.push(fileLines[i - 1]!);
+    }
+    if (placement === "after" && i === t2) out.push(...copied);
   }
-  return out + content.slice(cursor);
+  if (out.length === 0) return "";
+  return out.join("\n") + (content.endsWith("\n") ? "\n" : "");
 }
 
 function prepareEdit(fileHashes: string[], edit: HEdit, warnings: string[]): { fixed: HEdit } {
@@ -367,14 +379,30 @@ export function applyEdit(
     resolvedSource = source.resolved;
     const s1 = resolvedSource.hash_bounds[0].line;
     const s2 = resolvedSource.hash_bounds[1].line;
-    if (edit.source.retire && resolved.placement === undefined) {
+    if (edit.source.retire) {
+      // WHY: (ticket-02b P1-B) the overlap question is placement-aware: an insertion point is a
+      // WHY: position BETWEEN lines, so `before` overlaps only strictly above the start
+      // WHY: (s1 < T <= s2) and `after` only strictly below the end (s1 <= T < s2). The four
+      // WHY: touching spellings (`before T=s1`, `before T=s2+1`, `after T=s1-1`, `after T=s2`)
+      // WHY: denote positions OUTSIDE the retired lines and stay legal — invariant 10 makes
+      // WHY: them honest noops, refusing one spelling would refuse its alias.
       const t1 = resolved.hash_bounds[0].line;
       const t2 = resolved.hash_bounds[1].line;
-      if (Math.max(t1, s1) <= Math.min(t2, s2)) {
+      const overlap =
+        resolved.placement === "before"
+          ? s1 < t1 && t1 <= s2
+          : resolved.placement === "after"
+            ? s1 <= t2 && t2 < s2
+            : Math.max(t1, s1) <= Math.min(t2, s2);
+      if (overlap) {
+        const target =
+          resolved.placement === undefined
+            ? `target (lines ${t1}-${t2})`
+            : `target line ${t1} (at "${resolved.placement}")`;
         throw new DomainError("E_BAD_PAYLOAD", {
           message:
-            `A move's retired source (lines ${s1}-${s2}) overlaps its target (lines ${t1}-${t2}). ` +
-            "Nothing was written: keep the retired span disjoint from the target (touching is fine), or copy without retiring.",
+            `A move's copy_from span (lines ${s1}-${s2}) overlaps its ${target} while delete_source is set. ` +
+            "Nothing was written: keep copy_from disjoint from the target (touching is fine), or omit delete_source to copy.",
         });
       }
     }
@@ -450,66 +478,75 @@ export function applyEdit(
     // WHY: live caller and is retired (#10).
   }
 
-  // WHY: (ticket-02) dual-splice assembly: the target splice and the retired-source splice both
-  // WHY: derive from this SAME pre-item buffer (`lineIndex`), so an anchor made ambiguous by one
-  // WHY: splice can never change what the other removes, and one sorted fold applies both at once.
-  const spans: RESpan[] = [];
+  // WHY: (ticket-02 invariant 5, ticket-02b) both splices of a span-ref item derive from the SAME
+  // WHY: pre-item buffer (`lineIndex`), so an anchor made ambiguous by one splice can never change
+  // WHY: what the other removes; the span-ref arm assembles the result from line coordinates.
   const mutationSpans: { startLine: number; endLine: number; inserted: number }[] = [];
   let sourceRange: ResolvedRange | undefined;
-  if (edit.source?.retire && resolvedSource) {
-    const deletion: RHEdit = { content_lines: [], hash_bounds: resolvedSource.hash_bounds };
-    const retired = resolvedRange(deletion);
-    sourceRange = retired;
-    mutationSpans.push({ startLine: retired.startLine, endLine: retired.endLine, inserted: 0 });
-    const span = resToSpan(deletion, content, lineIndex);
-    if (span.kind === "noop") {
-      // WHY: unreachable — the noop arm needs the original range to be empty, and a resolved
-      // WHY: span is never empty; kept as a fail-closed guard rather than a silent cast.
-      throw new DomainError("E_BAD_PAYLOAD", {
-        message: "A move's retired source resolved to an empty range.",
+  const targetRange = resolvedRange(resolved);
+  let result: string;
+  if (edit.source && resolvedSource) {
+    const s1 = resolvedSource.hash_bounds[0].line;
+    const s2 = resolvedSource.hash_bounds[1].line;
+    const t1 = resolved.hash_bounds[0].line;
+    const t2 = resolved.hash_bounds[1].line;
+    if (edit.source.retire) {
+      const deletion: RHEdit = { content_lines: [], hash_bounds: resolvedSource.hash_bounds };
+      sourceRange = resolvedRange(deletion);
+      mutationSpans.push({
+        startLine: sourceRange.startLine,
+        endLine: sourceRange.endLine,
+        inserted: 0,
       });
     }
-    spans.push(span);
-  }
-
-  const spanResult = resToSpan(resolved, content, lineIndex);
-  if (spanResult.kind === "noop" && spans.length === 0) {
-    return {
-      content,
-      firstChangedLine: undefined,
-      lastChangedLine: undefined,
-      range: resolvedRange(resolved),
-      ...(warnings.length ? { warnings } : {}),
-      ...(literalBypass ? { literalBypass: true as const } : {}),
-      noopEdit: {
-        loc: spanResult.loc,
-        currentContent: spanResult.currentContent,
-      },
-    };
-  }
-  let targetRange = resolvedRange(resolved);
-  if (spanResult.kind === "replace") {
-    spans.push(spanResult);
-    if (edit.source) {
+    // WHY: a target already carrying the copied lines contributes no splice — the retirement alone
+    // WHY: produces the bytes, and `resolvedRange` already reports a zero delta for an equal-width
+    // WHY: replacement (the ticket-02 `delta: 0` correction was a no-op for every reachable input
+    // WHY: and is dropped; the suppressing branch is covered by the target-equals-source test).
+    const targetSame =
+      resolved.placement === undefined &&
+      t2 - t1 + 1 === resolved.content_lines.length &&
+      lineIndex.fileLines.slice(t1 - 1, t2).every((line, k) => line === resolved.content_lines[k]);
+    if (!targetSame) {
       mutationSpans.push({
         startLine: targetRange.startLine,
         endLine: targetRange.endLine,
         inserted: resolved.content_lines.length,
       });
     }
-  } else if (edit.source) {
-    // WHY: a target already carrying the copied text contributes no splice — the retirement
-    // WHY: still applies, so the target range honestly reports zero delta.
-    targetRange = { ...targetRange, delta: 0 };
+    result = assembleLines(
+      content,
+      lineIndex.fileLines,
+      edit.source.retire ? { s1, s2 } : undefined,
+      resolved.placement,
+      t1,
+      t2,
+      resolved.content_lines,
+    );
+    abortIf(signal);
+  } else {
+    const spanResult = resToSpan(resolved, content, lineIndex);
+    if (spanResult.kind === "noop") {
+      return {
+        content,
+        firstChangedLine: undefined,
+        lastChangedLine: undefined,
+        range: targetRange,
+        ...(warnings.length ? { warnings } : {}),
+        ...(literalBypass ? { literalBypass: true as const } : {}),
+        noopEdit: {
+          loc: spanResult.loc,
+          currentContent: spanResult.currentContent,
+        },
+      };
+    }
+    result = assemble(content, spanResult, signal);
   }
-
-  clampInsertionsIntoSpans(spans);
-  const result = assembleSpans(content, spans, signal);
   assertNotEmpty(content, result);
 
-  // WHY: (ticket-02 invariant 10) a degenerate move — an insertion point that clamps onto its
-  // WHY: own retirement span — computes to byte identity. It rides the noop path: no write,
-  // WHY: no double-apply, one honest `noopEdit`.
+  // WHY: (ticket-02 invariant 10, ticket-02b P1-A) a degenerate move — an insertion point touching
+  // WHY: its own retired span — computes to byte identity on the line list, so it rides the noop
+  // WHY: path: no write, no double-apply, one honest `noopEdit`.
   if (edit.source && result === content) {
     return {
       content,
