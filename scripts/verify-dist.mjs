@@ -41,9 +41,14 @@ const FRESHNESS_TOLERANCE_MS = 2000;
 const REQUIRED_TOOLS = ["edit", "read", "read_skill", "undo_last_edit"];
 const REQUIRED_COMMAND = "pi-better-edit";
 
+/** pi aliases these to its own copies; they must stay external, optional peers. */
+const HOST_PACKAGES = ["@earendil-works/pi-coding-agent", "@earendil-works/pi-tui", "typebox"];
+
+/** Thrown so enclosing `finally` blocks still reclaim their temp directories. */
+class ScriptFailure extends Error {}
+
 function fail(message) {
-  console.error(`verify-dist: ${message}`);
-  process.exit(1);
+  throw new ScriptFailure(message);
 }
 
 function toPosix(path) {
@@ -165,9 +170,14 @@ function maxMtimeMs(paths, packageRoot) {
 }
 
 /**
- * Module specifiers the artifact leaves for the runtime, read off esbuild's own output shape:
- * every module statement starts at the beginning of a line, so a scan anchored there cannot
- * pick up prompt text that happens to contain the word `from` inside a string.
+ * Module specifiers the artifact leaves for the runtime.
+ *
+ * Static statements are read off esbuild's own output shape: every module statement starts at
+ * the beginning of a line, so a scan anchored there cannot pick up prompt text that happens to
+ * contain the word `from` inside a string. Dynamic `import()` and `require()` calls are not
+ * anchored that way, so their string-literal arguments are collected separately — a stripped
+ * prefix inside `import("sqlite")` is the same 2.1.0 failure class as one inside a static
+ * import, and the reviewer demonstrated that bypass against the anchored scan alone.
  *
  * Each specifier must resolve: either a Node builtin that kept its `node:` prefix, or a
  * package the manifest declares. A stripped prefix (`node:sqlite` -> `sqlite`) is exactly
@@ -202,6 +212,12 @@ function bareSpecifiers(code) {
     addIfBare(specifier);
     index = lookahead;
   }
+  for (const pattern of [
+    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
+    /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
+  ]) {
+    for (const match of code.matchAll(pattern)) addIfBare(match[1]);
+  }
   return specifiers;
 }
 
@@ -209,6 +225,29 @@ function packageNameOf(specifier) {
   return specifier.startsWith("@")
     ? specifier.split("/").slice(0, 2).join("/")
     : specifier.split("/")[0];
+}
+
+/**
+ * ADR-0027 decision 4: the three host packages are provided by pi, so they must never be
+ * runtime dependencies — a user install would then pull a second copy of pi's own module graph
+ * — and they must stay declared as optional peers, which is also what keeps npm's peer
+ * auto-install from fetching them into the user's tree.
+ */
+function assertHostPackagesAreOptionalPeers(manifest) {
+  const dependencies = manifest.dependencies ?? {};
+  const peers = manifest.peerDependencies ?? {};
+  const peerMeta = manifest.peerDependenciesMeta ?? {};
+  for (const name of HOST_PACKAGES) {
+    if (Object.keys(dependencies).includes(name)) {
+      fail(`host-provided package ${name} is a runtime dependency; it must be an optional peer`);
+    }
+    if (!Object.keys(peers).includes(name)) {
+      fail(`host-provided package ${name} is missing from peerDependencies`);
+    }
+    if (peerMeta[name]?.optional !== true) {
+      fail(`host-provided package ${name} is not marked optional in peerDependenciesMeta`);
+    }
+  }
 }
 
 function assertSpecifiersResolve(code, manifest) {
@@ -301,7 +340,7 @@ async function main() {
   const manifestPath = resolve(SCRIPT_ROOT, options.manifest ?? "package.json");
   const packageRoot = resolve(SCRIPT_ROOT, options.packageRoot ?? dirname(manifestPath));
   const manifest = readManifest(manifestPath);
-
+  assertHostPackagesAreOptionalPeers(manifest);
   const entries = manifest.pi?.extensions;
   if (!Array.isArray(entries) || entries.length !== 1) {
     fail(`pi.extensions must declare exactly one entry, found ${JSON.stringify(entries)}`);
@@ -356,4 +395,13 @@ async function main() {
   );
 }
 
-await main();
+try {
+  await main();
+} catch (error) {
+  if (error instanceof ScriptFailure) {
+    process.exitCode = 1;
+    console.error(`verify-dist: ${error.message}`);
+  } else {
+    throw error;
+  }
+}

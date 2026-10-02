@@ -35,9 +35,11 @@ const MANAGERS = {
   bun: ["bun", ["install", "--omit=dev", "--omit=peer"]],
 };
 
+/** Thrown so enclosing `finally` blocks still reclaim their scratch directories. */
+class ScriptFailure extends Error {}
+
 function fail(message) {
-  console.error(`install-surface-check: ${message}`);
-  process.exit(1);
+  throw new ScriptFailure(message);
 }
 
 function parseArgs(argv) {
@@ -70,12 +72,23 @@ function install(manager, cwd, env) {
   });
 }
 
+/**
+ * Removes the manager's install state so the next install is genuinely cold.
+ *
+ * WHY: a warm install short-circuits. pnpm and bun report "Already up to date", run no
+ * lifecycle scripts at all, and exit 0 — `prepare` never runs, so a probe that only deletes
+ * the artifact proves nothing about the build failing loudly.
+ */
+function makeInstallCold(tree) {
+  rmSync(join(tree, "node_modules"), { recursive: true, force: true });
+  rmSync(join(tree, "dist"), { recursive: true, force: true });
+}
+
 function main() {
   const { manager, keep } = parseArgs(process.argv.slice(2));
   const scratch = mkdtempSync(join(tmpdir(), `pi-better-edit-install-${manager}-`));
   const tree = join(scratch, "pi-better-edit");
   const artifact = join(tree, "dist", "index.js");
-  let exitCode = 0;
   try {
     const copied = copyTrackedFiles(ROOT, tree);
     initGitRepo(tree);
@@ -134,7 +147,7 @@ function main() {
     }
     console.log(`install-surface-check: ${manager}: ${(verify.stdout ?? "").trim()}`);
 
-    rmSync(join(tree, "dist"), { recursive: true, force: true });
+    makeInstallCold(tree);
     const broken = install(manager, tree, { PI_BUNDLER_BIN: join(scratch, "no-such-bundler") });
     if (broken.status === 0) {
       fail(
@@ -151,16 +164,19 @@ function main() {
       fail(`${manager} install failed for an unexpected reason\n${brokenOutput}`);
     }
     console.log(
-      `install-surface-check: ${manager}: unusable bundler fails the install (exit ${broken.status}), no artifact written`,
+      `install-surface-check: ${manager}: cold install with an unusable bundler fails (exit ${broken.status}), no artifact written`,
     );
   } catch (error) {
-    exitCode = 1;
-    console.error(`install-surface-check: ${error.message}`);
+    if (error instanceof ScriptFailure) {
+      process.exitCode = 1;
+      console.error(`install-surface-check: ${error.message}`);
+    } else {
+      throw error;
+    }
   } finally {
     if (keep) console.log(`install-surface-check: kept ${scratch}`);
     else rmSync(scratch, { recursive: true, force: true });
   }
-  process.exit(exitCode);
 }
 
 main();

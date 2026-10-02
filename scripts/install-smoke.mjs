@@ -33,7 +33,7 @@ import {
 } from "node:fs";
 import { createServer } from "node:net";
 import { tmpdir } from "node:os";
-import { dirname, join, resolve } from "node:path";
+import { dirname, join, relative, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { commitAll, copyTrackedFiles, headRevision, initGitRepo, run } from "./lib/git-tree.mjs";
 
@@ -42,9 +42,11 @@ const EXTENSION_COMMAND = "pi-better-edit";
 
 let piBinary = process.env.PI_BIN ?? "pi";
 
+/** Thrown so enclosing `finally` blocks still stop the daemon and reclaim the scratch tree. */
+class ScriptFailure extends Error {}
+
 function fail(message) {
-  console.error(`install-smoke: ${message}`);
-  process.exit(1);
+  throw new ScriptFailure(message);
 }
 
 function parseArgs(argv) {
@@ -211,7 +213,6 @@ async function main() {
   const gitHome = join(scratch, "home-git");
   const tarballHome = join(scratch, "home-tarball");
   let daemon;
-  let exitCode = 0;
   try {
     mkdirSync(project, { recursive: true });
     copyTrackedFiles(ROOT, source);
@@ -254,39 +255,55 @@ async function main() {
         );
       }
     }
-    const consumer = join(scratch, "consumer", "node_modules", "pi-better-edit");
-    mkdirSync(consumer, { recursive: true });
-    run("tar", ["-xzf", tarball, "-C", consumer, "--strip-components=1"]);
-    if (!existsSync(join(consumer, "dist", "index.js"))) {
-      fail("the extracted tarball has no dist/index.js before any install script runs");
-    }
-    const install = run(
-      "npm",
-      [
-        "install",
-        "--omit=dev",
-        "--legacy-peer-deps",
-        "--ignore-scripts",
-        "--no-audit",
-        "--no-fund",
-      ],
-      {
-        cwd: consumer,
-        allowFailure: true,
-      },
+    // WHY: a real dependency install, not an install performed inside the package. npm runs no
+    // lifecycle script for a tarball dependency, so the artifact can only have come from the
+    // tarball, and a plain install (no --legacy-peer-deps) is what exercises
+    // peerDependenciesMeta: none of the three host packages may reach the consumer's tree.
+    const consumerProject = join(scratch, "consumer");
+    mkdirSync(consumerProject, { recursive: true });
+    writeFileSync(
+      join(consumerProject, "package.json"),
+      `${JSON.stringify(
+        {
+          name: "pi-better-edit-consumer",
+          private: true,
+          version: "0.0.0",
+          dependencies: { "pi-better-edit": `file:${tarball}` },
+        },
+        null,
+        2,
+      )}\n`,
+      "utf8",
     );
+    const install = run("npm", ["install"], { cwd: consumerProject, allowFailure: true });
     if (install.status !== 0)
       fail(
-        `npm install in the extracted package failed\n${install.stdout ?? ""}${install.stderr ?? ""}`,
+        `npm install of the packed tarball failed\n${install.stdout ?? ""}${install.stderr ?? ""}`,
       );
-    if (
-      existsSync(join(consumer, "node_modules", "esbuild")) ||
-      existsSync(join(consumer, "node_modules", ".bin", "esbuild"))
-    ) {
-      fail("installing from the tarball added a bundler to the dependency tree");
+    const consumer = join(consumerProject, "node_modules", "pi-better-edit");
+    if (!existsSync(join(consumer, "dist", "index.js"))) {
+      fail(
+        "the installed dependency has no dist/index.js; the artifact did not come from the tarball",
+      );
+    }
+    if (!existsSync(join(consumer, "prompts", "read.md"))) {
+      fail(
+        "the installed dependency has no prompts/read.md; the prompt assets did not come from the tarball",
+      );
+    }
+    for (const absent of [
+      join(consumerProject, "node_modules", "@earendil-works"),
+      join(consumerProject, "node_modules", "typebox"),
+      join(consumerProject, "node_modules", "esbuild"),
+    ]) {
+      if (existsSync(absent)) {
+        fail(
+          `installing from the tarball added ${relative(consumerProject, absent)} to the consumer's dependency tree`,
+        );
+      }
     }
     console.log(
-      `install-smoke: tarball surface: ${listing.length} packed files, entry and prompt assets present, no bundler installed`,
+      `install-smoke: tarball surface: ${listing.length} packed files; a plain npm install of the tarball ships the artifact and adds no host package or bundler`,
     );
     pi(["install", consumer], { cwd: project, home: tarballHome });
     assertExtensionLoads({
@@ -329,8 +346,12 @@ async function main() {
       "install-smoke: all install surfaces resolve exactly one extension from the artifact",
     );
   } catch (error) {
-    exitCode = 1;
-    console.error(`install-smoke: ${error.message}`);
+    if (error instanceof ScriptFailure) {
+      process.exitCode = 1;
+      console.error(`install-smoke: ${error.message}`);
+    } else {
+      throw error;
+    }
   } finally {
     if (daemon !== undefined && existsSync(daemon.pidFile)) {
       const pid = Number.parseInt(readFileSync(daemon.pidFile, "utf8").trim(), 10);
@@ -345,7 +366,6 @@ async function main() {
     if (keep) console.log(`install-smoke: kept ${scratch}`);
     else rmSync(scratch, { recursive: true, force: true });
   }
-  process.exit(exitCode);
 }
 
 await main();

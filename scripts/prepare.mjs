@@ -42,11 +42,12 @@ function build() {
   });
   if (result.error) {
     console.error(`prepare: could not run the build: ${result.error.message}`);
-    process.exit(1);
+    process.exitCode = 1;
+    return;
   }
   if (result.status !== 0) {
     console.error(`prepare: build failed with code ${result.status}`);
-    process.exit(result.status ?? 1);
+    process.exitCode = result.status ?? 1;
   }
 }
 

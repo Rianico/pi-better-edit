@@ -10,7 +10,8 @@
  * regression, where the gitignored artifact was cleaned away, zero extensions resolved,
  * and pi's dependency repair could not see the missing file.
  *
- * Usage: node scripts/build-dist.mjs [--outfile dist/index.js]
+ * Usage: node scripts/build-dist.mjs [--outfile dist/index.js] [--entry index.ts]
+ *        --entry is the seam the metafile-guard mutation uses to bundle a fixture.
  * Env:   PI_BUNDLER_BIN  explicit bundler binary; skips discovery and provisioning
  */
 import { execFileSync, spawnSync } from "node:child_process";
@@ -40,9 +41,11 @@ export const EXTERNALS = ["diff", "file-type", "xxhash-wasm", "typebox", "@earen
 /** `engines.node` is >=22.19.0; esbuild preserves the `node:` specifier prefixes. */
 const TARGET = "node22";
 
+/** Thrown so enclosing `finally` blocks still reclaim their temp directories. */
+class ScriptFailure extends Error {}
+
 function fail(message) {
-  console.error(`build-dist: ${message}`);
-  process.exit(1);
+  throw new ScriptFailure(message);
 }
 
 function bundlerVersion(bin) {
@@ -153,9 +156,9 @@ function resolveBundler() {
   return provisionBundler();
 }
 
-function bundlerArgs(outfile, metafile) {
+function bundlerArgs(entry, outfile, metafile) {
   return [
-    ENTRY,
+    entry,
     "--bundle",
     "--platform=node",
     "--format=esm",
@@ -183,31 +186,32 @@ function assertNothingBundledFromNodeModules(metafilePath) {
 
 function parseArgs(argv) {
   let outfile = DEFAULT_OUTFILE;
+  let entry = ENTRY;
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index];
-    if (arg === "--outfile") {
-      const value = argv[index + 1];
-      if (value === undefined || value.length === 0) fail("--outfile needs a path");
-      outfile = value;
+    const value = argv[index + 1];
+    if (arg === "--outfile" || arg === "--entry") {
+      if (value === undefined || value.length === 0) fail(`${arg} needs a path`);
+      if (arg === "--outfile") outfile = value;
+      else entry = value;
       index += 1;
       continue;
     }
     fail(`unknown argument: ${arg}`);
   }
-  return { outfile: resolve(ROOT, outfile) };
+  return { entry: resolve(ROOT, entry), outfile: resolve(ROOT, outfile) };
 }
 
 function main() {
-  const { outfile } = parseArgs(process.argv.slice(2));
-  const entry = join(ROOT, ENTRY);
-  if (!existsSync(entry)) fail(`entry ${ENTRY} is missing`);
+  const { entry, outfile } = parseArgs(process.argv.slice(2));
+  if (!existsSync(entry)) fail(`entry ${relative(ROOT, entry)} is missing`);
 
   const bundler = resolveBundler();
   mkdirSync(dirname(outfile), { recursive: true });
   const metafileDir = mkdtempSync(join(tmpdir(), "pi-better-edit-metafile-"));
   const metafile = join(metafileDir, "metafile.json");
   try {
-    const result = spawnSync(bundler.bin, bundlerArgs(outfile, metafile), {
+    const result = spawnSync(bundler.bin, bundlerArgs(entry, outfile, metafile), {
       cwd: ROOT,
       stdio: "inherit",
     });
@@ -223,8 +227,17 @@ function main() {
     fail(`bundler reported success but ${relative(ROOT, outfile)} is missing or empty`);
   }
   console.log(
-    `build-dist: wrote ${relative(ROOT, outfile)} from ${ENTRY} using ${bundler.description}`,
+    `build-dist: wrote ${relative(ROOT, outfile)} from ${relative(ROOT, entry)} using ${bundler.description}`,
   );
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  if (error instanceof ScriptFailure) {
+    process.exitCode = 1;
+    console.error(`build-dist: ${error.message}`);
+  } else {
+    throw error;
+  }
+}

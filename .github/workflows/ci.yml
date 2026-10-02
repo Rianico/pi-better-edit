@@ -87,6 +87,13 @@ jobs:
           pnpm run lint
           pnpm run format
 
+      # ADR-0027's import-cost criterion, enforced rather than decorative: the budget is
+      # checked against the minimum warm sample with the warm-up sample discarded.
+      - name: Install pi
+        run: npm install -g @earendil-works/pi-coding-agent@0.99.1
+
+      - name: Artifact module-import budget
+        run: pnpm run measure:import
   install-surfaces:
     runs-on: ubuntu-latest
     strategy:

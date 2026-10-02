@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 /**
- * Demonstrates that scripts/verify-dist.mjs actually fails on each violation it claims to
- * catch, by mutating the artifact and the manifest and asserting a non-zero exit.
+ * Demonstrates that scripts/verify-dist.mjs and scripts/build-dist.mjs actually fail on each
+ * violation they claim to catch, by mutating the artifact, the manifest and the bundle input
+ * and asserting a non-zero exit with the expected diagnostic.
  *
  * WHY: a verification step that passes on a broken artifact is worse than no step at all.
- * Every check in verify-dist.mjs is exercised here against a deliberate mutation, so a
- * check that silently stopped working shows up as a missing failure.
+ * Every check is exercised here against a deliberate mutation, and the expected message is
+ * asserted too — a mutant that trips an unrelated check, or that crashes later for a
+ * different reason, must not be recorded as a pass.
  *
  * Usage: node scripts/verify-dist-mutations.mjs
  */
@@ -28,13 +30,22 @@ const DIST = join(ROOT, "dist");
 const ARTIFACT = join(DIST, "index.js");
 const SCRATCH = join(ROOT, ".tmp", "verify-dist-mutations");
 
+/** Thrown so enclosing `finally` blocks still reclaim the mutants. */
+class ScriptFailure extends Error {}
+
 function fail(message) {
-  console.error(`verify-dist-mutations: ${message}`);
-  process.exit(1);
+  throw new ScriptFailure(message);
 }
 
 function run(args) {
   return spawnSync(process.execPath, ["scripts/verify-dist.mjs", ...args], {
+    cwd: ROOT,
+    encoding: "utf8",
+  });
+}
+
+function runBuild(args) {
+  return spawnSync(process.execPath, ["scripts/build-dist.mjs", ...args], {
     cwd: ROOT,
     encoding: "utf8",
   });
@@ -69,10 +80,11 @@ function main() {
 
   const mutants = [];
   const mutations = [];
-  const addMutation = (name, args, expectation) => mutations.push({ name, args, expectation });
+  const addMutation = (name, args, expected, kind = "verify") =>
+    mutations.push({ name, args, expected, kind });
 
   const missing = join(DIST, "__mutant-missing.js");
-  addMutation("artifact-missing", ["--artifact", missing], "artifact is missing");
+  addMutation("artifact-missing", ["--artifact", missing], "is missing or empty");
 
   const nestedDir = join(DIST, "nested");
   const nested = join(nestedDir, "index.js");
@@ -82,7 +94,7 @@ function main() {
   addMutation(
     "nested-artifact",
     ["--artifact", nested],
-    "prompt assets no longer resolve relative to the artifact",
+    "does not resolve relative to the artifact",
   );
 
   const promptRef = writeMutantArtifact("prompt-ref", (code) =>
@@ -92,18 +104,14 @@ function main() {
   addMutation(
     "prompt-ref-missing",
     ["--artifact", promptRef],
-    "a referenced prompt asset does not exist",
+    "does not resolve relative to the artifact",
   );
 
   const strippedNode = writeMutantArtifact("stripped-node-prefix", (code) =>
     code.replaceAll('from "node:', 'from "'),
   );
   mutants.push(strippedNode);
-  addMutation(
-    "stripped-node-prefix",
-    ["--artifact", strippedNode],
-    "a node: prefix was rewritten to a bare builtin",
-  );
+  addMutation("stripped-node-prefix", ["--artifact", strippedNode], "unresolvable bare specifiers");
 
   const undeclared = writeMutantArtifact(
     "undeclared-package",
@@ -113,7 +121,31 @@ function main() {
   addMutation(
     "undeclared-bare-package",
     ["--artifact", undeclared],
-    "an undeclared bare package is left for the runtime",
+    "unresolvable bare specifiers",
+  );
+
+  // WHY: static import statements are not the only way a specifier reaches the runtime; a
+  // stripped prefix inside import() or require() is the same 2.1.0 failure class.
+  const dynamicImport = writeMutantArtifact(
+    "dynamic-import-node-prefix",
+    (code) => `${code}\nasync function __smoke() { await import("sqlite"); }\n`,
+  );
+  mutants.push(dynamicImport);
+  addMutation(
+    "dynamic-import-stripped-node-prefix",
+    ["--artifact", dynamicImport],
+    "unresolvable bare specifiers",
+  );
+
+  const requireCall = writeMutantArtifact(
+    "require-node-prefix",
+    (code) => `${code}\nfunction __smoke() { return require("sqlite"); }\n`,
+  );
+  mutants.push(requireCall);
+  addMutation(
+    "require-stripped-node-prefix",
+    ["--artifact", requireCall],
+    "unresolvable bare specifiers",
   );
 
   const notFactory = writeMutantArtifact("default-export", (code) =>
@@ -123,7 +155,7 @@ function main() {
   addMutation(
     "default-export-not-a-factory",
     ["--artifact", notFactory],
-    "the artifact does not default-export a factory",
+    "does not export a valid factory function",
   );
 
   const stale = join(DIST, "__mutant-stale.js");
@@ -131,7 +163,7 @@ function main() {
   copyFileSync(ARTIFACT, stale);
   const longAgo = new Date(statSync(join(ROOT, "src")).mtimeMs - 24 * 60 * 60 * 1000);
   utimesSync(stale, longAgo, longAgo);
-  addMutation("stale-artifact", ["--artifact", stale], "the artifact predates its sources");
+  addMutation("stale-artifact", ["--artifact", stale], "is stale");
 
   const noDist = writeMutantManifest("entry-not-packed", (manifest) => {
     manifest.files = manifest.files.filter((entry) => entry !== "dist");
@@ -140,7 +172,7 @@ function main() {
   addMutation(
     "entry-not-in-packed-file-set",
     ["--manifest", noDist, "--package-root", ROOT, "--artifact", ARTIFACT],
-    "the packed file set does not contain the manifest entry",
+    "does not contain the manifest entry",
   );
 
   const noPrompts = writeMutantManifest("prompts-not-packed", (manifest) => {
@@ -150,7 +182,7 @@ function main() {
   addMutation(
     "prompt-assets-not-in-packed-file-set",
     ["--manifest", noPrompts, "--package-root", ROOT, "--artifact", ARTIFACT],
-    "a prompt asset resolves outside the packed file set",
+    "the packed file set does not contain",
   );
 
   const twoEntries = writeMutantManifest("two-entries", (manifest) => {
@@ -160,7 +192,7 @@ function main() {
   addMutation(
     "manifest-two-entries",
     ["--manifest", twoEntries, "--package-root", ROOT, "--artifact", ARTIFACT],
-    "pi.extensions declares more than one entry",
+    "must declare exactly one entry",
   );
 
   const mainMismatch = writeMutantManifest("main-mismatch", (manifest) => {
@@ -170,7 +202,7 @@ function main() {
   addMutation(
     "manifest-main-mismatch",
     ["--manifest", mainMismatch, "--package-root", ROOT, "--artifact", ARTIFACT],
-    "main and pi.extensions disagree",
+    "must be the same single entry",
   );
 
   const sourceEntry = writeMutantManifest("source-entry", (manifest) => {
@@ -181,7 +213,29 @@ function main() {
   addMutation(
     "manifest-points-at-source",
     ["--manifest", sourceEntry, "--package-root", ROOT, "--artifact", ARTIFACT],
-    "pi.extensions points at source",
+    "points at source",
+  );
+
+  const hostDependency = writeMutantManifest("host-package-as-runtime-dependency", (manifest) => {
+    manifest.dependencies.typebox = manifest.peerDependencies.typebox;
+  });
+  mutants.push(hostDependency);
+  addMutation(
+    "host-package-as-runtime-dependency",
+    ["--manifest", hostDependency, "--package-root", ROOT, "--artifact", ARTIFACT],
+    "host-provided package",
+  );
+
+  // WHY: the externals list is the contract, the metafile guard is the invariant behind it. A
+  // bare import that is not externalized gets inlined from node_modules, which the output scan
+  // cannot see, so this guard is exercised through the build itself.
+  const guardEntry = join(SCRATCH, "metafile-guard-entry.ts");
+  writeFileSync(guardEntry, 'import "@babel/parser";\nexport const fixture = 1;\n', "utf8");
+  addMutation(
+    "metafile-guard-inlined-host-package",
+    ["--entry", guardEntry, "--outfile", join(SCRATCH, "metafile-guard.js")],
+    "host packages must stay external",
+    "build",
   );
 
   try {
@@ -193,22 +247,43 @@ function main() {
 
     let failures = 0;
     for (const mutation of mutations) {
-      const result = run(mutation.args);
-      const message = `${result.stderr}${result.stdout}`.trim().split("\n")[0] ?? "";
+      const result = mutation.kind === "build" ? runBuild(mutation.args) : run(mutation.args);
+      const output = `${result.stdout}${result.stderr}`;
+      const message = output.trim().split("\n")[0] ?? "";
       if (result.status === 0) {
         failures += 1;
         console.error(
-          `verify-dist-mutations: FAIL ${mutation.name}: verify-dist.mjs passed; expected ${mutation.expectation}`,
+          `verify-dist-mutations: FAIL ${mutation.name}: exit 0; expected a failure containing "${mutation.expected}"`,
         );
         continue;
       }
-      console.log(`verify-dist-mutations: ok ${mutation.name} (${message})`);
+      if (!output.includes(mutation.expected)) {
+        failures += 1;
+        console.error(
+          `verify-dist-mutations: FAIL ${mutation.name}: failed for the wrong reason; expected "${mutation.expected}", got "${message}"`,
+        );
+        continue;
+      }
+      const matched =
+        output.split("\n").find((line) => line.includes(mutation.expected)) ?? message;
+      console.log(`verify-dist-mutations: ok ${mutation.name} (${matched.trim()})`);
     }
     if (failures > 0) fail(`${failures} mutation(s) went undetected`);
-    console.log(`verify-dist-mutations: ${mutations.length} mutations all detected`);
+    console.log(
+      `verify-dist-mutations: ${mutations.length} mutations all detected for the expected reason`,
+    );
   } finally {
     for (const mutant of mutants) rmSync(mutant, { recursive: true, force: true });
   }
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  if (error instanceof ScriptFailure) {
+    process.exitCode = 1;
+    console.error(`verify-dist-mutations: ${error.message}`);
+  } else {
+    throw error;
+  }
+}
