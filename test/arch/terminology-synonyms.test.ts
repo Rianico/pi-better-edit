@@ -391,10 +391,17 @@ describe("anchor term baseline stays recorded and shrink-only", () => {
  * for the three spellings finds this header alone).
  * Judgement recorded (R3): camelCase, hyphenated and upper-case variants are
  * DIFFERENT tokens and out of this ban's contract — decided, not missed. The
- * `op` class IS closed to brace-less shapes (own-line, `[`-led, backticked
- * cells) because those are plausible in a doc.
+ * `op` class IS closed to brace-less key shapes in BOTH scopes (own-line,
+ * `[`-led, backticked cells, `-`/`(`/`>`/`#`-led, bare keys): the scope scans
+ * whole-file text and carved files mask only leading-marker WHY:/SAFETY:
+ * comment lines before the same whole-file predicate runs. A colon-less
+ * mention (table value cell) is not key-shaped and stays outside the contract.
  * Presence is pinned VERBATIM (R4): each added fragment raises the cost of a
  * legitimate doc rewrite — that cost is disclosed, not hidden.
+ * SYMMETRY (I1): the guard enumerates two sets — scope members and needle
+ * members — and pins BOTH (ban test pins scope, pin test pins needles,
+ * self-test shape-pins `op`). Deliberately unpinned: camel/hyphen/upper
+ * variants (different tokens, out of contract — see above). No silent asymmetry.
  * Shape copied from terminology-foreign-source.test.ts.
  */
 const RETIRED_WIRE_NEEDLES = [
@@ -403,18 +410,24 @@ const RETIRED_WIRE_NEEDLES = [
   ["delete", "source"].join("_"),
 ];
 
-// WHY: key-shaped, never bare. Prose like "no `op` field"
-// (src/payload-contract.ts) must stay green; only a payload key trips this.
-// The class is closed to brace-less shapes plausible in a doc (own-line,
-// `[`-led, backticked cell); the quiet arms below pin each tightening.
-const OP_KEY_NEEDLE = /[{,[\n`]\s*("op"|'op'|op)\s*:/;
+// WHY: key-shaped, never bare — a colon-less mention is not a key. Prose like
+// "no `op` field" must stay green; only a payload key trips this. The class
+// covers brace-less key shapes plausible in a doc (own-line, `[`-led,
+// backticked cell, `-`/`(`/`>`/`#`-led, bare keys); the quiet arms below pin
+// each tightening, one per shape. Every shape was probed in node before
+// encoding (see report for the table of 22 probes).
+const OP_KEY_NEEDLE = /(^|[^A-Za-z_])["'`]?op["'`]?\s*:/;
 
 // WHY (E26): each carve-out states its reason as a fact about the artifact.
 // (a1) src/edit.ts documents the removal: `replaceWithSchema` REMOVED, no
 // fold for the retired spelling. (a2) src/hashline/apply.ts sweep note names
-// the retired spellings it swept. The exemption is LINE-scoped: only lines
-// inside documenting WHY:/SAFETY: comments are skipped (pinned by the arm
-// below) — a live spelling on any other line still reddens. No carve-out for
+// the retired spellings it swept. The exemption is COMMENT-anchored, not
+// substring-anchored: leading-marker WHY:/SAFETY: comment lines are masked
+// before the same whole-file predicate runs (pinned by the arm below). A live
+// spelling on any other line — including a code line with a trailing WHY:
+// note — still reddens. Masked lines are invisible by design: a documenting
+// comment ABOUT a live alias on a leading-marker line is textually
+// indistinguishable from the sanctioned sweep note.
 // `op` prose: the key-shaped needle does not match it (pinned by quiet arms).
 // SCOPE BY SURFACE (E26 — a reason per exclusion). IN: README.md, CONTEXT.md
 // (the taught contract), prompts/*.md (model instructions), src/**/*.ts
@@ -464,25 +477,49 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     expect(retiredWireViolations()).toEqual([]);
   });
 
+  it("pins the needle set's members: all three retired spellings stay banned", () => {
+    // WHY (I1, SYMMETRY): scope members pinned and needle members pinned —
+    // the two enumerations agree about deserving pinning. Trimming this set
+    // must redden (acceptance mutates the enumeration itself).
+    expect(RETIRED_WIRE_NEEDLES).toEqual([
+      ["replace", "with"].join("_"),
+      ["copy", "from"].join("_"),
+      ["delete", "source"].join("_"),
+    ]);
+  });
+
   it("keeps the carve-outs needed: each still documents the removal it excuses", () => {
     // WHY: shrink-only honesty — the moment a file stops documenting the
     // removal, its carve-out is a hole and must be removed. Specific tokens,
     // not bare words: generic "retired" also names parameters elsewhere in
     // apply.ts, so the arm pins the sweep note's own token plus the spelling.
+    // Substance disclosure (I7): the two spelled-token pins quote the note's
+    // substance — rewording the note's other words needs no test change,
+    // dropping a named spelling needs the reason updated. The sweep-word pin
+    // is deliberately loose (other WHY: lines name the span-ref sweep oracle).
+    // A reword is therefore a one-file edit unless it drops a spelling.
     const edit = readFileSync("src/edit.ts", "utf-8");
     expect(edit).toContain("REMOVED");
     expect(edit).toContain(["replace", "with"].join("_"));
     const apply = readFileSync("src/hashline/apply.ts", "utf-8");
-    expect(apply).toMatch(/sweep \(a\)/);
+    expect(apply).toMatch(/WHY:.*sweep/);
     expect(apply).toContain(["copy", "from"].join("_"));
+    expect(apply).toContain(["delete", "source"].join("_"));
   });
 
-  it("carved files carry the spellings only inside documenting WHY:/SAFETY: lines", () => {
-    // WHY (R2b): the exemption is line-scoped. A live spelling on any other
-    // line — code, plain comment, prose — reddens here.
+  it("carved files carry the spellings only inside leading-marker WHY:/SAFETY: comment lines", () => {
+    // WHY (I2/I3): exemption anchored to comment LINES. Leading-marker
+    // WHY:/SAFETY: lines are masked, then the same whole-file predicate runs
+    // — so trailing-WHY: code lines and own-line `op` keys redden, while the
+    // sanctioned sweep note and the SAFETY deprecation stay exempt. Residual,
+    // stated: a documenting comment ABOUT a live alias on a leading-marker
+    // line is invisible (indistinguishable from the sanctioned note).
     for (const file of RETIRED_WIRE_CARVE_OUT) {
-      const lines = readFileSync(file, "utf-8").split("\n");
-      const live = lines.filter((line) => needsRetiredWire(line) && !/WHY:|SAFETY:/.test(line));
+      const text = readFileSync(file, "utf-8")
+        .split("\n")
+        .map((line) => (/^\s*(\/\/+|\/?\*+|\/\*)\s*(WHY|SAFETY):/.test(line) ? "" : line))
+        .join("\n");
+      const live = needsRetiredWire(text) ? ["live spelling outside a WHY:/SAFETY: comment"] : [];
       expect(live).toEqual([]);
     }
   });
@@ -502,10 +539,23 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     expect(needsRetiredWire('\n"op": "replace"')).toBe(true);
     expect(needsRetiredWire('[ "op": "replace" ]')).toBe(true);
     expect(needsRetiredWire('cell `op: "replace"` here')).toBe(true);
+    expect(needsRetiredWire('- op: "replace"')).toBe(true);
+    expect(needsRetiredWire('(op: "replace")')).toBe(true);
+    expect(needsRetiredWire('> op: "replace"')).toBe(true);
+    expect(needsRetiredWire("### op: replace")).toBe(true);
+    expect(needsRetiredWire('the payload key `op`: "replace" is retired')).toBe(true);
+    // WHY: the colon-less table cell is not key-shaped — outside the key
+    // contract (probed false; the key contract requires the colon).
+    expect(needsRetiredWire('| `op` | "replace" |')).toBe(false);
     expect(needsRetiredWire("there is no `op` field and no verbs")).toBe(false);
     expect(needsRetiredWire("a legacy key, an `op` field")).toBe(false);
     expect(needsRetiredWire('{"stop": "halt"}')).toBe(false);
     expect(needsRetiredWire("the crop: wheat")).toBe(false);
+    expect(needsRetiredWire("- stop: halt")).toBe(false);
+    expect(needsRetiredWire("(stop: 1)")).toBe(false);
+    expect(needsRetiredWire("> note: text")).toBe(false);
+    expect(needsRetiredWire("# top: picks")).toBe(false);
+    expect(needsRetiredWire("op status")).toBe(false);
   });
 
   it("presence: the delete spelling is taught as text", () => {
