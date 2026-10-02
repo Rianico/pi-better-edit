@@ -1,4 +1,4 @@
-import { readFileSync, readdirSync } from "node:fs";
+import { readdirSync, readFileSync, unlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 
@@ -391,11 +391,12 @@ describe("anchor term baseline stays recorded and shrink-only", () => {
  * for the three spellings finds this header alone).
  * Judgement recorded (R3): camelCase, hyphenated and upper-case variants are
  * DIFFERENT tokens and out of this ban's contract — decided, not missed. The
- * `op` class IS closed to brace-less key shapes in BOTH scopes (own-line,
- * `[`-led, backticked cells, `-`/`(`/`>`/`#`-led, bare keys): the scope scans
- * whole-file text and carved files mask only leading-marker WHY:/SAFETY:
- * comment lines before the same whole-file predicate runs. A colon-less
- * mention (table value cell) is not key-shaped and stays outside the contract.
+ * `op` class IS closed to decorated key shapes in BOTH scopes — markers
+ * `" ' ` * _` and curly quotes around `op`, any non-letter prefix (`-`, `(`,
+ * `>`, `#`, `[`, own-line, `**`/`*` emphasis): the scope scans whole-file
+ * text and carved files mask only leading-marker WHY:/SAFETY: comment lines
+ * (without trailing live code) before the same whole-file predicate runs. A
+ * colon-less mention (table value cell) is not key-shaped and stays outside.
  * Presence is pinned VERBATIM (R4): each added fragment raises the cost of a
  * legitimate doc rewrite — that cost is disclosed, not hidden.
  * SYMMETRY (I1/J4): the guard enumerates THREE sets — scope members, needle
@@ -412,12 +413,12 @@ const RETIRED_WIRE_NEEDLES = [
 ];
 
 // WHY: key-shaped, never bare — a colon-less mention is not a key. Prose like
-// "no `op` field" must stay green; only a payload key trips this. The class
-// covers brace-less key shapes plausible in a doc (own-line, `[`-led,
-// backticked cell, `-`/`(`/`>`/`#`-led, bare keys); the quiet arms below pin
-// each tightening, one per shape. Every shape was probed in node before
-// encoding (see report for the table of 22 probes).
-const OP_KEY_NEEDLE = /(^|[^A-Za-z_])["'`]?op["'`]?\s*:/;
+// "no `op` field" must stay green; only a payload key trips this. Markers
+// `" ' ` * _` and curly quotes may decorate `op`; any non-letter may prefix
+// it. The quiet arms below pin each tightening, one per shape. Every shape
+// was probed in node before encoding (see report for the probe table).
+const OP_KEY_NEEDLE =
+  /(^|[^A-Za-z_])["'`*_\u201c\u201d\u2018\u2019]*op["'`*_\u201c\u201d\u2018\u2019]*\s*:/;
 
 // WHY (E26): each carve-out states its reason as a fact about the artifact.
 // (a1) src/edit.ts documents the removal: `replaceWithSchema` REMOVED, no
@@ -440,6 +441,7 @@ const OP_KEY_NEEDLE = /(^|[^A-Za-z_])["'`]?op["'`]?\s*:/;
 // CHANGELOG.md (release history); benchmarks/ (measurement scripts); the
 // repo-root index.ts (re-export barrel). OUT: test/ — refusal fixtures plus
 // this guard's own prose (not shrink-only, so no re-assertion is owed).
+// THE GUARD'S STATED CONTRACT: per-file membership, per surface.
 const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts", "src/hashline/apply.ts"]);
 
 function retiredWireScope(): string[] {
@@ -469,6 +471,21 @@ function retiredWireViolations(): string[] {
   return out;
 }
 
+function walkFiles(dir: string): string[] {
+  // WHY (R1/R2): the pins' OWN recursive walk — deliberately NOT allFiles /
+  // srcFiles. Producer and pins must not share fate: contracting the producer
+  // reddens the pins, and contracting this walk leaves the producer's ban
+  // intact to redden on the plant. No single edit outside the pins' own
+  // bodies shrinks both sides at once.
+  const out: string[] = [];
+  for (const entry of readdirSync(dir, { withFileTypes: true })) {
+    const path = join(dir, entry.name);
+    if (entry.isDirectory()) out.push(...walkFiles(path));
+    else out.push(path);
+  }
+  return out;
+}
+
 describe("retired wire spellings stay banned and corrected facts stay present (ticket-07)", () => {
   it("names no retired wire spelling in README, CONTEXT, prompts, src or scripts (carve-outs excluded)", () => {
     // WHY: non-empty is not coverage (E21, E25 on the scope itself) — a
@@ -478,9 +495,15 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     const scope = retiredWireScope();
     expect(scope.length).toBeGreaterThan(0);
     for (const required of ["README.md", "CONTEXT.md"]) expect(scope).toContain(required);
-    expect(scope.some((f) => f.startsWith("prompts/") && f.endsWith(".md"))).toBe(true);
-    expect(scope.some((f) => f.startsWith("src/"))).toBe(true);
-    for (const f of allFiles("scripts", "").filter((f) => !f.endsWith(".pyc")))
+    // WHY (R1, per-file membership per surface): each surface is pinned
+    // member-by-member from the pins' own walk — one surviving member can no
+    // longer satisfy a surface. Carve-outs skipped (the loop would redden on
+    // src/edit.ts otherwise).
+    for (const f of walkFiles("prompts").filter((f) => f.endsWith(".md")))
+      if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f);
+    for (const f of walkFiles("src").filter((f) => f.endsWith(".ts")))
+      if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f);
+    for (const f of walkFiles("scripts").filter((f) => !f.endsWith(".pyc")))
       if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f); // every script a member or carve-out
     expect(scope).toContain("scripts/practical-token-benchmark.mjs"); // the motivated artifact, pinned BY NAME
     expect(scope).not.toContain("src/edit.ts"); // the carve-out is still applied
@@ -499,39 +522,58 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     ]);
   });
 
+  it("composition: retiredWireViolations lists planted bytes through the real loop", () => {
+    // WHY (R3): F6 witnessed the detector; this witnesses the COMPOSITION.
+    // Neutralising the scope×predicate loop (return []) must redden THIS arm.
+    // The fixture is written, asserted, and deleted inside this test.
+    const fixture = "scripts/__retired-wire-fixture.tmp";
+    writeFileSync(fixture, "anchor_from\n" + ["replace", "with"].join("_") + "\n");
+    try {
+      expect(retiredWireViolations()).toContain(fixture);
+    } finally {
+      unlinkSync(fixture);
+    }
+  });
+
   it("keeps the carve-outs needed: each still documents the removal it excuses", () => {
     // WHY: shrink-only honesty — the moment a file stops documenting the
     // removal, its carve-out is a hole and must be removed. Specific tokens,
     // not bare words: generic "retired" also names parameters elsewhere in
     // apply.ts, so the arm pins the sweep note's own token plus the spelling.
-    // Substance disclosure (I7): the two spelled-token pins quote the note's
-    // substance — rewording the note's other words needs no test change,
-    // dropping a named spelling needs the reason updated. The sweep-word pin
-    // is deliberately loose (other WHY: lines name the span-ref sweep oracle).
-    // A reword is therefore a one-file edit unless it drops a spelling.
+    // Substance disclosure (R7): the pin quotes the note's distinctive
+    // substance — `named wire fields` occurs once, at apply.ts:452. Rewording
+    // the note's other words needs no test change; dropping the substance
+    // clause or a named spelling needs the reason updated.
     const edit = readFileSync("src/edit.ts", "utf-8");
     expect(edit).toContain("REMOVED");
     expect(edit).toContain(["replace", "with"].join("_"));
     const apply = readFileSync("src/hashline/apply.ts", "utf-8");
-    expect(apply).toMatch(/WHY:.*sweep/);
+    expect(apply).toMatch(/WHY:.*named wire fields/);
     expect(apply).toContain(["copy", "from"].join("_"));
     expect(apply).toContain(["delete", "source"].join("_"));
   });
 
   it("carved files carry the spellings only inside leading-marker WHY:/SAFETY: comment lines", () => {
-    // WHY (I2/I3): exemption anchored to comment LINES. Leading-marker
-    // WHY:/SAFETY: lines are masked, then the same whole-file predicate runs
-    // — so trailing-WHY: code lines and own-line `op` keys redden, while the
-    // sanctioned sweep note and the SAFETY deprecation stay exempt. Residual,
-    // stated: a documenting comment ABOUT a live alias on a leading-marker
-    // line is invisible (indistinguishable from the sanctioned note).
+    // WHY (I2/I3/R5): exemption anchored to comment LINES. A leading-marker
+    // WHY:/SAFETY: line is masked ONLY when no live code follows its `*/` —
+    // ` * WHY: compat */ const x = "replace_with";` reddens (D8). Masked
+    // lines are invisible by design (see residual below); everything else,
+    // including trailing-WHY: code lines and own-line `op` keys, reddens.
+    // Failure names file:line. Residual, stated: a documenting comment ABOUT
+    // a live alias with no trailing code stays exempt (indistinguishable
+    // from the sanctioned note).
     for (const file of RETIRED_WIRE_CARVE_OUT) {
-      const text = readFileSync(file, "utf-8")
-        .split("\n")
-        .map((line) => (/^\s*(\/\/+|\/?\*+|\/\*)\s*(WHY|SAFETY):/.test(line) ? "" : line))
-        .join("\n");
-      const live = needsRetiredWire(text) ? ["live spelling outside a WHY:/SAFETY: comment"] : [];
-      expect(live).toEqual([]);
+      const lines = readFileSync(file, "utf-8").split("\n");
+      const masked = (line: string): boolean =>
+        /^\s*(\/\/+|\/?\*+|\/\*)\s*(WHY|SAFETY):/.test(line) && !/\*\/\s*\S/.test(line);
+      const text = lines.map((line) => (masked(line) ? "" : line)).join("\n");
+      if (!needsRetiredWire(text)) continue;
+      const hits: string[] = [];
+      lines.forEach((line, i) => {
+        if (masked(line)) return;
+        if (needsRetiredWire(i > 0 ? `\n${line}` : line)) hits.push(`${file}:${i + 1}`);
+      });
+      expect(hits.length > 0 ? hits : [`${file}:masked-text match`]).toEqual([]);
     }
   });
 
@@ -550,6 +592,12 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     expect(needsRetiredWire('\n"op": "replace"')).toBe(true);
     expect(needsRetiredWire('[ "op": "replace" ]')).toBe(true);
     expect(needsRetiredWire('cell `op: "replace"` here')).toBe(true);
+    expect(needsRetiredWire('- **op**: "replace"')).toBe(true);
+    expect(needsRetiredWire('**op**: "replace"')).toBe(true);
+    expect(needsRetiredWire('**`op`**: "replace"')).toBe(true);
+    expect(needsRetiredWire('- **`op`**: "replace" is retired')).toBe(true);
+    expect(needsRetiredWire('- *op*: "replace"')).toBe(true);
+    expect(needsRetiredWire('\u201cop\u201d: "replace"')).toBe(true);
     expect(needsRetiredWire('- op: "replace"')).toBe(true);
     expect(needsRetiredWire('(op: "replace")')).toBe(true);
     expect(needsRetiredWire('> op: "replace"')).toBe(true);
@@ -567,6 +615,10 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     expect(needsRetiredWire("> note: text")).toBe(false);
     expect(needsRetiredWire("# top: picks")).toBe(false);
     expect(needsRetiredWire("op status")).toBe(false);
+    expect(needsRetiredWire('- **stop**: "halt"')).toBe(false);
+    expect(needsRetiredWire("(**stop**: 1)")).toBe(false);
+    expect(needsRetiredWire('- *stop*: "x"')).toBe(false);
+    expect(needsRetiredWire("\u201cstop\u201d: x")).toBe(false);
   });
 
   it("presence: the delete spelling is taught as text", () => {
