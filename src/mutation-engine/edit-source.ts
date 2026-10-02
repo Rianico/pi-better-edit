@@ -6,6 +6,7 @@
  */
 
 import { readNormFile } from "../file-reader.js";
+import { splitLines } from "../utils.js";
 import type { LineEnding } from "../edit-diff.js";
 import type { HashStore } from "../hash-store.js";
 import { MAX_HASH_LINES, type LeaseSpanSource } from "../hashline/index.js";
@@ -79,6 +80,56 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
     served,
     blockedHashes,
     canonDigests,
+  };
+}
+
+/**
+ * SAFETY: (ticket-04 §9.5, keel F2) the foreign read-only authority lives here, beside
+ * SAFETY: `loadEditFile`, and cannot be mistaken for it: `loadEditFile` forwards `noPersist`
+ * SAFETY: verbatim, so reuse would let a foreign read flip into a persisting, lease-retiring
+ * SAFETY: load. This entry accepts no such flag, passes the CALLER's store to the served-state
+ * SAFETY: load (an injected store must not see a split served view), and records nothing.
+ *
+ * Assembles one foreign file's served view: the never-persisting read, its served-state load,
+ * and the read-only lease identity source — the single place the foreign pre-pass gets these.
+ */
+export type ForeignServedView = {
+  absolutePath: string;
+  normalized: string;
+  fileLines: string[];
+  fileHashes: string[];
+  served: (string | null)[];
+  source: LeaseSpanSource;
+};
+
+export async function loadForeignServedView(input: {
+  path: string;
+  cwd: string;
+  sessionKey: string;
+  store: HashStore;
+}): Promise<ForeignServedView> {
+  const { normalized, absolutePath, fileHashes } = await readNormFile(input.path, input.cwd, {
+    maxLines: MAX_HASH_LINES,
+    store: input.store,
+    noPersist: true,
+  });
+  const served = await createSessionHandle(input.sessionKey, absolutePath, input.store).load();
+  const source = leaseSpanSource({
+    store: input.store,
+    sessionKey: input.sessionKey,
+    absolutePath,
+    content: normalized,
+  });
+  return {
+    absolutePath,
+    normalized,
+    // WHY: (§9.6) `splitLines` is the fileLines every hash/coordinate computation uses —
+    // WHY: `normalized.split("\n")` misaligns the trailing line against `fileHashes`, and the
+    // WHY: leased seam skips `assertAligned`, so the violation would be silent.
+    fileLines: splitLines(normalized),
+    fileHashes,
+    served,
+    source,
   };
 }
 

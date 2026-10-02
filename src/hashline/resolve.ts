@@ -158,6 +158,21 @@ export function uniqueServedPosition(
  */
 export type EditPlacement = "in-place" | "before" | "after";
 
+// WHY: bound to the union (§9.12): a list element outside `EditPlacement` fails `pnpm run typecheck`;
+// WHY: consumers must not re-enumerate the literals inline.
+const EDIT_PLACEMENTS = ["in-place", "before", "after"] as const satisfies readonly EditPlacement[];
+
+function isEditPlacement(value: unknown): value is EditPlacement {
+  return typeof value === "string" && (EDIT_PLACEMENTS as readonly string[]).includes(value);
+}
+
+// WHY: rendered from the bound list so the refusal's allowed values cannot drift from the vocabulary.
+function placementSpellings(): string {
+  const quoted = EDIT_PLACEMENTS.map((value) => `"${value}"`);
+  const last = quoted.pop()!;
+  return `${quoted.join(", ")} or ${last}`;
+}
+
 /**
  * The same-file line span a span-ref payload copies from (ticket-02). `retire` marks a move:
  * the source's own span is deleted in the same single-pass assembly, computed against the same
@@ -361,14 +376,16 @@ function assertItem(edit: Record<string, unknown>): void {
         'The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.',
     });
   }
-  if (
-    "placement" in edit &&
-    edit.placement !== "in-place" &&
-    edit.placement !== "before" &&
-    edit.placement !== "after"
-  ) {
+  // SAFETY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement
+  // SAFETY: value — `pipeline.ts` and `apply.ts` fall an unrecognized placement through to the
+  // SAFETY: in-place path, which REMOVES the target span, and no `switch`/`assertNever` covers it.
+  // SAFETY: Keep it a refusal.
+  // WHY: the wire vocabulary appears on a library path on purpose: the internal field is
+  // WHY: `placement`, but `E_BAD_PAYLOAD` is MODEL tier — the retrying party acts on the wire
+  // WHY: name `at`, never on a field it never sent (sweep (a)).
+  if ("placement" in edit && !isEditPlacement(edit.placement)) {
     throw new DomainError("E_BAD_PAYLOAD", {
-      message: 'Field "placement" must be "in-place", "before" or "after". Nothing was written.',
+      message: `Field "at" must be ${placementSpellings()}. Nothing was written.`,
     });
   }
   if ("source" in edit) {
@@ -386,7 +403,7 @@ function assertItem(edit: Record<string, unknown>): void {
     ) {
       throw new DomainError("E_BAD_PAYLOAD", {
         message:
-          'Field "source" must be { anchor_from, anchor_to, retire }: two bare 3-char anchors bounding the same-file span and a boolean. Nothing was written.',
+          'Field "text_ref" must be { anchor_from, anchor_to, mode: "copy" | "cut" }: two bare 3-char anchors bounding the same-file span — "cut" additionally retires it. Nothing was written.',
       });
     }
   }

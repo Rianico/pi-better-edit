@@ -1,6 +1,8 @@
+import { normalize } from "node:path";
 import { Type } from "typebox";
 import { EDITS_MAX_ITEMS } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
+import type { EditPlacement } from "./hashline/resolve.js";
 import { rejectUnknownFields } from "./utils.js";
 
 const normalizedEdit = Symbol("normalizedEdit");
@@ -39,6 +41,14 @@ export type EditMode = "general" | "literal";
  * everything downstream consumes the union — the engine switches on `payload.kind` exhaustively.
  */
 export type Placement = "in-place" | "before" | "after";
+
+// WHY: (§9.12) the wire `at` union and the engine seam's placement union are one vocabulary by
+// WHY: contract, not by copy: this compile-time mutual-assignability assertion fails
+// WHY: `pnpm run typecheck` the moment the two unions drift apart.
+export const _placementVocabularyAgreement: [
+  Placement extends EditPlacement ? true : never,
+  EditPlacement extends Placement ? true : never,
+] = [true, true];
 
 /** The anchor pair an item targets — placement and payload are relative to its resolved span. */
 export type AnchorSpan = { anchor_from: string; anchor_to: string };
@@ -166,7 +176,7 @@ const EDIT_PAYLOAD_HINT =
 export const EDIT_DESCRIPTION =
   'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }` (atomic, one file per call). Use for content seen via `read` or a diff; never for directories, binaries, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors — copy the 3 chars before `│` in this file\'s served `HASH│content` lines (lease (session, file, anchor)), never `│` or content. Exactly one payload per item: `text` (content; `\\n` joins lines, `""` deletes) or `text_ref` `{anchor_from, anchor_to, mode, file?}` — a served span\'s bytes (`mode` `"copy"`|`"cut"`; `file`=another served file, copy today); `at`: "in-place" (default), "before", "after". `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
 export const EDIT_SNIPPET =
-  'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), one payload per item: `text` is bare content (`""` deletes) or `text_ref` copies a served span (`file` = another served file, `mode: "copy" | "cut"`). Chain from diff anchors with no re-read.';
+  'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), one payload per item: `text` is bare content (`""` deletes) or `text_ref` copies a served span (same file: `"copy"`|`"cut"`; `file`=another served file: `"copy"` only). Chain from diff anchors with no re-read.';
 export const EDIT_GUIDELINES: string[] = [
   'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`.',
   `edit: payload shape \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); \`edits\` length is the arity (1 = single, >1 = batched atomically to the one file); each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`.`,
@@ -271,7 +281,8 @@ function isLegalItemKeySet(keys: Set<string>): boolean {
   return ITEM_KEY_SETS.some((shape) => keySetEquals(keys, shape));
 }
 
-const AT_SPELLINGS: readonly Placement[] = ["in-place", "before", "after"];
+// WHY: bound to the union (§9.12): a list element outside `Placement` fails `pnpm run typecheck`.
+const AT_SPELLINGS = ["in-place", "before", "after"] as const satisfies readonly Placement[];
 
 function analyzeItem(value: unknown, index: number): string | undefined {
   if (!isRec(value)) {
@@ -284,16 +295,19 @@ function analyzeItem(value: unknown, index: number): string | undefined {
     if (hasText && hasRef) {
       return `edit[${index}] carries both "text" and "text_ref": exactly one payload per item (${ITEM_SHAPE}).`;
     }
+    // WHY: (§9.3) an illegal key set is often also MISSING a required key; the unsupported-field
+    // WHY: list alone renders blank there, so the refusal must name the missing keys too.
     const payloadKeys = new Set(["anchor_from", "anchor_to", "at", "text", "text_ref"]);
     const offending = [...keys].filter((key) => !payloadKeys.has(key));
+    const missing = ["anchor_from", "anchor_to"].filter((key) => !keys.has(key));
+    const clauses: string[] = [];
+    if (offending.length > 0) clauses.push(`unsupported field(s) ${quoted(offending)}`);
+    if (missing.length > 0) clauses.push(`missing required field(s) ${quoted(missing)}`);
     if (!hasText && !hasRef) {
-      const named =
-        offending.length > 0
-          ? `unsupported field(s) ${quoted(offending)} — exactly one payload per item`
-          : "exactly one payload per item";
-      return `edit[${index}] carries no payload: ${named} (${ITEM_SHAPE}).`;
+      const named = clauses.length > 0 ? `${clauses.join(";")} — ` : "";
+      return `edit[${index}] carries no payload: ${named}exactly one payload per item (${ITEM_SHAPE}).`;
     }
-    return `edit[${index}] has unsupported field(s) ${quoted(offending)} (${ITEM_SHAPE}).`;
+    return `edit[${index}] has ${clauses.join(";")} (${ITEM_SHAPE}).`;
   }
   const { anchor_from, anchor_to, at, text, text_ref } = value;
   if (typeof anchor_from !== "string" || typeof anchor_to !== "string") {
@@ -333,6 +347,11 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   if ("file" in text_ref && typeof refFile !== "string") {
     return `edit[${index}] "text_ref" "file" must be a string naming the served file to read from.`;
   }
+  // WHY: (§9.2) an empty "file" was admitted and only failed deep in the loader as
+  // WHY: `[E_UNSUPPORTED_FILE] Path is a directory: .` — the field-level refusal belongs here.
+  if (refFile === "") {
+    return `edit[${index}] "text_ref" "file" must name a served file to read from — an empty string is not a path (omit "file" to reference this file).`;
+  }
   if (typeof text_ref.anchor_from !== "string" || typeof text_ref.anchor_to !== "string") {
     return `edit[${index}] "text_ref" "anchor_from"/"anchor_to" must be bare 3-char hash anchor strings copied from the served output of the file they name.`;
   }
@@ -345,7 +364,12 @@ function analyzeItem(value: unknown, index: number): string | undefined {
 // WHY: refusal — and its test — are deliberately temporary.
 function analyzeForeignCut(item: EditItem, file: string): string | undefined {
   const ref = item.text_ref;
-  if (!ref || ref.file === undefined || ref.file === file) return undefined;
+  if (!ref || ref.file === undefined) return undefined;
+  // WHY: (§9.4, review-3 P3-3) foreign-vs-same-file is a PATH question, not a spelling question:
+  // WHY: `./target.txt` and `target.txt` name one file, so the lexical spelling is normalized
+  // WHY: before comparing. Symlinked aliases resolve at the engine's path comparison
+  // WHY: (`isForeignReference` in mutation-engine/pipeline.ts), which sees the real filesystem.
+  if (normalize(ref.file) === normalize(file)) return undefined;
   if (ref.mode === "cut") {
     return (
       'A foreign-source reference supports mode: "copy" today; mode: "cut" requires a ' +
@@ -481,14 +505,19 @@ export function getPreviewInput(args: unknown): { file: string; edits: EditItem[
 
 const ROOT_KS = new Set(["file", "edits", "mode"]);
 
-const PLACEMENTS: readonly string[] = ["in-place", "before", "after"];
+// WHY: bound to the union (§9.12): a list element outside `Placement` fails `pnpm run typecheck`.
+const PLACEMENTS = ["in-place", "before", "after"] as const satisfies readonly Placement[];
+
+function isPlacementValue(value: string): value is Placement {
+  return (PLACEMENTS as readonly string[]).includes(value);
+}
 
 function isNormalizedEditItem(value: unknown): value is NormalizedEditItem {
   if (!isRec(value)) return false;
   const { target, at, payload } = value;
   if (!isRec(target)) return false;
   if (typeof target.anchor_from !== "string" || typeof target.anchor_to !== "string") return false;
-  if (typeof at !== "string" || !PLACEMENTS.includes(at)) return false;
+  if (typeof at !== "string" || !isPlacementValue(at)) return false;
   if (!isRec(payload)) return false;
   if (payload.kind === "empty") return true;
   if (payload.kind === "literal") return typeof payload.text === "string";
@@ -542,9 +571,19 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
   }
 
   for (let index = 0; index < request.edits.length; index++) {
-    if (!isNormalizedEditItem(request.edits[index])) {
+    const item = request.edits[index];
+    if (!isNormalizedEditItem(item)) {
       throw new DomainError("E_BAD_PAYLOAD", {
-        message: `Edit request edits[${index}] must be { target, at, payload } with exactly one payload: "literal" text, a "reference" span (mode "copy" or "cut"), or "empty".`,
+        message: `Edit request edits[${index}] must be { target, at, payload } with exactly one payload: text content, a served-span reference with mode "copy" or "cut", or a deletion (no content).`,
+      });
+    }
+    // WHY: (ticket-04 item (i)) the min-line guard lives at wire admission, not in the parse seam:
+    // WHY: at admission `"text": ""` is already folded into the deletion payload, so a zero-line
+    // WHY: literal payload can only come from a direct engine-seam construction — refuse it there,
+    // WHY: naming the wire field instead of the internal payload arm.
+    if (item.payload.kind === "literal" && item.payload.text === "") {
+      throw new DomainError("E_BAD_PAYLOAD", {
+        message: `Edit request edits[${index}] "text" must carry at least one line; "text": "" is the deletion payload. Nothing was written.`,
       });
     }
   }

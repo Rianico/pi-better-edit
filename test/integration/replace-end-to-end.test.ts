@@ -1,16 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
-import { lineHashes } from "../../src/hashline";
 import {
   withTempFile,
   withTempBytes,
   setupIntegrationTest,
-  useTestHome,
   getText,
   extractHash,
 } from "../support/fixtures";
-
-const home = useTestHome();
 
 describe("edit tool — end-to-end", () => {
   it("reads a file and edits a single line", async () => {

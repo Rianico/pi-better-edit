@@ -613,7 +613,8 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const lineA = "} = verification ?? {};";
       const lineB = "clearServedRefusals(absolutePath);";
       // File A's own allocation names its anchor; file B is served under the SAME anchor string,
-      // which is the cross-file collision the process-global hash->canon map used to leak through.
+      // which is the same-anchor collision across two files that the process-global hash->canon
+      // map used to leak through.
       const anchor = (await lineHashes(lineA, pathA))[0]!;
       // WHY: canon evidence is derived from the leases a serve grants (#151), never from a stored canon
       // WHY: array, so each file is served against the snapshot that actually holds its own line.

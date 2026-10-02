@@ -449,10 +449,12 @@ export function applyEdit(
           resolved.placement === undefined
             ? `target (lines ${t1}-${t2})`
             : `target line ${t1} (at "${resolved.placement}")`;
+        // WHY: (sweep (a)) the retired `copy_from`/`delete_source` spellings named wire fields that
+        // WHY: no longer exist — the retrying party sends `"text_ref"` and its `"mode"`.
         throw new DomainError("E_BAD_PAYLOAD", {
           message:
-            `A move's copy_from span (lines ${s1}-${s2}) overlaps its ${target} while delete_source is set. ` +
-            "Nothing was written: keep copy_from disjoint from the target (touching is fine), or omit delete_source to copy.",
+            `A move's "text_ref" span (lines ${s1}-${s2}) overlaps its ${target} while "mode": "cut" is set. ` +
+            'Nothing was written: keep the "text_ref" span disjoint from the target (touching is fine), or use "mode": "copy".',
         });
       }
     }

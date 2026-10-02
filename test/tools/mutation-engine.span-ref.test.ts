@@ -1,13 +1,17 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { execute, isMutationSuccess, isMutationFailure } from "../../src/mutation-engine/index.js";
 import {
   withTempFile,
+  withTempDir,
   setupIntegrationTest,
   TEST_SESSION_ID,
   useTestHome,
 } from "../support/fixtures.js";
 import { lineHashes, initHasher } from "../../src/hashline/index.js";
+import { loadHashStore, type HashStore } from "../../src/hash-store.js";
+import { readNormFile } from "../../src/file-reader.js";
 import type { NormalizedEditRequest, Placement } from "../../src/payload-contract.js";
 
 const home = useTestHome();
@@ -50,6 +54,95 @@ function handItem(
     at,
     payload: { kind: "literal", text },
   };
+}
+
+// WHY: (ticket-04 rework item iv) admission never produces a foreign `cut`, so this shape exists
+// only when built directly at the engine seam — exactly the hole the pre-pass leaves by dropping
+// `mode` when it collapses a foreign reference to a literal.
+function foreignRefItem(
+  target: [string, string],
+  source: [string, string],
+  file: string,
+  mode: "copy" | "cut",
+): NormalizedEditRequest["edits"][number] {
+  return {
+    target: { anchor_from: target[0], anchor_to: target[1] },
+    at: "in-place",
+    payload: {
+      kind: "reference",
+      span: { anchor_from: source[0], anchor_to: source[1], file, mode },
+      mode,
+    },
+  };
+}
+
+// WHY: (keel F3) the normalized `reference` payload carries the mode TWICE — `payload.mode` and
+// `span.mode` (admission copies `text_ref` verbatim into `span`, payload-contract.ts:441). This
+// builds the disagreement; only engine-side validation can see it.
+function modeMismatchItem(
+  target: [string, string],
+  source: [string, string],
+  spanMode: "copy" | "cut",
+  payloadMode: "copy" | "cut",
+): NormalizedEditRequest["edits"][number] {
+  return {
+    target: { anchor_from: target[0], anchor_to: target[1] },
+    at: "in-place",
+    payload: {
+      kind: "reference",
+      span: { anchor_from: source[0], anchor_to: source[1], mode: spanMode },
+      mode: payloadMode,
+    },
+  };
+}
+
+type RecordedQuery = { sql: string; params: unknown[] };
+
+// WHY: (§10) counts served-table SELECTs that flow THROUGH the injected store without touching
+// src: the Proxy delegates every call to the real store and records each executed statement.
+function countingStore(real: HashStore): { store: HashStore; queries: RecordedQuery[] } {
+  const queries: RecordedQuery[] = [];
+  const db = new Proxy(real.db, {
+    get(target, prop, receiver) {
+      if (prop === "prepare") {
+        return (...args: unknown[]) => {
+          const sql = args[0] as string;
+          // SAFETY: sqlite StatementSync is duck-typed here — only all/get/run are wrapped and
+          // SAFETY: every call delegates to the original statement, so behavior is unchanged.
+          const stmt = (target.prepare as (sql: string, ...rest: unknown[]) => unknown).call(
+            target,
+            ...(args as [string, ...unknown[]]),
+          ) as Record<string, unknown>;
+          return new Proxy(stmt, {
+            get(t, p, r) {
+              if (p === "all" || p === "get" || p === "run") {
+                return (...params: unknown[]) => {
+                  queries.push({ sql, params });
+                  return (t[p] as (...a: unknown[]) => unknown).apply(t, params);
+                };
+              }
+              return Reflect.get(t, p, r);
+            },
+          });
+        };
+      }
+      const value = Reflect.get(target, prop, receiver);
+      // SAFETY: bind native methods to the real db so the sqlite handle's internal slot stays valid.
+      return typeof value === "function"
+        ? (value as (...a: unknown[]) => unknown).bind(target)
+        : value;
+    },
+  });
+  return { store: { db, engine: "node:sqlite" }, queries };
+}
+
+// WHY: the served mirror row read is the unit §10 memoizes (read + load + lease per resolved
+// absolute path); `served_leases`/`DELETE FROM served` statements and target-path reads are not
+// foreign-source reads and stay out of the count.
+function foreignServedReads(queries: RecordedQuery[], foreignAbs: string): number {
+  return queries.filter(
+    (q) => /^\s*SELECT .*FROM served WHERE/.test(q.sql) && q.params.some((p) => p === foreignAbs),
+  ).length;
 }
 
 describe("MutationEngine — span-ref move", () => {
@@ -459,5 +552,160 @@ describe("MutationEngine — span-ref in batches", () => {
       expect(result.result).toBe("b\nC\na\n");
       await expect(readFile(`${cwd}/sample.txt`, "utf-8")).resolves.toBe("b\nC\na\n");
     });
+  });
+});
+
+describe("MutationEngine — reference payloads at the engine seam (ticket-04 rework)", () => {
+  it('refuses a directly-constructed foreign mode:"cut" — no silent copy (item iv)', async () => {
+    await withTempDir("spanref-foreign-cut-", async (cwd) => {
+      await writeFile(join(cwd, "sample.txt"), "a\nb\nc\nd\ne\n", "utf-8");
+      await writeFile(join(cwd, "other.txt"), "x\ny\nz\n", "utf-8");
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { path: "other.txt" }, undefined, undefined, ctx);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      const s = await lineHashes("x\ny\nz\n", home.testPath);
+      // WHY: (§4) the foreign pre-pass collapses every foreign reference to a literal COPY
+      // before `parseEdits` ever sees the payload, so a foreign `cut` silently succeeds as a
+      // copy and the requested retirement vanishes. The seam must fail LOUD: the same
+      // E_BAD_PAYLOAD phasing message, or a throw naming ticket-04b — silence is the bug.
+      let outcome: Awaited<ReturnType<typeof execute>> | Error;
+      try {
+        outcome = await execute(
+          {
+            file: "sample.txt",
+            edits: [foreignRefItem([h[4]!, h[4]!], [s[0]!, s[1]!], "other.txt", "cut")],
+          },
+          cwd,
+          { sessionKey: TEST_SESSION_ID },
+        );
+      } catch (error) {
+        outcome = error instanceof Error ? error : new Error(String(error));
+      }
+      const loud =
+        outcome instanceof Error
+          ? outcome.message.includes("ticket-04b")
+          : isMutationFailure(outcome) &&
+            (outcome.code === "E_BAD_PAYLOAD" || outcome.message.includes("ticket-04b"));
+      expect(
+        loud,
+        outcome instanceof Error
+          ? `a throw must name ticket-04b: ${outcome.message}`
+          : isMutationSuccess(outcome)
+            ? `refused, but it silently succeeded as a copy: ${JSON.stringify(outcome.result)}`
+            : `failure must be E_BAD_PAYLOAD or name ticket-04b: ${outcome.code} ${outcome.message}`,
+      ).toBe(true);
+      await expect(readFile(join(cwd, "sample.txt"), "utf-8")).resolves.toBe("a\nb\nc\nd\ne\n");
+      await expect(readFile(join(cwd, "other.txt"), "utf-8")).resolves.toBe("x\ny\nz\n");
+    });
+  });
+
+  it("refuses a nested span.mode that disagrees with the payload mode (keel F3)", async () => {
+    await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      for (const [spanMode, payloadMode] of [
+        ["cut", "copy"],
+        ["copy", "cut"],
+      ] as const) {
+        const result = await execute(
+          {
+            file: "sample.txt",
+            edits: [modeMismatchItem([h[4]!, h[4]!], [h[0]!, h[1]!], spanMode, payloadMode)],
+          },
+          cwd,
+          { sessionKey: TEST_SESSION_ID },
+        );
+        // WHY: `parseEdits` reads only `payload.mode` (pipeline.ts:386-388), so a disagreeing
+        // nested `span.mode` validates silently and ships whichever arm `payload.mode` names.
+        // The nested mode must be validated against the top-level one — loud E_BAD_PAYLOAD.
+        expect(
+          isMutationFailure(result),
+          `span.mode ${spanMode} vs mode ${payloadMode} must be refused, not validated silently`,
+        ).toBe(true);
+        if (!isMutationFailure(result)) continue;
+        expect(result.code).toBe("E_BAD_PAYLOAD");
+        await expect(readFile(`${cwd}/sample.txt`, "utf-8")).resolves.toBe("a\nb\nc\nd\ne\n");
+      }
+    });
+  });
+
+  it("reads one foreign file once per batch through the injected store (§10)", async () => {
+    const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+    const s = await lineHashes("p\nq\nr\ns\nt\n", home.testPath);
+    const copyItem = (from: number, to: number, onto: number) => ({
+      target: { anchor_from: h[onto - 1]!, anchor_to: h[onto - 1]! },
+      at: "after" as const,
+      payload: {
+        kind: "reference" as const,
+        span: {
+          anchor_from: s[from - 1]!,
+          anchor_to: s[to - 1]!,
+          file: "source.txt",
+          mode: "copy" as const,
+        },
+        mode: "copy" as const,
+      },
+    });
+    let batchResult = "";
+    let sequenced = "";
+    await withTempDir("spanref-foreign-onceread-", async (cwd) => {
+      await writeFile(join(cwd, "target.txt"), "a\nb\nc\nd\ne\n", "utf-8");
+      await writeFile(join(cwd, "source.txt"), "p\nq\nr\ns\nt\n", "utf-8");
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { path: "source.txt" }, undefined, undefined, ctx);
+      // WHY: the store is re-opened per HOME-stubbed directory, so the injected proxy must wrap
+      // the store that THIS directory's setup opened — capturing it outside would wrap a closed db.
+      const realStore = await loadHashStore();
+      const foreignAbs = (
+        await readNormFile("source.txt", cwd, { store: realStore, noPersist: true })
+      ).absolutePath;
+      const counting = countingStore(realStore);
+      const result = await execute(
+        { file: "target.txt", edits: [copyItem(1, 2, 5), copyItem(4, 5, 1)] },
+        cwd,
+        { sessionKey: TEST_SESSION_ID, store: counting.store },
+      );
+      expect(
+        isMutationSuccess(result),
+        isMutationFailure(result)
+          ? `two-item foreign batch must succeed: ${result.code} ${result.message}`
+          : "two-item foreign batch must succeed",
+      ).toBe(true);
+      if (!isMutationSuccess(result)) return;
+      batchResult = result.result;
+      // WHY: (§10) read + load + lease of the foreign file are memoized on the resolved absolute
+      // path: a batch of TWO foreign items owes exactly ONE served-table read per file, THROUGH
+      // the injected store. At HEAD the pre-pass loads the session handle WITHOUT `input.store`
+      // (pipeline.ts:491), so the injected store sees ZERO foreign reads — the count, not the
+      // bytes, is the witness.
+      expect(foreignServedReads(counting.queries, foreignAbs)).toBe(1);
+      await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe("p\nq\nr\ns\nt\n");
+    });
+    // WHY: byte-identity arm: the batched result equals running the same two items as separate
+    // sequential single-item batches — per-batch memoization must not stale-share across calls
+    // either. PIN (green at HEAD on this content — the served-read count above is the red half).
+    await withTempDir("spanref-foreign-sequential-", async (cwd) => {
+      await writeFile(join(cwd, "target.txt"), "a\nb\nc\nd\ne\n", "utf-8");
+      await writeFile(join(cwd, "source.txt"), "p\nq\nr\ns\nt\n", "utf-8");
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { path: "source.txt" }, undefined, undefined, ctx);
+      const first = await execute({ file: "target.txt", edits: [copyItem(1, 2, 5)] }, cwd, {
+        sessionKey: TEST_SESSION_ID,
+      });
+      expect(isMutationSuccess(first), "first single-item foreign batch must succeed").toBe(true);
+      if (!isMutationSuccess(first)) return;
+      const second = await execute({ file: "target.txt", edits: [copyItem(4, 5, 1)] }, cwd, {
+        sessionKey: TEST_SESSION_ID,
+      });
+      expect(isMutationSuccess(second), "second single-item foreign batch must succeed").toBe(true);
+      if (!isMutationSuccess(second)) return;
+      sequenced = second.result;
+    });
+    expect(batchResult).toBe(sequenced);
+    expect(batchResult).toBe("a\ns\nt\nb\nc\nd\ne\np\nq\n");
   });
 });

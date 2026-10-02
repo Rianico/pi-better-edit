@@ -15,6 +15,10 @@
  * drift/undo/serve invariants:
  *
  *   Admission (edit.ts: TypeBox + assertReq)
+ *     → Foreign pre-pass (`materializeForeignReferences`: when any item names
+ *       another served file, that SECOND file is read and lease-resolved here,
+ *       memoized per resolved path — a read-only load ahead of Load whose
+ *       refusal aborts the whole call before the target is even read)
  *     → Load (edit-source: readNorm + served state)
  *     → Parse & Validate (resEdit; warnings local, no servePolicy)
  *     → Span gate (batches only: baseline spans resolved through
@@ -60,7 +64,6 @@ import {
   applyEdit,
   buildNeverServedEditHint,
   resEdit,
-  MAX_HASH_LINES,
   type HEdit,
   type NEdit,
 } from "../hashline/index.js";
@@ -68,10 +71,9 @@ import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import { denseServeRows, type ResolvedRange } from "../hashline/served.js";
 import { resolveLeasedEdit } from "../hashline/lease-resolve.js";
 import type { FileSnapshotContext } from "../hashline/served-verification.js";
-import { DomainError, formatWarning } from "../domain-errors.js";
+import { DomainError, formatWarning, type DomainErrorCode } from "../domain-errors.js";
 import { notifyServedSpans, servedRowsToSpans } from "../served-spans.js";
 import { createSessionHandle } from "../served-session/session.js";
-import { readNormFile } from "../file-reader.js";
 import { scanDrift } from "../drift.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { clearServedRefusals } from "../hashline/served-guard.js";
@@ -93,7 +95,13 @@ import {
 import { DEFERRED_STORE_SYNC_WARNING } from "../constants.js";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import type { PipelineOptions, ProcessedEditFile } from "./types.js";
-import { loadEditFile, leaseSpanSource, requireSessionKey } from "./edit-source.js";
+import {
+  loadEditFile,
+  loadForeignServedView,
+  leaseSpanSource,
+  requireSessionKey,
+  type ForeignServedView,
+} from "./edit-source.js";
 import {
   assertBatchSpansDisjoint,
   spliceWorkingBufferIds,
@@ -366,16 +374,19 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
       let source: { anchor_from: string; anchor_to: string; retire: boolean } | undefined;
       switch (payload.kind) {
         case "literal":
-          // WHY: the `literal` arm owns its invariant at the one place the union is parsed
-          // WHY: into engine lines: it must carry at least one line.
-          if (payload.text.length === 0) {
-            throw new DomainError("E_BAD_PAYLOAD", {
-              message: 'A "literal" payload must carry at least one line. Nothing was written.',
-            });
-          }
           text = payload.text;
           break;
         case "reference":
+          // WHY: (keel F3) the `reference` payload carries the mode twice — `payload.mode` and
+          // WHY: `span.mode` — and only the top-level one is consumed below; a disagreement is
+          // WHY: refused, not silently resolved in favor of one arm. Admission always folds the
+          // WHY: wire `text_ref` verbatim, so this fires only on a directly-constructed payload.
+          if (payload.span.mode !== payload.mode) {
+            throw new DomainError("E_BAD_PAYLOAD", {
+              message:
+                'The "text_ref" payload is inconsistent: its "mode" disagrees with the mode carried by the span it names. Nothing was written.',
+            });
+          }
           // WHY: the copied lines are content the caller does not hold — `applyEdit` materializes
           // WHY: them from the resolved source span before any gate or splice runs, so the parse
           // WHY: seam carries the span, never a placeholder text. A foreign-source span (a
@@ -422,19 +433,52 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
   return parsed;
 }
 
-function isForeignReference(item: NormalizedEditItem, file: string): boolean {
-  return (
-    item.payload.kind === "reference" &&
-    item.payload.span.file !== undefined &&
-    item.payload.span.file !== file
-  );
+// WHY: (§9.4, review-3 P3-3) foreign-vs-same-file is a RESOLVED-PATH question, not a spelling
+// WHY: question: `./target.txt` and `target.txt` name one file, so a legal same-file `mode:"cut"`
+// WHY: must take the intra-file path and a same-file copy must keep the `text_ref` metrics.
+async function sameResolvedPath(a: string, b: string, cwd: string): Promise<boolean> {
+  const [resolvedA, resolvedB] = await Promise.all([
+    resolveTarget(toCwd(a, cwd)),
+    resolveTarget(toCwd(b, cwd)),
+  ]);
+  return resolvedA === resolvedB;
 }
+
+async function foreignRefFileOf(
+  item: NormalizedEditItem,
+  input: { cwd: string; file: string },
+): Promise<string | undefined> {
+  const payload = item.payload;
+  if (payload.kind !== "reference" || payload.span.file === undefined) return undefined;
+  return (await sameResolvedPath(payload.span.file, input.file, input.cwd))
+    ? undefined
+    : payload.span.file;
+}
+
+// WHY: (item (ii)) the three never-served codes pass through UNCHANGED regardless of how many
+// WHY: rows a producer attaches: the payload-length proxy below (§0's pinned pass-through) is
+// WHY: correct today only because no producer carries rows there — a code set is the honest rule.
+const NEVER_SERVED_FOREIGN_CODES: ReadonlySet<DomainErrorCode> = new Set([
+  "E_UNKNOWN_ANCHOR",
+  "E_FOREIGN_ANCHOR",
+  "E_STALE_ANCHOR",
+]);
+
+// WHY: (item (ii)) these codes HOLD a lease — retirement or drift must surface with the code that
+// WHY: means it, never rewritten as E_STALE_ANCHOR with its "no read is needed" remedy.
+const LEASED_FOREIGN_PASSTHROUGH_CODES: ReadonlySet<DomainErrorCode> = new Set([
+  "E_UNVERIFIED_RANGE",
+  "E_STALE_RANGE",
+  "E_TARGET_LOST",
+]);
 
 /**
  * A foreign-source rejection never carries served rows: the rows a leased-range rejection names
  * belong to the FOREIGN file's mirror, and this call must not lease anything it did not write.
- * `recordRejectionServe`'s length guard is the enforcement point — an empty `servedRows` skips
- * every snapshotIO write, so a never-served foreign anchor leaves both files byte- and row-identical.
+ * `foreignRejection`'s pass-through is the enforcement point — a never-served foreign anchor
+ * returns the inner error unchanged (and `recordRejectionServe`'s length guard skips every
+ * snapshotIO write for the empty-rows payload), so a never-served foreign anchor leaves both
+ * files byte- and row-identical.
  */
 function foreignRejection(error: unknown, refFile: string): DomainError {
   if (error instanceof DomainError) {
@@ -446,7 +490,13 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
     ) {
       return error;
     }
-    const cause = error.code === "E_TARGET_LOST" ? "retirement" : "never-served";
+    if (NEVER_SERVED_FOREIGN_CODES.has(error.code)) return error;
+    if (LEASED_FOREIGN_PASSTHROUGH_CODES.has(error.code)) return error;
+    // WHY: (§9.9) the fallback claims `cause: "never-served"` — that is only honest for failures
+    // WHY: with no lease behind them. Derive the inner typed cause when it has one, so a
+    // WHY: retirement/drift shape that reaches here can never surface a dishonest cause in the
+    // WHY: envelope-validated RangeCause union.
+    const cause = error.cause ?? error.details.cause ?? "never-served";
     return new DomainError("E_STALE_ANCHOR", {
       headline:
         `the foreign-source reference to ${refFile} does not resolve against that file's served state ` +
@@ -465,10 +515,12 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
  * file's CURRENT content through the READ-ONLY half of the lease seam and collapsed to a `literal`
  * payload BEFORE the mutate loop, so a foreign resolution failure aborts the whole call atomically
  * (nothing has been mutated yet) and every downstream gate runs on the bytes that will be written.
+ * The read+load+lease assembly is `loadForeignServedView` (edit-source.ts) — one entry, memoized
+ * per resolved path by `materializeForeignReferences`.
  *
  * SAFETY: the foreign path is read-only by tool-level construction, not by convention:
- *  - `readNormFile(..., { noPersist: true })` is the store-read-only primitive — the loader gates
- *    every snapshotIO.upsert (snapshot, lineage, leases) behind that flag;
+ *  - `loadForeignServedView` is built on `readNormFile(..., { noPersist: true })` — the loader
+ *    gates every snapshotIO.upsert (snapshot, lineage, leases) behind that flag;
  *  - `leaseSpanSource` exposes only `leaseFor`/`rebasedLineOf`/`anchorHomes` — resolution never
  *    re-stamps a lease and never writes `retired_at`;
  *  - the loop never calls `recordServeFeedback`/`record`/`retire`/`grant` for the foreign path,
@@ -478,27 +530,36 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
  */
 async function materializeForeignItem(
   item: NormalizedEditItem,
-  input: { cwd: string; store: HashStore; sessionKey: string },
+  refFile: string,
+  view: ForeignServedView,
 ): Promise<NormalizedEditItem> {
   const payload = item.payload;
-  if (payload.kind !== "reference" || payload.span.file === undefined) return item;
-  const refFile = payload.span.file;
-  const foreign = await readNormFile(refFile, input.cwd, {
-    maxLines: MAX_HASH_LINES,
-    store: input.store,
-    noPersist: true,
-  });
-  const served = await createSessionHandle(input.sessionKey, foreign.absolutePath).load();
-  const source = leaseSpanSource({
-    store: input.store,
-    sessionKey: input.sessionKey,
-    absolutePath: foreign.absolutePath,
-    content: foreign.normalized,
-  });
-  const fileLines = foreign.normalized.split("\n");
+  if (payload.kind !== "reference") return item;
+  // WHY: (keel F3) same agreement rule as the parse seam — check before anything else consumes
+  // WHY: the mode, so a disagreement can never decide between the arms implicitly.
+  if (payload.span.mode !== payload.mode) {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'The "text_ref" payload is inconsistent: its "mode" disagrees with the mode carried by the span it names. Nothing was written.',
+    });
+  }
+  // WHY: (ticket-04 item (iv)) this pre-pass collapses every foreign reference to a literal COPY,
+  // WHY: so a foreign `mode: "cut"` has no retirement target here and must never silently become
+  // WHY: a copy: admission refuses the shape today (same message at the wire gate), but engine-level
+  // WHY: callers construct payloads directly, and ticket-04b removes that admission refusal —
+  // WHY: WITHOUT this guard a 04b cut would then report success and leave the source behind.
+  // WHY: (ticket-04b DELETES this guard deliberately, together with the test that pins it.)
+  if (payload.mode !== "copy") {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        'A foreign-source reference supports mode: "copy" today; mode: "cut" requires a ' +
+        "correlated multi-file transaction and is not enabled yet.",
+    });
+  }
+  const { fileLines } = view;
   const snapshot: FileSnapshotContext = {
     fileLines,
-    fileHashes: foreign.fileHashes,
+    fileHashes: view.fileHashes,
     filePath: refFile,
   };
   // WHY: the SAME seam as every served span: leased identity first, fail-closed on a missing or
@@ -510,25 +571,67 @@ async function materializeForeignItem(
   };
   let resolution;
   try {
-    resolution = resolveLeasedEdit({ edit: spanEdit, snapshot, served, source });
+    resolution = resolveLeasedEdit({
+      edit: spanEdit,
+      snapshot,
+      served: view.served,
+      source: view.source,
+    });
   } catch (error) {
     throw foreignRejection(error, refFile);
   }
   const l1 = resolution.resolved.hash_bounds[0].line;
   const l2 = resolution.resolved.hash_bounds[1].line;
-  return { ...item, payload: { kind: "literal", text: fileLines.slice(l1 - 1, l2).join("\n") } };
+  return {
+    ...item,
+    payload: { kind: "literal", text: collapseSpanToText(fileLines.slice(l1 - 1, l2)) },
+  };
+}
+
+// WHY: (ticket-04 item (i)) `parseText` maps "" → [] and N newlines → N blank lines
+// WHY: (`src/hashline/parse.ts:76-77`) — the INVERSE of `join("\n")` — so joining an all-blank
+// WHY: span loses exactly one line (two blanks → one) and a single blank collapses to "" (zero
+// WHY: lines). Emitting the wire's own all-blank convention reuses the already-pinned
+// WHY: serialization instead of inventing a third encoding; mixed spans join exactly, as before.
+function collapseSpanToText(span: string[]): string {
+  if (span.length > 0 && span.every((line) => line.length === 0)) {
+    return "\n".repeat(span.length);
+  }
+  return span.join("\n");
 }
 
 async function materializeForeignReferences(
   items: NormalizedEditItem[],
   input: { cwd: string; file: string; store: HashStore; sessionKey: string },
 ): Promise<NormalizedEditItem[]> {
-  if (!items.some((item) => isForeignReference(item, input.file))) return items;
+  const refFiles = await Promise.all(items.map((item) => foreignRefFileOf(item, input)));
+  if (!refFiles.some((refFile) => refFile !== undefined)) return items;
+  // WHY: (item (v), §10) one read+load+lease per RESOLVED absolute path per batch: without the
+  // WHY: memo, each item performs its own fresh disk read and store SELECT, so a foreign file
+  // WHY: changing on disk BETWEEN two items materializes TWO revisions into one call with no
+  // WHY: diagnostic — correctness, not performance. The map is batch-scoped (this call only); a
+  // WHY: global cache would serve stale served state across calls.
+  const views = new Map<string, Promise<ForeignServedView>>();
   const out: NormalizedEditItem[] = [];
-  for (const item of items) {
-    out.push(
-      isForeignReference(item, input.file) ? await materializeForeignItem(item, input) : item,
-    );
+  for (let index = 0; index < items.length; index++) {
+    const item = items[index]!;
+    const refFile = refFiles[index];
+    if (refFile === undefined) {
+      out.push(item);
+      continue;
+    }
+    const key = await resolveTarget(toCwd(refFile, input.cwd));
+    let view = views.get(key);
+    if (view === undefined) {
+      view = loadForeignServedView({
+        path: refFile,
+        cwd: input.cwd,
+        store: input.store,
+        sessionKey: input.sessionKey,
+      });
+      views.set(key, view);
+    }
+    out.push(await materializeForeignItem(item, refFile, await view));
   }
   return out;
 }
