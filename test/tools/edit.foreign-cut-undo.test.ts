@@ -188,7 +188,7 @@ describe("correlated undo of a cut transaction (ticket-04b §4)", () => {
   // REMEDIATION-2 R2, revert side: the same write-AHEAD rule observed at the moment of the
   // FIRST revert write — the intent row is present while every member still sits at the cut's
   // post bytes. Mutation refuted: moving `saveCutIntent` after the first revert write (the
-  // revert-arm mirror of N8) observes ZERO intents here.
+  // N8r: the revert-arm mirror of the M2a/N8 forward arm observes ZERO intents here.
   it("the revert intent is durable BEFORE the first revert write", async () => {
     await withTempDir("cut-undo-intent-order-", async (cwd) => {
       const { ctx, undo } = await cutThrough(cwd);

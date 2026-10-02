@@ -8,7 +8,7 @@ accepted — required by TICKET-04b (`edit-op` lane). Governs the foreign-source
 introduced at the `text_ref` wire (ticket-04 admitted the shape; this ADR owns its durability).
 Does not modify ADR-0007: `EditRequest.file` stays singular and multiple top-level targets remain
 dropped by ADR-0007 — the second file of a cut is a side effect of one item, never a second
-batch target.
+batch target. Ordering note: `docs/adr/0027` did not exist while `0028` did; ticket-06 lands 0027 here, so the gap cannot later read as a lost file.
 
 ## Context
 
@@ -178,3 +178,34 @@ itself is not on disk in this repository, so this section — not the note — i
   `edit.foreign-cut.test.ts`, `edit.wire-contract.test.ts` and
   `mutation-engine.span-ref.test.ts`, and the guard-arm in
   `test/arch/terminology-foreign-source.test.ts` keeping the deletion falsifiable.
+- **Full-file retirement refusal (a LIMITATION, not a defect).** An apply whose
+  assembled result is empty while the original file is not is refused pre-write
+  with `[E_EMPTY_RANGE]` ("Cannot empty a non-empty file via edit. Use `write`
+  if you need to clear the file." -- audience MODEL): the `assertNotEmpty`
+  check in `applyEdit` (`src/hashline/apply.ts:100`, called at `:606` after
+  assembly, before any write). Reason: emptying a file is clearing, and
+  clearing belongs to `write`; the edit tool must not gain a second,
+  anchor-less deletion path. Refusal witness:
+  `test/tools/replace-tool.test.ts:165-171` (`text: ""` over the whole file).
+  A documented limitation is a contract; a test alone is a fact.
+- **Mutation recipes (reproducible by hand).** PRECONDITION: run a
+  known-reddening POSITIVE CONTROL first -- a mutation run whose GREEN is
+  indistinguishable from "no test ran" is not a mutation run (the `git
+  clean -fd` finding: it deletes the untracked `node_modules` symlink and
+  every mutation reads GREEN). A recipe that cannot fail is a recipe for
+  nothing.
+  | mutation | what it moves | the assertion that must redden |
+  | M10 | diverge only `prompts/edit-guidelines.md` | the raw-file read in `prompts.test.ts` (one operand read from the artifact) |
+  | M2a / N8 (forward) | move the intent write to after the first rename | the ORDER assertion on `onBeforeFirstCutWrite` (a count reddening instead means the wrong witness) |
+  | N8r (revert) | move the intent write to after the first revert write | the ORDER assertion on `onBeforeUndoWrites` |
+  | N7 | delete the `[MODEL]` envelope wrap and re-throw | the `EISDIR`-member witness through the undo tool |
+  | N6 | strip the BOM at the oracle site | the in-tree BOM+legal-U+FFFD intersection witness |
+  No in-suite battery exists because parallel vitest workers importing the
+  same `src` files would race -- the absence is a documented decision, not an
+  oversight. A `scripts/` runner is OPTIONAL and NOT a deliverable.
+- **Frozen strings, pinned by literal.** `"in-place"`, `"before"`,
+  `"after"`, `"anchor_from"`, `"anchor_to"`, the `E_*`/`W_*` codes (21/7
+  at `9c9da08`; anchored commands in ADR-0027). Line numbers and hashes
+  drift; strings do not. (Relays corrected: the `f2d88e…` hash was true only
+  at `e74875f` -- cite any hash with commit + command; `resolve.ts:331` is
+  not a wire string.)
