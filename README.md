@@ -55,7 +55,7 @@ File editing is the #1 point of failure for autonomous agents. Traditional tools
 ## Core Pillars
 
 ### 1. 🪙 Token Economics (40–60% Context Savings)
-- **$O(R)$ Edit Payloads**: The model emits only `{ "anchor_from": "a1b", "anchor_to": "c3d", "replace_with": "..." }`, never regurgitating existing code.
+- **$O(R)$ Edit Payloads**: The model emits only `{ "anchor_from": "a1b", "anchor_to": "c3d", "text": "..." }`, never regurgitating existing code.
 - **Self-Serving Diffs**: Every applied edit returns fresh anchors in the post-edit diff — zero re-read roundtrips to chain edits.
 - **Disjoint Multi-Window Reads**: Query up to 16 disjoint slices (`windows: [{offset, limit}, ...]`) in one turn instead of dumping 2,000 lines into context.
 - **Zero-Token Auto-Rebase**: Non-conflicting shifts resolve locally via $O(m \log m)$ Patience LIS alignment — 0 tokens, 0 retries.
@@ -118,7 +118,7 @@ kQm│}
     {
       "anchor_from": "szJ",
       "anchor_to": "szJ",
-      "replace_with": "  console.log('hi');\n"
+      "text": "  console.log('hi');\n"
     }
   ]
 }
@@ -140,8 +140,8 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 {
   "file": "src/main.ts",
   "edits": [
-    { "anchor_from": "a1b", "anchor_to": "a1b", "replace_with": "// Header comment\n" },
-    { "anchor_from": "c3d", "anchor_to": "c3d", "replace_with": "  return true;\n" }
+    { "anchor_from": "a1b", "anchor_to": "a1b", "text": "// Header comment\n" },
+    { "anchor_from": "c3d", "anchor_to": "c3d", "text": "  return true;\n" }
   ]
 }
 ```
@@ -159,7 +159,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 │  - file_snapshots: CAS snapshots (snapshot_id, path, snapshot_hash, line_count)  │
 │  - line_lineage: Coordinate authority (snapshot_id, line_number) -> (line_id)    │
 │  - line_id_counters: Monotonic integer block allocator per path                  │
-│  - served_leases: Session-keyed immutable leases (session_id, path, anchor)      │
+│  - served_leases: Session-keyed immutable leases (session_id, file_path, anchor) │
 │  - file_undo: Snapshot-pinned undo history surviving restarts                    │
 └────────────────────────────────────────┬─────────────────────────────────────────┘
                                          │
@@ -223,7 +223,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 | --- | --- | --- |
 | `read` | `file`, `offset` (1-based), `limit`, `windows` (optional) | Returns file content formatted as `HASH│content`. Lines &gt;200KB are replaced with a marker hint. `windows: [{offset, limit}, …]` reads up to 16 disjoint ranges in one turn: each renders under `=== Lines A-B of N ===` and every shown line is leased, so anchors from all of them work in one `edit`. |
 | `read_skill` | `file` | Reads file content as plain text without hash prefixes or lease recording (ideal for prompts, docs, and skills). |
-| `edit` | `file`, `edits`, `mode` (optional) | Applies single or batched edits atomically. Each edit targets `anchor_from` and `anchor_to` inclusive. `mode: "literal"` declares verbatim text. |
+| `edit` | `file`, `edits`, `mode` (optional) | Applies single or batched edits atomically. Each item bounds an inclusive `anchor_from`/`anchor_to` range, places its payload with optional `at`, and carries exactly one payload — `text` or `text_ref`. `mode: "literal"` declares verbatim text. |
 | `undo_last_edit` | `file` | Restores the previous file state, BOM, line endings, and original anchors. Persists across restarts. |
 
 ### Payload Contract
@@ -235,15 +235,43 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
     {
       "anchor_from": "a1b",
       "anchor_to": "c3d",
-      "replace_with": "const status = 'ready';\n"
+      "text": "const status = 'ready';\n"
     }
   ],
   "mode": "general"
 }
 ```
 
+An edit item is **flat, with no discriminator field**: it bounds its range with the inclusive
+anchor pair, places its payload with the optional `at`, and carries **exactly one payload** —
+`text` or `text_ref`. Both or neither is refused with the offending keys named. No operation tag
+exists because the payload's *presence* is the intent, and placement is an independent axis.
+
+| Item key | Values | Meaning |
+| --- | --- | --- |
+| `anchor_from` / `anchor_to` | bare 3-char hash anchors | Inclusive target range — both boundary lines are touched. |
+| `at` (optional) | `"in-place"` \| `"before"` \| `"after"` | Placement relative to the resolved range. **Omitted means `"in-place"`.** `"before"`/`"after"` insert at the range boundary and require a single-line resolved target; the underscore spelling `"in_place"` is refused — the canonical spelling is `"in-place"`. |
+| `text` | string | By-value payload — bare file content (`\n` joins lines). **`""` deletes the range when placed in-place** (no `at`). With `"before"`/`"after"` an empty `text` does NOT delete: it writes nothing and the call narrates `[W_NOOP_INSERT]` as a no-op. |
+| `text_ref` | `{ anchor_from, anchor_to, file?, mode }` | By-reference payload — the bytes of a `served span` bounded by two anchors of the file it names. `mode` is **required** (never inferred): `"copy"` re-inserts the span and keeps the source; `"cut"` additionally retires it. `file` may name another served file — a **foreign-source copy** (never called "cross-file" here; that word named a dropped multi-file batching idea). Both modes apply to a foreign file, and a foreign `cut` commits insert and retirement as one correlated transaction. |
+
+Example items — every shipped shape, one each:
+
+```json
+{ "anchor_from": "a1b", "anchor_to": "c3d", "text": "const status = 'ready';\n" }
+{ "anchor_from": "a1b", "anchor_to": "c3d", "text": "" }
+{ "anchor_from": "kQm", "anchor_to": "kQm", "at": "after", "text": "// Footer comment\n" }
+{ "anchor_from": "p9r", "anchor_to": "p9r", "at": "before", "text": "  return true;\n" }
+{ "anchor_from": "m2z", "anchor_to": "m2z", "text_ref": { "anchor_from": "d2x", "anchor_to": "d2x", "mode": "copy" } }
+{ "anchor_from": "m2z", "anchor_to": "m2z", "text_ref": { "anchor_from": "d2x", "anchor_to": "e5v", "mode": "cut" } }
+{ "anchor_from": "m2z", "anchor_to": "m2z", "text_ref": { "anchor_from": "g7t", "anchor_to": "h3s", "file": "src/helper.ts", "mode": "cut" } }
+```
+
+(in order: in-place replace; in-place delete; after-insert; before-insert; by-reference copy;
+by-reference cut in this file; foreign-source cut.) The legacy fused verb for retiring a
+referenced span is retired — the current word is `cut`.
+
 - `file`: Path to the target text file (must be a file, never a directory).
-- `edits`: Array of 1 to 32 edit items. An empty `replace_with` string deletes the targeted range.
+- `edits`: Array of 1 to 32 edit items; `text` and `text_ref` are mutually exclusive per item.
 - `mode`: `"general"` (default) refuses text containing served anchor prefixes; `"literal"` allows verbatim insertion of lines beginning with `HASH│`.
 
 ### Interoperability with pi-lens
