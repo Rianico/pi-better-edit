@@ -381,12 +381,21 @@ describe("anchor term baseline stays recorded and shrink-only", () => {
 /**
  * ticket-07 — the retired wire spellings get a witness.
  * WHY: 05's doc rewrite had no witness in the suite: README.md/CONTEXT.md could
- * reintroduce `replace_with` (and friends) with every test green — demonstrated
- * by planting the spelling and watching the arch suite stay green. This block is
- * the ban half (absence) plus the presence half (E25): the five corrected facts
- * asserted as text, so a rewrite that DELETES the corrected sentences fails too.
- * Needles are built dynamically so this guard file never contains the banned
- * strings itself. Shape copied from terminology-foreign-source.test.ts.
+ * reintroduce a retired spelling (this header names `replace_with` in prose as
+ * the example) with every test green — demonstrated by planting the spelling
+ * and watching the arch suite stay green. This block is the ban half (absence)
+ * plus the presence half (E25): the five corrected facts asserted as text, so a
+ * rewrite that DELETES the corrected sentences fails too. The ban's CODE below
+ * builds every needle dynamically and contains none of the banned strings as
+ * literals; only this header names one in prose (verified: grepping this file
+ * for the three spellings finds this header alone).
+ * Judgement recorded (R3): camelCase, hyphenated and upper-case variants are
+ * DIFFERENT tokens and out of this ban's contract — decided, not missed. The
+ * `op` class IS closed to brace-less shapes (own-line, `[`-led, backticked
+ * cells) because those are plausible in a doc.
+ * Presence is pinned VERBATIM (R4): each added fragment raises the cost of a
+ * legitimate doc rewrite — that cost is disclosed, not hidden.
+ * Shape copied from terminology-foreign-source.test.ts.
  */
 const RETIRED_WIRE_NEEDLES = [
   ["replace", "with"].join("_"),
@@ -396,15 +405,22 @@ const RETIRED_WIRE_NEEDLES = [
 
 // WHY: key-shaped, never bare. Prose like "no `op` field"
 // (src/payload-contract.ts) must stay green; only a payload key trips this.
-// The discriminator arm below pins both sides.
-const OP_KEY_NEEDLE = /[{,]\s*("op"|'op'|op)\s*:/;
+// The class is closed to brace-less shapes plausible in a doc (own-line,
+// `[`-led, backticked cell); the quiet arms below pin each tightening.
+const OP_KEY_NEEDLE = /[{,[\n`]\s*("op"|'op'|op)\s*:/;
 
 // WHY (E26): each carve-out states its reason as a fact about the artifact.
 // (a1) src/edit.ts documents the removal: `replaceWithSchema` REMOVED, no
 // fold for the retired spelling. (a2) src/hashline/apply.ts sweep note names
-// the retired spellings it swept. No carve-out for `op` prose: the key-shaped
-// needle does not match it (pinned by the quiet arm). ADR/CHANGELOG history
-// is out of the ban scope, so no baseline entries exist here.
+// the retired spellings it swept. The exemption is LINE-scoped: only lines
+// inside documenting WHY:/SAFETY: comments are skipped (pinned by the arm
+// below) — a live spelling on any other line still reddens. No carve-out for
+// `op` prose: the key-shaped needle does not match it (pinned by quiet arms).
+// ADR/CHANGELOG history is out of the ban scope, so no baseline entries exist
+// here. test/ is excluded with reason (not shrink-only, so no re-assertion is
+// owed): test files USE the retired spellings as data — planted payloads,
+// refusal-clause strings, this guard's own prose — they neither teach nor ship
+// them.
 const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts", "src/hashline/apply.ts"]);
 
 function retiredWireScope(): string[] {
@@ -413,58 +429,89 @@ function retiredWireScope(): string[] {
   );
 }
 
+function needsRetiredWire(text: string): boolean {
+  return RETIRED_WIRE_NEEDLES.some((needle) => text.includes(needle)) || OP_KEY_NEEDLE.test(text);
+}
+
 function retiredWireViolations(): string[] {
   const out: string[] = [];
   for (const file of retiredWireScope()) {
-    const text = readFileSync(file, "utf-8");
-    if (RETIRED_WIRE_NEEDLES.some((needle) => text.includes(needle)) || OP_KEY_NEEDLE.test(text)) {
-      out.push(file);
-    }
+    out.push(...(needsRetiredWire(readFileSync(file, "utf-8")) ? [file] : []));
   }
   return out;
 }
 
 describe("retired wire spellings stay banned and corrected facts stay present (ticket-07)", () => {
   it("names no retired wire spelling in README, CONTEXT, prompts or src (carve-outs excluded)", () => {
-    // WHY: a silently empty scope would pass by construction (E21) — the
-    // scope itself is asserted non-empty before the ban is checked.
-    expect(retiredWireScope().length).toBeGreaterThan(0);
+    // WHY: a silently empty scope would pass by construction (E21) — and a
+    // merely non-empty scope can be silently disarmed (R1). Required members
+    // are pinned: shrinking to src/ alone must redden; a legitimate rename is
+    // fixed in one line.
+    const scope = retiredWireScope();
+    expect(scope.length).toBeGreaterThan(0);
+    for (const required of ["README.md", "CONTEXT.md"]) expect(scope).toContain(required);
+    expect(scope.some((f) => f.startsWith("prompts/") && f.endsWith(".md"))).toBe(true);
+    expect(scope.some((f) => f.startsWith("src/"))).toBe(true);
+    expect(scope).not.toContain("src/edit.ts"); // the carve-out is still applied
     expect(retiredWireViolations()).toEqual([]);
   });
 
   it("keeps the carve-outs needed: each still documents the removal it excuses", () => {
     // WHY: shrink-only honesty — the moment a file stops documenting the
-    // removal, its carve-out is a hole and must be removed.
-    expect(readFileSync("src/edit.ts", "utf-8")).toContain("REMOVED");
-    expect(readFileSync("src/hashline/apply.ts", "utf-8")).toContain("retired");
+    // removal, its carve-out is a hole and must be removed. Specific tokens,
+    // not bare words: generic "retired" also names parameters elsewhere in
+    // apply.ts, so the arm pins the sweep note's own token plus the spelling.
+    const edit = readFileSync("src/edit.ts", "utf-8");
+    expect(edit).toContain("REMOVED");
+    expect(edit).toContain(["replace", "with"].join("_"));
+    const apply = readFileSync("src/hashline/apply.ts", "utf-8");
+    expect(apply).toMatch(/sweep \(a\)/);
+    expect(apply).toContain(["copy", "from"].join("_"));
   });
 
-  it("planted-term self-test: needles see planted occurrences and stay quiet otherwise", () => {
-    // WHY: a text guard that cannot be seen failing proves nothing. Planted
-    // spellings are checked against the needles, and the canonical wire
-    // sample plus the `op` prose stay quiet — the discriminator that keeps
-    // the key-shaped needle honest.
-    const planted = `{ ${RETIRED_WIRE_NEEDLES[0]}: "x" }`;
-    expect(RETIRED_WIRE_NEEDLES.some((needle) => planted.includes(needle))).toBe(true);
-    expect(
-      RETIRED_WIRE_NEEDLES.some((needle) => '{ "anchor_from": "a", "text": "T" }'.includes(needle)),
-    ).toBe(false);
-    expect(OP_KEY_NEEDLE.test('{ anchor_from: "a", op: "replace" }')).toBe(true);
-    expect(OP_KEY_NEEDLE.test('{"op": "replace"}')).toBe(true);
-    expect(OP_KEY_NEEDLE.test("there is no `op` field and no verbs")).toBe(false);
-    expect(OP_KEY_NEEDLE.test("a legacy key, an `op` field")).toBe(false);
+  it("carved files carry the spellings only inside documenting WHY:/SAFETY: lines", () => {
+    // WHY (R2b): the exemption is line-scoped. A live spelling on any other
+    // line — code, plain comment, prose — reddens here.
+    for (const file of RETIRED_WIRE_CARVE_OUT) {
+      const lines = readFileSync(file, "utf-8").split("\n");
+      const live = lines.filter((line) => needsRetiredWire(line) && !/WHY:|SAFETY:/.test(line));
+      expect(live).toEqual([]);
+    }
+  });
+
+  it("planted-term self-test: the scanner sees planted bytes and stays quiet otherwise", () => {
+    // WHY: a text guard that cannot be seen failing proves nothing. These arms
+    // run the REAL per-file predicate over fixtures of the scanned bytes —
+    // neutralising the detector reddens this test, not just a human's manual
+    // run. One fixture per `op`-key shape the detector claims to catch, and
+    // one quiet arm per newly-tightened shape.
+    const clean = readFileSync("README.md", "utf-8");
+    expect(needsRetiredWire(clean)).toBe(false);
+    expect(needsRetiredWire(clean + "\n" + ["replace", "with"].join("_"))).toBe(true);
+    expect(needsRetiredWire('{ "anchor_from": "a", "text": "T" }')).toBe(false);
+    expect(needsRetiredWire('{ anchor_from: "a", op: "replace" }')).toBe(true);
+    expect(needsRetiredWire('{"op": "replace"}')).toBe(true);
+    expect(needsRetiredWire('\n"op": "replace"')).toBe(true);
+    expect(needsRetiredWire('[ "op": "replace" ]')).toBe(true);
+    expect(needsRetiredWire('cell `op: "replace"` here')).toBe(true);
+    expect(needsRetiredWire("there is no `op` field and no verbs")).toBe(false);
+    expect(needsRetiredWire("a legacy key, an `op` field")).toBe(false);
+    expect(needsRetiredWire('{"stop": "halt"}')).toBe(false);
+    expect(needsRetiredWire("the crop: wheat")).toBe(false);
   });
 
   it("presence: the delete spelling is taught as text", () => {
     const readme = readFileSync("README.md", "utf-8");
     expect(readme).toContain('`""` deletes the range when placed in-place');
     expect(readme).toContain("[W_NOOP_INSERT]` as a no-op");
+    expect(readme).toContain("does NOT delete");
   });
 
   it("presence: at defaults to in-place and the underscore spelling is refused", () => {
     const readme = readFileSync("README.md", "utf-8");
     expect(readme).toContain('Omitted means `"in-place"`');
     expect(readme).toContain('"in_place"` is refused');
+    expect(readme).toContain('the canonical spelling is `"in-place"`');
   });
 
   it("presence: exactly one payload per item", () => {
@@ -478,6 +525,8 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     const readme = readFileSync("README.md", "utf-8");
     expect(readme).toContain("`mode` is **required** (never inferred)");
     expect(readme).toContain("`file` may name another served file");
+    expect(readme).toContain('`"copy"` re-inserts the span and keeps the source');
+    expect(readme).toContain('`"cut"` additionally retires it');
   });
 
   it("presence: foreign-source copy vocabulary, not cross-file", () => {
