@@ -1,4 +1,4 @@
-import { open as fsOpen, stat as fsStat } from "node:fs/promises";
+import { open as fsOpen, readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
 import { fileTypeFromBuffer } from "file-type";
 import { MAX_BYTES, SNIFF_BYTES } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
@@ -123,11 +123,16 @@ export async function loadFileKindAndText(
     const mimeFile = mimeToLFile(detectedMimeType);
     if (mimeFile) return mimeFile;
     const decoder = new TextDecoder("utf-8", { fatal: false, ignoreBOM: true });
-    let hadUtf8DecodeErrors = false;
+    let utf8Suspect = false;
     let newlineCount = 0;
     const parts: string[] = [];
+    // WHY: (04b-rem P2-3) an invalid UTF-8 sequence ALWAYS makes a non-fatal decoder emit U+FFFD,
+    // WHY: so the absence of U+FFFD proves the round-trip is lossless; its presence proves
+    // WHY: nothing — the file may legitimately contain the replacement character. Suspicion
+    // WHY: therefore decides what to CHECK, never what to REPORT: the report is the byte
+    // WHY: comparison below, which tells a corrupt file and a legal U+FFFD character apart.
     function noteUtf8(decoded: string): void {
-      if (!hadUtf8DecodeErrors && decoded.includes("\uFFFD")) hadUtf8DecodeErrors = true;
+      if (!utf8Suspect && decoded.includes("\uFFFD")) utf8Suspect = true;
     }
     function trackNewlines(decoded: string): void {
       if (options?.maxLines === undefined) return;
@@ -162,9 +167,19 @@ export async function loadFileKindAndText(
     }
     parts.push(decodeChunk(new Uint8Array(0), false));
 
+    const text = parts.join("");
+    // WHY: the round-trip ORACLE: the decoded text is line-addressable without loss exactly when
+    // WHY: re-encoding it equals the file's bytes. Runs only on suspicion; re-reading the file is
+    // WHY: cheaper than keeping a parallel raw copy for every clean file.
+    let hadUtf8DecodeErrors = false;
+    if (utf8Suspect) {
+      const rawBytes = await fsReadFile(filePath);
+      hadUtf8DecodeErrors = !Buffer.from(text, "utf-8").equals(rawBytes);
+    }
+
     return {
       kind: "text",
-      text: parts.join(""),
+      text,
       stats: pathStat,
       ...(hadUtf8DecodeErrors ? { hadUtf8DecodeErrors: true as const } : {}),
     };

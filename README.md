@@ -284,8 +284,10 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 | `[E_NOT_FOUND]` | Target file does not exist on disk. | Verify path using `ls` and retry with corrected path. |
 | `[E_ACCESS]` | Target file is unreadable, unwritable, or in a symlink loop. | Correct permissions or resolve symlink loop. |
 | `[E_UNSUPPORTED_FILE]` | Target path is a directory, binary file, image, or UTF-16/32 text. | Hashline editing only targets UTF-8 text files. |
+| `[E_LOSSY_TEXT]` | File bytes do not round-trip a UTF-8 decode (invalid sequences became U+FFFD on read); edit refused before any write. | Re-encode the file as valid UTF-8 with a byte-level tool, then retry. |
 | `[E_UNDO_STALE]` | Target file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read file. |
 | `[E_UNDO_UNAVAILABLE]` | Undo state could not be persisted to SQLite store. | Edit was refused and file unchanged; retry edit. |
+| `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure; do not re-undo — the next run repairs the interrupted revert. |
 | `[E_LARGE_FILE]` | File exceeds the 238,328-line ceiling of 3-char base62 space. | Use `write` or non-hashline tools for very large files. |
 | `[E_UNKNOWN]` | Unexpected filesystem or invariant failure. | Check error message details. |
 

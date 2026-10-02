@@ -47,6 +47,8 @@ export type DomainErrorCode =
   | "E_NOT_FOUND"
   | "E_UNDO_STALE"
   | "E_UNDO_UNAVAILABLE"
+  | "E_LOSSY_TEXT"
+  | "E_UNDO_REVERT_FAILED"
   | "E_UNKNOWN"
   | "E_LARGE_FILE";
 
@@ -196,6 +198,12 @@ export interface ErrorPayloadMap {
     reason: "deleted" | "modified";
   };
   E_UNDO_UNAVAILABLE: {
+    path: string;
+  };
+  E_LOSSY_TEXT: {
+    path: string;
+  };
+  E_UNDO_REVERT_FAILED: {
     path: string;
   };
   E_UNKNOWN: {
@@ -517,6 +525,32 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
       `Retry the edit, or use write if the store cannot be recovered.`,
     // WHY remedy: the hash store persist failed with the edit unapplied and the file unchanged, so retrying the edit is safe. See ADR-0021.
     remedy: "Retry the edit.",
+  },
+  E_LOSSY_TEXT: {
+    audience: "MODEL",
+    // WHY: (04b-rem P2-3) the admission round-trip guard: anchors are derived from the DECODED
+    // WHY: text, so bytes that do not re-encode identically cannot be line-addressed without
+    // WHY: destruction — the refusal happens before any mutation, and the cause is OBSERVED (the
+    // WHY: decode/encode comparison), never assumed.
+    format: ({ path }) =>
+      `Cannot edit ${path}: its bytes do not round-trip a UTF-8 decode — invalid sequences were ` +
+      `replaced by U+FFFD on read, so a line-addressed rewrite would destroy the original bytes. ` +
+      `Nothing was written.`,
+    // WHY remedy: the failed round-trip pins exactly one safe action — re-encode with a byte-level tool before retrying. See ADR-0021 d4.
+    remedy: "Re-encode the file as valid UTF-8 with a byte-level tool, then retry.",
+  },
+  E_UNDO_REVERT_FAILED: {
+    audience: "MODEL",
+    // WHY: (04b-rem P2-1) a correlated revert defeated mid-window: some members are already at
+    // WHY: their pre bytes, others still at post. Nothing is cleared and nothing is re-attempted
+    // WHY: blindly — the durable revert-intent record describes the state and repair completes it.
+    format: ({ path }) =>
+      `Undo of the cut transaction was interrupted: ${path} could not be restored while other ` +
+      `files of the transaction already were. No undo history was cleared; the files stay in the ` +
+      `half-reverted state the durable repair record describes. Do not re-undo — the next run ` +
+      `repairs the interrupted revert.`,
+    // WHY remedy: a re-undo would fight the pending repair — let the repair complete after the file access failure is fixed. See ADR-0021 d4.
+    remedy: "Fix the file access failure, then let the next run repair the interrupted revert.",
   },
   E_UNKNOWN: {
     audience: "MODEL",

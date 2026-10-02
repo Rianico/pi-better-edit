@@ -59,7 +59,6 @@
  */
 
 import { constants } from "node:fs";
-import { readFile } from "node:fs/promises";
 import { randomUUID } from "node:crypto";
 import { genDiff, restoreEndings } from "../edit-diff.js";
 import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
@@ -87,7 +86,7 @@ import { saveUndo } from "../edit-undo.js";
 import { saveCutIntent, dropCutIntent } from "../undo-store.js";
 import { repairCutIntents } from "../cut-repair.js";
 import { withSortedMutationQueues } from "../mutation-queue.js";
-import { resolveTarget, writeAtomic } from "../fs-write.js";
+import { resolveTarget, writeAtomic, readBytes } from "../fs-write.js";
 import { toCwd } from "../paths.js";
 import type {
   DesiredContent,
@@ -777,6 +776,15 @@ async function runMutations(
     noPersist: options?.noPersist,
   });
 
+  // WHY: (04b-rem P2-3) the admission round-trip guard: anchors were derived from the DECODED
+  // WHY: text, so bytes that do not re-encode identically cannot be restored by any line-
+  // WHY: addressed write — refuse before anything mutates, making every later byte-identity
+  // WHY: claim in this module true by construction. The read path keeps disclosing such files;
+  // WHY: only the edit path refuses.
+  if (hadUtf8DecodeErrors) {
+    throw new DomainError("E_LOSSY_TEXT", { path });
+  }
+
   if (realEdits.length > 1) {
     // WHY: the baseline identity seam is built from the pre-batch `S_curr`, so a span the gate
     // WHY: compares is the `s'_k` the apply path would rewrite — one source for both (spec §3.2.1).
@@ -1030,10 +1038,6 @@ async function runMutations(
   }
   const resultLineIds = isPreview ? [] : currentIds;
 
-  if (hadUtf8DecodeErrors) {
-    warnings.push("Non-UTF-8 bytes were shown as U+FFFD; this edit rewrote the file as UTF-8.");
-  }
-
   let driftNotice: string | undefined;
   if (!isPreview && unionStartLine !== Infinity) {
     const resultLines = splitLines(result);
@@ -1068,7 +1072,6 @@ async function runMutations(
     result,
     bom,
     originalEnding,
-    hadUtf8DecodeErrors,
     warnings,
     originalHashes,
     resultHashes,
@@ -1257,6 +1260,16 @@ async function runCutTransaction(
 
   // WHY: STEP 1 durable pre-images: undo rows for EVERY file (pre bytes + post bytes + the
   // WHY: shared transaction id), then the intent record — all BEFORE the first rename.
+  // WHY: (04b-rem P2-2/P2-3) the RAW pre-images are captured FIRST, so every consumer below — the
+  // WHY: rows' `raw_pre` and the rollback — reads the SAME bytes that were on disk before the
+  // WHY: first rename. Byte identity is not promised by this read, it is PROVEN upstream: the
+  // WHY: admission round-trip guard refused any file whose decoded text re-encodes differently,
+  // WHY: so decode/encode here is lossless by construction, stray line-break spellings included
+  // WHY: (ticket-04b §11: after an abort BOTH files are byte-identical to their pre bytes).
+  const rawPreBytes = new Map<string, Buffer>();
+  for (const plan of plans) {
+    rawPreBytes.set(plan.absolutePath, await readBytes(plan.absolutePath));
+  }
   const saved: { restore: () => Promise<void> }[] = [];
   for (const plan of plans) {
     const undo = await saveUndo(plan.absolutePath, {
@@ -1266,6 +1279,7 @@ async function runCutTransaction(
       hashes: plan.originalHashes,
       resultContent: plan.result,
       transactionId: txnId,
+      rawPre: rawPreBytes.get(plan.absolutePath)!.toString("utf-8"),
     });
     if (!undo.persisted) {
       for (const prior of saved) await prior.restore();
@@ -1280,17 +1294,11 @@ async function runCutTransaction(
     throw error;
   }
 
-  // WHY: STEP 2 ordered commit: the target insert first, then each source retirement.
-  // WHY: raw pre-images captured under the queue immediately BEFORE the first rename, so an
-  // WHY: abort inside the window restores each file EXACTLY as it was found — byte-for-byte,
-  // WHY: stray line-break spellings included. The commit path serializes canonically (one
+  // WHY: STEP 2 ordered commit: the target insert first, then each source retirement, using the
+  // WHY: raw pre-images captured in STEP 1 above. The commit path serializes canonically (one
   // WHY: convention, no third path); a ROLLBACK is not a commit and must not smuggle in the
-  // WHY: canonical fold as if it were the restore (ticket-04b §11: after an abort BOTH files
-  // WHY: are byte-identical to the pre-transaction contents).
-  const preBytes = new Map<string, string>();
-  for (const plan of plans) {
-    preBytes.set(plan.absolutePath, await readFile(plan.absolutePath, "utf-8"));
-  }
+  // WHY: canonical fold as if it were the restore — it writes the captured BUFFERS (ticket-04b
+  // WHY: §11: after an abort BOTH files are byte-identical to the pre-transaction contents).
   const written: ProcessedEditFile[] = [];
   try {
     abortIf(options?.signal);
@@ -1316,7 +1324,7 @@ async function runCutTransaction(
     let rolledBack = true;
     for (const plan of written) {
       try {
-        await writeAtomic(plan.absolutePath, preBytes.get(plan.absolutePath)!);
+        await writeAtomic(plan.absolutePath, rawPreBytes.get(plan.absolutePath)!);
       } catch (rollbackError) {
         rolledBack = false;
         console.error("Failed to roll back a cut-transaction file:", rollbackError);

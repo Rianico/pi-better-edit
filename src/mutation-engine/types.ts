@@ -52,7 +52,6 @@ export interface ProcessedEditFile {
   result: string;
   bom: string;
   originalEnding: LineEnding;
-  hadUtf8DecodeErrors: boolean;
   warnings: string[];
   originalHashes: string[];
   resultHashes: string[];

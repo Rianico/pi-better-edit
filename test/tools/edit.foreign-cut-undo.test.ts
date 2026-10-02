@@ -1,8 +1,20 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { readFile, writeFile, rm } from "node:fs/promises";
+import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { lineHashes, initHasher } from "../../src/hashline/index.js";
-import { withTempDir, setupIntegrationTest, useTestHome, getText } from "../support/fixtures.js";
+import { execute, isMutationSuccess } from "../../src/mutation-engine/index.js";
+import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
+import { getUndo } from "../../src/edit-undo.js";
+import { resolveTarget } from "../../src/fs-write.js";
+import { listCutIntentsAsync } from "../../src/undo-store.js";
+import {
+  withTempDir,
+  setupIntegrationTest,
+  TEST_SESSION_ID,
+  useTestHome,
+  getText,
+} from "../support/fixtures.js";
 
 // TICKET-04b §4: the correlated undo. Both files of a cut share one `file_undo.transaction_id`;
 // undo of EITHER file reverts BOTH, or fails closed with no partial revert. The stale signal is
@@ -16,6 +28,12 @@ beforeAll(async () => {
 
 const SOURCE_BEFORE = "a\nb\nc\nd\n";
 const TARGET_BEFORE = "1\n2\n3\n";
+
+function admit(raw: unknown): NormalizedEditRequest {
+  const canonical = normReq(raw);
+  assertReq(canonical);
+  return canonical as NormalizedEditRequest;
+}
 
 async function cutThrough(cwd: string) {
   const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
@@ -44,7 +62,7 @@ async function cutThrough(cwd: string) {
   // Committed cut: target "b\nc\n2\n3\n", source "a\nd\n".
   expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("b\nc\n2\n3\n");
   expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe("a\nd\n");
-  return { ctx, undo: undoTool };
+  return { ctx, undo: undoTool, readTool };
 }
 
 describe("correlated undo of a cut transaction (ticket-04b §4)", () => {
@@ -93,6 +111,77 @@ describe("correlated undo of a cut transaction (ticket-04b §4)", () => {
       expect(text).toContain("E_UNDO_STALE");
       expect(text).toContain("source.txt");
       expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("b\nc\n2\n3\n");
+    });
+  });
+
+  // REMEDIATION P2-1 (amended ruling 3): the correlated revert is a DURABLE transaction, not a
+  // write ordering. A crash inside the revert window must (a) refuse with a typed [MODEL] code
+  // whose registry row selects the retry — never a raw escape, (b) clear NO undo row, (c) leave
+  // the revert-intent record so the next run's repair FINISHES the revert with nothing lost.
+  // The seam is the undo-side mirror of `onCutBetweenWrites`: test-only, fired from ctx after
+  // the first member write. Making the directory read-only defeats the finish-revert write, so
+  // the refusal arm is observed with a genuinely half-reverted transaction.
+  it("a crash mid-revert: typed refusal, no row cleared, revert intent durable, next run finishes the revert", async () => {
+    await withTempDir("cut-undo-crash-", async (cwd) => {
+      const { ctx, undo, readTool } = await cutThrough(cwd);
+      const targetReal = await resolveTarget(join(cwd, "target.txt"));
+      const sourceReal = await resolveTarget(join(cwd, "source.txt"));
+      const txnId = (await getUndo(targetReal))?.transactionId;
+      expect(typeof txnId).toBe("string");
+      let seamFired = false;
+      (
+        ctx as { onUndoBetweenWrites?: (committedAbsolutePath: string) => void }
+      ).onUndoBetweenWrites = () => {
+        seamFired = true;
+        chmodSync(cwd, 0o500);
+        throw new Error("injected P2-1 crash after the first member revert");
+      };
+      const result = await undo.execute("u1", { path: "target.txt" }, undefined, undefined, ctx);
+      chmodSync(cwd, 0o755);
+
+      expect(seamFired, "the undo write seam must fire inside the revert window").toBe(true);
+      expect(result.isError, "a defeated revert must refuse, not escape raw").toBe(true);
+      const text = getText(result);
+      expect(text).toContain("E_UNDO_REVERT_FAILED");
+      expect(text, "the code must select the retry: the refusal names the repair").toContain(
+        "repair",
+      );
+
+      // The half-reverted residue is preserved, NOT hidden by a row clear: source reverted
+      // (sorted members are [source.txt, target.txt]), target still at the cut's post bytes.
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(SOURCE_BEFORE);
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("b\nc\n2\n3\n");
+      expect((await getUndo(sourceReal))?.transactionId, "no undo row may be cleared").toBe(txnId);
+      expect((await getUndo(targetReal))?.transactionId).toBe(txnId);
+      const intent = (await listCutIntentsAsync()).find((i) => i.txnId === txnId);
+      expect(intent?.direction, "the revert-intent record must be durable").toBe("revert");
+
+      // A retry before the repair is a typed stale refusal (rows survive), never "No undo
+      // history" — the residue must not be forgotten just because one member moved.
+      const retry = await undo.execute("u2", { path: "target.txt" }, undefined, undefined, ctx);
+      expect(getText(retry)).toContain("E_UNDO_STALE");
+      expect(getText(retry)).not.toContain("No undo history");
+
+      // THE NEXT RUN REPAIRS: any live edit fires repairCutIntents, which finishes the revert
+      // from the rows' pre bytes, then retires the rows and the intent. No content lost.
+      await writeFile(join(cwd, "misc.txt"), "m\nn\n", "utf-8");
+      await readTool.execute("r9", { path: "misc.txt" }, undefined, undefined, ctx);
+      const hm = await lineHashes("m\nn\n", `${home.testPath}/misc.txt`);
+      const trigger = await execute(
+        admit({
+          file: "misc.txt",
+          edits: [{ anchor_from: hm[1]!, anchor_to: hm[1]!, text: "N" }],
+        }),
+        cwd,
+        { sessionKey: TEST_SESSION_ID },
+      );
+      expect(isMutationSuccess(trigger), "the repair trigger edit must succeed").toBe(true);
+
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_BEFORE);
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(SOURCE_BEFORE);
+      expect(await getUndo(targetReal)).toBeUndefined();
+      expect(await getUndo(sourceReal)).toBeUndefined();
+      expect((await listCutIntentsAsync()).find((i) => i.txnId === txnId)).toBeUndefined();
     });
   });
 });

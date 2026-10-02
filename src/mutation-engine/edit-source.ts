@@ -17,6 +17,7 @@ import {
   type ServedLease,
 } from "../served-session/session.js";
 import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
+import { DomainError } from "../domain-errors.js";
 import { identityPositions } from "./batch-span-gate.js";
 
 export interface EditFileSource {
@@ -108,11 +109,22 @@ export async function loadForeignServedView(input: {
   sessionKey: string;
   store: HashStore;
 }): Promise<ForeignServedView> {
-  const { normalized, absolutePath, fileHashes } = await readNormFile(input.path, input.cwd, {
-    maxLines: MAX_HASH_LINES,
-    store: input.store,
-    noPersist: true,
-  });
+  const { normalized, absolutePath, fileHashes, hadUtf8DecodeErrors } = await readNormFile(
+    input.path,
+    input.cwd,
+    {
+      maxLines: MAX_HASH_LINES,
+      store: input.store,
+      noPersist: true,
+    },
+  );
+  // WHY: (04b-rem P2-3) the admission round-trip guard applies to the FOREIGN source exactly as
+  // WHY: it applies to the target: the cut materializes span bytes decoded from THIS file, so
+  // WHY: lossy bytes here would write destroyed content into the target. The refusal names the
+  // WHY: member whose bytes broke the round-trip — the cause is observed, not assumed.
+  if (hadUtf8DecodeErrors) {
+    throw new DomainError("E_LOSSY_TEXT", { path: absolutePath });
+  }
   const served = await createSessionHandle(input.sessionKey, absolutePath, input.store).load();
   const source = leaseSpanSource({
     store: input.store,

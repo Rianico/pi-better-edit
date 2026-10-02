@@ -185,6 +185,8 @@ const LIVE_CODES: DomainErrorCode[] = [
   "E_NOT_FOUND",
   "E_UNDO_STALE",
   "E_UNDO_UNAVAILABLE",
+  "E_LOSSY_TEXT",
+  "E_UNDO_REVERT_FAILED",
   "E_UNKNOWN",
   "E_LARGE_FILE",
 ];
@@ -250,6 +252,8 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
   E_NOT_FOUND: { path: "probe.ts" },
   E_UNDO_STALE: { path: "probe.ts", reason: "modified" },
   E_UNDO_UNAVAILABLE: { path: "probe.ts" },
+  E_LOSSY_TEXT: { path: "probe.bin" },
+  E_UNDO_REVERT_FAILED: { path: "probe.ts" },
   E_UNKNOWN: { errorName: "Error", message: "boom\nsecond line" },
   E_LARGE_FILE: { path: "probe.ts", limitKind: "lines", lineCount: 99, limit: 5 },
 };
@@ -368,6 +372,19 @@ describe("domain error registry: closed contract, not a list", () => {
     expect(error.message).not.toContain("Retry with these anchors");
     expect(error.message).not.toContain("no read needed");
     expect(ERROR_REGISTRY.E_STALE_RANGE.remedy).toBeUndefined();
+  });
+
+  it("the remediation codes select their retry (04b-rem P2-1/P2-3, ADR-0021 d4)", () => {
+    // WHY: a rejection whose code selects NO remedy breaks the registry doctrine — "the code
+    // WHY: alone selects the retry". Both codes exist precisely because the failure they name
+    // WHY: has one correct model action: re-encode before editing; let the next run repair a
+    // WHY: defeated revert (never re-undo it).
+    expect(ERROR_REGISTRY.E_LOSSY_TEXT.audience).toBe("MODEL");
+    expect(typeof ERROR_REGISTRY.E_LOSSY_TEXT.remedy).toBe("string");
+    expect(ERROR_REGISTRY.E_LOSSY_TEXT.remedy).toContain("UTF-8");
+    expect(ERROR_REGISTRY.E_UNDO_REVERT_FAILED.audience).toBe("MODEL");
+    expect(typeof ERROR_REGISTRY.E_UNDO_REVERT_FAILED.remedy).toBe("string");
+    expect(ERROR_REGISTRY.E_UNDO_REVERT_FAILED.remedy).toContain("repair");
   });
 
   it("closes the representable-empty render: an empty headline over an empty block cannot construct (04b §12.2)", () => {

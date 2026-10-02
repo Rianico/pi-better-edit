@@ -102,6 +102,20 @@ describe("prompt guidelines", () => {
     expect(tool.promptGuidelines).toEqual(EDIT_GUIDELINES);
   });
 
+  it("the batch guideline states the pre-rename guarantee, not a whole-call atomicity the cut cannot honor (04b-rem P3-4)", () => {
+    // WHY: the retired sentence claimed "the call is atomic (any failure writes nothing)" —
+    // WHY: FALSE for a foreign cut whose rollback is defeated inside the two-rename window. The
+    // WHY: replacement scopes the promise to what IS guaranteed (validation before the first
+    // WHY: rename writes nothing) and states the ordered-commit/repair story for the rest, in
+    // WHY: BOTH mirrors — the mirror equality above pins them byte-equal.
+    const joined = EDIT_GUIDELINES.join("\n");
+    expect(joined).not.toContain("the call is atomic (any failure writes nothing)");
+    expect(joined).toContain("every edit validates BEFORE the first rename");
+    expect(loadGuide("../prompts/edit-guidelines.md").join("\n")).toContain(
+      "a defeated rollback restores captured bytes or is repaired on the next run",
+    );
+  });
+
   it("loadGuide returns an array of guidelines", () => {
     const guidelines = loadGuide("../prompts/edit-guidelines.md");
     expect(Array.isArray(guidelines)).toBe(true);

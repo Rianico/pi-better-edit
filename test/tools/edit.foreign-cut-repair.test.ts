@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { readFile, writeFile } from "node:fs/promises";
+import { readFile, writeFile, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { execute, isMutationSuccess, isMutationFailure } from "../../src/mutation-engine/index.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
@@ -127,6 +127,34 @@ describe("foreign-cut durability: window state, intent record, next-run repair (
     });
   });
 
+  // REMEDIATION P2-2, rollback arm: the LF-uniform seeds above cannot tell a raw restore from a
+  // canonical re-fold (they coincide), so the abort witness needs a target whose RAW bytes are
+  // not any canonical serialization. Mutation refuted: rolling back with the canonical fold
+  // instead of the captured Buffer reddens this test; the fold above stays green because for
+  // uniform-ending files the two spellings are equal.
+  it("an abort restores the written file's RAW non-canonical bytes (rollback is not a re-serialization)", async () => {
+    const TARGET_MIXED_RAW = "1\r\n2\n3\n";
+    await withTempDir("cut-rollback-raw-", async (cwd) => {
+      await writeFile(join(cwd, "source.txt"), SOURCE_BEFORE, "utf-8");
+      await writeFile(join(cwd, "target.txt"), TARGET_MIXED_RAW, "utf-8");
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+      const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
+      const ht = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
+      const result = await execute(cutRequest(ht, hs), cwd, {
+        sessionKey: TEST_SESSION_ID,
+        onCutBetweenWrites: () => {
+          throw new Error("injected crash between the renames");
+        },
+      });
+      expect(isMutationFailure(result), "the injected crash must surface as a failure").toBe(true);
+      // The rollback is a byte restore: the stray CRLF on the first line must survive untouched.
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_MIXED_RAW);
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(SOURCE_BEFORE);
+    });
+  });
+
   it("repair on the next run COMPLETES a half-applied window with no content lost", async () => {
     await withTempDir("cut-repair-complete-", async (cwd) => {
       const { ctx, readTool, hs, ht } = await seedAndServe(cwd);
@@ -212,6 +240,130 @@ describe("foreign-cut durability: window state, intent record, next-run repair (
       expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(SOURCE_POST);
       expect((await listCutIntentsAsync()).find((i) => i.txnId === txnId)).toBeUndefined();
       expect((await getUndo(targetReal))?.transactionId).toBe(txnId);
+    });
+  });
+
+  // REMEDIATION P2-2: the repair oracle must compare BYTES, because the crash/abort paths rest
+  // members at their RAW (never canonically folded) pre-images. A mixed-ending file resting at
+  // its original bytes is a legal fence-row state; if the oracle only knows the canonical
+  // serialization, that member reads as "other" and the intent leaks forever.
+  const SOURCE_MIXED_RAW = "a\r\nb\nc\nd\n";
+  // Same lines, so the served anchors match `SOURCE_BEFORE`; the earliest break decides the
+  // file's own ending (CRLF), so its canonical form is NOT the raw bytes on disk.
+  const MIXED_CANON_POST = "a\r\nd\r\n";
+
+  async function seedMixedSource(cwd: string) {
+    await writeFile(join(cwd, "source.txt"), SOURCE_MIXED_RAW, "utf-8");
+    await writeFile(join(cwd, "target.txt"), TARGET_BEFORE, "utf-8");
+    const { ctx, readTool } = setupIntegrationTest(cwd);
+    await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+    const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
+    const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
+    return { ctx, readTool, hs, ht };
+  }
+
+  it("repair COMPLETES a window whose source rests at its raw non-canonical bytes (mixed endings)", async () => {
+    await withTempDir("cut-repair-mixed-complete-", async (cwd) => {
+      const { ctx, readTool, hs, ht } = await seedMixedSource(cwd);
+      const result = await execute(cutRequest(ht, hs), cwd, { sessionKey: TEST_SESSION_ID });
+      expect(isMutationSuccess(result)).toBe(true);
+      const targetReal = await resolveTarget(join(cwd, "target.txt"));
+      const txnId = (await getUndo(targetReal))?.transactionId;
+      expect(typeof txnId).toBe("string");
+      // Craft the crash residue: the source sits at its UNTOUCHED RAW bytes — legal, but never
+      // equal to any canonical serialization. The intent is what a crash after the first rename
+      // would have left.
+      await writeFile(join(cwd, "source.txt"), SOURCE_MIXED_RAW, "utf-8");
+      await saveCutIntent(txnId!, targetReal);
+
+      await triggerRepair(cwd, ctx, readTool);
+
+      // A byte oracle reads the raw resting bytes as PRE and completes; a canonical-text oracle
+      // would call it "other" and leak the intent forever.
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(MIXED_CANON_POST);
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_POST);
+      expect((await listCutIntentsAsync()).find((i) => i.txnId === txnId)).toBeUndefined();
+    });
+  });
+
+  it("the RESTORE arm writes the member's RAW pre bytes back, not the canonical fold", async () => {
+    await withTempDir("cut-repair-mixed-restore-", async (cwd) => {
+      const { ctx, readTool, hs, ht } = await seedMixedSource(cwd);
+      const result = await execute(cutRequest(ht, hs), cwd, { sessionKey: TEST_SESSION_ID });
+      expect(isMutationSuccess(result)).toBe(true);
+      const targetReal = await resolveTarget(join(cwd, "target.txt"));
+      const txnId = (await getUndo(targetReal))?.transactionId;
+      expect(typeof txnId).toBe("string");
+      // The inverse arm: target never committed (pre), source already retired (canonical post).
+      // Repair restores the source — and a restore is not a re-serialization: the file must come
+      // back EXACTLY as it was found, stray line-break spellings included.
+      await writeFile(join(cwd, "target.txt"), TARGET_BEFORE, "utf-8");
+      await saveCutIntent(txnId!, targetReal);
+
+      await triggerRepair(cwd, ctx, readTool);
+
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(SOURCE_MIXED_RAW);
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_BEFORE);
+      expect((await listCutIntentsAsync()).find((i) => i.txnId === txnId)).toBeUndefined();
+    });
+  });
+
+  // REMEDIATION P3-5: fail-closed arms get negative witnesses THROUGH THE ENTRY POINT (E8) — a
+  // direct call would prove the arm exists, not that repair places it. Each witness asserts the
+  // files are untouched and states exactly what happens to the intent.
+  it("a MISSING member is fail-closed: repair touches nothing and keeps the intent", async () => {
+    await withTempDir("cut-repair-missing-member-", async (cwd) => {
+      const { ctx, readTool, hs, ht } = await seedAndServe(cwd);
+      const result = await execute(cutRequest(ht, hs), cwd, { sessionKey: TEST_SESSION_ID });
+      expect(isMutationSuccess(result)).toBe(true);
+      const targetReal = await resolveTarget(join(cwd, "target.txt"));
+      const txnId = (await getUndo(targetReal))?.transactionId;
+      expect(typeof txnId).toBe("string");
+      await saveCutIntent(txnId!, targetReal);
+      await rm(join(cwd, "source.txt"));
+
+      await triggerRepair(cwd, ctx, readTool);
+
+      // No crash escapes repair, nothing is re-created, the question stays open.
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe(TARGET_POST);
+      const gone = await readFile(join(cwd, "source.txt"), "utf-8").catch(
+        (e: unknown) => (e as NodeJS.ErrnoException).code,
+      );
+      expect(gone).toBe("ENOENT");
+      expect((await listCutIntentsAsync()).find((i) => i.txnId === txnId)).toBeDefined();
+    });
+  });
+
+  it("an intent whose target undo row was overwritten by a later edit is DROPPED, never leaked", async () => {
+    await withTempDir("cut-repair-overwritten-row-", async (cwd) => {
+      const { ctx, readTool, hs, ht } = await seedAndServe(cwd);
+      const result = await execute(cutRequest(ht, hs), cwd, { sessionKey: TEST_SESSION_ID });
+      expect(isMutationSuccess(result)).toBe(true);
+      const targetReal = await resolveTarget(join(cwd, "target.txt"));
+      const txnId = (await getUndo(targetReal))?.transactionId;
+      expect(typeof txnId).toBe("string");
+      // A later ordinary edit re-anchors the target's file_undo row (its transaction id becomes
+      // the ordinary NULL): the cut evidence for the target is GONE and nothing can re-create
+      // it — the intent can no longer act, only accumulate. Mirror the `rows.length === 0` arm.
+      const htPost = await lineHashes(TARGET_POST, `${home.testPath}/target.txt`);
+      const later = await execute(
+        admit({
+          file: "target.txt",
+          edits: [{ anchor_from: htPost[0]!, anchor_to: htPost[0]!, text: "B" }],
+        }),
+        cwd,
+        { sessionKey: TEST_SESSION_ID },
+      );
+      expect(isMutationSuccess(later)).toBe(true);
+      await saveCutIntent(txnId!, targetReal);
+
+      await triggerRepair(cwd, ctx, readTool);
+
+      expect((await listCutIntentsAsync()).find((i) => i.txnId === txnId)).toBeUndefined();
+      // Fail-closed on bytes: the drop must not smuggle in a write.
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("B\nc\n2\n3\n");
+      expect(await readFile(join(cwd, "source.txt"), "utf-8")).toBe(SOURCE_POST);
     });
   });
 });

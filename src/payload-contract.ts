@@ -187,7 +187,7 @@ export const EDIT_GUIDELINES: string[] = [
   "edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so copy `anchor_from`/`anchor_to` only from the served rows of the file the payload names: this file by default, `text_ref.file` when it names another file.",
   "edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.",
   "edit: a `[MODEL] [W_*]` line in `content` is informational — the mutation was applied; a `[MODEL] [E_*]` line is your retry instruction or a rejection — follow it from the message alone; a `[MODEL]` line that presents rows as a fresh read (`Current range (fresh read):`) is not a blind retry — decide from those rows; a dimmed `[USER]` line in `details` is human info, never your error.",
-  "edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).",
+  "edit: batch independent ranges via one `edits` array — every edit validates BEFORE the first rename and any failure there writes nothing; a foreign `cut` writes its files in a fixed order, a defeated rollback restores captured bytes or is repaired on the next run.",
   "edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.",
 ];
 

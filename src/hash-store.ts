@@ -220,11 +220,27 @@ const CUT_INTENT_DDL =
   "created_at INTEGER NOT NULL" +
   ")";
 
+// WHY: (04b-rem P2-2/P2-3) `raw_pre` carries the file's RAW pre-transaction text — the decoded
+// WHY: bytes, not the canonical fold. The admission round-trip guard (E_LOSSY_TEXT) makes decode
+// WHY: and re-encode byte-identical by construction, so a rollback or repair that writes
+// WHY: `Buffer.from(raw_pre, "utf-8")` restores EXACTLY the bytes found before the first rename,
+// WHY: stray line-break spellings included; NULL is a pre-remediation row (or a single-file edit)
+// WHY: and falls back to the canonical serialization.
+// WHY: (04b-rem P2-1) `direction` on `cut_intent` marks what the durable record describes: NULL is
+// WHY: the forward cut (two renames, target first), "revert" is a correlated UNDO whose per-file
+// WHY: writes failed partway — next-run repair completes the revert instead of the cut.
+// WHY: (04b-rem P3-6) `transaction_id` is read by equality (`undoGetTransaction`) on EVERY apply
+// WHY: (repair scan) and every correlated undo, so it gets an index; the intent scan orders by the
+// WHY: unindexed `created_at` over a table that holds at most a handful of rows — ADR-0028 §3's
+// WHY: "one indexed SELECT" said otherwise and is corrected there, not here.
 export function ensureFileUndoSchema(db: DatabaseSync): void {
   db.exec(FILE_UNDO_DDL);
   addColumnIfMissing(db, "file_undo", "snapshot_hash", "TEXT");
   addColumnIfMissing(db, "file_undo", "transaction_id", "TEXT");
+  addColumnIfMissing(db, "file_undo", "raw_pre", "TEXT");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_file_undo_transaction_id ON file_undo (transaction_id)");
   db.exec(CUT_INTENT_DDL);
+  addColumnIfMissing(db, "cut_intent", "direction", "TEXT");
 }
 
 function buildStore(db: DatabaseSync): void {
