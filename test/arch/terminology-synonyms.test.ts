@@ -416,17 +416,24 @@ const OP_KEY_NEEDLE = /[{,[\n`]\s*("op"|'op'|op)\s*:/;
 // inside documenting WHY:/SAFETY: comments are skipped (pinned by the arm
 // below) — a live spelling on any other line still reddens. No carve-out for
 // `op` prose: the key-shaped needle does not match it (pinned by quiet arms).
-// ADR/CHANGELOG history is out of the ban scope, so no baseline entries exist
-// here. test/ is excluded with reason (not shrink-only, so no re-assertion is
-// owed): test files USE the retired spellings as data — planted payloads,
-// refusal-clause strings, this guard's own prose — they neither teach nor ship
-// them.
+// SCOPE BY SURFACE (E26 — a reason per exclusion). IN: README.md, CONTEXT.md
+// (the taught contract), prompts/*.md (model instructions), src/**/*.ts
+// (shipped code), scripts/ (model-facing strings on shipped entry points —
+// the benchmark prompt taught the retired shape from here). OUT: docs/spec,
+// docs/adr (historical rewrite records). OUT: test/ — refusal fixtures plus
+// this guard's own prose (not shrink-only, so no re-assertion is owed).
 const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts", "src/hashline/apply.ts"]);
 
 function retiredWireScope(): string[] {
-  return ["README.md", "CONTEXT.md", ...allFiles("prompts", ".md"), ...srcFiles()].filter(
-    (file) => !RETIRED_WIRE_CARVE_OUT.has(file),
-  );
+  return [
+    "README.md",
+    "CONTEXT.md",
+    ...allFiles("prompts", ".md"),
+    ...srcFiles(),
+    ...allFiles("scripts", ".mjs"),
+    ...allFiles("scripts", ".js"),
+    ...allFiles("scripts", ".py"),
+  ].filter((file) => !RETIRED_WIRE_CARVE_OUT.has(file));
 }
 
 function needsRetiredWire(text: string): boolean {
@@ -442,16 +449,17 @@ function retiredWireViolations(): string[] {
 }
 
 describe("retired wire spellings stay banned and corrected facts stay present (ticket-07)", () => {
-  it("names no retired wire spelling in README, CONTEXT, prompts or src (carve-outs excluded)", () => {
-    // WHY: a silently empty scope would pass by construction (E21) — and a
-    // merely non-empty scope can be silently disarmed (R1). Required members
-    // are pinned: shrinking to src/ alone must redden; a legitimate rename is
+  it("names no retired wire spelling in README, CONTEXT, prompts, src or scripts (carve-outs excluded)", () => {
+    // WHY: non-empty is not coverage (E21, E25 on the scope itself) — a
+    // merely non-empty scope can be silently disarmed. Required members are
+    // pinned: shrinking to src/ alone must redden; a legitimate rename is
     // fixed in one line.
     const scope = retiredWireScope();
     expect(scope.length).toBeGreaterThan(0);
     for (const required of ["README.md", "CONTEXT.md"]) expect(scope).toContain(required);
     expect(scope.some((f) => f.startsWith("prompts/") && f.endsWith(".md"))).toBe(true);
     expect(scope.some((f) => f.startsWith("src/"))).toBe(true);
+    expect(scope.some((f) => f.startsWith("scripts/"))).toBe(true);
     expect(scope).not.toContain("src/edit.ts"); // the carve-out is still applied
     expect(retiredWireViolations()).toEqual([]);
   });
