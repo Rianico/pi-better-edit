@@ -6,6 +6,10 @@
 
 * **release:** stop clearing the ledger before semantic-release (#36)
 
+### Build System
+
+* **build:** ship the prebuilt bundle as the extension entry on both install surfaces (#38)
+
 ## [2.4.0] - 2026-09-30
 
 ### Features
