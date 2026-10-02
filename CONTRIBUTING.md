@@ -9,7 +9,7 @@
 
 ## Changelog
 
-`CHANGELOG.md` `## [Unreleased]` is gated by `scripts/changelog-gate.py` in `changelog-check.yml` (a PR run reads the `Landing:` declaration from the PR body; the `main` run is the durable one); `release.yml` runs `scripts/changelog-unreleased.py clear` then `semantic-release` owns versioned sections. Do not hand-edit versioned sections. Commit a sync as a hidden type (e.g. `chore: sync changelog unreleased section`) so it mints no ledger entry. Hidden types `style|chore|refactor|test|build|ci` only appear when `!`/`BREAKING CHANGE`.
+`CHANGELOG.md` `## [Unreleased]` is gated by `scripts/changelog-gate.py` in `changelog-check.yml` (a PR run reads the `Landing:` declaration from the PR body; the `main` run is the durable one); `release.yml` runs `semantic-release`, whose `scripts/release-changelog.mjs` plugin promotes the curated `[Unreleased]` ledger into the versioned section and re-opens an empty `## [Unreleased]`. Never clear `[Unreleased]` before the release runs — the plugin reads it as the release notes. Do not hand-edit versioned sections. Commit a sync as a hidden type (e.g. `chore: sync changelog unreleased section`) so it mints no ledger entry. Hidden types `style|chore|refactor|test|build|ci` only appear when `!`/`BREAKING CHANGE`.
 
 Gates and hooks can probe the ledger read-only with `uv run python scripts/changelog-gate.py ledger --pr <N>` (exit 0 when the PR's entries are attributed, 1 on drift, 2 when the file is absent; nothing is written, staged or committed). A blocked gate can be waived via a `Ledger-Waiver: <reason>` line in the PR body — accepts fixable findings only, never unverified code.
 
