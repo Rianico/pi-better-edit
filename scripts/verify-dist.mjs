@@ -177,7 +177,7 @@ function maxMtimeMs(paths, packageRoot) {
  * contain the word `from` inside a string. Dynamic `import()` and `require()` calls are not
  * anchored that way, so their string-literal arguments are collected separately — a stripped
  * prefix inside `import("sqlite")` is the same 2.1.0 failure class as one inside a static
- * import, and the reviewer demonstrated that bypass against the anchored scan alone.
+ * import.
  *
  * Each specifier must resolve: either a Node builtin that kept its `node:` prefix, or a
  * package the manifest declares. A stripped prefix (`node:sqlite` -> `sqlite`) is exactly
@@ -212,11 +212,33 @@ function bareSpecifiers(code) {
     addIfBare(specifier);
     index = lookahead;
   }
-  for (const pattern of [
-    /\bimport\s*\(\s*["']([^"']+)["']\s*\)/g,
-    /\brequire\s*\(\s*["']([^"']+)["']\s*\)/g,
-  ]) {
-    for (const match of code.matchAll(pattern)) addIfBare(match[1]);
+  for (const specifier of dynamicSpecifiers(code)) addIfBare(specifier);
+  return specifiers;
+}
+
+/**
+ * Comments can sit inside the call, and that is the shape esbuild emits: a source-level
+ * `await import(/* webpackIgnore *\/ "node:sqlite")` becomes a multi-line `import(`, the
+ * comment, the literal and `)`. Matching only `\(\s*["']` finds nothing — neither as built nor
+ * with the prefix stripped — so the separator tolerates whitespace, block comments and line
+ * comments.
+ */
+const CALL_SEPARATOR = String.raw`(?:\s|\/\*[\s\S]*?\*\/|\/\/[^\n]*)*`;
+
+/**
+ * Specifiers reached through a call rather than a static import. `require` covers esbuild's
+ * `__require` rewrite — `\brequire` cannot match it, because `_` to `r` is not a word
+ * boundary — and `createRequire` covers the ESM form `createRequire(import.meta.url)("x")`.
+ */
+function dynamicSpecifiers(code) {
+  const specifiers = [];
+  const patterns = [
+    new RegExp(String.raw`\bimport\s*\(${CALL_SEPARATOR}["']([^"']+)["']`, "g"),
+    new RegExp(String.raw`(?:^|[^\w$])(?:__)?require\s*\(${CALL_SEPARATOR}["']([^"']+)["']`, "g"),
+    new RegExp(String.raw`createRequire\s*\([^)]*\)\s*\(${CALL_SEPARATOR}["']([^"']+)["']`, "g"),
+  ];
+  for (const pattern of patterns) {
+    for (const match of code.matchAll(pattern)) specifiers.push(match[1]);
   }
   return specifiers;
 }
@@ -234,12 +256,21 @@ function packageNameOf(specifier) {
  * auto-install from fetching them into the user's tree.
  */
 function assertHostPackagesAreOptionalPeers(manifest) {
-  const dependencies = manifest.dependencies ?? {};
+  // optionalDependencies is a runtime dependency list too and npm installs it into consumers;
+  // bundleDependencies would vendor a host copy into the tarball. Neither may carry one.
+  const runtimeNames = [
+    ...Object.keys(manifest.dependencies ?? {}),
+    ...Object.keys(manifest.optionalDependencies ?? {}),
+    ...Object.keys(manifest.bundleDependencies ?? {}),
+    ...Object.keys(manifest.bundledDependencies ?? {}),
+  ];
   const peers = manifest.peerDependencies ?? {};
   const peerMeta = manifest.peerDependenciesMeta ?? {};
   for (const name of HOST_PACKAGES) {
-    if (Object.keys(dependencies).includes(name)) {
-      fail(`host-provided package ${name} is a runtime dependency; it must be an optional peer`);
+    if (runtimeNames.includes(name)) {
+      fail(
+        `host-provided package ${name} is a runtime dependency (dependencies/optionalDependencies/bundleDependencies); it must be an optional peer`,
+      );
     }
     if (!Object.keys(peers).includes(name)) {
       fail(`host-provided package ${name} is missing from peerDependencies`);

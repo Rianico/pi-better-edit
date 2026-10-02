@@ -111,42 +111,34 @@ function main() {
     code.replaceAll('from "node:', 'from "'),
   );
   mutants.push(strippedNode);
-  addMutation("stripped-node-prefix", ["--artifact", strippedNode], "unresolvable bare specifiers");
+  addMutation("stripped-node-prefix", ["--artifact", strippedNode], "fs/promises");
 
   const undeclared = writeMutantArtifact(
     "undeclared-package",
     (code) => `${code}\nimport "left-pad";\n`,
   );
   mutants.push(undeclared);
-  addMutation(
-    "undeclared-bare-package",
-    ["--artifact", undeclared],
-    "unresolvable bare specifiers",
-  );
+  addMutation("undeclared-bare-package", ["--artifact", undeclared], "left-pad");
 
   // WHY: static import statements are not the only way a specifier reaches the runtime; a
-  // stripped prefix inside import() or require() is the same 2.1.0 failure class.
+  // stripped prefix inside import() or require() is the same 2.1.0 failure class. The shapes
+  // below are the ones esbuild actually emits: a comment inside the call, and `__require`
+  // rather than a source-level `require`.
   const dynamicImport = writeMutantArtifact(
     "dynamic-import-node-prefix",
-    (code) => `${code}\nasync function __smoke() { await import("sqlite"); }\n`,
+    (code) =>
+      `${code}\nasync function __smoke() {\n  await import(\n    /* webpackIgnore */\n    "sqlite"\n  );\n}\n`,
   );
   mutants.push(dynamicImport);
-  addMutation(
-    "dynamic-import-stripped-node-prefix",
-    ["--artifact", dynamicImport],
-    "unresolvable bare specifiers",
-  );
+  addMutation("dynamic-import-stripped-node-prefix", ["--artifact", dynamicImport], "sqlite");
 
   const requireCall = writeMutantArtifact(
     "require-node-prefix",
-    (code) => `${code}\nfunction __smoke() { return require("sqlite"); }\n`,
+    (code) =>
+      `${code}\nfunction __smokeRequire() {\n  return __require(\n    /* webpackIgnore */\n    "zlib"\n  );\n}\n`,
   );
   mutants.push(requireCall);
-  addMutation(
-    "require-stripped-node-prefix",
-    ["--artifact", requireCall],
-    "unresolvable bare specifiers",
-  );
+  addMutation("require-stripped-node-prefix", ["--artifact", requireCall], "zlib");
 
   const notFactory = writeMutantArtifact("default-export", (code) =>
     code.replace("index_default as default", "index_default as notDefault"),
@@ -163,7 +155,7 @@ function main() {
   copyFileSync(ARTIFACT, stale);
   const longAgo = new Date(statSync(join(ROOT, "src")).mtimeMs - 24 * 60 * 60 * 1000);
   utimesSync(stale, longAgo, longAgo);
-  addMutation("stale-artifact", ["--artifact", stale], "is stale");
+  addMutation("stale-artifact", ["--artifact", stale], "the artifact is stale");
 
   const noDist = writeMutantManifest("entry-not-packed", (manifest) => {
     manifest.files = manifest.files.filter((entry) => entry !== "dist");
@@ -182,7 +174,7 @@ function main() {
   addMutation(
     "prompt-assets-not-in-packed-file-set",
     ["--manifest", noPrompts, "--package-root", ROOT, "--artifact", ARTIFACT],
-    "the packed file set does not contain",
+    "which the packed file set does not contain",
   );
 
   const twoEntries = writeMutantManifest("two-entries", (manifest) => {
@@ -223,17 +215,32 @@ function main() {
   addMutation(
     "host-package-as-runtime-dependency",
     ["--manifest", hostDependency, "--package-root", ROOT, "--artifact", ARTIFACT],
-    "host-provided package",
+    "typebox is a runtime dependency",
+  );
+
+  const optionalHost = writeMutantManifest("host-package-as-optional-dependency", (manifest) => {
+    manifest.optionalDependencies = {
+      "@earendil-works/pi-tui": manifest.peerDependencies["@earendil-works/pi-tui"],
+    };
+  });
+  mutants.push(optionalHost);
+  addMutation(
+    "host-package-as-optional-dependency",
+    ["--manifest", optionalHost, "--package-root", ROOT, "--artifact", ARTIFACT],
+    "@earendil-works/pi-tui is a runtime dependency",
   );
 
   // WHY: the externals list is the contract, the metafile guard is the invariant behind it. A
   // bare import that is not externalized gets inlined from node_modules, which the output scan
-  // cannot see, so this guard is exercised through the build itself.
+  // cannot see, so this guard is exercised through the build itself. Both the fixture and the
+  // bundle esbuild writes before the guard rejects it are cleaned up by the finally below.
   const guardEntry = join(SCRATCH, "metafile-guard-entry.ts");
+  const guardBundle = join(SCRATCH, "metafile-guard.js");
+  mutants.push(guardEntry, guardBundle);
   writeFileSync(guardEntry, 'import "@babel/parser";\nexport const fixture = 1;\n', "utf8");
   addMutation(
     "metafile-guard-inlined-host-package",
-    ["--entry", guardEntry, "--outfile", join(SCRATCH, "metafile-guard.js")],
+    ["--entry", guardEntry, "--outfile", guardBundle],
     "host packages must stay external",
     "build",
   );
@@ -248,8 +255,10 @@ function main() {
     let failures = 0;
     for (const mutation of mutations) {
       const result = mutation.kind === "build" ? runBuild(mutation.args) : run(mutation.args);
-      const output = `${result.stdout}${result.stderr}`;
-      const message = output.trim().split("\n")[0] ?? "";
+      // Assertions read stderr: every diagnostic here is written with console.error, while a
+      // bundler's progress lines go to stdout and would otherwise be mistaken for the message.
+      const output = `${result.stderr}${result.stdout}`;
+      const message = result.stderr.trim().split("\n")[0] ?? "";
       if (result.status === 0) {
         failures += 1;
         console.error(

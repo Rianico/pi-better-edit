@@ -55,7 +55,7 @@
     "build": "node scripts/build-dist.mjs",
     "verify:dist": "node scripts/verify-dist.mjs",
     "verify:dist:mutations": "node scripts/verify-dist-mutations.mjs",
-    "measure:import": "node scripts/measure-import.mjs --max-artifact-ms 600",
+    "measure:import": "node scripts/measure-import.mjs --max-ratio 0.75",
     "smoke:install": "node scripts/install-smoke.mjs",
     "prepare": "node scripts/prepare.mjs",
     "prepack": "node scripts/build-dist.mjs && node scripts/verify-dist.mjs"

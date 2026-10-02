@@ -199,6 +199,11 @@ function parseArgs(argv) {
     }
     fail(`unknown argument: ${arg}`);
   }
+  // WHY: --entry is a test seam. Defaulting the output to the canonical artifact would let a
+  // seam caller that passes --entry and forgets --outfile silently overwrite dist/index.js.
+  if (argv.includes("--entry") && !argv.includes("--outfile")) {
+    fail("--entry requires an explicit --outfile");
+  }
   return { entry: resolve(ROOT, entry), outfile: resolve(ROOT, outfile) };
 }
 

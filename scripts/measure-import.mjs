@@ -28,7 +28,15 @@ const TARGETS = [
   { name: "artifact", entry: "dist/index.js" },
 ];
 
-/** ADR-0027 records 425-436 ms warm; the budget leaves room for a shared CI runner. */
+/**
+ * WHY a ratio and not the absolute: a shared CI runner roughly 30% slower than a workstation
+ * would false-fail an absolute budget. ADR-0027 measured 425-436 ms warm against 1077-1893 ms
+ * of source import, so the artifact must stay well under the source it replaces; measured
+ * ratios here are 0.54 and 0.59, and 0.75 leaves headroom. The absolute is still printed.
+ */
+const DEFAULT_MAX_RATIO = 0.75;
+
+/** Reported, not gated: the number a workstation actually sees. */
 const DEFAULT_MAX_ARTIFACT_MS = 600;
 
 /**
@@ -45,15 +53,20 @@ function resolvePiBinary(explicit) {
     .filter((entry) => entry.length > 0)
     .map((entry) => join(entry, process.platform === "win32" ? "pi.cmd" : "pi"))
     .filter((candidate) => existsSync(candidate));
-  return (
-    candidates.find((candidate) => !candidate.startsWith(localBin)) ?? candidates.at(0) ?? "pi"
-  );
+  const external = candidates.find((candidate) => !candidate.startsWith(localBin));
+  if (external === undefined) {
+    // WHY: the repo's pinned devDependency pi is a different runtime and prints no timing line,
+    // so falling back to it fails later with a misleading "printed no module import timing".
+    throw new Error(`no pi on PATH outside ${localBin}; install pi or set PI_BIN`);
+  }
+  return external;
 }
 
 function parseArgs(argv) {
   const options = {
     runs: 3,
     pi: resolvePiBinary(process.env.PI_BIN),
+    maxRatio: DEFAULT_MAX_RATIO,
     maxArtifactMs: DEFAULT_MAX_ARTIFACT_MS,
   };
   for (let index = 0; index < argv.length; index += 1) {
@@ -65,6 +78,11 @@ function parseArgs(argv) {
     }
     if (arg === "--pi") {
       options.pi = argv[index + 1];
+      index += 1;
+      continue;
+    }
+    if (arg === "--max-ratio") {
+      options.maxRatio = Number.parseFloat(argv[index + 1] ?? "");
       index += 1;
       continue;
     }
@@ -196,15 +214,29 @@ function main() {
   console.log(
     `measure-import: artifact ${artifactWarm.min} ms min / ${artifactWarm.median} ms median warm against source ${sourceWarm.min} ms min / ${sourceWarm.median} ms median warm`,
   );
+  const ratio = artifactWarm.min / sourceWarm.min;
   console.log(
-    `measure-import: warm artifact spread ${artifactWarm.spread} ms (min ${artifactWarm.min}, max ${Math.max(...artifactWarm.samples)}); budget ${options.maxArtifactMs} ms against the minimum`,
+    `measure-import: warm artifact spread ${artifactWarm.spread} ms (min ${artifactWarm.min}, max ${Math.max(...artifactWarm.samples)}); absolute ${artifactWarm.min} ms against the reported ${options.maxArtifactMs} ms reference`,
   );
-  if (artifactWarm.min > options.maxArtifactMs) {
+  console.log(
+    `measure-import: ratio artifact/source ${ratio.toFixed(3)} against the ${options.maxRatio} gate (artifact ${artifactWarm.min} ms / source ${sourceWarm.min} ms)`,
+  );
+  if (ratio > options.maxRatio) {
     console.error(
-      `measure-import: artifact module import ${artifactWarm.min} ms exceeds ${options.maxArtifactMs} ms`,
+      `measure-import: artifact/source ratio ${ratio.toFixed(3)} exceeds ${options.maxRatio} (artifact ${artifactWarm.min} ms, source ${sourceWarm.min} ms)`,
     );
     process.exitCode = 1;
   }
+  if (artifactWarm.min > options.maxArtifactMs) {
+    console.log(
+      `measure-import: note: absolute ${artifactWarm.min} ms is above the ${options.maxArtifactMs} ms reference; the ratio gate decides`,
+    );
+  }
 }
 
-main();
+try {
+  main();
+} catch (error) {
+  process.exitCode = 1;
+  console.error(`measure-import: ${error.message}`);
+}
