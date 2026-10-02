@@ -13,21 +13,25 @@ import { describe, it, expect } from "vitest";
  * `findEditHashEcho` / `EditHashEchoError` are retired (#125).
  */
 function srcFiles(dir = "src", out: string[] = []): string[] {
+  // WHY (C1): the traversal lives in recurseDir; this wrapper states only
+  // its predicate (src/, .ts) and keeps its signature for existing callers.
+  return allFiles(dir, ".ts", out);
+}
+
+// WHY (C1): the single directory recursion. Pure traversal — NO file
+// selection lives here; every caller states its own extension/scope
+// predicate, so sharing this cannot mirror producer into pin or reverse.
+function recurseDir(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
     const path = join(dir, entry.name);
-    if (entry.isDirectory()) srcFiles(path, out);
-    else if (entry.isFile() && path.endsWith(".ts")) out.push(path);
+    if (entry.isDirectory()) recurseDir(path, out);
+    else out.push(path);
   }
   return out;
 }
 
 function allFiles(dir: string, ext: string, out: string[] = []): string[] {
-  for (const entry of readdirSync(dir, { withFileTypes: true })) {
-    const path = join(dir, entry.name);
-    if (entry.isDirectory()) allFiles(path, ext, out);
-    else if (entry.isFile() && path.endsWith(ext)) out.push(path);
-  }
-  return out;
+  return recurseDir(dir, out).filter((f) => f.endsWith(ext));
 }
 
 const files = srcFiles();
