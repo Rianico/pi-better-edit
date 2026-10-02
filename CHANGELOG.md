@@ -4,7 +4,7 @@
 
 ### Build System
 
-* **build:** ship the prebuilt bundle as the extension entry on both install surfaces
+* **build:** ship the prebuilt bundle as the extension entry on both install surfaces (#38)
 ## [2.4.0] - 2026-09-30
 
 ## [2.3.0] - 2026-09-27
