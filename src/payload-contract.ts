@@ -1,4 +1,3 @@
-import { normalize } from "node:path";
 import { Type } from "typebox";
 import { EDITS_MAX_ITEMS } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
@@ -358,27 +357,12 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   return undefined;
 }
 
-// WHY: (ticket-04 §3.3, amended) foreign-source: a `text_ref` that names another file reaches that
-// WHY: file's served mirror; `copy` is what is supported TODAY. `cut` is a phasing limit, not a
-// WHY: design property: ticket-04b enables it as a correlated multi-file transaction, so this
-// WHY: refusal — and its test — are deliberately temporary.
-function analyzeForeignCut(item: EditItem, file: string): string | undefined {
-  const ref = item.text_ref;
-  if (!ref || ref.file === undefined) return undefined;
-  // WHY: (§9.4, review-3 P3-3) foreign-vs-same-file is a PATH question, not a spelling question:
-  // WHY: `./target.txt` and `target.txt` name one file, so the lexical spelling is normalized
-  // WHY: before comparing. Symlinked aliases resolve at the engine's path comparison
-  // WHY: (`isForeignReference` in mutation-engine/pipeline.ts), which sees the real filesystem.
-  if (normalize(ref.file) === normalize(file)) return undefined;
-  if (ref.mode === "cut") {
-    return (
-      'A foreign-source reference supports mode: "copy" today; mode: "cut" requires a ' +
-      "correlated multi-file transaction and is not enabled yet."
-    );
-  }
-  return undefined;
-}
-
+// WHY: (remediation-2 B3) there was previously a second, LEXICAL "same file" test here that
+// WHY: refused foreign `mode: "cut"` at admission. One definition now owns the question — the
+// WHY: engine's realpath classification (`sameResolvedPath`, mutation-engine/pipeline.ts) — and
+// WHY: its item-(iv) pre-pass refusal is the single foreign-cut guard, witnessed through the
+// WHY: entry point by `edit.wire-contract.test.ts`. Admission is a pure shape check; path
+// WHY: identity on the real filesystem belongs to the engine seam.
 /**
  * The single admission analyzer shared by `editRequestFrom` (normReq), `prepareEditArguments` and
  * `assertReq` (ticket-04): every entry point rejects the same inputs with the same message, so the
@@ -442,9 +426,7 @@ function analyzeRequest(input: unknown): Admission {
       continue;
     }
     const item = items[index] as EditItem;
-    const foreign = analyzeForeignCut(item, file);
-    if (foreign !== undefined) failures.push(`edit[${index}]: ${foreign}`);
-    else edited.push(item);
+    edited.push(item);
   }
   if (failures.length > 0) {
     return { ok: false, message: `${failures.join(" ")} ${describeReceived(input)}` };
@@ -577,10 +559,11 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
         message: `Edit request edits[${index}] must be { target, at, payload } with exactly one payload: text content, a served-span reference with mode "copy" or "cut", or a deletion (no content).`,
       });
     }
-    // WHY: (ticket-04 item (i)) the min-line guard lives at wire admission, not in the parse seam:
-    // WHY: at admission `"text": ""` is already folded into the deletion payload, so a zero-line
-    // WHY: literal payload can only come from a direct engine-seam construction — refuse it there,
-    // WHY: naming the wire field instead of the internal payload arm.
+    // WHY: (ticket-04 item (i), remediation-2 B4) the wire folds `"text": ""` into the deletion
+    // WHY: payload, so this guard is a defense for direct `assertReq` callers only; the
+    // WHY: enforcement point for the engine seam is the parse guard in
+    // WHY: `mutation-engine/pipeline.ts` (`parseEdits`, same message), which `execute()` cannot
+    // WHY: bypass. Naming the wire field `"text"` keeps the model-actionable wording.
     if (item.payload.kind === "literal" && item.payload.text === "") {
       throw new DomainError("E_BAD_PAYLOAD", {
         message: `Edit request edits[${index}] "text" must carry at least one line; "text": "" is the deletion payload. Nothing was written.`,

@@ -159,11 +159,16 @@ describe("Edit wire contract — admission (finite key-set gate)", () => {
     );
   });
 
-  it("refuses a foreign-source cut and says foreign-source", () => {
-    let caught: unknown;
-    try {
-      admit({
-        file: "target.txt",
+  it("refuses a foreign-source cut at the engine seam and says foreign-source (remediation-2 B3, E8)", async () => {
+    // WHY: (B3, one definition of "same file") admission no longer classifies paths — the engine's
+    // WHY: realpath pre-pass owns foreign classification — so the refusal is witnessed THROUGH the
+    // WHY: entry point that reaches it: the same seam pair the tool uses (admit, then `execute`).
+    // WHY: At `ad80222` this is RED at `admit` (the lexical admission refusal throws there).
+    await withTempDir("foreign-cut-entry-", async (cwd) => {
+      await writeFile(join(cwd, "sample.txt"), "a\nb\nc\n", "utf-8");
+      await writeFile(join(cwd, "other.txt"), "x\ny\nz\n", "utf-8");
+      const raw = {
+        file: "sample.txt",
         edits: [
           {
             anchor_from: "a1B",
@@ -171,17 +176,18 @@ describe("Edit wire contract — admission (finite key-set gate)", () => {
             text_ref: { anchor_from: "x", anchor_to: "y", file: "other.txt", mode: "cut" },
           },
         ],
-      });
-    } catch (error) {
-      caught = error;
-    }
-    expect(caught, "admission must reject").toBeInstanceOf(DomainError);
-    const de = caught as DomainError;
-    expect(de.code).toBe("E_BAD_PAYLOAD");
-    // WHY: (sweep (b)) positive vocabulary pins replace the old `not.toContain` of the retired
-    // WHY: synonym — the repo-wide term guard (test/arch) owns its zero-tolerance check.
-    expect(refusalText(de.message)).toContain("A foreign-source reference supports mode:");
-    expect(refusalText(de.message)).toContain('mode: "copy" today');
+      };
+      const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
+      expect(isMutationFailure(result), "the engine pre-pass must refuse").toBe(true);
+      if (!isMutationFailure(result)) return;
+      expect(result.code).toBe("E_BAD_PAYLOAD");
+      // WHY: (sweep (b)) positive vocabulary pins replace the old `not.toContain` of the retired
+      // WHY: synonym — the repo-wide term guard (test/arch) owns its zero-tolerance check.
+      expect(result.message).toContain("A foreign-source reference supports mode:");
+      expect(result.message).toContain('mode: "copy" today');
+      await expect(readFile(join(cwd, "sample.txt"), "utf-8")).resolves.toBe("a\nb\nc\n");
+      await expect(readFile(join(cwd, "other.txt"), "utf-8")).resolves.toBe("x\ny\nz\n");
+    });
   });
 });
 
@@ -624,6 +630,9 @@ describe("Edit wire contract — fail-closed placement guard on the published se
     expect(de.code).toBe("E_BAD_PAYLOAD");
     expect(de.message).toContain('"at"');
     expect(de.message).toContain("Nothing was written");
+    // PIN (remediation-2 B2 — green at HEAD; falsification owed by mutation phase: the M5
+    // mutation that rewords `placementSpellings()` must fail HERE, not only on the field name).
+    expect(de.message).toContain('"in-place", "before" or "after"');
   });
 });
 
@@ -725,6 +734,42 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
       ).toBe(true);
       if (!isMutationSuccess(result)) return;
       expect(result.result).toBe(plainResult);
+    });
+  });
+
+  it("a same-file cut spelled with an ABSOLUTE alias is the same SAME-FILE cut (remediation-2 B3)", async () => {
+    // RED at `ad80222`: admission compares LEXICALY normalized spellings, so the absolute alias
+    // differs from `sample.txt`, is classified foreign, and the cut is refused — two definitions
+    // of "same file". With the one realpath rule the engine already uses, this must behave
+    // byte-identically to the unaliased intra-file cut (source retired, "c\nd\na\nb\n").
+    await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", `${home.testPath}/sample.txt`);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      const raw = req([
+        {
+          anchor_from: h[4]!,
+          anchor_to: h[4]!,
+          text_ref: {
+            anchor_from: h[0]!,
+            anchor_to: h[1]!,
+            file: join(cwd, "sample.txt"),
+            mode: "cut",
+          },
+        },
+      ]);
+      const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
+      expect(
+        isMutationSuccess(result),
+        isMutationFailure(result)
+          ? `absolute-alias same-file cut must take the intra-file path: ${result.code} ${result.message}`
+          : "absolute-alias same-file cut must take the intra-file path",
+      ).toBe(true);
+      if (!isMutationSuccess(result)) return;
+      expect(result.result).toBe("c\nd\na\nb\n");
+      await expect(readFile(`${cwd}/sample.txt`, "utf-8")).resolves.toBe("c\nd\na\nb\n");
+      expect(result.raw.removedHashes.has(h[0]!)).toBe(true);
+      expect(result.raw.removedHashes.has(h[1]!)).toBe(true);
     });
   });
 });

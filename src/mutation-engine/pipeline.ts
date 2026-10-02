@@ -374,6 +374,19 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): Parsed
       let source: { anchor_from: string; anchor_to: string; retire: boolean } | undefined;
       switch (payload.kind) {
         case "literal":
+          // WHY: (remediation-2 B4) the min-line guard must sit where the destructive behaviour is
+          // WHY: reachable: `execute()` never calls `assertReq`, so a directly-constructed
+          // WHY: `{kind:"literal", text:""}` used to delete the span and report success (the wire
+          // WHY: folds `"text": ""` into the deletion payload and can never produce this shape —
+          // WHY: only engine-seam construction can). Mirror item (iv): refuse LOUD at the seam,
+          // WHY: naming the wire field `"text"` with the admission message verbatim.
+          if (payload.text === "") {
+            throw new DomainError("E_BAD_PAYLOAD", {
+              message:
+                `Edit request edits[${index}] "text" must carry at least one line; ` +
+                `"text": "" is the deletion payload. Nothing was written.`,
+            });
+          }
           text = payload.text;
           break;
         case "reference":
@@ -473,15 +486,24 @@ const LEASED_FOREIGN_PASSTHROUGH_CODES: ReadonlySet<DomainErrorCode> = new Set([
 ]);
 
 /**
- * A foreign-source rejection never carries served rows: the rows a leased-range rejection names
- * belong to the FOREIGN file's mirror, and this call must not lease anything it did not write.
- * `foreignRejection`'s pass-through is the enforcement point — a never-served foreign anchor
- * returns the inner error unchanged (and `recordRejectionServe`'s length guard skips every
- * snapshotIO write for the empty-rows payload), so a never-served foreign anchor leaves both
- * files byte- and row-identical.
+ * A foreign-source rejection never renders unleased rows: the rows a leased-range rejection names
+ * belong to the FOREIGN file's mirror, and this call must not lease anything it did not write
+ * (`loadForeignServedView` is the read-only authority). Rows are therefore SERVED or ABSENT —
+ * the leased codes are re-wrapped HERE with their rows dropped and `refFile` named, except
+ * `E_TARGET_LOST`, whose format already names the file and carries no rows, so it passes through.
+ * §0's never-served pass-through below stays (its exact-code pins ride it); the length guard in
+ * it is SHADOWED by the code-set check and is NOT the enforcement point.
+ * WHY: (B6, ISSUE-6 repo half — second recurrence) a never-served foreign anchor is ticketed to
+ * WHY: the `W_NEVER_SERVED_SHAPE` soft hint, but it surfaces as a hard rejection here, and that
+ * WHY: deviation is structural: `[W_*]` codes are the APPLIED tier — `warnBlock` renders them only
+ * WHY: on a result that mutated — and a foreign failure aborts before any apply, so the channel
+ * WHY: that would carry the hint never exists for this call.
  */
 function foreignRejection(error: unknown, refFile: string): DomainError {
   if (error instanceof DomainError) {
+    // WHY: (§0) kept per §0, but FULLY SHADOWED by the code-set check below (mutation M9 → 0 red):
+    // WHY: every code it matches is already in `NEVER_SERVED_FOREIGN_CODES`. It is not the
+    // WHY: enforcement point — do not describe it as one.
     if (
       (error.code === "E_UNKNOWN_ANCHOR" ||
         error.code === "E_FOREIGN_ANCHOR" ||
@@ -491,7 +513,12 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
       return error;
     }
     if (NEVER_SERVED_FOREIGN_CODES.has(error.code)) return error;
-    if (LEASED_FOREIGN_PASSTHROUGH_CODES.has(error.code)) return error;
+    if (LEASED_FOREIGN_PASSTHROUGH_CODES.has(error.code)) {
+      // WHY: (item A) `E_TARGET_LOST` already satisfies served-or-absent: its format names the
+      // WHY: file (the foreign snapshot always carries `filePath`) and renders no rows.
+      if (error.code === "E_TARGET_LOST") return error;
+      return foreignLeasedWrap(error, refFile);
+    }
     // WHY: (§9.9) the fallback claims `cause: "never-served"` — that is only honest for failures
     // WHY: with no lease behind them. Derive the inner typed cause when it has one, so a
     // WHY: retirement/drift shape that reaches here can never surface a dishonest cause in the
@@ -508,6 +535,42 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
     headline: `the foreign-source reference to ${refFile} did not resolve. Nothing was written.`,
     cause: "never-served",
   });
+}
+
+// WHY: (remediation-2 item A) served-or-absent for a foreign leased failure: the inner fresh-read
+// WHY: rows belong to the FOREIGN file and were never leased by this call, so they are dropped and
+// WHY: the headline names `refFile` — the model re-reads the foreign file itself. The code is
+// WHY: preserved verbatim (§0's exact-code pins): retirement or drift must still surface under the
+// WHY: code that means it, never rewritten as `E_STALE_ANCHOR` with its "no read is needed" remedy.
+function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
+  const headline =
+    `the foreign-source reference to ${refFile} no longer resolves against that file's served ` +
+    `state (rejection: ${error.code}). No rows of ${refFile} were served by this call. Nothing ` +
+    `was written; read ${refFile} and copy fresh anchors from that read.`;
+  const cause = error.cause ?? error.details.cause ?? "never-served";
+  const firstOffending =
+    error.firstOffendingLine !== undefined ? { firstOffendingLine: error.firstOffendingLine } : {};
+  if (error.code === "E_UNVERIFIED_RANGE") {
+    return new DomainError("E_UNVERIFIED_RANGE", {
+      headline,
+      servedRows: [],
+      servedBlock: "",
+      cause,
+      ...firstOffending,
+    });
+  }
+  if (error.code === "E_STALE_RANGE") {
+    return new DomainError("E_STALE_RANGE", {
+      headline,
+      servedRows: [],
+      servedBlock: "",
+      cause,
+      ...firstOffending,
+    });
+  }
+  // WHY: fail closed — the caller's code set admits only the two arms above plus `E_TARGET_LOST`,
+  // WHY: which passes through untouched; a set edited without extending this wrap must be loud.
+  throw error;
 }
 
 /**

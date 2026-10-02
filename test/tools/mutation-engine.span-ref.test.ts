@@ -708,4 +708,32 @@ describe("MutationEngine — reference payloads at the engine seam (ticket-04 re
     expect(batchResult).toBe(sequenced);
     expect(batchResult).toBe("a\ns\nt\nb\nc\nd\ne\np\nq\n");
   });
+
+  it("refuses a directly-constructed zero-line literal at the parse seam (remediation-2 B4)", async () => {
+    // RED at `ad80222` — a behavioural regression witness: the min-line guard sits in `assertReq`,
+    // which this entry point never calls, so `{kind:"literal", text:""}` DELETES the target span
+    // and reports success where `baef230` refused it. Mirrors item (iv): the engine seam must
+    // refuse LOUD, naming the wire field `"text"`, and the file must stay byte-identical.
+    await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      const result = await execute(
+        { file: "sample.txt", edits: [handItem([h[1]!, h[1]!], "")] },
+        cwd,
+        { sessionKey: TEST_SESSION_ID },
+      );
+      expect(
+        isMutationFailure(result),
+        isMutationSuccess(result)
+          ? `zero-line literal succeeded and deleted the span: ${JSON.stringify(result.result)}`
+          : "zero-line literal must be refused",
+      ).toBe(true);
+      if (!isMutationFailure(result)) return;
+      expect(result.code).toBe("E_BAD_PAYLOAD");
+      expect(result.message).toContain('"text"');
+      expect(result.message).toContain("must carry at least one line");
+      await expect(readFile(`${cwd}/sample.txt`, "utf-8")).resolves.toBe("a\nb\nc\nd\ne\n");
+    });
+  });
 });

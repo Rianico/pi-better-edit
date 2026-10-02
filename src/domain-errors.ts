@@ -138,6 +138,10 @@ export interface ErrorPayloadMap {
     firstOffendingLine?: number;
   };
   E_UNVERIFIED_RANGE: {
+    // WHY: (remediation-2 item A) the foreign pass-through renders this code with NO rows, which
+    // WHY: needs a file-attributing headline; target-side producers keep passing
+    // WHY: `UNVERIFIED_HEADLINE` and a non-empty `servedBlock`, so their render is byte-identical.
+    headline?: string;
     servedRows: ServedRow[];
     servedBlock: string;
     cause: RangeCause;
@@ -398,7 +402,11 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     // WHY: the current on-disk range, but a stale served canon is indistinguishable from real disk
     // WHY: drift, so the model must inspect them and decide — never a blind retry with the anchors
     // WHY: that just failed.
-    format: ({ headline, servedBlock }) => `${headline}\n${FRESH_READ_HEADING}\n${servedBlock}`,
+    // WHY: (remediation-2 item A) `servedBlock === ""` means NO rows are in the served set for
+    // WHY: this rejection — render headline only. Every target-side producer passes a non-empty
+    // WHY: block, so their renders stay byte-identical.
+    format: ({ headline, servedBlock }) =>
+      servedBlock === "" ? headline : `${headline}\n${FRESH_READ_HEADING}\n${servedBlock}`,
   },
   E_TARGET_LOST: {
     audience: "MODEL",
@@ -409,7 +417,12 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_UNVERIFIED_RANGE: {
     audience: "MODEL",
-    format: ({ servedBlock }) => `${UNVERIFIED_HEADLINE}\n${FRESH_READ_HEADING}\n${servedBlock}`,
+    // WHY: same served-or-absent rule as `E_STALE_RANGE`: the fresh-read section appears exactly
+    // WHY: when rows are served; an absent-rows rejection renders its headline only.
+    format: ({ headline, servedBlock }) =>
+      servedBlock === ""
+        ? (headline ?? UNVERIFIED_HEADLINE)
+        : `${headline ?? UNVERIFIED_HEADLINE}\n${FRESH_READ_HEADING}\n${servedBlock}`,
   },
   E_MALFORMED_ANCHOR: {
     audience: "MODEL",
