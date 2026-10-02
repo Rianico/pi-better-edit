@@ -1,7 +1,8 @@
-import { open as fsOpen, readFile as fsReadFile, stat as fsStat } from "node:fs/promises";
+import { open as fsOpen, stat as fsStat } from "node:fs/promises";
 import { fileTypeFromBuffer } from "file-type";
 import { MAX_BYTES, SNIFF_BYTES } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
+import { readBytes } from "../fs-write.js";
 
 const IMG_TYPES = new Set<string>(["image/jpeg", "image/png", "image/gif", "image/webp"]);
 
@@ -171,9 +172,12 @@ export async function loadFileKindAndText(
     // WHY: the round-trip ORACLE: the decoded text is line-addressable without loss exactly when
     // WHY: re-encoding it equals the file's bytes. Runs only on suspicion; re-reading the file is
     // WHY: cheaper than keeping a parallel raw copy for every clean file.
+    // WHY: (04b-rem2 suggestion 1) the byte read goes through the file layer's ONE primitive —
+    // WHY: the oracle and every restore/compare site now read bytes the same way, including the
+    // WHY: BOM: the WHOLE byte image is compared, nothing is stripped at the oracle site.
     let hadUtf8DecodeErrors = false;
     if (utf8Suspect) {
-      const rawBytes = await fsReadFile(filePath);
+      const rawBytes = await readBytes(filePath);
       hadUtf8DecodeErrors = !Buffer.from(text, "utf-8").equals(rawBytes);
     }
 

@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { readFile, writeFile, rm } from "node:fs/promises";
+import { readFile, writeFile, rm, mkdir } from "node:fs/promises";
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
 import { lineHashes, initHasher } from "../../src/hashline/index.js";
@@ -182,6 +182,54 @@ describe("correlated undo of a cut transaction (ticket-04b §4)", () => {
       expect(await getUndo(targetReal)).toBeUndefined();
       expect(await getUndo(sourceReal)).toBeUndefined();
       expect((await listCutIntentsAsync()).find((i) => i.txnId === txnId)).toBeUndefined();
+    });
+  });
+
+  // REMEDIATION-2 R2, revert side: the same write-AHEAD rule observed at the moment of the
+  // FIRST revert write — the intent row is present while every member still sits at the cut's
+  // post bytes. Mutation refuted: moving `saveCutIntent` after the first revert write (the
+  // revert-arm mirror of N8) observes ZERO intents here.
+  it("the revert intent is durable BEFORE the first revert write", async () => {
+    await withTempDir("cut-undo-intent-order-", async (cwd) => {
+      const { ctx, undo } = await cutThrough(cwd);
+      const observed: { intents: number; target: string; source: string }[] = [];
+      (ctx as { onBeforeUndoWrites?: () => void | Promise<void> }).onBeforeUndoWrites =
+        async () => {
+          observed.push({
+            intents: (await listCutIntentsAsync()).length,
+            target: await readFile(join(cwd, "target.txt"), "utf-8"),
+            source: await readFile(join(cwd, "source.txt"), "utf-8"),
+          });
+        };
+      const result = await undo.execute("u1", { path: "target.txt" }, undefined, undefined, ctx);
+      expect(result.isError, getText(result)).toBeFalsy();
+      expect(observed).toHaveLength(1);
+      expect(observed[0]!.intents).toBeGreaterThanOrEqual(1);
+      expect(observed[0]!.target, "no revert byte may have landed when the intent was read").toBe(
+        "b\nc\n2\n3\n",
+      );
+      expect(observed[0]!.source).toBe("a\nd\n");
+    });
+  });
+
+  // REMEDIATION-2 R3: the E_UNKNOWN wrapper is on a LIVE path — an unexpected filesystem failure
+  // (a member replaced by a DIRECTORY: validation's byte read answers EISDIR, a code the typed
+  // stale arms do not claim) must surface as the [MODEL] envelope, never a raw escape.
+  // Mutation refuted: N7 (delete the wrap and re-throw) escapes EISDIR out of the tool and this
+  // witness fails on the raw throw instead of seeing the envelope.
+  it("an unexpected failure in the correlated revert surfaces as the [MODEL] E_UNKNOWN envelope", async () => {
+    await withTempDir("cut-undo-eisdir-", async (cwd) => {
+      const { ctx, undo } = await cutThrough(cwd);
+      await rm(join(cwd, "source.txt"));
+      await mkdir(join(cwd, "source.txt"));
+      const result = await undo.execute("u1", { path: "target.txt" }, undefined, undefined, ctx);
+      expect(result.isError, "an unexpected filesystem failure must not escape raw").toBe(true);
+      const text = getText(result);
+      expect(text).toContain("[MODEL]");
+      expect(text).toContain("E_UNKNOWN");
+      // Fail closed and durably honest: nothing reverted, the requested member still at post.
+      expect(await readFile(join(cwd, "target.txt"), "utf-8")).toBe("b\nc\n2\n3\n");
+      await expect(readFile(join(cwd, "source.txt"))).rejects.toThrow(/EISDIR/);
     });
   });
 });

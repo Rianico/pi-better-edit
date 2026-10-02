@@ -346,6 +346,12 @@ async function undoCorrelatedTransaction(
       // WHY: from the same rows on the next run (04b-rem P2-1: durability, not reordering).
       await saveCutIntent(txnId, requestedAbsolutePath, "revert");
 
+      // WHY: test-only observation seam (04b-rem2 R2), the revert-side mirror of
+      // WHY: `onBeforeFirstCutWrite`: it fires BEFORE the first revert write, while every member
+      // WHY: still sits at the cut's post bytes, so the write-ahead ordering is observable here too.
+      const undoCtx = ctx as { onBeforeUndoWrites?: () => void | Promise<void> };
+      if (undoCtx?.onBeforeUndoWrites) await undoCtx.onBeforeUndoWrites();
+
       // WHY: durable revert, STEP 2: this call owns the window it opens — a failed write first
       // WHY: COMPLETES the revert inline over the remaining members. Only a completion that is
       // WHY: itself defeated refuses: rows and intent then stay intact and the typed

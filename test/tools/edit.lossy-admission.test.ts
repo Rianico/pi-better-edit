@@ -130,4 +130,43 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       ).toBe(false);
     });
   });
+
+  // REMEDIATION-2 R4: the INTERSECTION the single-feature cases miss — a file that is BOTH
+  // BOM-prefixed AND carries a legal U+FFFD. The BOM makes the decoded text start with U+FEFF;
+  // the FFFD triggers SUSPICION, so the round-trip oracle actually runs and must compare the
+  // WHOLE byte image. Mutation refuted: N6 (strip the BOM at the oracle site) makes the
+  // comparison mismatch on exactly this file and the edit is wrongly refused.
+  it("a BOM-prefixed file that ALSO contains a legal U+FFFD edits normally — the oracle compares the whole byte image", async () => {
+    await withTempDir("lossy-bom-replacement-", async (cwd) => {
+      const bytes = Buffer.concat([
+        Buffer.from([0xef, 0xbb, 0xbf]), // UTF-8 BOM
+        Buffer.from("alpha\n"),
+        Buffer.from([0xef, 0xbf, 0xbd]), // legal U+FFFD (valid UTF-8)
+        Buffer.from("\nbeta\n"),
+      ]);
+      await writeFile(join(cwd, "bomrep.txt"), bytes);
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "bomrep.txt" }, undefined, undefined, ctx);
+      const decoded = "alpha\n\uFFFD\nbeta\n";
+      const h = await lineHashes(decoded, `${home.testPath}/bomrep.txt`);
+      const result = await execute(
+        admit({
+          file: "bomrep.txt",
+          edits: [{ anchor_from: h[2]!, anchor_to: h[2]!, text: "BETA" }],
+        }),
+        cwd,
+        { sessionKey: TEST_SESSION_ID },
+      );
+      expect(
+        isMutationSuccess(result),
+        "BOM + legal U+FFFD round-trips losslessly: suspicion must NOT become refusal",
+      ).toBe(true);
+      const after = await readFile(join(cwd, "bomrep.txt"));
+      expect(
+        after.subarray(0, 3).equals(Buffer.from([0xef, 0xbb, 0xbf])),
+        "the BOM is preserved through the canonical serializer",
+      ).toBe(true);
+      expect(after.toString("utf-8").slice(1)).toBe("alpha\n\uFFFD\nBETA\n");
+    });
+  });
 });

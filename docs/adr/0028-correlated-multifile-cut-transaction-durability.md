@@ -89,8 +89,10 @@ undo must never revert one file of the pair alone.
    store re-materializes per member (deferred warnings are non-fatal) and exactly ONE
    `deleteUndoTransaction` clears the whole set, followed by the intent drop (a failed drop
    self-retires via the repair "every member at PRE" arm). An unexpected throw anywhere in the
-   correlated path is wrapped into a `[MODEL] [E_UNKNOWN]` envelope — a raw non-`[MODEL]` escape
-   would break the registry doctrine (ADR-0021 d4) and leave the model with no remedy. Reverts
+   correlated path is wrapped into a `[MODEL] [E_UNKNOWN]` envelope: a raw non-`[MODEL]` escape
+   strips the audience tag and code the registry doctrine (ADR-0021 d4) routes by, and the wrap
+   restores that envelope — `E_UNKNOWN` is remedy-free BY RULE, and the wrap is deliberately not
+   claimed to supply a remedy. Reverts
    run under sorted multi-path queues (`src/mutation-queue.ts`) so two transactions touching the
    same files in swapped order cannot deadlock.
 
@@ -162,6 +164,12 @@ itself is not on disk in this repository, so this section — not the note — i
 - Cut durability is a REPAIR contract, not an atomicity contract: docs and response text must
   never say the two files are written atomically. The window is real and its crash states are
   enumerated and tested.
+- RESIDUAL RISK — the admission proof has a boundary: the round-trip guard (`E_LOSSY_TEXT`) runs
+  at READ time, the raw pre-image is captured later under the queue, and the renames later
+  still. An out-of-band writer that makes a file non-UTF-8 INSIDE that window invalidates
+  "byte-identity by construction" for that call — the same pre-existing concurrency class as
+  out-of-band modifications of served lines (ADR's re-read doctrine). Untested in-process;
+  recorded as a known window, not as a claim the guard closes it.
 - `file_undo.transaction_id` is the correlation authority; vacuum pinning sees each member row
   per (path, snapshot_hash) — a transaction multiplies pinned rows, asserted against budget in
   `test/core/snapshot-vacuum.test.ts`.

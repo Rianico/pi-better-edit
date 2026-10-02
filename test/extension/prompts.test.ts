@@ -96,22 +96,34 @@ describe("prompt guidelines", () => {
   });
 
   it("edit-guidelines.md is single-sourced from payload-contract", () => {
-    const fileGuidelines = loadGuide("../prompts/edit-guidelines.md");
-    expect(fileGuidelines).toEqual(EDIT_GUIDELINES);
+    // WHY: (04b-rem2 R1, E21) `loadGuide` answers this path with the constant itself, so a
+    // WHY: comparison through it is the constant against itself and can never fail. The SHIPPED
+    // WHY: artifact is READ and parsed here — same rules the guide loader applies to real files —
+    // WHY: and pinned against the constant, and the tool prompt is pinned against the FILE.
+    // WHY: M10 (diverge only prompts/edit-guidelines.md) reddens this test.
+    const raw = readFileSync(new URL("../../prompts/edit-guidelines.md", import.meta.url), "utf-8");
+    const fileLines = raw
+      .split("\n")
+      .map((line) => line.trim())
+      .filter((line) => line.startsWith("- "))
+      .map((line) => line.slice(2));
+    expect(fileLines).toEqual(EDIT_GUIDELINES);
     const tool = buildToolDef();
-    expect(tool.promptGuidelines).toEqual(EDIT_GUIDELINES);
+    expect(tool.promptGuidelines).toEqual(fileLines);
   });
 
   it("the batch guideline states the pre-rename guarantee, not a whole-call atomicity the cut cannot honor (04b-rem P3-4)", () => {
     // WHY: the retired sentence claimed "the call is atomic (any failure writes nothing)" —
     // WHY: FALSE for a foreign cut whose rollback is defeated inside the two-rename window. The
     // WHY: replacement scopes the promise to what IS guaranteed (validation before the first
-    // WHY: rename writes nothing) and states the ordered-commit/repair story for the rest, in
-    // WHY: BOTH mirrors — the mirror equality above pins them byte-equal.
-    const joined = EDIT_GUIDELINES.join("\n");
-    expect(joined).not.toContain("the call is atomic (any failure writes nothing)");
-    expect(joined).toContain("every edit validates BEFORE the first rename");
-    expect(loadGuide("../prompts/edit-guidelines.md").join("\n")).toContain(
+    // WHY: rename writes nothing) and states the ordered-commit/repair story for the rest.
+    // WHY: (04b-rem2 R1) both assertions read the RAW shipped file — the artifact operand —
+    // WHY: never the constant; the parsed equality in the single-sourced test above pins
+    // WHY: file == constant == tool prompt with real reachability.
+    const raw = readFileSync(new URL("../../prompts/edit-guidelines.md", import.meta.url), "utf-8");
+    expect(raw).not.toContain("the call is atomic (any failure writes nothing)");
+    expect(raw).toContain("every edit validates BEFORE the first rename");
+    expect(raw).toContain(
       "a defeated rollback restores captured bytes or is repaired on the next run",
     );
   });

@@ -1301,6 +1301,11 @@ async function runCutTransaction(
   // WHY: §11: after an abort BOTH files are byte-identical to the pre-transaction contents).
   const written: ProcessedEditFile[] = [];
   try {
+    if (options?.onBeforeFirstCutWrite) {
+      // WHY: test-only observation seam (04b-rem2 R2): fires BEFORE the first rename so the
+      // WHY: write-ahead ordering of the intent record is OBSERVED, not asserted after the fact.
+      await options.onBeforeFirstCutWrite();
+    }
     abortIf(options?.signal);
     await writeAtomic(
       file.absolutePath,

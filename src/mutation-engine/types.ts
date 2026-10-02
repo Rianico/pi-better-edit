@@ -28,6 +28,13 @@ export interface PipelineOptions {
    * intent record and next-run repair must resolve.
    */
   onCutBetweenWrites?: (committedAbsolutePath: string) => void | Promise<void>;
+  /**
+   * TEST-ONLY observation seam (ticket-04b remediation-2 R2): invoked inside a foreign-source cut
+   * transaction BEFORE the first rename, while no byte of the transaction has landed. The rule
+   * under test is write-AHEAD: the intent record must already be durable at the moment of the
+   * first mutation — an existence check taken inside the window cannot show that.
+   */
+  onBeforeFirstCutWrite?: () => void | Promise<void>;
 }
 
 /**

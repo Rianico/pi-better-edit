@@ -108,6 +108,33 @@ describe("foreign-cut durability: window state, intent record, next-run repair (
     });
   });
 
+  // REMEDIATION-2 R2: the rule is write-AHEAD. The seam above proves existence after rename #1
+  // only; this witness observes the store at the moment of the FIRST rename, while no byte of
+  // the transaction has landed. Mutations refuted: M2a (intent moved between the two renames)
+  // and N8 (intent moved after the window) both observe ZERO intents here.
+  it("the intent is durable BEFORE the first rename — observed with no byte landed (M2a/N8)", async () => {
+    await withTempDir("cut-intent-write-ahead-", async (cwd) => {
+      const { hs, ht } = await seedAndServe(cwd);
+      const observations: { intents: number; target: string; source: string }[] = [];
+      const result = await execute(cutRequest(ht, hs), cwd, {
+        sessionKey: TEST_SESSION_ID,
+        onBeforeFirstCutWrite: async () => {
+          observations.push({
+            intents: (await listCutIntentsAsync()).length,
+            target: await readFile(join(cwd, "target.txt"), "utf-8"),
+            source: await readFile(join(cwd, "source.txt"), "utf-8"),
+          });
+        },
+      });
+      expect(isMutationSuccess(result)).toBe(true);
+      expect(observations).toHaveLength(1);
+      // ORDER, not existence-after-the-fact: intent present AND nothing mutated yet.
+      expect(observations[0]!.intents).toBeGreaterThanOrEqual(1);
+      expect(observations[0]!.target).toBe(TARGET_BEFORE);
+      expect(observations[0]!.source).toBe(SOURCE_BEFORE);
+    });
+  });
+
   it("a throw inside the two-rename window aborts: both files byte-identical to pre, intent retired", async () => {
     await withTempDir("cut-window-abort-", async (cwd) => {
       const { hs, ht } = await seedAndServe(cwd);
