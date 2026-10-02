@@ -435,9 +435,13 @@ const OP_KEY_NEEDLE =
 // (the taught contract), prompts/*.md (model instructions), src/**/*.ts
 // (shipped code), scripts/ (model-facing strings on declared entry points
 // (package.json scripts — scripts/ is NOT in the shipped files list) —
-// the benchmark prompt taught the retired shape from here). OUT: docs/**
-// historical/archive records (spec, adr, articles, .archive_issues — a
-// superseded tuple-payload note still names the retired key);
+// the benchmark prompt taught the retired shape from here).
+// OUT by default: every tracked path not listed IN (the mechanism is an allow-list).
+// OUT: docs/** historical/archive records: spec, adr, articles,
+// .archive_issues (a superseded tuple-payload note still names the retired
+// key) -- but NOT docs/agents/*.md, which are LIVE agent instructions
+// (issue-tracker, triage-labels, domain), nor docs/spec/, which holds the
+// LIVE architecture spec agents are pointed at;
 // CHANGELOG.md (release history); benchmarks/ (measurement scripts); the
 // repo-root index.ts (re-export barrel). OUT: test/ — refusal fixtures plus
 // this guard's own prose (not shrink-only, so no re-assertion is owed).
