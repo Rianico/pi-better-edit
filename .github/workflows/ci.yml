@@ -46,3 +46,108 @@ jobs:
 
       - name: Run tests
         run: pnpm run test:coverage
+
+  artifact:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0  # zizmor: ignore[cache-poisoning]
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Build the extension entry
+        run: pnpm run build
+
+      - name: Verify the artifact the way pi loads it
+        run: pnpm run verify:dist
+
+      # ADR-0027: the guard is only worth having if it fails on each violation, so every
+      # check is exercised against a deliberate mutation of the artifact and the manifest.
+      - name: Demonstrate the guard fails on every violation
+        run: pnpm run verify:dist:mutations
+
+      # A file the linters would reject inside dist/ proves they still skip the artifact.
+      - name: Lint and format skip the built artifact
+        run: |
+          printf 'const broken = (\n' > dist/__scan-probe.js
+          pnpm run lint
+          pnpm run format
+
+  install-surfaces:
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        manager: [npm, pnpm, bun]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0  # zizmor: ignore[cache-poisoning]
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install repository dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install bun
+        if: matrix.manager == 'bun'
+        run: npm install -g bun
+
+      # Reproduces pi's git install for this manager: a git-checkout-shaped tree with the
+      # artifact cleaned away, then the manager's install with devDependencies omitted.
+      - name: Install surface (${{ matrix.manager }})
+        run: node scripts/install-surface-check.mjs --manager ${{ matrix.manager }}
+
+  install-smoke:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: pnpm/action-setup@ea17c68df8912ef543352723c149a84f56e3d413 # v6.1.0
+        with:
+          run_install: false
+
+      - name: Setup Node.js
+        uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0  # zizmor: ignore[cache-poisoning]
+        with:
+          node-version: 26
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Install pi
+        run: npm install -g @earendil-works/pi-coding-agent@0.99.1
+
+      # pi installs a git source served by a local `git daemon`, installs the packed tarball,
+      # drives pi in RPC mode for both, and re-checks after a commit-changing update.
+      - name: Install smoke (git source, tarball, RPC)
+        run: pnpm run smoke:install
