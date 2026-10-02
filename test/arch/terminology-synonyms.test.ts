@@ -377,3 +377,112 @@ describe("anchor term baseline stays recorded and shrink-only", () => {
     }
   });
 });
+
+/**
+ * ticket-07 — the retired wire spellings get a witness.
+ * WHY: 05's doc rewrite had no witness in the suite: README.md/CONTEXT.md could
+ * reintroduce `replace_with` (and friends) with every test green — demonstrated
+ * by planting the spelling and watching the arch suite stay green. This block is
+ * the ban half (absence) plus the presence half (E25): the five corrected facts
+ * asserted as text, so a rewrite that DELETES the corrected sentences fails too.
+ * Needles are built dynamically so this guard file never contains the banned
+ * strings itself. Shape copied from terminology-foreign-source.test.ts.
+ */
+const RETIRED_WIRE_NEEDLES = [
+  ["replace", "with"].join("_"),
+  ["copy", "from"].join("_"),
+  ["delete", "source"].join("_"),
+];
+
+// WHY: key-shaped, never bare. Prose like "no `op` field"
+// (src/payload-contract.ts) must stay green; only a payload key trips this.
+// The discriminator arm below pins both sides.
+const OP_KEY_NEEDLE = /[{,]\s*("op"|'op'|op)\s*:/;
+
+// WHY (E26): each carve-out states its reason as a fact about the artifact.
+// (a1) src/edit.ts documents the removal: `replaceWithSchema` REMOVED, no
+// fold for the retired spelling. (a2) src/hashline/apply.ts sweep note names
+// the retired spellings it swept. No carve-out for `op` prose: the key-shaped
+// needle does not match it (pinned by the quiet arm). ADR/CHANGELOG history
+// is out of the ban scope, so no baseline entries exist here.
+const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts", "src/hashline/apply.ts"]);
+
+function retiredWireScope(): string[] {
+  return ["README.md", "CONTEXT.md", ...allFiles("prompts", ".md"), ...srcFiles()].filter(
+    (file) => !RETIRED_WIRE_CARVE_OUT.has(file),
+  );
+}
+
+function retiredWireViolations(): string[] {
+  const out: string[] = [];
+  for (const file of retiredWireScope()) {
+    const text = readFileSync(file, "utf-8");
+    if (RETIRED_WIRE_NEEDLES.some((needle) => text.includes(needle)) || OP_KEY_NEEDLE.test(text)) {
+      out.push(file);
+    }
+  }
+  return out;
+}
+
+describe("retired wire spellings stay banned and corrected facts stay present (ticket-07)", () => {
+  it("names no retired wire spelling in README, CONTEXT, prompts or src (carve-outs excluded)", () => {
+    // WHY: a silently empty scope would pass by construction (E21) — the
+    // scope itself is asserted non-empty before the ban is checked.
+    expect(retiredWireScope().length).toBeGreaterThan(0);
+    expect(retiredWireViolations()).toEqual([]);
+  });
+
+  it("keeps the carve-outs needed: each still documents the removal it excuses", () => {
+    // WHY: shrink-only honesty — the moment a file stops documenting the
+    // removal, its carve-out is a hole and must be removed.
+    expect(readFileSync("src/edit.ts", "utf-8")).toContain("REMOVED");
+    expect(readFileSync("src/hashline/apply.ts", "utf-8")).toContain("retired");
+  });
+
+  it("planted-term self-test: needles see planted occurrences and stay quiet otherwise", () => {
+    // WHY: a text guard that cannot be seen failing proves nothing. Planted
+    // spellings are checked against the needles, and the canonical wire
+    // sample plus the `op` prose stay quiet — the discriminator that keeps
+    // the key-shaped needle honest.
+    const planted = `{ ${RETIRED_WIRE_NEEDLES[0]}: "x" }`;
+    expect(RETIRED_WIRE_NEEDLES.some((needle) => planted.includes(needle))).toBe(true);
+    expect(
+      RETIRED_WIRE_NEEDLES.some((needle) => '{ "anchor_from": "a", "text": "T" }'.includes(needle)),
+    ).toBe(false);
+    expect(OP_KEY_NEEDLE.test('{ anchor_from: "a", op: "replace" }')).toBe(true);
+    expect(OP_KEY_NEEDLE.test('{"op": "replace"}')).toBe(true);
+    expect(OP_KEY_NEEDLE.test("there is no `op` field and no verbs")).toBe(false);
+    expect(OP_KEY_NEEDLE.test("a legacy key, an `op` field")).toBe(false);
+  });
+
+  it("presence: the delete spelling is taught as text", () => {
+    const readme = readFileSync("README.md", "utf-8");
+    expect(readme).toContain('`""` deletes the range when placed in-place');
+    expect(readme).toContain("[W_NOOP_INSERT]` as a no-op");
+  });
+
+  it("presence: at defaults to in-place and the underscore spelling is refused", () => {
+    const readme = readFileSync("README.md", "utf-8");
+    expect(readme).toContain('Omitted means `"in-place"`');
+    expect(readme).toContain('"in_place"` is refused');
+  });
+
+  it("presence: exactly one payload per item", () => {
+    const context = readFileSync("CONTEXT.md", "utf-8");
+    expect(context).toContain(
+      "exactly one payload per item (`text` XOR `text_ref`, both or neither refused)",
+    );
+  });
+
+  it("presence: SpanRef mode is required and file names another served file", () => {
+    const readme = readFileSync("README.md", "utf-8");
+    expect(readme).toContain("`mode` is **required** (never inferred)");
+    expect(readme).toContain("`file` may name another served file");
+  });
+
+  it("presence: foreign-source copy vocabulary, not cross-file", () => {
+    const readme = readFileSync("README.md", "utf-8");
+    expect(readme).toContain("foreign-source copy");
+    expect(readme).toContain('(never called "cross-file" here');
+  });
+});
