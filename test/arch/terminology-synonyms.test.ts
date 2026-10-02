@@ -398,10 +398,11 @@ describe("anchor term baseline stays recorded and shrink-only", () => {
  * mention (table value cell) is not key-shaped and stays outside the contract.
  * Presence is pinned VERBATIM (R4): each added fragment raises the cost of a
  * legitimate doc rewrite — that cost is disclosed, not hidden.
- * SYMMETRY (I1): the guard enumerates two sets — scope members and needle
- * members — and pins BOTH (ban test pins scope, pin test pins needles,
- * self-test shape-pins `op`). Deliberately unpinned: camel/hyphen/upper
- * variants (different tokens, out of contract — see above). No silent asymmetry.
+ * SYMMETRY (I1/J4): the guard enumerates THREE sets — scope members, needle
+ * members, carve-out members — and pins ALL THREE (ban test pins scope, pin
+ * test pins needles, carve-out pin below pins exemptions, self-test
+ * shape-pins `op`). Deliberately unpinned: camel/hyphen/upper variants
+ * (different tokens, out of contract — see above). No silent asymmetry.
  * Shape copied from terminology-foreign-source.test.ts.
  */
 const RETIRED_WIRE_NEEDLES = [
@@ -431,21 +432,28 @@ const OP_KEY_NEEDLE = /(^|[^A-Za-z_])["'`]?op["'`]?\s*:/;
 // `op` prose: the key-shaped needle does not match it (pinned by quiet arms).
 // SCOPE BY SURFACE (E26 — a reason per exclusion). IN: README.md, CONTEXT.md
 // (the taught contract), prompts/*.md (model instructions), src/**/*.ts
-// (shipped code), scripts/ (model-facing strings on shipped entry points —
-// the benchmark prompt taught the retired shape from here). OUT: docs/spec,
-// docs/adr (historical rewrite records). OUT: test/ — refusal fixtures plus
+// (shipped code), scripts/ (model-facing strings on declared entry points
+// (package.json scripts — scripts/ is NOT in the shipped files list) —
+// the benchmark prompt taught the retired shape from here). OUT: docs/**
+// historical/archive records (spec, adr, articles, .archive_issues — a
+// superseded tuple-payload note still names the retired key);
+// CHANGELOG.md (release history); benchmarks/ (measurement scripts); the
+// repo-root index.ts (re-export barrel). OUT: test/ — refusal fixtures plus
 // this guard's own prose (not shrink-only, so no re-assertion is owed).
 const RETIRED_WIRE_CARVE_OUT = new Set(["src/edit.ts", "src/hashline/apply.ts"]);
 
 function retiredWireScope(): string[] {
+  // WHY (J1/J2): extension-independent — the helper matches by endsWith, so
+  // ext "." matches NOTHING (verified: "x.py".endsWith(".") is false) and
+  // would make any assertion over its walk vacuous. The walk uses "" (every
+  // path ends with "") and filters compiled artifacts; a new scripts/ file
+  // of ANY extension is then a member unless carved.
   return [
     "README.md",
     "CONTEXT.md",
     ...allFiles("prompts", ".md"),
     ...srcFiles(),
-    ...allFiles("scripts", ".mjs"),
-    ...allFiles("scripts", ".js"),
-    ...allFiles("scripts", ".py"),
+    ...allFiles("scripts", "").filter((f) => !f.endsWith(".pyc")),
   ].filter((file) => !RETIRED_WIRE_CARVE_OUT.has(file));
 }
 
@@ -472,8 +480,11 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     for (const required of ["README.md", "CONTEXT.md"]) expect(scope).toContain(required);
     expect(scope.some((f) => f.startsWith("prompts/") && f.endsWith(".md"))).toBe(true);
     expect(scope.some((f) => f.startsWith("src/"))).toBe(true);
-    expect(scope.some((f) => f.startsWith("scripts/"))).toBe(true);
+    for (const f of allFiles("scripts", "").filter((f) => !f.endsWith(".pyc")))
+      if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f); // every script a member or carve-out
+    expect(scope).toContain("scripts/practical-token-benchmark.mjs"); // the motivated artifact, pinned BY NAME
     expect(scope).not.toContain("src/edit.ts"); // the carve-out is still applied
+    expect([...RETIRED_WIRE_CARVE_OUT]).toEqual(["src/edit.ts", "src/hashline/apply.ts"]); // J4: carve-out set pinned against addition
     expect(retiredWireViolations()).toEqual([]);
   });
 
