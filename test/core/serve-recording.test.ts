@@ -294,7 +294,7 @@ describe("write then edit — same-session drift-free (#70)", () => {
             {
               anchor_from: served[0]!,
               anchor_to: served[0]!,
-              replace_with: "A\n",
+              text: "A\n",
             },
           ],
         }),
@@ -373,7 +373,7 @@ describe("rejected edits — pre-load failures write zero serves (#69)", () => {
               {
                 anchor_from: "findActivatingFile,",
                 anchor_to: "x",
-                replace_with: "y",
+                text: "y",
               },
             ],
           }) as unknown as NormalizedEditRequest,
@@ -432,7 +432,7 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
             {
               anchor_from: seed.fileHashes[0]!,
               anchor_to: seed.fileHashes[0]!,
-              replace_with: `${startLines[0]}\n${Array(10).fill(dup).join("\n")}`,
+              text: `${startLines[0]}\n${Array(10).fill(dup).join("\n")}`,
             },
           ],
         }),
@@ -449,7 +449,7 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
               {
                 anchor_from: "findActivatingFile,",
                 anchor_to: "x",
-                replace_with: "y",
+                text: "y",
               },
             ],
           }),
@@ -499,7 +499,7 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
             {
               anchor_from: afterFirst[targetPos]!,
               anchor_to: afterFirst[targetPos]!,
-              replace_with: "const d = 40;",
+              text: "const d = 40;",
             },
           ],
         }),
@@ -832,7 +832,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const first = await apply(
         req({
           file: "cyclic-pipeline.txt",
-          edits: [{ anchor_from: hashesA[1]!, anchor_to: hashesA[1]!, replace_with: "BRAVO" }],
+          edits: [{ anchor_from: hashesA[1]!, anchor_to: hashesA[1]!, text: "BRAVO" }],
         }),
         home,
         { store, sessionKey: SESSION },
@@ -845,7 +845,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const second = await apply(
         req({
           file: "cyclic-pipeline.txt",
-          edits: [{ anchor_from: hashesB[1]!, anchor_to: hashesB[1]!, replace_with: "bravo" }],
+          edits: [{ anchor_from: hashesB[1]!, anchor_to: hashesB[1]!, text: "bravo" }],
         }),
         home,
         { store, sessionKey: SESSION },
@@ -901,8 +901,8 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
         req({
           file: "nothing.txt",
           edits: [
-            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" },
-            { anchor_from: "zzz", anchor_to: "zzz", replace_with: "zzz" },
+            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+            { anchor_from: "zzz", anchor_to: "zzz", text: "zzz" },
           ],
         }),
         home,
@@ -926,7 +926,7 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
       const retried = await apply(
         req({
           file: "nothing.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "BRAVO" }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BRAVO" }],
         }),
         home,
         { store, sessionKey: SESSION },
@@ -948,7 +948,7 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
           apply(
             req({
               file: "nothing.txt",
-              edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" }],
+              edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" }],
             }),
             home,
             { store, sessionKey: SESSION },
@@ -973,7 +973,7 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
       const previewed = await execEdits(
         req({
           file: "nothing.txt",
-          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" }],
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" }],
         }),
         home,
         { store, sessionKey: SESSION, noPersist: true },

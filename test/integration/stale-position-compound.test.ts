@@ -24,7 +24,7 @@ describe("stale-position compound edits", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[line5Hash, line5Hash, "E"]] },
+        { file: "sample.ts", edits: [{ anchor_from: line5Hash, anchor_to: line5Hash, text: "E" }] },
         undefined,
         undefined,
         ctx,
@@ -34,7 +34,10 @@ describe("stale-position compound edits", () => {
       if (freshHash) {
         await editTool.execute(
           "e2",
-          { path: "sample.ts", edits: [[freshHash, freshHash, "E-AGAIN"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: freshHash, anchor_to: freshHash, text: "E-AGAIN" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -61,7 +64,10 @@ describe("stale-position compound edits", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[line2Hash, line4Hash, "B\nC_D"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: line2Hash, anchor_to: line4Hash, text: "B\nC_D" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -89,7 +95,10 @@ describe("stale-position compound edits", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[line2Hash, line4Hash, "B\nC_D"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: line2Hash, anchor_to: line4Hash, text: "B\nC_D" }],
+        },
         undefined,
         undefined,
         ctx,

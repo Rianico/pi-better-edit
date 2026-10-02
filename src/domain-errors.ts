@@ -64,7 +64,8 @@ export type DomainWarningCode =
   | "W_REVERSED_ANCHORS"
   | "W_UNICODE_LITERAL"
   | "W_LITERAL_BYPASS"
-  | "W_NOOP";
+  | "W_NOOP"
+  | "W_NOOP_INSERT";
 
 /**
  * SAFETY: one served row — position is 0-based, hash is the 3-char anchor. Canon evidence is not a
@@ -234,7 +235,7 @@ function suspiciousTail(count: number): string {
   if (count < 2) return "";
   return (
     ` Identical refusal submitted ${count}× — the bytes still reproduce a served row.` +
-    ` Omit the copied anchors from \`replace_with\` and retry with the same anchors, or declare intent with mode: "literal".`
+    ` Omit the copied anchors from \`text\` and retry with the same anchors, or declare intent with mode: "literal".`
   );
 }
 
@@ -254,7 +255,7 @@ function suspiciousFormat(payload: ErrorPayloadMap["E_SUSPICIOUS_TEXT"]): string
     `Refused edit to ${payload.path}: replacement line ${payload.line} begins with ` +
     `the exact ${payload.hash}│ anchor served for this session, path, and line ${payload.servedLine}. ` +
     `HASH│ anchors are tool output, not file content. ` +
-    `Omit the copied anchors from \`replace_with\` and retry with the same anchors, or declare intent with mode: "literal". ` +
+    `Omit the copied anchors from \`text\` and retry with the same anchors, or declare intent with mode: "literal". ` +
     `Re-read the file for fresh anchors if needed. Nothing was written. ${submitted}` +
     suspiciousTail(payload.count)
   );
@@ -421,7 +422,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     format: suspiciousFormat,
     // WHY remedy: the replacement reproduces a served hash echo for this session, path and line — `target`, `hash` and `servedLine` pin the row. See ADR-0021.
     remedy:
-      'Omit the copied anchors from replace_with and retry with the same anchors, or declare intent with mode: "literal".',
+      'Omit the copied anchors from text and retry with the same anchors, or declare intent with mode: "literal".',
   },
   E_BATCH_ABORT: {
     audience: "MODEL",
@@ -527,6 +528,11 @@ export interface WarningPayloadMap {
     batch: boolean;
     count: number;
   };
+  W_NOOP_INSERT: {
+    ref: string;
+    removeFrom: string;
+    removeTo: string;
+  };
 }
 
 function neverServedShapeFormat(payload: WarningPayloadMap["W_NEVER_SERVED_SHAPE"]): string {
@@ -593,6 +599,15 @@ export const WARNING_REGISTRY: {
   W_NOOP: {
     audience: "USER",
     format: noopWarnFormat,
+  },
+  // WHY: (ticket-04 §3.6) an empty `text` with "before"/"after" is a NO-OP, not a rejection: the
+  // WHY: bytes stay unchanged, the item counts as a noop, and the model channel learns why — the
+  // WHY: audience is MODEL because the fix belongs to the next submission, not to the human.
+  W_NOOP_INSERT: {
+    audience: "MODEL",
+    format: ({ ref, removeFrom, removeTo }) =>
+      `empty insertion ${ref} (${removeFrom} → ${removeTo}): "before"/"after" with text "" writes ` +
+      "nothing and the file stayed byte-identical. Provide text or drop the empty item.",
   },
 };
 

@@ -37,7 +37,7 @@ describe("literal declaration payload", () => {
   it("absent mode behaves as general and unknown root fields fail with mode in the hint", () => {
     const base = {
       file: "a.txt",
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
+      edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }],
     };
     expect(() => assertReq(normReq(base))).not.toThrow();
     expect(() => assertReq(normReq({ ...base, mode: "literal" }))).not.toThrow();
@@ -71,9 +71,7 @@ describe("edit served-row gate with declaration", () => {
           "e1",
           {
             file: "sample.txt",
-            edits: [
-              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: `${hashes[1]}│two` },
-            ],
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│two` }],
           } as any,
           undefined,
           undefined,
@@ -90,7 +88,7 @@ describe("edit served-row gate with declaration", () => {
               {
                 anchor_from: hashes[2]!,
                 anchor_to: hashes[2]!,
-                replace_with: `${hashes[0]}│one\n${hashes[1]}│two`,
+                text: `${hashes[0]}│one\n${hashes[1]}│two`,
               },
             ],
           } as any,
@@ -108,7 +106,7 @@ describe("edit served-row gate with declaration", () => {
             {
               anchor_from: hashes[1]!,
               anchor_to: hashes[1]!,
-              replace_with: `${hashes[1]}│CHANGED`,
+              text: `${hashes[1]}│CHANGED`,
             },
           ],
         } as any,
@@ -130,9 +128,7 @@ describe("edit served-row gate with declaration", () => {
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const payload = {
         file: "sample.txt",
-        edits: [
-          { anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: `${hashes[1]}│two` },
-        ],
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│two` }],
       } as any;
       const first = await editTool
         .execute("e1", payload, undefined, undefined, ctx)
@@ -170,9 +166,7 @@ describe("edit served-row gate with declaration", () => {
       const before = await readFsFile(path, "utf-8");
       const refusal = {
         file: "sample.txt",
-        edits: [
-          { anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: `${hashes[1]}│two` },
-        ],
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│two` }],
       } as any;
       const first = await editTool
         .execute("e1", refusal, undefined, undefined, ctx)
@@ -189,7 +183,7 @@ describe("edit served-row gate with declaration", () => {
                 {
                   anchor_from: hashes[0]!,
                   anchor_to: hashes[0]!,
-                  replace_with: "changed-one",
+                  text: "changed-one",
                 },
               ],
             } as any,
@@ -219,7 +213,7 @@ describe("edit served-row gate with declaration", () => {
         "e1",
         {
           file: "sample.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: verbatim }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: verbatim }],
           mode: "literal",
         } as any,
         undefined,

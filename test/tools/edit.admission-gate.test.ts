@@ -5,8 +5,10 @@ import { createEditTool } from "../../src/edit-tool.js";
 import { assertReq, normReq } from "../../src/payload-contract.js";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 
-const STRUCTURAL_PREFIX =
-  'Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...], mode?: "general" | "literal" }.';
+// WHY: (ticket-04 §3) the admission analyzer now names the per-class failure reason, so the old
+// WHY: verbatim one-hint-for-everything prefix is gone; what every rejection still shares is the
+// WHY: canonical payload phrase.
+const PAYLOAD_HINT = "exactly one payload per item";
 
 async function executeWithFile(cwd: string, fileValue: unknown): Promise<Error> {
   const { ctx, readTool } = setupIntegrationTest(cwd);
@@ -14,7 +16,7 @@ async function executeWithFile(cwd: string, fileValue: unknown): Promise<Error> 
   await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
   const tool = createEditTool();
   const payload: Record<string, unknown> = {
-    edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
+    edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" }],
   };
   if (fileValue !== undefined) payload.file = fileValue;
   return tool.execute(payload, undefined, ctx).then(
@@ -34,48 +36,48 @@ function messageOf(shape: unknown): string {
   throw new Error("expected rejection");
 }
 
-describe("edit admission gate — single structural hint", () => {
-  it("rejects a null file with the structural hint and writes nothing", async () => {
+describe("edit admission gate — shared payload hint", () => {
+  it("rejects a null file with the shared payload hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, null);
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
+      expect(String(error.message)).toContain(PAYLOAD_HINT);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects a missing file with the structural hint and writes nothing", async () => {
+  it("rejects a missing file with the shared payload hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, undefined);
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
+      expect(String(error.message)).toContain(PAYLOAD_HINT);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects an empty-string file with the structural hint and writes nothing", async () => {
+  it("rejects an empty-string file with the shared payload hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, "");
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
+      expect(String(error.message)).toContain(PAYLOAD_HINT);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects a whitespace-only file with the structural hint and writes nothing", async () => {
+  it("rejects a whitespace-only file with the shared payload hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, "   ");
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
+      expect(String(error.message)).toContain(PAYLOAD_HINT);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("rejects a non-string file with the structural hint and writes nothing", async () => {
+  it("rejects a non-string file with the shared payload hint and writes nothing", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const error = await executeWithFile(cwd, 123);
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain(STRUCTURAL_PREFIX);
+      expect(String(error.message)).toContain(PAYLOAD_HINT);
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
@@ -89,7 +91,7 @@ describe("edit admission gate — single structural hint", () => {
       const result = await tool.preview(
         {
           file: null,
-          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" }],
         },
         cwd,
         ctx,
@@ -97,29 +99,26 @@ describe("edit admission gate — single structural hint", () => {
       expect("error" in result).toBe(true);
       if ("error" in result) {
         expect(result.error).toContain("[E_BAD_PAYLOAD]");
-        expect(result.error).toContain(STRUCTURAL_PREFIX);
+        expect(result.error).toContain(PAYLOAD_HINT);
       }
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
   });
 
-  it("assertReq reports one hint for every invalid class", () => {
+  it("assertReq names every invalid class with the payload hint", () => {
     const shapes: unknown[] = [
-      { edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
-      { file: null, edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
-      { file: 123, edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
-      { file: "", edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
-      { file: "   ", edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }] },
+      { edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }] },
+      { file: null, edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }] },
+      { file: 123, edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }] },
+      { file: "", edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }] },
+      { file: "   ", edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }] },
       { file: "sample.ts", edits: [{ anchor_from: "aB3", anchor_to: "cD4" }] },
       "bare-string",
     ];
     const messages = shapes.map((shape) => messageOf(shape));
     for (const message of messages) {
       expect(message).toContain("[E_BAD_PAYLOAD]");
-      expect(message).toContain(STRUCTURAL_PREFIX);
-    }
-    for (const message of messages) {
-      expect(message).toBe(messages[0]);
+      expect(message).toContain(PAYLOAD_HINT);
     }
   });
 
@@ -129,17 +128,16 @@ describe("edit admission gate — single structural hint", () => {
       edits: [{ anchor_from: "aB3", anchor_to: "cD4" }],
     });
     expect(badEdits).toContain("[E_BAD_PAYLOAD]");
-    expect(badEdits).toContain(STRUCTURAL_PREFIX);
+    expect(badEdits).toContain(PAYLOAD_HINT);
     const nonObject = messageOf("bare-string");
     expect(nonObject).toContain("[E_BAD_PAYLOAD]");
-    expect(nonObject).toContain(STRUCTURAL_PREFIX);
-    expect(badEdits).toBe(nonObject);
+    expect(nonObject).toContain(PAYLOAD_HINT);
   });
 
   it("the narrowed request carries a string file (null is unrepresentable)", () => {
     const wire = {
       file: "sample.ts",
-      edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" }],
+      edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "x" }],
     };
     const narrowed = normReq(wire);
     assertReq(narrowed);

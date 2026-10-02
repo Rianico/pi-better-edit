@@ -140,12 +140,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b1.ts",
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: "BBB",
-        },
+        { file: "b1.ts", edits: [{ anchor_from: anchor, anchor_to: anchor, text: "BBB" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -174,12 +169,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b2.ts",
-          anchor_from: a,
-          anchor_to: b,
-          replace_with: "X\nY",
-        },
+        { file: "b2.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -209,12 +199,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b3.ts",
-          anchor_from: a,
-          anchor_to: b,
-          replace_with: "X\nY\nZ",
-        },
+        { file: "b3.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY\nZ" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -245,12 +230,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b4.ts",
-          anchor_from: a,
-          anchor_to: b,
-          replace_with: "X\nY",
-        },
+        { file: "b4.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -280,12 +260,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b5.ts",
-          anchor_from: a,
-          anchor_to: b,
-          replace_with: "X\nY",
-        },
+        { file: "b5.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -317,12 +292,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b6.ts",
-          anchor_from: a,
-          anchor_to: b,
-          replace_with: "X\nY",
-        },
+        { file: "b6.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -362,12 +332,7 @@ describeGate("EVAL comparison battery", () => {
           rec,
           getTool(target.toolNames.edit),
           target.toolNames.edit,
-          {
-            path: "b7.ts",
-            anchor_from: a,
-            anchor_to: b,
-            replace_with: "X\nY\nZ\nW\nV",
-          },
+          { file: "b7.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY\nZ\nW\nV" }] },
           ctx,
         );
         rec.outcome = e1.ok ? "success" : "rejected";
@@ -390,12 +355,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b8.ts",
-          anchor_from: hashes[1]!,
-          anchor_to: hashes[1]!,
-          replace_with: "BBB",
-        },
+        { file: "b8.ts", edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -425,7 +385,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        { path: "b9.ts", anchor_from: a, anchor_to: a, replace_with: "X" },
+        { file: "b9.ts", edits: [{ anchor_from: a, anchor_to: a, text: "X" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -456,12 +416,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b10.ts",
-          anchor_from: a,
-          anchor_to: b,
-          replace_with: "X\nY\nZ\nW",
-        },
+        { file: "b10.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY\nZ\nW" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -490,12 +445,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b11.ts",
-          anchor_from: a,
-          anchor_to: a,
-          replace_with: "bbb",
-        },
+        { file: "b11.ts", edits: [{ anchor_from: a, anchor_to: a, text: "bbb" }] },
         ctx,
       );
       rec.outcome = e1.ok ? (e1.text.includes("noop") ? "success" : "error") : "rejected";
@@ -524,7 +474,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        { path: "b12.ts", anchor_from: a, anchor_to: a, replace_with: "a" },
+        { file: "b12.ts", edits: [{ anchor_from: a, anchor_to: a, text: "a" }] },
         ctx,
       );
       rec.outcome = e1.ok ? (e1.text.includes("noop") ? "success" : "error") : "rejected";
@@ -552,13 +502,13 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        { path: "b13.ts", anchor_from: a, anchor_to: a, replace_with: "B" },
+        { file: "b13.ts", edits: [{ anchor_from: a, anchor_to: a, text: "B" }] },
         ctx,
       );
       const diff = await deliverDiff(handlers, ctx, {
         toolName: target.toolNames.edit,
         isError: false,
-        input: { path: "b13.ts" },
+        input: { file: "b13.ts" },
         details: e1.r?.details,
         content: e1.r?.content,
       });
@@ -569,12 +519,7 @@ describeGate("EVAL comparison battery", () => {
           rec,
           getTool(target.toolNames.edit),
           target.toolNames.edit,
-          {
-            path: "b13.ts",
-            anchor_from: plusHash,
-            anchor_to: plusHash,
-            replace_with: "B2",
-          },
+          { file: "b13.ts", edits: [{ anchor_from: plusHash, anchor_to: plusHash, text: "B2" }] },
           ctx,
         );
         if (!e2.ok) {
@@ -610,10 +555,8 @@ describeGate("EVAL comparison battery", () => {
         getTool(target.toolNames.edit),
         target.toolNames.edit,
         {
-          path: "b14.ts",
-          anchor_from: emptyHash,
-          anchor_to: emptyHash,
-          replace_with: "first\nsecond",
+          file: "b14.ts",
+          edits: [{ anchor_from: emptyHash, anchor_to: emptyHash, text: "first\nsecond" }],
         },
         ctx,
       );
@@ -654,12 +597,7 @@ describeGate("EVAL comparison battery", () => {
           rec,
           getTool(target.toolNames.edit),
           target.toolNames.edit,
-          {
-            path: "b15.ts",
-            anchor_from: a,
-            anchor_to: b,
-            replace_with: "replacement",
-          },
+          { file: "b15.ts", edits: [{ anchor_from: a, anchor_to: b, text: "replacement" }] },
           ctx,
         );
         rec.outcome = e1.ok ? "success" : "rejected";
@@ -689,12 +627,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b16.ts",
-          anchor_from: a,
-          anchor_to: a,
-          replace_with: "BBB",
-        },
+        { file: "b16.ts", edits: [{ anchor_from: a, anchor_to: a, text: "BBB" }] },
         ctx,
       );
       const u1 = await call(rec, getTool(target.toolNames.undo), "undo", { path: "b16.ts" }, ctx);
@@ -724,12 +657,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b16b.ts",
-          anchor_from: a,
-          anchor_to: a,
-          replace_with: "BBB",
-        },
+        { file: "b16b.ts", edits: [{ anchor_from: a, anchor_to: a, text: "BBB" }] },
         ctx,
       );
       await writeFile(path, "AAA\nBBB\nccc\n", "utf-8");
@@ -761,12 +689,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b17.ts",
-          anchor_from: b,
-          anchor_to: a,
-          replace_with: "X\nY",
-        },
+        { file: "b17.ts", edits: [{ anchor_from: b, anchor_to: a, text: "X\nY" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -795,12 +718,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b18.ts",
-          anchor_from: a,
-          anchor_to: a,
-          replace_with: "a\nX",
-        },
+        { file: "b18.ts", edits: [{ anchor_from: a, anchor_to: a, text: "a\nX" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -832,12 +750,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b19.ts",
-          anchor_from: a,
-          anchor_to: a,
-          replace_with: "BBB",
-        },
+        { file: "b19.ts", edits: [{ anchor_from: a, anchor_to: a, text: "BBB" }] },
         mainCtx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -877,19 +790,14 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b20.ts",
-          anchor_from: sB,
-          anchor_to: sB,
-          replace_with: "B",
-        },
+        { file: "b20.ts", edits: [{ anchor_from: sB, anchor_to: sB, text: "B" }] },
         subCtx,
       );
       if (se.ok) {
         await deliverDiff(handlers, subCtx, {
           toolName: target.toolNames.edit,
           isError: false,
-          input: { path: "b20.ts" },
+          input: { file: "b20.ts" },
           details: se.r?.details,
           content: se.r?.content,
         });
@@ -898,12 +806,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b20.ts",
-          anchor_from: aC,
-          anchor_to: aC,
-          replace_with: "C",
-        },
+        { file: "b20.ts", edits: [{ anchor_from: aC, anchor_to: aC, text: "C" }] },
         mainCtx,
       );
       rec.outcome = se.ok ? (e1.ok ? "success" : "rejected") : "error";
@@ -935,12 +838,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b21.ts",
-          anchor_from: a,
-          anchor_to: a,
-          replace_with: "BBB",
-        },
+        { file: "b21.ts", edits: [{ anchor_from: a, anchor_to: a, text: "BBB" }] },
         mainCtx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -971,12 +869,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b22.ts",
-          anchor_from: hashes[1]!,
-          anchor_to: hashes[1]!,
-          replace_with: "B",
-        },
+        { file: "b22.ts", edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "B" }] },
         mainCtx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
@@ -1011,10 +904,8 @@ describeGate("EVAL comparison battery", () => {
         getTool(target.toolNames.edit),
         target.toolNames.edit,
         {
-          path: "b23.cpp",
-          anchor_from: line2Hash,
-          anchor_to: line2Hash,
-          replace_with: "\tif (x > 100) {",
+          file: "b23.cpp",
+          edits: [{ anchor_from: line2Hash, anchor_to: line2Hash, text: "\tif (x > 100) {" }],
         },
         ctx,
       );
@@ -1052,10 +943,14 @@ describeGate("EVAL comparison battery", () => {
         getTool(target.toolNames.edit),
         target.toolNames.edit,
         {
-          path: "b24.js",
-          anchor_from: a,
-          anchor_to: b,
-          replace_with: "function alpha() {\n  return 'alpha-modified';\n} // end alpha",
+          file: "b24.js",
+          edits: [
+            {
+              anchor_from: a,
+              anchor_to: b,
+              text: "function alpha() {\n  return 'alpha-modified';\n} // end alpha",
+            },
+          ],
         },
         ctx,
       );
@@ -1069,7 +964,7 @@ describeGate("EVAL comparison battery", () => {
       const pathB = join(cwd, "b25b.ts");
       await writeFile(pathB, "charlie\ndelta\n", "utf-8");
       const rec: ScenarioResult = {
-        scenario: "B25 foreign-anchor cross-file isolation (#145)",
+        scenario: "B25 foreign-anchor foreign-source isolation (#145)",
         outcome: "success",
         calls: [],
         finalContent: "",
@@ -1088,10 +983,8 @@ describeGate("EVAL comparison battery", () => {
         getTool(target.toolNames.edit),
         target.toolNames.edit,
         {
-          path: "b25b.ts",
-          anchor_from: anchorBravo,
-          anchor_to: anchorBravo,
-          replace_with: "MODIFIED",
+          file: "b25b.ts",
+          edits: [{ anchor_from: anchorBravo, anchor_to: anchorBravo, text: "MODIFIED" }],
         },
         ctx,
       );
@@ -1121,12 +1014,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.edit),
         target.toolNames.edit,
-        {
-          path: "b26.txt",
-          anchor_from: anchor,
-          anchor_to: anchor,
-          replace_with: "SECOND",
-        },
+        { file: "b26.txt", edits: [{ anchor_from: anchor, anchor_to: anchor, text: "SECOND" }] },
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";

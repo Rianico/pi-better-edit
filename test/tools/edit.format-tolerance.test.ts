@@ -34,8 +34,8 @@ describe("format-tolerance across edits (whitespace-only external reformat)", ()
       const first = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
-          edits: [[lastHash, lastHash, MESSY_REPLACEMENT]],
+          file: "sample.ts",
+          edits: [{ anchor_from: lastHash, anchor_to: lastHash, text: MESSY_REPLACEMENT }],
         },
         undefined,
         undefined,
@@ -62,8 +62,8 @@ describe("format-tolerance across edits (whitespace-only external reformat)", ()
       const second = await editTool.execute(
         "e2",
         {
-          path: "sample.ts",
-          edits: [[anchor, anchor, "REPLACED"]],
+          file: "sample.ts",
+          edits: [{ anchor_from: anchor, anchor_to: anchor, text: "REPLACED" }],
         },
         undefined,
         undefined,

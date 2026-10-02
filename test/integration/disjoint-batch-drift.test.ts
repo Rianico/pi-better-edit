@@ -24,10 +24,10 @@ describe("disjoint batch drift gap", () => {
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
+          file: "sample.ts",
           edits: [
-            [bRef, bRef, "B"],
-            [hRef, hRef, "H"],
+            { anchor_from: bRef, anchor_to: bRef, text: "B" },
+            { anchor_from: hRef, anchor_to: hRef, text: "H" },
           ],
         },
         undefined,
@@ -74,7 +74,7 @@ describe("disjoint batch drift gap", () => {
       await writeFile(path, "a\nb\nc\nd\nE\n", "utf-8");
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[bRef, bRef, "B"]] },
+        { file: "sample.ts", edits: [{ anchor_from: bRef, anchor_to: bRef, text: "B" }] },
         undefined,
         undefined,
         ctx,

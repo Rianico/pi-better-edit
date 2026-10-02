@@ -32,7 +32,7 @@ describe("file kind guards in tools", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "bad-utf.ts", edits: [[intRef, intRef, "long"]] },
+        { file: "bad-utf.ts", edits: [{ anchor_from: intRef, anchor_to: intRef, text: "long" }] },
         undefined,
         undefined,
         ctx,
@@ -53,7 +53,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "image.png", edits: [["AAA", "BBB", "x"]] },
+          { file: "image.png", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -70,7 +70,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "utf16.txt", edits: [["AAA", "BBB", "x"]] },
+          { file: "utf16.txt", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -87,7 +87,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "mydir", edits: [["AAA", "BBB", "x"]] },
+          { file: "mydir", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -105,7 +105,10 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "empty.txt", edits: [[hashes[0]!, hashes[0]!, ""]] },
+          {
+            file: "empty.txt",
+            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "" }],
+          },
           undefined,
           undefined,
           ctx,

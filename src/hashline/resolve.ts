@@ -151,12 +151,12 @@ export function uniqueServedPosition(
 }
 
 /**
- * Internal placement of a resolved span's mutation. `"replace"` (also the default when absent)
- * rewrites the span's bytes; `"before"`/`"after"` splice at a zero-width point adjacent to the
- * span. The wire cannot express it yet — only the admission boundary's normalized items and
- * library-level `applyEdit` callers set it.
+ * Internal placement of a resolved span's mutation. `"in-place"` (also the default when absent)
+ * rewrites the span's bytes; `"before"`/`"after"` splice at a zero-width point adjacent to a
+ * single-line resolved span. Library-level `applyEdit` callers set it; the wire carries the same
+ * spelling as `at` (ticket-04), and the pipeline passes it down only when it is not in-place.
  */
-export type EditPlacement = "replace" | "before" | "after";
+export type EditPlacement = "in-place" | "before" | "after";
 
 /**
  * The same-file line span a span-ref payload copies from (ticket-02). `retire` marks a move:
@@ -328,7 +328,7 @@ function assertItem(edit: Record<string, unknown>): void {
     edit,
     ITEM_KS,
     "Edit",
-    "The edit takes only { replace_with, anchor_from, anchor_to }.",
+    "The edit takes only { text, anchor_from, anchor_to }.",
   );
 
   if ("anchor_from" in edit && typeof edit.anchor_from !== "string") {
@@ -346,13 +346,13 @@ function assertItem(edit: Record<string, unknown>): void {
   if (!("text" in edit)) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        'The edit requires a "replace_with" field. Provide the replacement text (use "" to delete). Nothing was written.',
+        'The edit requires a "text" field. Provide the replacement text (use "" to delete). Nothing was written.',
     });
   }
   if (typeof edit.text !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        '"replace_with" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
+        '"text" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
     });
   }
   if (typeof edit.anchor_from !== "string" || typeof edit.anchor_to !== "string") {
@@ -363,12 +363,12 @@ function assertItem(edit: Record<string, unknown>): void {
   }
   if (
     "placement" in edit &&
-    edit.placement !== "replace" &&
+    edit.placement !== "in-place" &&
     edit.placement !== "before" &&
     edit.placement !== "after"
   ) {
     throw new DomainError("E_BAD_PAYLOAD", {
-      message: 'Field "placement" must be "replace", "before" or "after". Nothing was written.',
+      message: 'Field "placement" must be "in-place", "before" or "after". Nothing was written.',
     });
   }
   if ("source" in edit) {

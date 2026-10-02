@@ -103,8 +103,14 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
       const edit1: any = await editTool.execute(
         "e1",
         {
-          path: "render.ts",
-          edits: [[pushRef, pushRef, "try {\n          out.push(it.name);\n        } catch {}"]],
+          file: "render.ts",
+          edits: [
+            {
+              anchor_from: pushRef,
+              anchor_to: pushRef,
+              text: "try {\n          out.push(it.name);\n        } catch {}",
+            },
+          ],
         },
         undefined,
         undefined,
@@ -133,8 +139,14 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
       const edit2: any = await editTool.execute(
         "e2",
         {
-          path: "render.ts",
-          edits: [[freshPushRef, freshPushRef, "out.push(it.name); // tagged"]],
+          file: "render.ts",
+          edits: [
+            {
+              anchor_from: freshPushRef,
+              anchor_to: freshPushRef,
+              text: "out.push(it.name); // tagged",
+            },
+          ],
         },
         undefined,
         undefined,
@@ -165,7 +177,10 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "f.ts", edits: [[sigRef, sigRef, "func hello() /* marked */"]] },
+          {
+            file: "f.ts",
+            edits: [{ anchor_from: sigRef, anchor_to: sigRef, text: "func hello() /* marked */" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -201,7 +216,10 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
         const edit1: any = await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[betaRef, betaRef, "const beta = 22;"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "const beta = 22;" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -233,7 +251,10 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
 
         const edit2: any = await editTool.execute(
           "e2",
-          { path: "sample.ts", edits: [[gammaRef, gammaRef, "const gamma = 33;"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "const gamma = 33;" }],
+          },
           undefined,
           undefined,
           ctx,

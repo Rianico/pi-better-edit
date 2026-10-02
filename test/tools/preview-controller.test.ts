@@ -7,12 +7,12 @@ import {
 import type { RPreview, RRState } from "../../src/edit-render";
 
 const sampleArgs = {
-  path: "sample.ts",
-  edits: [["AAA", "BBB", "x"]],
+  file: "sample.ts",
+  edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }],
 };
 const otherArgs = {
-  path: "sample.ts",
-  edits: [["AAA", "BBB", "y"]],
+  file: "sample.ts",
+  edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "y" }],
 };
 
 function makeHost(overrides: Partial<PreviewHost> = {}): {
@@ -62,7 +62,7 @@ describe("DebouncedPreview", () => {
             {
               anchor_from: "AAA",
               anchor_to: "BBB",
-              replace_with: "y",
+              text: "y",
             },
           ],
         }),

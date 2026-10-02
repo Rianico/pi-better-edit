@@ -32,7 +32,7 @@ describe("served-state range verification for edit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -64,7 +64,7 @@ describe("served-state range verification for edit", () => {
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -87,7 +87,10 @@ describe("served-state range verification for edit", () => {
       const retryTo = servedLines[2]!.split("│")[0]!;
       const retry = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[retryFrom, retryTo, "X\nY"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: retryFrom, anchor_to: retryTo, text: "X\nY" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -102,7 +105,7 @@ describe("served-state range verification for edit", () => {
       await expect(
         editTool.execute(
           "e3",
-          { path: "sample.ts", edits: [[retryFrom, retryTo, "Z"]] },
+          { file: "sample.ts", edits: [{ anchor_from: retryFrom, anchor_to: retryTo, text: "Z" }] },
           undefined,
           undefined,
           ctx,
@@ -122,7 +125,10 @@ describe("served-state range verification for edit", () => {
       const freshGamma = extractHash(freshText.split("\n").find((l) => l.includes("│gamma"))!);
       const final = await editTool.execute(
         "e4",
-        { path: "sample.ts", edits: [[freshAlpha, freshGamma, "Z"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: freshAlpha, anchor_to: freshGamma, text: "Z" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -151,7 +157,7 @@ describe("served-state range verification for edit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[alphaRef, betaRef, "A\nB"]] },
+        { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: betaRef, text: "A\nB" }] },
         undefined,
         undefined,
         ctx,
@@ -180,7 +186,7 @@ describe("served-state range verification for edit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[betaRef, gammaRef, "B\nG"]] },
+        { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: gammaRef, text: "B\nG" }] },
         undefined,
         undefined,
         ctx,
@@ -210,7 +216,10 @@ describe("served-state range verification for edit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[alphaRef, gammaRef, "X\nY"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X\nY" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -236,7 +245,7 @@ describe("served-state range verification for edit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -268,7 +277,7 @@ describe("served-state range verification for edit", () => {
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, betaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: betaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -292,7 +301,10 @@ describe("served-state range verification for edit", () => {
 
       const retry = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[betaRefFromRange, betaRefFromRange, "BETA2"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: betaRefFromRange, anchor_to: betaRefFromRange, text: "BETA2" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -311,7 +323,10 @@ describe("served-state range verification for edit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "X"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "X" }],
+          },
           undefined,
           undefined,
           ctx,

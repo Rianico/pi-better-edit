@@ -44,9 +44,8 @@ describe("prompts/edit-snippet.md (single source)", () => {
 
   it("snippet and description share canonical payload shape (single source)", () => {
     const canonicalDesc =
-      '{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }';
-    const canonicalSnippet =
-      '{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"replace_with":text}]}';
+      '{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }';
+    const canonicalSnippet = '{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}';
     expect(editPrompt).toContain(canonicalDesc);
     expect(editSnippet).toContain(canonicalSnippet);
     const tool = buildToolDef();
@@ -89,7 +88,7 @@ describe("prompt guidelines", () => {
     );
     expect(content).toContain("anchor_from");
     expect(content).toContain("anchor_to");
-    expect(content).toContain("replace_with");
+    expect(content).toContain("text_ref");
     expect(content).toContain("fresh anchors");
     expect(content).not.toContain("hash_bounds");
     expect(content).not.toContain("new_content");

@@ -76,7 +76,7 @@ describe("served-rows tool_result handler", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        { path: "sample.txt", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "sample.txt", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -133,7 +133,10 @@ describe("served-rows tool_result handler", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.txt", edits: [[originalHashes[1]!, originalHashes[1]!, "BETA"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: originalHashes[1]!, anchor_to: originalHashes[1]!, text: "BETA" }],
+        },
         undefined,
         undefined,
         ctx,

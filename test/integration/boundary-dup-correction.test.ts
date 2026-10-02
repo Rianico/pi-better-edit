@@ -14,8 +14,14 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
       await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
-          edits: [[line2Hash, line3Hash, `  const y = 2;\n  return y;\n}`]],
+          file: "sample.ts",
+          edits: [
+            {
+              anchor_from: line2Hash,
+              anchor_to: line3Hash,
+              text: `  const y = 2;\n  return y;\n}`,
+            },
+          ],
         },
         undefined,
         undefined,
@@ -38,8 +44,14 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
       await editTool.execute(
         "e1",
         {
-          path: "logic.ts",
-          edits: [[line2Hash, line3Hash, `before();\nif (ok) {\n  runSafe();`]],
+          file: "logic.ts",
+          edits: [
+            {
+              anchor_from: line2Hash,
+              anchor_to: line3Hash,
+              text: `before();\nif (ok) {\n  runSafe();`,
+            },
+          ],
         },
         undefined,
         undefined,
@@ -59,7 +71,7 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
       const aHash = extractHash(lines1.find((l) => l.includes("│a"))!);
       await editTool.execute(
         "e1",
-        { path: "mini.txt", edits: [[aHash, aHash, "a\nb"]] },
+        { file: "mini.txt", edits: [{ anchor_from: aHash, anchor_to: aHash, text: "a\nb" }] },
         undefined,
         undefined,
         ctx,
@@ -79,8 +91,8 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
       await editTool.execute(
         "e1",
         {
-          path: "nested.ts",
-          edits: [[bodyHash, bodyHash, "  const x = 2;\n}\n}"]],
+          file: "nested.ts",
+          edits: [{ anchor_from: bodyHash, anchor_to: bodyHash, text: "  const x = 2;\n}\n}" }],
         },
         undefined,
         undefined,

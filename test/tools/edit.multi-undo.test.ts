@@ -18,10 +18,10 @@ describe("edit multi-item undo", () => {
       const result = await editTool.execute(
         "e1",
         {
-          path: "a.txt",
+          file: "a.txt",
           edits: [
-            [hashes[0]!, hashes[0]!, "ALPHA"],
-            [hashes[2]!, hashes[2]!, "GAMMA"],
+            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+            { anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "GAMMA" },
           ],
         },
         undefined,

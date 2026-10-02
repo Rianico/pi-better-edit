@@ -60,21 +60,29 @@ import {
   applyEdit,
   buildNeverServedEditHint,
   resEdit,
+  MAX_HASH_LINES,
   type HEdit,
   type NEdit,
 } from "../hashline/index.js";
 import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import { denseServeRows, type ResolvedRange } from "../hashline/served.js";
-import { DomainError } from "../domain-errors.js";
+import { resolveLeasedEdit } from "../hashline/lease-resolve.js";
+import type { FileSnapshotContext } from "../hashline/served-verification.js";
+import { DomainError, formatWarning } from "../domain-errors.js";
 import { notifyServedSpans, servedRowsToSpans } from "../served-spans.js";
 import { createSessionHandle } from "../served-session/session.js";
+import { readNormFile } from "../file-reader.js";
 import { scanDrift } from "../drift.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { clearServedRefusals } from "../hashline/served-guard.js";
 import { saveUndo } from "../edit-undo.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
 import { toCwd } from "../paths.js";
-import type { DesiredText, NormalizedEditRequest } from "../payload-contract.js";
+import type {
+  DesiredContent,
+  NormalizedEditItem,
+  NormalizedEditRequest,
+} from "../payload-contract.js";
 import {
   batchAbortFor,
   batchAbortForMany,
@@ -316,27 +324,36 @@ async function recordRejectionServe(args: {
 }
 
 /**
- * WHY: (ticket-01 hardening) the single exhaustive view of the payload union for text consumers —
- * WHY: the noop-loop tracker discriminates its noop episodes with this. A new union arm must add
- * WHY: a case here or `assertNever` fails `pnpm run typecheck`. The `span-ref` arm renders as its
- * WHY: span's anchors, never a placeholder empty text: the copied content is not known here, and
- * WHY: collapsing every non-hand-written arm to "" would fuse distinct noop episodes into one count.
+ * WHY: (ticket-01 hardening, ticket-04 rename) the single exhaustive view of the payload union for
+ * WHY: text consumers — the noop-loop tracker discriminates its noop episodes with this. A new
+ * WHY: union arm must add a case here or `assertNever` fails `pnpm run typecheck`. The `reference`
+ * WHY: arm renders as its span's anchors with the mode word, never a placeholder empty text: the
+ * WHY: copied content is not known here, and collapsing every non-literal arm to "" would fuse
+ * WHY: distinct noop episodes into one count.
  */
-function replacementTextForPayload(payload: DesiredText): string {
+function replacementTextForPayload(payload: DesiredContent): string {
   switch (payload.kind) {
-    case "hand-written":
+    case "literal":
       return payload.text;
-    case "span-ref":
-      return `span:${payload.span.anchor_from}..${payload.span.anchor_to}:${payload.retireSource ? "move" : "copy"}`;
-    case "none":
+    case "reference":
+      return `span:${payload.span.anchor_from}..${payload.span.anchor_to}:${payload.mode === "cut" ? "move" : "copy"}`;
+    case "empty":
       return "";
     default:
       return assertNever(payload);
   }
 }
 
-function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[] {
-  const parsed: HEdit[] = [];
+/**
+ * WHY: (ticket-04 §3.6) an `empty` payload with `"before"`/`"after"` parses to a NO-OP marker, not
+ * WHY: to an HEdit: the mutate loop counts the item as a noop and warns the model channel; it
+ * WHY: never reaches `applyEdit` and never consults the noop-loop tracker (no bytes are rewritten,
+ * WHY: so there is no repeated-content episode to count).
+ */
+type ParsedItem = { edit: HEdit } | { noopInsert: true };
+
+function parseEdits(items: NormalizedEditRequest["edits"], path: string): ParsedItem[] {
+  const parsed: ParsedItem[] = [];
   // WHY: payload parsing aggregates like the span gate — one malformed item must not mask another,
   // WHY: so the model fixes every malformed item in a single resubmission. Parsing is pure (no
   // WHY: mutation runs before it), so collecting every failure preserves atomicity trivially.
@@ -348,49 +365,48 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
       let text: string;
       let source: { anchor_from: string; anchor_to: string; retire: boolean } | undefined;
       switch (payload.kind) {
-        case "hand-written":
-          // WHY: the `hand-written` arm owns its invariant at the one place the union is parsed
+        case "literal":
+          // WHY: the `literal` arm owns its invariant at the one place the union is parsed
           // WHY: into engine lines: it must carry at least one line.
           if (payload.text.length === 0) {
             throw new DomainError("E_BAD_PAYLOAD", {
-              message:
-                'A "hand-written" payload must carry at least one line. Nothing was written.',
+              message: 'A "literal" payload must carry at least one line. Nothing was written.',
             });
           }
           text = payload.text;
           break;
-        case "span-ref":
+        case "reference":
           // WHY: the copied lines are content the caller does not hold — `applyEdit` materializes
           // WHY: them from the resolved source span before any gate or splice runs, so the parse
-          // WHY: seam carries the span, never a placeholder text.
+          // WHY: seam carries the span, never a placeholder text. A foreign-source span (a
+          // WHY: `text_ref` naming another served file) has already been materialized to a
+          // WHY: `literal` payload by the pre-pass in `runMutations`, so this span names THIS file.
           source = {
             anchor_from: payload.span.anchor_from,
             anchor_to: payload.span.anchor_to,
-            retire: payload.retireSource,
+            retire: payload.mode === "cut",
           };
           text = "";
           break;
-        case "none":
-          if (item.at !== "replace") {
-            throw new DomainError("E_BAD_PAYLOAD", {
-              message:
-                'An insertion ("before"/"after") requires "hand-written" text. Nothing was written.',
-            });
+        case "empty":
+          if (item.at !== "in-place") {
+            parsed.push({ noopInsert: true });
+            continue;
           }
           text = "";
           break;
         default:
           assertNever(payload);
       }
-      parsed.push(
-        resEdit({
+      parsed.push({
+        edit: resEdit({
           anchor_from: item.target.anchor_from,
           anchor_to: item.target.anchor_to,
           text,
-          ...(item.at !== "replace" ? { placement: item.at } : {}),
+          ...(item.at !== "in-place" ? { placement: item.at } : {}),
           ...(source ? { source } : {}),
         }),
-      );
+      });
     } catch (error) {
       if (items.length === 1) throw error;
       failures.push({ error: error instanceof Error ? error : new Error(String(error)), index });
@@ -406,6 +422,117 @@ function parseEdits(items: NormalizedEditRequest["edits"], path: string): HEdit[
   return parsed;
 }
 
+function isForeignReference(item: NormalizedEditItem, file: string): boolean {
+  return (
+    item.payload.kind === "reference" &&
+    item.payload.span.file !== undefined &&
+    item.payload.span.file !== file
+  );
+}
+
+/**
+ * A foreign-source rejection never carries served rows: the rows a leased-range rejection names
+ * belong to the FOREIGN file's mirror, and this call must not lease anything it did not write.
+ * `recordRejectionServe`'s length guard is the enforcement point — an empty `servedRows` skips
+ * every snapshotIO write, so a never-served foreign anchor leaves both files byte- and row-identical.
+ */
+function foreignRejection(error: unknown, refFile: string): DomainError {
+  if (error instanceof DomainError) {
+    if (
+      (error.code === "E_UNKNOWN_ANCHOR" ||
+        error.code === "E_FOREIGN_ANCHOR" ||
+        error.code === "E_STALE_ANCHOR") &&
+      error.servedRows.length === 0
+    ) {
+      return error;
+    }
+    const cause = error.code === "E_TARGET_LOST" ? "retirement" : "never-served";
+    return new DomainError("E_STALE_ANCHOR", {
+      headline:
+        `the foreign-source reference to ${refFile} does not resolve against that file's served state ` +
+        `(rejection: ${error.code}). Nothing was written; read ${refFile} and copy fresh anchors from its served rows.`,
+      cause,
+    });
+  }
+  return new DomainError("E_STALE_ANCHOR", {
+    headline: `the foreign-source reference to ${refFile} did not resolve. Nothing was written.`,
+    cause: "never-served",
+  });
+}
+
+/**
+ * Foreign-source copy (ticket-04 §3.3): a `text_ref` naming another served file is read from that
+ * file's CURRENT content through the READ-ONLY half of the lease seam and collapsed to a `literal`
+ * payload BEFORE the mutate loop, so a foreign resolution failure aborts the whole call atomically
+ * (nothing has been mutated yet) and every downstream gate runs on the bytes that will be written.
+ *
+ * SAFETY: the foreign path is read-only by tool-level construction, not by convention:
+ *  - `readNormFile(..., { noPersist: true })` is the store-read-only primitive — the loader gates
+ *    every snapshotIO.upsert (snapshot, lineage, leases) behind that flag;
+ *  - `leaseSpanSource` exposes only `leaseFor`/`rebasedLineOf`/`anchorHomes` — resolution never
+ *    re-stamps a lease and never writes `retired_at`;
+ *  - the loop never calls `recordServeFeedback`/`record`/`retire`/`grant` for the foreign path,
+ *    and the foreign path is never added to `apply()`'s `withFileMutationQueue` write set — only
+ *    `request.file` is queued, written, retired, or served (commit reads `file.absolutePath`, which
+ *    is the TARGET's path resolved by `loadEditFile`).
+ */
+async function materializeForeignItem(
+  item: NormalizedEditItem,
+  input: { cwd: string; store: HashStore; sessionKey: string },
+): Promise<NormalizedEditItem> {
+  const payload = item.payload;
+  if (payload.kind !== "reference" || payload.span.file === undefined) return item;
+  const refFile = payload.span.file;
+  const foreign = await readNormFile(refFile, input.cwd, {
+    maxLines: MAX_HASH_LINES,
+    store: input.store,
+    noPersist: true,
+  });
+  const served = await createSessionHandle(input.sessionKey, foreign.absolutePath).load();
+  const source = leaseSpanSource({
+    store: input.store,
+    sessionKey: input.sessionKey,
+    absolutePath: foreign.absolutePath,
+    content: foreign.normalized,
+  });
+  const fileLines = foreign.normalized.split("\n");
+  const snapshot: FileSnapshotContext = {
+    fileLines,
+    fileHashes: foreign.fileHashes,
+    filePath: refFile,
+  };
+  // WHY: the SAME seam as every served span: leased identity first, fail-closed on a missing or
+  // WHY: retired lease, whole-window verified — the foreign half is read-only, the semantics are
+  // WHY: identical to an intra-file `text_ref`.
+  const spanEdit: HEdit = {
+    content_lines: [],
+    hash_bounds: [{ hash: payload.span.anchor_from }, { hash: payload.span.anchor_to }],
+  };
+  let resolution;
+  try {
+    resolution = resolveLeasedEdit({ edit: spanEdit, snapshot, served, source });
+  } catch (error) {
+    throw foreignRejection(error, refFile);
+  }
+  const l1 = resolution.resolved.hash_bounds[0].line;
+  const l2 = resolution.resolved.hash_bounds[1].line;
+  return { ...item, payload: { kind: "literal", text: fileLines.slice(l1 - 1, l2).join("\n") } };
+}
+
+async function materializeForeignReferences(
+  items: NormalizedEditItem[],
+  input: { cwd: string; file: string; store: HashStore; sessionKey: string },
+): Promise<NormalizedEditItem[]> {
+  if (!items.some((item) => isForeignReference(item, input.file))) return items;
+  const out: NormalizedEditItem[] = [];
+  for (const item of items) {
+    out.push(
+      isForeignReference(item, input.file) ? await materializeForeignItem(item, input) : item,
+    );
+  }
+  return out;
+}
+
 async function runMutations(
   request: NormalizedEditRequest,
   cwd: string,
@@ -413,10 +540,18 @@ async function runMutations(
 ): Promise<ProcessedEditFile> {
   // WHY: the file was answered at admission (assertReq); the narrowed type carries it here.
   const path = request.file;
-  const items = request.edits;
   const mode = request.mode ?? "general";
   const hashStore = options?.store ?? (await loadHashStore());
   const sessionKey = requireSessionKey(options?.sessionKey);
+  // WHY: (ticket-04 §3.3) the foreign-source pre-pass runs before ANY parse or mutation: a
+  // WHY: `text_ref` naming another served file is materialized to a `literal` payload here, so a
+  // WHY: foreign resolution failure aborts the call atomically with the target not yet loaded.
+  const items = await materializeForeignReferences(request.edits, {
+    cwd,
+    file: path,
+    store: hashStore,
+    sessionKey,
+  });
   const warnings: string[] = [];
   // WHY: (#146) the never-served soft hint is once per call: per-item counts
   // WHY: travel as structured data (`neverServedCount`) and aggregate here, and
@@ -435,6 +570,12 @@ async function runMutations(
   const isPreview = options?.noPersist === true;
 
   const parsed = parseEdits(items, path);
+  // WHY: (ticket-04 §3.6) noop-insert markers mutate nothing, so they are not part of the batch
+  // WHY: span gate — the gate compares regions the call will rewrite.
+  const realEdits: HEdit[] = [];
+  for (const one of parsed) {
+    if ("edit" in one) realEdits.push(one.edit);
+  }
 
   const {
     normalized: originalNormalized,
@@ -454,10 +595,10 @@ async function runMutations(
     noPersist: options?.noPersist,
   });
 
-  if (parsed.length > 1) {
+  if (realEdits.length > 1) {
     // WHY: the baseline identity seam is built from the pre-batch `S_curr`, so a span the gate
     // WHY: compares is the `s'_k` the apply path would rewrite — one source for both (spec §3.2.1).
-    await assertBatchSpansDisjoint(parsed, {
+    await assertBatchSpansDisjoint(realEdits, {
       served,
       identity: leaseSpanSource({
         store: hashStore,
@@ -534,7 +675,22 @@ async function runMutations(
   for (let index = 0; index < items.length; index++) {
     abortIf(options?.signal);
     const item = items[index]!;
-    const edit = parsed[index]!;
+    const parsedItem = parsed[index]!;
+    if ("noopInsert" in parsedItem) {
+      // WHY: (ticket-04 §3.6) an empty "before"/"after" writes nothing by construction: bytes
+      // WHY: unchanged, counted as a noop, model channel warned. It skips `applyEdit` AND the
+      // WHY: noop-loop tracker — that tracker counts repeated content REWRITES, not this.
+      noopCount += 1;
+      warnings.push(
+        formatWarning("W_NOOP_INSERT", {
+          ref: `edit[${index}] (${path})`,
+          removeFrom: item.target.anchor_from,
+          removeTo: item.target.anchor_to,
+        }),
+      );
+      continue;
+    }
+    const edit = parsedItem.edit;
 
     const outcome = await applyOneEdit({
       content: currentContent,

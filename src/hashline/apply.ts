@@ -108,6 +108,8 @@ function assertNotEmpty(originalContent: string, result: string): void {
  * the span's first line, `after` lands after the span's last line's content and before the
  * existing separator — including at EOF with no trailing newline. Inserting at least one line
  * always changes the bytes, so an insertion never reaches the noop comparison.
+ * WHY: (ticket-04 §3.4) `applyEdit` refuses an insertion whose resolved target spans more than one
+ * WHY: line before reaching here, so both bounds name the same line.
  */
 function insertionSpan(edit: RHEdit, lineIndex: LIdx): RESpan {
   const { fileLines, lineStarts } = lineIndex;
@@ -376,6 +378,24 @@ export function applyEdit(
     throw new DomainError("E_UNKNOWN_ANCHOR", {
       path: filePath ?? "this file",
       anchors,
+    });
+  }
+
+  // WHY: (ticket-04 §3.4) "before"/"after" splice at ONE zero-width position; a resolved multi-line
+  // WHY: target has no single honest insertion point, so the placement is refused AFTER anchor
+  // WHY: resolution (a raw anchor-string comparison cannot see a rebased span) and BEFORE any
+  // WHY: assembly — this covers literal, reference and foreign-materialized payloads identically.
+  if (
+    (resolved.placement === "before" || resolved.placement === "after") &&
+    resolved.hash_bounds[0].line !== resolved.hash_bounds[1].line
+  ) {
+    const t1 = resolved.hash_bounds[0].line;
+    const t2 = resolved.hash_bounds[1].line;
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message:
+        `Field "at" ("${resolved.placement}") requires a single-line target span: the anchors ` +
+        `resolve to lines ${t1}-${t2}. Nothing was written; narrow the anchors to one line, or ` +
+        'use "in-place" to rewrite the range.',
     });
   }
 

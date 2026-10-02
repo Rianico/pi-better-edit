@@ -66,10 +66,10 @@ describe("task-147 rejection diagnostics", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[0]!, "ALPHA"],
-              [hashes[1]!, hashes[2]!, "BETA\ngamma"],
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "BETA\ngamma" },
             ],
           },
           undefined,
@@ -131,7 +131,10 @@ describe("task-147 rejection diagnostics", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
-      const payload = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] };
+      const payload = {
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+      };
       await editTool.execute("e1", payload, undefined, undefined, ctx);
       await editTool.execute("e2", payload, undefined, undefined, ctx);
       const err = (await editTool
@@ -150,7 +153,10 @@ describe("task-147 rejection diagnostics", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,

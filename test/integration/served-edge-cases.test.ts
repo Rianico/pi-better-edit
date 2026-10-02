@@ -41,7 +41,7 @@ describe("served-state edge cases for edit", () => {
       // (ADR-0024) instead of paying a rejection-and-resend round trip.
       const applied = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: l3Ref, anchor_to: l7Ref, text: "X" }] },
         undefined,
         undefined,
         ctx,
@@ -70,7 +70,7 @@ describe("served-state edge cases for edit", () => {
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[aRef, dRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: aRef, anchor_to: dRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -104,7 +104,7 @@ describe("served-state edge cases for edit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[aRef, aRef, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: aRef, anchor_to: aRef, text: "X" }] },
         undefined,
         undefined,
         ctx,
@@ -128,7 +128,10 @@ describe("served-state edge cases for edit", () => {
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[3]!, hashes[4]!, "X"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[3]!, anchor_to: hashes[4]!, text: "X" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -150,7 +153,10 @@ describe("served-state edge cases for edit", () => {
           .split("│")[0]!;
       const retry = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[servedFor("l4"), servedFor("l5"), "X"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: servedFor("l4"), anchor_to: servedFor("l5"), text: "X" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -179,7 +185,7 @@ describe("served-state edge cases for edit", () => {
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[firstRef, lastRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: firstRef, anchor_to: lastRef, text: "X" }] },
           undefined,
           undefined,
           ctx,

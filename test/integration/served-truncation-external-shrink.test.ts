@@ -62,7 +62,7 @@ describe("served-state truncation survives an external shrink (issue #27)", () =
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[aRef, fRef, "F2"]] },
+          { file: "sample.ts", edits: [{ anchor_from: aRef, anchor_to: fRef, text: "F2" }] },
           undefined,
           undefined,
           ctx,

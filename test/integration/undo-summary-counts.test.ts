@@ -13,7 +13,7 @@ const TWENTY_LINES = Array.from({ length: 20 }, (_, i) => `line ${i}`).join("\n"
 async function undoAfterEdit(
   file: string,
   original: string,
-  edits: (readLines: string[]) => unknown[][],
+  edits: (readLines: string[]) => unknown[],
   assert: (undone: { details?: unknown }, text: string, restored: string) => void,
 ): Promise<void> {
   await withTempFile(file, original, async ({ cwd, path }) => {
@@ -21,7 +21,7 @@ async function undoAfterEdit(
     const r1 = await readTool.execute("r1", { path: file }, undefined, undefined, ctx);
     await editTool.execute(
       "e1",
-      { path: file, edits: edits(getText(r1).split("\n")) },
+      { file: file, edits: edits(getText(r1).split("\n")) },
       undefined,
       undefined,
       ctx,
@@ -38,7 +38,11 @@ describe("undo_last_edit summary counts (#173)", () => {
       TWENTY_LINES,
       (readLines) => [
         // Delete lines 3..16 (14 lines, beyond the 6-line removal cap) and add one line.
-        [extractHash(readLines[2]!), extractHash(readLines[15]!), "REPLACED"],
+        {
+          anchor_from: extractHash(readLines[2]!),
+          anchor_to: extractHash(readLines[15]!),
+          text: "REPLACED",
+        },
       ],
       (undone, text, restored) => {
         expect(restored).toBe(TWENTY_LINES);
@@ -57,7 +61,13 @@ describe("undo_last_edit summary counts (#173)", () => {
     await undoAfterEdit(
       "undo_counts_smalldelete.txt",
       TWENTY_LINES,
-      (readLines) => [[extractHash(readLines[2]!), extractHash(readLines[4]!), "A\nB"]],
+      (readLines) => [
+        {
+          anchor_from: extractHash(readLines[2]!),
+          anchor_to: extractHash(readLines[4]!),
+          text: "A\nB",
+        },
+      ],
       (undone, text, restored) => {
         expect(restored).toBe(TWENTY_LINES);
         expect(text).toContain(

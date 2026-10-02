@@ -26,11 +26,11 @@ describe("multi-item edit error propagation", () => {
         .execute(
           "e1",
           {
-            path: "bad-anchor.txt",
+            file: "bad-anchor.txt",
             edits: [
-              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" },
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
               // A `HASH│row` copied out of served output: `resEdit` rejects the item's anchor syntax.
-              { anchor_from: `${hashes[1]}│beta`, anchor_to: hashes[1]!, replace_with: "BETA" },
+              { anchor_from: `${hashes[1]}│beta`, anchor_to: hashes[1]!, text: "BETA" },
             ],
           },
           undefined,
@@ -62,10 +62,10 @@ describe("multi-item edit error propagation", () => {
         .execute(
           "e1",
           {
-            path: "apply-loop.txt",
+            file: "apply-loop.txt",
             edits: [
-              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" },
-              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: `${hashes[1]}│beta` },
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│beta` },
             ],
           },
           undefined,
@@ -98,10 +98,10 @@ describe("multi-item edit error propagation", () => {
         .execute(
           "e1",
           {
-            path: "apply-failure.txt",
+            file: "apply-failure.txt",
             edits: [
-              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" },
-              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "beta" },
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "beta" },
             ],
           },
           undefined,
@@ -153,10 +153,10 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
         .execute(
           "e1",
           {
-            path: "batch-serve.txt",
+            file: "batch-serve.txt",
             edits: [
-              { anchor_from: l1Ref, anchor_to: l1Ref, replace_with: "L1" },
-              { anchor_from: l3Ref, anchor_to: l7Ref, replace_with: "X" },
+              { anchor_from: l1Ref, anchor_to: l1Ref, text: "L1" },
+              { anchor_from: l3Ref, anchor_to: l7Ref, text: "X" },
             ],
           },
           undefined,
@@ -205,10 +205,10 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
         .execute(
           "e1",
           {
-            path: "batch-isolated.txt",
+            file: "batch-isolated.txt",
             edits: [
-              { anchor_from: l1Ref, anchor_to: l1Ref, replace_with: "L1" },
-              { anchor_from: l3Ref, anchor_to: l7Ref, replace_with: "X" },
+              { anchor_from: l1Ref, anchor_to: l1Ref, text: "L1" },
+              { anchor_from: l3Ref, anchor_to: l7Ref, text: "X" },
             ],
           },
           undefined,

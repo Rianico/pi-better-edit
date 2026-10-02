@@ -13,7 +13,10 @@ describe("edit tool text shape (token budget)", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -33,7 +36,10 @@ describe("edit tool text shape (token budget)", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -52,7 +58,10 @@ describe("edit tool text shape (token budget)", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, ""]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -70,7 +79,12 @@ describe("edit tool text shape (token budget)", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `b${longLine.slice(1)}`]] },
+        {
+          file: "sample.ts",
+          edits: [
+            { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `b${longLine.slice(1)}` },
+          ],
+        },
         undefined,
         undefined,
         ctx,

@@ -18,7 +18,10 @@ describe("edit tool file mutation queue", () => {
 
       const r1 = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "ALPHA"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -27,7 +30,10 @@ describe("edit tool file mutation queue", () => {
       expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const r2 = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BETA" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -49,7 +55,10 @@ describe("edit tool file mutation queue", () => {
 
         const r1 = await editTool.execute(
           "e1",
-          { path: "target.ts", edits: [[hashes[0]!, hashes[0]!, "ALPHA"]] },
+          {
+            file: "target.ts",
+            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -58,7 +67,10 @@ describe("edit tool file mutation queue", () => {
         expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
         const r2 = await editTool.execute(
           "e2",
-          { path: "link.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
+          {
+            file: "link.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BETA" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -89,7 +101,10 @@ describe("edit tool file mutation queue", () => {
 
       const r1 = await editTool.execute(
         "e1",
-        { path: "sub/target.ts", edits: [[hashes[0]!, hashes[0]!, "ALPHA"]] },
+        {
+          file: "sub/target.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -98,7 +113,10 @@ describe("edit tool file mutation queue", () => {
       expect(r1.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const r2 = await editTool.execute(
         "e2",
-        { path: "linkdir/sub/target.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
+        {
+          file: "linkdir/sub/target.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BETA" }],
+        },
         undefined,
         undefined,
         ctx,

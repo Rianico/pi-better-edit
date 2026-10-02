@@ -378,6 +378,7 @@ describe("domain warning registry: applied tier, never a rejection", () => {
     "W_UNICODE_LITERAL",
     "W_LITERAL_BYPASS",
     "W_NOOP",
+    "W_NOOP_INSERT",
   ];
 
   const WARNING_EXAMPLES: { [K in DomainWarningCode]: WarningPayloadMap[K] } = {
@@ -393,9 +394,14 @@ describe("domain warning registry: applied tier, never a rejection", () => {
       batch: false,
       count: 2,
     },
+    W_NOOP_INSERT: {
+      ref: "edit[0] (probe.ts)",
+      removeFrom: "abc",
+      removeTo: "def",
+    },
   };
 
-  it("the warning union is exactly the six W_* codes", () => {
+  it("the warning union is exactly the seven W_* codes", () => {
     expect(warningUnionMembers().sort()).toEqual([...WARNING_CODES].sort());
   });
 

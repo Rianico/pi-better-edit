@@ -126,7 +126,7 @@ describe("rejectUnknownFields", () => {
         obj,
         allowed,
         "Edit 0",
-        "Each edit takes only { replace_with, anchor_from, anchor_to }.",
+        "Each edit takes only { text, anchor_from, anchor_to }.",
       ),
     ).toThrow(/Each edit takes only/);
   });

@@ -16,7 +16,7 @@ describe("edit — missing file fails closed", () => {
         .execute(
           {
             file: null,
-            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "BBB" }],
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
           },
           undefined,
           ctx,
@@ -28,7 +28,9 @@ describe("edit — missing file fails closed", () => {
           (entry) => entry as Error,
         );
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain("Edit request must be exactly");
+      expect(String(error.message)).toContain(
+        'Edit request "file" must be a non-empty string path to a text file',
+      );
       expect(String(error.message)).not.toContain("resolved to");
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
@@ -44,7 +46,7 @@ describe("edit — missing file fails closed", () => {
       const result = await tool.preview(
         {
           file: null,
-          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" }],
         },
         cwd,
         ctx,
@@ -52,7 +54,9 @@ describe("edit — missing file fails closed", () => {
       expect("error" in result).toBe(true);
       if ("error" in result) {
         expect(result.error).toContain("[E_BAD_PAYLOAD]");
-        expect(result.error).toContain("Edit request must be exactly");
+        expect(result.error).toContain(
+          'Edit request "file" must be a non-empty string path to a text file',
+        );
       }
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\n");
     });
@@ -72,7 +76,7 @@ describe("edit — missing file fails closed", () => {
               {
                 anchor_from: hashes[1]!,
                 anchor_to: hashes[1]!,
-                replace_with: "BBB",
+                text: "BBB",
               },
             ],
           },
@@ -95,7 +99,7 @@ describe("edit — missing file fails closed", () => {
         "e1",
         {
           file: "sample.ts",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "BBB" }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
         },
         undefined,
         undefined,

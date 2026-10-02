@@ -39,7 +39,7 @@ describe("MutationEngine — deep seam", () => {
       const result = await execute(
         req({
           file: "sample.txt",
-          edits: [{ anchor_from: from, anchor_to: to, replace_with: "x\ny" }],
+          edits: [{ anchor_from: from, anchor_to: to, text: "x\ny" }],
         }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
@@ -63,7 +63,7 @@ describe("MutationEngine — deep seam", () => {
       const result = await preview(
         req({
           file: "sample.txt",
-          edits: [{ anchor_from: from, anchor_to: from, replace_with: "replaced" }],
+          edits: [{ anchor_from: from, anchor_to: from, text: "replaced" }],
         }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
@@ -86,7 +86,7 @@ describe("MutationEngine — deep seam", () => {
       const result = await preview(
         req({
           file: "sample.txt",
-          edits: [{ anchor_from: from, anchor_to: from, replace_with: "replaced" }],
+          edits: [{ anchor_from: from, anchor_to: from, text: "replaced" }],
         }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
@@ -118,7 +118,7 @@ describe("MutationEngine — deep seam", () => {
       const result = await execute(
         req({
           file: "sample.txt",
-          edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
+          edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }],
         }),
         cwd,
         { sessionKey: TEST_SESSION_ID },
@@ -143,8 +143,8 @@ describe("MutationEngine — deep seam", () => {
         req({
           file: "sample.txt",
           edits: [
-            { anchor_from: h0, anchor_to: h0, replace_with: "A" },
-            { anchor_from: h2, anchor_to: h3, replace_with: "C" },
+            { anchor_from: h0, anchor_to: h0, text: "A" },
+            { anchor_from: h2, anchor_to: h3, text: "C" },
           ],
         }),
         cwd,

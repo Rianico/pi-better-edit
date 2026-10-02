@@ -41,32 +41,6 @@ function rows(text: string): { hash: string; text: string }[] {
 
 const BOM = "\uFEFF";
 
-describe("closed #64 — legacy object-form edits entries", () => {
-  it("applies {remove_from, remove_to, replacement_text} end-to-end through the tool seam", async () => {
-    await withTempFile("legacy.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const served = rows(
-        getText(await readTool.execute("r1", { path: "legacy.txt" }, undefined, undefined, ctx)),
-      );
-      const line2 = served[1]!.hash;
-
-      const res = await editTool.execute(
-        "e1",
-        {
-          file: "legacy.txt",
-          edits: [{ remove_from: line2, remove_to: line2, replacement_text: "TWO" }],
-        },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      expect(getText(res)).toContain("Successfully edited");
-      expect(await readFile(path, "utf-8")).toBe("one\nTWO\nthree\n");
-    });
-  });
-});
-
 describe("closed #31 — retired anchors never re-bind to a twin", () => {
   it("fails closed when a deleted line's anchor is reused on its surviving duplicate", async () => {
     await withTempFile("twins.txt", "aaa\nbbb\naaa\n", async ({ cwd, path }) => {
@@ -81,7 +55,7 @@ describe("closed #31 — retired anchors never re-bind to a twin", () => {
       // delete line 1: line 3's `aaa` shifts up, and line 1's anchor is retired
       await editTool.execute(
         "e1",
-        { path: "twins.txt", edits: [[line1, line1, ""]] },
+        { file: "twins.txt", edits: [{ anchor_from: line1, anchor_to: line1, text: "" }] },
         undefined,
         undefined,
         ctx,
@@ -92,7 +66,7 @@ describe("closed #31 — retired anchors never re-bind to a twin", () => {
       await expect(
         editTool.execute(
           "e2",
-          { path: "twins.txt", edits: [[line1, line1, "CCC"]] },
+          { file: "twins.txt", edits: [{ anchor_from: line1, anchor_to: line1, text: "CCC" }] },
           undefined,
           undefined,
           ctx,
@@ -117,10 +91,10 @@ describe("closed #53 — served refresh after a multi-entry batch", () => {
       const batch = await editTool.execute(
         "e1",
         {
-          path: "batch.txt",
+          file: "batch.txt",
           edits: [
-            [line2, line2, "line 2 modified"],
-            [line10, line10, "line 10\nline 10.1\nline 10.2"],
+            { anchor_from: line2, anchor_to: line2, text: "line 2 modified" },
+            { anchor_from: line10, anchor_to: line10, text: "line 10\nline 10.1\nline 10.2" },
           ],
         },
         undefined,
@@ -142,7 +116,10 @@ describe("closed #53 — served refresh after a multi-entry batch", () => {
         .slice(1, 4);
       const chained = await editTool.execute(
         "e2",
-        { path: "batch.txt", edits: [[anchor, anchor, "line 10.2 chained"]] },
+        {
+          file: "batch.txt",
+          edits: [{ anchor_from: anchor, anchor_to: anchor, text: "line 10.2 chained" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -173,7 +150,7 @@ describe("closed #48 — full re-read after an external change", () => {
       const last = reread[5]!.hash;
       await editTool.execute(
         "e1",
-        { path: "shift.txt", edits: [[last, last, "F"]] },
+        { file: "shift.txt", edits: [{ anchor_from: last, anchor_to: last, text: "F" }] },
         undefined,
         undefined,
         ctx,
@@ -205,7 +182,7 @@ describe("closed #51 — anchor space is a line-count limit, not a retirement ac
         const victim = served[0]!.hash; // retire the first line's anchor every round
         await editTool.execute(
           `e${round}`,
-          { path: "churn.txt", edits: [[victim, victim, ""]] },
+          { file: "churn.txt", edits: [{ anchor_from: victim, anchor_to: victim, text: "" }] },
           undefined,
           undefined,
           sessionCtx,
@@ -222,7 +199,10 @@ describe("closed #51 — anchor space is a line-count limit, not a retirement ac
       const target = fresh[13]!.hash;
       await editTool.execute(
         "ef",
-        { path: "churn.txt", edits: [[target, target, "row 20 last"]] },
+        {
+          file: "churn.txt",
+          edits: [{ anchor_from: target, anchor_to: target, text: "row 20 last" }],
+        },
         undefined,
         undefined,
         finalCtx,
@@ -247,7 +227,7 @@ describe("closed #23/#60 — BOM and encoding handling", () => {
 
         await editTool.execute(
           "e1",
-          { path: "bom.txt", edits: [[line2, line2, "BRAVO"]] },
+          { file: "bom.txt", edits: [{ anchor_from: line2, anchor_to: line2, text: "BRAVO" }] },
           undefined,
           undefined,
           ctx,
@@ -304,7 +284,7 @@ describe("closed #38 — boundary duplicate removal", () => {
 
       await editTool.execute(
         "e1",
-        { path: "braces.ts", edits: [[line1, line1, "X\nb"]] },
+        { file: "braces.ts", edits: [{ anchor_from: line1, anchor_to: line1, text: "X\nb" }] },
         undefined,
         undefined,
         ctx,

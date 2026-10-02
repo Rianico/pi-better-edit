@@ -9,33 +9,40 @@ describe("normReq", () => {
   });
 
   it("normalizes the exact { file, edits } shape", () => {
-    expect(normReq({ file: "src/main.ts", edits: [["aB3", "cD4", "new"]] })).toMatchObject({
+    expect(
+      normReq({
+        file: "src/main.ts",
+        edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
+      }),
+    ).toMatchObject({
       file: "src/main.ts",
       edits: [
         {
           target: { anchor_from: "aB3", anchor_to: "cD4" },
-          at: "replace",
-          payload: { kind: "hand-written", text: "new" },
+          at: "in-place",
+          payload: { kind: "literal", text: "new" },
         },
       ],
     });
   });
 
-  it("folds an empty replace_with to a none payload", () => {
-    expect(normReq({ file: "src/main.ts", edits: [["aB3", "cD4", ""]] })).toMatchObject({
+  it("folds an empty text to an empty payload", () => {
+    expect(
+      normReq({ file: "src/main.ts", edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "" }] }),
+    ).toMatchObject({
       file: "src/main.ts",
       edits: [
         {
           target: { anchor_from: "aB3", anchor_to: "cD4" },
-          at: "replace",
-          payload: { kind: "none" },
+          at: "in-place",
+          payload: { kind: "empty" },
         },
       ],
     });
   });
 
   it("rejects a null file fail-closed", () => {
-    const input = { file: null, edits: [["aB3", "cD4", "new"]] };
+    const input = { file: null, edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }] };
     expect(normReq(input)).toBe(input);
   });
 
@@ -49,8 +56,14 @@ describe("normReq", () => {
   });
 
   it("does not mutate input", () => {
-    const input = { file: "test.txt", edits: [["aB3", "cD4", "new"]] };
+    const input = {
+      file: "test.txt",
+      edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
+    };
     normReq(input);
-    expect(input).toEqual({ file: "test.txt", edits: [["aB3", "cD4", "new"]] });
+    expect(input).toEqual({
+      file: "test.txt",
+      edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
+    });
   });
 });

@@ -24,10 +24,10 @@ describe("edit multi-item tool", () => {
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
+          file: "sample.ts",
           edits: [
-            [hashes[0]!, hashes[0]!, "AAA"],
-            [hashes[2]!, hashes[2]!, "CCC"],
+            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" },
+            { anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "CCC" },
           ],
         },
         undefined,
@@ -51,8 +51,8 @@ describe("edit multi-item tool", () => {
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
-          edits: [[hashes[1]!, hashes[1]!, "BBB"]],
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
         },
         undefined,
         undefined,
@@ -76,10 +76,10 @@ describe("edit multi-item tool", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[0]!, "ALPHA"],
-              [hashes[1]!, hashes[1]!, "two"],
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "two" },
             ],
           },
           undefined,
@@ -111,10 +111,10 @@ describe("edit multi-item tool", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[0]!, "ALPHA"],
-              [hashes[1]!, hashes[2]!, "BETA\ngamma"],
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "BETA\ngamma" },
             ],
           },
           undefined,
@@ -136,8 +136,8 @@ describe("edit multi-item tool", () => {
       const followUp = await editTool.execute(
         "e2",
         {
-          path: "sample.ts",
-          edits: [[servedHash, servedHash, "beta"]],
+          file: "sample.ts",
+          edits: [{ anchor_from: servedHash, anchor_to: servedHash, text: "beta" }],
         },
         undefined,
         undefined,
@@ -158,10 +158,10 @@ describe("edit multi-item tool", () => {
         editTool.execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[1]!, hashes[1]!, "BBB"],
-              [hashes[1]!, hashes[1]!, "XX"],
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "XX" },
             ],
           },
           undefined,
@@ -183,10 +183,10 @@ describe("edit multi-item tool", () => {
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
+          file: "sample.ts",
           edits: [
-            [hashes[1]!, hashes[1]!, "BBB"],
-            [hashes[2]!, hashes[2]!, "ccc"],
+            { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" },
+            { anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "ccc" },
           ],
         },
         undefined,
@@ -209,8 +209,8 @@ describe("edit multi-item tool", () => {
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
-          edits: [[hashes[1]!, hashes[1]!, "bbb"]],
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
         },
         undefined,
         undefined,
@@ -236,7 +236,7 @@ describe("edit multi-item tool", () => {
             {
               anchor_from: hashes[0]!,
               anchor_to: hashes[0]!,
-              replace_with: "AAA",
+              text: "AAA",
             },
           ],
         }),
@@ -249,7 +249,7 @@ describe("edit multi-item tool", () => {
               file: "sample.ts",
               anchor_from: hashes[0]!,
               anchor_to: hashes[0]!,
-              replace_with: "AAA",
+              text: "AAA",
             },
           ],
         }),
@@ -265,7 +265,7 @@ describe("edit multi-item tool", () => {
                 file: "sample.ts",
                 anchor_from: hashes[0]!,
                 anchor_to: hashes[0]!,
-                replace_with: "AAA",
+                text: "AAA",
               },
             ],
           } as any,
@@ -286,7 +286,7 @@ describe("edit multi-item tool", () => {
         editTool.execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [[hashes[0]!, hashes[0]!]],
           },
           undefined,
@@ -298,7 +298,7 @@ describe("edit multi-item tool", () => {
       const validItem = [hashes[0]!, hashes[0]!, "AAA"];
       const tooMany = Array.from({ length: 33 }, () => validItem);
       await expect(
-        editTool.execute("e1", { path: "sample.ts", edits: tooMany }, undefined, undefined, ctx),
+        editTool.execute("e1", { file: "sample.ts", edits: tooMany }, undefined, undefined, ctx),
       ).rejects.toThrow(/E_BAD_PAYLOAD/);
 
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
@@ -315,7 +315,7 @@ describe("edit multi-item tool", () => {
         "e1",
         {
           file: "sample.ts",
-          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" }],
         },
         undefined,
         undefined,
@@ -339,8 +339,8 @@ describe("edit multi-item tool", () => {
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
-          edits: [[hashes[2]!, hashes[0]!, "XX"]],
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[0]!, text: "XX" }],
         },
         undefined,
         undefined,
@@ -368,8 +368,8 @@ describe("edit multi-item tool", () => {
         const result = await editTool.execute(
           "e1",
           {
-            path: "sample.ts",
-            edits: [[hashes[1]!, hashes[1]!, "BETA"]],
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BETA" }],
           },
           undefined,
           undefined,
@@ -390,8 +390,8 @@ describe("edit multi-item tool", () => {
       await doRead(ctx, readTool, "sample.ts");
 
       const payload = {
-        path: "sample.ts",
-        edits: [[hashes[1]!, hashes[1]!, "bbb"]],
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
       };
 
       const first = await editTool.execute("e1", payload, undefined, undefined, ctx);
@@ -418,10 +418,10 @@ describe("edit multi-item tool", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[1]!, hashes[1]!, "BBB"],
-              [hashes[1]!, hashes[1]!, "XX"],
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "XX" },
             ],
           },
           undefined,
@@ -437,8 +437,8 @@ describe("edit multi-item tool", () => {
       const followUp = await editTool.execute(
         "e2",
         {
-          path: "sample.ts",
-          edits: [[servedHash, servedHash, "BBB"]],
+          file: "sample.ts",
+          edits: [{ anchor_from: servedHash, anchor_to: servedHash, text: "BBB" }],
         },
         undefined,
         undefined,
@@ -460,12 +460,12 @@ describe("edit multi-item batch error aggregation", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[0]!, "AAA"],
-              ["ZZZ", "ZZZ", "xx"],
-              [hashes[2]!, hashes[2]!, "CCC"],
-              ["QQQ", "QQQ", "yy"],
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" },
+              { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "xx" },
+              { anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "CCC" },
+              { anchor_from: "QQQ", anchor_to: "QQQ", text: "yy" },
             ],
           },
           undefined,
@@ -498,10 +498,10 @@ describe("edit multi-item batch error aggregation", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[0]!, "AAA"],
-              ["ZZZ", "ZZZ", "xx"],
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" },
+              { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "xx" },
             ],
           },
           undefined,
@@ -529,11 +529,11 @@ describe("edit multi-item batch error aggregation", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[0]!, "AAA"],
-              ["!!", "!!", "xx"],
-              ["##", "##", "yy"],
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" },
+              { anchor_from: "!!", anchor_to: "!!", text: "xx" },
+              { anchor_from: "##", anchor_to: "##", text: "yy" },
             ],
           },
           undefined,
@@ -566,11 +566,11 @@ describe("edit multi-item batch error aggregation", () => {
           .execute(
             "e1",
             {
-              path: "sample.ts",
+              file: "sample.ts",
               edits: [
-                [hashes[0]!, hashes[0]!, "ALPHA"],
-                [hashes[1]!, hashes[2]!, "BETA\ngamma"],
-                ["ZZZ", "ZZZ", "xx"],
+                { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+                { anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "BETA\ngamma" },
+                { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "xx" },
               ],
             },
             undefined,
@@ -613,10 +613,10 @@ describe("edit multi-item batch error aggregation", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[1]!, "X"],
-              [hashes[1]!, hashes[2]!, "Y"],
+              { anchor_from: hashes[0]!, anchor_to: hashes[1]!, text: "X" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "Y" },
             ],
           },
           undefined,
@@ -639,7 +639,7 @@ describe("prepareEditArguments normalization", () => {
   it("keeps the canonical object-root payload unchanged", () => {
     const args = {
       file: "a.ts",
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
+      edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }],
     };
     expect(prepareEditArguments(args)).toEqual(args);
   });
@@ -647,10 +647,10 @@ describe("prepareEditArguments normalization", () => {
   it("rejects a null file fail-closed", () => {
     expect(() =>
       prepareEditArguments({
-        path: null,
+        file: null,
         edits: [
-          ["AAA", "BBB", "x"],
-          ["CCC", "DDD", ""],
+          { anchor_from: "AAA", anchor_to: "BBB", text: "x" },
+          { anchor_from: "CCC", anchor_to: "DDD", text: "" },
         ],
       }),
     ).toThrow(/\[E_BAD_PAYLOAD\]/);
@@ -669,7 +669,9 @@ describe("prepareEditArguments normalization", () => {
       ["a.ts", ["AAA", "BBB"], "x"],
     ]) {
       expect(() => prepareEditArguments(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
-      expect(() => prepareEditArguments(args)).toThrow(/canonical payload/);
+      expect(() => prepareEditArguments(args)).toThrow(
+        /canonical payload|it is exactly \{ file|an item is exactly/,
+      );
     }
   });
 });

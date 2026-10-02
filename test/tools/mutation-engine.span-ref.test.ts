@@ -23,15 +23,19 @@ function spanRefItem(
   target: [string, string],
   source: [string, string],
   retire: boolean,
-  at: Placement = "replace",
+  at: Placement = "in-place",
 ): NormalizedEditRequest["edits"][number] {
   return {
     target: { anchor_from: target[0], anchor_to: target[1] },
     at,
     payload: {
-      kind: "span-ref",
-      span: { anchor_from: source[0], anchor_to: source[1] },
-      retireSource: retire,
+      kind: "reference",
+      span: {
+        anchor_from: source[0],
+        anchor_to: source[1],
+        mode: retire ? ("cut" as const) : ("copy" as const),
+      },
+      mode: retire ? "cut" : "copy",
     },
   };
 }
@@ -39,12 +43,12 @@ function spanRefItem(
 function handItem(
   target: [string, string],
   text: string,
-  at: Placement = "replace",
+  at: Placement = "in-place",
 ): NormalizedEditRequest["edits"][number] {
   return {
     target: { anchor_from: target[0], anchor_to: target[1] },
     at,
-    payload: { kind: "hand-written", text },
+    payload: { kind: "literal", text },
   };
 }
 

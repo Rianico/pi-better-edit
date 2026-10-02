@@ -75,7 +75,7 @@ describe("resEdit", () => {
 
   it("rejects missing text", () => {
     const edit = { anchor_from: "ZZP", anchor_to: "ZZP" } as any;
-    expect(() => resEdit(edit)).toThrow(/requires a "replace_with" field/i);
+    expect(() => resEdit(edit)).toThrow(/requires a "text" field/i);
   });
 
   it("strips a HASH│content row pasted into anchor_from/anchor_to with a warning", () => {

@@ -19,7 +19,10 @@ describe("edit noop-loop tracker session scope", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctxA);
       await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctxB);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
-      const payload = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] };
+      const payload = {
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+      };
 
       const a1 = await editTool.execute("a1", payload, undefined, undefined, ctxA);
       expect(a1.details.classification).toBe("noop");
@@ -49,14 +52,20 @@ describe("edit noop-loop tracker session scope", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctxA);
       await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctxB);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
-      const noopPayload = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] };
+      const noopPayload = {
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+      };
 
       await editTool.execute("a1", noopPayload, undefined, undefined, ctxA);
       await editTool.execute("b1", noopPayload, undefined, undefined, ctxB);
 
       await editTool.execute(
         "a2",
-        { path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "AAA"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" }],
+        },
         undefined,
         undefined,
         ctxA,

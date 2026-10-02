@@ -92,7 +92,7 @@ describe("applyEdit — recovery scenarios", () => {
 
   it("rejects missing text", () => {
     const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ" } as any;
-    expect(() => resEdit(edit)).toThrow(/requires a "replace_with" field/);
+    expect(() => resEdit(edit)).toThrow(/requires a "text" field/);
   });
 
   it("rejects null text", () => {

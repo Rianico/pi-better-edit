@@ -29,7 +29,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[betaHash, betaHash, "BBB"]] },
+        { file: "sample.ts", edits: [{ anchor_from: betaHash, anchor_to: betaHash, text: "BBB" }] },
         undefined,
         undefined,
         ctx,
@@ -60,7 +60,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[bHash, cHash, "B\nC"]] },
+        { file: "sample.ts", edits: [{ anchor_from: bHash, anchor_to: cHash, text: "B\nC" }] },
         undefined,
         undefined,
         ctx,
@@ -91,7 +91,7 @@ describe("edit tool — end-to-end", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[bHash, cHash, ""]] },
+        { file: "sample.ts", edits: [{ anchor_from: bHash, anchor_to: cHash, text: "" }] },
         undefined,
         undefined,
         ctx,
@@ -124,7 +124,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[betaRef, betaRef, "BBB"]] },
+        { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BBB" }] },
         undefined,
         undefined,
         ctx,
@@ -135,7 +135,10 @@ describe("edit tool — end-to-end", () => {
       await expect(
         editTool.execute(
           "e2",
-          { path: "sample.ts", edits: [[betaRef, betaRef, "BBB-AGAIN"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BBB-AGAIN" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -160,7 +163,10 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        { path: "empty.ts", edits: [[emptyHash, emptyHash, "first\nsecond"]] },
+        {
+          file: "empty.ts",
+          edits: [{ anchor_from: emptyHash, anchor_to: emptyHash, text: "first\nsecond" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -189,7 +195,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        { path: "crlf.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "crlf.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -213,7 +219,7 @@ describe("edit tool — end-to-end", () => {
 
       await editTool.execute(
         "e1",
-        { path: "cr.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "cr.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -263,7 +269,7 @@ describe("edit tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            { path: c.fileName, edits: [[betaRef, betaRef, ""]] },
+            { file: c.fileName, edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "" }] },
             undefined,
             undefined,
             ctx,
@@ -289,7 +295,10 @@ describe("edit tool — end-to-end", () => {
             .split("│")[0]!;
           await editTool.execute(
             "e1",
-            { path: c.fileName, edits: [[betaRef, betaRef, "beta"]] },
+            {
+              file: c.fileName,
+              edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "beta" }],
+            },
             undefined,
             undefined,
             ctx,
@@ -299,25 +308,5 @@ describe("edit tool — end-to-end", () => {
         });
       });
     }
-  });
-  it("accepts top-level anchor_from/anchor_to and replace_with", async () => {
-    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-
-      const editResult = await editTool.execute(
-        "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      expect(editResult.content[0].text).toContain("Successfully edited");
-      const { readFile } = await import("fs/promises");
-      const content = await readFile(path, "utf-8");
-      expect(content).toBe("aaa\nBBB\nccc\n");
-    });
   });
 });

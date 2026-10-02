@@ -83,8 +83,8 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
         .execute(
           "e1",
           {
-            path: "single.txt",
-            edits: [{ anchor_from: single.beta, anchor_to: single.delta, replace_with: "X" }],
+            file: "single.txt",
+            edits: [{ anchor_from: single.beta, anchor_to: single.delta, text: "X" }],
           },
           undefined,
           undefined,
@@ -98,10 +98,10 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
         .execute(
           "e2",
           {
-            path: batchName,
+            file: batchName,
             edits: [
-              { anchor_from: batch.alpha, anchor_to: batch.alpha, replace_with: "ALPHA" },
-              { anchor_from: batch.beta, anchor_to: batch.delta, replace_with: "X" },
+              { anchor_from: batch.alpha, anchor_to: batch.alpha, text: "ALPHA" },
+              { anchor_from: batch.beta, anchor_to: batch.delta, text: "X" },
             ],
           },
           undefined,

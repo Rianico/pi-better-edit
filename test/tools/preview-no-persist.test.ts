@@ -28,7 +28,7 @@ describe("compPreview no-persist guarantee", () => {
       const cHash = hashes[2]!;
 
       const preview = await compPreview(
-        { path: "sample.txt", edits: [[bHash, cHash, "B"]] },
+        { file: "sample.txt", edits: [{ anchor_from: bHash, anchor_to: cHash, text: "B" }] },
         cwd,
         ctx,
       );
@@ -53,7 +53,10 @@ describe("compPreview no-persist guarantee", () => {
       const hashes = await lineHashes(content, absolutePath);
 
       await compPreview(
-        { path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "X\nY"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "X\nY" }],
+        },
         cwd,
         ctx,
       );
@@ -75,7 +78,10 @@ describe("compPreview no-persist guarantee", () => {
       const hashes = await lineHashes(content, absolutePath);
 
       const preview = await compPreview(
-        { path: "sample.txt", edits: [[hashes[0]!, hashes[2]!, "x"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "x" }],
+        },
         cwd,
         ctx,
       );
@@ -107,7 +113,10 @@ describe("compPreview no-persist guarantee", () => {
       db.close();
 
       const preview = await compPreview(
-        { path: "sample.txt", edits: [[hashes[0]!, hashes[1]!, "X"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[1]!, text: "X" }],
+        },
         cwd,
         ctx,
       );
@@ -143,7 +152,7 @@ describe("compPreview no-persist guarantee", () => {
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
       const preview = await compPreview(
-        { path: "sample.txt", edits: [[alphaRef, gammaRef, "X"]] },
+        { file: "sample.txt", edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X" }] },
         cwd,
         ctx,
       );
@@ -152,7 +161,10 @@ describe("compPreview no-persist guarantee", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.txt", edits: [[alphaRef, gammaRef, "X"]] },
+          {
+            file: "sample.txt",
+            edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -188,7 +200,10 @@ describe("compPreview no-persist guarantee", () => {
       // Lines 2-3 are unserved; the interior gap renders a diff instead of a rejection (ADR-0024), so
       // the persistence detector moves to the interior anchors themselves.
       const preview = await compPreview(
-        { path: "sample.txt", edits: [[hashes[0]!, hashes[3]!, "X"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[3]!, text: "X" }],
+        },
         cwd,
         ctx,
       );
@@ -199,7 +214,10 @@ describe("compPreview no-persist guarantee", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "X"]] },
+          {
+            file: "sample.txt",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "X" }],
+          },
           undefined,
           undefined,
           ctx,

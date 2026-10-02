@@ -36,7 +36,7 @@ function diagPayload(ref: string): { rawAnchor: string; reason: string } {
       reason:
         `anchor_from must be a single bare 3-char hash (e.g. "wUp"), not a block with HASH│. ` +
         `Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as anchor_from and "${lastHash}" as anchor_to, ` +
-        `and put the new content (without HASH│) in replace_with. Nothing was written.`,
+        `and put the new content (without HASH│) in text. Nothing was written.`,
     };
   }
   if (trimmed.includes("│")) {
@@ -69,7 +69,7 @@ export function parseText(edit: string): string[] {
   if (typeof edit !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        '"replace_with" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
+        '"text" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
     });
   }
   const normalized = edit.replace(/\r\n/g, "\n").replace(/\r/g, "\n");

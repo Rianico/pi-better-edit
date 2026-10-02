@@ -299,6 +299,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 | `[W_UNICODE_LITERAL]` | `[USER]` | Literal `\uDDDD` sequence detected in replacement. Applied verbatim. |
 | `[W_LITERAL_BYPASS]` | `[USER]` | Served hash echo check bypassed via explicit `mode: "literal"`. |
 | `[W_NOOP]` | `[USER]` | Edit produced no file changes; warning emitted on 2nd occurrence. |
+| `[W_NOOP_INSERT]` | `[MODEL]` | An `at: "before"/"after"` item with `text: ""` writes nothing; the file stayed byte-identical. |
 
 ---
 

@@ -17,7 +17,10 @@ describe("edit noop-loop counter commit boundary", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", file);
       await doRead(ctx, readTool);
-      const noop = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] };
+      const noop = {
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+      };
 
       // WHY: two identical no-ops arm the counter to the warn tier (2x); the
       // WHY: third identical resend must refuse (3x).
@@ -35,10 +38,10 @@ describe("edit noop-loop counter commit boundary", () => {
         .execute(
           "e3",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[0]!, "AAA"],
-              [hashes[1]!, hashes[1]!, `${hashes[1]!}│bbb`],
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]!}│bbb` },
             ],
           },
           undefined,
@@ -65,7 +68,10 @@ describe("edit noop-loop counter commit boundary", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", file);
       await doRead(ctx, readTool);
-      const noop = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] };
+      const noop = {
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+      };
 
       await editTool.execute("e1", noop, undefined, undefined, ctx);
       const second = await editTool.execute("e2", noop, undefined, undefined, ctx);
@@ -81,7 +87,10 @@ describe("edit noop-loop counter commit boundary", () => {
         await expect(
           editTool.execute(
             "e3",
-            { path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "AAA"]] },
+            {
+              file: "sample.ts",
+              edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" }],
+            },
             undefined,
             undefined,
             ctx,
@@ -105,7 +114,10 @@ describe("edit noop-loop counter commit boundary", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", file);
       await doRead(ctx, readTool);
-      const noop = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] };
+      const noop = {
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+      };
 
       await editTool.execute("e1", noop, undefined, undefined, ctx);
       await editTool.execute("e2", noop, undefined, undefined, ctx);
@@ -114,7 +126,10 @@ describe("edit noop-loop counter commit boundary", () => {
       // WHY: starts from zero — no warn tier, no refusal.
       const applied = await editTool.execute(
         "e3",
-        { path: "sample.ts", edits: [[hashes[3]!, hashes[3]!, "DDD"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[3]!, anchor_to: hashes[3]!, text: "DDD" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -126,7 +141,10 @@ describe("edit noop-loop counter commit boundary", () => {
       const fresh = await lineHashes("aaa\nbbb\nccc\nDDD\n", file);
       const resubmitted = await editTool.execute(
         "e4",
-        { path: "sample.ts", edits: [[fresh[1]!, fresh[1]!, "bbb"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: fresh[1]!, anchor_to: fresh[1]!, text: "bbb" }],
+        },
         undefined,
         undefined,
         ctx,

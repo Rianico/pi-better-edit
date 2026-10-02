@@ -109,7 +109,10 @@ describe("downstream #61 — no silent miswrite on canon-repeated lines", () => 
       try {
         await editTool.execute(
           "e1",
-          { path: "small.cpp", edits: [[line9Hash, line9Hash, "\tif (x > 999) {"]] },
+          {
+            file: "small.cpp",
+            edits: [{ anchor_from: line9Hash, anchor_to: line9Hash, text: "\tif (x > 999) {" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -140,7 +143,10 @@ describe("downstream #61 — no silent miswrite on canon-repeated lines", () => 
 
       await editTool.execute(
         "e1",
-        { path: "small.cpp", edits: [[line9Hash, line9Hash, "\tif (x > 999) {"]] },
+        {
+          file: "small.cpp",
+          edits: [{ anchor_from: line9Hash, anchor_to: line9Hash, text: "\tif (x > 999) {" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -155,7 +161,7 @@ describe("downstream #61 — no silent miswrite on canon-repeated lines", () => 
 
 // #63 is cured by dropping the shape refusal: literal `HASH│` bytes now write through
 // byte-exact, while a verbatim served row still refuses via the evidence gate.
-describe("downstream #63 — literal HASH│ content in replace_with", () => {
+describe("downstream #63 — literal HASH│ content in text", () => {
   it("writes literal `abc│text` / `KEY│value` lines whose hashes are not anchors of the file", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
@@ -166,8 +172,8 @@ describe("downstream #63 — literal HASH│ content in replace_with", () => {
       await editTool.execute(
         "e1",
         {
-          path: "sample.txt",
-          edits: [[line2Hash, line2Hash, "abc│text\nKEY│value"]],
+          file: "sample.txt",
+          edits: [{ anchor_from: line2Hash, anchor_to: line2Hash, text: "abc│text\nKEY│value" }],
         },
         undefined,
         undefined,
@@ -178,7 +184,7 @@ describe("downstream #63 — literal HASH│ content in replace_with", () => {
     });
   });
 
-  it("still rejects a pasted served hash echo in replace_with", async () => {
+  it("still rejects a pasted served hash echo in text", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
@@ -189,7 +195,10 @@ describe("downstream #63 — literal HASH│ content in replace_with", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.txt", edits: [[line2Hash, line2Hash, echo]] },
+          {
+            file: "sample.txt",
+            edits: [{ anchor_from: line2Hash, anchor_to: line2Hash, text: echo }],
+          },
           undefined,
           undefined,
           ctx,

@@ -99,7 +99,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -121,7 +121,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -157,7 +157,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[betaRef, betaRef, "BETA_NEW"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA_NEW" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -189,7 +192,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[gammaRef, gammaRef, "GAMMA_NEW"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "GAMMA_NEW" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -224,7 +230,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: l3Ref, anchor_to: l7Ref, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -279,7 +285,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
 
       const applied = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: l3Ref, anchor_to: l7Ref, text: "X" }] },
         undefined,
         undefined,
         ctx,
@@ -299,7 +305,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[3]!, hashes[4]!, "X"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[3]!, anchor_to: hashes[4]!, text: "X" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -352,10 +361,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              { anchor_from: alphaRef, anchor_to: betaRef, replace_with: "X" },
-              { anchor_from: betaRef, anchor_to: gammaRef, replace_with: "Y" },
+              { anchor_from: alphaRef, anchor_to: betaRef, text: "X" },
+              { anchor_from: betaRef, anchor_to: gammaRef, text: "Y" },
             ],
           },
           undefined,
@@ -376,10 +385,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         .execute(
           "e2",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              { anchor_from: alphaRef, anchor_to: alphaRef, replace_with: "ALPHA" },
-              { anchor_from: betaRef, anchor_to: betaRef, replace_with: "beta" },
+              { anchor_from: alphaRef, anchor_to: alphaRef, text: "ALPHA" },
+              { anchor_from: betaRef, anchor_to: betaRef, text: "beta" },
             ],
           },
           undefined,
@@ -494,7 +503,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, betaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: betaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -526,7 +535,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const retryTo = servedLines[1]!.split("│")[0]!;
       const retry = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[retryFrom, retryTo, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: retryFrom, anchor_to: retryTo, text: "X" }] },
         undefined,
         undefined,
         ctx,
@@ -549,7 +558,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, betaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: betaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -588,7 +597,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[betaRef, gammaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: gammaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -630,7 +639,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[l9Ref, l10Ref, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: l9Ref, anchor_to: l10Ref, text: "X" }] },
           undefined,
           undefined,
           ctx,

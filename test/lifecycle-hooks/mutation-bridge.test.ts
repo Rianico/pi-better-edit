@@ -147,7 +147,10 @@ describe("lifecycle mutation-bridge wiring", () => {
       const ref = refsOf(getText(read));
       const result = (await harness.editTool.execute(
         "e1",
-        { path: "p.txt", edits: [[ref("beta"), ref("beta"), "BETA"]] },
+        {
+          file: "p.txt",
+          edits: [{ anchor_from: ref("beta"), anchor_to: ref("beta"), text: "BETA" }],
+        },
         undefined,
         undefined,
         harness.ctx,
@@ -201,7 +204,10 @@ describe("lifecycle mutation-bridge wiring", () => {
       const ref = refsOf(getText(read));
       await harness.editTool.execute(
         "e1",
-        { path: "p.txt", edits: [[ref("beta"), ref("beta"), "BETA"]] },
+        {
+          file: "p.txt",
+          edits: [{ anchor_from: ref("beta"), anchor_to: ref("beta"), text: "BETA" }],
+        },
         undefined,
         undefined,
         harness.ctx,
@@ -262,7 +268,10 @@ describe("lifecycle mutation-bridge wiring", () => {
       const rejection = await harness.editTool
         .execute(
           "e1",
-          { path: "p.txt", edits: [[ref("alpha"), ref("delta"), "X"]] },
+          {
+            file: "p.txt",
+            edits: [{ anchor_from: ref("alpha"), anchor_to: ref("delta"), text: "X" }],
+          },
           undefined,
           undefined,
           harness.ctx,
@@ -307,7 +316,10 @@ describe("lifecycle mutation-bridge wiring", () => {
       const outcome = (await harness.editTool
         .execute(
           "e1",
-          { path: "p.txt", edits: [[ref("beta"), ref("beta"), "beta"]] },
+          {
+            file: "p.txt",
+            edits: [{ anchor_from: ref("beta"), anchor_to: ref("beta"), text: "beta" }],
+          },
           undefined,
           undefined,
           harness.ctx,

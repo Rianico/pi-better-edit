@@ -72,7 +72,10 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
       const edit1 = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[refs["a"]!, refs["c"]!, ""]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: refs["a"]!, anchor_to: refs["c"]!, text: "" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -95,7 +98,10 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
       const edit2 = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[refs["d"]!, refs["e"]!, ""]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: refs["d"]!, anchor_to: refs["e"]!, text: "" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -125,7 +131,10 @@ describe("served-state truncation keeps chained edits verifiable", () => {
       const refs = await hashRefs(readTool, "sample.ts", ctx, ["d", "e"]);
       const edit = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[refs["d"]!, refs["e"]!, ""]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: refs["d"]!, anchor_to: refs["e"]!, text: "" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -151,7 +160,10 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
       const batchResult = await editTool.execute(
         "b1",
-        { path: "sample.ts", edits: [[refs["a"]!, refs["c"]!, ""]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: refs["a"]!, anchor_to: refs["c"]!, text: "" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -163,8 +175,8 @@ describe("served-state truncation keeps chained edits verifiable", () => {
           toolName: "edit",
           isError: false,
           input: {
-            path: "sample.ts",
-            edits: [[refs["a"]!, refs["c"]!, ""]],
+            file: "sample.ts",
+            edits: [{ anchor_from: refs["a"]!, anchor_to: refs["c"]!, text: "" }],
           },
           details: batchResult.details,
           content: batchResult.content,
@@ -177,7 +189,10 @@ describe("served-state truncation keeps chained edits verifiable", () => {
 
       const edit = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[refs["d"]!, refs["e"]!, ""]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: refs["d"]!, anchor_to: refs["e"]!, text: "" }],
+        },
         undefined,
         undefined,
         ctx,

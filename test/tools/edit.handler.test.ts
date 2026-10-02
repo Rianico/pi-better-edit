@@ -53,10 +53,10 @@ describe("edit tool_result handler", () => {
       const result = await editTool.execute(
         "e1",
         {
-          path: "a.txt",
+          file: "a.txt",
           edits: [
-            [aHashes[1]!, aHashes[1]!, "BETA"],
-            [aHashes[2]!, aHashes[2]!, "GAMMA"],
+            { anchor_from: aHashes[1]!, anchor_to: aHashes[1]!, text: "BETA" },
+            { anchor_from: aHashes[2]!, anchor_to: aHashes[2]!, text: "GAMMA" },
           ],
         },
         undefined,
@@ -70,10 +70,10 @@ describe("edit tool_result handler", () => {
           toolName: "edit",
           isError: false,
           input: {
-            path: "a.txt",
+            file: "a.txt",
             edits: [
-              [aHashes[1]!, aHashes[1]!, "BETA"],
-              [aHashes[2]!, aHashes[2]!, "GAMMA"],
+              { anchor_from: aHashes[1]!, anchor_to: aHashes[1]!, text: "BETA" },
+              { anchor_from: aHashes[2]!, anchor_to: aHashes[2]!, text: "GAMMA" },
             ],
           },
           details: result.details,
@@ -93,7 +93,7 @@ describe("edit tool_result handler", () => {
 
       const followUp = await editTool.execute(
         "e2",
-        { path: "a.txt", edits: [[betaHash, betaHash, "BETA2"]] },
+        { file: "a.txt", edits: [{ anchor_from: betaHash, anchor_to: betaHash, text: "BETA2" }] },
         undefined,
         undefined,
         ctx,
