@@ -33,7 +33,11 @@
  *     → Drift: scanDrift over the per-edit intervals (one statement
  *       below — interval-aware, no union-gap caveat)
  *     → Persist (live only, in `apply`): saveUndo → writeAtomic;
- *       on write failure: restore undo
+ *       on write failure: restore undo. A foreign-source `mode: "cut"` (ticket-04b) extends this
+ *       to an ORDERED multi-file commit: undo rows for every file plus a durable intent record
+ *       before the first rename, the target insert committed BEFORE the destructive source
+ *       retirement, best-effort rollback otherwise, and next-run repair for anything in
+ *       between (ADR-0028 — no filesystem atomicity is claimed anywhere).
  *     → Serve (live only, in `apply`): upsertSnapshotFor (snapshot +
  *       lineage + retirement + diff leases + dense serve mirror rows in
  *       ONE transaction — CAND-3); rejection serves were already
@@ -55,6 +59,8 @@
  */
 
 import { constants } from "node:fs";
+import { readFile } from "node:fs/promises";
+import { randomUUID } from "node:crypto";
 import { genDiff, restoreEndings } from "../edit-diff.js";
 import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
@@ -78,6 +84,9 @@ import { scanDrift } from "../drift.js";
 import { clearNoopLoop, runNoopPolicy } from "../noop-guard.js";
 import { clearServedRefusals } from "../hashline/served-guard.js";
 import { saveUndo } from "../edit-undo.js";
+import { saveCutIntent, dropCutIntent } from "../undo-store.js";
+import { repairCutIntents } from "../cut-repair.js";
+import { withSortedMutationQueues } from "../mutation-queue.js";
 import { resolveTarget, writeAtomic } from "../fs-write.js";
 import { toCwd } from "../paths.js";
 import type {
@@ -93,8 +102,7 @@ import {
   wrapParseFailure,
 } from "../edit-response.js";
 import { DEFERRED_STORE_SYNC_WARNING } from "../constants.js";
-import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
-import type { PipelineOptions, ProcessedEditFile } from "./types.js";
+import type { PipelineOptions, ProcessedEditFile, ForeignCutRecord } from "./types.js";
 import {
   loadEditFile,
   loadForeignServedView,
@@ -574,27 +582,30 @@ function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
 }
 
 /**
- * Foreign-source copy (ticket-04 §3.3): a `text_ref` naming another served file is read from that
- * file's CURRENT content through the READ-ONLY half of the lease seam and collapsed to a `literal`
- * payload BEFORE the mutate loop, so a foreign resolution failure aborts the whole call atomically
- * (nothing has been mutated yet) and every downstream gate runs on the bytes that will be written.
- * The read+load+lease assembly is `loadForeignServedView` (edit-source.ts) — one entry, memoized
- * per resolved path by `materializeForeignReferences`.
+ * Foreign-source copy (ticket-04 §3.3) and the cut record (ticket-04b): a `text_ref` naming
+ * another served file is read from that file's CURRENT content through the READ-ONLY half of the
+ * lease seam and collapsed to a `literal` payload BEFORE the mutate loop, so a foreign resolution
+ * failure aborts the whole call atomically (nothing has been mutated yet) and every downstream
+ * gate runs on the bytes that will be written. The read+load+lease assembly is
+ * `loadForeignServedView` (edit-source.ts) — one entry, memoized per resolved path by
+ * `materializeForeignReferences`.
  *
- * SAFETY: the foreign path is read-only by tool-level construction, not by convention:
+ * SAFETY: the pre-pass read is read-only by construction, not by convention:
  *  - `loadForeignServedView` is built on `readNormFile(..., { noPersist: true })` — the loader
  *    gates every snapshotIO.upsert (snapshot, lineage, leases) behind that flag;
  *  - `leaseSpanSource` exposes only `leaseFor`/`rebasedLineOf`/`anchorHomes` — resolution never
  *    re-stamps a lease and never writes `retired_at`;
- *  - the loop never calls `recordServeFeedback`/`record`/`retire`/`grant` for the foreign path,
- *    and the foreign path is never added to `apply()`'s `withFileMutationQueue` write set — only
- *    `request.file` is queued, written, retired, or served (commit reads `file.absolutePath`, which
- *    is the TARGET's path resolved by `loadEditFile`).
+ *  - the loop never calls `recordServeFeedback`/`record`/`retire`/`grant` for the foreign path.
+ * For `mode: "copy"` that is the whole story: the foreign path is never written. For
+ * `mode: "cut"` (ticket-04b) the file is instead edited LATER as a first-class transaction
+ * member — its own `runMutations` load, verification, undo row, and store commit — under
+ * `runCutTransaction`; this pre-pass itself still persists nothing.
  */
 async function materializeForeignItem(
   item: NormalizedEditItem,
   refFile: string,
   view: ForeignServedView,
+  cuts: ForeignCutRecord[],
 ): Promise<NormalizedEditItem> {
   const payload = item.payload;
   if (payload.kind !== "reference") return item;
@@ -606,19 +617,12 @@ async function materializeForeignItem(
         'The "text_ref" payload is inconsistent: its "mode" disagrees with the mode carried by the span it names. Nothing was written.',
     });
   }
-  // WHY: (ticket-04 item (iv)) this pre-pass collapses every foreign reference to a literal COPY,
-  // WHY: so a foreign `mode: "cut"` has no retirement target here and must never silently become
-  // WHY: a copy: admission refuses the shape today (same message at the wire gate), but engine-level
-  // WHY: callers construct payloads directly, and ticket-04b removes that admission refusal —
-  // WHY: WITHOUT this guard a 04b cut would then report success and leave the source behind.
-  // WHY: (ticket-04b DELETES this guard deliberately, together with the test that pins it.)
-  if (payload.mode !== "copy") {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message:
-        'A foreign-source reference supports mode: "copy" today; mode: "cut" requires a ' +
-        "correlated multi-file transaction and is not enabled yet.",
-    });
-  }
+  // WHY: (ticket-04b) ticket-04 item (iv) refused a foreign `mode: "cut"` here because the
+  // WHY: pre-pass had no retirement target — enabling cut without a transaction would report
+  // WHY: success and leave the source behind. That refusal is DELETED deliberately: the
+  // WHY: correlated multi-file transaction (`runCutTransaction`, ADR-0028) is the missing half,
+  // WHY: and the cut's retirement now rides the recorded entry below. `edit.foreign-cut.test.ts`
+  // WHY: and `edit.wire-contract.test.ts` witness both halves of that history.
   const { fileLines } = view;
   const snapshot: FileSnapshotContext = {
     fileLines,
@@ -645,6 +649,17 @@ async function materializeForeignItem(
   }
   const l1 = resolution.resolved.hash_bounds[0].line;
   const l2 = resolution.resolved.hash_bounds[1].line;
+  if (payload.mode === "cut") {
+    // WHY: the SUBMITTED span anchors are recorded, not the resolved line numbers: the source
+    // WHY: transaction re-resolves them through its own leases, so a shift between this read and
+    // WHY: that load rebases honestly and any real drift fails closed BEFORE the first rename.
+    cuts.push({
+      refFile,
+      absolutePath: view.absolutePath,
+      spanFrom: payload.span.anchor_from,
+      spanTo: payload.span.anchor_to,
+    });
+  }
   return {
     ...item,
     payload: { kind: "literal", text: collapseSpanToText(fileLines.slice(l1 - 1, l2)) },
@@ -666,9 +681,10 @@ function collapseSpanToText(span: string[]): string {
 async function materializeForeignReferences(
   items: NormalizedEditItem[],
   input: { cwd: string; file: string; store: HashStore; sessionKey: string },
-): Promise<NormalizedEditItem[]> {
+): Promise<{ items: NormalizedEditItem[]; cuts: ForeignCutRecord[] }> {
   const refFiles = await Promise.all(items.map((item) => foreignRefFileOf(item, input)));
-  if (!refFiles.some((refFile) => refFile !== undefined)) return items;
+  const cuts: ForeignCutRecord[] = [];
+  if (!refFiles.some((refFile) => refFile !== undefined)) return { items, cuts };
   // WHY: (item (v), §10) one read+load+lease per RESOLVED absolute path per batch: without the
   // WHY: memo, each item performs its own fresh disk read and store SELECT, so a foreign file
   // WHY: changing on disk BETWEEN two items materializes TWO revisions into one call with no
@@ -694,9 +710,9 @@ async function materializeForeignReferences(
       });
       views.set(key, view);
     }
-    out.push(await materializeForeignItem(item, refFile, await view));
+    out.push(await materializeForeignItem(item, refFile, await view, cuts));
   }
-  return out;
+  return { items: out, cuts };
 }
 
 async function runMutations(
@@ -712,7 +728,7 @@ async function runMutations(
   // WHY: (ticket-04 §3.3) the foreign-source pre-pass runs before ANY parse or mutation: a
   // WHY: `text_ref` naming another served file is materialized to a `literal` payload here, so a
   // WHY: foreign resolution failure aborts the call atomically with the target not yet loaded.
-  const items = await materializeForeignReferences(request.edits, {
+  const { items, cuts: foreignCuts } = await materializeForeignReferences(request.edits, {
     cwd,
     file: path,
     store: hashStore,
@@ -1066,6 +1082,7 @@ async function runMutations(
     range: unionRange,
     editedIntervals,
     literalDeclarations,
+    foreignCuts,
   };
 }
 
@@ -1075,6 +1092,277 @@ export async function previewEdits(
   options?: Omit<PipelineOptions, "noPersist">,
 ) {
   return runMutations(request, cwd, { ...options, noPersist: true });
+}
+
+// WHY: (ticket-04b §2) nested queues in deterministic SORTED order (`withSortedMutationQueues`,
+// WHY: src/mutation-queue.ts): the cut transaction holds a lock for every file it will rename
+// WHY: across the whole plan+commit, and two calls whose file sets overlap in different orders
+// WHY: can never deadlock. Dedup first: a same-file cut shape (resolved equal) collapses to one
+// WHY: queue and takes the intra-file path anyway.
+
+/**
+ * The post-write commit for ONE file whose bytes are already on disk: the refusal/noop-loop
+ * tally clears, the legacy retire mirror, and the authoritative snapshot/lineage/lease/served-
+ * mirror transaction. Shared verbatim by the single-file path and `runCutTransaction` — one
+ * materialization owner for every committed file. Returns the diff info for the batch section.
+ */
+async function finishCommittedFile(
+  file: ProcessedEditFile,
+  options: PipelineOptions | undefined,
+  sessionKey: string,
+): Promise<ReturnType<typeof genDiff>> {
+  // WHY: the clear side of the tally, separated from verification: the refusal count was
+  // WHY: recorded while the edit was still uncommitted, and only this committed write —
+  // WHY: bytes on disk — retires it, per session, so another session's tally stays its own.
+  clearServedRefusals(sessionKey, file.absolutePath);
+  // WHY: the noop-loop tracker clears only here, after the bytes are on disk, beside the
+  // WHY: served-refusal tracker — the counters reflect committed reality. An edit that writes
+  // WHY: nothing (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) never reaches this
+  // WHY: site, so its counters survive for the resubmission to trip on.
+  clearNoopLoop(sessionKey, file.absolutePath);
+
+  // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4): it is
+  // WHY: deliberately deferred to here, after the bytes are on disk, so an edit that writes nothing
+  // WHY: (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) can never retire a lease the
+  // WHY: session still validly holds. Retirement must not happen in runMutations, which materializes
+  // WHY: the working buffer while saveUndo/writeAtomic can still fail.
+  // WHY: (#117) the legacy v6 `served.retired` mirror retires once here, after the bytes are on
+  // WHY: disk, from the batch's in-memory accumulation. A failed batch never reaches this point,
+  // WHY: so it retires no blocked hashes. Best-effort with context on failure: the bytes already
+  // WHY: committed, so the edit succeeds with a deferred-sync warning, never a silent swallow.
+  if (file.removedHashes.size > 0) {
+    try {
+      const legacyHandle =
+        options?.store === undefined
+          ? createSessionHandle(sessionKey, file.absolutePath)
+          : createSessionHandle(sessionKey, file.absolutePath, options.store);
+      await legacyHandle.retire(file.removedHashes);
+    } catch (error) {
+      console.error("Failed to retire legacy blocked hashes after write:", error);
+      file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
+    }
+  }
+  const resultLineCount = visLines(file.result).length;
+  const diffInfo = genDiff(
+    file.originalNormalized,
+    file.result,
+    1,
+    file.resultHashes,
+    file.originalHashes,
+  );
+  const denseRows = denseServeRows(file.resultHashes);
+  try {
+    // WHY: the served diff rows are step 5 of the commit transaction (spec §3.2.4 step 4):
+    // WHY: snapshot + lineage + retirement + leases share one `BEGIN IMMEDIATE`, so a lease
+    // WHY: failure rolls the snapshot back instead of leaving snapshot-without-leases behind.
+    // WHY: CAND-3 adds step 6 — the served mirror write (`servedMirror`) — to the same
+    // WHY: transaction: a lease committed with the mirror missing (false `E_STALE_RANGE` at the
+    // WHY: boundary gate) or mirror rows without a lease (ADR-0023: no evidence at all) are now
+    // WHY: structurally unreachable; one failure means one full rollback and the one
+    // WHY: DEFERRED_STORE_SYNC_WARNING below — never a half-committed store.
+    await upsertSnapshotFor(
+      {
+        path: file.absolutePath,
+        snapshotHash: snapshotHashFor(file.result),
+        lineCount: splitLines(file.result).length,
+        hashes: file.resultHashes,
+        content: file.result,
+        lineIds: file.resultLineIds,
+      },
+      {
+        retireLeases: true,
+        leases: { sessionKey, rows: denseRows },
+        // WHY: the mirror shape reproduces `recordDiff`'s truncation plan
+        // WHY: (`planServeRecording({resultLineCount, firstChangedLine})`) exactly — the same
+        // WHY: clamp/clear/patch, the same displaced-anchor retirement — inside this transaction.
+        servedMirror: {
+          sessionKey,
+          rows: denseRows,
+          shape: {
+            lineCount: resultLineCount,
+            clearFrom: diffInfo.firstChangedLine !== undefined ? diffInfo.firstChangedLine - 1 : 0,
+          },
+        },
+      },
+    );
+  } catch (error) {
+    // SAFETY: best-effort post-write materialization — the edit already committed; a store failure
+    // SAFETY: leaves the in-memory hashes authoritative and the next read re-materializes and
+    // SAFETY: retires. SPEC §3.6.2: the bytes are on disk, so the tool reports success but must
+    // SAFETY: warn that store synchronization is deferred.
+    console.error("Failed to commit post-write snapshot materialization:", error);
+    file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
+  }
+  return diffInfo;
+}
+
+/**
+ * (ticket-04b §2) The foreign-source cut as one correlated multi-file transaction (ADR-0028). NO
+ * FILESYSTEM ATOMICITY IS CLAIMED: `writeAtomic` is per-path, so two files mean two renames
+ * with a real crash window between them. The honest guarantee is three-part:
+ *
+ *  1. ORDERED COMMIT — the target insert is durably committed BEFORE the destructive source
+ *     retirement. A crash between the renames leaves the copy at the target and the span still
+ *     at the source — duplication, recoverable; the inverse ordering would be data loss. This
+ *     ordering is the spine of the design.
+ *  2. DURABLE INTENT — every file's undo row carries the transaction id and a `cut_intent` row
+ *     names the transaction before the first rename, so a half-applied transaction is
+ *     detectable on the next run.
+ *  3. REPAIR — `repairCutIntents` (src/cut-repair.ts, run on every live apply) resolves an
+ *     orphaned intent to complete-the-cut OR restore-both-files from the rows' pre/post bytes,
+ *     losing no content in either resolution.
+ *
+ * Every failure before the first rename leaves every file untouched (the plans run in-memory
+ * first and any throw aborts the call); failures inside the window roll back the written files
+ * best-effort, and a rollback that does not hold LEAVES THE INTENT ROW for repair.
+ */
+async function runCutTransaction(
+  file: ProcessedEditFile,
+  cwd: string,
+  options: PipelineOptions | undefined,
+  sessionKey: string,
+) {
+  const groups = new Map<string, ForeignCutRecord[]>();
+  for (const cut of file.foreignCuts) {
+    const list = groups.get(cut.absolutePath);
+    if (list) list.push(cut);
+    else groups.set(cut.absolutePath, [cut]);
+  }
+  const sourcePlans: ProcessedEditFile[] = [];
+  for (const absolutePath of [...groups.keys()].sort()) {
+    const cuts = groups.get(absolutePath)!;
+    // WHY: the retirement is a deletion payload over the SUBMITTED anchors — the ordinary edit
+    // WHY: shape — so the source gets its own load, its own lease verification, and its own
+    // WHY: batch-span gate: overlapping retire spans in one source abort the WHOLE call before
+    // WHY: any rename, which is §5's disjointness-across-both-files requirement.
+    const req: NormalizedEditRequest = {
+      file: cuts[0]!.refFile,
+      edits: cuts.map((cut) => ({
+        target: { anchor_from: cut.spanFrom, anchor_to: cut.spanTo },
+        at: "in-place" as const,
+        payload: { kind: "empty" as const },
+      })),
+    };
+    sourcePlans.push(
+      await runMutations(req, cwd, {
+        ...options,
+        sessionKey,
+        accessMode: options?.accessMode ?? constants.R_OK | constants.W_OK,
+      }),
+    );
+  }
+
+  const plans = [file, ...sourcePlans];
+  const txnId = randomUUID();
+
+  // WHY: STEP 1 durable pre-images: undo rows for EVERY file (pre bytes + post bytes + the
+  // WHY: shared transaction id), then the intent record — all BEFORE the first rename.
+  const saved: { restore: () => Promise<void> }[] = [];
+  for (const plan of plans) {
+    const undo = await saveUndo(plan.absolutePath, {
+      content: plan.originalNormalized,
+      bom: plan.bom,
+      originalEnding: plan.originalEnding,
+      hashes: plan.originalHashes,
+      resultContent: plan.result,
+      transactionId: txnId,
+    });
+    if (!undo.persisted) {
+      for (const prior of saved) await prior.restore();
+      throw new DomainError("E_UNDO_UNAVAILABLE", { path: plan.path });
+    }
+    saved.push(undo);
+  }
+  try {
+    await saveCutIntent(txnId, file.absolutePath);
+  } catch (error) {
+    for (const prior of saved) await prior.restore();
+    throw error;
+  }
+
+  // WHY: STEP 2 ordered commit: the target insert first, then each source retirement.
+  // WHY: raw pre-images captured under the queue immediately BEFORE the first rename, so an
+  // WHY: abort inside the window restores each file EXACTLY as it was found — byte-for-byte,
+  // WHY: stray line-break spellings included. The commit path serializes canonically (one
+  // WHY: convention, no third path); a ROLLBACK is not a commit and must not smuggle in the
+  // WHY: canonical fold as if it were the restore (ticket-04b §11: after an abort BOTH files
+  // WHY: are byte-identical to the pre-transaction contents).
+  const preBytes = new Map<string, string>();
+  for (const plan of plans) {
+    preBytes.set(plan.absolutePath, await readFile(plan.absolutePath, "utf-8"));
+  }
+  const written: ProcessedEditFile[] = [];
+  try {
+    abortIf(options?.signal);
+    await writeAtomic(
+      file.absolutePath,
+      file.bom + restoreEndings(file.result, file.originalEnding),
+    );
+    written.push(file);
+    for (const plan of sourcePlans) {
+      if (options?.onCutBetweenWrites) {
+        // WHY: test-only fault-injection seam (ticket-04b §3): fires INSIDE the two-rename
+        // WHY: window, after the previous file's rename is durable.
+        await options.onCutBetweenWrites(written[written.length - 1]!.absolutePath);
+      }
+      abortIf(options?.signal);
+      await writeAtomic(
+        plan.absolutePath,
+        plan.bom + restoreEndings(plan.result, plan.originalEnding),
+      );
+      written.push(plan);
+    }
+  } catch (error) {
+    let rolledBack = true;
+    for (const plan of written) {
+      try {
+        await writeAtomic(plan.absolutePath, preBytes.get(plan.absolutePath)!);
+      } catch (rollbackError) {
+        rolledBack = false;
+        console.error("Failed to roll back a cut-transaction file:", rollbackError);
+      }
+    }
+    if (rolledBack) {
+      for (const prior of saved) await prior.restore();
+      try {
+        await dropCutIntent(txnId);
+      } catch (dropError) {
+        console.error("Failed to drop the cut intent after rollback:", dropError);
+      }
+    }
+    // WHY: a rollback that did not hold LEAVES the intent row and the transaction-tagged undo
+    // WHY: rows: next-run repair resolves to complete-the-cut or restore-both from the stored
+    // WHY: pre/post bytes (ADR-0028) — never a silent loss, never a fake atomicity claim.
+    throw error;
+  }
+
+  try {
+    await dropCutIntent(txnId);
+  } catch (error) {
+    // SAFETY: every byte is committed; a stale intent row resolves to "all == post" on the next
+    // SAFETY: run and drops itself — repair owns that path, the edit result stands.
+    console.error("Failed to clear the cut intent after commit:", error);
+  }
+
+  // WHY: STEP 3 store commit per file — the same `finishCommittedFile` the single-file path
+  // WHY: runs, then ONE response whose sections cover BOTH files (§5).
+  const sections = [];
+  for (const plan of plans) {
+    sections.push(toSection(plan, await finishCommittedFile(plan, options, sessionKey)));
+  }
+  const toolResult = buildBatchResult(sections);
+  const drift = plans
+    .map((p) => p.driftNotice)
+    .filter((d): d is string => d !== undefined)
+    .join("\n\n");
+  return {
+    result: file.result,
+    diff: toolResult.details.diff ?? "",
+    drift: drift === "" ? undefined : drift,
+    metrics: toolResult.details.metrics,
+    raw: file,
+    toolResult,
+  };
 }
 
 export async function apply(
@@ -1104,13 +1392,33 @@ export async function apply(
     };
   }
 
+  // WHY: (ticket-04b §2) repair before work: a previous run that crashed inside the two-rename
+  // WHY: window left a durable intent; resolve it now — complete the cut or restore both files,
+  // WHY: never lose content — BEFORE this call layers its own undo rows and leases over the
+  // WHY: state. Best-effort: an ambiguous member keeps its intent untouched (src/cut-repair.ts)
+  // WHY: and the scan is one indexed SELECT. Previews skip it: they write nothing and repair is
+  // WHY: a write path.
+  await repairCutIntents(options?.store);
+
   // WHY: the file was answered at admission (assertReq); the narrowed type carries it here.
   const path = request.file;
   const absolutePath = toCwd(path, cwd);
   const mutationTargetPath = await resolveTarget(absolutePath);
   const sessionKey = requireSessionKey(options?.sessionKey);
 
-  return withFileMutationQueue(mutationTargetPath, async () => {
+  // WHY: (ticket-04b §2) a cut transaction serializes EVERY file it will rename for the whole
+  // WHY: plan+commit, and the queues are taken in deterministic sorted order so two calls with
+  // WHY: swapped target/source cannot deadlock. COPY items never widen the lock set — a copy's
+  // WHY: foreign file stays read-only.
+  const cutSourcePaths: string[] = [];
+  for (const item of request.edits) {
+    if (item.payload.kind !== "reference" || item.payload.mode !== "cut") continue;
+    const refFile = await foreignRefFileOf(item, { cwd, file: path });
+    if (refFile === undefined) continue;
+    cutSourcePaths.push(await resolveTarget(toCwd(refFile, cwd)));
+  }
+
+  return withSortedMutationQueues([mutationTargetPath, ...cutSourcePaths], async () => {
     abortIf(options?.signal);
 
     const file = await runMutations(request, cwd, {
@@ -1132,6 +1440,15 @@ export async function apply(
     }
 
     abortIf(options?.signal);
+
+    // WHY: (ticket-04b) a foreign-source cut commits as one correlated transaction (ADR-0028):
+    // WHY: undo rows for every file + a durable intent record BEFORE the first rename, target
+    // WHY: insert durably committed before the destructive source retirement, and next-run
+    // WHY: repair for a half-applied window. Red-first witnessed by `edit.foreign-cut.test.ts`.
+    if (file.foreignCuts.length > 0) {
+      return await runCutTransaction(file, cwd, options, sessionKey);
+    }
+
     const undo = await saveUndo(mutationTargetPath, {
       content: file.originalNormalized,
       bom: file.bom,
@@ -1152,89 +1469,7 @@ export async function apply(
       await undo.restore();
       throw error;
     }
-    // WHY: the clear side of the tally, separated from verification: the refusal count was
-    // WHY: recorded while the edit was still uncommitted, and only this committed write —
-    // WHY: bytes on disk — retires it, per session, so another session's tally stays its own.
-    clearServedRefusals(sessionKey, file.absolutePath);
-    // WHY: the noop-loop tracker clears only here, after the bytes are on disk, beside the
-    // WHY: served-refusal tracker — the counters reflect committed reality. An edit that writes
-    // WHY: nothing (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) never reaches this
-    // WHY: site, so its counters survive for the resubmission to trip on.
-    clearNoopLoop(sessionKey, file.absolutePath);
-
-    // WHY: S_final is the edit path's only authoritative materialization (spec §3.2.4 step 4): it is
-    // WHY: deliberately deferred to here, after the bytes are on disk, so an edit that writes nothing
-    // WHY: (rejected batch, E_UNDO_UNAVAILABLE, writeAtomic rollback) can never retire a lease the
-    // WHY: session still validly holds. Retirement must not happen in runMutations, which materializes
-    // WHY: the working buffer while saveUndo/writeAtomic can still fail.
-    // WHY: (#117) the legacy v6 `served.retired` mirror retires once here, after the bytes are on
-    // WHY: disk, from the batch's in-memory accumulation. A failed batch never reaches this point,
-    // WHY: so it retires no blocked hashes. Best-effort with context on failure: the bytes already
-    // WHY: committed, so the edit succeeds with a deferred-sync warning, never a silent swallow.
-    if (file.removedHashes.size > 0) {
-      try {
-        const legacyHandle =
-          options?.store === undefined
-            ? createSessionHandle(sessionKey, file.absolutePath)
-            : createSessionHandle(sessionKey, file.absolutePath, options.store);
-        await legacyHandle.retire(file.removedHashes);
-      } catch (error) {
-        console.error("Failed to retire legacy blocked hashes after write:", error);
-        file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
-      }
-    }
-    const resultLineCount = visLines(file.result).length;
-    const diffInfo = genDiff(
-      file.originalNormalized,
-      file.result,
-      1,
-      file.resultHashes,
-      file.originalHashes,
-    );
-    const denseRows = denseServeRows(file.resultHashes);
-    try {
-      // WHY: the served diff rows are step 5 of the commit transaction (spec §3.2.4 step 4):
-      // WHY: snapshot + lineage + retirement + leases share one `BEGIN IMMEDIATE`, so a lease
-      // WHY: failure rolls the snapshot back instead of leaving snapshot-without-leases behind.
-      // WHY: CAND-3 adds step 6 — the served mirror write (`servedMirror`) — to the same
-      // WHY: transaction: a lease committed with the mirror missing (false `E_STALE_RANGE` at the
-      // WHY: boundary gate) or mirror rows without a lease (ADR-0023: no evidence at all) are now
-      // WHY: structurally unreachable; one failure means one full rollback and the one
-      // WHY: DEFERRED_STORE_SYNC_WARNING below — never a half-committed store.
-      await upsertSnapshotFor(
-        {
-          path: file.absolutePath,
-          snapshotHash: snapshotHashFor(file.result),
-          lineCount: splitLines(file.result).length,
-          hashes: file.resultHashes,
-          content: file.result,
-          lineIds: file.resultLineIds,
-        },
-        {
-          retireLeases: true,
-          leases: { sessionKey, rows: denseRows },
-          // WHY: the mirror shape reproduces `recordDiff`'s truncation plan
-          // WHY: (`planServeRecording({resultLineCount, firstChangedLine})`) exactly — the same
-          // WHY: clamp/clear/patch, the same displaced-anchor retirement — inside this transaction.
-          servedMirror: {
-            sessionKey,
-            rows: denseRows,
-            shape: {
-              lineCount: resultLineCount,
-              clearFrom:
-                diffInfo.firstChangedLine !== undefined ? diffInfo.firstChangedLine - 1 : 0,
-            },
-          },
-        },
-      );
-    } catch (error) {
-      // SAFETY: best-effort post-write materialization — the edit already committed; a store failure
-      // SAFETY: leaves the in-memory hashes authoritative and the next read re-materializes and
-      // SAFETY: retires. SPEC §3.6.2: the bytes are on disk, so the tool reports success but must
-      // SAFETY: warn that store synchronization is deferred.
-      console.error("Failed to commit post-write snapshot materialization:", error);
-      file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
-    }
+    const diffInfo = await finishCommittedFile(file, options, sessionKey);
 
     const toolResult = buildBatchResult([toSection(file, diffInfo)]);
     return {

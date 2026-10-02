@@ -196,6 +196,11 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
 
 // WHY: file_undo is the single source of truth for undo history in v7; the DDL lives here
 // WHY: (spec §5.1) so the store and the undo domain cannot drift apart.
+// WHY: (ticket-04b §4) `transaction_id` correlates the undo rows of one multi-file cut
+// WHY: transaction — a column on `file_undo`, deliberately not a new table (ruling); NULL is an
+// WHY: ordinary single-file edit. `cut_intent` is the durable intent record written BEFORE the
+// WHY: first rename of a cut transaction and deleted when every file of the transaction is
+// WHY: committed — its presence at open time marks a half-applied transaction for repair.
 const FILE_UNDO_DDL =
   "CREATE TABLE IF NOT EXISTS file_undo (" +
   "path TEXT PRIMARY KEY, " +
@@ -208,9 +213,18 @@ const FILE_UNDO_DDL =
   "updated_at INTEGER NOT NULL" +
   ")";
 
+const CUT_INTENT_DDL =
+  "CREATE TABLE IF NOT EXISTS cut_intent (" +
+  "txn_id TEXT PRIMARY KEY, " +
+  "target_path TEXT NOT NULL, " +
+  "created_at INTEGER NOT NULL" +
+  ")";
+
 export function ensureFileUndoSchema(db: DatabaseSync): void {
   db.exec(FILE_UNDO_DDL);
   addColumnIfMissing(db, "file_undo", "snapshot_hash", "TEXT");
+  addColumnIfMissing(db, "file_undo", "transaction_id", "TEXT");
+  db.exec(CUT_INTENT_DDL);
 }
 
 function buildStore(db: DatabaseSync): void {

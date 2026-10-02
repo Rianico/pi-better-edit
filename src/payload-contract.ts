@@ -8,8 +8,9 @@ const normalizedEdit = Symbol("normalizedEdit");
 
 /**
  * The `text_ref` payload: two inclusive bare anchors bounding a served span, an optional serving
- * `file` (foreign-source copy only), and a REQUIRED `mode` — `"copy"` re-inserts the span bytes,
- * `"cut"` additionally retires them (same file only; a foreign-source `"cut"` is refused).
+ * `file`, and a REQUIRED `mode` — `"copy"` re-inserts the span bytes, `"cut"` additionally retires
+ * them. Both modes apply to this file AND to another served file (ticket-04b): a foreign-source
+ * `"cut"` commits the insert and the source retirement as one correlated transaction (ADR-0028).
  */
 export type SpanRef = {
   anchor_from: string;
@@ -115,12 +116,12 @@ export const textRefSchema = Type.Object(
     file: Type.Optional(
       Type.String({
         description:
-          'Served file the span is read from; a file other than the request\'s "file" supports mode: "copy" today',
+          'Served file the span is read from; another served file supports both "copy" and "cut" like this file does',
       }),
     ),
     mode: Type.Union([Type.Literal("copy"), Type.Literal("cut")], {
       description:
-        '"copy" re-inserts the referenced span bytes; "cut" additionally retires them (same file only)',
+        '"copy" re-inserts the referenced span bytes; "cut" additionally retires them, in the serving file, foreign-source included',
     }),
   },
   { additionalProperties: false },
@@ -169,21 +170,21 @@ const EDIT_PAYLOAD_HINT =
   '"file" is the text file to edit (a non-empty string, never a directory); each item names two inclusive ' +
   'bare-3-char anchors and exactly one payload — "text" (bare replacement content; an empty string deletes the ' +
   'range) or "text_ref" ({ anchor_from, anchor_to, file?, mode: "copy" | "cut" } — the served span\'s bytes, ' +
-  'with "file" reaching another served file for copy only); optional "at" is "in-place" (default), ' +
+  '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
   '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
   'served rows are refused) or "literal" (declared literal content).';
 export const EDIT_DESCRIPTION =
-  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }` (atomic, one file per call). Use for content seen via `read` or a diff; never for directories, binaries, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors — copy the 3 chars before `│` in this file\'s served `HASH│content` lines (lease (session, file, anchor)), never `│` or content. Exactly one payload per item: `text` (content; `\\n` joins lines, `""` deletes) or `text_ref` `{anchor_from, anchor_to, mode, file?}` — a served span\'s bytes (`mode` `"copy"`|`"cut"`; `file`=another served file, copy today); `at`: "in-place" (default), "before", "after". `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
+  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }` (one top-level file per call). For content seen via `read`/diff; never directories, binaries, images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors — copy the 3 chars before `│` in this file\'s served rows (lease (session, file, anchor)), never `│` or content. Exactly one payload per item: `text` (`\\n` joins lines, `""` deletes) or `text_ref` `{anchor_from, anchor_to, mode, file?}` — a served span\'s bytes (`mode` `"copy"`|`"cut"`; `file`=another served file, where `cut` retires the span there too); `at`: "in-place" (default), "before", "after". `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
 export const EDIT_SNIPPET =
-  'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), one payload per item: `text` is bare content (`""` deletes) or `text_ref` copies a served span (same file: `"copy"`|`"cut"`; `file`=another served file: `"copy"` only). Chain from diff anchors with no re-read.';
+  'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), one payload per item: `text` is bare content (`""` deletes) or `text_ref` writes a served span (`"copy"` keeps the source, `"cut"` also retires it — in this file or in the `file` it names). Chain from diff anchors with no re-read.';
 export const EDIT_GUIDELINES: string[] = [
   'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`.',
   `edit: payload shape \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); \`edits\` length is the arity (1 = single, >1 = batched atomically to the one file); each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`.`,
   "edit: `anchor_from`/`anchor_to` bound the inclusive range (both lines replaced by the payload); when an anchor no longer matches, re-read the file and copy fresh anchors.",
   'edit: `text` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused.',
   'edit: `at` places the payload relative to the resolved target span — "in-place" (default) rewrites it, "before"/"after" insert at its boundary and require a single-line resolved target; `text: ""` with "before"/"after" writes nothing (noop).',
-  'edit: `text_ref` `{anchor_from, anchor_to, mode}` writes the bytes of a served span in this file into the target — `mode: "copy"` keeps the source, `mode: "cut"` also retires it; `mode` is required, never inferred.',
-  "edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so copy `anchor_from`/`anchor_to` only from this file's served rows; to write content from another file, `text_ref.file` names that other served file and copies from its served rows (`mode: \"copy\"` is what is supported today).",
+  'edit: `text_ref` `{anchor_from, anchor_to, mode}` writes the bytes of a served span into the target — `mode: "copy"` keeps the source, `mode: "cut"` also retires it; with `file` naming another served file, both modes apply to that file\'s served rows and a `cut` retires the span there in the same call; `mode` is required, never inferred.',
+  "edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so copy `anchor_from`/`anchor_to` only from the served rows of the file the payload names: this file by default, `text_ref.file` when it names another file.",
   "edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.",
   "edit: a `[MODEL] [W_*]` line in `content` is informational — the mutation was applied; a `[MODEL] [E_*]` line is your retry instruction or a rejection — follow it from the message alone; a `[MODEL]` line that presents rows as a fresh read (`Current range (fresh read):`) is not a blind retry — decide from those rows; a dimmed `[USER]` line in `details` is human info, never your error.",
   "edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).",
@@ -357,12 +358,13 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   return undefined;
 }
 
-// WHY: (remediation-2 B3) there was previously a second, LEXICAL "same file" test here that
-// WHY: refused foreign `mode: "cut"` at admission. One definition now owns the question — the
-// WHY: engine's realpath classification (`sameResolvedPath`, mutation-engine/pipeline.ts) — and
-// WHY: its item-(iv) pre-pass refusal is the single foreign-cut guard, witnessed through the
-// WHY: entry point by `edit.wire-contract.test.ts`. Admission is a pure shape check; path
-// WHY: identity on the real filesystem belongs to the engine seam.
+// WHY: (remediation-2 B3 → ticket-04b) there was previously a second, LEXICAL "same file" test
+// WHY: here that refused foreign `mode: "cut"` at admission. One definition owns the question —
+// WHY: the engine's realpath classification (`sameResolvedPath`, mutation-engine/pipeline.ts) —
+// WHY: and admission stays a pure shape check: a foreign `cut` is ADMITTED and committed as one
+// WHY: correlated transaction (`runCutTransaction`, ADR-0028), witnessed through the entry point
+// WHY: by `edit.wire-contract.test.ts` and `edit.foreign-cut.test.ts`. Path identity on the real
+// WHY: filesystem belongs to the engine seam.
 /**
  * The single admission analyzer shared by `editRequestFrom` (normReq), `prepareEditArguments` and
  * `assertReq` (ticket-04): every entry point rejects the same inputs with the same message, so the

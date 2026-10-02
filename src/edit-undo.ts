@@ -2,7 +2,14 @@ import { readFile } from "node:fs/promises";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { withFileMutationQueue } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { readUndo, writeUndo, removeUndo, type UndoRecord } from "./undo-store.js";
+import {
+  readUndo,
+  writeUndo,
+  removeUndo,
+  readUndoTransaction,
+  type UndoRecord,
+} from "./undo-store.js";
+import { withSortedMutationQueues } from "./mutation-queue.js";
 import { adoptPinnedSnapshotFor, anchorsForSnapshotHash, snapshotHashFor } from "./snapshot-store";
 import { sessionKeyFor } from "./served-session/session.js";
 import { resolveTarget, writeAtomic } from "./fs-write.js";
@@ -14,7 +21,7 @@ import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError } from "./domain-errors.js";
 import { changedRange, lineHashes } from "./hashline/index.js";
-import { denseServeRows } from "./hashline/served.js";
+import { denseServeRows, type ServedRow } from "./hashline/served.js";
 export interface UndoEntry {
   content: string;
   bom: string;
@@ -26,6 +33,12 @@ export interface UndoEntry {
    * vacuum retention and adopted by the undo revert (spec §3.1.2, issue #82).
    */
   snapshotHash?: string | null;
+  /**
+   * (ticket-04b §4) Correlation id of a multi-file cut transaction; `null`/absent is an ordinary
+   * single-file edit. Undo of a file whose row carries an id reverts EVERY file of the
+   * transaction or fails closed with no partial revert.
+   */
+  transactionId?: string | null;
 }
 
 export async function saveUndo(
@@ -45,6 +58,7 @@ export async function saveUndo(
       // WHY: canonical hash lets the revert adopt that snapshot verbatim (zero counter ids) instead
       // WHY: of re-deriving it, and keeps the target pinned against vacuum (spec §3.6.1).
       snapshotHash: entry.snapshotHash ?? snapshotHashFor(entry.content),
+      transactionId: entry.transactionId ?? null,
     });
   } catch (error) {
     // SAFETY: typed error handling — persist failure returns { persisted: false } and caller throws E_UNDO_UNAVAILABLE; logging preserves cause, not silent undefined, downstream handles rejection.
@@ -81,6 +95,7 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
       hashes: record.hashes,
       resultContent: record.resultContent,
       snapshotHash: record.snapshotHash ?? null,
+      transactionId: record.transactionId ?? null,
     };
   } catch (error) {
     // SAFETY: best-effort undo load — failures return undefined (no history) and caller reports "No undo history"; stale or corrupt store is recoverable on next edit, not silent undefined without log.
@@ -96,6 +111,284 @@ export async function clearUndo(path: string): Promise<void> {
     // SAFETY: best-effort undo cleanup — clearUndo failures are ignored; stale undo entry will be overwritten on next edit or pruned, file content already correct.
     console.error("Failed to clear undo entry:", error);
   }
+}
+
+// WHY: (ticket-04b §4) the correlated member of one cut transaction, normalized from its
+// WHY: `file_undo` row: the pre bytes (`content`) and the post bytes (`resultContent`) plus the
+// WHY: serialization the revert shares with every other write (`bom + restoreEndings(...)`).
+interface UndoMember {
+  absolutePath: string;
+  displayPath: string;
+  content: string;
+  bom: string;
+  ending: LineEnding;
+  hashes: string[];
+  resultContent: string;
+  snapshotHash: string | null;
+}
+
+function toMember(row: UndoRecord & { path: string }, displayPath: string): UndoMember | undefined {
+  const ending = row.ending;
+  if (ending !== "\r\n" && ending !== "\n" && ending !== "\r") return undefined;
+  return {
+    absolutePath: row.path,
+    displayPath,
+    content: row.content,
+    bom: row.bom,
+    ending,
+    hashes: row.hashes,
+    resultContent: row.resultContent,
+    snapshotHash: row.snapshotHash ?? null,
+  };
+}
+
+/**
+ * (ticket-04b §4) Undo of one correlated cut transaction: EVERY member reverts, or nothing does.
+ * Freshness of all members is validated FIRST — a stale or deleted member fails the whole undo
+ * closed with the EXISTING `E_UNDO_STALE` code (unchanged, MODEL audience) naming THAT member,
+ * and no undo row of the transaction is cleared: the single-file arm clears its stale row because
+ * that row is the whole story, but clearing one row of a correlated set would silently degrade a
+ * future undo into a partial revert. Reverts run under the same sorted multi-path queues the
+ * cut transaction itself used.
+ */
+async function undoCorrelatedTransaction(
+  txnId: string,
+  requestedAbsolutePath: string,
+  requestedDisplayPath: string,
+  ctx: unknown,
+) {
+  const rows = await readUndoTransaction(txnId);
+  const members: UndoMember[] = [];
+  for (const row of rows) {
+    const display = row.path === requestedAbsolutePath ? requestedDisplayPath : row.path;
+    const member = toMember(row, display);
+    // WHY: a corrupt-ending row poisons the whole set: fail closed naming it, revert nothing.
+    if (!member) {
+      return {
+        content: [
+          {
+            type: "text" as const,
+            text: new DomainError("E_UNDO_STALE", {
+              path: row.path,
+              reason: "modified" as const,
+            }).message,
+          },
+        ],
+        isError: true,
+        details: {},
+      };
+    }
+    members.push(member);
+  }
+  if (!members.some((m) => m.absolutePath === requestedAbsolutePath)) {
+    return {
+      content: [
+        {
+          type: "text" as const,
+          text: `No undo history for ${requestedDisplayPath}. There is no previous edit to revert.`,
+        },
+      ],
+      isError: true,
+      details: {},
+    };
+  }
+
+  const sessionKeyForUndo = sessionKeyFor(
+    ctx as unknown as { sessionManager?: { getSessionId(): string } },
+  );
+
+  return withSortedMutationQueues(
+    members.map((m) => m.absolutePath),
+    async () => {
+      // WHY: validate ALL members before reverting ANY (no partial revert, §4).
+      const currents: { member: UndoMember; raw: string }[] = [];
+      for (const member of members) {
+        let raw: string | undefined;
+        try {
+          raw = await readFile(member.absolutePath, "utf-8");
+        } catch (error) {
+          if (errCode(error) !== "ENOENT") throw error;
+        }
+        if (raw === undefined) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: new DomainError("E_UNDO_STALE", {
+                  path: member.displayPath,
+                  reason: "deleted" as const,
+                }).message,
+              },
+            ],
+            isError: true,
+            details: {},
+          };
+        }
+        if (raw !== member.bom + restoreEndings(member.resultContent, member.ending)) {
+          return {
+            content: [
+              {
+                type: "text" as const,
+                text: new DomainError("E_UNDO_STALE", {
+                  path: member.displayPath,
+                  reason: "modified" as const,
+                }).message,
+              },
+            ],
+            isError: true,
+            details: {},
+          };
+        }
+        currents.push({ member, raw });
+      }
+
+      const sections: {
+        member: UndoMember;
+        diff: string;
+        addedByEdit: number;
+        removedByEdit: number;
+      }[] = [];
+      const allServedRows: ServedRow[] = [];
+      const deferredSyncWarnings: string[] = [];
+      let requestedContentHash = "";
+      let requestedLineCount = 0;
+      let requestedRange: { firstChangedLine?: number; lastChangedLine?: number } | null = null;
+
+      for (const { member, raw } of currents) {
+        const { text: currentStripped } = stripBOM(raw);
+        const currentNormalized = toLF(currentStripped);
+        const restoredContentHash = member.snapshotHash ?? snapshotHashFor(member.content);
+        const restoredLineCount = splitLines(member.content).length;
+        let restoredHashes = member.hashes;
+        try {
+          restoredHashes =
+            (await anchorsForSnapshotHash(member.absolutePath, restoredContentHash)) ??
+            member.hashes;
+        } catch (error) {
+          // SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo
+          // SAFETY: falls back to the stored hashes; the file restore and diff stay valid.
+          console.error("Failed to load anchors for undo restore:", error);
+        }
+        const currentHashes = await lineHashes(currentNormalized, member.absolutePath);
+        const remainingUndoCounts = new Map<string, number>();
+        for (const line of visLines(member.content)) {
+          remainingUndoCounts.set(line, (remainingUndoCounts.get(line) ?? 0) + 1);
+        }
+        let linesAddedByEdit = 0;
+        for (const line of visLines(currentNormalized)) {
+          const remaining = remainingUndoCounts.get(line) ?? 0;
+          if (remaining > 0) remainingUndoCounts.set(line, remaining - 1);
+          else linesAddedByEdit++;
+        }
+        let linesRemovedByEdit = 0;
+        for (const remaining of remainingUndoCounts.values()) linesRemovedByEdit += remaining;
+        const restoredRange = changedRange(currentNormalized, member.content);
+        const undoDiffResult = genDiff(
+          currentNormalized,
+          member.content,
+          1,
+          restoredHashes,
+          currentHashes,
+        );
+        const undoDenseRows = denseServeRows(restoredHashes);
+        const curSet = new Set(currentHashes);
+        const restoredSet = new Set(restoredHashes);
+        const displacedAnchors: string[] = [...curSet].filter((h) => !restoredSet.has(h));
+
+        // WHY: the same canonical serialization as every other write — one convention, no third
+        // WHY: path — and the same single store transaction shape (adopt + leases + mirror +
+        // WHY: displaced retirement) the single-file revert uses per file.
+        await writeAtomic(
+          member.absolutePath,
+          member.bom + restoreEndings(member.content, member.ending),
+        );
+        try {
+          await adoptPinnedSnapshotFor(
+            {
+              path: member.absolutePath,
+              snapshotHash: restoredContentHash,
+              lineCount: restoredLineCount,
+              hashes: restoredHashes,
+              content: member.content,
+            },
+            {
+              retireLeases: true,
+              leases: { sessionKey: sessionKeyForUndo, rows: undoDenseRows },
+              servedMirror: {
+                sessionKey: sessionKeyForUndo,
+                rows: undoDenseRows,
+                shape: { lineCount: restoredLineCount, clearFrom: 0 },
+                retireAnchors: displacedAnchors,
+              },
+            },
+          );
+        } catch (error) {
+          // SAFETY: §3.6.2 post-write semantics — the bytes are back on disk, so the member is
+          // SAFETY: never rolled forward again; the store re-materializes on the next read.
+          console.error("Failed to commit the undo restore transaction:", error);
+          deferredSyncWarnings.push(DEFERRED_STORE_SYNC_WARNING);
+        }
+        await clearUndo(member.absolutePath);
+
+        if (member.absolutePath === requestedAbsolutePath) {
+          requestedContentHash = restoredContentHash;
+          requestedLineCount = visLines(member.content).length;
+          requestedRange = restoredRange;
+        }
+        sections.push({
+          member,
+          diff: undoDiffResult.diff,
+          addedByEdit: linesAddedByEdit,
+          removedByEdit: linesRemovedByEdit,
+        });
+        allServedRows.push(...undoDenseRows);
+      }
+
+      const names = members.map((m) => m.displayPath).join(", ");
+      const parts: string[] = [`Undone last edit on ${names}.`];
+      for (const section of sections) {
+        if (section.addedByEdit > 0 || section.removedByEdit > 0) {
+          parts.push(
+            `Removed ${section.addedByEdit} line(s) that were added and restored ${section.removedByEdit} line(s) that were removed.`,
+          );
+        }
+      }
+      parts.push(
+        deferredSyncWarnings.length > 0
+          ? "Files reverted; store synchronization is deferred (see the warning below), so the diff rows are not anchored for follow-up edits until the next read."
+          : "Files reverted; diff rows carry fresh anchors for follow-up edits.",
+      );
+      parts.push(...deferredSyncWarnings);
+
+      const totalAdded = sections.reduce((sum, s) => sum + s.addedByEdit, 0);
+      const totalRemoved = sections.reduce((sum, s) => sum + s.removedByEdit, 0);
+      const details: EditDetails = {
+        // WHY: the same `--- path ---` section convention the edit response uses for multi-file
+        // WHY: batches, so the model reads a two-file revert the same way it reads a two-file cut.
+        diff: sections.map((s) => `--- ${s.member.displayPath} ---\n${s.diff}`).join("\n"),
+        firstChangedLine: requestedRange?.firstChangedLine,
+        lastChangedLine: requestedRange?.lastChangedLine,
+        resultLineCount: requestedLineCount,
+        servedRows: allServedRows,
+        contentHash: requestedContentHash,
+        ...(deferredSyncWarnings.length > 0 ? { warnings: deferredSyncWarnings } : {}),
+        metrics: buildMetrics({
+          classification: "applied",
+          editsAttempted: sections.length,
+          noopEditsCount: 0,
+          warningsCount: deferredSyncWarnings.length,
+          firstChangedLine: requestedRange?.firstChangedLine,
+          lastChangedLine: requestedRange?.lastChangedLine,
+          addedLines: totalRemoved,
+          removedLines: totalAdded,
+        }),
+      };
+      return {
+        content: [{ type: "text" as const, text: parts.join("\n") }],
+        details,
+      };
+    },
+  );
 }
 
 export function regEditUndo(pi: ExtensionAPI): void {
@@ -134,6 +427,13 @@ export function regEditUndo(pi: ExtensionAPI): void {
           isError: true,
           details: {},
         };
+      }
+
+      // WHY: (ticket-04b §4) a row carrying `transaction_id` is one member of a cut transaction:
+      // WHY: undo of EITHER member reverts BOTH files, or fails closed with no partial revert. The
+      // WHY: single-file arm below is untouched for rows without an id.
+      if (undo.transactionId !== null && undo.transactionId !== undefined) {
+        return await undoCorrelatedTransaction(undo.transactionId, mutationTargetPath, path, ctx);
       }
 
       return withFileMutationQueue(mutationTargetPath, async () => {

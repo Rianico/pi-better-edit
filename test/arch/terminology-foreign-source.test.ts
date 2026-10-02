@@ -68,35 +68,56 @@ describe("retired term stays out of the repo (ticket-04 rework §11 #25)", () =>
 
 // TEXT GUARD (remediation-2 B7), labelled as such: these are content scans, not behavioral
 // witnesses — the behavior they back is tested through the entry point by
-// `edit.wire-contract.test.ts` (engine-seam foreign-cut refusal) and
+// `edit.wire-contract.test.ts` (engine-seam foreign cut, both halves: the deleted refusal and the
+// transactional success) and
 // `edit.foreign-attribution.test.ts` (leased wrap headlines). The guard only pins that the
 // canonical `foreign-source` wording survives a rewording at the renderer source. The scan
 // site moved with the wording: remediation-2 B3 collapsed the admission-side duplicate into the
 // engine pre-pass, so BOTH refusal phrasings now live in pipeline.ts alone.
+// (04b §12.3) the falsifiability arms operate on a FIXTURE OF THE SCANNED FILE — the real
+// content with the phrase surgically removed — not a hardcoded constant string, so the arm
+// exercises the same scanner over the same bytes the pass arm reads. An oracle that cannot
+// fail is not an oracle.
 const containsPhrase = (content: string, phrase: string): boolean => content.includes(phrase);
 
+function rewordedFixture(pipeline: string, phrase: string): string {
+  expect(pipeline, "the pass arm must have found the phrase to mutate").toContain(phrase);
+  const mutated = pipeline.replaceAll(phrase, "[reworded away]");
+  expect(mutated).not.toBe(pipeline);
+  return mutated;
+}
+
 describe("foreign-source discipline in the refusal renderers (ticket-04 rework §11 #25)", () => {
-  it("the engine refusal for a foreign cut names the canonical foreign-source phrasing", () => {
-    // PIN (green on the fixed tree; falsified by rewording the clause away from `foreign-source`,
-    // seen failing in the arm below).
+  it("the deleted foreign-cut refusal stays deleted: cut is a transaction member, not a refused mode (04b)", () => {
+    // (04b §12.3) This arm pinned the item-(iv) refusal's canonical wording
+    // ("A foreign-source reference supports mode:"). The refusal was deleted as an intentional
+    // act, in the same commit as the correlated multi-file transaction that enables foreign
+    // `mode: "cut"` — `edit.foreign-cut.test.ts` and `edit.wire-contract.test.ts` witness both
+    // halves. What must not regress is the DELETION: a future re-introduction of a copy-only
+    // refusal would silently re-negate ticket-04b, so the absence arm is the guard now, and the
+    // fixture arm keeps this scan falsifiable by mutating the surviving transaction wording.
     const pipeline = readFileSync("src/mutation-engine/pipeline.ts", "utf-8");
-    expect(containsPhrase(pipeline, "A foreign-source reference supports mode:")).toBe(true);
+    const deletedRefusal = "supports mode:";
     expect(
-      containsPhrase(
-        "a reworded sample that drops the term",
-        "A foreign-source reference supports mode:",
-      ),
-      "the scan must be able to fail",
+      containsPhrase(pipeline, deletedRefusal),
+      "the item-(iv) copy-only refusal must stay deleted (ADR-0028): foreign cut commits",
+    ).toBe(false);
+    const phrase = "foreign-source cut as one correlated multi-file transaction";
+    expect(containsPhrase(pipeline, phrase)).toBe(true);
+    expect(
+      containsPhrase(rewordedFixture(pipeline, phrase), phrase),
+      "the scan must be able to fail — the mutated fixture must not contain the phrase",
     ).toBe(false);
   });
 
   it("the engine's foreign rejection headlines name the foreign-source reference", () => {
     // PIN (§0 keeps the pass-through wording; the remediation-2 leased wrap adds the same shape).
     const pipeline = readFileSync("src/mutation-engine/pipeline.ts", "utf-8");
-    expect(containsPhrase(pipeline, "the foreign-source reference to")).toBe(true);
+    const phrase = "the foreign-source reference to";
+    expect(containsPhrase(pipeline, phrase)).toBe(true);
     expect(
-      containsPhrase("a reworded sample that drops the term", "the foreign-source reference to"),
-      "the scan must be able to fail",
+      containsPhrase(rewordedFixture(pipeline, phrase), phrase),
+      "the scan must be able to fail — the mutated fixture must not contain the phrase",
     ).toBe(false);
   });
 });

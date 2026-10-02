@@ -148,9 +148,10 @@ function assembleRejectAndServe(args: {
 /**
  * Builds an `[E_TARGET_LOST]` rejection for a retired leased identity whose range cannot be
  * identified (spec stale-identity-reject-and-serve D1/D6, ADR-0018 decisions 1-2). The payload
- * carries no rows, no `Current range` heading and no retry hint, so the codes stay disjoint
- * by payload shape: `[E_STALE_RANGE]` and `[E_UNVERIFIED_RANGE]` always render rows,
- * `[E_TARGET_LOST]` never does.
+ * carries no rows, no `Current range` heading and no retry hint. §D6's row-shape phrasing is
+ * superseded in part by ADR-0021 d4: the code alone selects the remedy and row presence is a
+ * payload detail — target-side `[E_STALE_RANGE]`/`[E_UNVERIFIED_RANGE]` producers serve rows,
+ * the foreign leased wrap renders those codes with none, and consumers dispatch on the code.
  */
 export function makeTargetLostRejection(opts: {
   servedLine: number;

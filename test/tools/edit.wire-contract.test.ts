@@ -4,6 +4,7 @@ import { join } from "node:path";
 import { execute, isMutationSuccess, isMutationFailure } from "../../src/mutation-engine/index.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
 import { DomainError } from "../../src/domain-errors.js";
+import { toLF } from "../../src/edit-diff.js";
 import { lineHashes, initHasher, resEdit, type HTEdit } from "../../src/hashline/index.js";
 import { loadHashStore } from "../../src/hash-store.js";
 import { getServed, loadLeases } from "../../src/served-session/session.js";
@@ -159,34 +160,41 @@ describe("Edit wire contract — admission (finite key-set gate)", () => {
     );
   });
 
-  it("refuses a foreign-source cut at the engine seam and says foreign-source (remediation-2 B3, E8)", async () => {
-    // WHY: (B3, one definition of "same file") admission no longer classifies paths — the engine's
-    // WHY: realpath pre-pass owns foreign classification — so the refusal is witnessed THROUGH the
-    // WHY: entry point that reaches it: the same seam pair the tool uses (admit, then `execute`).
-    // WHY: At `ad80222` this is RED at `admit` (the lexical admission refusal throws there).
+  it("a foreign-source cut commits at the engine seam as one two-file transaction — the item-(iv) refusal is deleted deliberately (04b)", async () => {
+    // WHY: (ticket-04 item (iv) → ticket-04b §1) this test used to PIN the refusal
+    // WHY: ("A foreign-source reference supports mode: … copy today"): item (iv) had no recovery
+    // WHY: story — retiring the source before the copy lands turns a mid-transaction crash into
+    // WHY: data loss, so the guard existed until the correlated multi-file transaction
+    // WHY: (`runCutTransaction`, ADR-0028) supplied the missing half: durable intent record before
+    // WHY: the first rename, the target insert committed BEFORE the destructive source
+    // WHY: retirement, and next-run repair for the window between. The refusal is deleted as an
+    // WHY: intentional act, in the same commit as the behaviour it enables; this test witnesses
+    // WHY: both halves — the refusal no longer fires, and the cut lands on BOTH files.
     await withTempDir("foreign-cut-entry-", async (cwd) => {
       await writeFile(join(cwd, "sample.txt"), "a\nb\nc\n", "utf-8");
       await writeFile(join(cwd, "other.txt"), "x\ny\nz\n", "utf-8");
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { path: "other.txt" }, undefined, undefined, ctx);
+      const hs = await lineHashes("x\ny\nz\n", `${home.testPath}/other.txt`);
+      const ht = await lineHashes("a\nb\nc\n", `${home.testPath}/sample.txt`);
       const raw = {
         file: "sample.txt",
         edits: [
           {
-            anchor_from: "a1B",
-            anchor_to: "c2D",
-            text_ref: { anchor_from: "x", anchor_to: "y", file: "other.txt", mode: "cut" },
+            anchor_from: ht[1]!,
+            anchor_to: ht[1]!,
+            text_ref: { anchor_from: hs[0]!, anchor_to: hs[1]!, file: "other.txt", mode: "cut" },
           },
         ],
       };
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
-      expect(isMutationFailure(result), "the engine pre-pass must refuse").toBe(true);
-      if (!isMutationFailure(result)) return;
-      expect(result.code).toBe("E_BAD_PAYLOAD");
-      // WHY: (sweep (b)) positive vocabulary pins replace the old `not.toContain` of the retired
-      // WHY: synonym — the repo-wide term guard (test/arch) owns its zero-tolerance check.
-      expect(result.message).toContain("A foreign-source reference supports mode:");
-      expect(result.message).toContain('mode: "copy" today');
-      await expect(readFile(join(cwd, "sample.txt"), "utf-8")).resolves.toBe("a\nb\nc\n");
-      await expect(readFile(join(cwd, "other.txt"), "utf-8")).resolves.toBe("x\ny\nz\n");
+      expect(isMutationSuccess(result), "the foreign-source cut must now commit").toBe(true);
+      if (!isMutationSuccess(result)) return;
+      await expect(readFile(join(cwd, "sample.txt"), "utf-8")).resolves.toBe("a\nx\ny\nc\n");
+      await expect(readFile(join(cwd, "other.txt"), "utf-8")).resolves.toBe("z\n");
+      // the deleted copy-only refusal must never surface again at this seam
+      expect(result.diff).not.toContain("supports mode:");
     });
   });
 });
@@ -503,7 +511,7 @@ async function runCopyPair(tc: CopyPairCase): Promise<{ viaFile: string; viaFore
   let viaForeign = "";
   await withTempFile("target.txt", tc.controlContent, async ({ cwd }) => {
     const { ctx, readTool } = setupIntegrationTest(cwd);
-    const h = await lineHashes(tc.controlContent, `${home.testPath}/target.txt`);
+    const h = await lineHashes(toLF(tc.controlContent), `${home.testPath}/target.txt`);
     await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
     const [l1, l2] = tc.controlSpan;
     const raw = req(
@@ -532,8 +540,8 @@ async function runCopyPair(tc: CopyPairCase): Promise<{ viaFile: string; viaFore
     const { ctx, readTool } = setupIntegrationTest(cwd);
     await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
     await readTool.execute("r2", { path: "source.txt" }, undefined, undefined, ctx);
-    const h = await lineHashes(tc.controlContent, `${home.testPath}/target.txt`);
-    const s = await lineHashes(tc.foreignContent, `${home.testPath}/source.txt`);
+    const h = await lineHashes(toLF(tc.controlContent), `${home.testPath}/target.txt`);
+    const s = await lineHashes(toLF(tc.foreignContent), `${home.testPath}/source.txt`);
     const [f1, f2] = tc.foreignSpan;
     const raw = {
       file: "target.txt",
@@ -597,6 +605,49 @@ const COPY_PAIR_CASES: CopyPairCase[] = [
     foreignContent: "\n\n\n",
     foreignSpan: [1, 3],
   },
+  // TICKET-04b §11 mandatory re-run: the matrix now covers every shape the dispatch names —
+  // empty (blank line at the head of the file), trailing-blank, no-trailing-newline, CRLF and
+  // mixed endings — for BOTH the foreign copy and the foreign cut arm.
+  {
+    name: "empty line at the head of the file",
+    controlContent: "\nb\nc\n",
+    controlSpan: [1, 1],
+    targetLine: 3,
+    foreignContent: "\nq\n",
+    foreignSpan: [1, 1],
+  },
+  {
+    name: "single trailing blank line",
+    controlContent: "a\nb\n\n",
+    controlSpan: [3, 3],
+    targetLine: 1,
+    foreignContent: "p\nq\n\n",
+    foreignSpan: [3, 3],
+  },
+  {
+    name: "no trailing newline",
+    controlContent: "a\n\nb",
+    controlSpan: [2, 2],
+    targetLine: 3,
+    foreignContent: "p\n\nq",
+    foreignSpan: [2, 2],
+  },
+  {
+    name: "CRLF file",
+    controlContent: "a\r\n\r\nb\r\nc\r\n",
+    controlSpan: [2, 2],
+    targetLine: 3,
+    foreignContent: "p\r\n\r\nq\r\n",
+    foreignSpan: [2, 2],
+  },
+  {
+    name: "mixed endings (one stray CRLF inside an LF file)",
+    controlContent: "a\n\r\nb\nc\n",
+    controlSpan: [2, 2],
+    targetLine: 3,
+    foreignContent: "p\n\r\nq\n",
+    foreignSpan: [2, 2],
+  },
 ];
 
 describe("Edit wire contract — paired blank-line control (item (i) fence)", () => {
@@ -604,6 +655,147 @@ describe("Edit wire contract — paired blank-line control (item (i) fence)", ()
     it(`copying the ${tc.name} from a foreign served file is byte-identical to the intra-file copy`, async () => {
       const { viaFile, viaForeign } = await runCopyPair(tc);
       expect(viaForeign).toBe(viaFile);
+    });
+  }
+});
+
+// WHY: (ticket-04b §11 byte fence, mandatory re-run over the full matrix) three claims per row,
+// WHY: each with the comparison itself as the oracle — no hand-written expected bytes:
+// WHY:   (1) the foreign CUT's target output is byte-identical to the intra-file equivalent
+// WHY:       (the intra-file copy of the same span — a cut's insert arm must be exactly a copy);
+// WHY:   (2) after a fault-injected abort INSIDE the two-rename window, target AND source are
+// WHY:       byte-identical to the pre-transaction contents;
+// WHY:   (3) the retirement write goes through the SAME canonical serialization as every other
+// WHY:       write — `bom + restoreEndings(result, originalEnding)` with `originalEnding` decided
+// WHY:       by the earliest line break in the file — which the independent re-fold below
+// WHY:       restates with plain string operations (no module import), so agreement is evidence,
+// WHY:       not tautology. One convention, no third path.
+function expectedRetirement(raw: string, l1: number, l2: number): string {
+  const idxLF = raw.indexOf("\n");
+  const idxCRLF = raw.indexOf("\r\n");
+  const ending =
+    idxLF === -1
+      ? raw.indexOf("\r") >= 0
+        ? "\r"
+        : "\n"
+      : idxCRLF !== -1 && idxCRLF < idxLF
+        ? "\r\n"
+        : "\n";
+  const lf = raw.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+  const trailing = lf.endsWith("\n");
+  const lines = trailing ? lf.slice(0, -1).split("\n") : lf.split("\n");
+  const kept = lines.filter((_, i) => i < l1 - 1 || i > l2 - 1);
+  return kept.join(ending) + (trailing && kept.length > 0 ? ending : "");
+}
+
+async function seedForeign(cwd: string, tc: CopyPairCase) {
+  await writeFile(join(cwd, "target.txt"), tc.controlContent, "utf-8");
+  await writeFile(join(cwd, "source.txt"), tc.foreignContent, "utf-8");
+  const { ctx, readTool } = setupIntegrationTest(cwd);
+  await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r2", { path: "source.txt" }, undefined, undefined, ctx);
+  const h = await lineHashes(toLF(tc.controlContent), `${home.testPath}/target.txt`);
+  const s = await lineHashes(toLF(tc.foreignContent), `${home.testPath}/source.txt`);
+  return { ctx, h, s };
+}
+
+function foreignCutReq(tc: CopyPairCase, h: string[], s: string[]): unknown {
+  const [f1, f2] = tc.foreignSpan;
+  return {
+    file: "target.txt",
+    edits: [
+      {
+        anchor_from: h[tc.targetLine - 1]!,
+        anchor_to: h[tc.targetLine - 1]!,
+        text_ref: {
+          anchor_from: s[f1 - 1]!,
+          anchor_to: s[f2 - 1]!,
+          file: "source.txt",
+          mode: "cut" as const,
+        },
+      },
+    ],
+  };
+}
+
+describe("Edit wire contract — §11 byte fence: foreign cut mirrors the intra-file arm", () => {
+  for (const tc of COPY_PAIR_CASES) {
+    it(`the ${tc.name}: foreign-cut target is byte-identical to the intra-file copy AND the retirement re-folds through the canonical serializer`, async () => {
+      let intraCopyBytes = "";
+      await withTempDir("fence-intra-copy-", async (cwd) => {
+        await writeFile(join(cwd, "target.txt"), tc.controlContent, "utf-8");
+        const { ctx, readTool } = setupIntegrationTest(cwd);
+        const h = await lineHashes(toLF(tc.controlContent), `${home.testPath}/target.txt`);
+        await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
+        const [l1, l2] = tc.controlSpan;
+        const raw = req(
+          [
+            {
+              anchor_from: h[tc.targetLine - 1]!,
+              anchor_to: h[tc.targetLine - 1]!,
+              text_ref: { anchor_from: h[l1 - 1]!, anchor_to: h[l2 - 1]!, mode: "copy" },
+            },
+          ],
+          "target.txt",
+        );
+        const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
+        expect(
+          isMutationSuccess(result),
+          isMutationFailure(result)
+            ? `intra-file copy arm must succeed (${tc.name}): ${result.code} ${result.message}`
+            : `intra-file copy arm must succeed (${tc.name})`,
+        ).toBe(true);
+        intraCopyBytes = await readFile(join(cwd, "target.txt"), "utf-8");
+      });
+
+      await withTempDir("fence-foreign-cut-", async (cwd) => {
+        const { h, s } = await seedForeign(cwd, tc);
+        const [f1, f2] = tc.foreignSpan;
+        const expectedSource = expectedRetirement(tc.foreignContent, f1, f2);
+        const result = await execute(admit(foreignCutReq(tc, h, s)), cwd, {
+          sessionKey: TEST_SESSION_ID,
+        });
+        if (expectedSource === "") {
+          // The row whose retirement would EMPTY the source: the same per-file guard the
+          // intra-file path enforces (`E_EMPTY_RANGE`, "use `write`") refuses the source plan
+          // in-memory, BEFORE the intent record and any rename — so this row's fence claim is
+          // the refusal itself: both files byte-identical to the seeds, nothing half-written.
+          // A zero-line source cannot be served at all, so no other row reaches this arm.
+          expect(
+            isMutationFailure(result) && result.code === "E_EMPTY_RANGE",
+            `cutting the whole of an all-blank source must refuse with E_EMPTY_RANGE (${tc.name})`,
+          ).toBe(true);
+          await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe(tc.controlContent);
+          await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe(tc.foreignContent);
+          return;
+        }
+        expect(
+          isMutationSuccess(result),
+          isMutationFailure(result)
+            ? `foreign cut arm must succeed (${tc.name}): ${result.code} ${result.message}`
+            : `foreign cut arm must succeed (${tc.name})`,
+        ).toBe(true);
+        if (!isMutationSuccess(result)) return;
+        // Claim (1): the insert is byte-identical to the intra-file equivalent.
+        await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe(intraCopyBytes);
+        // Claim (3): the retirement shares the canonical serializer — restated independently.
+        await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe(expectedSource);
+      });
+    });
+
+    it(`the ${tc.name}: a fault-injected abort inside the two-rename window leaves BOTH files byte-identical to the pre-transaction contents`, async () => {
+      await withTempDir("fence-foreign-abort-", async (cwd) => {
+        const { h, s } = await seedForeign(cwd, tc);
+        const result = await execute(admit(foreignCutReq(tc, h, s)), cwd, {
+          sessionKey: TEST_SESSION_ID,
+          onCutBetweenWrites: () => {
+            throw new Error("injected §11 fault: after the first rename");
+          },
+        });
+        expect(isMutationFailure(result), `the injected fault must abort (${tc.name})`).toBe(true);
+        await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe(tc.controlContent);
+        await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe(tc.foreignContent);
+      });
     });
   }
 });

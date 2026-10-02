@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   DomainError,
   ERROR_REGISTRY,
+  UNVERIFIED_HEADLINE,
   WARNING_REGISTRY,
   formatWarning,
   type DomainErrorCode,
@@ -367,6 +368,61 @@ describe("domain error registry: closed contract, not a list", () => {
     expect(error.message).not.toContain("Retry with these anchors");
     expect(error.message).not.toContain("no read needed");
     expect(ERROR_REGISTRY.E_STALE_RANGE.remedy).toBeUndefined();
+  });
+
+  it("closes the representable-empty render: an empty headline over an empty block cannot construct (04b §12.2)", () => {
+    // WHY: `E_UNVERIFIED_RANGE.headline` is optional and `servedBlock` may be "", which admitted
+    // WHY: the render `"[MODEL] [E_UNVERIFIED_RANGE] "` — a header with no information at all.
+    // WHY: The rule: when the block is EMPTY the headline must be a NON-EMPTY string (an absent
+    // WHY: headline falls back to the default, which is non-empty). Mutation witness: delete the
+    // WHY: construction guards in `src/domain-errors.ts` (E_UNVERIFIED_RANGE :418 region and
+    // WHY: E_STALE_RANGE :402 region) and both `toThrow` arms below fail at HEAD.
+    expect(
+      () =>
+        new DomainError("E_UNVERIFIED_RANGE", {
+          headline: "",
+          servedRows: [],
+          servedBlock: "",
+          cause: "retirement",
+        }),
+      "empty headline + empty block must not construct",
+    ).toThrow(/headline/);
+    expect(
+      () =>
+        new DomainError("E_STALE_RANGE", {
+          headline: "",
+          servedRows: [],
+          servedBlock: "",
+          cause: "served-range staleness",
+        }),
+      "the same shape is poison for E_STALE_RANGE too",
+    ).toThrow(/headline/);
+    // PIN arms (green before and after): the empty-block render is legitimate when a REAL headline
+    // exists — the foreign leased wrap's shape — and an absent headline takes the default.
+    const wrapped = new DomainError("E_UNVERIFIED_RANGE", {
+      headline: "the foreign-source reference to source.txt no longer resolves.",
+      servedRows: [],
+      servedBlock: "",
+      cause: "retirement",
+    });
+    expect(wrapped.message).toBe(
+      "[MODEL] [E_UNVERIFIED_RANGE] the foreign-source reference to source.txt no longer resolves.",
+    );
+    const defaulted = new DomainError("E_UNVERIFIED_RANGE", {
+      servedRows: [],
+      servedBlock: "",
+      cause: "retirement",
+    });
+    expect(defaulted.message).toBe(`[MODEL] [E_UNVERIFIED_RANGE] ${UNVERIFIED_HEADLINE}`);
+    // Rows-present renders are untouched by the guard: a non-empty block keeps its section even
+    // beside an absent headline (target-side shape).
+    const withRows = new DomainError("E_UNVERIFIED_RANGE", {
+      servedRows: [{ position: 0, hash: "abc" }],
+      servedBlock: "abc│alpha",
+      cause: "retirement",
+    });
+    expect(withRows.message).toContain(UNVERIFIED_HEADLINE);
+    expect(withRows.message).toContain("Current range (fresh read):");
   });
 });
 

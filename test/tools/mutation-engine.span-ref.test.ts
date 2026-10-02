@@ -56,9 +56,9 @@ function handItem(
   };
 }
 
-// WHY: (ticket-04 rework item iv) admission never produces a foreign `cut`, so this shape exists
-// only when built directly at the engine seam — exactly the hole the pre-pass leaves by dropping
-// `mode` when it collapses a foreign reference to a literal.
+// WHY: (ticket-04 rework item iv → 04b) admission now admits a foreign `cut`, but this helper
+// WHY: still builds the shape directly at the engine seam — the payload the pre-pass consumes,
+// WHY: without the `text_ref` admission sugar.
 function foreignRefItem(
   target: [string, string],
   source: [string, string],
@@ -556,7 +556,14 @@ describe("MutationEngine — span-ref in batches", () => {
 });
 
 describe("MutationEngine — reference payloads at the engine seam (ticket-04 rework)", () => {
-  it('refuses a directly-constructed foreign mode:"cut" — no silent copy (item iv)', async () => {
+  it('commits a directly-constructed foreign mode:"cut" as one two-file transaction (04b supersedes item iv)', async () => {
+    // WHY: (ticket-04 rework item iv → ticket-04b §1) this test used to PIN a loud refusal: the
+    // WHY: pre-pass collapsed every foreign reference to a literal COPY before `parseEdits`, so a
+    // WHY: foreign `cut` silently succeeded as a copy and the requested retirement vanished —
+    // WHY: silence was the bug and the refusal was the stopgap. 04b deletes the stopgap in the
+    // WHY: same commit as the fix: the pre-pass RECORDS the cut and `runCutTransaction` retires
+    // WHY: the source as a first-class edit against that file (ADR-0028). Both halves stay pinned
+    // WHY: here — no silent copy (the source really is retired) and the insert lands at the target.
     await withTempDir("spanref-foreign-cut-", async (cwd) => {
       await writeFile(join(cwd, "sample.txt"), "a\nb\nc\nd\ne\n", "utf-8");
       await writeFile(join(cwd, "other.txt"), "x\ny\nz\n", "utf-8");
@@ -565,38 +572,19 @@ describe("MutationEngine — reference payloads at the engine seam (ticket-04 re
       await readTool.execute("r2", { path: "other.txt" }, undefined, undefined, ctx);
       const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
       const s = await lineHashes("x\ny\nz\n", home.testPath);
-      // WHY: (§4) the foreign pre-pass collapses every foreign reference to a literal COPY
-      // before `parseEdits` ever sees the payload, so a foreign `cut` silently succeeds as a
-      // copy and the requested retirement vanishes. The seam must fail LOUD: the same
-      // E_BAD_PAYLOAD phasing message, or a throw naming ticket-04b — silence is the bug.
-      let outcome: Awaited<ReturnType<typeof execute>> | Error;
-      try {
-        outcome = await execute(
-          {
-            file: "sample.txt",
-            edits: [foreignRefItem([h[4]!, h[4]!], [s[0]!, s[1]!], "other.txt", "cut")],
-          },
-          cwd,
-          { sessionKey: TEST_SESSION_ID },
-        );
-      } catch (error) {
-        outcome = error instanceof Error ? error : new Error(String(error));
-      }
-      const loud =
-        outcome instanceof Error
-          ? outcome.message.includes("ticket-04b")
-          : isMutationFailure(outcome) &&
-            (outcome.code === "E_BAD_PAYLOAD" || outcome.message.includes("ticket-04b"));
-      expect(
-        loud,
-        outcome instanceof Error
-          ? `a throw must name ticket-04b: ${outcome.message}`
-          : isMutationSuccess(outcome)
-            ? `refused, but it silently succeeded as a copy: ${JSON.stringify(outcome.result)}`
-            : `failure must be E_BAD_PAYLOAD or name ticket-04b: ${outcome.code} ${outcome.message}`,
-      ).toBe(true);
-      await expect(readFile(join(cwd, "sample.txt"), "utf-8")).resolves.toBe("a\nb\nc\nd\ne\n");
-      await expect(readFile(join(cwd, "other.txt"), "utf-8")).resolves.toBe("x\ny\nz\n");
+      const result = await execute(
+        {
+          file: "sample.txt",
+          edits: [foreignRefItem([h[4]!, h[4]!], [s[0]!, s[1]!], "other.txt", "cut")],
+        },
+        cwd,
+        { sessionKey: TEST_SESSION_ID },
+      );
+      expect(isMutationSuccess(result), "the foreign cut must commit, not refuse").toBe(true);
+      if (!isMutationSuccess(result)) return;
+      expect(result.result).toBe("a\nb\nc\nd\nx\ny\n");
+      await expect(readFile(join(cwd, "sample.txt"), "utf-8")).resolves.toBe("a\nb\nc\nd\nx\ny\n");
+      await expect(readFile(join(cwd, "other.txt"), "utf-8")).resolves.toBe("z\n");
     });
   });
 

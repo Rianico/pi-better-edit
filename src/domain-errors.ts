@@ -405,8 +405,14 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     // WHY: (remediation-2 item A) `servedBlock === ""` means NO rows are in the served set for
     // WHY: this rejection — render headline only. Every target-side producer passes a non-empty
     // WHY: block, so their renders stay byte-identical.
-    format: ({ headline, servedBlock }) =>
-      servedBlock === "" ? headline : `${headline}\n${FRESH_READ_HEADING}\n${servedBlock}`,
+    // WHY: (04b §12.2) an empty headline over an empty block would render a header with no
+    // WHY: information, so the pair is refused AT CONSTRUCTION, not silently defaulted.
+    format: ({ headline, servedBlock }) => {
+      if (servedBlock === "" && headline === "") {
+        throw new TypeError("E_STALE_RANGE: headline must be non-empty when servedBlock is empty");
+      }
+      return servedBlock === "" ? headline : `${headline}\n${FRESH_READ_HEADING}\n${servedBlock}`;
+    },
   },
   E_TARGET_LOST: {
     audience: "MODEL",
@@ -419,10 +425,18 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     // WHY: same served-or-absent rule as `E_STALE_RANGE`: the fresh-read section appears exactly
     // WHY: when rows are served; an absent-rows rejection renders its headline only.
-    format: ({ headline, servedBlock }) =>
-      servedBlock === ""
-        ? (headline ?? UNVERIFIED_HEADLINE)
-        : `${headline ?? UNVERIFIED_HEADLINE}\n${FRESH_READ_HEADING}\n${servedBlock}`,
+    // WHY: (04b §12.2) `headline: ""` passed `??` (which only rejects null/undefined) and admitted
+    // WHY: the render "[MODEL] [E_UNVERIFIED_RANGE] " — header, no information. An absent headline
+    // WHY: takes the non-empty default; an EMPTY one is refused at construction.
+    format: ({ headline, servedBlock }) => {
+      const resolved = headline ?? UNVERIFIED_HEADLINE;
+      if (servedBlock === "" && resolved === "") {
+        throw new TypeError(
+          "E_UNVERIFIED_RANGE: headline must be non-empty when servedBlock is empty",
+        );
+      }
+      return servedBlock === "" ? resolved : `${resolved}\n${FRESH_READ_HEADING}\n${servedBlock}`;
+    },
   },
   E_MALFORMED_ANCHOR: {
     audience: "MODEL",
