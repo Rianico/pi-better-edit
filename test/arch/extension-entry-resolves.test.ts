@@ -96,4 +96,16 @@ describe("extension entry is installable from every source", () => {
     expect(prepack).toContain("build-dist.mjs");
     expect(prepack).toContain("verify-dist.mjs");
   });
+
+  it("prepublishOnly builds the entry before running the suite that asserts it", () => {
+    const prepublishOnly = pkg.scripts?.prepublishOnly ?? "";
+    const buildAt = prepublishOnly.indexOf("build-dist.mjs");
+    const testAt = prepublishOnly.indexOf("test");
+    expect(buildAt, "prepublishOnly never builds dist/index.js").toBeGreaterThanOrEqual(0);
+    expect(testAt, "prepublishOnly never runs the test suite").toBeGreaterThanOrEqual(0);
+    expect(
+      buildAt,
+      "prepublishOnly runs tests before the entry is built; publishing from a clean tree fails",
+    ).toBeLessThan(testAt);
+  });
 });

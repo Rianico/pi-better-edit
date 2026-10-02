@@ -45,7 +45,7 @@
     "format": "oxfmt --check .",
     "format:fix": "oxfmt .",
     "typecheck": "tsc --noEmit",
-    "prepublishOnly": "pnpm run typecheck && pnpm run lint && pnpm test",
+    "prepublishOnly": "node scripts/build-dist.mjs && pnpm run typecheck && pnpm run lint && pnpm test",
     "eval": "RUN_EVAL=1 EVAL_TARGET=local vitest run test/eval/comparison-battery.test.ts",
     "eval:compare": "node scripts/eval-compare.mjs",
     "eval:hashline": "node benchmarks/hashline-compare.mjs",
