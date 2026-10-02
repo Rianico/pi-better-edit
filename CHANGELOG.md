@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.5.0] - 2026-10-02
+
 ### Bug Fixes
 
 * **release:** stop clearing the ledger before semantic-release (#36)
