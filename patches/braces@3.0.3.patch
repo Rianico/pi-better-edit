@@ -1,0 +1,18 @@
+diff --git a/lib/parse.js b/lib/parse.js
+index 3a6988e629f52aee6609dc5ec290a5e9ff47cecb..cbae98bfefe30132ee8a2fdd28610f586d4aefae 100644
+--- a/lib/parse.js
++++ b/lib/parse.js
+@@ -73,7 +73,13 @@ const parse = (input, options = {}) => {
+ 
+   push({ type: 'bos' });
+ 
++  const MAX_DEPTH = 100;
++
+   while (index < length) {
++    if (stack.length > MAX_DEPTH + 1) {
++      throw new SyntaxError(`Input nesting depth (${stack.length - 1}), exceeds max depth (${MAX_DEPTH})`);
++    }
++
+     block = stack[stack.length - 1];
+     value = advance();
+ 

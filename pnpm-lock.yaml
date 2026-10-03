@@ -111,6 +111,9 @@ overrides:
   fast-uri: 3.1.8
   esbuild: 0.28.2
 
+patchedDependencies:
+  braces@3.0.3: 920fbe943b333f389cd351c74f7b58365c691190ce13ddfd420b2d7fe827201b
+
 importers:
 
   .:
@@ -4361,7 +4364,7 @@ snapshots:
     dependencies:
       balanced-match: 4.0.4
 
-  braces@3.0.3:
+  braces@3.0.3(patch_hash=920fbe943b333f389cd351c74f7b58365c691190ce13ddfd420b2d7fe827201b):
     dependencies:
       fill-range: 7.1.1
 
@@ -5076,7 +5079,7 @@ snapshots:
 
   micromatch@4.0.8:
     dependencies:
-      braces: 3.0.3
+      braces: 3.0.3(patch_hash=920fbe943b333f389cd351c74f7b58365c691190ce13ddfd420b2d7fe827201b)
       picomatch: 2.3.2
 
   mime@4.1.0: {}
