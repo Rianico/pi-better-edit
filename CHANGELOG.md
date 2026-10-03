@@ -11,6 +11,10 @@
 * **edit:** ship the flat wire item -- exactly one payload per item (`text` for hand-written bytes, `text_ref{mode}` for served-span bytes with strictly required `mode: "copy" | "cut"`), optional `at` (`"in-place"` default; `"in_place"` refused), and `text: ""` in-place delete. Replace, insert-before, insert-after, delete, copy and move are each expressible (ADR-0027). Wording kept strictly additive in evidence.
 * **edit:** `resEdit` barrel signature change -- the internal rename reaches the public barrel (`src/hashline/index.ts`): an internal rename that reaches a public barrel is consumer-visible even when no model sees it.
 
+### Documentation
+
+* **agents:** add `docs/agents/refining-tool-prompts.md` — the method for refining a tool's prompts (map the surfaces, map the pins, probe behaviourally, measure every ambiguity, review, ticket, verify the served text) and the principles behind it; linked from `AGENTS.md`.
+
 ## [2.4.0] - 2026-09-30
 
 ## [2.3.0] - 2026-09-27
