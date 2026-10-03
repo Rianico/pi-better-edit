@@ -2,12 +2,9 @@
 
 ## [Unreleased]
 
-### ⚠ BREAKING CHANGES
-
-* **edit:** flat wire item replaces the op-bearing shape. `replace_with`, the positional tuple form, and the legacy item keys are removed: sends using them now refuse with `unknown or unsupported fields` naming the replacement -- change `replace_with` payloads to `text` (or `text_ref` with `mode`), tuples to named-key items, and legacy keys to `anchor_from`/`anchor_to`. `file_path` remains accepted as a deprecated alias (warns, maps to `path`) and will be removed in a future version.
-
 ### Features
 
+* **edit:** flat wire item replaces the op-bearing shape. `replace_with`, the positional tuple form, and the legacy item keys are removed: sends using them now refuse with `unknown or unsupported fields` naming the replacement -- change `replace_with` payloads to `text` (or `text_ref` with `mode`), tuples to named-key items, and legacy keys to `anchor_from`/`anchor_to`. `file_path` remains accepted as a deprecated alias (warns, maps to `path`) and will be removed in a future version.
 * **edit:** ship the flat wire item -- exactly one payload per item (`text` for hand-written bytes, `text_ref{mode}` for served-span bytes with strictly required `mode: "copy" | "cut"`), optional `at` (`"in-place"` default; `"in_place"` refused), and `text: ""` in-place delete. Replace, insert-before, insert-after, delete, copy and move are each expressible (ADR-0027). Wording kept strictly additive in evidence.
 * **edit:** `resEdit` barrel signature change -- the internal rename reaches the public barrel (`src/hashline/index.ts`): an internal rename that reaches a public barrel is consumer-visible even when no model sees it.
 
@@ -15,9 +12,66 @@
 
 * **agents:** add `docs/agents/refining-tool-prompts.md` — the method for refining a tool's prompts (map the surfaces, map the pins, probe behaviourally, measure every ambiguity, review, ticket, verify the served text) and the principles behind it; linked from `AGENTS.md`.
 
+## [2.5.0] - 2026-10-02
+
+### Bug Fixes
+
+* **release:** stop clearing the ledger before semantic-release (#36)
+
+### Build System
+
+* **build:** ship the prebuilt bundle as the extension entry on both install surfaces (#38)
+
 ## [2.4.0] - 2026-09-30
 
+### Features
+
+* **lens:** report served rows to pi-lens' read bridge through a domain-neutral observer seam (#29)
+* **lens:** add the /pi-better-edit lens command and the .pi/agents/pi-better-edit.json config with env, project and global precedence (#29)
+* **lens:** ship schemas/pi-better-edit.json for editor validation of the config (#29)
+* **lens:** mirror landed mutations (edit, write, undo) to pi-lens' mutation bridge through a domain-neutral mutated-file seam (#33)
+
+### Bug Fixes
+
+* **lifecycle:** resolve the write tool's target from file before path and file_path (#29)
+
+* **edit-undo:** derive undo-summary counts from source inputs, not rendered rows (#9)
+* commit the edit and undo store state in one transaction, so a store failure can no longer leave the leases and the served mirror disagreeing (#16)
+* **preview:** keep the debounced preview bound to the session that armed it across a session switch (#16)
+* **drift:** key drift-notice episodes on the drifted line's position, so distinct lines sharing an anchor are no longer collapsed into one silent notice (#16)
+* **packaging:** declare typebox as a peer dependency so host-provided copies cannot bypass the extension loader (#34)
+* **deps:** pin undici, brace-expansion, fast-uri and esbuild to patched releases via pnpm override so the audit gate clears the transitive DoS and TLS-bypass advisories
+### Documentation
+
+* **readme:** record pi-lens interoperability and the read-expansion contract (#29)
+* **prompts:** note that served rows may cover an expanded window without naming a provider (#29)
+* **readme:** name the read-expansion workarounds and the deferred format interaction (#30)
+
+### Tests
+
+* **edit:** pin the payload wire shape against pi-lens' third-party shape adapters (#31)
+* **lens:** pin the mutation-bridge entry shape, the drop accounting and the write-only notification invariant (#33)
+
+### Code Refactoring
+
+* **identity:** rename tombstone vocabulary to blockedHashes, cause contract to blocked-hash (#18)
+* **identity:** retire the unused blocked-hash library-seam signal (no live callers), keeping the allocation guard (#25)
+
 ## [2.3.0] - 2026-09-27
+
+### Features
+
+* **edit-diff:** formalize the single-projection contract with counted span markers (#174)
+
+### Bug Fixes
+
+* verify preview against the session that served the anchors (#168)
+* **edit-diff:** render small middle gaps whole, keep anchors aligned (#172)
+* **edit-diff:** render ctx-0 middle gaps marker-only with correct skip (#175)
+
+### Miscellaneous Chores
+
+* **scaffold:** refresh the git contract to the current generation (#167)
 
 ## [2.2.0](https://github.com/Rianico/pi-better-edit/compare/v2.1.0...v2.2.0) (2026-09-22)
 
