@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.6.0] - 2026-10-03
+
 ### Features
 
 * **edit:** flat wire item replaces the op-bearing shape. `replace_with`, the positional tuple form, and the legacy item keys are removed: sends using them now refuse with `unknown or unsupported fields` naming the replacement -- change `replace_with` payloads to `text` (or `text_ref` with `mode`), tuples to named-key items, and legacy keys to `anchor_from`/`anchor_to`. `file_path` remains accepted as a deprecated alias (warns, maps to `path`) and will be removed in a future version. (#39)
