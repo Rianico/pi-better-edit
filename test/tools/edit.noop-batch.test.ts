@@ -35,10 +35,10 @@ describe("edit noop-loop guard in multi-item calls", () => {
         const result = await editTool.execute(
           `e${round + 1}`,
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [anchor, anchor, replacement],
-              [hashes[1]!, hashes[1]!, "bbb"],
+              { anchor_from: anchor, anchor_to: anchor, text: replacement },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" },
             ],
           },
           undefined,
@@ -53,10 +53,10 @@ describe("edit noop-loop guard in multi-item calls", () => {
         .execute(
           "e3",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [anchor, anchor, replacement],
-              [hashes[1]!, hashes[1]!, "bbb"],
+              { anchor_from: anchor, anchor_to: anchor, text: replacement },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" },
             ],
           },
           undefined,
@@ -84,10 +84,10 @@ describe("edit noop-loop guard in multi-item calls", () => {
       await doRead(ctx, readTool, "sample.ts");
 
       const payload = {
-        path: "sample.ts",
+        file: "sample.ts",
         edits: [
-          [hashes[0]!, hashes[0]!, "aaa"],
-          [hashes[1]!, hashes[1]!, "bbb"],
+          { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "aaa" },
+          { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" },
         ],
       };
 
@@ -115,7 +115,10 @@ describe("edit noop-loop guard in multi-item calls", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", path);
       await doRead(ctx, readTool, "sample.ts");
 
-      const payload = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] };
+      const payload = {
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+      };
 
       const first = await editTool.execute("e1", payload, undefined, undefined, ctx);
       expect(first.details.metrics.classification).toBe("noop");
@@ -144,10 +147,10 @@ describe("edit noop-loop guard in multi-item calls", () => {
       await doRead(ctx, readTool, "sample.ts");
 
       const payload = {
-        path: "sample.ts",
+        file: "sample.ts",
         edits: [
-          [hashes[0]!, hashes[0]!, "aaa"],
-          [hashes[1]!, hashes[1]!, "bbb"],
+          { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "aaa" },
+          { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" },
         ],
       };
       await editTool.execute("e1", payload, undefined, undefined, ctx);
@@ -157,7 +160,10 @@ describe("edit noop-loop guard in multi-item calls", () => {
       // WHY: a partial clear would leave one slot armed and reject below.
       await editTool.execute(
         "e3",
-        { path: "sample.ts", edits: [[hashes[2]!, hashes[2]!, "CCC"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "CCC" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -165,10 +171,10 @@ describe("edit noop-loop guard in multi-item calls", () => {
       await doRead(ctx, readTool, "sample.ts");
       const fresh = await lineHashes("aaa\nbbb\nCCC\nddd\n", path);
       const resubmitted = {
-        path: "sample.ts",
+        file: "sample.ts",
         edits: [
-          [fresh[0]!, fresh[0]!, "aaa"],
-          [fresh[1]!, fresh[1]!, "bbb"],
+          { anchor_from: fresh[0]!, anchor_to: fresh[0]!, text: "aaa" },
+          { anchor_from: fresh[1]!, anchor_to: fresh[1]!, text: "bbb" },
         ],
       };
 

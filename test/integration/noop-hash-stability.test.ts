@@ -18,7 +18,10 @@ describe("noop edit hash stability", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashBefore, hashBefore, "bbb"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashBefore, anchor_to: hashBefore, text: "bbb" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -44,7 +47,10 @@ describe("noop edit hash stability", () => {
       for (let i = 0; i < 2; i++) {
         await editTool.execute(
           `e${i}`,
-          { path: "sample.ts", edits: [[hashBefore, hashBefore, "bbb"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashBefore, anchor_to: hashBefore, text: "bbb" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -70,7 +76,7 @@ describe("noop edit hash stability", () => {
 
       const noop = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[bbbHash, bbbHash, "bbb"]] },
+        { file: "sample.ts", edits: [{ anchor_from: bbbHash, anchor_to: bbbHash, text: "bbb" }] },
         undefined,
         undefined,
         ctx,
@@ -79,7 +85,7 @@ describe("noop edit hash stability", () => {
 
       const result = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[dddHash, dddHash, "DDD"]] },
+        { file: "sample.ts", edits: [{ anchor_from: dddHash, anchor_to: dddHash, text: "DDD" }] },
         undefined,
         undefined,
         ctx,
@@ -105,7 +111,10 @@ describe("noop edit hash stability", () => {
 
       const noop = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashBefore, hashBefore, "bbb"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashBefore, anchor_to: hashBefore, text: "bbb" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -114,7 +123,10 @@ describe("noop edit hash stability", () => {
 
       const followUp = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[hashBefore, hashBefore, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashBefore, anchor_to: hashBefore, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,

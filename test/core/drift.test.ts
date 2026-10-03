@@ -460,3 +460,115 @@ describe("drift-notice episode identity (CAND-9, ADR-0023)", () => {
     expect(second!.allAlreadyReported).toBe(true);
   });
 });
+
+describe("computeDrift — zero-width insertion intervals (ticket-01 hardening: deltaBefore arithmetic)", () => {
+  // WHY: a zero-width insertion interval (`startLine > endLine`) edits no served line, so it can
+  // WHY: never be matched by `isInIntervals`; its ONLY effect is positional — every served line at
+  // WHY: or after the insertion point shifts by the inserted line count. These cases pin that
+  // WHY: arithmetic directly: no served hash survives into the result, so the drifted position
+  // WHY: comes from the floor `servedIndex + deltaBefore(index)` — the nearest-survivor tiers
+  // WHY: cannot rescue an off-by-one here.
+  const zeroWidth = (startLine: number, endLine: number, delta: number) => ({
+    startLine,
+    endLine,
+    startHash: "zs0",
+    endHash: "ze0",
+    delta,
+  });
+
+  it("shifts served lines at/after the insertion point by the inserted count, lines before unmoved", () => {
+    // Insertion after 1-based line 2 → zero-width {startLine: 3, endLine: 2} with 2 lines added.
+    // 0-based served lines 0,1 keep their positions; lines 2,3 shift +2 → 4,5.
+    const result = computeDrift({
+      served: ["s0", "s1", "s2", "s3"],
+      resultHashes: ["r0", "r1", "r2", "r3", "r4", "r5"],
+      resultLines: ["L0", "L1", "L2", "L3", "L4", "L5"],
+      intervals: [zeroWidth(3, 2, 2)],
+      reported: new Set(),
+    });
+    expect(result).toBeDefined();
+    expect(result!.total).toBe(4);
+    expect(result!.rows).toEqual([
+      { position: 0, hash: "r0", content: "L0", drifted: true },
+      { position: 1, hash: "r1", content: "L1", drifted: true },
+      { position: 2, hash: "r2", content: "L2", drifted: false },
+      { position: 3, hash: "r3", content: "L3", drifted: false },
+      { position: 4, hash: "r4", content: "L4", drifted: true },
+      { position: 5, hash: "r5", content: "L5", drifted: true },
+    ]);
+  });
+
+  it("an insertion at the file start shifts every served line", () => {
+    // Zero-width {startLine: 1, endLine: 0}: the resolved interval is {from: 0, to: -1}, so
+    // `to < p` holds for every 0-based served position — all three lines shift +1.
+    const result = computeDrift({
+      served: ["s0", "s1", "s2"],
+      resultHashes: ["r0", "r1", "r2", "r3"],
+      resultLines: ["L0", "L1", "L2", "L3"],
+      intervals: [zeroWidth(1, 0, 1)],
+      reported: new Set(),
+    });
+    expect(result).toBeDefined();
+    expect(result!.total).toBe(3);
+    expect(result!.rows).toEqual([
+      { position: 0, hash: "r0", content: "L0", drifted: false },
+      { position: 1, hash: "r1", content: "L1", drifted: true },
+      { position: 2, hash: "r2", content: "L2", drifted: true },
+      { position: 3, hash: "r3", content: "L3", drifted: true },
+    ]);
+  });
+
+  it("an insertion after the last served line shifts nothing", () => {
+    // Zero-width {startLine: 4, endLine: 3} on a 3-line served mirror: `to = 2`, no served
+    // position p satisfies `2 < p` — every drifted line keeps its position.
+    const result = computeDrift({
+      served: ["s0", "s1", "s2"],
+      resultHashes: ["r0", "r1", "r2", "r3", "r4"],
+      resultLines: ["L0", "L1", "L2", "L3", "L4"],
+      intervals: [zeroWidth(4, 3, 2)],
+      reported: new Set(),
+    });
+    expect(result).toBeDefined();
+    expect(result!.total).toBe(3);
+    expect(result!.rows).toEqual([
+      { position: 0, hash: "r0", content: "L0", drifted: true },
+      { position: 1, hash: "r1", content: "L1", drifted: true },
+      { position: 2, hash: "r2", content: "L2", drifted: true },
+      { position: 3, hash: "r3", content: "L3", drifted: false },
+    ]);
+  });
+
+  it("two zero-width insertions stack their deltas for lines past both", () => {
+    // Insertions after 1-based lines 2 and 4 (2 and 1 lines): 0-based served p≥2 shifts +2,
+    // p≥4 shifts +2+1 — the last served line (p=4) lands at 7, proving addition across intervals.
+    const result = computeDrift({
+      served: ["s0", "s1", "s2", "s3", "s4"],
+      resultHashes: ["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7"],
+      resultLines: ["L0", "L1", "L2", "L3", "L4", "L5", "L6", "L7"],
+      intervals: [zeroWidth(3, 2, 2), zeroWidth(5, 4, 1)],
+      reported: new Set(),
+    });
+    expect(result).toBeDefined();
+    expect(result!.total).toBe(5);
+    expect(result!.rows.filter((r) => r.drifted).map((r) => r.position)).toEqual([0, 1, 4, 5, 7]);
+  });
+
+  it("a large delta after the whole mirror moves no position — the shift is conditional, not unconditional", () => {
+    // Zero-width {startLine: 6, endLine: 5} (to = 4): every served position is below the
+    // insertion point, so even a +10-line insertion leaves positions 0,1,2 untouched.
+    const result = computeDrift({
+      served: ["s0", "s1", "s2"],
+      resultHashes: ["r0", "r1", "r2"],
+      resultLines: ["L0", "L1", "L2"],
+      intervals: [zeroWidth(6, 5, 10)],
+      reported: new Set(),
+    });
+    expect(result).toBeDefined();
+    expect(result!.total).toBe(3);
+    expect(result!.rows).toEqual([
+      { position: 0, hash: "r0", content: "L0", drifted: true },
+      { position: 1, hash: "r1", content: "L1", drifted: true },
+      { position: 2, hash: "r2", content: "L2", drifted: true },
+    ]);
+  });
+});

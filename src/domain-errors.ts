@@ -47,6 +47,8 @@ export type DomainErrorCode =
   | "E_NOT_FOUND"
   | "E_UNDO_STALE"
   | "E_UNDO_UNAVAILABLE"
+  | "E_LOSSY_TEXT"
+  | "E_UNDO_REVERT_FAILED"
   | "E_UNKNOWN"
   | "E_LARGE_FILE";
 
@@ -64,7 +66,8 @@ export type DomainWarningCode =
   | "W_REVERSED_ANCHORS"
   | "W_UNICODE_LITERAL"
   | "W_LITERAL_BYPASS"
-  | "W_NOOP";
+  | "W_NOOP"
+  | "W_NOOP_INSERT";
 
 /**
  * SAFETY: one served row — position is 0-based, hash is the 3-char anchor. Canon evidence is not a
@@ -137,6 +140,10 @@ export interface ErrorPayloadMap {
     firstOffendingLine?: number;
   };
   E_UNVERIFIED_RANGE: {
+    // WHY: (remediation-2 item A) the foreign pass-through renders this code with NO rows, which
+    // WHY: needs a file-attributing headline; target-side producers keep passing
+    // WHY: `UNVERIFIED_HEADLINE` and a non-empty `servedBlock`, so their render is byte-identical.
+    headline?: string;
     servedRows: ServedRow[];
     servedBlock: string;
     cause: RangeCause;
@@ -193,6 +200,12 @@ export interface ErrorPayloadMap {
   E_UNDO_UNAVAILABLE: {
     path: string;
   };
+  E_LOSSY_TEXT: {
+    path: string;
+  };
+  E_UNDO_REVERT_FAILED: {
+    path: string;
+  };
   E_UNKNOWN: {
     errorName: string;
     message: string;
@@ -234,7 +247,7 @@ function suspiciousTail(count: number): string {
   if (count < 2) return "";
   return (
     ` Identical refusal submitted ${count}× — the bytes still reproduce a served row.` +
-    ` Omit the copied anchors from \`replace_with\` and retry with the same anchors, or declare intent with mode: "literal".`
+    ` Omit the copied anchors from \`text\` and retry with the same anchors, or declare intent with mode: "literal".`
   );
 }
 
@@ -254,7 +267,7 @@ function suspiciousFormat(payload: ErrorPayloadMap["E_SUSPICIOUS_TEXT"]): string
     `Refused edit to ${payload.path}: replacement line ${payload.line} begins with ` +
     `the exact ${payload.hash}│ anchor served for this session, path, and line ${payload.servedLine}. ` +
     `HASH│ anchors are tool output, not file content. ` +
-    `Omit the copied anchors from \`replace_with\` and retry with the same anchors, or declare intent with mode: "literal". ` +
+    `Omit the copied anchors from \`text\` and retry with the same anchors, or declare intent with mode: "literal". ` +
     `Re-read the file for fresh anchors if needed. Nothing was written. ${submitted}` +
     suspiciousTail(payload.count)
   );
@@ -397,7 +410,17 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     // WHY: the current on-disk range, but a stale served canon is indistinguishable from real disk
     // WHY: drift, so the model must inspect them and decide — never a blind retry with the anchors
     // WHY: that just failed.
-    format: ({ headline, servedBlock }) => `${headline}\n${FRESH_READ_HEADING}\n${servedBlock}`,
+    // WHY: (remediation-2 item A) `servedBlock === ""` means NO rows are in the served set for
+    // WHY: this rejection — render headline only. Every target-side producer passes a non-empty
+    // WHY: block, so their renders stay byte-identical.
+    // WHY: (04b §12.2) an empty headline over an empty block would render a header with no
+    // WHY: information, so the pair is refused AT CONSTRUCTION, not silently defaulted.
+    format: ({ headline, servedBlock }) => {
+      if (servedBlock === "" && headline === "") {
+        throw new TypeError("E_STALE_RANGE: headline must be non-empty when servedBlock is empty");
+      }
+      return servedBlock === "" ? headline : `${headline}\n${FRESH_READ_HEADING}\n${servedBlock}`;
+    },
   },
   E_TARGET_LOST: {
     audience: "MODEL",
@@ -408,7 +431,20 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_UNVERIFIED_RANGE: {
     audience: "MODEL",
-    format: ({ servedBlock }) => `${UNVERIFIED_HEADLINE}\n${FRESH_READ_HEADING}\n${servedBlock}`,
+    // WHY: same served-or-absent rule as `E_STALE_RANGE`: the fresh-read section appears exactly
+    // WHY: when rows are served; an absent-rows rejection renders its headline only.
+    // WHY: (04b §12.2) `headline: ""` passed `??` (which only rejects null/undefined) and admitted
+    // WHY: the render "[MODEL] [E_UNVERIFIED_RANGE] " — header, no information. An absent headline
+    // WHY: takes the non-empty default; an EMPTY one is refused at construction.
+    format: ({ headline, servedBlock }) => {
+      const resolved = headline ?? UNVERIFIED_HEADLINE;
+      if (servedBlock === "" && resolved === "") {
+        throw new TypeError(
+          "E_UNVERIFIED_RANGE: headline must be non-empty when servedBlock is empty",
+        );
+      }
+      return servedBlock === "" ? resolved : `${resolved}\n${FRESH_READ_HEADING}\n${servedBlock}`;
+    },
   },
   E_MALFORMED_ANCHOR: {
     audience: "MODEL",
@@ -421,7 +457,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     format: suspiciousFormat,
     // WHY remedy: the replacement reproduces a served hash echo for this session, path and line — `target`, `hash` and `servedLine` pin the row. See ADR-0021.
     remedy:
-      'Omit the copied anchors from replace_with and retry with the same anchors, or declare intent with mode: "literal".',
+      'Omit the copied anchors from text and retry with the same anchors, or declare intent with mode: "literal".',
   },
   E_BATCH_ABORT: {
     audience: "MODEL",
@@ -490,6 +526,32 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     // WHY remedy: the hash store persist failed with the edit unapplied and the file unchanged, so retrying the edit is safe. See ADR-0021.
     remedy: "Retry the edit.",
   },
+  E_LOSSY_TEXT: {
+    audience: "MODEL",
+    // WHY: (04b-rem P2-3) the admission round-trip guard: anchors are derived from the DECODED
+    // WHY: text, so bytes that do not re-encode identically cannot be line-addressed without
+    // WHY: destruction — the refusal happens before any mutation, and the cause is OBSERVED (the
+    // WHY: decode/encode comparison), never assumed.
+    format: ({ path }) =>
+      `Cannot edit ${path}: its bytes do not round-trip a UTF-8 decode — invalid sequences were ` +
+      `replaced by U+FFFD on read, so a line-addressed rewrite would destroy the original bytes. ` +
+      `Nothing was written.`,
+    // WHY remedy: the failed round-trip pins exactly one safe action — re-encode with a byte-level tool before retrying. See ADR-0021 d4.
+    remedy: "Re-encode the file as valid UTF-8 with a byte-level tool, then retry.",
+  },
+  E_UNDO_REVERT_FAILED: {
+    audience: "MODEL",
+    // WHY: (04b-rem P2-1) a correlated revert defeated mid-window: some members are already at
+    // WHY: their pre bytes, others still at post. Nothing is cleared and nothing is re-attempted
+    // WHY: blindly — the durable revert-intent record describes the state and repair completes it.
+    format: ({ path }) =>
+      `Undo of the cut transaction was interrupted: ${path} could not be restored while other ` +
+      `files of the transaction already were. No undo history was cleared; the files stay in the ` +
+      `half-reverted state the durable repair record describes. Do not re-undo — the next run ` +
+      `repairs the interrupted revert.`,
+    // WHY remedy: a re-undo would fight the pending repair — let the repair complete after the file access failure is fixed. See ADR-0021 d4.
+    remedy: "Fix the file access failure, then let the next run repair the interrupted revert.",
+  },
   E_UNKNOWN: {
     audience: "MODEL",
     format: ({ errorName, message }) =>
@@ -526,6 +588,11 @@ export interface WarningPayloadMap {
     removeTo: string;
     batch: boolean;
     count: number;
+  };
+  W_NOOP_INSERT: {
+    ref: string;
+    removeFrom: string;
+    removeTo: string;
   };
 }
 
@@ -593,6 +660,15 @@ export const WARNING_REGISTRY: {
   W_NOOP: {
     audience: "USER",
     format: noopWarnFormat,
+  },
+  // WHY: (ticket-04 §3.6) an empty `text` with "before"/"after" is a NO-OP, not a rejection: the
+  // WHY: bytes stay unchanged, the item counts as a noop, and the model channel learns why — the
+  // WHY: audience is MODEL because the fix belongs to the next submission, not to the human.
+  W_NOOP_INSERT: {
+    audience: "MODEL",
+    format: ({ ref, removeFrom, removeTo }) =>
+      `empty insertion ${ref} (${removeFrom} → ${removeTo}): "before"/"after" with text "" writes ` +
+      "nothing and the file stayed byte-identical. Provide text or drop the empty item.",
   },
 };
 

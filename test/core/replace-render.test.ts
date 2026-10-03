@@ -31,7 +31,7 @@ describe("getPreviewInput", () => {
     expect(
       getPreviewInput({
         file: null,
-        edits: [["AAA", "BBB", "new"]],
+        edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }],
       }),
     ).toBeNull();
   });
@@ -49,15 +49,15 @@ describe("getPreviewInput", () => {
     const result = getPreviewInput({
       file: "test.txt",
       edits: [
-        ["AAA", "BBB", "new"],
-        ["CCC", "DDD", ""],
+        { anchor_from: "AAA", anchor_to: "BBB", text: "new" },
+        { anchor_from: "CCC", anchor_to: "DDD", text: "" },
       ],
     });
     expect(result).toEqual({
       file: "test.txt",
       edits: [
-        { anchor_from: "AAA", anchor_to: "BBB", replace_with: "new" },
-        { anchor_from: "CCC", anchor_to: "DDD", replace_with: "" },
+        { anchor_from: "AAA", anchor_to: "BBB", text: "new" },
+        { anchor_from: "CCC", anchor_to: "DDD", text: "" },
       ],
     });
   });
@@ -120,7 +120,7 @@ describe("fmtCall", () => {
   it("formats call with file", () => {
     const args = {
       file: "test.txt",
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "new" }],
+      edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }],
     };
     const state = { preview: undefined };
     const result = fmtCall(args, state, false, mockTheme);
@@ -130,7 +130,7 @@ describe("fmtCall", () => {
   it("formats call with error preview", () => {
     const args = {
       file: "test.txt",
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "new" }],
+      edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }],
     };
     const state = { preview: { error: "test error" } };
     const result = fmtCall(args, state, false, mockTheme);
@@ -140,7 +140,7 @@ describe("fmtCall", () => {
   it("formats call with diff preview", () => {
     const args = {
       file: "test.txt",
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "new" }],
+      edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }],
     };
     const state = { preview: { diff: "+added\n-removed" } };
     const result = fmtCall(args, state, false, mockTheme);

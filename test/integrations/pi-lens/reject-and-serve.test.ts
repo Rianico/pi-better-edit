@@ -84,7 +84,10 @@ async function withLensHarness(
 }
 
 /** Read, then drift the file on disk: the pre-mutation identity check rejects with served rows. */
-async function seedDriftRejection(harness: Harness, dir: string): Promise<string[][]> {
+async function seedDriftRejection(
+  harness: Harness,
+  dir: string,
+): Promise<{ anchor_from: string; anchor_to: string; text: string }[]> {
   await writeFile(join(dir, "p.txt"), "alpha\nbeta\ngamma\ndelta\n", "utf-8");
   const read = await harness.readTool.execute(
     "r1",
@@ -95,7 +98,7 @@ async function seedDriftRejection(harness: Harness, dir: string): Promise<string
   );
   const ref = refsOf(getText(read));
   await writeFile(join(dir, "p.txt"), "alpha\nBETA-EXTERNAL\ngamma\ndelta\n", "utf-8");
-  return [[ref("alpha"), ref("delta"), "X"]];
+  return [{ anchor_from: ref("alpha"), anchor_to: ref("delta"), text: "X" }];
 }
 
 afterEach(() => {
@@ -114,7 +117,7 @@ describe("reject-and-serve mirror", () => {
       calls.length = 0;
       const previewTool = createEditTool();
 
-      const preview = await previewTool.preview({ path: "p.txt", edits }, dir, {
+      const preview = await previewTool.preview({ file: "p.txt", edits }, dir, {
         sessionManager: testSessionManager,
       });
       expect("error" in preview).toBe(true);
@@ -123,7 +126,7 @@ describe("reject-and-serve mirror", () => {
 
       // WHY: a preview without the session the anchors were served to fails loud instead of minting
       // WHY: a fresh key whose lease lookups would miss as a misleading E_UNKNOWN_ANCHOR.
-      const sessionless = await previewTool.preview({ path: "p.txt", edits }, dir, {});
+      const sessionless = await previewTool.preview({ file: "p.txt", edits }, dir, {});
       expect(sessionless).toEqual({ error: expect.any(String) });
       expect(notifications).toEqual([]);
       expect(calls).toEqual([]);
@@ -137,7 +140,7 @@ describe("reject-and-serve mirror", () => {
       calls.length = 0;
 
       const rejection = await harness.editTool
-        .execute("e1", { path: "p.txt", edits }, undefined, undefined, harness.ctx)
+        .execute("e1", { file: "p.txt", edits }, undefined, undefined, harness.ctx)
         .catch((error: unknown) => error);
 
       expect((rejection as { code?: unknown }).code).toBe("E_STALE_RANGE");
@@ -172,7 +175,7 @@ describe("reject-and-serve mirror", () => {
       const rejection = await harness.editTool
         .execute(
           "e1",
-          { path: "q.txt", edits: [["ZZZ", "ZZZ", "NEW"]] },
+          { file: "q.txt", edits: [{ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "NEW" }] },
           undefined,
           undefined,
           harness.ctx,

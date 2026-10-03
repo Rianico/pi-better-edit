@@ -147,7 +147,7 @@ describe("applyEdit ambiguous tier", () => {
     expect(editNote).toContain("differs from what was served");
     expect(editNote).toContain("undo_last_edit");
     expect(editNote).toMatch(/anchor_from.*anchor_to/);
-    expect(editNote).toMatch(/replace_with/);
+    expect(editNote).toMatch(/`text`/);
     expect(editNote).not.toMatch(/without the anchor/i);
     const writeNote = buildServedWritePrefixNote({ line: 2, anchor: "Ab3", servedLine: 1 });
     expect(writeNote.startsWith("[MODEL] [W_SERVED_PREFIX_MISMATCH]")).toBe(true);
@@ -170,7 +170,7 @@ describe("applyEdit ambiguous tier", () => {
       expect(note).not.toMatch(/remove the (copied )?anchors?/i);
     }
     expect(editNote).toMatch(/anchor_from/);
-    expect(editNote).toMatch(/replace_with/);
+    expect(editNote).toMatch(/`text`/);
   });
 });
 
@@ -189,7 +189,7 @@ describe("canonical applied-hint remedy stays byte-identical across builders", (
     expect(tailOf(editNote)).toBe(tailOf(neverServed));
     expect(ANCHOR_PREFIX_REMEDY).toBe(
       "If the hash anchor prefix was unintended, `undo_last_edit`, then retry " +
-        "with the same `anchor_from`/`anchor_to` and drop the anchor prefix from `replace_with`.",
+        "with the same `anchor_from`/`anchor_to` and drop the anchor prefix from `text`.",
     );
   });
 });
@@ -205,7 +205,7 @@ describe("edit result content carries the note", () => {
         "e1",
         {
           file: "sample.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: ambiguous }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: ambiguous }],
         } as any,
         undefined,
         undefined,
@@ -232,7 +232,7 @@ describe("edit result content carries the note", () => {
         "e1",
         {
           file: "sample.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "plain" }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "plain" }],
         } as any,
         undefined,
         undefined,

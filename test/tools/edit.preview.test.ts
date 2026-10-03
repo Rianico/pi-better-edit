@@ -24,7 +24,10 @@ describe("compPreview", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         cwd,
         ctx,
       );
@@ -40,7 +43,10 @@ describe("compPreview", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BETA" }],
+        },
         cwd,
         ctx,
       );
@@ -56,7 +62,10 @@ describe("compPreview", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         cwd,
         ctx,
       );
@@ -71,7 +80,10 @@ describe("compPreview", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         cwd,
         ctx,
       );
@@ -86,7 +98,10 @@ describe("compPreview", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         cwd,
         ctx,
       );
@@ -118,7 +133,10 @@ describe("compPreview", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         cwd,
         ctx,
       );
@@ -136,7 +154,10 @@ describe("issue #165 — session-backed preview", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         cwd,
         ctx,
       );
@@ -150,7 +171,10 @@ describe("issue #165 — session-backed preview", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         cwd,
         {
           cwd,
@@ -184,7 +208,7 @@ describe("compPreview — served-state staleness surfacing", () => {
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X" }] },
         cwd,
         ctx,
       );
@@ -217,7 +241,10 @@ describe("compPreview — served-state staleness surfacing", () => {
       const hashes = await lineHashes("alpha\nbeta\ngamma\ndelta\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[0]!, hashes[3]!, "X"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[3]!, text: "X" }],
+        },
         cwd,
         ctx,
       );
@@ -231,7 +258,10 @@ describe("compPreview — served-state staleness surfacing", () => {
       const { ctx } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "X"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "X" }],
+        },
         cwd,
         ctx,
       );
@@ -249,7 +279,10 @@ describe("compPreview — served-state staleness surfacing", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "BBB" }],
+        },
         cwd,
         ctx,
       );
@@ -303,7 +336,10 @@ describe("renderCall preview", () => {
 
       const harness = makeHarness(cwd);
       tool.renderCall(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         harness.theme,
         harness.context,
       );
@@ -327,7 +363,10 @@ describe("renderCall preview", () => {
 
       const harness = makeHarness(cwd);
       tool.renderCall(
-        { path: "sample.ts", edits: [[hashes[0]!, hashes[2]!, "X"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "X" }],
+        },
         harness.theme,
         harness.context,
       );
@@ -383,7 +422,10 @@ describe("renderCall preview", () => {
       vi.useFakeTimers();
       try {
         tool.renderCall(
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+          },
           harness.theme,
           harness.context,
         );
@@ -421,13 +463,19 @@ describe("renderCall preview", () => {
       try {
         const harness = makeHarness(cwd);
         tool.renderCall(
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+          },
           harness.theme,
           harness.context,
         );
         expect(harness.state.preview).toBeUndefined();
         tool.renderCall(
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "CCC"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "CCC" }],
+          },
           harness.theme,
           harness.context,
         );
@@ -452,7 +500,10 @@ describe("compPreview — noop", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+        },
         cwd,
         ctx,
       );

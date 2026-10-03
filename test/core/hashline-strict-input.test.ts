@@ -11,18 +11,18 @@ describe("edit input validation", () => {
     const toolEdit: HTEdit = {
       anchor_from: hashes[0]!,
       anchor_to: hashes[0]!,
-      replace_with: `${hashes[0]!}│FOO`,
+      text: `${hashes[0]!}│FOO`,
     };
     const result = applyEdit(file, resEdit(toolEdit));
     expect(result.content).toBe(`${hashes[0]!}│FOO\nbar`);
     expect(result.warnings ?? []).toEqual([]);
   });
 
-  it("rejects array replace_with before patch-prefix validation", () => {
+  it("rejects array text before patch-prefix validation", () => {
     const toolEdit: HTEdit = {
       anchor_from: "ZZZ",
       anchor_to: "ZZZ",
-      replace_with: ["+ZZZ:foo"],
+      text: ["+ZZZ:foo"],
     } as unknown as HTEdit;
     expect(() => resEdit(toolEdit)).toThrow(
       /must be a string with \\n line separators, not an array/i,
@@ -33,7 +33,7 @@ describe("edit input validation", () => {
     const toolEdit: HTEdit = {
       anchor_from: "ZZZ",
       anchor_to: "ZZZ",
-      replace_with: "-1    foo",
+      text: "-1    foo",
     };
     const resolved = resEdit(toolEdit);
     expect(resolved.content_lines).toEqual(["-1    foo"]);
@@ -43,7 +43,7 @@ describe("edit input validation", () => {
     const toolEdit: HTEdit = {
       anchor_from: "ZZZ",
       anchor_to: "ZZZ",
-      replace_with: "bar",
+      text: "bar",
     };
     const resolved = resEdit(toolEdit);
     expect(resolved.content_lines).toEqual(["bar"]);
@@ -53,7 +53,7 @@ describe("edit input validation", () => {
     const toolEdit: HTEdit = {
       anchor_from: "ZZZ",
       anchor_to: "ZZZ",
-      replace_with: "# keep me",
+      text: "# keep me",
     };
     const resolved = resEdit(toolEdit);
     expect(resolved.content_lines).toEqual(["# keep me"]);
@@ -75,7 +75,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `${betaHash}│### heading\nreal content`,
+        text: `${betaHash}│### heading\nreal content`,
       },
       hashes,
     );
@@ -91,7 +91,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `${gammaHash}│text`,
+        text: `${gammaHash}│text`,
       },
       hashes,
     );
@@ -106,7 +106,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: "ZZZ│one\nZZP│two",
+        text: "ZZZ│one\nZZP│two",
       },
       hashes,
     );
@@ -121,7 +121,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: "ZZZ│one\nreal\nZZP│two",
+        text: "ZZZ│one\nreal\nZZP│two",
       },
       hashes,
     );
@@ -136,7 +136,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `  ${hashes[1]!}│  indented`,
+        text: `  ${hashes[1]!}│  indented`,
       },
       hashes,
     );
@@ -151,7 +151,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: "TS: TypeScript",
+        text: "TS: TypeScript",
       },
       hashes,
     );
@@ -162,10 +162,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
   it("does not false-positive on shorter valid-content prefixes like '#' or '+'", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    const result = applyTool(
-      { anchor_from: anchor, anchor_to: anchor, replace_with: "# heading" },
-      hashes,
-    );
+    const result = applyTool({ anchor_from: anchor, anchor_to: anchor, text: "# heading" }, hashes);
     expect(result.warnings ?? []).toEqual([]);
   });
 
@@ -174,10 +171,7 @@ describe("partial hash prefixes copied into content (issue #24)", () => {
     const anchor = hashes[0]!;
     const betaHash = hashes[1]!;
     const longLine = `${betaHash}│${"y".repeat(500)}`;
-    const result = applyTool(
-      { anchor_from: anchor, anchor_to: anchor, replace_with: longLine },
-      hashes,
-    );
+    const result = applyTool({ anchor_from: anchor, anchor_to: anchor, text: longLine }, hashes);
     expect(result.content).toBe(`${longLine}\nbeta\ngamma\ndelta`);
     expect(result.warnings ?? []).toEqual([]);
   });
@@ -197,7 +191,7 @@ describe("diff preview rows copied into content", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `+${hashes[1]!}│### heading\nreal content`,
+        text: `+${hashes[1]!}│### heading\nreal content`,
       },
       hashes,
     );
@@ -212,7 +206,7 @@ describe("diff preview rows copied into content", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `-${hashes[1]!}│one\n-   │two`,
+        text: `-${hashes[1]!}│one\n-   │two`,
       },
       hashes,
     );
@@ -223,10 +217,7 @@ describe("diff preview rows copied into content", () => {
   it("leaves numbered deletion rows as literal content without warning", async () => {
     const hashes = await lineHashes(file, home.testPath);
     const anchor = hashes[0]!;
-    const result = applyTool(
-      { anchor_from: anchor, anchor_to: anchor, replace_with: "-1    foo" },
-      hashes,
-    );
+    const result = applyTool({ anchor_from: anchor, anchor_to: anchor, text: "-1    foo" }, hashes);
     expect(result.content).toBe("-1    foo\nbeta\ngamma\ndelta");
     expect(result.warnings ?? []).toEqual([]);
   });
@@ -238,7 +229,7 @@ describe("diff preview rows copied into content", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: "+added\n-removed",
+        text: "+added\n-removed",
       },
       hashes,
     );
@@ -261,7 +252,7 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `+ ${hashes[1]!}│one`,
+        text: `+ ${hashes[1]!}│one`,
       },
       hashes,
     );
@@ -276,7 +267,7 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `- ${hashes[1]!}│one`,
+        text: `- ${hashes[1]!}│one`,
       },
       hashes,
     );
@@ -291,7 +282,7 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: "+ abc│def\n- xyz│uvw",
+        text: "+ abc│def\n- xyz│uvw",
       },
       hashes,
     );
@@ -306,7 +297,7 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `+${hashes[1]!}│one`,
+        text: `+${hashes[1]!}│one`,
       },
       hashes,
     );
@@ -321,7 +312,7 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
       {
         anchor_from: anchor,
         anchor_to: anchor,
-        replace_with: `-${hashes[1]!}│one\n-   │two`,
+        text: `-${hashes[1]!}│one\n-   │two`,
       },
       hashes,
     );
@@ -342,10 +333,7 @@ describe("literal bytes reach disk unchanged (#126)", () => {
     const anchor = hashes[0]!;
     const cases = ["abc│text", "   abc│text", "KEY│value", "- wUp│    pass", "abc|text"];
     for (const literal of cases) {
-      const result = applyTool(
-        { anchor_from: anchor, anchor_to: anchor, replace_with: literal },
-        hashes,
-      );
+      const result = applyTool({ anchor_from: anchor, anchor_to: anchor, text: literal }, hashes);
       expect(result.content).toBe(`${literal}\nbeta\ngamma\ndelta`);
       expect(result.warnings ?? []).toEqual([]);
     }

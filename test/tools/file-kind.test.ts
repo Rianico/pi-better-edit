@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { readFile } from "node:fs/promises";
 import { lineHashes } from "../../src/hashline";
 import {
   withTempFile,
@@ -10,9 +11,12 @@ import {
 const home = useTestHome();
 
 describe("file kind guards in tools", () => {
-  it("edit decodes invalid utf-8 as replacement chars and writes them back as utf-8", async () => {
+  // REMEDIATION P2-3 reverses this file's old witness: a lossy edit that re-encoded U+FFFD over
+  // the original bytes was the defect. The read path keeps disclosing such files; the edit path
+  // now refuses before any mutation.
+  it("edit discloses invalid utf-8 on read but refuses to edit it (bytes do not round-trip)", async () => {
     const bytes = new Uint8Array([0xff, 0x28, 0x0a, 0x69, 0x6e, 0x74, 0x0a]);
-    await withTempBytes("bad-utf.ts", bytes, async ({ cwd }) => {
+    await withTempBytes("bad-utf.ts", bytes, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const readResult = await readTool.execute(
@@ -30,15 +34,17 @@ describe("file kind guards in tools", () => {
         .find((line: string) => line.includes("│int"))!
         .split("│")[0]!;
 
-      const result = await editTool.execute(
-        "e1",
-        { path: "bad-utf.ts", edits: [[intRef, intRef, "long"]] },
-        undefined,
-        undefined,
-        ctx,
-      );
-      expect(result.content[0].text).toContain("Successfully edited");
-      expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
+      await expect(
+        editTool.execute(
+          "e1",
+          { file: "bad-utf.ts", edits: [{ anchor_from: intRef, anchor_to: intRef, text: "long" }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/E_LOSSY_TEXT/);
+      const rawAfter = await readFile(path);
+      expect(rawAfter.equals(Buffer.from(bytes))).toBe(true);
     });
   });
 
@@ -53,7 +59,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "image.png", edits: [["AAA", "BBB", "x"]] },
+          { file: "image.png", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -70,7 +76,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "utf16.txt", edits: [["AAA", "BBB", "x"]] },
+          { file: "utf16.txt", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -87,7 +93,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "mydir", edits: [["AAA", "BBB", "x"]] },
+          { file: "mydir", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -105,7 +111,10 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "empty.txt", edits: [[hashes[0]!, hashes[0]!, ""]] },
+          {
+            file: "empty.txt",
+            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "" }],
+          },
           undefined,
           undefined,
           ctx,

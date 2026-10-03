@@ -82,6 +82,7 @@ function resolvedAt(edit: HEdit, fileHashes: string[], fromLine: number, toLine:
       { line: fromLine, hash: fileHashes[fromLine - 1]!, hashMatched: true },
       { line: toLine, hash: fileHashes[toLine - 1]!, hashMatched: true },
     ],
+    ...(edit.placement !== undefined ? { placement: edit.placement } : {}),
   };
 }
 

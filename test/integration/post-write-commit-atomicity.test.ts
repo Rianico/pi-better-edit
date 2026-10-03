@@ -98,8 +98,8 @@ describe("CAND-3 unified post-write commit transaction", () => {
         const res = await editTool.execute(
           "e1",
           {
-            path: "cand3_edit_mirror_fail.txt",
-            edits: [[bravoHash, bravoHash, "bravo edited"]],
+            file: "cand3_edit_mirror_fail.txt",
+            edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
           },
           undefined,
           undefined,
@@ -147,8 +147,8 @@ describe("CAND-3 unified post-write commit transaction", () => {
         const res = await editTool.execute(
           "e1",
           {
-            path: "cand3_edit_lease_fail.txt",
-            edits: [[bravoHash, bravoHash, "bravo edited"]],
+            file: "cand3_edit_lease_fail.txt",
+            edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
           },
           undefined,
           undefined,
@@ -182,7 +182,10 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const bravoHash = extractHash(getText(r1).split("\n")[1]!);
       await editTool.execute(
         "e1",
-        { path: "cand3_undo_mirror_fail.txt", edits: [[bravoHash, bravoHash, "bravo edited"]] },
+        {
+          file: "cand3_undo_mirror_fail.txt",
+          edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -251,7 +254,10 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const bravoHash = extractHash(getText(r1).split("\n")[1]!);
       await editTool.execute(
         "e1",
-        { path: "cand3_undo_ordering.txt", edits: [[bravoHash, bravoHash, "bravo edited"]] },
+        {
+          file: "cand3_undo_ordering.txt",
+          edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -299,7 +305,10 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const bravoHash = extractHash(getText(r1).split("\n")[1]!);
       await editTool.execute(
         "e1",
-        { path: "cand3_undo_text.txt", edits: [[bravoHash, bravoHash, "bravo edited"]] },
+        {
+          file: "cand3_undo_text.txt",
+          edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -344,7 +353,10 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const bravoHash = extractHash(getText(r1).split("\n")[1]!);
       await editTool.execute(
         "e1",
-        { path: "cand3_undo_success.txt", edits: [[bravoHash, bravoHash, "bravo edited"]] },
+        {
+          file: "cand3_undo_success.txt",
+          edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
+        },
         undefined,
         undefined,
         ctx,

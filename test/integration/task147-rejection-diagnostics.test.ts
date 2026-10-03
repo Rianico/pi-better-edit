@@ -23,7 +23,7 @@ describe("task-147 rejection diagnostics", () => {
     const lines = ["alpha", "beta"];
     const hashes = _lineHashesPure(lines.join("\n"));
     const snapshot = { fileHashes: hashes, fileLines: lines, filePath: "sample.ts" };
-    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "ZZZ", replace_with: "x" });
+    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "x" });
     const { mismatches } = valEdit(edit, snapshot, undefined);
     const { message } = fmtMismatchWithServes(mismatches, snapshot);
     expect(message).toContain("1 stale anchor in sample.ts");
@@ -40,7 +40,7 @@ describe("task-147 rejection diagnostics", () => {
     let caught: Error | undefined;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "AAA", replace_with: "x" }),
+        edit: resEdit({ anchor_from: "AAA", anchor_to: "AAA", text: "x" }),
         snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"], filePath: "sample.ts" },
         served: [],
         source: emptySource,
@@ -66,10 +66,10 @@ describe("task-147 rejection diagnostics", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              [hashes[0]!, hashes[0]!, "ALPHA"],
-              [hashes[1]!, hashes[2]!, "BETA\ngamma"],
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "BETA\ngamma" },
             ],
           },
           undefined,
@@ -131,7 +131,10 @@ describe("task-147 rejection diagnostics", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
-      const payload = { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] };
+      const payload = {
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+      };
       await editTool.execute("e1", payload, undefined, undefined, ctx);
       await editTool.execute("e2", payload, undefined, undefined, ctx);
       const err = (await editTool
@@ -150,7 +153,10 @@ describe("task-147 rejection diagnostics", () => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,

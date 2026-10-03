@@ -13,7 +13,7 @@ The tool's per-file, per-line record of the hash last delivered to the model for
 _Avoid_: expectation, last read, snapshot
 
 **model–tool boundary**:
-The separation of responsibilities: the tool owns verification of what the model submits; the model owns intent. The tool never relies on the model to supply verification data or to perform pre-edit rituals (re-reading) to keep its own checks honest, and never silently rewrites `replace_with` to "fix" the model's intent (e.g. stripping lines that duplicate outside the range). `range = hash_bounds, replacement = replace_with` is pure — no surprise rewrite.
+The separation of responsibilities: the tool owns verification of what the model submits; the model owns intent. The tool never relies on the model to supply verification data or to perform pre-edit rituals (re-reading) to keep its own checks honest, and never silently rewrites `text` to "fix" the model's intent (e.g. stripping lines that duplicate outside the range). `range = hash_bounds, replacement = text` is pure — no surprise rewrite.
 _Avoid_: —
 
 **anchor philosophy**:
@@ -123,8 +123,8 @@ The principle that a tool's name encodes the model's intent — `read` (hashed, 
 _Avoid_: —
 
 **payload contract**:
-The model-facing JSON shape used to state one or more file edits in a single `edit` call: `{ "file": …, "edits": [{ "anchor_from": …, "anchor_to": …, "replace_with": … }, …] }`. The file is hoisted to the payload root (see file), and the `edits` array expresses arity — length 1 is a single edit, longer is a batched edit applied atomically to one file. There is no separate batch tool.
-_Avoid_: patch language, command language
+The model-facing JSON shape used to state one or more file edits in a single `edit` call: `{ "file": …, "edits": [{ "anchor_from": …, "anchor_to": …, "text" | "text_ref" [, "at"] }, …] }`. Items are flat with no discriminator: exactly one payload per item — `text` (by value) XOR `text_ref` (a `served span` taken by reference, `mode: "copy" | "cut"` required) — and the optional `at` is placement only, defaulting to `"in-place"` when omitted. The file is hoisted to the payload root (see file), and the `edits` array expresses arity — length 1 is a single edit, longer is a batched edit applied atomically to one file. There is no separate batch tool.
+_Avoid_: patch language, command language, operation tag (the payload's presence states the intent; no tag field exists)
 
 **edits**:
 The payload's array of edit items; its length is the call's arity. The tool name `edit` covers single and batched edits — intent is expressed by arity, not by a separate tool.
@@ -135,16 +135,20 @@ A pair of boundary anchors (`anchor_from`, `anchor_to`) identifying the first an
 _Avoid_: hunk, region
 
 **separator**:
-The `│` character dividing a served row into `HASH│content`. The model copies only the 3 chars before it into `anchor_from`/`anchor_to` and never emits it — in `replace_with`, in anchors, or anywhere in the call — except under a `literal declaration`, which asserts the bytes are content.
+The `│` character dividing a served row into `HASH│content`. The model copies only the 3 chars before it into `anchor_from`/`anchor_to` and never emits it — in `text`, in anchors, or anywhere in the call — except under a `literal declaration`, which asserts the bytes are content.
 _Avoid_: pipe, delimiter
 
 **file**:
-The top-level payload field naming the text file to edit — a non-empty string, never a directory. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file. A legacy `null` file is still folded in code but rejected fail-closed with `[E_BAD_PAYLOAD]`.
+The top-level payload field naming the text file to edit — a non-empty string, never a directory. It sits above the `edits` array rather than inside each item, so every edit in one call targets the same file. A missing, `null`, empty, or wrapper-only `file` is refused fail-closed at admission with `[E_BAD_PAYLOAD]` naming the field.
 _Avoid_: path, optional path
 
 **edit item**:
-A named object `{ "anchor_from": …, "anchor_to": …, "replace_with": … }` — one entry inside the payload's `edits` array, the model-facing unit of mutation. Named fields (not positional tuples) so every provider schema accepts them. The file is not part of the item; it is hoisted to the payload root.
-_Avoid_: patch language, tuple
+A named, flat object `{ "anchor_from": …, "anchor_to": …, "text" | "text_ref" [, "at"] }` — one entry inside the payload's `edits` array, the model-facing unit of mutation. Named fields (not positional tuples) so every provider schema accepts them; exactly one payload per item (`text` XOR `text_ref`, both or neither refused). `at` is placement relative to the resolved range — `"in-place"` (default when omitted), `"before"`, `"after"` — and placement is decoupled from payload semantics: the payload's *presence* carries the meaning, so no tag field is needed. The file is not part of the item; it is hoisted to the payload root.
+_Avoid_: patch language, tuple, move (retired fused verb for retiring a referenced span — the current word is `cut`)
+
+**DesiredContent** (internal):
+The payload union built at the single admission boundary (`normReq`) from each validated wire item — the wire never names it. Arms: `literal` (the `text` content), `reference` (carrying `span` and `mode: "copy" | "cut"`), `empty` (the deletion the wire folds from `text: ""`); the engine switches over it exhaustively (`assertNever`), so a new arm fails `pnpm run typecheck` until handled.
+_Avoid_: DesiredText (retired name), hand-written / span reference / none (retired arm words), payload enum (it is a union, not a closed tag)
 
 **served hash echo**:
 A candidate line that begins with the exact served anchor and reproduces the served content that anchor was served with, at any position (position-agnostic, content-matched) — tool output mistaken for file content. One such row suffices. Detection is evidence-only — the tool never gates on the shape of a line. Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
@@ -155,15 +159,15 @@ The caller's explicit assertion, via `mode: "literal"`, that bytes reproducing s
 _Avoid_: force, override, bypass
 
 **E_SUSPICIOUS_TEXT**:
-Refusal that `replace_with` (for `edit`) copied a `served hash echo` — `[E_SUSPICIOUS_TEXT] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. Evidence-only: it fires only when `replace_with` reproduces a row actually served for this session, path, and line, never for the shape of a line — a `HASH│`-shaped line whose anchor was never served is written verbatim. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Omit the copied anchors from `replace_with` and retry with the same anchors, or reassert under a `literal declaration`, the sole escape. Nothing was written. Deny, not strip — fail-loud, compensable.
+Refusal that `text` (for `edit`) copied a `served hash echo` — `[E_SUSPICIOUS_TEXT] Refused write to ${path}: line ${n} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}` or `Refused edit to ${path}: replacement line ${k} begins with the exact ${hash}│ anchor served for this session, path, and line ${servedLine}`. Evidence-only: it fires only when `text` reproduces a row actually served for this session, path, and line, never for the shape of a line — a `HASH│`-shaped line whose anchor was never served is written verbatim. The refusal names the reproduced row's real coordinate, states nothing was written, and carries the literal fragment (`mode: "literal"`) that escapes it. Omit the copied anchors from `text` and retry with the same anchors, or reassert under a `literal declaration`, the sole escape. Nothing was written. Deny, not strip — fail-loud, compensable.
 _Avoid_: E_HASH_ECHO (ambiguous), E_SERVED_ECHO (retired name; the refusal is E_SUSPICIOUS_TEXT, see ADR-0019)
 
 **boundary duplication** (historical — removed):
-Former auto-fix that silently stripped replacement lines duplicating lines outside the range (`trailingDups`/`leadingDups` with byte `===`, and `firstNewAfterDups`/`lastNewBeforeDups` with `canon()`+`sectionIsUnique`). Removed as a fix: the tool is now pure `range = hash_bounds, replacement = replace_with`. A true duplicate stays loud in the post-edit diff/drift signal for the model to fix next turn; silent removal is irreversible (brace-balance loss). No new error code — the duplicate is preserved verbatim.
+Former auto-fix that silently stripped replacement lines duplicating lines outside the range (`trailingDups`/`leadingDups` with byte `===`, and `firstNewAfterDups`/`lastNewBeforeDups` with `canon()`+`sectionIsUnique`). Removed as a fix: the tool is now pure `range = hash_bounds, replacement = text`. A true duplicate stays loud in the post-edit diff/drift signal for the model to fix next turn; silent removal is irreversible (brace-balance loss). No new error code — the duplicate is preserved verbatim.
 _Avoid_: dedup, autofix, trimming
 
 **pure edit**:
-The invariant that an edit is exactly the resolved range replaced by the exact `replace_with` with no boundary-dedup rewrite. Verified by `valEdit → verifyServed → resToSpan` with no intermediate splice.
+The invariant that an edit is exactly the resolved range replaced by the exact `text` payload with no boundary-dedup rewrite. Verified by `valEdit → verifyServed → resToSpan` with no intermediate splice.
 _Avoid_: smart edit, autocorrection
 
 **blocked hashes**:
@@ -199,7 +203,7 @@ The unexpected-error envelope: a throw that is not a `DomainError` (an invariant
 _Avoid_: E_UNSPECIFIED (unclaimed code)
 
 **applied warning** (`W_*`):
-The applied-path diagnostic tier: a `[W_*]` line reports a mutation that was applied, carrying the audience that owns it — `[MODEL]` lines are informational (the bytes were written, so no retry is needed) and `[USER]` lines render dimmed for the human. An `[E_*]` line reports a rejection; an applied mutation never emits one. The six codes are `W_NEVER_SERVED_SHAPE` and `W_SERVED_PREFIX_MISMATCH` (`MODEL`), plus `W_REVERSED_ANCHORS`, `W_UNICODE_LITERAL`, `W_LITERAL_BYPASS`, and `W_NOOP` (`USER`).
+The applied-path diagnostic tier: a `[W_*]` line reports a mutation that was applied, carrying the audience that owns it — `[MODEL]` lines are informational (the bytes were written, so no retry is needed) and `[USER]` lines render dimmed for the human. An `[E_*]` line reports a rejection; an applied mutation never emits one. The seven codes are `W_NEVER_SERVED_SHAPE`, `W_SERVED_PREFIX_MISMATCH`, and `W_NOOP_INSERT` (`MODEL`), plus `W_REVERSED_ANCHORS`, `W_UNICODE_LITERAL`, `W_LITERAL_BYPASS`, and `W_NOOP` (`USER`).
 _Avoid_: E-tier code on a success; No action is required (retired sentinel, redundant with the tier)
 
 **reversed anchors**:

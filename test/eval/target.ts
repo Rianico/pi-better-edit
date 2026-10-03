@@ -14,30 +14,13 @@ export async function resolveTarget(): Promise<EvalTarget> {
       import("../../src/hashline"),
       import("../../package.json"),
     ]);
+    // WHY: (ticket-04 §3) the battery speaks the wire directly — the local target IS the current
+    // WHY: contract, so the legacy folding adapter is gone: no adaptEditParams.
     return {
       version: `local (${version})`,
       register,
       lineHashes,
       toolNames: { read: "read", edit: "edit", undo: "undo_last_edit" },
-      adaptEditParams: (name: string, params: any) => {
-        if (name !== "edit" || !params || typeof params !== "object") return params;
-        if (Array.isArray(params.edits)) {
-          return {
-            file: params.file ?? params.path,
-            edits: params.edits,
-            ...(params.mode ? { mode: params.mode } : {}),
-          };
-        }
-        const file = params.file ?? params.path;
-        const anchor_from = params.anchor_from ?? params.remove_from;
-        const anchor_to = params.anchor_to ?? params.remove_to;
-        const replace_with = params.replace_with ?? params.replacement_text;
-        return {
-          file,
-          edits: [{ anchor_from, anchor_to, replace_with }],
-          ...(params.mode ? { mode: params.mode } : {}),
-        };
-      },
     };
   }
   if (target === "package") {
@@ -51,23 +34,28 @@ export async function resolveTarget(): Promise<EvalTarget> {
       register,
       lineHashes,
       toolNames: { read: "read", edit: "replace", undo: "undo_last_replace" },
+      // WHY: the published comparator tool still speaks its own legacy wire; the battery's
+      // WHY: new-wire items are TRANSLATED (not folded) into that shape for comparison only.
       adaptEditParams: (name: string, params: any) => {
         if (name !== "replace" || !params || typeof params !== "object") return params;
-        const file = params.path ?? params.file;
-        let from = params.remove_from ?? params.anchor_from;
-        let to = params.remove_to ?? params.anchor_to;
-        let text = params.replacement_text ?? params.replace_with;
-        if (Array.isArray(params.edits) && params.edits.length === 1) {
+        const file = params.file;
+        if (!Array.isArray(params.edits)) return params;
+        if (params.edits.length === 1) {
           const item = params.edits[0];
-          from = item.remove_from ?? item.anchor_from;
-          to = item.remove_to ?? item.anchor_to;
-          text = item.replacement_text ?? item.replace_with;
+          return {
+            path: file,
+            remove_from: item.anchor_from,
+            remove_to: item.anchor_to,
+            replacement_text: item.text,
+          };
         }
         return {
           path: file,
-          remove_from: from,
-          remove_to: to,
-          replacement_text: text,
+          edits: params.edits.map((item: any) => ({
+            remove_from: item.anchor_from,
+            remove_to: item.anchor_to,
+            replacement_text: item.text,
+          })),
         };
       },
     };

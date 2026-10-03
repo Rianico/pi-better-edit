@@ -14,6 +14,10 @@ Single-context — one `CONTEXT.md` plus `docs/adr/` at the repo root. See `docs
 
 The architecture-revision spec lives at `docs/spec/content-addressed-line-identity-mvcc.md`.
 
+### Refining tool prompts
+
+The method for changing a tool's description, snippet or guidelines — map the surfaces, map the pins, probe behaviourally, measure every ambiguity, review, ticket, verify the served text — and the principles behind it: see `docs/agents/refining-tool-prompts.md`.
+
 ### Contribution
 
 Conventional commits & changelog: see CONTRIBUTING.md

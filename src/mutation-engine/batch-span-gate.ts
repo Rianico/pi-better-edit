@@ -129,12 +129,16 @@ export interface BaselineSpanContext {
  * the batch aborts with that same diagnostic (`[E_STALE_ANCHOR]`, `[E_STALE_RANGE]`) instead of
  * silently dropping the span (a dropped span blinds the overlap gate for every other item in the
  * call).
+ *
+ * A span-ref MOVE contributes a second baseline span — its retired source — because the source lines
+ * are mutated state the overlap gate must see (invariant 5). A copy's source is read, not mutated,
+ * so it adds no span.
  */
-async function resolveBaselineSpan(
+async function resolveBaselineSpans(
   edit: HEdit,
   index: number,
   ctx: BaselineSpanContext,
-): Promise<BaselineSpan> {
+): Promise<BaselineSpan[]> {
   const fileLines = splitLines(ctx.originalNormalized);
   const fileHashes = ctx.originalHashes;
   // WHY: the span gate aggregates per-item rejections in `assertBatchSpansDisjoint`, so this seam
@@ -154,6 +158,11 @@ async function resolveBaselineSpan(
     }
     throw error;
   };
+  const spanOf = (leased: LeasedEditResolution): BaselineSpan => {
+    const from = leased.resolved.hash_bounds[0].line;
+    const to = leased.resolved.hash_bounds[1].line;
+    return { index, startLine: Math.min(from, to), endLine: Math.max(from, to) };
+  };
   // WHY: follow-up — this pre-heal is dead since the lease seam heals a reversed pair
   // WHY: internally (`resolveLeasedEdit` swaps the resolved lines and narrates
   // WHY: `[W_REVERSED_ANCHORS]`), and the measured span below is order-proof via
@@ -171,9 +180,23 @@ async function resolveBaselineSpan(
   } catch (error) {
     return abort(error);
   }
-  const from = leased.resolved.hash_bounds[0].line;
-  const to = leased.resolved.hash_bounds[1].line;
-  return { index, startLine: Math.min(from, to), endLine: Math.max(from, to) };
+  const spans = [spanOf(leased)];
+  if (edit.source?.retire) {
+    const sourceEdit: HEdit = { content_lines: [], hash_bounds: edit.source.bounds };
+    let leasedSource: LeasedEditResolution;
+    try {
+      leasedSource = resolveLeasedEdit({
+        edit: sourceEdit,
+        snapshot: { fileHashes, fileLines, filePath: ctx.path },
+        served: ctx.served,
+        source: ctx.identity,
+      });
+    } catch (error) {
+      return abort(error);
+    }
+    spans.push(spanOf(leasedSource));
+  }
+  return spans;
 }
 
 /**
@@ -190,13 +213,13 @@ export async function assertBatchSpansDisjoint(
   // WHY: span validation aggregates instead of failing fast — every item resolves against the same
   // WHY: pre-batch snapshot through a pure seam, so one failing edit cannot mask another and the
   // WHY: model fixes all of them in one resubmission. Each failure's reject-and-serve rows are
-  // WHY: already recorded inside `resolveBaselineSpan`; a non-domain throw is unexpected and aborts
+  // WHY: already recorded inside `resolveBaselineSpans`; a non-domain throw is unexpected and aborts
   // WHY: immediately. Atomicity is untouched: the gate runs before the first mutation, so an
   // WHY: aggregated rejection still writes zero bytes.
   const failures: { error: DomainError; index: number }[] = [];
   for (let index = 0; index < edits.length; index++) {
     try {
-      spans.push(await resolveBaselineSpan(edits[index]!, index, ctx));
+      spans.push(...(await resolveBaselineSpans(edits[index]!, index, ctx)));
     } catch (error) {
       if (!(error instanceof DomainError)) throw error;
       failures.push({ error, index });
@@ -215,6 +238,12 @@ export async function assertBatchSpansDisjoint(
     for (let j = i + 1; j < spans.length; j++) {
       const a = spans[i]!;
       const b = spans[j]!;
+      // WHY: a move's target and its own retired source are one item: their overlap is that item's
+      // WHY: question, never a batch conflict. `applyEdit` rejects it with `E_BAD_PAYLOAD` under the
+      // WHY: placement-aware rule — for a replacement the spans must not intersect, for an
+      // WHY: insertion (`before`/`after`) only a point strictly inside the retired lines overlaps;
+      // WHY: the four touching spellings stay legal as honest noops (ticket-02b P1-B).
+      if (a.index === b.index) continue;
       if (a.startLine <= b.endLine && b.startLine <= a.endLine) {
         // WHY: the rejected batch still owes the model usable anchors (README error-code contract):
         // WHY: the later item's span is served exactly like the sequential anchor-mismatch abort,

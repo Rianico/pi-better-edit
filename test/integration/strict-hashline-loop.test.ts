@@ -21,7 +21,7 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -32,7 +32,10 @@ describe("strict hashline tool loop", () => {
       await expect(
         editTool.execute(
           "e2",
-          { path: "sample.ts", edits: [[betaRef, betaRef, "BETA-AGAIN"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA-AGAIN" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -54,7 +57,10 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e3",
-        { path: "sample.ts", edits: [[freshRef, freshRef, "BETA-AGAIN"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: freshRef, anchor_to: freshRef, text: "BETA-AGAIN" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -78,7 +84,10 @@ describe("strict hashline tool loop", () => {
 
       await editTool.execute(
         "e1",
-        { path: "empty.ts", edits: [[emptyHash, emptyHash, "first\nsecond"]] },
+        {
+          file: "empty.ts",
+          edits: [{ anchor_from: emptyHash, anchor_to: emptyHash, text: "first\nsecond" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -109,7 +118,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "crlf.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "crlf.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -135,7 +144,7 @@ describe("CRLF line ending preservation", () => {
 
       await editTool.execute(
         "e1",
-        { path: "lf.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "lf.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -172,7 +181,7 @@ describe("UTF-8 BOM handling", () => {
 
       await editTool.execute(
         "e1",
-        { path: "bom.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "bom.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,

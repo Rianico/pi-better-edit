@@ -27,7 +27,7 @@ describe("hash heal TDD — MVCC rebase / fail-closed semantics", () => {
       await writeFile(path, `a\n${collidingInsert}\nb\nc`, "utf-8");
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[bHash, cHash, "B\nC2"]] },
+        { file: "sample.ts", edits: [{ anchor_from: bHash, anchor_to: cHash, text: "B\nC2" }] },
         undefined,
         undefined,
         ctx,
@@ -57,7 +57,10 @@ describe("hash heal TDD — MVCC rebase / fail-closed semantics", () => {
       // No try/catch retry: the lease identity survives the shift, so this must apply first try.
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[tHash, tHash, "const t = healed;"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: tHash, anchor_to: tHash, text: "const t = healed;" }],
+        },
         undefined,
         undefined,
         ctx,

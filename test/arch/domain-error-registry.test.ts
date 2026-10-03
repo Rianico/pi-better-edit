@@ -5,6 +5,7 @@ import { describe, expect, it } from "vitest";
 import {
   DomainError,
   ERROR_REGISTRY,
+  UNVERIFIED_HEADLINE,
   WARNING_REGISTRY,
   formatWarning,
   type DomainErrorCode,
@@ -184,6 +185,8 @@ const LIVE_CODES: DomainErrorCode[] = [
   "E_NOT_FOUND",
   "E_UNDO_STALE",
   "E_UNDO_UNAVAILABLE",
+  "E_LOSSY_TEXT",
+  "E_UNDO_REVERT_FAILED",
   "E_UNKNOWN",
   "E_LARGE_FILE",
 ];
@@ -249,6 +252,8 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
   E_NOT_FOUND: { path: "probe.ts" },
   E_UNDO_STALE: { path: "probe.ts", reason: "modified" },
   E_UNDO_UNAVAILABLE: { path: "probe.ts" },
+  E_LOSSY_TEXT: { path: "probe.bin" },
+  E_UNDO_REVERT_FAILED: { path: "probe.ts" },
   E_UNKNOWN: { errorName: "Error", message: "boom\nsecond line" },
   E_LARGE_FILE: { path: "probe.ts", limitKind: "lines", lineCount: 99, limit: 5 },
 };
@@ -368,6 +373,74 @@ describe("domain error registry: closed contract, not a list", () => {
     expect(error.message).not.toContain("no read needed");
     expect(ERROR_REGISTRY.E_STALE_RANGE.remedy).toBeUndefined();
   });
+
+  it("the remediation codes select their retry (04b-rem P2-1/P2-3, ADR-0021 d4)", () => {
+    // WHY: a rejection whose code selects NO remedy breaks the registry doctrine — "the code
+    // WHY: alone selects the retry". Both codes exist precisely because the failure they name
+    // WHY: has one correct model action: re-encode before editing; let the next run repair a
+    // WHY: defeated revert (never re-undo it).
+    expect(ERROR_REGISTRY.E_LOSSY_TEXT.audience).toBe("MODEL");
+    expect(typeof ERROR_REGISTRY.E_LOSSY_TEXT.remedy).toBe("string");
+    expect(ERROR_REGISTRY.E_LOSSY_TEXT.remedy).toContain("UTF-8");
+    expect(ERROR_REGISTRY.E_UNDO_REVERT_FAILED.audience).toBe("MODEL");
+    expect(typeof ERROR_REGISTRY.E_UNDO_REVERT_FAILED.remedy).toBe("string");
+    expect(ERROR_REGISTRY.E_UNDO_REVERT_FAILED.remedy).toContain("repair");
+  });
+
+  it("closes the representable-empty render: an empty headline over an empty block cannot construct (04b §12.2)", () => {
+    // WHY: `E_UNVERIFIED_RANGE.headline` is optional and `servedBlock` may be "", which admitted
+    // WHY: the render `"[MODEL] [E_UNVERIFIED_RANGE] "` — a header with no information at all.
+    // WHY: The rule: when the block is EMPTY the headline must be a NON-EMPTY string (an absent
+    // WHY: headline falls back to the default, which is non-empty). Mutation witness: delete the
+    // WHY: construction guards in `src/domain-errors.ts` (E_UNVERIFIED_RANGE :418 region and
+    // WHY: E_STALE_RANGE :402 region) and both `toThrow` arms below fail at HEAD.
+    expect(
+      () =>
+        new DomainError("E_UNVERIFIED_RANGE", {
+          headline: "",
+          servedRows: [],
+          servedBlock: "",
+          cause: "retirement",
+        }),
+      "empty headline + empty block must not construct",
+    ).toThrow(/headline/);
+    expect(
+      () =>
+        new DomainError("E_STALE_RANGE", {
+          headline: "",
+          servedRows: [],
+          servedBlock: "",
+          cause: "served-range staleness",
+        }),
+      "the same shape is poison for E_STALE_RANGE too",
+    ).toThrow(/headline/);
+    // PIN arms (green before and after): the empty-block render is legitimate when a REAL headline
+    // exists — the foreign leased wrap's shape — and an absent headline takes the default.
+    const wrapped = new DomainError("E_UNVERIFIED_RANGE", {
+      headline: "the foreign-source reference to source.txt no longer resolves.",
+      servedRows: [],
+      servedBlock: "",
+      cause: "retirement",
+    });
+    expect(wrapped.message).toBe(
+      "[MODEL] [E_UNVERIFIED_RANGE] the foreign-source reference to source.txt no longer resolves.",
+    );
+    const defaulted = new DomainError("E_UNVERIFIED_RANGE", {
+      servedRows: [],
+      servedBlock: "",
+      cause: "retirement",
+    });
+    expect(defaulted.message).toBe(`[MODEL] [E_UNVERIFIED_RANGE] ${UNVERIFIED_HEADLINE}`);
+    // Rows-present renders are untouched by the guard: a non-empty block keeps its section even
+    // beside an absent headline (target-side shape).
+    const withRows = new DomainError("E_UNVERIFIED_RANGE", {
+      servedRows: [{ position: 0, hash: "abc" }],
+      servedBlock: "abc│alpha",
+      cause: "retirement",
+    });
+    expect(withRows.message).toContain(UNVERIFIED_HEADLINE);
+    expect(withRows.message).toContain("Current range (fresh read):");
+  });
 });
 
 describe("domain warning registry: applied tier, never a rejection", () => {
@@ -378,6 +451,7 @@ describe("domain warning registry: applied tier, never a rejection", () => {
     "W_UNICODE_LITERAL",
     "W_LITERAL_BYPASS",
     "W_NOOP",
+    "W_NOOP_INSERT",
   ];
 
   const WARNING_EXAMPLES: { [K in DomainWarningCode]: WarningPayloadMap[K] } = {
@@ -393,9 +467,14 @@ describe("domain warning registry: applied tier, never a rejection", () => {
       batch: false,
       count: 2,
     },
+    W_NOOP_INSERT: {
+      ref: "edit[0] (probe.ts)",
+      removeFrom: "abc",
+      removeTo: "def",
+    },
   };
 
-  it("the warning union is exactly the six W_* codes", () => {
+  it("the warning union is exactly the seven W_* codes", () => {
     expect(warningUnionMembers().sort()).toEqual([...WARNING_CODES].sort());
   });
 

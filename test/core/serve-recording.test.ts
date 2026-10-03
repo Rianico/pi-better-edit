@@ -16,7 +16,15 @@ import {
   loadLeases,
 } from "../../src/served-session/index.js";
 import { apply, execEdits } from "../../src/mutation-engine/pipeline.js";
-import type { NormalizedEditRequest } from "../../src/payload-contract.js";
+import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
+
+// WHY: the engine seam takes the admission-normalized request (ticket-01 union) — wire
+// WHY: fixtures go through the same admission boundary the tool uses.
+function req(input: unknown): NormalizedEditRequest {
+  const normalized = normReq(input);
+  assertReq(normalized);
+  return normalized;
+}
 import { planServeRecording } from "../../src/served-session/index.js";
 import { computeDrift, scanDrift } from "../../src/drift";
 import { initHasher, lineHashes } from "../../src/hashline";
@@ -280,16 +288,16 @@ describe("write then edit — same-session drift-free (#70)", () => {
       expect(served).not.toContain("zz1");
       expect(served).not.toContain("zz5");
       const file = await execEdits(
-        {
+        req({
           file: "w.txt",
           edits: [
             {
               anchor_from: served[0]!,
               anchor_to: served[0]!,
-              replace_with: "A\n",
+              text: "A\n",
             },
           ],
-        },
+        }),
         home,
         { store, sessionKey: "s1" },
       );
@@ -359,16 +367,16 @@ describe("rejected edits — pre-load failures write zero serves (#69)", () => {
       const absPath = join(home, "nope.txt");
       await expect(
         execEdits(
-          {
+          req({
             file: "nope.txt",
             edits: [
               {
                 anchor_from: "findActivatingFile,",
                 anchor_to: "x",
-                replace_with: "y",
+                text: "y",
               },
             ],
-          } as unknown as NormalizedEditRequest,
+          }) as unknown as NormalizedEditRequest,
           home,
           { store, sessionKey: "s1" },
         ),
@@ -418,16 +426,16 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
         isFullRead: true,
       });
       const first = await execEdits(
-        {
+        req({
           file: "dup.ts",
           edits: [
             {
               anchor_from: seed.fileHashes[0]!,
               anchor_to: seed.fileHashes[0]!,
-              replace_with: `${startLines[0]}\n${Array(10).fill(dup).join("\n")}`,
+              text: `${startLines[0]}\n${Array(10).fill(dup).join("\n")}`,
             },
           ],
-        },
+        }),
         home,
         { store, sessionKey: "s1" },
       );
@@ -435,16 +443,16 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
       expect(first.driftNotice).toBeUndefined();
       await expect(
         execEdits(
-          {
+          req({
             file: "dup.ts",
             edits: [
               {
                 anchor_from: "findActivatingFile,",
                 anchor_to: "x",
-                replace_with: "y",
+                text: "y",
               },
             ],
-          },
+          }),
           home,
           { store, sessionKey: "s1" },
         ),
@@ -485,16 +493,16 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
       expect(targetPos).toBeGreaterThan(-1);
       expect(rotated).not.toContain(targetPos);
       const second = await execEdits(
-        {
+        req({
           file: "dup.ts",
           edits: [
             {
               anchor_from: afterFirst[targetPos]!,
               anchor_to: afterFirst[targetPos]!,
-              replace_with: "const d = 40;",
+              text: "const d = 40;",
             },
           ],
-        },
+        }),
         home,
         { store, sessionKey: "s1" },
       );
@@ -605,7 +613,8 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const lineA = "} = verification ?? {};";
       const lineB = "clearServedRefusals(absolutePath);";
       // File A's own allocation names its anchor; file B is served under the SAME anchor string,
-      // which is the cross-file collision the process-global hash->canon map used to leak through.
+      // which is the same-anchor collision across two files that the process-global hash->canon
+      // map used to leak through.
       const anchor = (await lineHashes(lineA, pathA))[0]!;
       // WHY: canon evidence is derived from the leases a serve grants (#151), never from a stored canon
       // WHY: array, so each file is served against the snapshot that actually holds its own line.
@@ -822,10 +831,10 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       // edit A -> B: the post-edit diff serve materializes snapB and retires A's leases
       const contentB = "alpha\nBRAVO\ncharlie\n";
       const first = await apply(
-        {
+        req({
           file: "cyclic-pipeline.txt",
-          edits: [{ anchor_from: hashesA[1]!, anchor_to: hashesA[1]!, replace_with: "BRAVO" }],
-        },
+          edits: [{ anchor_from: hashesA[1]!, anchor_to: hashesA[1]!, text: "BRAVO" }],
+        }),
         home,
         { store, sessionKey: SESSION },
       );
@@ -835,10 +844,10 @@ describe("serve hooks grant served_leases (issue #81)", () => {
 
       // edit B -> A: snapA is a cache hit, so the diff serve must re-bind A's leases to snapA
       const second = await apply(
-        {
+        req({
           file: "cyclic-pipeline.txt",
-          edits: [{ anchor_from: hashesB[1]!, anchor_to: hashesB[1]!, replace_with: "bravo" }],
-        },
+          edits: [{ anchor_from: hashesB[1]!, anchor_to: hashesB[1]!, text: "bravo" }],
+        }),
         home,
         { store, sessionKey: SESSION },
       );
@@ -890,13 +899,13 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
       ]);
 
       const rejection = (await apply(
-        {
+        req({
           file: "nothing.txt",
           edits: [
-            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" },
-            { anchor_from: "zzz", anchor_to: "zzz", replace_with: "zzz" },
+            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+            { anchor_from: "zzz", anchor_to: "zzz", text: "zzz" },
           ],
-        },
+        }),
         home,
         { store, sessionKey: SESSION },
       ).catch((error: unknown) => error)) as Error;
@@ -916,10 +925,10 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
 
       // 0 stale retries: the model can immediately retry with the anchors it already holds.
       const retried = await apply(
-        {
+        req({
           file: "nothing.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "BRAVO" }],
-        },
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BRAVO" }],
+        }),
         home,
         { store, sessionKey: SESSION },
       );
@@ -938,10 +947,10 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
       try {
         await expect(
           apply(
-            {
+            req({
               file: "nothing.txt",
-              edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" }],
-            },
+              edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" }],
+            }),
             home,
             { store, sessionKey: SESSION },
           ),
@@ -963,10 +972,10 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
     await withTempHome(async (home) => {
       const { store, path, hashes } = await seedServedLeases(home);
       const previewed = await execEdits(
-        {
+        req({
           file: "nothing.txt",
-          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" }],
-        },
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" }],
+        }),
         home,
         { store, sessionKey: SESSION, noPersist: true },
       );

@@ -88,6 +88,19 @@ function seedUndoPin(db: DatabaseSync, path: string, snapshotHash: string): void
   ).run(path, snapshotHash, Date.now());
 }
 
+// WHY: (ticket-04b §4) one cut transaction writes TWO `file_undo` rows sharing a
+// WHY: `transaction_id`. The vacuum pin predicate is per (path, snapshot_hash) and never reads
+// WHY: the id — which is exactly why this shape needs its own witness: the mutation is the NEW
+// WHY: row-set a transaction produces (doubled pinned rows), not the predicate. Falsifier: a
+// WHY: predicate narrowed to `transaction_id IS NULL` would evict a pinned transaction member
+// WHY: here, and correlated undo would lose the snapshot its revert adopts.
+function seedUndoTxnPin(db: DatabaseSync, path: string, snapshotHash: string, txnId: string): void {
+  db.prepare(
+    "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, " +
+      "transaction_id, updated_at) VALUES (?, 'x', '', '\\n', '[]', 'x', ?, ?, ?)",
+  ).run(path, snapshotHash, txnId, Date.now());
+}
+
 function versions(db: DatabaseSync): { path: string; snapshot_hash: string }[] {
   return db
     .prepare(
@@ -237,6 +250,56 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
         "hash-4",
         "hash-5",
       ]);
+    });
+  });
+
+  // TICKET-04b §4: the vacuum interaction of a cut transaction's correlated undo rows.
+  it("pins BOTH files of one cut transaction and evicts only unrelated versions to hold the budget", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const db = store.db;
+      seedBigStore(db);
+      // The two oldest versions are the transaction's undo pins; the budget must take the NEXT
+      // oldest two instead of breaking the correlated pair.
+      seedUndoTxnPin(db, "/p0.ts", "hash-0", "txn-cut-1");
+      seedUndoTxnPin(db, "/p1.ts", "hash-1", "txn-cut-1");
+
+      const result = vacuumSnapshots(db);
+
+      expect(result.evicted).toBe(2);
+      expect(versions(db).map((v) => v.snapshot_hash)).toEqual([
+        "hash-0",
+        "hash-1",
+        "hash-4",
+        "hash-5",
+      ]);
+      expect(totalBytes(db)).toBeLessThanOrEqual(VACUUM_GLOBAL_BUDGET_BYTES);
+      // The doubled pin shows up doubled in the accounting — one per member, not one per edit.
+      expect(result.pinnedBytes).toBe(2 * BIG_LINES * VACUUM_LINEAGE_BYTES_PER_LINE);
+      // The correlation survived the pass: both rows carry the same transaction id.
+      const ids = db
+        .prepare("SELECT transaction_id FROM file_undo ORDER BY path")
+        .all() as unknown as { transaction_id: string }[];
+      expect(ids.map((r) => r.transaction_id)).toEqual(["txn-cut-1", "txn-cut-1"]);
+    });
+  });
+
+  it("defers the budget rather than evicting any member when every version is a transaction pin", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const db = store.db;
+      // Three transactions x two members: the transaction multiplies pinned rows file by file.
+      for (let i = 0; i < BIG_FILES; i++) {
+        seedVersion(db, `/p${i}.ts`, `hash-${i}`, BIG_LINES, 1000 * (i + 1));
+        seedUndoTxnPin(db, `/p${i}.ts`, `hash-${i}`, `txn-${i >> 1}`);
+      }
+      expect(totalBytes(db)).toBeGreaterThan(VACUUM_GLOBAL_BUDGET_BYTES);
+
+      const result = vacuumSnapshots(db);
+
+      expect(result.evicted).toBe(0);
+      expect(versions(db)).toHaveLength(BIG_FILES);
+      expect(result.deferredBytes).toBe(totalBytes(db) - VACUUM_GLOBAL_BUDGET_BYTES);
     });
   });
 

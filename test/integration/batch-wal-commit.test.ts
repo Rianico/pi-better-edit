@@ -86,10 +86,10 @@ describe("multi-edit batch WAL commit", () => {
       const editPromise = editTool.execute(
         "e1",
         {
-          path: "nest.txt",
+          file: "nest.txt",
           edits: [
-            [h2, h2, "B"],
-            [h1, h3, "X"],
+            { anchor_from: h2, anchor_to: h2, text: "B" },
+            { anchor_from: h1, anchor_to: h3, text: "X" },
           ],
         },
         undefined,
@@ -123,10 +123,10 @@ describe("multi-edit batch WAL commit", () => {
       const editPromise = editTool.execute(
         "e1",
         {
-          path: "overlap.txt",
+          file: "overlap.txt",
           edits: [
-            [h2, h4, "X"],
-            [h4, h5, "Y"],
+            { anchor_from: h2, anchor_to: h4, text: "X" },
+            { anchor_from: h4, anchor_to: h5, text: "Y" },
           ],
         },
         undefined,
@@ -169,10 +169,10 @@ describe("multi-edit batch WAL commit", () => {
       const editPromise = editTool.execute(
         "e1",
         {
-          path: "shift-overlap.txt",
+          file: "shift-overlap.txt",
           edits: [
-            [dupRef, dupRef, "X"],
-            [alphaRef, betaRef, "YZ"],
+            { anchor_from: dupRef, anchor_to: dupRef, text: "X" },
+            { anchor_from: alphaRef, anchor_to: betaRef, text: "YZ" },
           ],
         },
         undefined,
@@ -219,10 +219,10 @@ describe("multi-edit batch WAL commit", () => {
       const editPromise = editTool.execute(
         "e1",
         {
-          path: "duplicate-canon.txt",
+          file: "duplicate-canon.txt",
           edits: [
-            [dupRef, dupRef, "X"],
-            [alphaRef, betaRef, "YZ"],
+            { anchor_from: dupRef, anchor_to: dupRef, text: "X" },
+            { anchor_from: alphaRef, anchor_to: betaRef, text: "YZ" },
           ],
         },
         undefined,
@@ -240,7 +240,10 @@ describe("multi-edit batch WAL commit", () => {
       // canon at line 3 changes while the first occurrence at line 1 keeps its bytes.
       await editTool.execute(
         "e2",
-        { path: "duplicate-canon.txt", edits: [[dupRef, dupRef, "X"]] },
+        {
+          file: "duplicate-canon.txt",
+          edits: [{ anchor_from: dupRef, anchor_to: dupRef, text: "X" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -270,7 +273,7 @@ describe("multi-edit batch WAL commit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "survive.txt", edits: [[h3, h3, "l3-modified"]] },
+        { file: "survive.txt", edits: [{ anchor_from: h3, anchor_to: h3, text: "l3-modified" }] },
         undefined,
         undefined,
         ctx,
@@ -297,7 +300,7 @@ describe("multi-edit batch WAL commit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "cycle.txt", edits: [[bravo, bravo, "BRAVO"]] },
+        { file: "cycle.txt", edits: [{ anchor_from: bravo, anchor_to: bravo, text: "BRAVO" }] },
         undefined,
         undefined,
         ctx,
@@ -311,7 +314,10 @@ describe("multi-edit batch WAL commit", () => {
 
       await editTool.execute(
         "e2",
-        { path: "cycle.txt", edits: [[bravoUpper, bravoUpper, "bravo"]] },
+        {
+          file: "cycle.txt",
+          edits: [{ anchor_from: bravoUpper, anchor_to: bravoUpper, text: "bravo" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -336,7 +342,7 @@ describe("multi-edit batch WAL commit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "retire.txt", edits: [[row2, row2, "row2-new"]] },
+        { file: "retire.txt", edits: [{ anchor_from: row2, anchor_to: row2, text: "row2-new" }] },
         undefined,
         undefined,
         ctx,
@@ -379,10 +385,10 @@ describe("multi-edit batch WAL commit", () => {
         .execute(
           "e1",
           {
-            path: "parse-abort.txt",
+            file: "parse-abort.txt",
             edits: [
-              [aaa, aaa, "AAA"],
-              [`${aaa}│aaa`, aaa, "BBB"],
+              { anchor_from: aaa, anchor_to: aaa, text: "AAA" },
+              { anchor_from: `${aaa}│aaa`, anchor_to: aaa, text: "BBB" },
             ],
           },
           undefined,
@@ -422,10 +428,10 @@ describe("multi-edit batch WAL commit", () => {
         .execute(
           "e1",
           {
-            path: "reject-abort.txt",
+            file: "reject-abort.txt",
             edits: [
-              [alpha, alpha, "ALPHA"],
-              [beta, gamma, "BETA\ngamma"],
+              { anchor_from: alpha, anchor_to: alpha, text: "ALPHA" },
+              { anchor_from: beta, anchor_to: gamma, text: "BETA\ngamma" },
             ],
           },
           undefined,
@@ -469,10 +475,10 @@ describe("multi-edit batch WAL commit", () => {
         editRes = await editTool.execute(
           "e1",
           {
-            path: "chain.txt",
+            file: "chain.txt",
             edits: [
-              [alpha, alpha, "dup"],
-              [dupSecond, dupSecond, "X"],
+              { anchor_from: alpha, anchor_to: alpha, text: "dup" },
+              { anchor_from: dupSecond, anchor_to: dupSecond, text: "X" },
             ],
           },
           undefined,

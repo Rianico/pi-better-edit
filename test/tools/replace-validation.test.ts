@@ -21,25 +21,37 @@ describe("assertReq", () => {
     ).toThrow("exactly");
   });
 
-  it("accepts legacy path payloads via folding and rejects null-path fail-closed", () => {
+  it("accepts canonical payloads and rejects a null file fail-closed", () => {
     expect(() =>
-      assertReq(normReq({ path: "test.txt", edits: [["AAA", "BBB", "new"]] })),
+      assertReq(
+        normReq({
+          file: "test.txt",
+          edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }],
+        }),
+      ),
     ).not.toThrow();
-    expect(() => assertReq(normReq({ path: null, edits: [["AAA", "BBB", "new"]] }))).toThrow(
-      "exactly",
-    );
+    expect(() =>
+      assertReq(
+        normReq({ file: null, edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }] }),
+      ),
+    ).toThrow("exactly");
   });
 
   it("rejects malformed shapes and member types", () => {
     expect(() => assertReq("string")).toThrow("E_BAD_PAYLOAD");
-    expect(() => assertReq({ path: "test.txt", edits: [["AAA"]] })).toThrow("E_BAD_PAYLOAD");
-    expect(() => assertReq({ path: "test.txt", edits: [["AAA", "BBB", null]] })).toThrow(
-      "E_BAD_PAYLOAD",
-    );
-    expect(() => assertReq({ path: "", edits: [["AAA", "BBB", "new"]] })).toThrow("E_BAD_PAYLOAD");
-    expect(() => assertReq({ path: "test.txt", edits: [["AAA", 42, "new"]] })).toThrow(
-      "E_BAD_PAYLOAD",
-    );
+    expect(() => assertReq({ file: "test.txt", edits: [["AAA"]] })).toThrow("E_BAD_PAYLOAD");
+    expect(() =>
+      assertReq({
+        file: "test.txt",
+        edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: null }],
+      }),
+    ).toThrow("E_BAD_PAYLOAD");
+    expect(() =>
+      assertReq({ file: "", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }] }),
+    ).toThrow("E_BAD_PAYLOAD");
+    expect(() =>
+      assertReq({ file: "test.txt", edits: [{ anchor_from: "AAA", anchor_to: 42, text: "new" }] }),
+    ).toThrow("E_BAD_PAYLOAD");
   });
 });
 
@@ -49,7 +61,10 @@ describe("anchor validation order", () => {
     await expect(
       tool.execute(
         "e1",
-        { path: "does-not-exist.ts", edits: [["abcd", "abcd", "x"]] },
+        {
+          file: "does-not-exist.ts",
+          edits: [{ anchor_from: "abcd", anchor_to: "abcd", text: "x" }],
+        },
         undefined,
         undefined,
         { cwd: "/tmp", sessionManager: testSessionManager } as any,
@@ -62,20 +77,28 @@ describe("prepareArguments normalization", () => {
     const tool = buildToolDef();
     const args = {
       file: "test.txt",
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "line1\nline2" }],
+      edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "line1\nline2" }],
     };
     expect(tool.prepareArguments!(args)).toEqual(args);
   });
 
-  it("folds legacy tuples and path keys to the canonical shape", () => {
+  it("keeps canonical items unchanged and fails closed on a null file", () => {
     const tool = buildToolDef();
-    expect(tool.prepareArguments!({ path: "test.txt", edits: [["AAA", "BBB", "x"]] })).toEqual({
+    expect(
+      tool.prepareArguments!({
+        file: "test.txt",
+        edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }],
+      }),
+    ).toEqual({
       file: "test.txt",
-      edits: [{ anchor_from: "AAA", anchor_to: "BBB", replace_with: "x" }],
+      edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }],
     });
-    expect(() => tool.prepareArguments!({ path: null, edits: [["AAA", "BBB", "x"]] })).toThrow(
-      /\[E_BAD_PAYLOAD\]/,
-    );
+    expect(() =>
+      tool.prepareArguments!({
+        file: null,
+        edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }],
+      }),
+    ).toThrow(/\[E_BAD_PAYLOAD\]/);
   });
 
   it("rejects malformed shapes with an actionable E_BAD_PAYLOAD hint", () => {
@@ -91,7 +114,9 @@ describe("prepareArguments normalization", () => {
     ];
     for (const args of bad) {
       expect(() => tool.prepareArguments!(args)).toThrow(/\[E_BAD_PAYLOAD\]/);
-      expect(() => tool.prepareArguments!(args)).toThrow(/canonical payload/);
+      expect(() => tool.prepareArguments!(args)).toThrow(
+        /canonical payload|it is exactly \{ file|an item is exactly/,
+      );
     }
   });
 
@@ -104,6 +129,6 @@ describe("prepareArguments normalization", () => {
         anchor_to: "BBB",
         replace_with: "new",
       }),
-    ).toThrow(/canonical payload/);
+    ).toThrow(/canonical payload|it is exactly \{ file/);
   });
 });

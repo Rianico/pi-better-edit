@@ -88,7 +88,7 @@ describe("WAL lineage commit from the working buffer", () => {
       // one, so the working buffer keeps its `line_id`.
       await editTool.execute(
         "e1",
-        { path: "dup.txt", edits: [[first, first, ""]] },
+        { file: "dup.txt", edits: [{ anchor_from: first, anchor_to: first, text: "" }] },
         undefined,
         undefined,
         ctx,
@@ -131,7 +131,7 @@ describe("WAL lineage commit from the working buffer", () => {
 
       await editTool.execute(
         "e1",
-        { path: "insert.txt", edits: [[b, b, "b1\nb2"]] },
+        { file: "insert.txt", edits: [{ anchor_from: b, anchor_to: b, text: "b1\nb2" }] },
         undefined,
         undefined,
         ctx,
@@ -161,7 +161,7 @@ describe("WAL lineage commit from the working buffer", () => {
 
       await editTool.execute(
         "e1",
-        { path: "revert.txt", edits: [[bravo, bravo, "BRAVO"]] },
+        { file: "revert.txt", edits: [{ anchor_from: bravo, anchor_to: bravo, text: "BRAVO" }] },
         undefined,
         undefined,
         ctx,
@@ -176,7 +176,10 @@ describe("WAL lineage commit from the working buffer", () => {
 
       await editTool.execute(
         "e2",
-        { path: "revert.txt", edits: [[bravoUpper, bravoUpper, "bravo"]] },
+        {
+          file: "revert.txt",
+          edits: [{ anchor_from: bravoUpper, anchor_to: bravoUpper, text: "bravo" }],
+        },
         undefined,
         undefined,
         ctx,

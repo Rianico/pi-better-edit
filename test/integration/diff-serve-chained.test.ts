@@ -63,7 +63,7 @@ describe("diff rows serve chained edits", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[l2Ref, l2Ref, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: l2Ref, anchor_to: l2Ref, text: "X" }] },
         undefined,
         undefined,
         ctx,
@@ -90,7 +90,7 @@ describe("diff rows serve chained edits", () => {
 
       const chained = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[l1Ref, xRef, "A\nB"]] },
+        { file: "sample.ts", edits: [{ anchor_from: l1Ref, anchor_to: xRef, text: "A\nB" }] },
         undefined,
         undefined,
         ctx,
@@ -119,7 +119,7 @@ describe("diff rows serve chained edits", () => {
 
       const editResult = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[l2Ref, l2Ref, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: l2Ref, anchor_to: l2Ref, text: "X" }] },
         undefined,
         undefined,
         ctx,
@@ -136,7 +136,7 @@ describe("diff rows serve chained edits", () => {
       // tool_result handler (old seam required handler).
       const chained = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[l1Ref, xRef, "A\nB"]] },
+        { file: "sample.ts", edits: [{ anchor_from: l1Ref, anchor_to: xRef, text: "A\nB" }] },
         undefined,
         undefined,
         ctx,

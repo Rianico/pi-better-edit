@@ -44,7 +44,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -74,7 +77,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -103,7 +109,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -129,7 +138,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -156,7 +168,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB\nB2"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB\nB2" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -181,7 +196,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, ""]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -206,7 +224,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[2]!, `XXX\nYYY\nZZZ`]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: `XXX\nYYY\nZZZ` }],
+        },
         undefined,
         undefined,
         ctx,
@@ -231,7 +252,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -257,7 +281,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -288,7 +315,10 @@ describe("undo_last_edit", () => {
         await expect(
           editTool.execute(
             "e1",
-            { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+            {
+              file: "sample.ts",
+              edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+            },
             undefined,
             undefined,
             ctx,
@@ -303,7 +333,10 @@ describe("undo_last_edit", () => {
 
       const retry = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -322,7 +355,10 @@ describe("undo_last_edit", () => {
 
       const first = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -336,7 +372,10 @@ describe("undo_last_edit", () => {
         await expect(
           editTool.execute(
             "e2",
-            { path: "sample.ts", edits: [[hashes[2]!, hashes[2]!, "CCC"]] },
+            {
+              file: "sample.ts",
+              edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "CCC" }],
+            },
             undefined,
             undefined,
             ctx,
@@ -370,7 +409,10 @@ describe("undo_last_edit", () => {
         await expect(
           editTool.execute(
             "e1",
-            { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+            {
+              file: "sample.ts",
+              edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+            },
             undefined,
             undefined,
             ctx,
@@ -396,7 +438,10 @@ describe("undo_last_edit", () => {
 
       const first = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -416,7 +461,10 @@ describe("undo_last_edit", () => {
         await expect(
           editTool.execute(
             "e2",
-            { path: "sample.ts", edits: [[hashes[2]!, hashes[2]!, "CCC"]] },
+            {
+              file: "sample.ts",
+              edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "CCC" }],
+            },
             controller.signal,
             undefined,
             ctx,
@@ -445,7 +493,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -471,7 +522,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "LINE1"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "LINE1" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -499,7 +553,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -532,7 +589,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -560,7 +620,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -588,7 +651,10 @@ describe("undo_last_edit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -642,7 +708,10 @@ describe("undo cleared after write", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         { cwd, sessionManager: testSessionManager } as any,
@@ -684,7 +753,10 @@ describe("undo cleared after write", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         { cwd, sessionManager: testSessionManager } as any,

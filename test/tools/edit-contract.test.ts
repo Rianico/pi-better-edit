@@ -14,31 +14,32 @@ describe("edit payload contract", () => {
     expect(
       validator.Check({
         file: "sample.ts",
-        edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+        edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
       }),
     ).toBe(true);
     expect(
       validator.Check({
         file: "sample.ts",
         edits: [
-          { anchor_from: "aB3", anchor_to: "cD4", replace_with: "x" },
-          { anchor_from: "qWe", anchor_to: "rTy", replace_with: "" },
+          { anchor_from: "aB3", anchor_to: "cD4", text: "x" },
+          { anchor_from: "qWe", anchor_to: "rTy", text: "" },
         ],
       }),
     ).toBe(true);
     expect(
       validator.Check({
         file: null,
-        edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+        edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
       }),
     ).toBe(false);
+    // WHY: (ticket-04 §3) tuple items are refused outright — the legacy fold is gone.
     expect(validator.Check({ file: "sample.ts", edits: [["aB3", "cD4", "new"]] })).toBe(false);
     expect(validator.Check({ file: "sample.ts", anchor_from: "aB3" })).toBe(false);
     expect(validator.Check(["sample.ts", ["aB3", "cD4"], "new"])).toBe(false);
     expect(
       validator.Check({
         file: "",
-        edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+        edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
       }),
     ).toBe(false);
     expect(
@@ -80,7 +81,9 @@ describe("edit payload contract", () => {
     expect(Object.keys(item.properties).sort()).toEqual([
       "anchor_from",
       "anchor_to",
-      "replace_with",
+      "at",
+      "text",
+      "text_ref",
     ]);
     expect(root.additionalProperties).toBe(false);
     expect(item.additionalProperties).toBe(false);
@@ -97,6 +100,9 @@ describe("edit payload contract", () => {
       "remove_to",
       "replacement_lines",
       "replacement_text",
+      // WHY: (ticket-04 §3) the retired wire spellings must not sneak back in either.
+      "replace_with",
+      "op",
     ];
     for (const alias of aliases) {
       expect(Object.keys(root.properties)).not.toContain(alias);
@@ -104,44 +110,38 @@ describe("edit payload contract", () => {
     }
   });
 
-  it("normalizes modern { file, edits } objects and folds legacy shapes", () => {
+  it("normalizes modern { file, edits } objects", () => {
     const normalized = normReq({
       file: "sample.ts",
-      edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
+      edits: [{ anchor_from: "aB3", anchor_to: "cD4", text: "new" }],
     });
     expect(normalized).toMatchObject({
       file: "sample.ts",
       edits: [
         {
-          anchor_from: "aB3",
-          anchor_to: "cD4",
-          replace_with: "new",
+          target: { anchor_from: "aB3", anchor_to: "cD4" },
+          at: "in-place",
+          payload: { kind: "literal", text: "new" },
         },
       ],
     });
     expect(() => assertReq(normalized)).not.toThrow();
-    // legacy tuple items fold to objects
-    expect(normReq({ file: "sample.ts", edits: [["aB3", "cD4", "new"]] })).toMatchObject({
+    // WHY: (ticket-04 §3) tuples and legacy item keys are REFUSED, not folded: `normReq`
+    // WHY: passes the raw input through untouched.
+    const tupleReq = { file: "sample.ts", edits: [["aB3", "cD4", "new"]] };
+    expect(normReq(tupleReq)).toBe(tupleReq);
+    const legacyKeys = {
       file: "sample.ts",
-      edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
-    });
-    // legacy root key and legacy item keys fold
-    expect(
-      normReq({
-        path: "sample.ts",
-        edits: [{ remove_from: "aB3", remove_to: "cD4", replacement_text: "new" }],
-      }),
-    ).toMatchObject({
-      file: "sample.ts",
-      edits: [{ anchor_from: "aB3", anchor_to: "cD4", replace_with: "new" }],
-    });
+      edits: [{ remove_from: "aB3", remove_to: "cD4", replacement_text: "new" }],
+    };
+    expect(normReq(legacyKeys)).toBe(legacyKeys);
     expect(() => assertReq(["sample.ts", ["aB3", "cD4"], "new"])).toThrow("exactly");
     expect(() =>
       assertReq({
         file: "sample.ts",
         anchor_from: "aB3",
         anchor_to: "cD4",
-        replace_with: "new",
+        text: "new",
       }),
     ).toThrow("exactly");
   });
@@ -172,7 +172,7 @@ describe("edit payload contract", () => {
         .execute(
           {
             file: null,
-            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "AAA" }],
+            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" }],
           },
           undefined,
           ctx,
@@ -184,7 +184,9 @@ describe("edit payload contract", () => {
           (entry) => entry as Error,
         );
       expect(String(error.message)).toContain("[E_BAD_PAYLOAD]");
-      expect(String(error.message)).toContain("Edit request must be exactly");
+      expect(String(error.message)).toContain(
+        'Edit request "file" must be a non-empty string path to a text file',
+      );
       expect(await readFile(path, "utf8")).toBe("aaa\nbbb\n");
     });
   });

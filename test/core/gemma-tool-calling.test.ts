@@ -10,18 +10,27 @@ describe("Gemma 4 tool calling bleed", () => {
   });
 
   it("editRequestFrom should normalize file with <|> quoting (Gemma bleed)", () => {
-    const result = editRequestFrom({ file: "<|>Window.py<|>", edits: [["KZc", "jPR", ""]] });
+    const result = editRequestFrom({
+      file: "<|>Window.py<|>",
+      edits: [{ anchor_from: "KZc", anchor_to: "jPR", text: "" }],
+    });
     expect(result).not.toBeUndefined();
     expect(result?.file).toBe("Window.py");
   });
 
   it("editRequestFrom should normalize file with │ quoting", () => {
-    const result = editRequestFrom({ file: "│Window.py│", edits: [["KZc", "jPR", ""]] });
+    const result = editRequestFrom({
+      file: "│Window.py│",
+      edits: [{ anchor_from: "KZc", anchor_to: "jPR", text: "" }],
+    });
     expect(result?.file).toBe("Window.py");
   });
 
   it("editRequestFrom should handle normal file unchanged", () => {
-    const result = editRequestFrom({ file: "Window.py", edits: [["KZc", "jPR", ""]] });
+    const result = editRequestFrom({
+      file: "Window.py",
+      edits: [{ anchor_from: "KZc", anchor_to: "jPR", text: "" }],
+    });
     expect(result?.file).toBe("Window.py");
   });
 

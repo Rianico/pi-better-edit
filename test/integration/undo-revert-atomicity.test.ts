@@ -65,7 +65,10 @@ describe("undo_last_edit restore transaction atomicity", () => {
 
       await editTool.execute(
         "e1",
-        { path: "undo_atomicity.txt", edits: [[line2Hash, line2Hash, "second line edited"]] },
+        {
+          file: "undo_atomicity.txt",
+          edits: [{ anchor_from: line2Hash, anchor_to: line2Hash, text: "second line edited" }],
+        },
         undefined,
         undefined,
         ctx,

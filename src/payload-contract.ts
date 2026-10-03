@@ -1,25 +1,78 @@
 import { Type } from "typebox";
 import { EDITS_MAX_ITEMS } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
+import type { EditPlacement } from "./hashline/resolve.js";
 import { rejectUnknownFields } from "./utils.js";
 
 const normalizedEdit = Symbol("normalizedEdit");
 
+/**
+ * The `text_ref` payload: two inclusive bare anchors bounding a served span, an optional serving
+ * `file`, and a REQUIRED `mode` — `"copy"` re-inserts the span bytes, `"cut"` additionally retires
+ * them. Both modes apply to this file AND to another served file (ticket-04b): a foreign-source
+ * `"cut"` commits the insert and the source retirement as one correlated transaction (ADR-0028).
+ */
+export type SpanRef = {
+  anchor_from: string;
+  anchor_to: string;
+  file?: string;
+  mode: "copy" | "cut";
+};
+
+/**
+ * Wire item (ticket-04): exactly one payload per item — `text` or `text_ref` — over the inclusive
+ * anchor pair, with optional `at` placement. There is no `op` field and no verbs: the key set IS
+ * the vocabulary (ADR-0007 line 26; content comes from the copy of another served file, which the
+ * wire expresses as `text_ref.file`).
+ */
 export type EditItem = {
   anchor_from: string;
   anchor_to: string;
-  replace_with: string;
+  at?: "in-place" | "before" | "after";
+  text?: string;
+  text_ref?: SpanRef;
 };
 
 export type EditMode = "general" | "literal";
 
+/**
+ * Internal normalized vocabulary owned by the admission boundary (ticket-01, renamed ticket-04).
+ * The wire never names these shapes: `normReq` builds them once from the validated payload and
+ * everything downstream consumes the union — the engine switches on `payload.kind` exhaustively.
+ */
+export type Placement = "in-place" | "before" | "after";
+
+// WHY: (§9.12) the wire `at` union and the engine seam's placement union are one vocabulary by
+// WHY: contract, not by copy: this compile-time mutual-assignability assertion fails
+// WHY: `pnpm run typecheck` the moment the two unions drift apart.
+export const _placementVocabularyAgreement: [
+  Placement extends EditPlacement ? true : never,
+  EditPlacement extends Placement ? true : never,
+] = [true, true];
+
+/** The anchor pair an item targets — placement and payload are relative to its resolved span. */
+export type AnchorSpan = { anchor_from: string; anchor_to: string };
+
+export type DesiredContent =
+  | { kind: "literal"; text: string }
+  | { kind: "reference"; span: SpanRef; mode: "copy" | "cut" }
+  | { kind: "empty" };
+
+export type NormalizedEditItem = { target: AnchorSpan; at: Placement; payload: DesiredContent };
+
 export type NormalizedEditRequest = {
+  file: string;
+  edits: NormalizedEditItem[];
+  mode?: EditMode;
+};
+
+/** The wire-folded request (the admission analyzer's view): canonical keys, pre-union. */
+type PreAdmissionRequest = {
   file: string;
   edits: EditItem[];
   mode?: EditMode;
 };
-type PreAdmissionRequest = NormalizedEditRequest;
-type NormalizedPayload = PreAdmissionRequest & {
+type NormalizedPayload = NormalizedEditRequest & {
   readonly [normalizedEdit]: true;
 };
 
@@ -35,10 +88,6 @@ function isNormalizedEdit(input: unknown): input is Record<string, unknown> {
   return isRec(input) && (input as Record<string | symbol, unknown>)[normalizedEdit] === true;
 }
 
-export const replaceWithSchema = Type.String({
-  description: 'Bare file content for the range; use "" to delete',
-});
-
 export const anchorFromSchema = Type.String({
   description: "Bare 3-char hash anchor of the first range line (inclusive)",
 });
@@ -52,11 +101,28 @@ export const editFileSchema = Type.String({
   description: "Path to the text file to edit (a file, never a directory)",
 });
 
-export const editItemSchema = Type.Object(
+export const editAtSchema = Type.Union(
+  [Type.Literal("in-place"), Type.Literal("before"), Type.Literal("after")],
+  {
+    description:
+      'Placement of the payload relative to the resolved target span: "in-place" (default) rewrites the span, "before"/"after" insert at its boundary and require a single-line resolved target',
+  },
+);
+
+export const textRefSchema = Type.Object(
   {
     anchor_from: anchorFromSchema,
     anchor_to: anchorToSchema,
-    replace_with: replaceWithSchema,
+    file: Type.Optional(
+      Type.String({
+        description:
+          'Served file the span is read from; another served file supports both "copy" and "cut" like this file does',
+      }),
+    ),
+    mode: Type.Union([Type.Literal("copy"), Type.Literal("cut")], {
+      description:
+        '"copy" re-inserts the referenced span bytes; "cut" additionally retires them, in the serving file, foreign-source included',
+    }),
   },
   { additionalProperties: false },
 );
@@ -65,6 +131,22 @@ export const editModeSchema = Type.Union([Type.Literal("general"), Type.Literal(
   description:
     'How to treat bytes reproducing served rows: "general" refuses them, "literal" declares them as intended file content',
 });
+
+// WHY: structurally permissive-but-typed (ticket-04): exactly-one-payload and the finite key sets
+// WHY: are owned by the admission analyzer (`itemFrom` + `assertReq`), not by the schema — the
+// WHY: schema's `additionalProperties: false` still refuses unknown keys at the pi seam.
+export const editItemSchema = Type.Object(
+  {
+    anchor_from: anchorFromSchema,
+    anchor_to: anchorToSchema,
+    at: Type.Optional(editAtSchema),
+    text: Type.Optional(
+      Type.String({ description: 'Bare file content for the range; use "" to delete' }),
+    ),
+    text_ref: Type.Optional(textRefSchema),
+  },
+  { additionalProperties: false },
+);
 
 export const editToolSchema = Type.Object(
   {
@@ -79,26 +161,33 @@ export const editToolSchema = Type.Object(
   { additionalProperties: false },
 );
 
+const ITEM_SHAPE =
+  "an item is exactly { anchor_from, anchor_to, text[, at] } or { anchor_from, anchor_to, text_ref[, at] }";
+
 const EDIT_PAYLOAD_HINT =
-  "Edit must be called with exactly one payload. Use the canonical payload " +
-  '{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "replace_with": replace_with }, ...], "mode"?: "general" | "literal"}: ' +
-  '"file" is the text file to edit (a non-empty string, never a directory); each item names ' +
-  "two inclusive bare-3-char anchors and the full replacement " +
-  '(an empty string deletes the range); optional "mode" is "general" (default, reproduced served rows are refused) or "literal" (declared literal content).';
+  "Edit must be called with exactly one payload per item. Use the canonical payload " +
+  '{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "text": text }, ...], "mode"?: "general" | "literal"}: ' +
+  '"file" is the text file to edit (a non-empty string, never a directory); each item names two inclusive ' +
+  'bare-3-char anchors and exactly one payload — "text" (bare replacement content; an empty string deletes the ' +
+  'range) or "text_ref" ({ anchor_from, anchor_to, file?, mode (required): "copy" | "cut" } — the served span\'s bytes, ' +
+  '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
+  '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
+  'served rows are refused) or "literal" (declared literal content).';
 export const EDIT_DESCRIPTION =
-  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` (arity = edits.length, atomic, one file per call). Use `edit` for content seen via `read` or a diff; never for directories, binaries, or images. `anchor_from`/`anchor_to` are bare 3-char HASH anchors (e.g. "wUp") — copy the 3 chars before `│` in this file\'s served `HASH│content` lines (lease (session, file, anchor)), never `│` or content. `replace_with` is bare content (`\\n` joins lines, `""` deletes; a line reproducing a served row is refused). Example: `{"file":"s.py","edits":[{"anchor_from":"wUp","anchor_to":"AU6","replace_with":"x:\\n    y"}]}`. `[MODEL]` in `content` is your retry instruction; dimmed `[USER]` in `details` is human info.';
+  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }` (one top-level file per call). For text files seen via `read`/diff. `anchor_from`/`anchor_to` are bare 3-char HASH anchors — copy the 3 chars before `│` in this file\'s served rows (lease (session, file, anchor)), never `│` or content. Exactly one payload per item: `text` (`\\n` joins lines, `""` deletes) or `text_ref` `{anchor_from, anchor_to, mode (required), file?}` — a served span\'s bytes (`mode` `"copy"`|`"cut"`; `file`=another served file, where `cut` retires the span there too); `at`: "in-place" (default), "before", "after". `[MODEL]` in `content` is your retry instruction.';
 export const EDIT_SNIPPET =
-  'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"replace_with":text}]}` — anchors are bare 3-char HASHes copied from served `HASH│content` (never copy `│`), `replace_with` is bare content (`""` deletes). Chain from diff anchors with no re-read.';
+  'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}` — anchors are bare 3-char hashes copied from served `HASH│content` (never copy `│`), one payload per item: `text` is bare content (`""` deletes) or `text_ref` writes a served span (`"copy"` keeps the source, `"cut"` also retires it — in this file or in the `file` it names). `at`: "in-place" (default), "before", "after". Chain from diff anchors with no re-read.';
 export const EDIT_GUIDELINES: string[] = [
-  'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char content hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`.',
-  'edit: payload shape `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "replace_with": text }, ...] }` — `file` is the text file (never a directory); `edits` length is the arity (1 = single, >1 = batched atomically to the one file).',
-  "edit: `anchor_from`/`anchor_to` bound the inclusive range (both lines replaced); when an anchor no longer matches, re-read the file and copy fresh anchors.",
-  'edit: `replace_with` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused.',
-  "edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read.",
+  'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`.',
+  `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`; both payloads or neither is refused.`,
+  "edit: `anchor_from`/`anchor_to` bound the inclusive range — in-place replaces both boundary lines, while `before`/`after` insert at the boundary instead; out-of-band writes (bash, scripts, formatters) bypass serve recording, so when an anchor no longer matches, re-read the file and copy fresh anchors.",
+  'edit: `text` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused; `text` is verbatim, so include the indentation you want.',
+  'edit: place the payload with `at` — "in-place" (default) rewrites it, "before"/"after" insert at its boundary and require a single-line resolved target; `text: ""` with "before"/"after" writes nothing (noop).',
+  'edit: `text_ref` `{anchor_from, anchor_to, mode}` writes the bytes of a served span into the target — `mode: "copy"` keeps the source, `mode: "cut"` also retires it; with `file` naming another served file, both modes apply to that file\'s served rows and a `cut` retires the span there in the same call; `mode` is required, never inferred. Prefer `text_ref` to reproduce served bytes exactly or to move them. Use `text` for content you author.',
+  "edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so copy `anchor_from`/`anchor_to` only from the served rows of the file the payload names: this file by default, `text_ref.file` when it names another file.",
+  "edit: after success the diff serves fresh `HASH│content` rows — copy new anchors from there for your next call; no re-read. Verify that the returned diff matches your intended mutation.",
   "edit: a `[MODEL] [W_*]` line in `content` is informational — the mutation was applied; a `[MODEL] [E_*]` line is your retry instruction or a rejection — follow it from the message alone; a `[MODEL]` line that presents rows as a fresh read (`Current range (fresh read):`) is not a blind retry — decide from those rows; a dimmed `[USER]` line in `details` is human info, never your error.",
-  "edit: batch independent ranges via one `edits` array — the call is atomic (any failure writes nothing).",
-  "edit: out-of-band writes (`bash`, scripts, formatters) bypass serve recording — your next `edit` correctly reports their lines as changed; re-read to sync.",
-  "edit: anchors are bound to the file that served them — each anchor's lease is (session, file, anchor), so an anchor copied from another file's served rows is refused; copy `anchor_from`/`anchor_to` only from this file's served rows.",
+  "edit: batch independent ranges via one `edits` array — every edit validates BEFORE the first rename and any failure there writes nothing; a foreign `cut` writes its files in a fixed order, a defeated rollback restores captured bytes or is repaired on the next run.",
 ];
 
 function _getPayloadPromptFragments(): {
@@ -115,59 +204,20 @@ function _getPayloadPromptFragments(): {
   };
 }
 
-function emitFilePathDeprecationWarning(filePathValue: unknown, context: string = "payload"): void {
-  console.warn(
-    `[DEPRECATED] "file_path" is deprecated, use "file" instead (${context}). Received file_path=${JSON.stringify(filePathValue)}. This alias will be removed in a future version.`,
-  );
+function describeReceived(input: unknown): string {
+  if (input === undefined) return "Received no arguments.";
+  if (input === null) return "Received null.";
+  if (typeof input === "string") return `Received a bare string (${JSON.stringify(input)}).`;
+  const json = JSON.stringify(input);
+  if (typeof json === "string" && json.length > 600) {
+    const truncated = json.slice(0, 600);
+    return `Received: ${truncated}… (+truncated, full file+edits in tool input)`;
+  }
+  return `Received: ${json}`;
 }
 
-function itemFromTuple(value: unknown): EditItem | undefined {
-  if (!Array.isArray(value) || value.length !== 3) return undefined;
-  const [anchor_from, anchor_to, replace_with] = value;
-  if (
-    typeof anchor_from !== "string" ||
-    typeof anchor_to !== "string" ||
-    typeof replace_with !== "string"
-  ) {
-    return undefined;
-  }
-  return { anchor_from, anchor_to, replace_with };
-}
-
-const ITEM_KS = new Set(["anchor_from", "anchor_to", "replace_with"]);
-const LEGACY_ITEM_KS = new Set(["remove_from", "remove_to", "replacement_text"]);
-
-function itemFrom(value: unknown): EditItem | undefined {
-  if (Array.isArray(value)) return itemFromTuple(value);
-  if (!isRec(value)) return undefined;
-  const keys = new Set(Object.keys(value));
-  if (keys.size === ITEM_KS.size && [...ITEM_KS].every((k) => keys.has(k))) {
-    const { anchor_from, anchor_to, replace_with } = value;
-    if (
-      typeof anchor_from !== "string" ||
-      typeof anchor_to !== "string" ||
-      typeof replace_with !== "string"
-    ) {
-      return undefined;
-    }
-    return { anchor_from, anchor_to, replace_with };
-  }
-  if (keys.size === LEGACY_ITEM_KS.size && [...LEGACY_ITEM_KS].every((k) => keys.has(k))) {
-    const { remove_from, remove_to, replacement_text } = value as Record<string, unknown>;
-    if (
-      typeof remove_from !== "string" ||
-      typeof remove_to !== "string" ||
-      typeof replacement_text !== "string"
-    ) {
-      return undefined;
-    }
-    return {
-      anchor_from: remove_from,
-      anchor_to: remove_to,
-      replace_with: replacement_text,
-    };
-  }
-  return undefined;
+function quoted(keys: string[]): string {
+  return keys.map((key) => `"${key}"`).join(", ");
 }
 
 function sanitizePath(value: unknown): string | null {
@@ -210,71 +260,211 @@ function sanitizePath(value: unknown): string | null {
   return s.length > 0 ? s : null;
 }
 
-const ROOT_INPUT_KS = new Set(["file", "file_path", "path", "edits", "mode"]);
+// WHY: (ticket-04 §3) the finite key-set gate: an item is legal only when its key set is EXACTLY
+// WHY: one of S1 {anchor_from, anchor_to, text}, S2 = S1 + at, S3 {anchor_from, anchor_to,
+// WHY: text_ref}, S4 = S3 + at — set EQUALITY, never superset, so a legacy key, an `op` field,
+// WHY: both payloads or neither payload all refuse with the offending keys named.
+const ITEM_KEY_SETS: readonly (readonly string[])[] = [
+  ["anchor_from", "anchor_to", "text"],
+  ["anchor_from", "anchor_to", "at", "text"],
+  ["anchor_from", "anchor_to", "text_ref"],
+  ["anchor_from", "anchor_to", "at", "text_ref"],
+];
 
-export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined {
-  if (!isRec(input)) return undefined;
-  const rec = input as Record<string, unknown>;
-  for (const key of Object.keys(rec)) {
-    if (!ROOT_INPUT_KS.has(key)) return undefined;
+function keySetEquals(keys: Set<string>, shape: readonly string[]): boolean {
+  if (keys.size !== shape.length) return false;
+  return shape.every((key) => keys.has(key));
+}
+
+function isLegalItemKeySet(keys: Set<string>): boolean {
+  return ITEM_KEY_SETS.some((shape) => keySetEquals(keys, shape));
+}
+
+// WHY: bound to the union (§9.12): a list element outside `Placement` fails `pnpm run typecheck`.
+const AT_SPELLINGS = ["in-place", "before", "after"] as const satisfies readonly Placement[];
+
+function analyzeItem(value: unknown, index: number): string | undefined {
+  if (!isRec(value)) {
+    return `edit[${index}] must be an object: ${ITEM_SHAPE}.`;
   }
-  let mode: "general" | "literal" | undefined;
+  const keys = new Set(Object.keys(value));
+  const hasText = keys.has("text");
+  const hasRef = keys.has("text_ref");
+  if (!isLegalItemKeySet(keys)) {
+    if (hasText && hasRef) {
+      return `edit[${index}] carries both "text" and "text_ref": exactly one payload per item (${ITEM_SHAPE}).`;
+    }
+    // WHY: (§9.3) an illegal key set is often also MISSING a required key; the unsupported-field
+    // WHY: list alone renders blank there, so the refusal must name the missing keys too.
+    const payloadKeys = new Set(["anchor_from", "anchor_to", "at", "text", "text_ref"]);
+    const offending = [...keys].filter((key) => !payloadKeys.has(key));
+    const missing = ["anchor_from", "anchor_to"].filter((key) => !keys.has(key));
+    const clauses: string[] = [];
+    if (offending.length > 0) clauses.push(`unsupported field(s) ${quoted(offending)}`);
+    if (missing.length > 0) clauses.push(`missing required field(s) ${quoted(missing)}`);
+    if (!hasText && !hasRef) {
+      const named = clauses.length > 0 ? `${clauses.join(";")} — ` : "";
+      return `edit[${index}] carries no payload: ${named}exactly one payload per item (${ITEM_SHAPE}).`;
+    }
+    return `edit[${index}] has ${clauses.join(";")} (${ITEM_SHAPE}).`;
+  }
+  const { anchor_from, anchor_to, at, text, text_ref } = value;
+  if (typeof anchor_from !== "string" || typeof anchor_to !== "string") {
+    return `edit[${index}] "anchor_from"/"anchor_to" must be bare 3-char hash anchor strings copied from served output (before │).`;
+  }
+  if (at !== undefined) {
+    if (at === "in_place") {
+      return `edit[${index}] "at" was "in_place" — the canonical spelling is "in-place": "at" must be "in-place", "before" or "after".`;
+    }
+    if (typeof at !== "string" || !(AT_SPELLINGS as readonly string[]).includes(at)) {
+      return `edit[${index}] "at" must be "in-place", "before" or "after" when present.`;
+    }
+  }
+  if (hasText) {
+    if (typeof text !== "string") {
+      return `edit[${index}] "text" must be a string with \\n line separators, not an array. Use "" to delete the range.`;
+    }
+    return undefined;
+  }
+  if (!isRec(text_ref)) {
+    return `edit[${index}] "text_ref" must be an object { anchor_from, anchor_to, file?, mode }.`;
+  }
+  const refKeys = new Set(Object.keys(text_ref));
+  if (!refKeys.has("mode")) {
+    return `edit[${index}] "text_ref" requires "mode": "copy" or "cut".`;
+  }
+  const refBase = new Set(["anchor_from", "anchor_to", "file", "mode"]);
+  const refOffending = [...refKeys].filter((key) => !refBase.has(key));
+  if (refOffending.length > 0) {
+    return `edit[${index}] "text_ref" has unsupported field(s) ${quoted(refOffending)}; it is { anchor_from, anchor_to, file?, mode }.`;
+  }
+  const { mode } = text_ref;
+  if (mode !== "copy" && mode !== "cut") {
+    return `edit[${index}] "text_ref" "mode" must be "copy" or "cut".`;
+  }
+  const refFile = text_ref.file;
+  if ("file" in text_ref && typeof refFile !== "string") {
+    return `edit[${index}] "text_ref" "file" must be a string naming the served file to read from.`;
+  }
+  // WHY: (§9.2) an empty "file" was admitted and only failed deep in the loader as
+  // WHY: `[E_UNSUPPORTED_FILE] Path is a directory: .` — the field-level refusal belongs here.
+  if (refFile === "") {
+    return `edit[${index}] "text_ref" "file" must name a served file to read from — an empty string is not a path (omit "file" to reference this file).`;
+  }
+  if (typeof text_ref.anchor_from !== "string" || typeof text_ref.anchor_to !== "string") {
+    return `edit[${index}] "text_ref" "anchor_from"/"anchor_to" must be bare 3-char hash anchor strings copied from the served output of the file they name.`;
+  }
+  return undefined;
+}
+
+// WHY: (remediation-2 B3 → ticket-04b) there was previously a second, LEXICAL "same file" test
+// WHY: here that refused foreign `mode: "cut"` at admission. One definition owns the question —
+// WHY: the engine's realpath classification (`sameResolvedPath`, mutation-engine/pipeline.ts) —
+// WHY: and admission stays a pure shape check: a foreign `cut` is ADMITTED and committed as one
+// WHY: correlated transaction (`runCutTransaction`, ADR-0028), witnessed through the entry point
+// WHY: by `edit.wire-contract.test.ts` and `edit.foreign-cut.test.ts`. Path identity on the real
+// WHY: filesystem belongs to the engine seam.
+/**
+ * The single admission analyzer shared by `editRequestFrom` (normReq), `prepareEditArguments` and
+ * `assertReq` (ticket-04): every entry point rejects the same inputs with the same message, so the
+ * tool seam and the engine seam cannot drift apart.
+ */
+type Admission = { ok: true; request: PreAdmissionRequest } | { ok: false; message: string };
+
+function analyzeRequest(input: unknown): Admission {
+  if (!isRec(input)) {
+    return { ok: false, message: `${EDIT_PAYLOAD_HINT} ${describeReceived(input)}` };
+  }
+  const rec = input as Record<string, unknown>;
+  const rootBase = new Set(["file", "edits", "mode"]);
+  const rootOffending = Object.keys(rec).filter((key) => !rootBase.has(key));
+  if (rootOffending.length > 0) {
+    return {
+      ok: false,
+      message:
+        `Edit request has unsupported field(s) ${quoted(rootOffending)}; it is exactly ` +
+        `{ file, edits: [{ anchor_from, anchor_to, text | text_ref[, at] }, ...], mode?: "general" | "literal" }. ` +
+        describeReceived(input),
+    };
+  }
+  let mode: EditMode | undefined;
   if ("mode" in rec) {
-    if (rec.mode !== "general" && rec.mode !== "literal") return undefined;
+    if (rec.mode !== "general" && rec.mode !== "literal") {
+      return {
+        ok: false,
+        message: `Edit request "mode" must be "general" or "literal" (absent means "general"). ${EDIT_PAYLOAD_HINT}`,
+      };
+    }
     mode = rec.mode;
   }
-  const hasFilePath = "file_path" in rec;
-  const hasPath = "path" in rec;
-  if (hasFilePath) {
-    emitFilePathDeprecationWarning(rec.file_path, "edit payload");
+  if (!("file" in rec)) {
+    return {
+      ok: false,
+      message: `Edit request requires "file" (the text file to edit). ${EDIT_PAYLOAD_HINT}`,
+    };
   }
-  let effectivePath: unknown;
-  const hasFile = "file" in rec;
-  if (hasFile) {
-    effectivePath = rec.file;
-  } else if (hasPath) {
-    effectivePath = rec.path;
-    if (
-      (typeof effectivePath !== "string" && effectivePath !== null) ||
-      (effectivePath === undefined && typeof rec.file_path === "string")
-    ) {
-      if (typeof rec.file_path === "string") {
-        effectivePath = rec.file_path;
-      }
-    }
-  } else if (hasFilePath) {
-    effectivePath = rec.file_path;
-  } else {
-    return undefined;
+  const sanitized = sanitizePath(rec.file);
+  if (sanitized === null) {
+    return {
+      ok: false,
+      message: `Edit request "file" must be a non-empty string path to a text file. ${EDIT_PAYLOAD_HINT}`,
+    };
   }
-
-  if (!("edits" in rec)) return undefined;
-  const edits = rec.edits;
-
-  const sanitized = typeof effectivePath === "string" ? sanitizePath(effectivePath) : null;
-  if (typeof effectivePath !== "string" || sanitized === null || sanitized.length === 0) {
-    return undefined;
+  if (!("edits" in rec) || !Array.isArray(rec.edits) || rec.edits.length === 0) {
+    return {
+      ok: false,
+      message: `Edit request requires a non-empty "edits" array. ${EDIT_PAYLOAD_HINT}`,
+    };
   }
   const file = sanitized;
-  if (!Array.isArray(edits) || edits.length === 0) return undefined;
-  const items: EditItem[] = [];
-  for (const item of edits) {
-    const normalized = itemFrom(item);
-    if (!normalized) return undefined;
-    items.push(normalized);
+  const items = rec.edits as unknown[];
+  const failures: string[] = [];
+  const edited: EditItem[] = [];
+  for (let index = 0; index < items.length; index++) {
+    const refusal = analyzeItem(items[index], index);
+    if (refusal !== undefined) {
+      failures.push(refusal);
+      continue;
+    }
+    const item = items[index] as EditItem;
+    edited.push(item);
   }
-  if (mode !== undefined) return { file, edits: items, mode };
-  return { file, edits: items };
+  if (failures.length > 0) {
+    return { ok: false, message: `${failures.join(" ")} ${describeReceived(input)}` };
+  }
+  if (mode !== undefined) return { ok: true, request: { file, edits: edited, mode } };
+  return { ok: true, request: { file, edits: edited } };
+}
+
+export function editRequestFrom(input: unknown): PreAdmissionRequest | undefined {
+  const admitted = analyzeRequest(input);
+  return admitted.ok ? admitted.request : undefined;
+}
+
+function normalizedItemFrom(item: EditItem): NormalizedEditItem {
+  const at = item.at ?? "in-place";
+  const payload: DesiredContent =
+    item.text_ref !== undefined
+      ? { kind: "reference", span: item.text_ref, mode: item.text_ref.mode }
+      : item.text === ""
+        ? { kind: "empty" }
+        : { kind: "literal", text: item.text ?? "" };
+  return {
+    target: { anchor_from: item.anchor_from, anchor_to: item.anchor_to },
+    at,
+    payload,
+  };
 }
 
 export function normReq(input: unknown): NormReqResult {
-  const valid = editRequestFrom(input);
-  // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by editRequestFrom returning undefined for invalid
-  if (!valid) return input as NormReqResult;
-  const record: Record<string, unknown> & { file: string; edits: EditItem[] } =
-    valid.mode !== undefined
-      ? { file: valid.file, edits: valid.edits, mode: valid.mode }
-      : { file: valid.file, edits: valid.edits };
+  const admitted = analyzeRequest(input);
+  // SAFETY: input is unvalidated at admission — cast to NormReqResult preserves runtime value for caller validation, narrowed by analyzeRequest refusing invalid shapes
+  if (!admitted.ok) return input as NormReqResult;
+  const items = admitted.request.edits.map(normalizedItemFrom);
+  const record: Record<string, unknown> & { file: string; edits: NormalizedEditItem[] } =
+    admitted.request.mode !== undefined
+      ? { file: admitted.request.file, edits: items, mode: admitted.request.mode }
+      : { file: admitted.request.file, edits: items };
   Object.defineProperty(record, normalizedEdit, {
     value: true,
     enumerable: false,
@@ -282,29 +472,12 @@ export function normReq(input: unknown): NormReqResult {
   return record;
 }
 
-function describeReceived(input: unknown): string {
-  if (input === undefined) return "Received no arguments.";
-  if (input === null) return "Received null.";
-  if (typeof input === "string") return `Received a bare string (${JSON.stringify(input)}).`;
-  const json = JSON.stringify(input);
-  if (typeof json === "string" && json.length > 600) {
-    const truncated = json.slice(0, 600);
-    return `Received: ${truncated}… (+truncated, full file+edits in tool input)`;
-  }
-  return `Received: ${json}`;
-}
-
 export function prepareEditArguments(args: unknown): Record<string, unknown> {
-  const valid = editRequestFrom(args);
-  if (valid) {
-    // SAFETY: valid.edits are folded to modern objects (tuples/legacy keys normalized) so the return matches the public schema
-    if (valid.mode !== undefined)
-      return { file: valid.file, edits: valid.edits as unknown, mode: valid.mode };
-    return { file: valid.file, edits: valid.edits as unknown };
+  const admitted = analyzeRequest(args);
+  if (admitted.ok) {
+    return admitted.request as unknown as Record<string, unknown>;
   }
-  throw new DomainError("E_BAD_PAYLOAD", {
-    message: `${EDIT_PAYLOAD_HINT} ${describeReceived(args)}`,
-  });
+  throw new DomainError("E_BAD_PAYLOAD", { message: admitted.message });
 }
 
 export function getPreviewInput(args: unknown): { file: string; edits: EditItem[] } | null {
@@ -315,11 +488,44 @@ export function getPreviewInput(args: unknown): { file: string; edits: EditItem[
 
 const ROOT_KS = new Set(["file", "edits", "mode"]);
 
+// WHY: bound to the union (§9.12): a list element outside `Placement` fails `pnpm run typecheck`.
+const PLACEMENTS = ["in-place", "before", "after"] as const satisfies readonly Placement[];
+
+function isPlacementValue(value: string): value is Placement {
+  return (PLACEMENTS as readonly string[]).includes(value);
+}
+
+function isNormalizedEditItem(value: unknown): value is NormalizedEditItem {
+  if (!isRec(value)) return false;
+  const { target, at, payload } = value;
+  if (!isRec(target)) return false;
+  if (typeof target.anchor_from !== "string" || typeof target.anchor_to !== "string") return false;
+  if (typeof at !== "string" || !isPlacementValue(at)) return false;
+  if (!isRec(payload)) return false;
+  if (payload.kind === "empty") return true;
+  if (payload.kind === "literal") return typeof payload.text === "string";
+  if (payload.kind === "reference") {
+    return (
+      isRec(payload.span) &&
+      typeof payload.span.anchor_from === "string" &&
+      typeof payload.span.anchor_to === "string" &&
+      (payload.mode === "copy" || payload.mode === "cut")
+    );
+  }
+  return false;
+}
+
 export function assertReq(request: unknown): asserts request is NormalizedEditRequest {
   if (!isNormalizedEdit(request)) {
+    // WHY: a raw (un-normalized) request reaching assertReq must hit the SAME finite key-set gate
+    // WHY: as `prepareEditArguments` — one analyzer, one refusal message, both entry points.
+    const admitted = analyzeRequest(request);
+    if (!admitted.ok) {
+      throw new DomainError("E_BAD_PAYLOAD", { message: admitted.message });
+    }
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        'Edit request must be exactly { file, edits: [{ anchor_from, anchor_to, replace_with }, ...], mode?: "general" | "literal" }. ' +
+        "Edit request must pass through normReq before assertReq: the engine consumes the normalized shape. " +
         EDIT_PAYLOAD_HINT,
     });
   }
@@ -340,7 +546,7 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
     });
   }
 
-  // WHY: the file was answered at admission (editRequestFrom); the narrowed type carries it here.
+  // WHY: the file was answered at admission (analyzeRequest); the narrowed type carries it here.
   if (!Array.isArray(request.edits) || request.edits.length === 0) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message: 'Edit request requires a non-empty "edits" array.',
@@ -348,14 +554,20 @@ export function assertReq(request: unknown): asserts request is NormalizedEditRe
   }
 
   for (let index = 0; index < request.edits.length; index++) {
-    const item = request.edits[index]!;
-    if (
-      typeof item.anchor_from !== "string" ||
-      typeof item.anchor_to !== "string" ||
-      typeof item.replace_with !== "string"
-    ) {
+    const item = request.edits[index];
+    if (!isNormalizedEditItem(item)) {
       throw new DomainError("E_BAD_PAYLOAD", {
-        message: `Edit request edits[${index}] must be { anchor_from, anchor_to, replace_with }: two bare 3-char anchors and the replacement text.`,
+        message: `Edit request edits[${index}] must be { target, at, payload } with exactly one payload: text content, a served-span reference with mode "copy" or "cut", or a deletion (no content).`,
+      });
+    }
+    // WHY: (ticket-04 item (i), remediation-2 B4) the wire folds `"text": ""` into the deletion
+    // WHY: payload, so this guard is a defense for direct `assertReq` callers only; the
+    // WHY: enforcement point for the engine seam is the parse guard in
+    // WHY: `mutation-engine/pipeline.ts` (`parseEdits`, same message), which `execute()` cannot
+    // WHY: bypass. Naming the wire field `"text"` keeps the model-actionable wording.
+    if (item.payload.kind === "literal" && item.payload.text === "") {
+      throw new DomainError("E_BAD_PAYLOAD", {
+        message: `Edit request edits[${index}] "text" must carry at least one line; "text": "" is the deletion payload. Nothing was written.`,
       });
     }
   }

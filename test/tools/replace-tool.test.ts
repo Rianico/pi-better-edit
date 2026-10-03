@@ -20,7 +20,14 @@ describe("editToolSchema", () => {
     expect(schema.properties.edits.items.type).toBe("object");
     expect(schema.properties.edits.items.properties.anchor_from.type).toBe("string");
     expect(schema.properties.edits.items.properties.anchor_to.type).toBe("string");
-    expect(schema.properties.edits.items.properties.replace_with.type).toBe("string");
+    expect(schema.properties.edits.items.properties.text.type).toBe("string");
+    expect(Object.keys(schema.properties.edits.items.properties).sort()).toEqual([
+      "anchor_from",
+      "anchor_to",
+      "at",
+      "text",
+      "text_ref",
+    ]);
   });
 });
 
@@ -36,7 +43,10 @@ describe("regEdit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         { cwd, sessionManager: testSessionManager } as any,
@@ -58,7 +68,10 @@ describe("regEdit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.txt", edits: [[hashes[1]!, hashes[2]!, "BBB\nCCC"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "BBB\nCCC" }],
+        },
         undefined,
         undefined,
         { cwd, sessionManager: testSessionManager } as any,
@@ -80,7 +93,10 @@ describe("regEdit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, ""]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "" }],
+        },
         undefined,
         undefined,
         { cwd, sessionManager: testSessionManager } as any,
@@ -102,7 +118,10 @@ describe("regEdit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+        },
         undefined,
         undefined,
         { cwd, sessionManager: testSessionManager } as any,
@@ -120,7 +139,7 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.txt", edits: [["ZZZ", "ZZZ", "x"]] },
+          { file: "sample.txt", edits: [{ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "x" }] },
           undefined,
           undefined,
           { cwd, sessionManager: testSessionManager } as any,
@@ -141,7 +160,10 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.txt", edits: [[hashes[0]!, hashes[1]!, ""]] },
+          {
+            file: "sample.txt",
+            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[1]!, text: "" }],
+          },
           undefined,
           undefined,
           { cwd, sessionManager: testSessionManager } as any,
@@ -188,7 +210,10 @@ describe("regEdit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.txt", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         { cwd, sessionManager: testSessionManager } as any,
@@ -210,7 +235,10 @@ describe("regEdit", () => {
 
       await editTool.execute(
         "e1",
-        { path: "crlf.txt", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
+        {
+          file: "crlf.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BETA" }],
+        },
         undefined,
         undefined,
         { cwd, sessionManager: testSessionManager } as any,

@@ -55,7 +55,10 @@ describe("multi-session — lease isolation", () => {
       await expect(
         editTool.execute(
           "b1",
-          { path: "small.cpp", edits: [[line9, line9, "\tif (x > 999) {"]] },
+          {
+            file: "small.cpp",
+            edits: [{ anchor_from: line9, anchor_to: line9, text: "\tif (x > 999) {" }],
+          },
           undefined,
           undefined,
           sessionB,
@@ -73,7 +76,10 @@ describe("multi-session — lease isolation", () => {
       await expect(
         editTool.execute(
           "b3",
-          { path: "small.cpp", edits: [[line9, line9, "\tif (x > 999) {"]] },
+          {
+            file: "small.cpp",
+            edits: [{ anchor_from: line9, anchor_to: line9, text: "\tif (x > 999) {" }],
+          },
           undefined,
           undefined,
           sessionB,
@@ -109,7 +115,12 @@ describe("multi-session — lease isolation", () => {
 
       await editTool.execute(
         "b2",
-        { path: "small.cpp", edits: [[bRows[2]!.hash, bRows[2]!.hash, "\t\treturn 42;"]] },
+        {
+          file: "small.cpp",
+          edits: [
+            { anchor_from: bRows[2]!.hash, anchor_to: bRows[2]!.hash, text: "\t\treturn 42;" },
+          ],
+        },
         undefined,
         undefined,
         sessionB,
@@ -117,7 +128,12 @@ describe("multi-session — lease isolation", () => {
       // A edits a line B never touched
       await editTool.execute(
         "a2",
-        { path: "small.cpp", edits: [[aRows[8]!.hash, aRows[8]!.hash, "\tif (x > 999) {"]] },
+        {
+          file: "small.cpp",
+          edits: [
+            { anchor_from: aRows[8]!.hash, anchor_to: aRows[8]!.hash, text: "\tif (x > 999) {" },
+          ],
+        },
         undefined,
         undefined,
         sessionA,
@@ -150,7 +166,12 @@ describe("multi-session — concurrent edits are external changes", () => {
 
       await editTool.execute(
         "b2",
-        { path: "small.cpp", edits: [[bRows[8]!.hash, bRows[8]!.hash, "\tif (x > 111) {"]] },
+        {
+          file: "small.cpp",
+          edits: [
+            { anchor_from: bRows[8]!.hash, anchor_to: bRows[8]!.hash, text: "\tif (x > 111) {" },
+          ],
+        },
         undefined,
         undefined,
         sessionB,
@@ -160,7 +181,12 @@ describe("multi-session — concurrent edits are external changes", () => {
       await expect(
         editTool.execute(
           "a2",
-          { path: "small.cpp", edits: [[aRows[8]!.hash, aRows[8]!.hash, "\tif (x > 222) {"]] },
+          {
+            file: "small.cpp",
+            edits: [
+              { anchor_from: aRows[8]!.hash, anchor_to: aRows[8]!.hash, text: "\tif (x > 222) {" },
+            ],
+          },
           undefined,
           undefined,
           sessionA,
@@ -190,7 +216,12 @@ describe("multi-session — restart semantics", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "small.cpp", edits: [[pre[8]!.hash, pre[8]!.hash, "\tif (x > 999) {"]] },
+          {
+            file: "small.cpp",
+            edits: [
+              { anchor_from: pre[8]!.hash, anchor_to: pre[8]!.hash, text: "\tif (x > 999) {" },
+            ],
+          },
           undefined,
           undefined,
           after,
@@ -204,7 +235,12 @@ describe("multi-session — restart semantics", () => {
       );
       await editTool.execute(
         "e2",
-        { path: "small.cpp", edits: [[post[8]!.hash, post[8]!.hash, "\tif (x > 999) {"]] },
+        {
+          file: "small.cpp",
+          edits: [
+            { anchor_from: post[8]!.hash, anchor_to: post[8]!.hash, text: "\tif (x > 999) {" },
+          ],
+        },
         undefined,
         undefined,
         after,
@@ -238,7 +274,10 @@ describe("multi-session — path scoping", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "one.txt.copy.txt", edits: [[oneRows[1]!.hash, oneRows[1]!.hash, "BRAVO"]] },
+          {
+            file: "one.txt.copy.txt",
+            edits: [{ anchor_from: oneRows[1]!.hash, anchor_to: oneRows[1]!.hash, text: "BRAVO" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -252,8 +291,8 @@ describe("multi-session — path scoping", () => {
         editTool.execute(
           "e2",
           {
-            path: "one.txt.never-read.txt",
-            edits: [[oneRows[1]!.hash, oneRows[1]!.hash, "BRAVO"]],
+            file: "one.txt.never-read.txt",
+            edits: [{ anchor_from: oneRows[1]!.hash, anchor_to: oneRows[1]!.hash, text: "BRAVO" }],
           },
           undefined,
           undefined,
@@ -281,7 +320,7 @@ describe("multi-session — churn does not poison a fresh session", () => {
         const victim = served[0]!.hash;
         await editTool.execute(
           `e${round}`,
-          { path: "churn.txt", edits: [[victim, victim, ""]] },
+          { file: "churn.txt", edits: [{ anchor_from: victim, anchor_to: victim, text: "" }] },
           undefined,
           undefined,
           ctx,
@@ -297,7 +336,12 @@ describe("multi-session — churn does not poison a fresh session", () => {
 
       await editTool.execute(
         "ef",
-        { path: "churn.txt", edits: [[served[15]!.hash, served[15]!.hash, "row 24 final"]] },
+        {
+          file: "churn.txt",
+          edits: [
+            { anchor_from: served[15]!.hash, anchor_to: served[15]!.hash, text: "row 24 final" },
+          ],
+        },
         undefined,
         undefined,
         fresh,

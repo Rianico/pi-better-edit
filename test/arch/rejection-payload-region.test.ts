@@ -1,9 +1,11 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
+import { join } from "node:path";
 import { initHasher, lineHashes, applyEdit } from "../../src/hashline";
 import type { ServedRow } from "../../src/hashline/served-verification";
 import {
   withTempFile,
+  withTempDir,
   setupIntegrationTest,
   useTestHome,
   getText,
@@ -34,6 +36,12 @@ function servedLineRe(): RegExp {
  * (`E_STALE_RANGE`, `E_UNVERIFIED_RANGE`) carry rows under the exact `Current range (fresh read):`
  * heading with no retry hint; every other payload carries rows under `Current range:` with a retry
  * hint.
+ * (04b §12.1, ADR-0021 d4) §D6's payload-shape phrasing is superseded in part: the code alone
+ * selects the remedy, and row presence is a payload detail, not a discriminator. The one
+ * exception within the range family is the FOREIGN leased wrap (`E_STALE_RANGE`/
+ * `E_UNVERIFIED_RANGE` re-wrapped by `foreignLeasedWrap`), which keeps the code but renders zero
+ * rows and no heading — asserted by the settled-shape arm below, which is also the falsifier
+ * this header comment previously lacked.
  */
 function assertLivePayload(args: {
   error: unknown;
@@ -99,7 +107,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[betaRef, betaRef, "BETA"]] },
+        { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA" }] },
         undefined,
         undefined,
         ctx,
@@ -121,7 +129,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -157,7 +165,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[betaRef, betaRef, "BETA_NEW"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "BETA_NEW" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -189,7 +200,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[gammaRef, gammaRef, "GAMMA_NEW"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "GAMMA_NEW" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -224,7 +238,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: l3Ref, anchor_to: l7Ref, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -279,7 +293,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
 
       const applied = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[l3Ref, l7Ref, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: l3Ref, anchor_to: l7Ref, text: "X" }] },
         undefined,
         undefined,
         ctx,
@@ -299,7 +313,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[3]!, hashes[4]!, "X"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[3]!, anchor_to: hashes[4]!, text: "X" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -352,10 +369,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         .execute(
           "e1",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              { anchor_from: alphaRef, anchor_to: betaRef, replace_with: "X" },
-              { anchor_from: betaRef, anchor_to: gammaRef, replace_with: "Y" },
+              { anchor_from: alphaRef, anchor_to: betaRef, text: "X" },
+              { anchor_from: betaRef, anchor_to: gammaRef, text: "Y" },
             ],
           },
           undefined,
@@ -376,10 +393,10 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         .execute(
           "e2",
           {
-            path: "sample.ts",
+            file: "sample.ts",
             edits: [
-              { anchor_from: alphaRef, anchor_to: alphaRef, replace_with: "ALPHA" },
-              { anchor_from: betaRef, anchor_to: betaRef, replace_with: "beta" },
+              { anchor_from: alphaRef, anchor_to: alphaRef, text: "ALPHA" },
+              { anchor_from: betaRef, anchor_to: betaRef, text: "beta" },
             ],
           },
           undefined,
@@ -494,7 +511,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, betaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: betaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -526,7 +543,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const retryTo = servedLines[1]!.split("│")[0]!;
       const retry = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[retryFrom, retryTo, "X"]] },
+        { file: "sample.ts", edits: [{ anchor_from: retryFrom, anchor_to: retryTo, text: "X" }] },
         undefined,
         undefined,
         ctx,
@@ -549,7 +566,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, betaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: betaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -588,7 +605,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[betaRef, gammaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: gammaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -630,7 +647,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[l9Ref, l10Ref, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: l9Ref, anchor_to: l10Ref, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -705,6 +722,76 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         expectedCode: "E_UNVERIFIED_RANGE",
       }),
     ).toThrow();
+  });
+
+  it("foreign leased wrap renders the settled §12.1 shape: code kept, zero rows, no heading", async () => {
+    await withTempDir("foreign-armed-shape-", async (cwd) => {
+      await writeFile(join(cwd, "source.txt"), "a\nb\nc\nd\n", "utf-8");
+      await writeFile(join(cwd, "target.txt"), "1\n2\n3\n", "utf-8");
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+      const hs = await lineHashes("a\nb\nc\nd\n", `${home.testPath}/source.txt`);
+      const ht = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
+      // Retire one served interior identity IN TOOL so the leased span is stale, then aim a
+      // foreign copy at the stale span: the engine re-wraps the leased rejection for the
+      // foreign file. The v1 recipe of edit.foreign-attribution.test.ts, witnessed here through
+      // the TOOL seam (editTool.execute) rather than the engine seam — E8 through the entry
+      // point that reaches the wrap.
+      await editTool.execute(
+        "e1",
+        { file: "source.txt", edits: [{ anchor_from: hs[0]!, anchor_to: hs[0]!, text: "B" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      let caught: unknown;
+      try {
+        await editTool.execute(
+          "e2",
+          {
+            file: "target.txt",
+            edits: [
+              {
+                anchor_from: ht[0]!,
+                anchor_to: ht[0]!,
+                text_ref: {
+                  anchor_from: hs[0]!,
+                  anchor_to: hs[2]!,
+                  file: "source.txt",
+                  mode: "copy",
+                },
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        );
+      } catch (error) {
+        caught = error;
+      }
+      const err = caught as {
+        code?: string;
+        message: string;
+        servedRows: ServedRow[];
+        servedBlock: string;
+      };
+      // Settled shape (amendment): code preserved · servedRows [] · servedBlock "" · headline
+      // names refFile · no `Current range` heading of either form.
+      // WHY: red-first mutation that turned this assertion RED: reverting `foreignLeasedWrap` to
+      // WHY: the bare leased pass-through (ticket-04 remediation-2, HEAD-src witness
+      // WHY: /tmp/ticket04-remed2/red-raw-v2.log failure 1 — message lacked the file name).
+      expect(err.code).toBe("E_UNVERIFIED_RANGE");
+      expect(err.servedRows).toEqual([]);
+      expect(err.servedBlock).toBe("");
+      expect(err.message).toContain("source.txt");
+      expect(err.message).not.toContain("Current range");
+      expect(err.message).not.toMatch(servedLineRe());
+      // Nothing was written to either file by the refused call.
+      await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe("B\nb\nc\nd\n");
+      await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe("1\n2\n3\n");
+    });
   });
 
   it("negative control: a shifted survivor still serving fails the check", async () => {

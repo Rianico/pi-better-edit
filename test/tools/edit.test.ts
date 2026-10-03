@@ -15,7 +15,10 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, null]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: null }],
+          },
           undefined,
           undefined,
           ctx,
@@ -24,7 +27,7 @@ describe("regEdit", () => {
     });
   });
 
-  it("accepts multi-line replace_with with \\n separators", async () => {
+  it("accepts multi-line text with \\n separators", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", home.testPath);
@@ -32,7 +35,10 @@ describe("regEdit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[0]!, hashes[0]!, "a\nb"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "a\nb" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -52,7 +58,10 @@ describe("regEdit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -64,7 +73,7 @@ describe("regEdit", () => {
     });
   });
 
-  it("refuses a reproduced served row in replace_with with E_SUSPICIOUS_TEXT (deny, not strip)", async () => {
+  it("refuses a reproduced served row in text with E_SUSPICIOUS_TEXT (deny, not strip)", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -73,7 +82,10 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, `${hashes[1]!}│bbb`]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]!}│bbb` }],
+          },
           undefined,
           undefined,
           ctx,
@@ -91,7 +103,10 @@ describe("regEdit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "Zz9│BBB"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "Zz9│BBB" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -110,7 +125,10 @@ describe("regEdit", () => {
       const marker = `+${hashes[1]!}│BBB`;
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, marker]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: marker }],
+        },
         undefined,
         undefined,
         ctx,
@@ -129,7 +147,10 @@ describe("regEdit", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[2]!, hashes[1]!, "X"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[1]!, text: "X" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -151,7 +172,12 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[`${hashes[1]!}│bbb`, `${hashes[1]!}│bbb`, "BBB"]] },
+          {
+            file: "sample.ts",
+            edits: [
+              { anchor_from: `${hashes[1]!}│bbb`, anchor_to: `${hashes[1]!}│bbb`, text: "BBB" },
+            ],
+          },
           undefined,
           undefined,
           ctx,
@@ -172,7 +198,10 @@ describe("regEdit — robustness", () => {
       try {
         const result = await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -197,7 +226,10 @@ describe("regEdit — robustness", () => {
       try {
         const result = await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -222,7 +254,10 @@ describe("regEdit — robustness", () => {
       try {
         const result = await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -248,7 +283,10 @@ describe("regEdit — robustness", () => {
       try {
         const result = await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -280,7 +318,10 @@ describe("regEdit — robustness", () => {
         await expect(
           editTool.execute(
             "e1",
-            { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB"]] },
+            {
+              file: "sample.ts",
+              edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+            },
             undefined,
             undefined,
             ctx,

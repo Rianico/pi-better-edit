@@ -33,10 +33,10 @@ describe("batch legacy blocked-hashes atomicity (#117)", () => {
         .execute(
           "e1",
           {
-            path: "legacy-fail.txt",
+            file: "legacy-fail.txt",
             edits: [
-              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" },
-              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: `${hashes[1]}│beta` },
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│beta` },
             ],
           },
           undefined,
@@ -65,10 +65,10 @@ describe("batch legacy blocked-hashes atomicity (#117)", () => {
       await editTool.execute(
         "e1",
         {
-          path: "legacy-ok.txt",
+          file: "legacy-ok.txt",
           edits: [
-            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: "ALPHA" },
-            { anchor_from: hashes[2]!, anchor_to: hashes[2]!, replace_with: "GAMMA" },
+            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+            { anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "GAMMA" },
           ],
         },
         undefined,

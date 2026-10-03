@@ -150,10 +150,46 @@ export function uniqueServedPosition(
   return uniqueItemPosition(served, anchor);
 }
 
-export type HEdit = { content_lines: string[]; hash_bounds: [Anchor, Anchor] };
+/**
+ * Internal placement of a resolved span's mutation. `"in-place"` (also the default when absent)
+ * rewrites the span's bytes; `"before"`/`"after"` splice at a zero-width point adjacent to a
+ * single-line resolved span. Library-level `applyEdit` callers set it; the wire carries the same
+ * spelling as `at` (ticket-04), and the pipeline passes it down only when it is not in-place.
+ */
+export type EditPlacement = "in-place" | "before" | "after";
+
+// WHY: bound to the union (§9.12): a list element outside `EditPlacement` fails `pnpm run typecheck`;
+// WHY: consumers must not re-enumerate the literals inline.
+const EDIT_PLACEMENTS = ["in-place", "before", "after"] as const satisfies readonly EditPlacement[];
+
+function isEditPlacement(value: unknown): value is EditPlacement {
+  return typeof value === "string" && (EDIT_PLACEMENTS as readonly string[]).includes(value);
+}
+
+// WHY: rendered from the bound list so the refusal's allowed values cannot drift from the vocabulary.
+function placementSpellings(): string {
+  const quoted = EDIT_PLACEMENTS.map((value) => `"${value}"`);
+  const last = quoted.pop()!;
+  return `${quoted.join(", ")} or ${last}`;
+}
+
+/**
+ * The same-file line span a span-ref payload copies from (ticket-02). `retire` marks a move:
+ * the source's own span is deleted in the same single-pass assembly, computed against the same
+ * pre-item buffer as the target splice.
+ */
+export type SpanSourceRef = { bounds: [Anchor, Anchor]; retire: boolean };
+
+export type HEdit = {
+  content_lines: string[];
+  hash_bounds: [Anchor, Anchor];
+  placement?: EditPlacement;
+  source?: SpanSourceRef;
+};
 export type RHEdit = {
   content_lines: string[];
   hash_bounds: [RAnchor, RAnchor];
+  placement?: EditPlacement;
 };
 
 interface HMismatch {
@@ -169,9 +205,11 @@ export interface NEdit {
 }
 
 export type HTEdit = {
-  replace_with: string;
+  text: string;
   anchor_from: string;
   anchor_to: string;
+  placement?: EditPlacement;
+  source?: { anchor_from: string; anchor_to: string; retire: boolean };
 };
 
 function resAnchorFromMap(ref: Anchor, hashIndex: Map<string, number[]>): RAnchor | HMismatch {
@@ -298,14 +336,14 @@ export function fmtMismatchWithServes(
   return { message: out.join("\n"), servedRows };
 }
 
-const ITEM_KS = new Set(["replace_with", "anchor_from", "anchor_to"]);
+const ITEM_KS = new Set(["text", "anchor_from", "anchor_to", "placement", "source"]);
 
 function assertItem(edit: Record<string, unknown>): void {
   rejectUnknownFields(
     edit,
     ITEM_KS,
     "Edit",
-    "The edit takes only { replace_with, anchor_from, anchor_to }.",
+    "The edit takes only { text, anchor_from, anchor_to }.",
   );
 
   if ("anchor_from" in edit && typeof edit.anchor_from !== "string") {
@@ -320,16 +358,16 @@ function assertItem(edit: Record<string, unknown>): void {
         'Field "anchor_to" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.',
     });
   }
-  if (!("replace_with" in edit)) {
+  if (!("text" in edit)) {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        'The edit requires a "replace_with" field. Provide the replacement text (use "" to delete). Nothing was written.',
+        'The edit requires a "text" field. Provide the replacement text (use "" to delete). Nothing was written.',
     });
   }
-  if (typeof edit.replace_with !== "string") {
+  if (typeof edit.text !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
       message:
-        '"replace_with" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
+        '"text" must be a string with \\n line separators, not an array. Do not pass an array of lines — pass the replacement text as one string: "line1\\nline2". Use "" to delete a range. Nothing was written.',
     });
   }
   if (typeof edit.anchor_from !== "string" || typeof edit.anchor_to !== "string") {
@@ -337,6 +375,37 @@ function assertItem(edit: Record<string, unknown>): void {
       message:
         'The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.',
     });
+  }
+  // SAFETY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement
+  // SAFETY: value — `pipeline.ts` and `apply.ts` fall an unrecognized placement through to the
+  // SAFETY: in-place path, which REMOVES the target span, and no `switch`/`assertNever` covers it.
+  // SAFETY: Keep it a refusal.
+  // WHY: the wire vocabulary appears on a library path on purpose: the internal field is
+  // WHY: `placement`, but `E_BAD_PAYLOAD` is MODEL tier — the retrying party acts on the wire
+  // WHY: name `at`, never on a field it never sent (sweep (a)).
+  if ("placement" in edit && !isEditPlacement(edit.placement)) {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: `Field "at" must be ${placementSpellings()}. Nothing was written.`,
+    });
+  }
+  if ("source" in edit) {
+    const source = edit.source;
+    if (
+      typeof source !== "object" ||
+      source === null ||
+      Array.isArray(source) ||
+      !("anchor_from" in (source as object)) ||
+      !("anchor_to" in (source as object)) ||
+      !("retire" in (source as object)) ||
+      typeof (source as { anchor_from?: unknown }).anchor_from !== "string" ||
+      typeof (source as { anchor_to?: unknown }).anchor_to !== "string" ||
+      typeof (source as { retire?: unknown }).retire !== "boolean"
+    ) {
+      throw new DomainError("E_BAD_PAYLOAD", {
+        message:
+          'Field "text_ref" must be { anchor_from, anchor_to, mode: "copy" | "cut" }: two bare 3-char anchors bounding the same-file span — "cut" additionally retires it. Nothing was written.',
+      });
+    }
   }
 }
 
@@ -356,7 +425,7 @@ function firstHashFromBlock(block: string): string | undefined {
 export function resEdit(edit: HTEdit): HEdit {
   assertItem(edit as Record<string, unknown>);
 
-  const editLines = parseText(edit.replace_with);
+  const editLines = parseText(edit.text);
   const bounds = [edit.anchor_from, edit.anchor_to].map((ref) => {
     const trimmed = ref.trim();
     if (trimmed.includes("\n")) {
@@ -386,6 +455,18 @@ export function resEdit(edit: HTEdit): HEdit {
   return {
     content_lines: editLines,
     hash_bounds: [parseHashRef(bounds[0]), parseHashRef(bounds[1])],
+    ...(edit.placement !== undefined ? { placement: edit.placement } : {}),
+    ...(edit.source !== undefined
+      ? {
+          source: {
+            bounds: [
+              parseHashRef(edit.source.anchor_from),
+              parseHashRef(edit.source.anchor_to),
+            ] as [Anchor, Anchor],
+            retire: edit.source.retire,
+          },
+        }
+      : {}),
   };
 }
 
@@ -458,6 +539,7 @@ export function valEdit(
       resolved: {
         content_lines: edit.content_lines,
         hash_bounds: [endResolved, startResolved],
+        ...(edit.placement !== undefined ? { placement: edit.placement } : {}),
       },
       mismatches,
       reversed: { fromHash: edit.hash_bounds[0].hash, toHash: edit.hash_bounds[1].hash },
@@ -468,6 +550,7 @@ export function valEdit(
     resolved: {
       content_lines: edit.content_lines,
       hash_bounds: [startResolved, endResolved],
+      ...(edit.placement !== undefined ? { placement: edit.placement } : {}),
     },
     mismatches,
   };

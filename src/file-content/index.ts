@@ -141,8 +141,11 @@ export async function prepareFile(
     options?.maxTruncLines ?? AUTO_READ_MAX,
   );
 
+  // WHY: (04b-rem P3-4 ruling) the old tail promised "editing rewrites the file as UTF-8" — the
+  // WHY: admission round-trip guard (E_LOSSY_TEXT) refuses such an edit instead, so the read
+  // WHY: disclosure now states what the tool actually does with these bytes.
   const previewText = norm.hadUtf8DecodeErrors
-    ? `${preview.text}\n\n[Non-UTF-8 bytes shown as U+FFFD; editing rewrites the file as UTF-8.]`
+    ? `${preview.text}\n\n[Non-UTF-8 bytes shown as U+FFFD; edit refuses this file — its bytes do not round-trip UTF-8.]`
     : preview.text;
 
   return {

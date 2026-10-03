@@ -41,8 +41,8 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "BBB" }],
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
         },
         undefined,
         undefined,
@@ -62,8 +62,8 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.ts",
-          edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[1]!, replace_with: "X" }],
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[1]!, text: "X" }],
         },
         undefined,
         undefined,
@@ -83,8 +83,8 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await servedHashes(ctx, readTool, "sample.ts");
       const payload = {
-        path: "sample.ts",
-        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "bbb" }],
+        file: "sample.ts",
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
       };
       const first = await editTool.execute("e1", payload, undefined, undefined, ctx);
       assertNoErrorOnSuccess({
@@ -109,8 +109,8 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       const result = await editTool.execute(
         "e1",
         {
-          path: "sample.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "ZZZ│alpha" }],
+          file: "sample.txt",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "ZZZ│alpha" }],
         },
         undefined,
         undefined,

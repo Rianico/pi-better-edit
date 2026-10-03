@@ -11,9 +11,9 @@ import {
   prepareEditArguments,
   EDIT_DESCRIPTION,
   type NormalizedEditRequest,
+  type EditItem,
   editToolSchema,
   editItemSchema,
-  replaceWithSchema,
   anchorFromSchema,
   anchorToSchema,
   editFileSchema,
@@ -29,11 +29,10 @@ import type { RPreview, RRState } from "./edit-render.js";
 void EDIT_DESCRIPTION;
 /** SAFETY: @deprecated Import from "./payload-contract.js" — single source per ADR-0007 */
 export { assertReq };
-/** SAFETY: @deprecated Import from "./payload-contract.js" — single source per ADR-0007. Re-exports retained for compatibility until next MAJOR. */
+/** SAFETY: @deprecated Import from "./payload-contract.js" — single source per ADR-0007. Re-exports retained for compatibility until next MAJOR. `replaceWithSchema` is REMOVED: the ticket-04 wire has no `replace_with` fold. */
 export {
   editToolSchema,
   editItemSchema,
-  replaceWithSchema,
   anchorFromSchema,
   anchorToSchema,
   editFileSchema,
@@ -41,11 +40,8 @@ export {
 };
 export { reuseText, reuseMarkdown } from "./tui-presenter.js";
 
-export type EditParams = {
-  anchor_from: string;
-  anchor_to: string;
-  replace_with: string;
-};
+/** The wire item (ticket-04): exactly one payload — `text` or `text_ref` — plus optional `at`. */
+export type EditParams = EditItem;
 
 export type EditRequest = NormalizedEditRequest;
 

@@ -171,6 +171,10 @@ describe("undo-store — raw entries", () => {
       resultContent: "new",
     });
     const entry = getUndoEntry(store, "/a.ts");
+    // (04b section 4) `transactionId: null` is part of the round-trip shape: an ordinary single-file
+    // edit row carries no transaction; only a cut's rows share a non-null id.
+    // (04b-rem P2-2) `rawPre: null` joins the same shape: only a cut transaction's rows carry the
+    // raw pre image; an ordinary row's absence of one is the canonical-fold fallback signal.
     expect(entry).toEqual({
       content: "old",
       bom: "\uFEFF",
@@ -178,6 +182,8 @@ describe("undo-store — raw entries", () => {
       hashes: ["abc", "def"],
       resultContent: "new",
       snapshotHash: null,
+      transactionId: null,
+      rawPre: null,
     });
   });
 

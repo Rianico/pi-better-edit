@@ -230,7 +230,12 @@ describe("read tool — windows", () => {
       // Both anchors come from different windows: the leases granted by one read must cover them.
       const edited = await editTool.execute(
         "e1",
-        { path: "windows.ts", edits: [[byLine.get("line 1")!, byLine.get("line 12")!, "X"]] },
+        {
+          file: "windows.ts",
+          edits: [
+            { anchor_from: byLine.get("line 1")!, anchor_to: byLine.get("line 12")!, text: "X" },
+          ],
+        },
         undefined,
         undefined,
         ctx,
@@ -261,7 +266,12 @@ describe("read tool — windows", () => {
       // Lines 2-3 appear in both windows; their anchors must resolve against the lease granted once.
       const edited = await editTool.execute(
         "e1",
-        { path: "overlap.ts", edits: [[byLine.get("line 2")!, byLine.get("line 3")!, "X"]] },
+        {
+          file: "overlap.ts",
+          edits: [
+            { anchor_from: byLine.get("line 2")!, anchor_to: byLine.get("line 3")!, text: "X" },
+          ],
+        },
         undefined,
         undefined,
         ctx,

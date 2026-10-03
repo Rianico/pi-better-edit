@@ -81,7 +81,10 @@ describe("lease grant inside the materialization transaction (#116)", () => {
 
       await editTool.execute(
         "e1",
-        { path: "lease_edit.txt", edits: [[bravoHash, bravoHash, "bravo edited"]] },
+        {
+          file: "lease_edit.txt",
+          edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -141,7 +144,10 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       try {
         const res = await editTool.execute(
           "e1",
-          { path: "lease_edit_atomic.txt", edits: [[bravoHash, bravoHash, "bravo edited"]] },
+          {
+            file: "lease_edit_atomic.txt",
+            edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -248,7 +254,10 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       try {
         const res = await editTool.execute(
           "e1",
-          { path: "lease_edit_notx3.txt", edits: [[bravoHash, bravoHash, "bravo edited"]] },
+          {
+            file: "lease_edit_notx3.txt",
+            edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -288,7 +297,10 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       try {
         const res = await editTool.execute(
           "e1",
-          { path: "lease_deferred.txt", edits: [[bravoHash, bravoHash, "bravo edited"]] },
+          {
+            file: "lease_deferred.txt",
+            edits: [{ anchor_from: bravoHash, anchor_to: bravoHash, text: "bravo edited" }],
+          },
           undefined,
           undefined,
           ctx,
@@ -314,7 +326,10 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       const bravoHash2 = extractHash(getText(r2).split("\n")[1]!);
       const res2 = await editTool.execute(
         "e2",
-        { path: "lease_deferred.txt", edits: [[bravoHash2, bravoHash2, "bravo final"]] },
+        {
+          file: "lease_deferred.txt",
+          edits: [{ anchor_from: bravoHash2, anchor_to: bravoHash2, text: "bravo final" }],
+        },
         undefined,
         undefined,
         ctx,

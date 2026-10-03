@@ -159,7 +159,7 @@ describe("edit tool never-served success plus hint", () => {
         "e1",
         {
           file: "sample.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: submitted }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: submitted }],
         } as any,
         undefined,
         undefined,
@@ -193,8 +193,8 @@ describe("edit tool never-served success plus hint", () => {
         {
           file: "sample.txt",
           edits: [
-            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, replace_with: first },
-            { anchor_from: hashes[2]!, anchor_to: hashes[2]!, replace_with: second },
+            { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: first },
+            { anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: second },
           ],
         } as any,
         undefined,
@@ -287,7 +287,7 @@ describe("noop edit carries no never-served hint", () => {
         "e1",
         {
           file: "sample.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: "two" }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "two" }],
         } as any,
         undefined,
         undefined,

@@ -13,7 +13,10 @@ describe("edit tool noop + warnings", () => {
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "bbb"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -30,7 +33,10 @@ describe("edit tool noop + warnings", () => {
 
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BBB\nccc"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB\nccc" }],
+        },
         undefined,
         undefined,
         ctx,

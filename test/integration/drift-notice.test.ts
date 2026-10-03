@@ -30,7 +30,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[alphaRef, alphaRef, "A"]] },
+        { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: alphaRef, text: "A" }] },
         undefined,
         undefined,
         ctx,
@@ -49,7 +49,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       const deltaRef = extractHash(driftRow!);
       const followUp = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[deltaRef, deltaRef, "D"]] },
+        { file: "sample.ts", edits: [{ anchor_from: deltaRef, anchor_to: deltaRef, text: "D" }] },
         undefined,
         undefined,
         ctx,
@@ -77,7 +77,10 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[alphaRef, alphaRef, "alpha"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: alphaRef, anchor_to: alphaRef, text: "alpha" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -110,7 +113,10 @@ describe("drift notices for changed served territory outside the edit range", ()
       await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
       const first = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[alphaRef, alphaRef, "alpha"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: alphaRef, anchor_to: alphaRef, text: "alpha" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -122,7 +128,10 @@ describe("drift notices for changed served territory outside the edit range", ()
       await writeFile(path, "alpha\nbeta\ngamma\nDELTA2\n", "utf-8");
       const second = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[alphaRef, alphaRef, "alpha"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: alphaRef, anchor_to: alphaRef, text: "alpha" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -164,7 +173,10 @@ describe("drift notices for changed served territory outside the edit range", ()
       await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
       await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[alphaRef, alphaRef, "alpha"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: alphaRef, anchor_to: alphaRef, text: "alpha" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -173,7 +185,10 @@ describe("drift notices for changed served territory outside the edit range", ()
       await writeFile(path, "alpha\nbeta\ngamma\nDELTA2\n", "utf-8");
       const second = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[alphaRef, alphaRef, "alpha"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: alphaRef, anchor_to: alphaRef, text: "alpha" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -186,7 +201,10 @@ describe("drift notices for changed served territory outside the edit range", ()
       await writeFile(path, "alpha\nbeta\ngamma\nDELTA3\n", "utf-8");
       const third = await editTool.execute(
         "e3",
-        { path: "sample.ts", edits: [[gammaRef, gammaRef, "gamma"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "gamma" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -221,7 +239,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       try {
         await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[alphaRef, gammaRef, "X"]] },
+          { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: gammaRef, text: "X" }] },
           undefined,
           undefined,
           ctx,
@@ -260,7 +278,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
         const result = await editTool.execute(
           "e1",
-          { path: "sample.ts", edits: [[l4Ref, l4Ref, "R"]] },
+          { file: "sample.ts", edits: [{ anchor_from: l4Ref, anchor_to: l4Ref, text: "R" }] },
           undefined,
           undefined,
           ctx,
@@ -300,7 +318,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       await writeFile(path, "alpha\nbeta\ngamma\nDELTA\n", "utf-8");
       const edited = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[alphaRef, alphaRef, "A"]] },
+        { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: alphaRef, text: "A" }] },
         undefined,
         undefined,
         ctx,
@@ -335,7 +353,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[alphaRef, alphaRef, "A"]] },
+        { file: "sample.ts", edits: [{ anchor_from: alphaRef, anchor_to: alphaRef, text: "A" }] },
         undefined,
         undefined,
         ctx,
@@ -364,7 +382,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       const betaRef = extractHash(betaRow!);
       const followUp = await editTool.execute(
         "e2",
-        { path: "sample.ts", edits: [[betaRef, betaRef, "B"]] },
+        { file: "sample.ts", edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "B" }] },
         undefined,
         undefined,
         ctx,

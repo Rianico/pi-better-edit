@@ -117,7 +117,10 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
       expect(anchor).toMatch(/^[A-Za-z0-9]{3}$/);
       await editTool.execute(
         "e1",
-        { path: "undo-anchor-121.txt", edits: [[anchor, anchor, "BETA"]] },
+        {
+          file: "undo-anchor-121.txt",
+          edits: [{ anchor_from: anchor, anchor_to: anchor, text: "BETA" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -158,7 +161,10 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
       const anchor = lines[1]?.split("│")[0] ?? "";
       await editTool.execute(
         "e1",
-        { path: "undo-restore-121.txt", edits: [[anchor, anchor, "TWO"]] },
+        {
+          file: "undo-restore-121.txt",
+          edits: [{ anchor_from: anchor, anchor_to: anchor, text: "TWO" }],
+        },
         undefined,
         undefined,
         ctx,

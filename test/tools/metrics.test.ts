@@ -13,7 +13,10 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "BETA"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BETA" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -31,7 +34,10 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "beta"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "beta" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -49,7 +55,10 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "TWO"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "TWO" }],
+        },
         undefined,
         undefined,
         ctx,
@@ -66,7 +75,10 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
 
       const result = await editTool.execute(
         "e1",
-        { path: "sample.ts", edits: [[hashes[1]!, hashes[1]!, "beta"]] },
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "beta" }],
+        },
         undefined,
         undefined,
         ctx,

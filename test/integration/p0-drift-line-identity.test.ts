@@ -45,8 +45,8 @@ describe("p0-drift-line-identity probes", () => {
       const editPromise = editTool.execute(
         "e1",
         {
-          path: "small.cpp",
-          edits: [[line2Hash, line2Hash, "\tif (x > 100) {"]],
+          file: "small.cpp",
+          edits: [{ anchor_from: line2Hash, anchor_to: line2Hash, text: "\tif (x > 100) {" }],
         },
         undefined,
         undefined,
@@ -77,8 +77,8 @@ describe("p0-drift-line-identity probes", () => {
       const editPromise = editTool.execute(
         "e1",
         {
-          path: "small.cpp",
-          edits: [[line2Hash, line2Hash, "\tif (x > 100) {"]],
+          file: "small.cpp",
+          edits: [{ anchor_from: line2Hash, anchor_to: line2Hash, text: "\tif (x > 100) {" }],
         },
         undefined,
         undefined,
@@ -109,8 +109,8 @@ describe("p0-drift-line-identity probes", () => {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "small.cpp",
-          edits: [[line9Hash, line9Hash, "\tif (x > 200) {"]],
+          file: "small.cpp",
+          edits: [{ anchor_from: line9Hash, anchor_to: line9Hash, text: "\tif (x > 200) {" }],
         },
         undefined,
         undefined,
@@ -143,8 +143,8 @@ describe("p0-drift-line-identity probes", () => {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "small.cpp",
-          edits: [[line9Hash, line9Hash, "\tif (x > 300) {"]],
+          file: "small.cpp",
+          edits: [{ anchor_from: line9Hash, anchor_to: line9Hash, text: "\tif (x > 300) {" }],
         },
         undefined,
         undefined,
@@ -180,8 +180,8 @@ describe("p0-drift-line-identity probes", () => {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "small.cpp",
-          edits: [[line9Hash, line9Hash, "\tif (x > 400) {"]],
+          file: "small.cpp",
+          edits: [{ anchor_from: line9Hash, anchor_to: line9Hash, text: "\tif (x > 400) {" }],
         },
         undefined,
         undefined,
@@ -209,8 +209,8 @@ describe("p0-drift-line-identity probes", () => {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "dup.txt",
-          edits: [[line3Hash, line3Hash, "mod"]],
+          file: "dup.txt",
+          edits: [{ anchor_from: line3Hash, anchor_to: line3Hash, text: "mod" }],
         },
         undefined,
         undefined,
@@ -243,14 +243,14 @@ describe("p0-drift-line-identity probes", () => {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "batch.txt",
+          file: "batch.txt",
           edits: [
-            [
-              line50Hash,
-              line50Hash,
-              "line 50 inserted\nline 50.1\nline 50.2\nline 50.3\nline 50.4\nline 50.5",
-            ],
-            [line10Hash, line10Hash, "line 10 modified"],
+            {
+              anchor_from: line50Hash,
+              anchor_to: line50Hash,
+              text: "line 50 inserted\nline 50.1\nline 50.2\nline 50.3\nline 50.4\nline 50.5",
+            },
+            { anchor_from: line10Hash, anchor_to: line10Hash, text: "line 10 modified" },
           ],
         },
         undefined,
@@ -291,8 +291,10 @@ describe("p0-drift-line-identity probes", () => {
       const editPromise = editTool.execute(
         "e1",
         {
-          path: "tear.txt",
-          edits: [[line10Hash, line20Hash, "replaced span 10 to 20"]],
+          file: "tear.txt",
+          edits: [
+            { anchor_from: line10Hash, anchor_to: line20Hash, text: "replaced span 10 to 20" },
+          ],
         },
         undefined,
         undefined,
@@ -335,13 +337,13 @@ function alpha() {
       const editPromise = editTool.execute(
         "e1",
         {
-          path: "swap.js",
+          file: "swap.js",
           edits: [
-            [
-              alphaStartHash,
-              alphaEndHash,
-              "function alpha() {\n  return 'alpha-modified';\n} // end alpha",
-            ],
+            {
+              anchor_from: alphaStartHash,
+              anchor_to: alphaEndHash,
+              text: "function alpha() {\n  return 'alpha-modified';\n} // end alpha",
+            },
           ],
         },
         undefined,
@@ -377,8 +379,10 @@ function alpha() {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "large.txt",
-          edits: [[line25000Hash, line25000Hash, "item_25000_edited"]],
+          file: "large.txt",
+          edits: [
+            { anchor_from: line25000Hash, anchor_to: line25000Hash, text: "item_25000_edited" },
+          ],
         },
         undefined,
         undefined,
@@ -417,10 +421,14 @@ function alpha() {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "batch_drift.txt",
+          file: "batch_drift.txt",
           edits: [
-            [line10Hash, line10Hash, "base_10_ext1\next2\next3\next4\next5\next6"],
-            [line15Hash, line15Hash, "base_15_modified"],
+            {
+              anchor_from: line10Hash,
+              anchor_to: line10Hash,
+              text: "base_10_ext1\next2\next3\next4\next5\next6",
+            },
+            { anchor_from: line15Hash, anchor_to: line15Hash, text: "base_15_modified" },
           ],
         },
         undefined,
@@ -462,8 +470,10 @@ function alpha() {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "boilerplate.txt",
-          edits: [[line1500Hash, line1500Hash, "  // edited line 1500"]],
+          file: "boilerplate.txt",
+          edits: [
+            { anchor_from: line1500Hash, anchor_to: line1500Hash, text: "  // edited line 1500" },
+          ],
         },
         undefined,
         undefined,
@@ -501,8 +511,8 @@ function alpha() {
       const editRes = await editTool.execute(
         "e1",
         {
-          path: "reserve.txt",
-          edits: [[bravoHash2, bravoHash2, "bravo-modified"]],
+          file: "reserve.txt",
+          edits: [{ anchor_from: bravoHash2, anchor_to: bravoHash2, text: "bravo-modified" }],
         },
         undefined,
         undefined,
@@ -529,8 +539,8 @@ function alpha() {
       await editTool.execute(
         "e1",
         {
-          path: "recover.txt",
-          edits: [[row2Hash, row2Hash, "row 2 updated"]],
+          file: "recover.txt",
+          edits: [{ anchor_from: row2Hash, anchor_to: row2Hash, text: "row 2 updated" }],
         },
         undefined,
         undefined,
@@ -549,8 +559,8 @@ function alpha() {
       const edit2Res = await editTool.execute(
         "e2",
         {
-          path: "recover.txt",
-          edits: [[row2HashAfter, row2HashAfter, "row 2 final"]],
+          file: "recover.txt",
+          edits: [{ anchor_from: row2HashAfter, anchor_to: row2HashAfter, text: "row 2 final" }],
         },
         undefined,
         undefined,
@@ -576,8 +586,8 @@ function alpha() {
       await editTool.execute(
         "e1",
         {
-          path: "undo_flow.txt",
-          edits: [[line2Hash, line2Hash, "second line edited"]],
+          file: "undo_flow.txt",
+          edits: [{ anchor_from: line2Hash, anchor_to: line2Hash, text: "second line edited" }],
         },
         undefined,
         undefined,
@@ -606,8 +616,14 @@ function alpha() {
       const edit2Res = await editTool.execute(
         "e2",
         {
-          path: "undo_flow.txt",
-          edits: [[restoredLine2Hash, restoredLine2Hash, "second line modified after undo"]],
+          file: "undo_flow.txt",
+          edits: [
+            {
+              anchor_from: restoredLine2Hash,
+              anchor_to: restoredLine2Hash,
+              text: "second line modified after undo",
+            },
+          ],
         },
         undefined,
         undefined,

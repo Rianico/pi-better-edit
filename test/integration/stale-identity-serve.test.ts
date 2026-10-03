@@ -26,8 +26,8 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
         .execute(
           "e1",
           {
-            path: "sample.ts",
-            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, replace_with: "GAMMA_NEW" }],
+            file: "sample.ts",
+            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "GAMMA_NEW" }],
           },
           undefined,
           undefined,
@@ -64,8 +64,8 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
         .execute(
           "e1",
           {
-            path: "sample.ts",
-            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, replace_with: "GAMMA_NEW" }],
+            file: "sample.ts",
+            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "GAMMA_NEW" }],
           },
           undefined,
           undefined,
@@ -78,8 +78,8 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
         .execute(
           "e2",
           {
-            path: "sample.ts",
-            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, replace_with: "GAMMA_NEW" }],
+            file: "sample.ts",
+            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "GAMMA_NEW" }],
           },
           undefined,
           undefined,
@@ -110,8 +110,8 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
         .execute(
           "e1",
           {
-            path: "sample.ts",
-            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, replace_with: "GAMMA_NEW" }],
+            file: "sample.ts",
+            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "GAMMA_NEW" }],
           },
           undefined,
           undefined,
@@ -126,8 +126,8 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
       const result = await editTool.execute(
         "e2",
         {
-          path: "sample.ts",
-          edits: [{ anchor_from: deltaRef, anchor_to: deltaRef, replace_with: "DELTA2" }],
+          file: "sample.ts",
+          edits: [{ anchor_from: deltaRef, anchor_to: deltaRef, text: "DELTA2" }],
         },
         undefined,
         undefined,
@@ -157,8 +157,8 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
         .execute(
           "e1",
           {
-            path: "sample.ts",
-            edits: [{ anchor_from: betaRef, anchor_to: betaRef, replace_with: "X" }],
+            file: "sample.ts",
+            edits: [{ anchor_from: betaRef, anchor_to: betaRef, text: "X" }],
           },
           undefined,
           undefined,
@@ -198,8 +198,8 @@ describe("target-lost leases nothing (D2 seam)", () => {
         .execute(
           "e1",
           {
-            path: "sample.ts",
-            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, replace_with: "GAMMA_NEW" }],
+            file: "sample.ts",
+            edits: [{ anchor_from: gammaRef, anchor_to: gammaRef, text: "GAMMA_NEW" }],
           },
           undefined,
           undefined,
@@ -211,8 +211,8 @@ describe("target-lost leases nothing (D2 seam)", () => {
       const neighbour = await editTool.execute(
         "e2",
         {
-          path: "sample.ts",
-          edits: [{ anchor_from: deltaRef, anchor_to: deltaRef, replace_with: "DELTA2" }],
+          file: "sample.ts",
+          edits: [{ anchor_from: deltaRef, anchor_to: deltaRef, text: "DELTA2" }],
         },
         undefined,
         undefined,

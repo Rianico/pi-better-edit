@@ -5,6 +5,7 @@ import {
   open,
   readdir,
   readlink,
+  readFile,
   rename,
   rm,
   stat,
@@ -117,7 +118,29 @@ async function syncDir(dir: string): Promise<void> {
   }
 }
 
-export async function writeAtomic(path: string, content: string): Promise<void> {
+/**
+ * (04b-rem P2-3) THE byte-level read primitive of the file layer — one owner for "the bytes this
+ * file holds right now". Every restore/compare site (cut repair's state oracle, both undo
+ * validations, the cut transaction's pre-image capture) reads through here and compares with
+ * `Buffer.equals`, so a byte-identity claim is never silently degraded to a string equality made
+ * after a decode the write never inverted.
+ */
+export async function readBytes(path: string): Promise<Buffer> {
+  if (path.includes("\0"))
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: "Path contains null byte. Pass a plain file string and retry.",
+    });
+  // SAFETY: resolveTarget returns an absolute, null-byte-validated, symlink-resolved path — the
+  // SAFETY: same boundary every other file-layer read passes through.
+  return readFile(await resolveTarget(path));
+}
+
+/**
+ * WHY: (04b-rem P2-3) `content` widens to `Buffer` for the rollback/restore arms that must land
+ * WHY: EXACTLY the captured bytes: same temp+rename machinery, same durability, no third
+ * WHY: serializer — a `Buffer` bypasses the utf-8 encoding step instead of adding a write path.
+ */
+export async function writeAtomic(path: string, content: string | Buffer): Promise<void> {
   if (path.includes("\0"))
     throw new DomainError("E_BAD_PAYLOAD", {
       message: "Path contains null byte. Pass a plain file string and retry.",

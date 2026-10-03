@@ -380,10 +380,8 @@ describe("auto-read after write", () => {
           toolName: "edit",
           toolCallId: "edit-1",
           input: {
-            path: "edit.txt",
-            anchor_from: "abc",
-            anchor_to: "abc",
-            replace_with: "BETA",
+            file: "edit.txt",
+            edits: [{ anchor_from: "abc", anchor_to: "abc", text: "BETA" }],
           },
           content: [
             {

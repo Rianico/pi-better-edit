@@ -186,7 +186,7 @@ export function findServedPrefixMismatches(
  */
 export const ANCHOR_PREFIX_REMEDY =
   "If the hash anchor prefix was unintended, `undo_last_edit`, then retry " +
-  "with the same `anchor_from`/`anchor_to` and drop the anchor prefix from `replace_with`.";
+  "with the same `anchor_from`/`anchor_to` and drop the anchor prefix from `text`.";
 
 /**
  * SAFETY: Model note for an applied edit carrying a served prefix mismatch.

@@ -64,7 +64,10 @@ describe.skipIf(isRoot || isWindows)("permission errors", () => {
         await expect(
           editTool.execute(
             "e1",
-            { path: filePath, edits: [["abc", "abc", "new content"]] },
+            {
+              file: filePath,
+              edits: [{ anchor_from: "abc", anchor_to: "abc", text: "new content" }],
+            },
             undefined,
             undefined,
             { cwd: tempDir, sessionManager: testSessionManager } as any,

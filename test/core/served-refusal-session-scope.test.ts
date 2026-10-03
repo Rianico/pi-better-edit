@@ -139,9 +139,7 @@ describe("served-refusal tally — two sessions, one path, end to end (#132)", (
       await readTool.execute("r2", { path: "shared.txt" }, undefined, undefined, sessionB);
       const payload = {
         file: "shared.txt",
-        edits: [
-          { anchor_from: hashes[1]!, anchor_to: hashes[1]!, replace_with: `${hashes[1]}│two` },
-        ],
+        edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│two` }],
       } as any;
 
       const aFirst = await editTool

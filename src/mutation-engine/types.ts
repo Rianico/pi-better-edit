@@ -21,6 +21,33 @@ export interface PipelineOptions {
   store?: HashStore;
   noPersist?: boolean;
   sessionKey?: string;
+  /**
+   * TEST-ONLY fault-injection seam (ticket-04b §3): invoked inside a foreign-source cut transaction
+   * AFTER the target insert is durably committed and BEFORE the source retirement rename. A
+   * throw here lands inside the two-rename window, which is exactly the half-applied state the
+   * intent record and next-run repair must resolve.
+   */
+  onCutBetweenWrites?: (committedAbsolutePath: string) => void | Promise<void>;
+  /**
+   * TEST-ONLY observation seam (ticket-04b remediation-2 R2): invoked inside a foreign-source cut
+   * transaction BEFORE the first rename, while no byte of the transaction has landed. The rule
+   * under test is write-AHEAD: the intent record must already be durable at the moment of the
+   * first mutation — an existence check taken inside the window cannot show that.
+   */
+  onBeforeFirstCutWrite?: () => void | Promise<void>;
+}
+
+/**
+ * (ticket-04b) One foreign `mode: "cut"` item as seen by the pre-pass: the submitted span anchors
+ * in the named file. The target call materializes the span bytes to a literal; the matching
+ * retirement runs as a first-class edit against THIS file (its own load, lease verification,
+ * batch gate, undo, and store commit) inside the same transaction.
+ */
+export interface ForeignCutRecord {
+  refFile: string;
+  absolutePath: string;
+  spanFrom: string;
+  spanTo: string;
 }
 
 // WHY: Internal: the engine's view of one file's mutation outcome.
@@ -32,7 +59,6 @@ export interface ProcessedEditFile {
   result: string;
   bom: string;
   originalEnding: LineEnding;
-  hadUtf8DecodeErrors: boolean;
   warnings: string[];
   originalHashes: string[];
   resultHashes: string[];
@@ -53,9 +79,22 @@ export interface ProcessedEditFile {
   totalAddedLines: number;
   totalRemovedLines: number;
   driftNotice: string | undefined;
+  /**
+   * Union of the call's edited intervals. A lone insertion publishes the zero-width inverted
+   * form (`startLine = point + 1 > endLine = point`, the ticket-01 drift contract): do NOT
+   * normalize it to a width-1 range — an insertion mutates no line, and fabricating a width
+   * would claim a target line that survives byte-identical, which the identity bookkeeping
+   * and the drift `deltaBefore` arithmetic both rely on.
+   */
   range: ResolvedRange;
   editedIntervals: ResolvedRange[];
   literalDeclarations: number;
+  /**
+   * (ticket-04b) The foreign `mode: "cut"` items this call materialized, in submission order.
+   * Empty unless the request carried a foreign-source cut. `apply()` turns a non-empty set into a
+   * correlated two-file transaction; the in-memory buffer itself never touches these files.
+   */
+  foreignCuts: ForeignCutRecord[];
 }
 
 // WHY: Discriminated success/failure for the deep seam.
