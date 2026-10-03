@@ -16,7 +16,7 @@ jobs:
       - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0  # zizmor: ignore[cache-poisoning]
         with: { node-version: 26, cache: pnpm }
       - run: pnpm install
-      - run: pnpm audit --audit-level high --ignore GHSA-vfj7-8cjw-p6xm # braces depth DoS (CVE-2026-93687) has no upstream fix; mitigated locally via patchedDependencies
+      - run: pnpm audit --audit-level high # braces depth DoS (CVE-2026-93687): no upstream fix; mitigated via patchedDependencies + auditConfig.ignoreGhsas (pnpm-workspace.yaml)
       - run: pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage
   release:
     needs: verify
