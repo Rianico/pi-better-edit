@@ -32,7 +32,7 @@ describe("applyEdit — recovery scenarios", () => {
   it("carries no rows when only one anchor of a range is unknown", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
-    const staleStart = "ZZZ";
+    const staleStart = "ZZZZ";
     let caught: Error | undefined;
     try {
       applyEdit(content, resEdit({ anchor_from: staleStart, anchor_to: hashes[2]!, text: "X" }));
@@ -47,7 +47,7 @@ describe("applyEdit — recovery scenarios", () => {
   it("carries no rows when only the end is unknown", async () => {
     const content = "a\nb\nc\nd\ne";
     const hashes = await lineHashes(content, home.testPath);
-    const staleEnd = "ZZZ";
+    const staleEnd = "ZZZZ";
     let caught: Error | undefined;
     try {
       applyEdit(content, resEdit({ anchor_from: hashes[0]!, anchor_to: staleEnd, text: "X" }));
@@ -63,7 +63,7 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     let caught: Error | undefined;
     try {
-      applyEdit(content, resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", text: "X" }));
+      applyEdit(content, resEdit({ anchor_from: "ZZZZ", anchor_to: "YYYY", text: "X" }));
     } catch (error) {
       caught = error as Error;
     }
@@ -86,27 +86,27 @@ describe("applyEdit — recovery scenarios", () => {
   });
 
   it("rejects unknown fields in edit items", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "x", extra: true } as any;
+    const edit = { anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "x", extra: true } as any;
     expect(() => resEdit(edit)).toThrow(/unknown or unsupported fields/);
   });
 
   it("rejects missing text", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ" } as any;
+    const edit = { anchor_from: "ZZZZ", anchor_to: "ZZZZ" } as any;
     expect(() => resEdit(edit)).toThrow(/requires a "text" field/);
   });
 
   it("rejects null text", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", text: null } as any;
+    const edit = { anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: null } as any;
     expect(() => resEdit(edit)).toThrow(/must be a string with \\n line separators, not an array/);
   });
 
   it("rejects array text", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", text: ["hello", "world"] } as any;
+    const edit = { anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: ["hello", "world"] } as any;
     expect(() => resEdit(edit)).toThrow(/must be a string with \\n line separators, not an array/);
   });
 
   it("accepts string text with line separators", () => {
-    const edit = { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "hello\nworld\n" } as any;
+    const edit = { anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "hello\nworld\n" } as any;
     const resolved = resEdit(edit);
     expect(resolved.content_lines).toEqual(["hello", "world", ""]);
   });

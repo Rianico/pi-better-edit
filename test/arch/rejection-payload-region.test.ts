@@ -19,7 +19,7 @@ beforeAll(async () => {
 });
 
 function servedLineRe(): RegExp {
-  return /^[A-Za-z0-9]{3}│/m;
+  return /^[A-Za-z0-9]{4}│/m;
 }
 
 /**
@@ -144,7 +144,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       // Served coordinates 1-3 prove no shift; window is hardcoded, never searched.
       expect(msg).toContain("Current range (fresh read):");
       expect(msg).not.toContain("Retry with these anchors");
-      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       const diskHashes = await currentHashes(disk);
       expect(servedLines).toEqual([
         `${diskHashes[0]}│alpha`,
@@ -254,7 +254,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).toContain("Current range (fresh read):");
       expect(msg).not.toContain("Retry with these anchors");
       expect((caught as { details?: { cause: string } }).details?.cause).not.toBe("never-served");
-      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines).toHaveLength(5);
       const diskHashes = await currentHashes(drifted);
       const diskLines = drifted.trimEnd().split("\n");
@@ -384,7 +384,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(overlap.message).toContain("Current range:");
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ngamma\n");
       const diskHashes = await currentHashes("alpha\nbeta\ngamma\n");
-      const servedLines = overlap.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = overlap.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       // Later span beta-gamma (lines 2-3) is served; rows reproduce on-disk bytes.
       expect(servedLines).toEqual([`${diskHashes[1]}│beta`, `${diskHashes[2]}│gamma`]);
       // A later item naming a retired identity aborts with its own code plus the trailer.
@@ -537,7 +537,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         expectedCode: "E_UNVERIFIED_RANGE",
       });
       // The fresh-read rows are leased through the normal seam: deciding from them writes.
-      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines).toHaveLength(2);
       const retryFrom = servedLines[0]!.split("│")[0]!;
       const retryTo = servedLines[1]!.split("│")[0]!;

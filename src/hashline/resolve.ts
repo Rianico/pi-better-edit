@@ -253,7 +253,7 @@ function formatNotFound(
   // WHY: the body carries no code tag — the registry owns the `[MODEL] [E_*]`
   // WHY: header when the caller wraps this in a `DomainError`.
   out.push(
-    `${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh ${HASH_LEN}-char anchors (the ${HASH_LEN} chars before │, e.g. "wUp").`,
+    `${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh ${HASH_LEN}-char anchors (the ${HASH_LEN} chars before │, e.g. "wUpX").`,
   );
   for (const m of distinct) {
     const ctx = m.context;
@@ -283,7 +283,7 @@ function formatAmbiguous(
   if (out.length > 0) out.push("");
   const distinctAmbiguous = [...new Map(ambiguous.map((m) => [m.ref.hash, m])).values()];
   out.push(
-    `${distinctAmbiguous.length} ambiguous anchor${distinctAmbiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh ${HASH_LEN}-char anchors (the ${HASH_LEN} chars before │, e.g. "wUp").`,
+    `${distinctAmbiguous.length} ambiguous anchor${distinctAmbiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh ${HASH_LEN}-char anchors (the ${HASH_LEN} chars before │, e.g. "wUpX").`,
   );
   for (const m of distinctAmbiguous) {
     const sample = (m.candidates ?? []).slice(0, 5);

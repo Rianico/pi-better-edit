@@ -18,12 +18,12 @@ describe("recordServeFeedback — serve-record policy", () => {
       const path = "/a.ts";
       await createSessionHandle("sessionA", path).recordServeFeedback(
         [
-          { position: 0, hash: "h00" },
-          { position: 1, hash: "X01" },
+          { position: 0, hash: "h000" },
+          { position: 1, hash: "X011" },
         ],
         "live",
       );
-      expect(await createSessionHandle("sessionA", path).load()).toEqual(["h00", "X01"]);
+      expect(await createSessionHandle("sessionA", path).load()).toEqual(["h000", "X011"]);
     });
   });
 
@@ -31,7 +31,7 @@ describe("recordServeFeedback — serve-record policy", () => {
     await withTempHome(async () => {
       const path = "/a.ts";
       await createSessionHandle("sessionA", path).recordServeFeedback(
-        [{ position: 0, hash: "h00" }],
+        [{ position: 0, hash: "h000" }],
         "preview",
       );
       expect(await createSessionHandle("sessionA", path).load()).toEqual([]);
@@ -45,7 +45,7 @@ describe("finalizeToolResult", () => {
       diff: "+a\n-b",
       warnings: ["W1"],
       driftNotice: "drift: 1 line(s) changed outside the range:",
-      servedRows: [{ position: 0, hash: "abc" }],
+      servedRows: [{ position: 0, hash: "abcc" }],
     });
     expect(result.content).toEqual([
       {
@@ -53,7 +53,7 @@ describe("finalizeToolResult", () => {
         text: "+a\n-b\n\nW1",
       },
     ]);
-    expect(result.servedRows).toEqual([{ position: 0, hash: "abc" }]);
+    expect(result.servedRows).toEqual([{ position: 0, hash: "abcc" }]);
   });
 
   it("omits served rows and blocks when absent", () => {
@@ -69,7 +69,7 @@ describe("applyEdit — resolved range geometry", () => {
     const hashes = _lineHashesPure(content);
     const edit: HEdit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
-      content_lines: ["BBB", "B2"],
+      content_lines: ["BBBB", "B2"],
     };
     const result = applyEdit(content, edit);
     expect(result.range).toEqual({
@@ -86,7 +86,7 @@ describe("applyEdit — resolved range geometry", () => {
     const hashes = _lineHashesPure(content);
     const noop = applyEdit(content, {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
-      content_lines: ["bbb"],
+      content_lines: ["bbbb"],
     });
     expect(noop.range.delta).toBe(0);
     const deleted = applyEdit(content, {

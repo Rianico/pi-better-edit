@@ -128,7 +128,7 @@ describe("edit multi-item tool", () => {
       expect(err.message).toContain(ATOMICITY_TRAILER);
       expect(err.message).toContain("Current range (fresh read):");
 
-      const servedBeta = err.message.split("\n").find((l) => /^[A-Za-z0-9]{3}│BETA$/.test(l));
+      const servedBeta = err.message.split("\n").find((l) => /^[A-Za-z0-9]{4}│BETA$/.test(l));
       expect(servedBeta).toBeDefined();
       expect(await readFile(path, "utf-8")).toBe("alpha\nBETA\ngamma\n");
 
@@ -463,9 +463,9 @@ describe("edit multi-item batch error aggregation", () => {
             file: "sample.ts",
             edits: [
               { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" },
-              { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "xx" },
+              { anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "xx" },
               { anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "CCC" },
-              { anchor_from: "QQQ", anchor_to: "QQQ", text: "yy" },
+              { anchor_from: "QQQQ", anchor_to: "QQQQ", text: "yy" },
             ],
           },
           undefined,
@@ -501,7 +501,7 @@ describe("edit multi-item batch error aggregation", () => {
             file: "sample.ts",
             edits: [
               { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" },
-              { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "xx" },
+              { anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "xx" },
             ],
           },
           undefined,
@@ -570,7 +570,7 @@ describe("edit multi-item batch error aggregation", () => {
               edits: [
                 { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
                 { anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "BETA\ngamma" },
-                { anchor_from: "ZZZ", anchor_to: "ZZZ", text: "xx" },
+                { anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "xx" },
               ],
             },
             undefined,

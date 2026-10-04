@@ -114,7 +114,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
       );
       const lines = getText(r1).split("\n");
       const anchor = lines[1]?.split("│")[0] ?? "";
-      expect(anchor).toMatch(/^[A-Za-z0-9]{3}$/);
+      expect(anchor).toMatch(/^[A-Za-z0-9]{4}$/);
       await editTool.execute(
         "e1",
         {

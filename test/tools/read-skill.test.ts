@@ -24,7 +24,7 @@ describe("read_skill tool", () => {
       const text = result.content[0].text;
       expect(text).toContain("# Demo");
       expect(text).toContain("Step one.");
-      const hashedLines = text.split("\n").filter((line: string) => /^[A-Za-z0-9]{3}│/.test(line));
+      const hashedLines = text.split("\n").filter((line: string) => /^[A-Za-z0-9]{4}│/.test(line));
       expect(hashedLines).toHaveLength(0);
     });
   });
@@ -43,7 +43,7 @@ describe("read_skill tool", () => {
       const text = result.content[0].text;
       expect(text).toContain("alpha");
       expect(text).toContain("beta");
-      expect(text.split("\n").some((line: string) => /^[A-Za-z0-9]{3}│/.test(line))).toBe(false);
+      expect(text.split("\n").some((line: string) => /^[A-Za-z0-9]{4}│/.test(line))).toBe(false);
     });
   });
 

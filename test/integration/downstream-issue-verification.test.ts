@@ -19,7 +19,7 @@ const SMALL_CPP = Array.from({ length: 6 }, (_, i) => {
   return `int f${n}(int x) {\n\tif (x > 0) {\n\t\treturn x;\n\t}\n\treturn -x;\n}\n`;
 }).join("\n");
 
-const ROW_RE = /^([A-Za-z0-9]{3})│(.*)$/;
+const ROW_RE = /^([A-Za-z0-9]{4})│(.*)$/;
 
 /** served rows of a read result, in order: `[{hash, text}]` */
 function rows(text: string): { hash: string; text: string }[] {

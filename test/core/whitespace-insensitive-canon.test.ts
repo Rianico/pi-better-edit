@@ -90,7 +90,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const content = "func hello\nworld\n";
-      const hashes = ["aB3", "xY7"];
+      const hashes = ["aB33", "xY77"];
       upsertSnapshot(store, {
         path: "/p.ts",
         snapshotHash: `${CANON_VERSION}:${contentChecksum(content)}`,
@@ -123,7 +123,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
         .prepare(
           "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) VALUES (?, ?, ?, ?, ?)",
         )
-        .run(snapshotId, 1, 1, "legacy-canon", "ZZZ");
+        .run(snapshotId, 1, 1, "legacy-canon", "ZZZZ");
 
       expect(getSnapshot(store, "/old.ts", content)).toBeUndefined();
 
@@ -131,10 +131,10 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
         path: "/old.ts",
         snapshotHash: `${CANON_VERSION}:${rawChecksum}`,
         lineCount: splitLines(content).length,
-        hashes: ["ABC"],
+        hashes: ["ABCC"],
         content,
       });
-      expect(getSnapshot(store, "/old.ts", content)).toEqual(["ABC"]);
+      expect(getSnapshot(store, "/old.ts", content)).toEqual(["ABCC"]);
       const db = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
@@ -154,7 +154,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
         path: "/p.ts",
         snapshotHash: `${CANON_VERSION}:${contentChecksum(content)}`,
         lineCount: splitLines(content).length,
-        hashes: ["ABC"],
+        hashes: ["ABCC"],
         content,
       });
       const db = new DatabaseSync(sqlitePath(home), {

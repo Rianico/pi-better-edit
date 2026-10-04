@@ -3,7 +3,7 @@ import { readFile, writeFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
 function servedRowRe(): RegExp {
-  return /^[A-Za-z0-9]{3}│/m;
+  return /^[A-Za-z0-9]{4}│/m;
 }
 
 describe("stale-identity target-lost rejection (spec stale-identity-reject-and-serve D1-D3/D5-D6)", () => {

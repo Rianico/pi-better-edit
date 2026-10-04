@@ -62,17 +62,17 @@ async function servedPreviewForFile(
 
 describe("write served hash guard", () => {
   it("allows clean content and unrelated literal hash-like text", () => {
-    const served: (string | null)[] = ["Ab3", "Cd4", null];
+    const served: (string | null)[] = ["Ab33", "Cd44", null];
     const canonDigests = canonDigestsForLines(["# Notes", "body", ""]);
     expect(
       findServedHashEcho(splitLines("# Notes\nbody\n"), served, canonDigests, 1),
     ).toBeUndefined();
     expect(
-      findServedHashEcho(splitLines("Zz9│literal protocol text\nbody\n"), served, canonDigests, 1),
+      findServedHashEcho(splitLines("Zz99│literal protocol text\nbody\n"), served, canonDigests, 1),
     ).toBeUndefined();
     expect(
       findServedHashEcho(
-        splitLines("prefix Ab3│is ordinary text\nbody\n"),
+        splitLines("prefix Ab33│is ordinary text\nbody\n"),
         served,
         canonDigests,
         1,
@@ -81,19 +81,19 @@ describe("write served hash guard", () => {
   });
 
   it("refuses a verbatim served row at any position", () => {
-    const served: (string | null)[] = ["Ab3", "Cd4"];
+    const served: (string | null)[] = ["Ab33", "Cd44"];
     const canonDigests = canonDigestsForLines(["# Notes", "body"]);
-    const hit = findServedHashEcho(splitLines("Ab3│# Notes\nbody\n"), served, canonDigests, 1);
-    expect(hit).toMatchObject({ line: 1, hash: "Ab3", servedLine: 1 });
+    const hit = findServedHashEcho(splitLines("Ab33│# Notes\nbody\n"), served, canonDigests, 1);
+    expect(hit).toMatchObject({ line: 1, hash: "Ab33", servedLine: 1 });
     // served prefix with differing content stays silent
     expect(
-      findServedHashEcho(splitLines("Cd4│wrong line\nAb3│wrong line\n"), served, canonDigests, 1),
+      findServedHashEcho(splitLines("Cd44│wrong line\nAb33│wrong line\n"), served, canonDigests, 1),
     ).toBeUndefined();
   });
 
   it("stays silent without canon data", () => {
     expect(
-      findServedHashEcho(splitLines("Ab3│nT2│CCd│UIA│## 1. H1\n"), ["Ab3"], [], 1),
+      findServedHashEcho(splitLines("Ab33│nT2│CCd│UIA│## 1. H1\n"), ["Ab33"], [], 1),
     ).toBeUndefined();
   });
 
@@ -182,13 +182,13 @@ describe("write served hash guard", () => {
       const path = join(cwd, "doc.md");
       await writeFile(path, "hello\n", "utf-8");
       const abs = await resolveTarget(path);
-      await createSessionHandle("s1", abs).record([{ position: 0, hash: "Ab3" }]);
+      await createSessionHandle("s1", abs).record([{ position: 0, hash: "Ab33" }]);
       await expect(
-        servedHashEchoDenial(io, path, "Zz9│literal text\n", cwd, "s1"),
+        servedHashEchoDenial(io, path, "Zz99│literal text\n", cwd, "s1"),
       ).resolves.toBeUndefined();
       // Ab3 without canon data stays silent even at the same line
       await expect(
-        servedHashEchoDenial(io, path, "Ab3│hello\n", cwd, "s1"),
+        servedHashEchoDenial(io, path, "Ab33│hello\n", cwd, "s1"),
       ).resolves.toBeUndefined();
     });
   });

@@ -35,7 +35,7 @@ describe("undo-store remediation: durability schema", () => {
       content: "a\nb\n",
       bom: "",
       ending: "\n",
-      hashes: ["abc"],
+      hashes: ["abcc"],
       resultContent: "a\n",
       rawPre: "a\r\nb\r\n",
     });
@@ -44,7 +44,7 @@ describe("undo-store remediation: durability schema", () => {
       content: "x",
       bom: "",
       ending: "\n",
-      hashes: ["dEf"],
+      hashes: ["dEfff"],
       resultContent: "y",
     });
     expect(getUndoEntry(store, "/plain-pre.ts")?.rawPre ?? null).toBeNull();
@@ -56,7 +56,7 @@ describe("undo-store remediation: durability schema", () => {
       content: "a",
       bom: "",
       ending: "\n",
-      hashes: ["aA1"],
+      hashes: ["aA11"],
       resultContent: "b",
       transactionId: "txn-rem-1",
     });
@@ -64,7 +64,7 @@ describe("undo-store remediation: durability schema", () => {
       content: "c",
       bom: "",
       ending: "\n",
-      hashes: ["bB2"],
+      hashes: ["bB22"],
       resultContent: "d",
       transactionId: "txn-rem-1",
     });
@@ -72,7 +72,7 @@ describe("undo-store remediation: durability schema", () => {
       content: "e",
       bom: "",
       ending: "\n",
-      hashes: ["cC3"],
+      hashes: ["cC33"],
       resultContent: "f",
       transactionId: "txn-rem-2",
     });
@@ -99,7 +99,7 @@ describe("undo-store remediation: durability schema", () => {
       content: "p",
       bom: "",
       ending: "\r\n",
-      hashes: ["rE1"],
+      hashes: ["rE11"],
       resultContent: "q",
       transactionId: "txn-rem-3",
       rawPre: "p\r\n",

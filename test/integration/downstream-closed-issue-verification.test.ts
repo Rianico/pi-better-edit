@@ -33,7 +33,7 @@ function ctxFor(cwd: string, id = "closed-issues"): unknown {
 function rows(text: string): { hash: string; text: string }[] {
   const out: { hash: string; text: string }[] = [];
   for (const line of text.split("\n")) {
-    const m = line.match(/^([A-Za-z0-9]{3})│(.*)$/);
+    const m = line.match(/^([A-Za-z0-9]{4})│(.*)$/);
     if (m) out.push({ hash: m[1]!, text: m[2]! });
   }
   return out;
@@ -66,7 +66,7 @@ describe("closed #31 — retired anchors never re-bind to a twin", () => {
       await expect(
         editTool.execute(
           "e2",
-          { file: "twins.txt", edits: [{ anchor_from: line1, anchor_to: line1, text: "CCC" }] },
+          { file: "twins.txt", edits: [{ anchor_from: line1, anchor_to: line1, text: "CCCC" }] },
           undefined,
           undefined,
           ctx,
@@ -113,7 +113,7 @@ describe("closed #53 — served refresh after a multi-entry batch", () => {
       const anchor = diff
         .split("\n")
         .find((l) => l.startsWith("+") && l.includes("│line 10.2"))!
-        .slice(1, 4);
+        .slice(1, 5);
       const chained = await editTool.execute(
         "e2",
         {
@@ -320,7 +320,7 @@ describe("closed #29 — write path never injects anchors", () => {
       await writeFile(path, String(input.content), "utf-8");
       const written = await readFile(path, "utf-8");
       expect(written).toBe("# title\n\nplain body\n");
-      expect(written).not.toMatch(/[A-Za-z0-9]{3}│/);
+      expect(written).not.toMatch(/[A-Za-z0-9]{4}│/);
     });
   });
 });

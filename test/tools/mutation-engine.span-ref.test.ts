@@ -379,7 +379,7 @@ describe("MutationEngine — span-ref move", () => {
       const h = await lineHashes("a\nb\nc\n", home.testPath);
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
-        { file: "sample.txt", edits: [spanRefItem([h[2]!, h[2]!], ["QQQ", "QQQ"], true)] },
+        { file: "sample.txt", edits: [spanRefItem([h[2]!, h[2]!], ["QQQQ", "QQQQ"], true)] },
         cwd,
         { sessionKey: TEST_SESSION_ID },
       );
@@ -518,7 +518,10 @@ describe("MutationEngine — span-ref in batches", () => {
       const result = await execute(
         {
           file: "sample.txt",
-          edits: [spanRefItem([h[3]!, h[3]!], ["QQQ", "QQQ"], true), handItem([h[0]!, h[0]!], "A")],
+          edits: [
+            spanRefItem([h[3]!, h[3]!], ["QQQQ", "QQQQ"], true),
+            handItem([h[0]!, h[0]!], "A"),
+          ],
         },
         cwd,
         { sessionKey: TEST_SESSION_ID },

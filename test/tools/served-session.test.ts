@@ -18,10 +18,10 @@ describe("ServedSession — handle deep interface", () => {
     await withTempHome(async () => {
       const handleA = createSessionHandle("sessA", "/a.ts");
       await handleA.record([
-        { position: 0, hash: "abc" },
-        { position: 1, hash: "def" },
+        { position: 0, hash: "abcc" },
+        { position: 1, hash: "deff" },
       ]);
-      expect(await handleA.load()).toEqual(["abc", "def"]);
+      expect(await handleA.load()).toEqual(["abcc", "deff"]);
       const handleB = createSessionHandle("sessB", "/a.ts");
       expect(await handleB.load()).toEqual([]);
     });
@@ -92,26 +92,26 @@ describe("ServedSession — handle deep interface", () => {
       );
 
       // plain mode: no line count, so the mirror rows are upserted without truncation
-      await h.recordDiff([{ position: 5, hash: "zzz" }], { contentHash: snapshotHashFor("") });
-      expect((await h.load())[5]).toBe("zzz");
+      await h.recordDiff([{ position: 5, hash: "zzzz" }], { contentHash: snapshotHashFor("") });
+      expect((await h.load())[5]).toBe("zzzz");
     });
   });
 
   it("recordServeFeedback respects preview policy (no-op)", async () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
-      await h.recordServeFeedback([{ position: 0, hash: "abc" }], "preview");
+      await h.recordServeFeedback([{ position: 0, hash: "abcc" }], "preview");
       expect(await h.load()).toEqual([]);
-      await h.recordServeFeedback([{ position: 0, hash: "abc" }], "live", 1);
-      expect(await h.load()).toEqual(["abc"]);
+      await h.recordServeFeedback([{ position: 0, hash: "abcc" }], "live", 1);
+      expect(await h.load()).toEqual(["abcc"]);
     });
   });
 
   it("drift reported set is per (session,path) and clearable via handle", async () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/a.ts");
-      await h.markDriftReported(["abc", "def"]);
-      expect(await h.driftReported()).toEqual(new Set(["abc", "def"]));
+      await h.markDriftReported(["abcc", "deff"]);
+      expect(await h.driftReported()).toEqual(new Set(["abcc", "deff"]));
       await h.clearDrift();
       expect(await h.driftReported()).toEqual(new Set());
     });
@@ -124,8 +124,8 @@ describe("ServedSession — handle deep interface", () => {
       const h = sessionFromContext(ctx, "/x.ts");
       expect(h.sessionKey).toBe("ctxSess");
       expect(h.path).toBe("/x.ts");
-      await h.record([{ position: 0, hash: "abc" }]);
-      expect(await h.load()).toEqual(["abc"]);
+      await h.record([{ position: 0, hash: "abcc" }]);
+      expect(await h.load()).toEqual(["abcc"]);
     });
   });
 

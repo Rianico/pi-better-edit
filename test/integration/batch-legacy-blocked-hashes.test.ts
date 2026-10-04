@@ -12,7 +12,7 @@ async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<
   const result = await readTool.execute("r1", { path }, undefined, undefined, ctx);
   return getText(result)
     .split("\n")
-    .filter((line) => /^[A-Za-z0-9]{3}│/.test(line))
+    .filter((line) => /^[A-Za-z0-9]{4}│/.test(line))
     .map(extractHash);
 }
 

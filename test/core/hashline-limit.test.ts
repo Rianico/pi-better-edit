@@ -1,48 +1,85 @@
 import { describe, expect, it } from "vitest";
-import { _lineHashesPure, lineHashes, HASH_SPACE, MAX_HASH_LINES } from "../../src/hashline";
+import { DomainError } from "../../src/domain-errors.js";
+import { prepareFile } from "../../src/file-content/index.js";
+import {
+  _lineHashesPure,
+  HASH_LEN,
+  HASH_SPACE,
+  lineHashes,
+  MAX_HASH_LINES,
+} from "../../src/hashline";
 import { useTestHome, withTempFile, setupReadTest } from "../support/fixtures";
 
 const home = useTestHome();
 
 describe("hashline limits", () => {
   it("derives the hash space from the alphabet and hash length", () => {
-    expect(HASH_SPACE).toBe(62 ** 3);
+    // WHY: `62 ** 4 = 14,776,336` lines cannot be materialized, so the space
+    // WHY: itself is pinned algebraically — a restated literal here would let
+    // WHY: the cap drift from the width the leases actually enforce.
+    expect(HASH_SPACE).toBe(62 ** HASH_LEN);
     expect(MAX_HASH_LINES).toBe(HASH_SPACE);
   });
 
-  it("hashes exactly MAX_HASH_LINES lines with unique anchors", () => {
-    const content = Array.from({ length: MAX_HASH_LINES }, (_, i) => `line ${i}`).join("\n");
+  it("hashes a bounded line count with unique anchors", () => {
+    // WHY: full-space enumeration is scale-infeasible at width 4, so a bounded
+    // WHY: uniqueness run stands in — it exercises allocation without building
+    // WHY: fourteen million lines.
+    const content = Array.from({ length: 50_000 }, (_, i) => `line ${i}`).join("\n");
     const hashes = _lineHashesPure(content);
-    expect(hashes).toHaveLength(MAX_HASH_LINES);
-    expect(new Set(hashes).size).toBe(MAX_HASH_LINES);
-  }, 300_000);
+    expect(hashes).toHaveLength(50_000);
+    expect(new Set(hashes).size).toBe(50_000);
+  });
 
-  it("throws a clear E_LARGE_FILE error above the limit", () => {
-    const content = Array.from({ length: MAX_HASH_LINES + 1 }, () => "x").join("\n");
-    expect(() => _lineHashesPure(content)).toThrow("E_LARGE_FILE");
-  }, 300_000);
+  it("formats the hash-space E_LARGE_FILE naming the live limit", () => {
+    // WHY: space exhaustion cannot be triggered (see above), so the error is
+    // WHY: constructed directly — the assertion pins that the formatted copy
+    // WHY: names the live `HASH_SPACE` limit and the live width, not a stale 3.
+    const error = new DomainError("E_LARGE_FILE", {
+      limitKind: "hash-space",
+      limit: HASH_SPACE,
+    });
+    expect(error.code).toBe("E_LARGE_FILE");
+    expect(error.message).toContain(`${HASH_SPACE}-line limit`);
+    expect(error.message).toContain(`${HASH_LEN}-char`);
+  });
 
   it("preserves unique hashes at the boundary through the store path", async () => {
-    const content = Array.from({ length: MAX_HASH_LINES }, (_, i) => `x${i}`).join("\n");
+    // WHY: same bounded stand-in through persistence — the seam, not the full
+    // WHY: fourteen-million-line space, is what this exercises.
+    const content = Array.from({ length: 5_000 }, (_, i) => `x${i}`).join("\n");
     const hashes = await lineHashes(content, home.testPath);
-    expect(hashes).toHaveLength(MAX_HASH_LINES);
-    expect(new Set(hashes).size).toBe(MAX_HASH_LINES);
-  }, 300_000);
+    expect(hashes).toHaveLength(5_000);
+    expect(new Set(hashes).size).toBe(5_000);
+  });
 });
 
 describe("read tool line cap", () => {
-  it("rejects oversized files with E_LARGE_FILE before hashing", async () => {
-    const content = Array.from({ length: MAX_HASH_LINES + 1 }, () => "x").join("\n");
-    await withTempFile("huge.ts", content, async ({ cwd }) => {
-      const { readTool, ctx } = setupReadTest(cwd);
-      await expect(
-        readTool.execute("r1", { path: "huge.ts" }, undefined, undefined, ctx),
-      ).rejects.toThrow("E_LARGE_FILE");
+  it("rejects over-maxLines files with E_LARGE_FILE limitKind lines before hashing", async () => {
+    // WHY: the `lines` limitKind is exercised through the loader with an
+    // WHY: explicit small cap — building `MAX_HASH_LINES + 1` lines is
+    // WHY: scale-infeasible, and the small cap proves the seam enforces the
+    // WHY: limit it is given before any hashing work.
+    const content = Array.from({ length: 11 }, () => "x").join("\n");
+    await withTempFile("eleven.ts", content, async ({ cwd }) => {
+      let caught: unknown;
+      try {
+        await prepareFile("eleven.ts", cwd, { maxLines: 10 });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(DomainError);
+      const err = caught as DomainError;
+      expect(err.code).toBe("E_LARGE_FILE");
+      expect(err.message).toContain("11 lines, exceeding the 10-line edit limit");
     });
   });
 
-  it("reads a file at the limit without hashing errors", async () => {
-    const content = Array.from({ length: MAX_HASH_LINES }, (_, i) => `x${i}`).join("\n");
+  it("reads a file well within the live seam limit without hashing errors", async () => {
+    // WHY: the real seams pass `MAX_HASH_LINES` (read.ts), so a file far below
+    // WHY: the fourteen-million-line cap must read cleanly — this proves the
+    // WHY: seam tolerates a large load rather than imposing a smaller hidden cap.
+    const content = Array.from({ length: 20_000 }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const result = await readTool.execute("r1", { path: "big.ts" }, undefined, undefined, ctx);
@@ -50,5 +87,5 @@ describe("read tool line cap", () => {
       expect(text).toContain("│x0");
       expect(text).toContain("[Showing lines 1-");
     });
-  }, 300_000);
+  });
 });

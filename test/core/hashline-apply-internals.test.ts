@@ -18,7 +18,7 @@ describe("resAnchor (via applyEdit)", () => {
   it("reports not_found for a hash that does not exist", () => {
     const content = "a\nb\nc\nd\ne";
     expect(() =>
-      applyEdit(content, resEdit({ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "X" })),
+      applyEdit(content, resEdit({ anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "X" })),
     ).toThrow(/E_UNKNOWN_ANCHOR/);
   });
 

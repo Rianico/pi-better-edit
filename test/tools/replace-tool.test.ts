@@ -139,7 +139,7 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { file: "sample.txt", edits: [{ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "x" }] },
+          { file: "sample.txt", edits: [{ anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "x" }] },
           undefined,
           undefined,
           { cwd, sessionManager: testSessionManager } as any,

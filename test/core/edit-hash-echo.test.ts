@@ -96,7 +96,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    expect(hashes).not.toContain("Zz9");
+    expect(hashes).not.toContain("Zz99");
     const hit = findServedHashEcho([`Zz9${HASH_SEP}literal`], served, canonDigests, 1);
     expect(hit).toBeUndefined();
   });
@@ -279,16 +279,16 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 describe("applyEdit — rebased served check stays evidence-only", () => {
   const content = "z\nq\nw";
   const hashes = _lineHashesPure(content);
-  const served: (string | null)[] = ["AAA", "BBB", null];
+  const served: (string | null)[] = ["AAAA", "BBBB", null];
   const leases: Record<string, LeaseIdentityView> = {
-    AAA: {
+    AAAA: {
       lineId: 1,
       canonHash: canonDigest("z"),
       servedSnapshotHash: "S",
       servedLineNumber: 1,
       retiredAt: null,
     },
-    BBB: {
+    BBBB: {
       lineId: 2,
       canonHash: canonDigest("q"),
       servedSnapshotHash: "S",
@@ -302,7 +302,7 @@ describe("applyEdit — rebased served check stays evidence-only", () => {
     rebasedLineOf: (lineId) => ({ 1: 2, 2: 3 })[lineId],
   };
   const rebasedEdit = (replaceWith: string): HEdit => ({
-    hash_bounds: [{ hash: "AAA" }, { hash: "BBB" }],
+    hash_bounds: [{ hash: "AAAA" }, { hash: "BBBB" }],
     content_lines: replaceWith.split("\n"),
   });
   const applyRebased = (
@@ -318,16 +318,16 @@ describe("applyEdit — rebased served check stays evidence-only", () => {
     });
 
   it("fixture anchors cannot collide with the file anchors", () => {
-    expect(hashes).not.toContain("AAA");
-    expect(hashes).not.toContain("BBB");
+    expect(hashes).not.toContain("AAAA");
+    expect(hashes).not.toContain("BBBB");
   });
 
   it("accepts an anchor-shaped repeat with differing content", () => {
-    const result = applyRebased(rebasedEdit("plain\nAAA\u2502BOOM"));
-    expect(result.content).toBe("z\nplain\nAAA\u2502BOOM");
+    const result = applyRebased(rebasedEdit("plain\nAAAA\u2502BOOM"));
+    expect(result.content).toBe("z\nplain\nAAAA\u2502BOOM");
   });
 
   it("still refuses the anchor served for the line it reproduces", () => {
-    expect(() => applyRebased(rebasedEdit("AAA\u2502z\nplain"))).toThrow(/\[E_SUSPICIOUS_TEXT\]/);
+    expect(() => applyRebased(rebasedEdit("AAAA\u2502z\nplain"))).toThrow(/\[E_SUSPICIOUS_TEXT\]/);
   });
 });

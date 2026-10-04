@@ -19,12 +19,12 @@ const TWELVE = Array.from({ length: 12 }, (_, index) => `line ${index + 1}`).joi
 function rowsOf(text: string): string[] {
   return text
     .split("\n")
-    .filter((line) => /^[A-Za-z0-9]{3}│/.test(line))
+    .filter((line) => /^[A-Za-z0-9]{4}│/.test(line))
     .map((line) => line.split("│")[1]!);
 }
 
 function anchorsByLine(text: string): Map<string, string> {
-  const rows = text.split("\n").filter((line) => /^[A-Za-z0-9]{3}│/.test(line));
+  const rows = text.split("\n").filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
   return new Map(rows.map((row) => [row.split("│")[1]!, extractHash(row)]));
 }
 
@@ -287,7 +287,7 @@ describe("read tool — windows", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const session = sessionFromContext(ctx, path);
 
-      await session.markDriftReported(["abc"]);
+      await session.markDriftReported(["abcc"]);
       await readTool.execute(
         "r1",
         { path: "empty-windows.ts", windows: [] },
@@ -298,7 +298,7 @@ describe("read tool — windows", () => {
       // An empty array falls back to a full read, so it owes the full-read contract: drift cleared.
       expect(await session.driftReported()).toEqual(new Set());
 
-      await session.markDriftReported(["abc"]);
+      await session.markDriftReported(["abcc"]);
       await readTool.execute(
         "r2",
         { path: "empty-windows.ts", offset: 1, limit: 2 },
@@ -306,7 +306,7 @@ describe("read tool — windows", () => {
         undefined,
         ctx,
       );
-      expect(await session.driftReported()).toEqual(new Set(["abc"]));
+      expect(await session.driftReported()).toEqual(new Set(["abcc"]));
     });
   });
 

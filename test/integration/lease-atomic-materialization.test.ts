@@ -3,6 +3,7 @@ import { readFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
+import { HASH_LEN } from "../../src/hashline/index.js";
 import { loadLeases, sessionKeyFor, type ServedLease } from "../../src/served-session/session";
 
 const ORIGINAL = "alpha\nbravo\ncharlie\n";
@@ -78,6 +79,9 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         ctx,
       );
       const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      // WHY: the served anchor the lease materializes from must be a live-width
+      // WHY: token — a hardcoded 3-char here would pass while the stack moved on.
+      expect(bravoHash).toHaveLength(HASH_LEN);
 
       await editTool.execute(
         "e1",

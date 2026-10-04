@@ -102,7 +102,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
   it("FileSnapshotContext threads through fmtMismatchWithServes", () => {
     const lines = ["a", "b"];
     const hashes = _lineHashesPure(lines.join("\n"));
-    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", text: "X" });
+    const edit = resEdit({ anchor_from: "ZZZZ", anchor_to: "YYYY", text: "X" });
     const { mismatches } = valEdit(edit, snapshotFor(lines, hashes), undefined);
     const snapshot = snapshotFor(lines, hashes);
     const { message, servedRows } = fmtMismatchWithServes(mismatches, snapshot);
@@ -127,7 +127,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const snapshot = snapshotFor(lines, hashes);
     const leases = new Map<string, LeaseIdentityView>([
       [
-        "AAA",
+        "AAAA",
         {
           lineId: 1,
           canonHash: "0",
@@ -137,7 +137,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
         },
       ],
       [
-        "BBB",
+        "BBBB",
         {
           lineId: 2,
           canonHash: "0",
@@ -149,7 +149,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     ]);
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA", "BBB"],
+        served: ["AAAA", "BBBB"],
         servedStart: 1,
         servedEnd: 2,
         rebasedStart: 1,
@@ -163,7 +163,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const src: LeaseSpanSource = {
       currentSnapshotHash: "C",
       leaseFor: (anchor: string) =>
-        anchor === "AAA"
+        anchor === "AAAA"
           ? {
               lineId: 1,
               canonHash: "0",
@@ -179,7 +179,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
                 servedLineNumber: 2,
                 retiredAt: null,
               }
-            : anchor === "BBB"
+            : anchor === "BBBB"
               ? {
                   lineId: 3,
                   canonHash: "0",
@@ -196,11 +196,11 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const dupeLines = ["x", "y", "z"];
     const dupeHashes = _lineHashesPure(dupeLines.join("\n"));
     const dupeSnapshot = snapshotFor(dupeLines, dupeHashes);
-    const dupeEdit = resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" });
+    const dupeEdit = resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" });
     const resolved = resolveLeasedEdit({
       edit: dupeEdit,
       snapshot: dupeSnapshot,
-      served: ["AAA", "m", "BBB"],
+      served: ["AAAA", "m", "BBBB"],
       source: src,
     });
     expect(resolved.status).toBe("fast");

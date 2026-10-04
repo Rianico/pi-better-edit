@@ -49,7 +49,7 @@ Harness facts — do NOT probe, use these directly:
 (2) this process is the FIRST of two sequential pi processes sharing one session; the next process continues this session with pi -c;
 (3) never call rm.
 
-Task: extensions.read /tmp/hashline-edge-e/s6.txt with NO offset and NO limit. Assert the tool result contains the row for line 1 (the first "3-char-hash│content" row). Do not edit the file and do not call any other tool.
+Task: extensions.read /tmp/hashline-edge-e/s6.txt with NO offset and NO limit. Assert the tool result contains the row for line 1 (the first "4-char-hash│content" row). Do not edit the file and do not call any other tool.
 
 Return { results: [{ scenario: "T6a", pass: true, detail: "read rows served" }], summary: "PASS" }.`;
 

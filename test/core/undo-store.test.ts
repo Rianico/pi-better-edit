@@ -16,7 +16,7 @@ describe("undo-store", () => {
       content: "hello\nworld",
       bom: "",
       originalEnding: "\n",
-      hashes: ["abc", "def"],
+      hashes: ["abcc", "deff"],
       resultContent: "hello\nworld!",
     });
     const entry = await getUndo(home.testPath);
@@ -24,7 +24,7 @@ describe("undo-store", () => {
     expect(entry!.content).toBe("hello\nworld");
     expect(entry!.bom).toBe("");
     expect(entry!.originalEnding).toBe("\n");
-    expect(entry!.hashes).toEqual(["abc", "def"]);
+    expect(entry!.hashes).toEqual(["abcc", "deff"]);
     expect(entry!.resultContent).toBe("hello\nworld!");
   });
 
@@ -33,7 +33,7 @@ describe("undo-store", () => {
       content: "hello\nworld",
       bom: "",
       originalEnding: "\n",
-      hashes: ["abc", "def"],
+      hashes: ["abcc", "deff"],
       resultContent: "hello\nworld!",
     });
     const entry = await getUndo(home.testPath);
@@ -56,14 +56,14 @@ describe("undo-store", () => {
       content: "second",
       bom: "\uFEFF",
       originalEnding: "\r\n",
-      hashes: ["bC4"],
+      hashes: ["bC44"],
       resultContent: "second!",
     });
     const entry = await getUndo(home.testPath);
     expect(entry!.content).toBe("second");
     expect(entry!.bom).toBe("\uFEFF");
     expect(entry!.originalEnding).toBe("\r\n");
-    expect(entry!.hashes).toEqual(["bC4"]);
+    expect(entry!.hashes).toEqual(["bC44"]);
   });
 
   it("clearUndo removes the entry", async () => {
@@ -71,7 +71,7 @@ describe("undo-store", () => {
       content: "data",
       bom: "",
       originalEnding: "\n",
-      hashes: ["xY7"],
+      hashes: ["xY77"],
       resultContent: "data!",
     });
     expect(await getUndo(home.testPath)).toBeDefined();
@@ -81,24 +81,24 @@ describe("undo-store", () => {
 
   it("handles multiple independent paths", async () => {
     await saveUndo(home.testPath, {
-      content: "aaa",
+      content: "aaaa",
       bom: "",
       originalEnding: "\n",
-      hashes: ["h1A"],
+      hashes: ["h1AA"],
       resultContent: "aaa!",
     });
     await saveUndo("/b.ts", {
-      content: "bbb",
+      content: "bbbb",
       bom: "",
       originalEnding: "\n",
-      hashes: ["h2B"],
+      hashes: ["h2BB"],
       resultContent: "bbb!",
     });
-    expect((await getUndo(home.testPath))!.content).toBe("aaa");
-    expect((await getUndo("/b.ts"))!.content).toBe("bbb");
+    expect((await getUndo(home.testPath))!.content).toBe("aaaa");
+    expect((await getUndo("/b.ts"))!.content).toBe("bbbb");
     await clearUndo(home.testPath);
     expect(await getUndo(home.testPath)).toBeUndefined();
-    expect((await getUndo("/b.ts"))!.content).toBe("bbb");
+    expect((await getUndo("/b.ts"))!.content).toBe("bbbb");
   });
 
   it("survives a hash-store shutdown and reopen", async () => {
@@ -106,7 +106,7 @@ describe("undo-store", () => {
       content: "old",
       bom: "\uFEFF",
       originalEnding: "\r",
-      hashes: ["abc", "def"],
+      hashes: ["abcc", "deff"],
       resultContent: "new",
     });
     shutdownHashStore();
@@ -115,7 +115,7 @@ describe("undo-store", () => {
     expect(entry!.content).toBe("old");
     expect(entry!.bom).toBe("\uFEFF");
     expect(entry!.originalEnding).toBe("\r");
-    expect(entry!.hashes).toEqual(["abc", "def"]);
+    expect(entry!.hashes).toEqual(["abcc", "deff"]);
     expect(entry!.resultContent).toBe("new");
   });
 
@@ -128,7 +128,7 @@ describe("undo-store", () => {
         content: "old",
         bom: "",
         originalEnding: "\n",
-        hashes: ["abc"],
+        hashes: ["abcc"],
         resultContent: "new",
       });
       expect(ok.persisted).toBe(false);
@@ -142,7 +142,7 @@ describe("undo-store", () => {
       content: "old",
       bom: "",
       originalEnding: "\r\n",
-      hashes: ["abc"],
+      hashes: ["abcc"],
       resultContent: "new",
     });
     const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
@@ -167,7 +167,7 @@ describe("undo-store — raw entries", () => {
       content: "old",
       bom: "\uFEFF",
       ending: "\r\n",
-      hashes: ["abc", "def"],
+      hashes: ["abcc", "deff"],
       resultContent: "new",
     });
     const entry = getUndoEntry(store, "/a.ts");
@@ -179,7 +179,7 @@ describe("undo-store — raw entries", () => {
       content: "old",
       bom: "\uFEFF",
       ending: "\r\n",
-      hashes: ["abc", "def"],
+      hashes: ["abcc", "deff"],
       resultContent: "new",
       snapshotHash: null,
       transactionId: null,
@@ -205,13 +205,13 @@ describe("undo-store — raw entries", () => {
       content: "second",
       bom: "",
       ending: "\r",
-      hashes: ["bC4"],
+      hashes: ["bC44"],
       resultContent: "second!",
     });
     const entry = getUndoEntry(store, "/a.ts");
     expect(entry!.content).toBe("second");
     expect(entry!.ending).toBe("\r");
-    expect(entry!.hashes).toEqual(["bC4"]);
+    expect(entry!.hashes).toEqual(["bC44"]);
   });
 
   it("deletes an undo entry", async () => {
@@ -220,7 +220,7 @@ describe("undo-store — raw entries", () => {
       content: "old",
       bom: "",
       ending: "\n",
-      hashes: ["xY7"],
+      hashes: ["xY77"],
       resultContent: "new",
     });
     deleteUndo(store, "/a.ts");
@@ -233,7 +233,7 @@ describe("undo-store — raw entries", () => {
       content: "old",
       bom: "",
       ending: "\n",
-      hashes: ["xY7"],
+      hashes: ["xY77"],
       resultContent: "new",
     });
     const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
@@ -256,7 +256,7 @@ describe("undo-store — raw entries", () => {
       content: "old",
       bom: "",
       ending: "\n",
-      hashes: ["xY7"],
+      hashes: ["xY77"],
       resultContent: "new",
     });
     const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
@@ -281,7 +281,7 @@ describe("undo-store — snapshot_hash pin (issue #79)", () => {
       content: "old",
       bom: "",
       ending: "\n",
-      hashes: ["abc"],
+      hashes: ["abcc"],
       resultContent: "new",
       snapshotHash: "v1:deadbeef",
     });
@@ -297,7 +297,7 @@ describe("undo-store — snapshot_hash pin (issue #79)", () => {
       content: "old",
       bom: "",
       ending: "\n",
-      hashes: ["abc"],
+      hashes: ["abcc"],
       resultContent: "new",
     });
     const row = store.db
@@ -312,7 +312,7 @@ describe("undo-store — snapshot_hash pin (issue #79)", () => {
       content: "old",
       bom: "",
       ending: "\n",
-      hashes: ["abc"],
+      hashes: ["abcc"],
       resultContent: "new",
     });
     const legacy = store.db.prepare("SELECT COUNT(*) AS n FROM undo").get() as { n: number };

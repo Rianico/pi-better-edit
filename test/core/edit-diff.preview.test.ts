@@ -9,10 +9,10 @@ describe("genDiff", () => {
   it("adds hash hints for context and addition lines and pads deletion lines to align the '│' column", () => {
     const result = genDiff("alpha\nbeta\ngamma", "alpha\nBETA\ngamma");
     const diff = result.diff;
-    expect(diff).toMatch(/^ [A-Za-z0-9]{3}│alpha$/m);
-    expect(diff).toMatch(/^\+[A-Za-z0-9]{3}│BETA$/m);
-    expect(diff).toMatch(/^- {3}│beta$/m);
-    expect(diff).toMatch(/^ [A-Za-z0-9]{3}│gamma$/m);
+    expect(diff).toMatch(/^ [A-Za-z0-9]{4}│alpha$/m);
+    expect(diff).toMatch(/^\+[A-Za-z0-9]{4}│BETA$/m);
+    expect(diff).toMatch(/^- {4}│beta$/m);
+    expect(diff).toMatch(/^ [A-Za-z0-9]{4}│gamma$/m);
   });
 
   it("carries the old hashes on deletion rows when oldContentHashes are provided", () => {
@@ -22,7 +22,7 @@ describe("genDiff", () => {
       "CCC",
     ]);
     expect(diff).toMatch(/^-BBB│beta$/m);
-    expect(diff).toMatch(/^\+[A-Za-z0-9]{3}│BETA$/m);
+    expect(diff).toMatch(/^\+[A-Za-z0-9]{4}│BETA$/m);
   });
 
   it("tracks old line numbers across skipped context and multi-line deletions", () => {
@@ -42,21 +42,21 @@ describe("genDiff", () => {
     const lines = diff.split("\n");
 
     const colonColumns = lines.map((line) => line.indexOf("│"));
-    expect(colonColumns).toEqual(lines.map(() => 4));
+    expect(colonColumns).toEqual(lines.map(() => 5));
 
     expect(lines).toContainEqual(
-      expect.stringMatching(/^ [A-Za-z0-9]{3}│function greet\(name\) \{$/),
+      expect.stringMatching(/^ [A-Za-z0-9]{4}│function greet\(name\) \{$/),
     );
-    expect(lines).toContainEqual(expect.stringMatching(/^- {3}│ {2}console\.log\('old'\)$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^- {4}│ {2}console\.log\('old'\)$/));
     expect(lines).toContainEqual(
-      expect.stringMatching(/^\+[A-Za-z0-9]{3}│ {2}return `Hello, \$\{name\}`$/),
+      expect.stringMatching(/^\+[A-Za-z0-9]{4}│ {2}return `Hello, \$\{name\}`$/),
     );
-    expect(lines).toContainEqual(expect.stringMatching(/^ [A-Za-z0-9]{3}│\}$/));
-    expect(lines).toContainEqual(expect.stringMatching(/^- {3}│ {2}console\.log\('old'\)$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^ [A-Za-z0-9]{4}│\}$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^- {4}│ {2}console\.log\('old'\)$/));
     expect(lines).toContainEqual(
-      expect.stringMatching(/^\+[A-Za-z0-9]{3}│ {2}return `Hello, \$\{name\}`$/),
+      expect.stringMatching(/^\+[A-Za-z0-9]{4}│ {2}return `Hello, \$\{name\}`$/),
     );
-    expect(lines).toContainEqual(expect.stringMatching(/^ [A-Za-z0-9]{3}│\}$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^ [A-Za-z0-9]{4}│\}$/));
   });
   it("truncates context between two distant changes", () => {
     const lines = [];
@@ -116,7 +116,7 @@ describe("genDiff — property: column alignment", () => {
     "  const y = 2;",
   ];
 
-  it("keeps the │ separator at column 4 for every diff row across random content", () => {
+  it("keeps the │ separator at column 5 for every diff row across random content", () => {
     for (let iter = 0; iter < 200; iter++) {
       const rnd = mulberry32(iter * 2654435761 + 17);
       const oldContent = Array.from(
@@ -132,7 +132,7 @@ describe("genDiff — property: column alignment", () => {
       for (const line of diff.split("\n")) {
         if (line.includes("│")) {
           expect(line.indexOf("│"), `column drift for iter ${iter}: ${JSON.stringify(line)}`).toBe(
-            4,
+            5,
           );
         }
       }
@@ -142,7 +142,7 @@ describe("genDiff — property: column alignment", () => {
   it("keeps the │ separator aligned with single-line diffs too", () => {
     const { diff } = genDiff("alpha\nbeta\ngamma", "alpha\nBETA\ngamma");
     for (const line of diff.split("\n")) {
-      if (line.includes("│")) expect(line.indexOf("│")).toBe(4);
+      if (line.includes("│")) expect(line.indexOf("│")).toBe(5);
     }
   });
 });

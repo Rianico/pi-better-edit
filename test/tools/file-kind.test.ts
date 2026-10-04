@@ -59,7 +59,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { file: "image.png", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
+          { file: "image.png", edits: [{ anchor_from: "AAAA", anchor_to: "BBBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -76,7 +76,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { file: "utf16.txt", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
+          { file: "utf16.txt", edits: [{ anchor_from: "AAAA", anchor_to: "BBBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -93,7 +93,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { file: "mydir", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
+          { file: "mydir", edits: [{ anchor_from: "AAAA", anchor_to: "BBBB", text: "x" }] },
           undefined,
           undefined,
           ctx,

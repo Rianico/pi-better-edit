@@ -23,12 +23,12 @@ describe("task-147 rejection diagnostics", () => {
     const lines = ["alpha", "beta"];
     const hashes = _lineHashesPure(lines.join("\n"));
     const snapshot = { fileHashes: hashes, fileLines: lines, filePath: "sample.ts" };
-    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "x" });
+    const edit = resEdit({ anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "x" });
     const { mismatches } = valEdit(edit, snapshot, undefined);
     const { message } = fmtMismatchWithServes(mismatches, snapshot);
     expect(message).toContain("1 stale anchor in sample.ts");
     expect(message).not.toContain("2 stale anchors");
-    expect(countMatches(message, /"ZZZ"/)).toBe(1);
+    expect(countMatches(message, /"ZZZZ"/)).toBe(1);
   });
 
   it("counts one anchor used as both bounds once with singular label (lease path)", () => {
@@ -40,8 +40,8 @@ describe("task-147 rejection diagnostics", () => {
     let caught: Error | undefined;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "AAA", text: "x" }),
-        snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"], filePath: "sample.ts" },
+        edit: resEdit({ anchor_from: "AAAA", anchor_to: "AAAA", text: "x" }),
+        snapshot: { fileHashes: ["AAAA", "BBBB"], fileLines: ["a", "b"], filePath: "sample.ts" },
         served: [],
         source: emptySource,
       });
@@ -50,10 +50,10 @@ describe("task-147 rejection diagnostics", () => {
     }
     expect(caught).toBeDefined();
     expect(caught!.message).toMatch(/\[MODEL\] \[E_UNKNOWN_ANCHOR\]/);
-    expect(caught!.message).toContain('has not served the anchor "AAA"');
-    expect(caught!.message).not.toContain('anchors "AAA"');
-    expect(caught!.message).not.toContain('"AAA", "AAA"');
-    expect(countMatches(caught!.message, /"AAA"/)).toBe(1);
+    expect(caught!.message).toContain('has not served the anchor "AAAA"');
+    expect(caught!.message).not.toContain('anchors "AAAA"');
+    expect(caught!.message).not.toContain('"AAAA", "AAAA"');
+    expect(countMatches(caught!.message, /"AAAA"/)).toBe(1);
   });
 
   it("aborts a batched call with one serve block and one audience tag", async () => {
@@ -155,7 +155,7 @@ describe("task-147 rejection diagnostics", () => {
         "e1",
         {
           file: "sample.ts",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBBB" }],
         },
         undefined,
         undefined,

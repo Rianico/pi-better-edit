@@ -346,7 +346,7 @@ function numericAnchorNote(anchors: string[]): string {
   const resemblance = numeric.length === 1 ? "resembles a line number" : "resemble line numbers";
   return (
     ` Note: ${noun} ${verb} only of digits and ${resemblance}. ` +
-    `Edit anchors are ${HASH_LEN}-character alphanumeric content hashes (e.g. "aB3") served by the read tool, not line numbers.`
+    `Edit anchors are ${HASH_LEN}-character alphanumeric content hashes (e.g. "aB3x") served by the read tool, not line numbers.`
   );
 }
 

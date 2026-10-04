@@ -75,7 +75,7 @@ describe("served-state range verification for edit", () => {
       expect(rejected).toBeDefined();
       expect(rejected!.message).toMatch(/E_STALE_RANGE/);
 
-      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       const currentHashes = await lineHashes("alpha\nBETA\ngamma\n", home.testPath);
       expect(servedLines).toEqual([
         `${currentHashes[0]}│alpha`,

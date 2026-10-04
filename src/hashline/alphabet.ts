@@ -1,4 +1,4 @@
-export const HASH_LEN = 3;
+export const HASH_LEN = 4;
 
 export const ALPHA = "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789";
 

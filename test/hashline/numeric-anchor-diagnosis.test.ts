@@ -14,13 +14,13 @@ function emptySource(): LeaseSpanSource {
 
 describe("E_UNKNOWN_ANCHOR numeric-anchor diagnosis", () => {
   it("single 3-digit anchor notes that it resembles a line number", () => {
-    const error = new DomainError("E_UNKNOWN_ANCHOR", { path: "a.py", anchors: ["833"] });
+    const error = new DomainError("E_UNKNOWN_ANCHOR", { path: "a.py", anchors: ["8334"] });
     expect(error.code).toBe("E_UNKNOWN_ANCHOR");
     expect(error.message.startsWith("[MODEL] [E_UNKNOWN_ANCHOR] ")).toBe(true);
-    expect(error.message).toContain('a.py has not served the anchor "833"; nothing was written.');
-    expect(error.message).toContain('Note: anchor "833" consists only of digits');
+    expect(error.message).toContain('a.py has not served the anchor "8334"; nothing was written.');
+    expect(error.message).toContain('Note: anchor "8334" consists only of digits');
     expect(error.message).toContain("resembles a line number");
-    expect(error.message).toContain('3-character alphanumeric content hashes (e.g. "aB3")');
+    expect(error.message).toContain('4-character alphanumeric content hashes (e.g. "aB3x")');
   });
 
   it("non-numeric unknown anchor retains the standard format without the note", () => {
@@ -59,9 +59,9 @@ describe("E_UNKNOWN_ANCHOR numeric-anchor diagnosis", () => {
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "833", anchor_to: "834", text: "X" }),
+        edit: resEdit({ anchor_from: "8334", anchor_to: "8344", text: "X" }),
         snapshot: {
-          fileHashes: ["AAA", "BBB"],
+          fileHashes: ["AAAA", "BBBB"],
           fileLines: ["a", "b"],
           filePath: "a.py",
         },

@@ -81,7 +81,7 @@ describe("served-state edge cases for edit", () => {
       expect(rejected).toBeDefined();
       expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 2/);
       // Reject-and-serve: the served rows are the current on-disk range, so the retry needs no read.
-      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines.map((l) => l.split("│")[1])).toEqual(["a", "b", "b", "d"]);
 
       expect(await readFile(path, "utf-8")).toBe("a\nb\nb\nd\n");
@@ -196,7 +196,7 @@ describe("served-state edge cases for edit", () => {
       expect(rejected).toBeDefined();
       expect(rejected!.message).toMatch(/E_STALE_RANGE.*line 100/);
 
-      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines).toHaveLength(150);
       expect(rejected!.message).toMatch(/\[\s*\.\.\.\s*50 more — read offset=151\]/);
       expect(await readFile(path, "utf-8")).toBe(mutated);

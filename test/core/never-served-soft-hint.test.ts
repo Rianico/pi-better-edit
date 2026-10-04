@@ -40,9 +40,9 @@ describe("never-served anchor-shaped predicate", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
-    const hits = findNeverServedAnchorShapes([`ZZZ${HASH_SEP}alpha`], served, 1);
+    const hits = findNeverServedAnchorShapes([`ZZZZ${HASH_SEP}alpha`], served, 1);
     expect(hits).toHaveLength(1);
-    expect(hits[0]).toMatchObject({ k: 1, anchor: "ZZZ" });
+    expect(hits[0]).toMatchObject({ k: 1, anchor: "ZZZZ" });
   });
 
   it("stays silent for a served anchor and for plain lines", () => {
@@ -60,8 +60,8 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    for (const anchor of ["AAA", "BBB", "CCC"]) expect(hashes).not.toContain(anchor);
-    const submitted = [`AAA${HASH_SEP}x`, `BBB${HASH_SEP}y`, `CCC${HASH_SEP}z`];
+    for (const anchor of ["AAAA", "BBBB", "CCCC"]) expect(hashes).not.toContain(anchor);
+    const submitted = [`AAAA${HASH_SEP}x`, `BBBB${HASH_SEP}y`, `CCCC${HASH_SEP}z`];
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: submitted,
@@ -81,8 +81,8 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    expect(hashes).not.toContain("ZZZ");
-    const submitted = `ZZZ${HASH_SEP}alpha`;
+    expect(hashes).not.toContain("ZZZZ");
+    const submitted = `ZZZZ${HASH_SEP}alpha`;
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [submitted],
@@ -153,8 +153,8 @@ describe("edit tool never-served success plus hint", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
-      expect(hashes).not.toContain("ZZZ");
-      const submitted = `ZZZ${HASH_SEP}alpha`;
+      expect(hashes).not.toContain("ZZZZ");
+      const submitted = `ZZZZ${HASH_SEP}alpha`;
       const result = await editTool.execute(
         "e1",
         {
@@ -184,10 +184,10 @@ describe("edit tool never-served success plus hint", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\nfour\n", home.testPath);
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
-      expect(hashes).not.toContain("ZZZ");
-      expect(hashes).not.toContain("QQQ");
-      const first = `ZZZ${HASH_SEP}alpha`;
-      const second = `QQQ${HASH_SEP}beta`;
+      expect(hashes).not.toContain("ZZZZ");
+      expect(hashes).not.toContain("QQQQ");
+      const first = `ZZZZ${HASH_SEP}alpha`;
+      const second = `QQQQ${HASH_SEP}beta`;
       const result = await editTool.execute(
         "e1",
         {
@@ -233,7 +233,7 @@ describe("write path carries no never-served hint", () => {
       const { getTool } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
       await readTool.execute("r1", { path: fileName }, undefined, undefined, ctx);
-      const submitted = `ZZZ${HASH_SEP}alpha`;
+      const submitted = `ZZZZ${HASH_SEP}alpha`;
       const written = `${submitted}\ntwo\n`;
       await writeFile(filePath, written, "utf-8");
       const hooks = createLifecycleHooks();
@@ -331,8 +331,8 @@ describe("never-served hint with no lease state (spec D6)", () => {
   it("fires with a missing served tracker instead of skipping the scan", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
-    expect(hashes).not.toContain("ZZZ");
-    const submitted = `ZZZ${HASH_SEP}alpha`;
+    expect(hashes).not.toContain("ZZZZ");
+    const submitted = `ZZZZ${HASH_SEP}alpha`;
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [submitted],
@@ -347,8 +347,8 @@ describe("never-served hint with no lease state (spec D6)", () => {
   it("fires with an explicitly undefined served mirror", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = _lineHashesPure(content);
-    expect(hashes).not.toContain("ZZZ");
-    const submitted = `ZZZ${HASH_SEP}alpha`;
+    expect(hashes).not.toContain("ZZZZ");
+    const submitted = `ZZZZ${HASH_SEP}alpha`;
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [submitted],

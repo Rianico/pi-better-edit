@@ -116,7 +116,7 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const content = "hello\nworld\n";
-      const hashes = ["aB3", "xY7"];
+      const hashes = ["aB33", "xY77"];
       put(store, "/path/to/file.ts", content, hashes);
 
       expect(getSnapshot(store, "/path/to/file.ts", content)).toEqual(hashes);
@@ -148,7 +148,7 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const content = "alpha\nbravo\n";
-      const hashes = ["aB3", "xY7"];
+      const hashes = ["aB33", "xY77"];
       upsertSnapshot(store, {
         path: "/descriptor.ts",
         snapshotHash: standardizedHash(content),
@@ -163,10 +163,10 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
         path: "/descriptor-async.ts",
         snapshotHash: snapshotHashFor(other),
         lineCount: 1,
-        hashes: ["zZ9"],
+        hashes: ["zZ99"],
         content: other,
       });
-      expect(getSnapshot(store, "/descriptor-async.ts", other)).toEqual(["zZ9"]);
+      expect(getSnapshot(store, "/descriptor-async.ts", other)).toEqual(["zZ99"]);
 
       const db = openRaw(home);
       try {
@@ -185,9 +185,9 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
   it("returns undefined on a checksum miss and allocates zero line ids", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      put(store, "/p.ts", "aaa\nbbb\n", ["aB3", "xY7"]);
+      put(store, "/p.ts", "aaa\nbbb\n", ["aB33", "xY77"]);
 
-      expect(getSnapshot(store, "/p.ts", "aaa\nbbb\n")).toEqual(["aB3", "xY7"]);
+      expect(getSnapshot(store, "/p.ts", "aaa\nbbb\n")).toEqual(["aB33", "xY77"]);
 
       const db = openRaw(home);
       const before = nextId(db, "/p.ts");
@@ -206,8 +206,8 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
       const store = await loadHashStore();
       const first = "one\ntwo\nthree\n";
       const second = "one\ntwo\n";
-      put(store, "/p.ts", first, ["111", "222", "333"]);
-      put(store, "/p.ts", second, ["111", "222"]);
+      put(store, "/p.ts", first, ["1111", "2222", "3333"]);
+      put(store, "/p.ts", second, ["1111", "2222"]);
 
       const db = openRaw(home);
       try {
@@ -226,8 +226,8 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
         expect(secondBlock).toEqual([1, 2]);
         expect(nextId(db, "/p.ts")).toBe(4);
 
-        expect(getSnapshot(store, "/p.ts", first)).toEqual(["111", "222", "333"]);
-        expect(getSnapshot(store, "/p.ts", second)).toEqual(["111", "222"]);
+        expect(getSnapshot(store, "/p.ts", first)).toEqual(["1111", "2222", "3333"]);
+        expect(getSnapshot(store, "/p.ts", second)).toEqual(["1111", "2222"]);
         expect(getSnapshot(store, "/p.ts", "one\n")).toBeUndefined();
       } finally {
         db.close();
@@ -241,7 +241,7 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
       const counters: number[] = [];
       for (let i = 0; i < 5; i++) {
         const content = "line\n".repeat(i + 1);
-        put(store, "/grow.ts", content, ["AAA"]);
+        put(store, "/grow.ts", content, ["AAAA"]);
         const db = openRaw(home);
         counters.push(nextId(db, "/grow.ts")!);
         db.close();
@@ -265,9 +265,9 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
   it("allocates an independent monotonic block per path", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      put(store, "/a.ts", "a1\na2\n", ["A1A", "A2A"]);
-      put(store, "/b.ts", "b1\n", ["B1B"]);
-      put(store, "/a.ts", "a3\n", ["A3A"]);
+      put(store, "/a.ts", "a1\na2\n", ["A1AA", "A2AA"]);
+      put(store, "/b.ts", "b1\n", ["B1BB"]);
+      put(store, "/a.ts", "a3\n", ["A3AA"]);
 
       const db = openRaw(home);
       try {
@@ -286,10 +286,10 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const content = "x\n";
-      put(store, "/p.ts", content, ["zZ9"]);
+      put(store, "/p.ts", content, ["zZ99"]);
 
-      expect(_lineHashesPure(content)).not.toEqual(["zZ9"]);
-      expect(getSnapshot(store, "/p.ts", content)).toEqual(["zZ9"]);
+      expect(_lineHashesPure(content)).not.toEqual(["zZ99"]);
+      expect(getSnapshot(store, "/p.ts", content)).toEqual(["zZ99"]);
     });
   });
 
@@ -306,19 +306,19 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const content = "same\n";
-      put(store, "/p.ts", content, ["AAA"]);
+      put(store, "/p.ts", content, ["AAAA"]);
       const db = openRaw(home);
       const before = nextId(db, "/p.ts");
       const beforeRows = snapshotRows(db, "/p.ts").length;
       db.close();
 
-      put(store, "/p.ts", content, ["AAA"]);
+      put(store, "/p.ts", content, ["AAAA"]);
 
       const after = openRaw(home);
       expect(nextId(after, "/p.ts")).toBe(before);
       expect(snapshotRows(after, "/p.ts").length).toBe(beforeRows);
       after.close();
-      expect(getSnapshot(store, "/p.ts", content)).toEqual(["AAA"]);
+      expect(getSnapshot(store, "/p.ts", content)).toEqual(["AAAA"]);
     });
   });
 });
@@ -348,7 +348,7 @@ describe("snapshot-store — corrupt lineage handling", () => {
   it("treats a row with malformed anchors as a cache miss and deletes it", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      put(store, "/p.ts", "x\ny\n", ["AAA", "BBB"]);
+      put(store, "/p.ts", "x\ny\n", ["AAAA", "BBBB"]);
       await corruptAnchors(home, "/p.ts", ["ZZ", "ZZZZ"]);
 
       expect(getSnapshot(store, "/p.ts", "x\ny\n")).toBeUndefined();
@@ -359,7 +359,7 @@ describe("snapshot-store — corrupt lineage handling", () => {
   it("keeps a corrupt snapshot when deletion is suppressed", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      put(store, "/p.ts", "x\ny\n", ["AAA", "BBB"]);
+      put(store, "/p.ts", "x\ny\n", ["AAAA", "BBBB"]);
       await corruptAnchors(home, "/p.ts", ["ZZ", "ZZZZ"]);
 
       expect(getSnapshot(store, "/p.ts", "x\ny\n", false)).toBeUndefined();
@@ -370,7 +370,7 @@ describe("snapshot-store — corrupt lineage handling", () => {
   it("treats a truncated lineage as a cache miss and deletes it", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      put(store, "/p.ts", "x\ny\n", ["AAA", "BBB"]);
+      put(store, "/p.ts", "x\ny\n", ["AAAA", "BBBB"]);
       const db = openRaw(home);
       db.prepare(
         "DELETE FROM line_lineage WHERE snapshot_id IN " +
@@ -388,7 +388,7 @@ describe("snapshot-store — pruneMissing", () => {
   it("removes snapshots and their lineage for files that no longer exist", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      put(store, "/gone.ts", "old\n", ["ZZZ"]);
+      put(store, "/gone.ts", "old\n", ["ZZZZ"]);
       await pruneMissing(store);
       expect(getSnapshot(store, "/gone.ts", "old\n")).toBeUndefined();
 
@@ -411,7 +411,7 @@ describe("snapshot-store — pruneMissing", () => {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["ZZZ"],
+        hashes: ["ZZZZ"],
         resultContent: "new",
       });
       await pruneMissing(store);
@@ -429,7 +429,7 @@ describe("snapshot-store — pruneMissing", () => {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["KEP"],
+        hashes: ["KEPP"],
         resultContent: "new",
       });
       await pruneMissing(store);
@@ -443,11 +443,11 @@ describe("snapshot-store — pruneMissing", () => {
       await writeFile(existing, "keep\n", "utf-8");
 
       const store = await loadHashStore();
-      put(store, existing, "keep\n", ["KEP"]);
-      put(store, "/gone.ts", "gone\n", ["GON"]);
+      put(store, existing, "keep\n", ["KEPP"]);
+      put(store, "/gone.ts", "gone\n", ["GONN"]);
       await pruneMissing(store);
 
-      expect(getSnapshot(store, existing, "keep\n")).toEqual(["KEP"]);
+      expect(getSnapshot(store, existing, "keep\n")).toEqual(["KEPP"]);
       expect(getSnapshot(store, "/gone.ts", "gone\n")).toBeUndefined();
     });
   });
@@ -460,13 +460,13 @@ describe("snapshot-store — pruneMissing", () => {
       await writeFile(grown, "grow\n", "utf-8");
 
       const store = await loadHashStore();
-      put(store, keep, "keep\n", ["KEP"]);
-      put(store, "/gone.ts", "gone\n", ["GON"]);
-      put(store, grown, "grow\n", ["GRW"]);
+      put(store, keep, "keep\n", ["KEPP"]);
+      put(store, "/gone.ts", "gone\n", ["GONN"]);
+      put(store, grown, "grow\n", ["GRWW"]);
       await pruneMissing(store);
 
-      expect(getSnapshot(store, keep, "keep\n")).toEqual(["KEP"]);
-      expect(getSnapshot(store, grown, "grow\n")).toEqual(["GRW"]);
+      expect(getSnapshot(store, keep, "keep\n")).toEqual(["KEPP"]);
+      expect(getSnapshot(store, grown, "grow\n")).toEqual(["GRWW"]);
       expect(getSnapshot(store, "/gone.ts", "gone\n")).toBeUndefined();
     });
   });
@@ -478,12 +478,12 @@ describe("snapshot-store — pruneMissing", () => {
       for (let i = 0; i < 70; i++) {
         const path = join(home, `keep-${i}.ts`);
         await writeFile(path, "keep\n", "utf-8");
-        const hash = `K${String(i).padStart(2, "0")}`;
+        const hash = `K${String(i).padStart(3, "0")}`;
         put(store, path, "keep\n", [hash]);
         existing.push({ path, hash });
       }
       for (let i = 0; i < 70; i++) {
-        put(store, `/gone-${i}.ts`, "gone\n", [`G${String(i).padStart(2, "0")}`]);
+        put(store, `/gone-${i}.ts`, "gone\n", [`G${String(i).padStart(3, "0")}`]);
       }
       await pruneMissing(store);
       for (const entry of existing) {
@@ -498,7 +498,7 @@ describe("snapshot-store — pruneMissing", () => {
   it("preserves the counter of a pruned path that still held a snapshot when pruning began", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      put(store, "/gone.ts", "old\n", ["ZZZ"]);
+      put(store, "/gone.ts", "old\n", ["ZZZZ"]);
       const counterBefore = nextId(store.db, "/gone.ts");
       expect(counterBefore).toBeDefined();
 
@@ -521,7 +521,7 @@ describe("snapshot-store — pruneMissing", () => {
   it("drops the line_id counter of a pruned path once it holds no snapshot and no lease", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      put(store, "/gone.ts", "old\n", ["ZZZ"]);
+      put(store, "/gone.ts", "old\n", ["ZZZZ"]);
       expect(counterRows(store.db, "/gone.ts")).toHaveLength(1);
       // Simulate the LRU vacuum that evicted the path's last snapshot: only the counter row is left.
       store.db.prepare("DELETE FROM file_snapshots WHERE path = ?").run("/gone.ts");
@@ -544,7 +544,7 @@ describe("snapshot-store — pruneMissing", () => {
       const existing = join(home, "keep.ts");
       await writeFile(existing, "keep\n", "utf-8");
       const store = await loadHashStore();
-      put(store, existing, "keep\n", ["KEP"]);
+      put(store, existing, "keep\n", ["KEPP"]);
 
       await pruneMissing(store);
 

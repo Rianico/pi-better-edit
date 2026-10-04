@@ -28,12 +28,12 @@ describe("genDiff gap trimming (#166)", () => {
     const { diff } = genDiff(oldContent, newContent, 4, hashes);
 
     expect(markers(diff)).toBe(0);
-    expect(rowFor(diff, "b")).toBe("-   │b");
+    expect(rowFor(diff, "b")).toBe("-    │b");
     expect(rowFor(diff, "B")).toBe(`+${hashes[1]}│B`);
     gap.forEach((line, i) => {
       expect(rowFor(diff, line)).toBe(` ${hashes[i + 2]}│${line}`);
     });
-    expect(rowFor(diff, "c")).toBe("-   │c");
+    expect(rowFor(diff, "c")).toBe("-    │c");
     expect(rowFor(diff, "C")).toBe(`+${hashes[8]}│C`);
     expect(rowFor(diff, "d")).toBe(` ${hashes[9]}│d`);
   });

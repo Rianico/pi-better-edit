@@ -175,7 +175,7 @@ describe("reject-and-serve mirror", () => {
       const rejection = await harness.editTool
         .execute(
           "e1",
-          { file: "q.txt", edits: [{ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "NEW" }] },
+          { file: "q.txt", edits: [{ anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "NEW" }] },
           undefined,
           undefined,
           harness.ctx,

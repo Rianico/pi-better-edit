@@ -31,7 +31,7 @@ function ctxFor(cwd: string, id: string): unknown {
 function rows(text: string): { hash: string; text: string }[] {
   const out: { hash: string; text: string }[] = [];
   for (const line of text.split("\n")) {
-    const m = line.match(/^([A-Za-z0-9]{3})│(.*)$/);
+    const m = line.match(/^([A-Za-z0-9]{4})│(.*)$/);
     if (m) out.push({ hash: m[1]!, text: m[2]! });
   }
   return out;

@@ -13,8 +13,12 @@ function gcd(a: number, b: number): number {
   return a;
 }
 
-function allCharsDiffer(a: string, b: string): boolean {
-  return a[0] !== b[0] && a[1] !== b[1] && a[2] !== b[2];
+// WHY: the stride `3907 = 62^2 + 62 + 1` increments only the low three base-62
+// WHY: digits, so consecutive 4-char anchors always differ in positions 1–3
+// WHY: while the most-significant char may coincide — the helper below pins
+// WHY: exactly that, not the width-3 "every character differs" claim.
+function lowThreeCharsDiffer(a: string, b: string): boolean {
+  return a[1] !== b[1] && a[2] !== b[2] && a[3] !== b[3];
 }
 
 describe("hash probe stride", () => {
@@ -22,7 +26,7 @@ describe("hash probe stride", () => {
     expect(gcd(HASH_PROBE_STRIDE, HASH_SPACE)).toBe(1);
   });
 
-  it("changes all three characters between consecutive allocations", () => {
+  it("changes the low three base-62 digits between consecutive allocations", () => {
     const digit0 = HASH_PROBE_STRIDE % 62;
     const digit1 = Math.floor(HASH_PROBE_STRIDE / 62) % 62;
     const digit2 = Math.floor(HASH_PROBE_STRIDE / 62 ** 2) % 62;
@@ -33,11 +37,11 @@ describe("hash probe stride", () => {
     expect(digit2).not.toBe(61);
   });
 
-  it("spreads blank lines so consecutive hashes share no characters", () => {
+  it("spreads blank lines so consecutive hashes differ in the low three positions", () => {
     const content = Array.from({ length: 20 }, () => "").join("\n");
     const hashes = _lineHashesPure(content);
     for (let i = 1; i < hashes.length; i++) {
-      expect(allCharsDiffer(hashes[i - 1]!, hashes[i]!)).toBe(true);
+      expect(lowThreeCharsDiffer(hashes[i - 1]!, hashes[i]!)).toBe(true);
     }
   });
 
@@ -45,7 +49,7 @@ describe("hash probe stride", () => {
     const content = Array.from({ length: 20 }, () => "}").join("\n");
     const hashes = _lineHashesPure(content);
     for (let i = 1; i < hashes.length; i++) {
-      expect(allCharsDiffer(hashes[i - 1]!, hashes[i]!)).toBe(true);
+      expect(lowThreeCharsDiffer(hashes[i - 1]!, hashes[i]!)).toBe(true);
     }
   });
 
@@ -53,7 +57,7 @@ describe("hash probe stride", () => {
     const content = Array.from({ length: 20 }, () => "").join("\n");
     const hashes = await lineHashes(content, home.testPath);
     for (let i = 1; i < hashes.length; i++) {
-      expect(allCharsDiffer(hashes[i - 1]!, hashes[i]!)).toBe(true);
+      expect(lowThreeCharsDiffer(hashes[i - 1]!, hashes[i]!)).toBe(true);
     }
   });
 
@@ -72,7 +76,7 @@ describe("hash probe stride", () => {
       hashes: oldHashes,
     });
     for (let i = 1; i < newHashes.length; i++) {
-      expect(allCharsDiffer(newHashes[i - 1]!, newHashes[i]!)).toBe(true);
+      expect(lowThreeCharsDiffer(newHashes[i - 1]!, newHashes[i]!)).toBe(true);
     }
   });
 });

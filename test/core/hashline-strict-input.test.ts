@@ -20,8 +20,8 @@ describe("edit input validation", () => {
 
   it("rejects array text before patch-prefix validation", () => {
     const toolEdit: HTEdit = {
-      anchor_from: "ZZZ",
-      anchor_to: "ZZZ",
+      anchor_from: "ZZZZ",
+      anchor_to: "ZZZZ",
       text: ["+ZZZ:foo"],
     } as unknown as HTEdit;
     expect(() => resEdit(toolEdit)).toThrow(
@@ -31,8 +31,8 @@ describe("edit input validation", () => {
 
   it("passes through numbered deletion rows as literal content", () => {
     const toolEdit: HTEdit = {
-      anchor_from: "ZZZ",
-      anchor_to: "ZZZ",
+      anchor_from: "ZZZZ",
+      anchor_to: "ZZZZ",
       text: "-1    foo",
     };
     const resolved = resEdit(toolEdit);
@@ -41,8 +41,8 @@ describe("edit input validation", () => {
 
   it("accepts plain literal content unchanged", () => {
     const toolEdit: HTEdit = {
-      anchor_from: "ZZZ",
-      anchor_to: "ZZZ",
+      anchor_from: "ZZZZ",
+      anchor_to: "ZZZZ",
       text: "bar",
     };
     const resolved = resEdit(toolEdit);
@@ -51,8 +51,8 @@ describe("edit input validation", () => {
 
   it("preserves '#' comment lines that do not match the strict prefix", () => {
     const toolEdit: HTEdit = {
-      anchor_from: "ZZZ",
-      anchor_to: "ZZZ",
+      anchor_from: "ZZZZ",
+      anchor_to: "ZZZZ",
       text: "# keep me",
     };
     const resolved = resEdit(toolEdit);

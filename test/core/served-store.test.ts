@@ -41,11 +41,11 @@ describe("hash-store — served state (issue #2)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/a.ts", [
-        { position: 0, hash: "abc" },
-        { position: 1, hash: "def" },
-        { position: 2, hash: "ghi" },
+        { position: 0, hash: "abcc" },
+        { position: 1, hash: "deff" },
+        { position: 2, hash: "ghii" },
       ]);
-      expect(getServed(store, "sessionA", "/a.ts")).toEqual(["abc", "def", "ghi"]);
+      expect(getServed(store, "sessionA", "/a.ts")).toEqual(["abcc", "deff", "ghii"]);
     });
   });
 
@@ -60,36 +60,43 @@ describe("hash-store — served state (issue #2)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "abc" },
-        { position: 2, hash: "def" },
+        { position: 0, hash: "abcc" },
+        { position: 2, hash: "deff" },
       ]);
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["abc", null, "def"]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["abcc", null, "deff"]);
     });
   });
 
   it("exposes leading gaps as never-served markers", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 3, hash: "abc" }]);
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual([null, null, null, "abc"]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 3, hash: "abcc" }]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual([null, null, null, "abcc"]);
     });
   });
 
   it("grows the record to the highest served position", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 5, hash: "def" }]);
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["abc", null, null, null, null, "def"]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abcc" }]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 5, hash: "deff" }]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual([
+        "abcc",
+        null,
+        null,
+        null,
+        null,
+        "deff",
+      ]);
     });
   });
 
   it("overwrites a previously served position", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "def" }]);
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["def"]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abcc" }]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "deff" }]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["deff"]);
     });
   });
 
@@ -97,12 +104,12 @@ describe("hash-store — served state (issue #2)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "abc" },
-        { position: 1, hash: "def" },
-        { position: 2, hash: "ghi" },
+        { position: 0, hash: "abcc" },
+        { position: 1, hash: "deff" },
+        { position: 2, hash: "ghii" },
       ]);
       upsertServed(store, "sessionA", "/p.ts", [{ position: 1, hash: null }]);
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["abc", null, "ghi"]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["abcc", null, "ghii"]);
     });
   });
 
@@ -119,8 +126,8 @@ describe("hash-store — served state (issue #2)", () => {
       const store = await loadHashStore();
       expect(() =>
         upsertServed(store, "sessionA", "/p.ts", [
-          { position: 0, hash: "abc" },
-          { position: 1, hash: "ZZZZ" },
+          { position: 0, hash: "abcc" },
+          { position: 1, hash: "ZZZ" },
         ]),
       ).toThrow(/Invalid served hash/);
       expect(getServed(store, "sessionA", "/p.ts")).toEqual([]);
@@ -131,7 +138,7 @@ describe("hash-store — served state (issue #2)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       expect(() =>
-        upsertServed(store, "sessionA", "/p.ts", [{ position: -1, hash: "abc" }]),
+        upsertServed(store, "sessionA", "/p.ts", [{ position: -1, hash: "abcc" }]),
       ).toThrow(/Invalid served position/);
       expect(getServed(store, "sessionA", "/p.ts")).toEqual([]);
     });
@@ -163,15 +170,15 @@ describe("hash-store — served state (issue #2)", () => {
   it("keeps unrelated served records intact when upserting another path", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/a.ts", [{ position: 0, hash: "abc" }]);
+      upsertServed(store, "sessionA", "/a.ts", [{ position: 0, hash: "abcc" }]);
       upsertServed(store, "sessionA", "/b.ts", [
-        { position: 0, hash: "def" },
-        { position: 1, hash: "ghi" },
+        { position: 0, hash: "deff" },
+        { position: 1, hash: "ghii" },
       ]);
-      expect(getServed(store, "sessionA", "/a.ts")).toEqual(["abc"]);
-      expect(getServed(store, "sessionA", "/b.ts")).toEqual(["def", "ghi"]);
+      expect(getServed(store, "sessionA", "/a.ts")).toEqual(["abcc"]);
+      expect(getServed(store, "sessionA", "/b.ts")).toEqual(["deff", "ghii"]);
       deleteServed(store, "sessionA", "/a.ts");
-      expect(getServed(store, "sessionA", "/b.ts")).toEqual(["def", "ghi"]);
+      expect(getServed(store, "sessionA", "/b.ts")).toEqual(["deff", "ghii"]);
     });
   });
 
@@ -179,12 +186,12 @@ describe("hash-store — served state (issue #2)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "abc" },
-        { position: 2, hash: "def" },
+        { position: 0, hash: "abcc" },
+        { position: 2, hash: "deff" },
       ]);
       shutdownHashStore();
       const reloaded = await loadHashStore();
-      expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual(["abc", null, "def"]);
+      expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual(["abcc", null, "deff"]);
     });
   });
 });
@@ -193,38 +200,38 @@ describe("hash-store — session isolation", () => {
   it("keeps two sessions' served records for the same path independent", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
-      upsertServed(store, "sessionB", "/p.ts", [{ position: 0, hash: "def" }]);
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["abc"]);
-      expect(getServed(store, "sessionB", "/p.ts")).toEqual(["def"]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abcc" }]);
+      upsertServed(store, "sessionB", "/p.ts", [{ position: 0, hash: "deff" }]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["abcc"]);
+      expect(getServed(store, "sessionB", "/p.ts")).toEqual(["deff"]);
     });
   });
 
   it("wipes only the targeted session's served records", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/a.ts", [{ position: 0, hash: "abc" }]);
-      upsertServed(store, "sessionB", "/a.ts", [{ position: 0, hash: "def" }]);
+      upsertServed(store, "sessionA", "/a.ts", [{ position: 0, hash: "abcc" }]);
+      upsertServed(store, "sessionB", "/a.ts", [{ position: 0, hash: "deff" }]);
       wipeServed(store, "sessionA");
       expect(getServed(store, "sessionA", "/a.ts")).toEqual([]);
-      expect(getServed(store, "sessionB", "/a.ts")).toEqual(["def"]);
+      expect(getServed(store, "sessionB", "/a.ts")).toEqual(["deff"]);
     });
   });
 
   it("keeps reported drift sets per session", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/p.ts", ["abc"]);
-      addReported(store, "sessionB", "/p.ts", ["def"]);
-      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set(["abc"]));
-      expect(getReported(store, "sessionB", "/p.ts")).toEqual(new Set(["def"]));
+      addReported(store, "sessionA", "/p.ts", ["abcc"]);
+      addReported(store, "sessionB", "/p.ts", ["deff"]);
+      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set(["abcc"]));
+      expect(getReported(store, "sessionB", "/p.ts")).toEqual(new Set(["deff"]));
     });
   });
 
   it("sees no served rows for a session that recorded nothing", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abcc" }]);
       expect(getServed(store, "sessionB", "/p.ts")).toEqual([]);
     });
   });
@@ -234,20 +241,20 @@ describe("hash-store — served wipe", () => {
   it("removes all served records while keeping snapshots and undo", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/a.ts", [{ position: 0, hash: "abc" }]);
-      upsertServed(store, "sessionA", "/b.ts", [{ position: 1, hash: "def" }]);
+      upsertServed(store, "sessionA", "/a.ts", [{ position: 0, hash: "abcc" }]);
+      upsertServed(store, "sessionA", "/b.ts", [{ position: 1, hash: "deff" }]);
       upsertSnapshot(store, {
         path: "/a.ts",
         snapshotHash: snapshotHashFor("a\n"),
         lineCount: 1,
-        hashes: ["abc"],
+        hashes: ["abcc"],
         content: "a\n",
       });
       upsertUndo(store, "/u.ts", {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["UVW"],
+        hashes: ["UVWW"],
         resultContent: "new",
       });
 
@@ -255,7 +262,7 @@ describe("hash-store — served wipe", () => {
 
       expect(getServed(store, "sessionA", "/a.ts")).toEqual([]);
       expect(getServed(store, "sessionA", "/b.ts")).toEqual([]);
-      expect(getSnapshot(store, "/a.ts", "a\n")).toEqual(["abc"]);
+      expect(getSnapshot(store, "/a.ts", "a\n")).toEqual(["abcc"]);
       expect(getUndoEntry(store, "/u.ts")).toBeDefined();
     });
   });
@@ -280,7 +287,7 @@ describe("hash-store — served corrupt row handling", () => {
   it("treats a row with unparseable hashes as an empty record and deletes it", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "AAA" }]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "AAAA" }]);
       await corruptServed(home, "sessionA", "/p.ts", "not json");
       shutdownHashStore();
       const reloaded = await loadHashStore();
@@ -323,8 +330,8 @@ describe("hash-store — served corrupt row handling", () => {
   it("treats a row with malformed hash strings as an empty record and deletes it", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "AAA" }]);
-      await corruptServed(home, "sessionA", "/p.ts", '["ZZ", "ZZZZ", "a!b"]');
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "AAAA" }]);
+      await corruptServed(home, "sessionA", "/p.ts", '["ZZ", "ZZZ", "a!b"]');
       shutdownHashStore();
       const reloaded = await loadHashStore();
       expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
@@ -342,7 +349,7 @@ describe("hash-store — served corrupt row handling", () => {
   it("treats a row with non-string entries as an empty record and deletes it", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "AAA" }]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "AAAA" }]);
       await corruptServed(home, "sessionA", "/p.ts", "[42]");
       shutdownHashStore();
       const reloaded = await loadHashStore();
@@ -363,19 +370,19 @@ describe("hash-store — served schema versioning", () => {
   it("preserves served state alongside snapshots and undo when the stored version differs", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "XYZ" }]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "XYZZ" }]);
       upsertSnapshot(store, {
         path: "/p.ts",
         snapshotHash: snapshotHashFor("x\n"),
         lineCount: 1,
-        hashes: ["XYZ"],
+        hashes: ["XYZZ"],
         content: "x\n",
       });
       upsertUndo(store, "/u.ts", {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["UVW"],
+        hashes: ["UVWW"],
         resultContent: "new",
       });
       shutdownHashStore();
@@ -388,7 +395,7 @@ describe("hash-store — served schema versioning", () => {
 
       const reloaded = await loadHashStore();
       expect(getServed(reloaded, "sessionA", "/p.ts")).not.toEqual([]);
-      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZ"]);
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZZ"]);
       expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
 
       const check = new DatabaseSync(sqlitePath(home), {
@@ -452,8 +459,8 @@ describe("hash-store — served schema versioning", () => {
       );
       db.close();
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/p.ts", ["abc"]);
-      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set(["abc"]));
+      addReported(store, "sessionA", "/p.ts", ["abcc"]);
+      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set(["abcc"]));
     });
   });
 });
@@ -462,7 +469,7 @@ describe("hash-store — served pruneMissing", () => {
   it("removes served records for files that no longer exist", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/gone.ts", [{ position: 0, hash: "ZZZ" }]);
+      upsertServed(store, "sessionA", "/gone.ts", [{ position: 0, hash: "ZZZZ" }]);
       await pruneMissing(store);
       expect(getServed(store, "sessionA", "/gone.ts")).toEqual([]);
     });
@@ -473,16 +480,16 @@ describe("hash-store — served pruneMissing", () => {
       const existing = join(home, "keep.ts");
       await writeFile(existing, "keep\n", "utf-8");
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", existing, [{ position: 0, hash: "KEP" }]);
+      upsertServed(store, "sessionA", existing, [{ position: 0, hash: "KEPP" }]);
       await pruneMissing(store);
-      expect(getServed(store, "sessionA", existing)).toEqual(["KEP"]);
+      expect(getServed(store, "sessionA", existing)).toEqual(["KEPP"]);
     });
   });
 
   it("prunes served-only records for files with no snapshot or undo row", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/orphan.ts", [{ position: 0, hash: "ORG" }]);
+      upsertServed(store, "sessionA", "/orphan.ts", [{ position: 0, hash: "ORGG" }]);
       await pruneMissing(store);
       expect(getServed(store, "sessionA", "/orphan.ts")).toEqual([]);
     });
@@ -493,41 +500,41 @@ describe("hash-store — served pruneMissing", () => {
       const existing = join(home, "keep.ts");
       await writeFile(existing, "keep\n", "utf-8");
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", existing, [{ position: 0, hash: "KEP" }]);
-      upsertServed(store, "sessionA", "/gone.ts", [{ position: 0, hash: "GON" }]);
+      upsertServed(store, "sessionA", existing, [{ position: 0, hash: "KEPP" }]);
+      upsertServed(store, "sessionA", "/gone.ts", [{ position: 0, hash: "GONN" }]);
       upsertSnapshot(store, {
         path: existing,
         snapshotHash: snapshotHashFor("keep\n"),
         lineCount: 1,
-        hashes: ["KEP"],
+        hashes: ["KEPP"],
         content: "keep\n",
       });
       upsertSnapshot(store, {
         path: "/gone.ts",
         snapshotHash: snapshotHashFor("gone\n"),
         lineCount: 1,
-        hashes: ["GON"],
+        hashes: ["GONN"],
         content: "gone\n",
       });
       upsertUndo(store, existing, {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["KEP"],
+        hashes: ["KEPP"],
         resultContent: "new",
       });
       upsertUndo(store, "/gone.ts", {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["GON"],
+        hashes: ["GONN"],
         resultContent: "new",
       });
       await pruneMissing(store);
 
-      expect(getServed(store, "sessionA", existing)).toEqual(["KEP"]);
+      expect(getServed(store, "sessionA", existing)).toEqual(["KEPP"]);
       expect(getServed(store, "sessionA", "/gone.ts")).toEqual([]);
-      expect(getSnapshot(store, existing, "keep\n")).toEqual(["KEP"]);
+      expect(getSnapshot(store, existing, "keep\n")).toEqual(["KEPP"]);
       expect(getSnapshot(store, "/gone.ts", "gone\n")).toBeUndefined();
       expect(getUndoEntry(store, existing)).toBeDefined();
       expect(getUndoEntry(store, "/gone.ts")).toBeUndefined();
@@ -539,9 +546,9 @@ describe("hash-store — reported drift set (issue #6)", () => {
   it("merges reported hashes per file", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/a.ts", ["abc", "def"]);
-      addReported(store, "sessionA", "/a.ts", ["def", "ghi"]);
-      expect(getReported(store, "sessionA", "/a.ts")).toEqual(new Set(["abc", "def", "ghi"]));
+      addReported(store, "sessionA", "/a.ts", ["abcc", "deff"]);
+      addReported(store, "sessionA", "/a.ts", ["deff", "ghii"]);
+      expect(getReported(store, "sessionA", "/a.ts")).toEqual(new Set(["abcc", "deff", "ghii"]));
     });
   });
 
@@ -555,7 +562,7 @@ describe("hash-store — reported drift set (issue #6)", () => {
   it("ignores malformed reported data", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/p.ts", ["abc"]);
+      addReported(store, "sessionA", "/p.ts", ["abcc"]);
       const db = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
@@ -570,7 +577,7 @@ describe("hash-store — reported drift set (issue #6)", () => {
   it("clears the reported set for a path", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/p.ts", ["abc"]);
+      addReported(store, "sessionA", "/p.ts", ["abcc"]);
       clearReported(store, "sessionA", "/p.ts");
       expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set());
     });
@@ -579,28 +586,28 @@ describe("hash-store — reported drift set (issue #6)", () => {
   it("survives a hash-store shutdown and reopen", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/p.ts", ["abc"]);
+      addReported(store, "sessionA", "/p.ts", ["abcc"]);
       shutdownHashStore();
       const reloaded = await loadHashStore();
-      expect(getReported(reloaded, "sessionA", "/p.ts")).toEqual(new Set(["abc"]));
+      expect(getReported(reloaded, "sessionA", "/p.ts")).toEqual(new Set(["abcc"]));
     });
   });
 
   it("is wiped alongside the served table for the same session", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/a.ts", ["abc"]);
-      addReported(store, "sessionB", "/a.ts", ["def"]);
+      addReported(store, "sessionA", "/a.ts", ["abcc"]);
+      addReported(store, "sessionB", "/a.ts", ["deff"]);
       wipeServed(store, "sessionA");
       expect(getReported(store, "sessionA", "/a.ts")).toEqual(new Set());
-      expect(getReported(store, "sessionB", "/a.ts")).toEqual(new Set(["def"]));
+      expect(getReported(store, "sessionB", "/a.ts")).toEqual(new Set(["deff"]));
     });
   });
 
   it("is pruned when the file no longer exists", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/gone.ts", ["abc"]);
+      addReported(store, "sessionA", "/gone.ts", ["abcc"]);
       await pruneMissing(store);
       expect(getReported(store, "sessionA", "/gone.ts")).toEqual(new Set());
     });
@@ -627,8 +634,8 @@ describe("hash-store — served TTL sweep (issue #17)", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "abc" },
-        { position: 2, hash: "def" },
+        { position: 0, hash: "abcc" },
+        { position: 2, hash: "deff" },
       ]);
       shutdownHashStore();
       await ageServedRow(home, "sessionA", "/p.ts", Date.now() - SERVED_TTL_MS - 1000);
@@ -649,25 +656,25 @@ describe("hash-store — served TTL sweep (issue #17)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "abc" },
-        { position: 2, hash: "def" },
+        { position: 0, hash: "abcc" },
+        { position: 2, hash: "deff" },
       ]);
       shutdownHashStore();
       const reloaded = await loadHashStore();
-      expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual(["abc", null, "def"]);
+      expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual(["abcc", null, "deff"]);
     });
   });
 
   it("prunes an old row of one session while keeping another session's fresh row", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
-      upsertServed(store, "sessionB", "/p.ts", [{ position: 0, hash: "def" }]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abcc" }]);
+      upsertServed(store, "sessionB", "/p.ts", [{ position: 0, hash: "deff" }]);
       shutdownHashStore();
       await ageServedRow(home, "sessionA", "/p.ts", Date.now() - SERVED_TTL_MS - 1000);
       const reloaded = await loadHashStore();
       expect(getServed(reloaded, "sessionA", "/p.ts")).toEqual([]);
-      expect(getServed(reloaded, "sessionB", "/p.ts")).toEqual(["def"]);
+      expect(getServed(reloaded, "sessionB", "/p.ts")).toEqual(["deff"]);
     });
   });
 });
@@ -677,30 +684,30 @@ describe("hash-store — recordServesTruncated", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
-        { position: 3, hash: "bbb" },
-        { position: 4, hash: "ddd" },
-        { position: 5, hash: "eee" },
-        { position: 6, hash: "bbb" },
-        { position: 7, hash: "fff" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
+        { position: 3, hash: "bbbb" },
+        { position: 4, hash: "dddd" },
+        { position: 5, hash: "eeee" },
+        { position: 6, hash: "bbbb" },
+        { position: 7, hash: "ffff" },
       ]);
       recordServesTruncated(
         store,
         "sessionA",
         "/p.ts",
         [
-          { position: 0, hash: "bbb" },
-          { position: 1, hash: "ddd" },
-          { position: 2, hash: "eee" },
-          { position: 3, hash: "bbb" },
-          { position: 4, hash: "fff" },
+          { position: 0, hash: "bbbb" },
+          { position: 1, hash: "dddd" },
+          { position: 2, hash: "eeee" },
+          { position: 3, hash: "bbbb" },
+          { position: 4, hash: "ffff" },
         ],
         5,
         0,
       );
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual([null, "ddd", "eee", "bbb", "fff"]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual([null, "dddd", "eeee", "bbbb", "ffff"]);
     });
   });
 
@@ -708,25 +715,25 @@ describe("hash-store — recordServesTruncated", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
-        { position: 3, hash: "ddd" },
-        { position: 4, hash: "eee" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
+        { position: 3, hash: "dddd" },
+        { position: 4, hash: "eeee" },
       ]);
       recordServesTruncated(
         store,
         "sessionA",
         "/p.ts",
         [
-          { position: 0, hash: "aaa" },
-          { position: 1, hash: "BET" },
-          { position: 2, hash: "ccc" },
+          { position: 0, hash: "aaaa" },
+          { position: 1, hash: "BETT" },
+          { position: 2, hash: "cccc" },
         ],
         3,
         1,
       );
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaa", "BET", "ccc"]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaaa", "BETT", "cccc"]);
     });
   });
 
@@ -734,14 +741,14 @@ describe("hash-store — recordServesTruncated", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
-        { position: 3, hash: "ddd" },
-        { position: 4, hash: "eee" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
+        { position: 3, hash: "dddd" },
+        { position: 4, hash: "eeee" },
       ]);
-      recordServesTruncated(store, "sessionA", "/p.ts", [{ position: 0, hash: "xxx" }], 3);
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["xxx", "bbb", "ccc"]);
+      recordServesTruncated(store, "sessionA", "/p.ts", [{ position: 0, hash: "xxxx" }], 3);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["xxxx", "bbbb", "cccc"]);
     });
   });
 
@@ -749,11 +756,11 @@ describe("hash-store — recordServesTruncated", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
       ]);
       recordServesTruncated(store, "sessionA", "/p.ts", [], 1);
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaa", "bbb"]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaaa", "bbbb"]);
     });
   });
 
@@ -761,21 +768,21 @@ describe("hash-store — recordServesTruncated", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       upsertServed(store, "sessionA", "/p.ts", [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
-        { position: 3, hash: "ddd" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
+        { position: 3, hash: "dddd" },
       ]);
       const { createSessionHandle } = await import("../../src/served-session/session.js");
       await createSessionHandle("sessionA", "/p.ts").recordTruncated(
         [
-          { position: 0, hash: "aaa" },
-          { position: 1, hash: "bbb" },
+          { position: 0, hash: "aaaa" },
+          { position: 1, hash: "bbbb" },
         ],
         2,
         0,
       );
-      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaa", "bbb"]);
+      expect(getServed(store, "sessionA", "/p.ts")).toEqual(["aaaa", "bbbb"]);
     });
   });
 });
@@ -787,15 +794,15 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
       const store = await loadHashStore();
       const handle = createSessionHandle("sessionA", "/p.ts", store);
       await handle.record([
-        { position: 0, hash: "abc" },
-        { position: 1, hash: "def" },
-        { position: 2, hash: "ghi" },
+        { position: 0, hash: "abcc" },
+        { position: 1, hash: "deff" },
+        { position: 2, hash: "ghii" },
       ]);
-      await handle.record([{ position: 0, hash: "xyz" }]);
+      await handle.record([{ position: 0, hash: "xyzz" }]);
       const blocked = await handle.loadBlockedHashes();
-      expect(blocked.has("abc")).toBe(true);
-      expect(blocked.has("def")).toBe(false);
-      expect(blocked.has("ghi")).toBe(false);
+      expect(blocked.has("abcc")).toBe(true);
+      expect(blocked.has("deff")).toBe(false);
+      expect(blocked.has("ghii")).toBe(false);
       // other session not affected
       const other = createSessionHandle("sessionB", "/p.ts", store);
       expect(await other.loadBlockedHashes()).toEqual(new Set());
@@ -807,16 +814,16 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
       const { createSessionHandle } = await import("../../src/served-session/session.js");
       const store = await loadHashStore();
       const h = createSessionHandle("sessionA", "/p.ts", store);
-      await h.record([{ position: 0, hash: "aaa" }]);
-      await h.retire(["aaa"]);
-      expect(await h.loadBlockedHashes()).toEqual(new Set(["aaa"]));
+      await h.record([{ position: 0, hash: "aaaa" }]);
+      await h.retire(["aaaa"]);
+      expect(await h.loadBlockedHashes()).toEqual(new Set(["aaaa"]));
       await h.recordEpoch({
         rows: [
-          { position: 0, hash: "bbb" },
-          { position: 1, hash: "ccc" },
+          { position: 0, hash: "bbbb" },
+          { position: 1, hash: "cccc" },
         ],
         lineCount: 2,
-        fullReadHashes: ["bbb", "ccc"],
+        fullReadHashes: ["bbbb", "cccc"],
         snapshotId: "v2|/p.ts|1|2|3|4",
       });
       expect(await h.loadBlockedHashes()).toEqual(new Set());
@@ -834,24 +841,24 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
       const h = createSessionHandle("sessionA", "/p.ts", store);
       await h.recordEpoch({
         rows: [
-          { position: 0, hash: "aaa" },
-          { position: 1, hash: "bbb" },
+          { position: 0, hash: "aaaa" },
+          { position: 1, hash: "bbbb" },
         ],
         lineCount: 2,
-        fullReadHashes: ["aaa", "bbb"],
+        fullReadHashes: ["aaaa", "bbbb"],
         snapshotId: "snap-1",
         isFullRead: true,
       });
       // partial that overwrites position 0
       await h.recordEpoch({
-        rows: [{ position: 0, hash: "ccc" }],
+        rows: [{ position: 0, hash: "cccc" }],
         lineCount: 2,
-        fullReadHashes: ["ccc", "bbb"],
+        fullReadHashes: ["cccc", "bbbb"],
         snapshotId: "snap-2",
         isFullRead: false,
       });
       const blocked = await h.loadBlockedHashes();
-      expect(blocked.has("aaa")).toBe(true);
+      expect(blocked.has("aaaa")).toBe(true);
       expect(await h.loadEpochId()).toBe("snap-1");
     });
   });
@@ -866,7 +873,7 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
       const store1 = await loadHashStore();
       const { createSessionHandle: createH } = await import("../../src/served-session/session.js");
       const h1 = createH("sessionA", "/rebound.txt", store1);
-      await h1.record([{ position: 0, hash: "AAA" }]);
+      await h1.record([{ position: 0, hash: "AAAA" }]);
       const { snapshotIOFor: _snapshotIOFor } = await import("../../src/snapshot-store");
       // need store path
       const dbPath = hashStorePath();
@@ -882,7 +889,7 @@ describe("served state — blocked-hashes epoch (ADR-0013, formerly tombstone)",
       const { loadHashStore: load2 } = await import("../../src/hash-store.js");
       const store2 = await load2();
       const h2 = createH("sessionA", "/rebound.txt", store2);
-      expect(await h2.load()).toEqual(["AAA"]);
+      expect(await h2.load()).toEqual(["AAAA"]);
       // snapshots should be gone - check via snapshot store
       const { getSnapshot: _getSnapshot } = await import("../../src/snapshot-store");
       // we didn't create snapshot, but ensure no crash
@@ -1093,7 +1100,7 @@ describe("served_leases — universal lease granting (issue #81)", () => {
   it("writes no lease when the anchor has no committed lineage", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/unmaterialized.ts", [{ position: 0, hash: "abc" }]);
+      upsertServed(store, "sessionA", "/unmaterialized.ts", [{ position: 0, hash: "abcc" }]);
       expect(loadLeases(store, "sessionA", "/unmaterialized.ts")).toEqual([]);
     });
   });
@@ -1103,9 +1110,9 @@ describe("served_session_meta — drift dedup storage (issue #81)", () => {
   it("persists the reported set in served_session_meta, not the legacy mirror", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abc" }]);
-      addReported(store, "sessionA", "/p.ts", ["abc", "def"]);
-      addReported(store, "sessionB", "/p.ts", ["ghi"]);
+      upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: "abcc" }]);
+      addReported(store, "sessionA", "/p.ts", ["abcc", "deff"]);
+      addReported(store, "sessionB", "/p.ts", ["ghii"]);
 
       const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
       const rows = db
@@ -1120,19 +1127,19 @@ describe("served_session_meta — drift dedup storage (issue #81)", () => {
       db.close();
 
       expect(rows).toEqual([
-        { session_id: "sessionA", reported: JSON.stringify(["abc", "def"]) },
-        { session_id: "sessionB", reported: JSON.stringify(["ghi"]) },
+        { session_id: "sessionA", reported: JSON.stringify(["abcc", "deff"]) },
+        { session_id: "sessionB", reported: JSON.stringify(["ghii"]) },
       ]);
       expect(legacy.n).toBe(0);
-      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set(["abc", "def"]));
-      expect(getReported(store, "sessionB", "/p.ts")).toEqual(new Set(["ghi"]));
+      expect(getReported(store, "sessionA", "/p.ts")).toEqual(new Set(["abcc", "deff"]));
+      expect(getReported(store, "sessionB", "/p.ts")).toEqual(new Set(["ghii"]));
     });
   });
 
   it("drops the served_session_meta row on clear", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      addReported(store, "sessionA", "/p.ts", ["abc"]);
+      addReported(store, "sessionA", "/p.ts", ["abcc"]);
 
       const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
       const before = db

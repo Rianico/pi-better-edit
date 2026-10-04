@@ -3,21 +3,21 @@ import { resEdit, type Anchor, type HTEdit } from "../../src/hashline";
 
 describe("resEdit", () => {
   it("resolves replace with anchor_from/anchor_to", () => {
-    const edit: HTEdit = { anchor_from: "ZZP", anchor_to: "PPW", text: "a\nb" };
+    const edit: HTEdit = { anchor_from: "ZZZP", anchor_to: "PPPW", text: "a\nb" };
     const resolved = resEdit(edit);
     expect(resolved).toHaveProperty("hash_bounds");
     expect(resolved).toHaveProperty("content_lines");
   });
 
   it("resolves a 1-line edit (same anchor)", () => {
-    const edit: HTEdit = { anchor_from: "MQX", anchor_to: "MQX", text: "new" };
+    const edit: HTEdit = { anchor_from: "MQXX", anchor_to: "MQXX", text: "new" };
     const resolved = resEdit(edit);
     const r = resolved as {
       hash_bounds: [Anchor, Anchor];
       content_lines: string[];
     };
-    expect(r.hash_bounds[0].hash).toBe("MQX");
-    expect(r.hash_bounds[1].hash).toBe("MQX");
+    expect(r.hash_bounds[0].hash).toBe("MQXX");
+    expect(r.hash_bounds[1].hash).toBe("MQXX");
   });
 
   it("throws on replace with no anchor_from/anchor_to (E_BAD_PAYLOAD)", () => {
@@ -30,10 +30,21 @@ describe("resEdit", () => {
     expect(() => resEdit(edit)).toThrow(/Invalid anchor/);
   });
 
+  it("rejects a 3-char anchor at the resolve seam with no compatibility path", () => {
+    // WHY: the width flip must not leave a compat path — a 3-char token is
+    // WHY: malformed at width 4 even though it was valid at width 3, while a
+    // WHY: live-width token resolves.
+    const stale: HTEdit = { anchor_from: "aB3", anchor_to: "aB3", text: "x" };
+    expect(() => resEdit(stale)).toThrow(/\[E_MALFORMED_ANCHOR\]/);
+    expect(() => resEdit(stale)).toThrow(/4-char/);
+    const live: HTEdit = { anchor_from: "aB3x", anchor_to: "aB3x", text: "x" };
+    expect(() => resEdit(live)).not.toThrow();
+  });
+
   it("rejects array text input", () => {
     const edit = {
-      anchor_from: "ZZP",
-      anchor_to: "ZZP",
+      anchor_from: "ZZZP",
+      anchor_to: "ZZZP",
       text: ["hello", "world"],
     } as unknown as HTEdit;
     expect(() => resEdit(edit)).toThrow(/must be a string with \\n line separators, not an array/i);
@@ -41,8 +52,8 @@ describe("resEdit", () => {
 
   it("splits string text on line separators", () => {
     const edit = {
-      anchor_from: "ZZP",
-      anchor_to: "ZZP",
+      anchor_from: "ZZZP",
+      anchor_to: "ZZZP",
       text: "line1\nline2\n",
     } as unknown as HTEdit;
     const resolved = resEdit(edit);
@@ -51,8 +62,8 @@ describe("resEdit", () => {
 
   it("normalizes CRLF in text", () => {
     const edit = {
-      anchor_from: "ZZP",
-      anchor_to: "ZZP",
+      anchor_from: "ZZZP",
+      anchor_to: "ZZZP",
       text: "a\r\nb",
     } as unknown as HTEdit;
     const resolved = resEdit(edit);
@@ -61,20 +72,20 @@ describe("resEdit", () => {
 
   it("rejects null text input", () => {
     const edit = {
-      anchor_from: "ZZP",
-      anchor_to: "ZZP",
+      anchor_from: "ZZZP",
+      anchor_to: "ZZZP",
       text: null,
     } as unknown as HTEdit;
     expect(() => resEdit(edit)).toThrow(/must be a string with \\n line separators, not an array/i);
   });
 
   it("rejects unknown fields", () => {
-    const edit = { anchor_from: "ZZP", anchor_to: "ZZP", text: "x", extra: true } as any;
+    const edit = { anchor_from: "ZZZP", anchor_to: "ZZZP", text: "x", extra: true } as any;
     expect(() => resEdit(edit)).toThrow(/unknown or unsupported fields/i);
   });
 
   it("rejects missing text", () => {
-    const edit = { anchor_from: "ZZP", anchor_to: "ZZP" } as any;
+    const edit = { anchor_from: "ZZZP", anchor_to: "ZZZP" } as any;
     expect(() => resEdit(edit)).toThrow(/requires a "text" field/i);
   });
 
@@ -97,13 +108,13 @@ describe("resEdit", () => {
   });
 
   it("leaves bare anchors untouched and emits no warning", () => {
-    const edit: HTEdit = { anchor_from: "MQX", anchor_to: "MQX", text: "new" };
+    const edit: HTEdit = { anchor_from: "MQXX", anchor_to: "MQXX", text: "new" };
     const resolved = resEdit(edit);
-    expect(resolved.hash_bounds[0].hash).toBe("MQX");
+    expect(resolved.hash_bounds[0].hash).toBe("MQXX");
   });
 
   it("still rejects rows without a leading hash", () => {
-    const edit: HTEdit = { anchor_from: "│const x = 1;", anchor_to: "MQX", text: "new" };
+    const edit: HTEdit = { anchor_from: "│const x = 1;", anchor_to: "MQXX", text: "new" };
     expect(() => resEdit(edit)).toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });
 });

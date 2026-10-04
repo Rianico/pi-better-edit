@@ -11,7 +11,7 @@ async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<
   const result = await readTool.execute("r1", { path }, undefined, undefined, ctx);
   return getText(result)
     .split("\n")
-    .filter((line) => /^[A-Za-z0-9]{3}│/.test(line))
+    .filter((line) => /^[A-Za-z0-9]{4}│/.test(line))
     .map(extractHash);
 }
 
@@ -178,7 +178,7 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
       expect(rows).toHaveLength(5);
       const blockLines = rejection
         .servedBlock!.split("\n")
-        .filter((line) => /^[A-Za-z0-9]{3}│/.test(line));
+        .filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
       expect(blockLines).toHaveLength(rows.length);
       for (const row of rows) {
         expect(rejection.servedBlock).toContain(`${row.hash}│`);
@@ -225,7 +225,7 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
       // No sibling bytes leak into the envelope: the block holds the failing window only.
       const blockLines = (rejection.servedBlock ?? "")
         .split("\n")
-        .filter((line) => /^[A-Za-z0-9]{3}│/.test(line));
+        .filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
       expect(blockLines.map((line) => line.split("│")[1])).toEqual(["l3", "l4", "L5X", "l6", "l7"]);
       expect(blockLines.join("\n")).not.toContain("L1");
       expect(rejection.message).not.toContain("│L1");
