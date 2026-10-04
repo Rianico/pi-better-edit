@@ -1,8 +1,11 @@
 import { readFileSync } from "node:fs";
+import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import * as utils from "../../src/utils.js";
+import { loadHashStore } from "../../src/hash-store.js";
 import { MAX_HASH_LINES } from "../../src/hashline/index.js";
 import { decodeNormText } from "../../src/file-content/loader.js";
+import { snapshotIOFor } from "../../src/snapshot-store";
 import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
 
 // WHY: a page is the only witness that can see whether the text was split: the rendered bytes are
@@ -38,13 +41,6 @@ vi.mock("../../src/utils.js", async (importOriginal) => {
 const splitCalls = (utils as unknown as { __splitCalls: SplitCall[] }).__splitCalls;
 
 useTestHome();
-
-/** The calls that came from the read's own modules — the ones a page must not make. */
-function callsFromReadStack(): SplitCall[] {
-  return splitCalls.filter((call) =>
-    call.frames.some((frame) => /src\/(file-content|hashline)\//.test(frame)),
-  );
-}
 
 function callsFromSnapshotStore(): SplitCall[] {
   return splitCalls.filter((call) =>
@@ -145,10 +141,15 @@ describe("the served page never materializes the line array", () => {
       await expect(run({ offset: 9, limit: 1 })).resolves.toContain(
         "Offset 9 is beyond end of file (4 lines total)",
       );
-      // WHY: the store's lineage table writes every line it is given, which is its own contract and not
-      // WHY: this page's; every other caller of these two primitives is the page path, and there is none.
-      expect(callsFromReadStack()).toEqual([]);
-      expect(callsFromSnapshotStore().length).toBeGreaterThan(0);
+      // WHY: these two primitives have plenty of other callers in the program — lifecycle hooks, edit
+      // WHY: responses, the mutation engine — and the claim here is a partition: in a served read they
+      // WHY: are called by the snapshot store's lineage write and by nothing else on the read path.
+      expect(splitCalls.length).toBe(callsFromSnapshotStore().length);
+      // WHY: and the run was not vacuous: the read reached the store. Asserted through the store's own
+      // WHY: API, not through a call it happens to make, so this cannot break when the store changes.
+      const io = snapshotIOFor(await loadHashStore());
+      const snapshot = await io.get(join(cwd, "plain.txt"), "alpha\nbeta\ngamma\ndelta\n", false);
+      expect(snapshot).toBeDefined();
     });
   });
 
@@ -160,7 +161,7 @@ describe("the served page never materializes the line array", () => {
       expect(result.content[0]?.text).toMatch(
         /^\w{3}│\n\[File is empty\. Use edit to insert content\.\]$/,
       );
-      expect(callsFromReadStack()).toEqual([]);
+      expect(splitCalls.length).toBe(callsFromSnapshotStore().length);
     });
   });
 
@@ -193,6 +194,23 @@ describe("the served page never materializes the line array", () => {
       expect(splitCalls).toEqual([]);
     });
   }, 300_000);
+
+  it("refuses a CR-only preloaded file at the cap, before it can reach the anchor space", async () => {
+    // WHY: the preloaded route skips the decode that counts newlines mid-stream, so it is the loader's
+    // WHY: own count that has to see the normalized line space: an LF fixture cannot tell the two apart
+    // WHY: because raw and normalized counts agree on it.
+    const text = "x\r".repeat(MAX_HASH_LINES + 1);
+    await withTempFile("cr.ts", text, async ({ cwd }) => {
+      splitCalls.length = 0;
+      await expect(
+        decodeNormText("cr.ts", cwd, {
+          maxLines: MAX_HASH_LINES,
+          preloadedFile: { kind: "text", text },
+        }),
+      ).rejects.toThrow(`cr.ts has ${MAX_HASH_LINES + 1} lines`);
+      expect(splitCalls).toEqual([]);
+    });
+  }, 300_000);
 });
 
 // WHY: the second half of the witness: the primitive is adopted by both seams only if it stays
@@ -214,22 +232,41 @@ describe("the walk is mode-agnostic", () => {
 });
 
 // WHY: recording the primitives catches a call through THEM, but a page could inline `split("\n")`
-// WHY: again, so this reads the page path itself — through a whitelist of the only splits it may hold.
-// WHY: Both are of RENDERED output (how many lines a preview string or a withheld marker came to), never
-// WHY: of the file's text: a third entry here is a page rebuilding the line array it exists without.
-describe("the page path holds no split of the file's text", () => {
-  const source = readFileSync(
-    new URL("../../src/file-content/preview.ts", import.meta.url),
-    "utf8",
-  );
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
+// WHY: again — and `walkLines` IS the page path, so an audit stopping at preview.ts would miss the
+// WHY: mutation that matters most. These are the files a read pages through; the allowance is how many
+// WHY: splits each may hold, and any split they do hold must be of RENDERED output (a property access),
+// WHY: never of a bare identifier — a file's text lives in bare identifiers.
+const READ_PATH: Array<[file: string, splits: number]> = [
+  ["src/file-content/line-walker.ts", 0],
+  ["src/file-content/preview.ts", 2],
+  ["src/file-content/loader.ts", 0],
+  ["src/file-content/index.ts", 0],
+  ["src/read.ts", 0],
+];
 
-  it("calls neither splitLines nor visLines", () => {
-    expect(code).not.toMatch(/\bsplitLines\b|\bvisLines\b/);
+function readPathSource(file: string): string {
+  return readFileSync(new URL(`../../${file}`, import.meta.url), "utf8")
+    .replace(/\/\*[\s\S]*?\*\//g, "")
+    .replace(/\/\/[^\n]*/g, "")
+    .replace(/\s+/g, "");
+}
+
+describe("the read path holds no split of the file's text", () => {
+  it.each(READ_PATH)("%s holds at most %s splits", (file, splits) => {
+    expect([...readPathSource(file).matchAll(/\.split\(/g)]).toHaveLength(splits);
+    // Naming them is fine (index.ts re-exports `visLines`); CALLING them is not.
+    expect(readPathSource(file)).not.toMatch(/\b(splitLines|visLines)\(/);
   });
 
-  it("splits only the output it renders, never the text it pages", () => {
-    const splits = code.match(/[\w.]+\.split\(/g) ?? [];
-    expect(splits).toEqual(["skippedTruncation.content.split(", "built.text.split("]);
+  it("never splits inside the walk itself, whatever its callers do", () => {
+    expect(readPathSource("src/file-content/line-walker.ts")).not.toMatch(/split/);
+  });
+
+  it("splits only output a page renders, never a bare name holding the text", () => {
+    const receivers = [
+      ...readPathSource("src/file-content/preview.ts").matchAll(/([A-Za-z0-9_$.[\]()]+)\.split\(/g),
+    ].map((match) => match[1]!);
+    expect(receivers).toHaveLength(2);
+    expect(receivers.every((receiver) => receiver.includes("."))).toBe(true);
   });
 });
