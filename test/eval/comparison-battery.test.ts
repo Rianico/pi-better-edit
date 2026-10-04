@@ -67,7 +67,10 @@ function setupTarget(
     registerTool(t: any) {
       const origExecute = t.execute;
       t.execute = function (callId: string, params: any, signal: any, onUpdate: any, ctx: any) {
-        const adapted = target.adaptEditParams ? target.adaptEditParams(t.name, params) : params;
+        const withEdits = target.adaptEditParams ? target.adaptEditParams(t.name, params) : params;
+        const adapted = target.adaptReadParams
+          ? target.adaptReadParams(t.name, withEdits)
+          : withEdits;
         return origExecute.call(this, callId, adapted, signal, onUpdate, ctx);
       };
       tools.set(t.name, t);

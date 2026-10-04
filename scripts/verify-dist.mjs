@@ -38,7 +38,7 @@ const FRESHNESS_INPUTS = ["index.ts", "src", "package.json", "scripts/build-dist
 /** File timestamps and tar extraction do not preserve sub-second ordering. */
 const FRESHNESS_TOLERANCE_MS = 2000;
 
-const REQUIRED_TOOLS = ["edit", "read", "read_skill", "undo_last_edit"];
+const REQUIRED_TOOLS = ["edit", "read", "undo_last_edit"];
 const REQUIRED_COMMAND = "pi-better-edit";
 
 /** pi aliases these to its own copies; they must stay external, optional peers. */

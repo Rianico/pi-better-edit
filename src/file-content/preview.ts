@@ -339,7 +339,10 @@ function buildWindowedPreview(params: {
     }
     const rowSizes = selected.map((line, index) => ({
       lineNumber: window.offset + index,
-      bytes: Buffer.byteLength(`${selectedHashes[index]}${HASH_SEP}${line}`, "utf-8"),
+      bytes: Buffer.byteLength(
+        verbatim ? line : `${selectedHashes[index]}${HASH_SEP}${line}`,
+        "utf-8",
+      ),
     }));
     const built = buildWindowSection({
       rowSizes,
@@ -434,7 +437,10 @@ export async function fmtReadPreview(
   const maxBytes = maxLineBytes;
   const rowSizes = selected.map((line, index) => ({
     lineNumber: startLine + index,
-    bytes: Buffer.byteLength(`${selectedHashes[index]}${HASH_SEP}${line}`, "utf-8"),
+    bytes: Buffer.byteLength(
+      verbatim ? line : `${selectedHashes[index]}${HASH_SEP}${line}`,
+      "utf-8",
+    ),
   }));
   if (rowSizes.some((row) => row.bytes > maxBytes)) {
     return buildOversizedPreview({

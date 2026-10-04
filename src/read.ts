@@ -6,7 +6,7 @@ import { MAX_HASH_LINES } from "./hashline/index.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
-import { abortIf } from "./utils.js";
+import { abortIf, assertNever } from "./utils.js";
 import { splitLines, visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { prepareFile } from "./file-content/index.js";
@@ -40,11 +40,11 @@ export function regRead(pi: ExtensionAPI): void {
     // SAFETY: the builtin renderers are keyed on `file_path ?? path`; the spread re-maps our
     // SAFETY: `file` payload onto `path` for rendering without mutating the caller's `args`.
     renderCall: (args, theme, context) =>
-      builtinRenderCall({ ...args, path: args.file }, theme, context),
+      builtinRenderCall({ ...args, path: args?.file }, theme, context),
     renderResult: (result, options, theme, context) =>
       builtinRenderResult(result, options, theme, {
         ...context,
-        args: { ...context.args, path: context.args.file },
+        args: { ...context.args, path: context.args?.file },
       }),
     parameters: Type.Object({
       file: Type.String({
@@ -139,20 +139,26 @@ export function regRead(pi: ExtensionAPI): void {
         throw new DomainError("E_UNSUPPORTED_FILE", { path: rawPath, kind: "image" });
       }
 
-      if (mode === "verbatim") {
-        // WHY: a verbatim read shares admission/normalization but must not touch served state —
-        // WHY: no lease, snapshot, epoch, drift clear, or span notification. Return before any of it.
-        return {
-          content: [{ type: "text", text: prepared.preview }],
-          details: {
-            truncation: prepared.truncation,
-            ...(prepared.nextOffset !== undefined ? { nextOffset: prepared.nextOffset } : {}),
-            metrics: {
-              truncated: Boolean(prepared.truncation),
-              ...(prepared.nextOffset !== undefined ? { next_offset: prepared.nextOffset } : {}),
+      switch (mode) {
+        case "verbatim": {
+          // WHY: a verbatim read shares admission/normalization but must not touch served state —
+          // WHY: no lease, snapshot, epoch, drift clear, or span notification. Return before any of it.
+          return {
+            content: [{ type: "text", text: prepared.preview }],
+            details: {
+              truncation: prepared.truncation,
+              ...(prepared.nextOffset !== undefined ? { nextOffset: prepared.nextOffset } : {}),
+              metrics: {
+                truncated: Boolean(prepared.truncation),
+                ...(prepared.nextOffset !== undefined ? { next_offset: prepared.nextOffset } : {}),
+              },
             },
-          },
-        };
+          };
+        }
+        case "served":
+          break;
+        default:
+          return assertNever(mode);
       }
 
       const session = sessionFromContext(

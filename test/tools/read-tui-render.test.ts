@@ -55,4 +55,45 @@ describe("read tool — TUI renderers for the {file} payload", () => {
     expect(args).toEqual({ file: "notes.txt" });
     expect("path" in args).toBe(false);
   });
+
+  it("does not throw when args or context.args are missing (hardening)", () => {
+    const tool = readTool();
+    expect(() => tool.renderCall(undefined, theme, { cwd: "/tmp", expanded: false })).not.toThrow();
+    const result = { content: [{ type: "text", text: "alpha" }], isError: false };
+    expect(() =>
+      tool.renderResult(result, { expanded: true }, theme, {
+        cwd: "/tmp",
+        args: undefined,
+        showImages: true,
+        isError: false,
+      }),
+    ).not.toThrow();
+  });
+
+  it("resolves the language for highlighting through the renderResult remap", () => {
+    const tool = readTool();
+    const calls: string[] = [];
+    const recordingTheme = {
+      fg: (name: string, text: string) => {
+        calls.push(name);
+        return text;
+      },
+      bold: (text: string) => text,
+    };
+    const args = { file: "notes.ts" };
+    const context = {
+      args,
+      cwd: "/tmp",
+      showImages: true,
+      isError: false,
+      lastComponent: undefined,
+    };
+    const result = { content: [{ type: "text", text: "const x = 1;\n" }], isError: false };
+
+    tool.renderResult(result, { expanded: true }, recordingTheme, context);
+
+    // WHY: the remap lets the builtin resolve getLanguageFromPath("notes.ts") and highlight via
+    // WHY: ANSI, so it does not wrap each body line in theme.fg("toolOutput", ...).
+    expect(calls).not.toContain("toolOutput");
+  });
 });

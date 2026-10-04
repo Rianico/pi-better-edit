@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
+import register from "../../index";
 import { fmtReadPreview } from "../../src/read";
 import { loadHashStore } from "../../src/hash-store";
 import { servedHashEchoDenial } from "../../src/write-hook";
@@ -6,6 +7,7 @@ import { resolveTarget } from "../../src/fs-write";
 import { addServedSpanObserver } from "../../src/served-spans";
 import {
   setupIntegrationTest,
+  testSessionManager,
   TEST_SESSION_ID,
   useTestHome,
   withTempFile,
@@ -26,12 +28,10 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
   });
 
   it("verbatim hides the terminal newline sentinel exactly like served", async () => {
-    const verbatim = await fmtReadPreview(
-      "alpha\nbeta\n",
-      { render: "verbatim" },
-      undefined,
-      home.testPath,
-    );
+    const text = "alpha\nbeta\n";
+    const served = await fmtReadPreview(text, {}, undefined, home.testPath);
+    const verbatim = await fmtReadPreview(text, { render: "verbatim" }, undefined, home.testPath);
+    expect(served.text.split("\n")).toHaveLength(2);
     expect(verbatim.text).toBe("alpha\nbeta");
     expect(verbatim.text.endsWith("\n")).toBe(false);
   });
@@ -45,6 +45,23 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
       home.testPath,
     );
     expect(verbatim.text).toBe("b\nc\n\n[Showing lines 2-3 of 4. Use offset=4 to continue.]");
+  });
+
+  it("sizes verbatim rows without the anchor prefix they never emit (fix 5)", async () => {
+    const line = "x".repeat(51198);
+    const text = `${line}\n`;
+    const verbatim = await fmtReadPreview(
+      text,
+      { render: "verbatim" },
+      undefined,
+      home.testPath,
+      51200,
+    );
+    expect(verbatim.text).toBe(line);
+    expect(verbatim.text).not.toContain("content not shown");
+
+    const served = await fmtReadPreview(text, {}, undefined, home.testPath, 51200);
+    expect(served.text).toContain("content not shown");
   });
 
   it("renders [File is empty.] for an empty file with no anchor row", async () => {
@@ -382,6 +399,31 @@ describe("read verbatim — served-row reproduction guard", () => {
       const servedText = result.content[0].text as string;
       const denial = await servedHashEchoDenial(null, path, servedText, cwd, TEST_SESSION_ID);
       expect(denial).toContain("[E_SUSPICIOUS_TEXT]");
+    });
+  });
+});
+
+describe("read verbatim — exhaustiveness guard", () => {
+  it("fails closed on a mode outside the union", async () => {
+    await withTempFile("guard.txt", "alpha\nbeta\n", async ({ cwd }) => {
+      const tools = new Map<string, { execute: (...args: unknown[]) => Promise<unknown> }>();
+      const pi = {
+        registerTool(tool: { name: string; execute: (...args: unknown[]) => Promise<unknown> }) {
+          tools.set(tool.name, tool);
+        },
+        registerCommand() {},
+        on() {},
+      };
+      register(pi as unknown as Parameters<typeof register>[0]);
+      const tool = tools.get("read");
+      if (!tool) throw new Error("read not registered");
+
+      await expect(
+        tool.execute("r1", { file: "guard.txt", mode: "__bogus__" }, undefined, undefined, {
+          cwd,
+          sessionManager: testSessionManager,
+        }),
+      ).rejects.toThrow(/Unexpected value/);
     });
   });
 });
