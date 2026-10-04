@@ -36,7 +36,7 @@ describe("read tool line cap", () => {
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       await expect(
-        readTool.execute("r1", { path: "huge.ts" }, undefined, undefined, ctx),
+        readTool.execute("r1", { file: "huge.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow("E_LARGE_FILE");
     });
   });
@@ -45,7 +45,7 @@ describe("read tool line cap", () => {
     const content = Array.from({ length: MAX_HASH_LINES }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
-      const result = await readTool.execute("r1", { path: "big.ts" }, undefined, undefined, ctx);
+      const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│x0");
       expect(text).toContain("[Showing lines 1-");

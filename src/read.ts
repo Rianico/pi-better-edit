@@ -32,7 +32,7 @@ export function regRead(pi: ExtensionAPI): void {
     promptSnippet: R_SNIPPET,
     promptGuidelines: readGuide(),
     parameters: Type.Object({
-      path: Type.String({
+      file: Type.String({
         description: "Path to the file to read (relative or absolute)",
       }),
       offset: Type.Optional(
@@ -69,7 +69,7 @@ export function regRead(pi: ExtensionAPI): void {
     }),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const rawPath = params.path;
+      const rawPath = params.file;
       abortIf(signal);
       // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
       // WHY: `noPersist` defers the authoritative materialization until the served window is
@@ -88,7 +88,7 @@ export function regRead(pi: ExtensionAPI): void {
 
       if (prepared.kind === "image") {
         const builtinRead = createReadTool(ctx.cwd);
-        // SAFETY: pi-coding-agent's createReadTool returns untyped execute; cast narrows to typed signature validated by runtime params and is only used to delegate with same args.
+        // SAFETY: pi-coding-agent's createReadTool returns untyped execute; cast narrows to typed signature validated by runtime params. The builtin read names the file `path`, so forward our `file` under its name.
         const executeBuiltinRead = builtinRead.execute as unknown as (
           toolCallId: string,
           input: typeof params,
@@ -98,7 +98,9 @@ export function regRead(pi: ExtensionAPI): void {
         ) => ReturnType<typeof builtinRead.execute>;
         // WHY: an image has no line address space, so `windows` is meaningless here; the delegated
         // WHY: builtin read ignores fields it does not read and returns the image itself.
-        return executeBuiltinRead(_toolCallId, params, signal, _onUpdate, ctx);
+        // SAFETY: spread keeps offset/limit/windows; `path` fills the builtin's filename slot (ours is `file`). Cast through unknown: the shapes agree at runtime, only the key name differs.
+        const builtinInput = { ...params, path: rawPath } as unknown as typeof params;
+        return executeBuiltinRead(_toolCallId, builtinInput, signal, _onUpdate, ctx);
       }
       if (prepared.kind !== "text") {
         if (prepared.kind === "directory") {

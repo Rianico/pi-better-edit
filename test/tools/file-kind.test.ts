@@ -21,7 +21,7 @@ describe("file kind guards in tools", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { path: "bad-utf.ts" },
+        { file: "bad-utf.ts" },
         undefined,
         undefined,
         ctx,
@@ -106,7 +106,7 @@ describe("file kind guards in tools", () => {
     await withTempFile("empty.txt", "a\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("a\n", home.testPath);
-      await readTool.execute("r1", { path: "empty.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "empty.txt" }, undefined, undefined, ctx);
 
       await expect(
         editTool.execute(

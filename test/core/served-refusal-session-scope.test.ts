@@ -135,8 +135,8 @@ describe("served-refusal tally — two sessions, one path, end to end (#132)", (
       const sessionA = { ...ctx, sessionManager: { getSessionId: () => "sess-132-a" } };
       const sessionB = { ...ctx, sessionManager: { getSessionId: () => "sess-132-b" } };
       // Each session serves itself the file, so each holds its own served mirror.
-      await readTool.execute("r1", { path: "shared.txt" }, undefined, undefined, sessionA);
-      await readTool.execute("r2", { path: "shared.txt" }, undefined, undefined, sessionB);
+      await readTool.execute("r1", { file: "shared.txt" }, undefined, undefined, sessionA);
+      await readTool.execute("r2", { file: "shared.txt" }, undefined, undefined, sessionB);
       const payload = {
         file: "shared.txt",
         edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│two` }],

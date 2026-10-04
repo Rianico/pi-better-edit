@@ -47,7 +47,7 @@ describe("edit tool_result handler", () => {
       expect(handler).toBeDefined();
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "test-session" } };
 
-      await readTool.execute("r1", { path: "a.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx);
       const aHashes = await lineHashes("alpha\nbeta\ngamma\n", aPath);
 
       const result = await editTool.execute(

@@ -59,7 +59,7 @@ describe("task-147 rejection diagnostics", () => {
   it("aborts a batched call with one serve block and one audience tag", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", path);
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
       const rejection = (await editTool
@@ -129,7 +129,7 @@ describe("task-147 rejection diagnostics", () => {
   it("routes the pipeline noop guard by call arity", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
       const payload = {
         file: "sample.ts",
@@ -149,7 +149,7 @@ describe("task-147 rejection diagnostics", () => {
   it("marks undo staleness refusal for the model audience", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
       await editTool.execute(
         "e1",

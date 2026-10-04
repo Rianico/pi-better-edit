@@ -8,7 +8,7 @@ const ATOMICITY_TRAILER =
 
 /** The `HASH│content` rows the read served, in file order — the anchors the model would copy. */
 async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<string[]> {
-  const result = await readTool.execute("r1", { path }, undefined, undefined, ctx);
+  const result = await readTool.execute("r1", { file: path }, undefined, undefined, ctx);
   return getText(result)
     .split("\n")
     .filter((line) => /^[A-Za-z0-9]{3}│/.test(line))
@@ -130,7 +130,7 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
     name: string,
     path: string,
   ): Promise<{ l1Ref: string; l3Ref: string; l7Ref: string }> {
-    const served = await readTool.execute("r1", { path: name }, undefined, undefined, ctx);
+    const served = await readTool.execute("r1", { file: name }, undefined, undefined, ctx);
     const servedText = getText(served);
     const ref = (line: string): string =>
       extractHash(servedText.split("\n").find((l: string) => l.includes(`│${line}`))!);

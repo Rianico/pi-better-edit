@@ -21,7 +21,7 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         {
@@ -40,7 +40,7 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         {
@@ -59,7 +59,7 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         {
@@ -77,7 +77,7 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         {
@@ -95,7 +95,7 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const preview = await compPreview(
         {
@@ -113,7 +113,7 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
         {
           path: "sample.ts",
@@ -131,7 +131,7 @@ describe("compPreview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
         {
           file: "sample.ts",
@@ -150,7 +150,7 @@ describe("issue #165 — session-backed preview", () => {
   it("previews anchors that a session-backed read served", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
@@ -195,7 +195,7 @@ describe("compPreview — served-state staleness surfacing", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -226,14 +226,14 @@ describe("compPreview — served-state staleness surfacing", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute(
         "r1",
-        { path: "sample.ts", offset: 1, limit: 1 },
+        { file: "sample.ts", offset: 1, limit: 1 },
         undefined,
         undefined,
         ctx,
       );
       await readTool.execute(
         "r2",
-        { path: "sample.ts", offset: 4, limit: 1 },
+        { file: "sample.ts", offset: 4, limit: 1 },
         undefined,
         undefined,
         ctx,
@@ -275,7 +275,7 @@ describe("compPreview — served-state staleness surfacing", () => {
   it("returns a diff (not an error) for a served, unchanged range", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
       const preview = await compPreview(
@@ -332,7 +332,7 @@ describe("renderCall preview", () => {
       const tool = getTool("edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const harness = makeHarness(cwd);
       tool.renderCall(
@@ -357,7 +357,7 @@ describe("renderCall preview", () => {
       pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
@@ -385,7 +385,7 @@ describe("renderCall preview", () => {
       const tool = getTool("edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const harness = makeHarness(cwd);
       tool.renderCall(
@@ -416,7 +416,7 @@ describe("renderCall preview", () => {
       const tool = getTool("edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const harness = makeHarness(cwd);
       vi.useFakeTimers();
@@ -457,7 +457,7 @@ describe("renderCall preview", () => {
       const tool = getTool("edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       vi.useFakeTimers();
       try {
@@ -498,7 +498,7 @@ describe("compPreview — noop", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
         {
           file: "sample.ts",

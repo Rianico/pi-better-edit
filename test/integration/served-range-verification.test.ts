@@ -18,7 +18,7 @@ describe("served-state range verification for edit", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -49,7 +49,7 @@ describe("served-state range verification for edit", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -115,7 +115,7 @@ describe("served-state range verification for edit", () => {
       // Fresh read re-serves and then edit succeeds
       const freshRead = await readTool.execute(
         "r3",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -144,7 +144,7 @@ describe("served-state range verification for edit", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -173,7 +173,7 @@ describe("served-state range verification for edit", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -202,7 +202,7 @@ describe("served-state range verification for edit", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -235,7 +235,7 @@ describe("served-state range verification for edit", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -262,7 +262,7 @@ describe("served-state range verification for edit", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,

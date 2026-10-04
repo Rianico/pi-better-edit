@@ -139,7 +139,7 @@ describe("lifecycle mutation-bridge wiring", () => {
       await writeFile(path, "alpha\nbeta\ngamma\n", "utf-8");
       const read = await harness.readTool.execute(
         "r1",
-        { path: "p.txt" },
+        { file: "p.txt" },
         undefined,
         undefined,
         harness.ctx,
@@ -196,7 +196,7 @@ describe("lifecycle mutation-bridge wiring", () => {
       await writeFile(path, "alpha\nbeta\ngamma\n", "utf-8");
       const read = await harness.readTool.execute(
         "r1",
-        { path: "p.txt" },
+        { file: "p.txt" },
         undefined,
         undefined,
         harness.ctx,
@@ -254,7 +254,7 @@ describe("lifecycle mutation-bridge wiring", () => {
       await writeFile(join(dir, "p.txt"), "alpha\nbeta\ngamma\ndelta\n", "utf-8");
       const read = await harness.readTool.execute(
         "r1",
-        { path: "p.txt" },
+        { file: "p.txt" },
         undefined,
         undefined,
         harness.ctx,
@@ -307,7 +307,7 @@ describe("lifecycle mutation-bridge wiring", () => {
       await writeFile(join(dir, "p.txt"), "alpha\nbeta\ngamma\n", "utf-8");
       const read = await harness.readTool.execute(
         "r1",
-        { path: "p.txt" },
+        { file: "p.txt" },
         undefined,
         undefined,
         harness.ctx,

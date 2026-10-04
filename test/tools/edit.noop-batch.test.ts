@@ -12,7 +12,7 @@ function countOccurrences(text: string, needle: string): number {
 }
 
 async function doRead(ctx: any, readTool: any, file: string): Promise<void> {
-  await readTool.execute("r1", { path: file }, undefined, undefined, ctx);
+  await readTool.execute("r1", { file: file }, undefined, undefined, ctx);
 }
 
 describe("edit noop-loop guard in multi-item calls", () => {

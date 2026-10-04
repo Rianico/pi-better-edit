@@ -51,7 +51,7 @@ describe("served-state truncation survives an external shrink (issue #27)", () =
       const ctx = { cwd, sessionManager: testSessionManager };
       const abs = join(cwd, "sample.ts");
 
-      const read = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const read = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const lines = getText(read).split("\n");
       const aRef = extractHash(lines.find((l) => l.includes("│a"))!);
       const fRef = extractHash(lines.find((l) => l.includes("│f"))!);

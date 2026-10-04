@@ -63,7 +63,7 @@ describe("served-rows tool_result handler", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { path: "sample.txt" },
+        { file: "sample.txt" },
         undefined,
         undefined,
         ctx,
@@ -124,7 +124,7 @@ describe("served-rows tool_result handler", () => {
       expect(handler).toBeDefined();
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "test-session" } };
 
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const originalHashes = await lineHashes("alpha\nbeta\ngamma\n", filePath);
       const store = await loadHashStore();
       const idsA = new Map(

@@ -49,8 +49,8 @@ async function foreignLeasedFailure(
     await writeFile(join(cwd, "source.txt"), sourceBefore, "utf-8");
     await writeFile(join(cwd, "target.txt"), "1\n2\n3\n", "utf-8");
     const { ctx, readTool } = setupIntegrationTest(cwd);
-    await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
-    await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
     const hs = await lineHashes(sourceBefore, `${home.testPath}/source.txt`);
     const ht = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
     await disturb(cwd, hs);
