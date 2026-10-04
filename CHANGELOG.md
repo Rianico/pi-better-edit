@@ -27,6 +27,7 @@
 * **hashline:** restore three revision-pinned archive quotes verbatim, record the width-3 digit rate beside its derived live figure, caveat token claims via ADR-0029, and pin the quantifier off-width filter with a live-width control. Docs plus tests only. (#20)
 * **benchmarks:** remove the in-repo benchmark suite and its wiring — `benchmarks/`, eval/compare scripts, package scripts, config entries and the README project-benchmark surfaces. The independent third-party benchmark keeps its own section. (#20)
 * **e2e:** re-home the deterministic edit battery out of the eval gate — the same 27 local scenarios run counted in `pnpm test` through the validated registry; the package/upstream comparison target is dropped with the benchmark suite. (#20)
+* **e2e:** restore per-scenario verdicts in the re-homed battery — outcome, rejection code and preserved content asserted from the recovered comparator table; both accept-where-reject and wrong-content mutants redden. (#20)
 
 ## [2.6.0] - 2026-10-03
 

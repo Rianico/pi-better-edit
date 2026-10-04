@@ -3,7 +3,6 @@ import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { lineHashes } from "../../src/hashline";
-import { version } from "../../package.json";
 import {
   withTempFile,
   getText,
@@ -12,6 +11,72 @@ import {
   testSessionManager,
 } from "../support/fixtures";
 
+// WHY: per-scenario verdicts recovered from the deleted comparator
+// WHY: (`f6c83a7:scripts/eval-compare.mjs` EXPECTED + `verdict()`). `outcome` and
+// WHY: `preserve` entries below are verbatim from that table; `preserve`
+// WHY: entries on applied scenarios are derived from each scenario's own
+// WHY: replacement text in this file (marked DERIVED). Without them the
+// WHY: battery records outcomes it never compares and cannot fail.
+type Verdict = { outcome: "success" | "rejected"; preserve?: string };
+const EXPECTED: Record<string, Verdict> = {
+  "B1 single-line replace": { outcome: "success", preserve: "BBB" }, // DERIVED
+  "B2 range replace": { outcome: "success", preserve: "X\nY" }, // DERIVED
+  "B3 interior drift must-not-silently-overwrite": {
+    outcome: "rejected",
+    preserve: "CCC",
+  },
+  "B4 out-of-range in-place change": { outcome: "success", preserve: "X\nY" }, // DERIVED
+  "B5 deletion-above-range positional-shift": { outcome: "success", preserve: "X\nY" }, // DERIVED
+  "B6 change-then-revert interior": { outcome: "success", preserve: "X\nY" }, // DERIVED
+  "B7 unread interior paged-read-gap now applies (ADR-0024)": {
+    outcome: "success",
+    preserve: "X\nY\nZ\nW\nV",
+  }, // DERIVED: behavior changed since the deleted table (ADR-0024)
+  "B8 blind-edit no-read never-served-boundary": {
+    outcome: "rejected",
+    preserve: "aaa\nbbb\nccc\n",
+  },
+  "B9 boundary-changed stale-anchor": { outcome: "rejected" },
+  "B10 duplicate-content drift must-still-reject": {
+    outcome: "rejected",
+    preserve: "\nb\nd\n",
+  },
+  "B11 noop replace": { outcome: "success", preserve: "bbb" }, // DERIVED
+  "B12 noop-with-out-of-range-drift": { outcome: "success", preserve: "a\nb\nc\nD\n" }, // DERIVED
+  "B13 chained-edit-from-diff-rows-no-reread": { outcome: "success", preserve: "B2" }, // DERIVED
+  "B14 empty-file insert": { outcome: "success", preserve: "first\nsecond" }, // DERIVED
+  "B15 large-range drift capped-feedback": {
+    outcome: "rejected",
+    preserve: "line 1",
+  },
+  "B16a undo after replace": { outcome: "success", preserve: "bbb" }, // DERIVED
+  "B16b undo after external change": { outcome: "rejected" },
+  "B17 reversed-range autocorrect": { outcome: "success", preserve: "X\nY" }, // DERIVED
+  "B18 boundary-dup autocorrect": { outcome: "success", preserve: "a\nX" }, // DERIVED
+  "B19 sub-agent-session-does-not-wipe-main": { outcome: "success", preserve: "BBB" }, // DERIVED
+  "B20 main-and-sub-agent-both-edit": { outcome: "success", preserve: "B\nC" }, // DERIVED
+  "B21 same-session-restart-keeps-served-state": {
+    outcome: "success",
+    preserve: "BBB",
+  }, // DERIVED
+  "B22 sub-agent-serves-not-visible-to-main": { outcome: "rejected" },
+  "B23 duplicate-canon silent-miswrite prevention (Probe E / #61)": {
+    outcome: "rejected",
+    preserve: "int f2",
+  },
+  "B24 symmetric contested-swap fail-closed (Probe K)": {
+    outcome: "rejected",
+    preserve: "function beta",
+  },
+  "B25 foreign-anchor foreign-source isolation (#145)": {
+    outcome: "rejected",
+    preserve: "charlie\ndelta\n",
+  },
+  "B26 UTF-8 BOM preservation across edit (#23/#60)": {
+    outcome: "success",
+    preserve: "\uFEFFfirst\nSECOND\nthird\n",
+  },
+};
 interface Call {
   tool: string;
   outLen: number;
@@ -847,5 +912,20 @@ describe("tool battery (deterministic edit scenarios)", () => {
 
     expect(results).toHaveLength(27);
     expect(results.filter((r) => r.outcome === "error")).toEqual([]);
+    // WHY: the recovered comparator — every recorded outcome, code, and
+    // WHY: preserved content is compared, not just counted. `verdict()`
+    // WHY: semantics: outcome must match; a rejection must carry a code;
+    // WHY: preserved content must survive in the final file.
+    for (const rec of results) {
+      const exp = EXPECTED[rec.scenario];
+      expect(exp, `missing expectation for ${rec.scenario}`).toBeDefined();
+      expect(rec.outcome).toBe(exp!.outcome);
+      if (exp!.outcome === "rejected") {
+        expect(rec.code).toBeDefined();
+      }
+      if (exp!.preserve !== undefined) {
+        expect(rec.finalContent).toContain(exp!.preserve);
+      }
+    }
   });
 });
