@@ -204,25 +204,60 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   // WHY: file_snapshots id, so no generation predicate can judge it — TTL pruning
   // WHY: at open owns it, and an absent mirror is recoverable only by a fresh serve.
   // WHY: Runs wherever the schema is ensured, so every store open sweeps.
+  // WHY: The four deletes commit as one `BEGIN IMMEDIATE` unit with rollback on error
+  // WHY: (the vacuum-evict transaction idiom): a crash between the snapshot sweep and
+  // WHY: the orphan-lease delete can no longer strand leases that name no live snapshot
+  // WHY: until the next open.
   const currentPrefix = `${CANON_VERSION}:%`;
   // WHY: tables created later in the fresh-build path (served_leases) may not exist
   // WHY: yet when this runs — the sweep touches only what is there.
   const hasTable = (table: string): boolean => tableColumns(db, table).size > 0;
-  if (hasTable("served_leases")) {
-    db.exec(`DELETE FROM served_leases WHERE served_snapshot_hash NOT LIKE '${currentPrefix}'`);
-  }
-  db.exec(`DELETE FROM file_snapshots WHERE canon_version != ${CANON_VERSION}`);
-  db.exec(
-    "DELETE FROM line_lineage WHERE snapshot_id NOT IN (SELECT snapshot_id FROM file_snapshots)",
-  );
-  // WHY: one provenance rule — a lease that names no surviving snapshot is dangling
-  // WHY: (same-generation pre-column rows read as canon 0 and are swept above: a
-  // WHY: one-time pairing-baseline reset). The orphan delete runs in the same open
-  // WHY: as the snapshot sweep, so no un-retired-but-lineage-less lease survives it.
-  if (hasTable("served_leases")) {
+  const hasLeases = hasTable("served_leases");
+  const sweepGenerations = (): void => {
+    if (hasLeases) {
+      db.exec(`DELETE FROM served_leases WHERE served_snapshot_hash NOT LIKE '${currentPrefix}'`);
+    }
+    db.exec(`DELETE FROM file_snapshots WHERE canon_version != ${CANON_VERSION}`);
     db.exec(
-      "DELETE FROM served_leases WHERE served_snapshot_hash NOT IN (SELECT snapshot_hash FROM file_snapshots)",
+      "DELETE FROM line_lineage WHERE snapshot_id NOT IN (SELECT snapshot_id FROM file_snapshots)",
     );
+    // WHY: one provenance rule as of this sweep — a lease that names no surviving
+    // WHY: snapshot for its own path is dangling (same-generation pre-column rows read
+    // WHY: as canon 0 and are swept above: a one-time pairing-baseline reset). The grant
+    // WHY: lookup is path-scoped (`path = ? AND snapshot_hash = ?`), so a lease naming
+    // WHY: a hash that survives only in a foreign path's row goes with the orphans.
+    // WHY: Scoped to the sweep, not the whole open: the open-hook vacuum runs after and
+    // WHY: may evict a snapshot pinned only by a retired-past-grace lease (the vacuum pin
+    // WHY: ignores those), stranding its lease until the next open's sweep — fail-closed
+    // WHY: (the generation-gated grant misses) and self-healing.
+    if (hasLeases) {
+      db.exec(
+        "DELETE FROM served_leases WHERE NOT EXISTS (SELECT 1 FROM file_snapshots fs " +
+          "WHERE fs.path = served_leases.file_path AND fs.snapshot_hash = served_leases.served_snapshot_hash)",
+      );
+    }
+  };
+  // SAFETY: `isTransaction` is an internal `node:sqlite` field the public type omits; the read is
+  // SAFETY: a boolean guard, and a missing field leaves `undefined` (treated as not-in-transaction).
+  // SAFETY: `BEGIN IMMEDIATE` cannot nest, so a caller already inside a transaction runs the sweep
+  // SAFETY: on that transaction instead of opening its own.
+  const inSweepTransaction = (db as unknown as { isTransaction?: boolean }).isTransaction === true;
+  if (inSweepTransaction) {
+    sweepGenerations();
+  } else {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      sweepGenerations();
+      db.exec("COMMIT");
+    } catch (error) {
+      try {
+        db.exec("ROLLBACK");
+      } catch (rollbackError: unknown) {
+        // SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.
+        console.error("[hash-store] failed to rollback sweep transaction:", rollbackError);
+      }
+      throw error;
+    }
   }
 }
 

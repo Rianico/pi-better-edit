@@ -12,6 +12,10 @@
 * **hashstore:** refuse cross-generation anchors after the `CANON_VERSION` bump — `file_undo` carries the anchor generation (legacy rows read as never-current), undo restores re-derive file-scoped anchors for stale rows instead of adopting them, and foreign-generation snapshot descriptors are rejected rather than written; recorded as ADR-0030 with the accepted file-scope residual. (#20)
 * **hashstore:** gate leases and snapshot hits on the anchor generation — the lease source skips pre-bump leases, snapshot lookups treat unknown-generation rows as misses that delete, and an open-time sweep drops snapshot/lineage/lease rows whose generation is unknown or foreign (leases orphaned by the snapshot sweep go in the same open); the served mirror is TTL-pruned, never swept; `file_snapshots` carries the generation so the next bump sweeps mechanically. (#20)
 
+### Bug Fixes
+
+* **hashstore:** harden the open-time generation sweep — the orphan-lease delete is path-scoped (a lease naming a hash that survives only in a foreign path's row is now dropped), the four sweep deletes commit as one `BEGIN IMMEDIATE` unit with rollback on error, and the lease-names-live-snapshot invariant is scoped to the sweep point (the open-hook vacuum can strand a retired-past-grace lease until the next open). (#20)
+
 ### Documentation
 
 * **readme:** cite external evidence for hash-anchored lines — token-bleed reduction (Lamberti 2026) and subword-tokenizer drift (TokDrift) — under the failure-modes table and the anchor-hash space explanation. (#41)

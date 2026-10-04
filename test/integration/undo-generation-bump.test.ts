@@ -1,8 +1,10 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
+import { DatabaseSync } from "node:sqlite";
 import {
   ensureSnapshotTables,
+  hashStorePath,
   loadHashStore,
   shutdownHashStore,
   type HashStore,
@@ -19,9 +21,11 @@ import { servedHashEchoDenial } from "../../src/write-hook.js";
 import { resolveTarget } from "../../src/fs-write.js";
 import { toCwd } from "../../src/paths.js";
 import {
+  VACUUM_RETIRED_PIN_MS,
   adoptPinnedSnapshotFor,
   anchorsForSnapshotHash,
   getSnapshot,
+  vacuumSnapshots,
 } from "../../src/snapshot-store";
 import {
   getText,
@@ -428,12 +432,14 @@ describe("generation bump refuses pre-v3 anchors", () => {
     });
   });
 
-  it("after any open every lease names a live snapshot", async () => {
-    // WHY: P2 invariant — one provenance rule for the whole sweep. A mixture of
+  it("the open-time sweep leaves no lease naming a missing snapshot", async () => {
+    // WHY: P2 invariant — one provenance rule as of the sweep point. A mixture of
     // WHY: pre-column (canon 0, current key), foreign-generation (canon 0/2, old key)
     // WHY: and live (canon 3) rows goes through the sweep in place and through a
     // WHY: real reopen; afterwards no lease dangles and no un-retired lease is
-    // WHY: lineage-less, while the live read's leases survive.
+    // WHY: lineage-less, while the live read's leases survive. Scoped to the sweep,
+    // WHY: not the whole open: the open-hook vacuum runs after and may evict a snapshot
+    // WHY: pinned only by a retired-past-grace lease (the next test pins that boundary).
     await withTempFile("i.txt", PRE, async ({ cwd }) => {
       const absI = join(cwd, "i.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
@@ -479,9 +485,13 @@ describe("generation bump refuses pre-v3 anchors", () => {
         )
         .run(absI, `2:${contentChecksum(OTHER)}`, 3, Date.now());
       const checkInvariant = (db: HashStore["db"]): void => {
+        // WHY: path-level provenance — the sweep's orphan rule, not the old hash-level
+        // WHY: form: a lease must name a snapshot row for its own path.
         const dangling = db
           .prepare(
-            "SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT IN (SELECT snapshot_hash FROM file_snapshots)",
+            "SELECT COUNT(*) AS n FROM served_leases sl WHERE NOT EXISTS " +
+              "(SELECT 1 FROM file_snapshots fs WHERE fs.path = sl.file_path " +
+              "AND fs.snapshot_hash = sl.served_snapshot_hash)",
           )
           .get() as { n: number };
         expect(dangling.n).toBe(0);
@@ -509,7 +519,268 @@ describe("generation bump refuses pre-v3 anchors", () => {
       shutdownHashStore();
       await loadHashStore();
       const reopened = await loadHashStore();
+      // WHY: the live read's leases are active, so the open-hook vacuum pins their
+      // WHY: snapshot and the end-of-open state still satisfies the sweep-point rule.
       checkInvariant(reopened.db);
+    });
+  });
+
+  it("a retired-past-grace lease dangles only until the next open's sweep", async () => {
+    // WHY: the exact sweep/vacuum boundary the invariant above is scoped to. The vacuum
+    // WHY: pin ignores a lease retired past the 1-hour grace even with updated_at inside
+    // WHY: the session TTL, so evicting its snapshot strands the lease at end of open
+    // WHY: (fail-closed: the generation-gated grant misses) until the next open's sweep
+    // WHY: drops it.
+    await withTempFile("h.txt", PRE, async ({ cwd }) => {
+      const absH = join(cwd, "h.txt");
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "h.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      const liveKey = `${CANON_VERSION}:${contentChecksum(PRE)}`;
+      const liveLeases = (
+        store.db
+          .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash = ?")
+          .get(liveKey) as { n: number }
+      ).n;
+      expect(liveLeases).toBeGreaterThan(0);
+      // WHY: retire past the pin grace but inside the session TTL — unpinned, not expired.
+      const now = Date.now();
+      store.db
+        .prepare("UPDATE served_leases SET retired_at = ?, updated_at = ? WHERE file_path = ?")
+        .run(now - 2 * VACUUM_RETIRED_PIN_MS, now, absH);
+      // WHY: undo restore targets pin too, so the boundary run starts with no pin at all.
+      store.db.prepare("DELETE FROM file_undo WHERE path = ?").run(absH);
+      // WHY: overfill the path past its 10-version retention window — the vacuum must
+      // WHY: evict oldest-first, and the retired lease's snapshot is the oldest row.
+      const OTHER = "ddd\neee\nfff\n";
+      for (let i = 0; i < 14; i++) {
+        plantSnapshotRow(store, absH, `3:forged-${i}`, contentOnlyHashes(OTHER));
+      }
+      vacuumSnapshots(store.db);
+      // WHY: the vacuum evicted the snapshot the retired leases name — the grant a live
+      // WHY: edit would need now misses, so the stranded state refuses fail-closed.
+      const liveRows = (
+        store.db
+          .prepare("SELECT COUNT(*) AS n FROM file_snapshots WHERE snapshot_hash = ?")
+          .get(liveKey) as { n: number }
+      ).n;
+      expect(liveRows).toBe(0);
+      const grantMiss = store.db
+        .prepare(
+          "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND snapshot_hash = ? " +
+            "AND committed = 1 AND canon_version = ?",
+        )
+        .get(absH, liveKey, CANON_VERSION) as { snapshot_id: number } | undefined;
+      expect(grantMiss).toBeUndefined();
+      const stranded = (
+        store.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases sl WHERE NOT EXISTS " +
+              "(SELECT 1 FROM file_snapshots fs WHERE fs.path = sl.file_path " +
+              "AND fs.snapshot_hash = sl.served_snapshot_hash)",
+          )
+          .get() as { n: number }
+      ).n;
+      expect(stranded).toBe(liveLeases);
+      // WHY: self-healing — the next open's sweep drops the stranded leases.
+      ensureSnapshotTables(store.db);
+      const healed = (
+        store.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases sl WHERE NOT EXISTS " +
+              "(SELECT 1 FROM file_snapshots fs WHERE fs.path = sl.file_path " +
+              "AND fs.snapshot_hash = sl.served_snapshot_hash)",
+          )
+          .get() as { n: number }
+      ).n;
+      expect(healed).toBe(0);
+    });
+  });
+
+  it("a lease naming a hash that survives only in a foreign path's row is swept", async () => {
+    // WHY: the orphan predicate is path-level because the grant lookup is path-scoped.
+    // WHY: A synthetic lease homed at ghost.txt names f.txt's live hash: the old
+    // WHY: hash-level rule kept it while the grant for its own path missed. Not
+    // WHY: production-reachable (current-prefix hashes are stored with the current
+    // WHY: generation, so the snapshot sweep cannot delete the row a live lease names).
+    await withTempFile("f.txt", PRE, async ({ cwd }) => {
+      const absF = join(cwd, "f.txt");
+      const ghostAbs = join(cwd, "ghost.txt");
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "f.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      const liveKey = `${CANON_VERSION}:${contentChecksum(PRE)}`;
+      const ghostRows = (
+        store.db
+          .prepare("SELECT COUNT(*) AS n FROM file_snapshots WHERE path = ?")
+          .get(ghostAbs) as { n: number }
+      ).n;
+      expect(ghostRows).toBe(0);
+      const session = testSessionManager.getSessionId();
+      store.db
+        .prepare(
+          "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, " +
+            "served_snapshot_hash, served_line_number, updated_at, retired_at) " +
+            "VALUES (?,?,?,?,?,?,?,?,NULL)",
+        )
+        .run(session, ghostAbs, "prB3", 999, canonDigest("zzz"), liveKey, 1, Date.now());
+      // WHY: premise — the grant lookup for the lease's own path misses.
+      const grantMiss = store.db
+        .prepare(
+          "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND snapshot_hash = ? " +
+            "AND committed = 1 AND canon_version = ?",
+        )
+        .get(ghostAbs, liveKey, CANON_VERSION) as { snapshot_id: number } | undefined;
+      expect(grantMiss).toBeUndefined();
+      ensureSnapshotTables(store.db);
+      const foreignLeft = (
+        store.db
+          .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE file_path = ?")
+          .get(ghostAbs) as { n: number }
+      ).n;
+      expect(foreignLeft).toBe(0);
+      // WHY: the vacuum pins the legitimate lease's snapshot, so the sweep keeps it.
+      const legitKept = (
+        store.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases WHERE file_path = ? " +
+              "AND served_snapshot_hash = ? AND retired_at IS NULL",
+          )
+          .get(absF, liveKey) as { n: number }
+      ).n;
+      expect(legitKept).toBeGreaterThan(0);
+    });
+  });
+
+  it("a mid-sweep failure rolls back instead of half-sweeping", async () => {
+    // WHY: the four sweep deletes are one BEGIN IMMEDIATE unit — when the snapshot
+    // WHY: delete fails, the already-executed non-current-lease delete rolls back with it.
+    await withTempFile("s.txt", PRE, async ({ cwd }) => {
+      const absS = join(cwd, "s.txt");
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "s.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      plantV2File(store, absS, PRE);
+      const leasesBefore = (
+        store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }
+      ).n;
+      const snapsBefore = (
+        store.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }
+      ).n;
+      expect(leasesBefore).toBeGreaterThan(0);
+      const origExec = store.db.exec.bind(store.db);
+      const spy = vi.spyOn(store.db, "exec").mockImplementation((sql: string) => {
+        if (sql.includes("DELETE FROM file_snapshots"))
+          throw new Error("injected mid-sweep failure");
+        origExec(sql);
+      });
+      try {
+        expect(() => ensureSnapshotTables(store.db)).toThrow(/injected mid-sweep failure/);
+      } finally {
+        spy.mockRestore();
+      }
+      // WHY: rollback — without the transaction the first delete would have persisted.
+      expect(
+        (store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }).n,
+      ).toBe(leasesBefore);
+      expect(
+        (store.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }).n,
+      ).toBe(snapsBefore);
+      // WHY: a clean retry still sweeps to the invariant — the failure left no wedge.
+      ensureSnapshotTables(store.db);
+      const dangling = (
+        store.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases sl WHERE NOT EXISTS " +
+              "(SELECT 1 FROM file_snapshots fs WHERE fs.path = sl.file_path " +
+              "AND fs.snapshot_hash = sl.served_snapshot_hash)",
+          )
+          .get() as { n: number }
+      ).n;
+      expect(dangling).toBe(0);
+    });
+  });
+
+  it("a repeated sweep across reopens is idempotent", async () => {
+    // WHY: every store open sweeps, so sweeping twice — in place and across a real
+    // WHY: reopen — must change nothing the second time while the live leases survive.
+    await withTempFile("q.txt", PRE, async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "q.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      ensureSnapshotTables(store.db);
+      const leasesFirst = (
+        store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }
+      ).n;
+      const snapsFirst = (
+        store.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }
+      ).n;
+      expect(leasesFirst).toBeGreaterThan(0);
+      ensureSnapshotTables(store.db);
+      expect(
+        (store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }).n,
+      ).toBe(leasesFirst);
+      expect(
+        (store.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }).n,
+      ).toBe(snapsFirst);
+      shutdownHashStore();
+      await loadHashStore();
+      const reopened = await loadHashStore();
+      expect(
+        (reopened.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }).n,
+      ).toBe(leasesFirst);
+      expect(
+        (reopened.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }).n,
+      ).toBe(snapsFirst);
+      const dangling = (
+        reopened.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases sl WHERE NOT EXISTS " +
+              "(SELECT 1 FROM file_snapshots fs WHERE fs.path = sl.file_path " +
+              "AND fs.snapshot_hash = sl.served_snapshot_hash)",
+          )
+          .get() as { n: number }
+      ).n;
+      expect(dangling).toBe(0);
+    });
+  });
+
+  it("a read-only store aborts the sweep with committed state intact", async () => {
+    // WHY: as the code defines it — buildStore runs inside the open, so a sweep write
+    // WHY: failure closes the handle and aborts the open instead of half-sweeping.
+    // WHY: Here the sweep runs directly on a read-only handle: it must throw and the
+    // WHY: committed rows must read back unchanged on the next read-write open.
+    await withTempFile("w.txt", PRE, async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "w.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      const leasesBefore = (
+        store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }
+      ).n;
+      const snapsBefore = (
+        store.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }
+      ).n;
+      expect(leasesBefore).toBeGreaterThan(0);
+      const storePath = hashStorePath();
+      shutdownHashStore();
+      const readOnly = new DatabaseSync(storePath, { readOnly: true });
+      try {
+        expect(() => ensureSnapshotTables(readOnly)).toThrow();
+      } finally {
+        readOnly.close();
+      }
+      const reopened = await loadHashStore();
+      expect(
+        (reopened.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }).n,
+      ).toBe(leasesBefore);
+      expect(
+        (reopened.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }).n,
+      ).toBe(snapsBefore);
     });
   });
 });
