@@ -1,9 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { walkLines } from "../../src/file-content/line-walker.js";
 import { loadHashStore } from "../../src/hash-store.js";
-import { splitLines } from "../../src/utils.js";
 import { _lineHashesPure, defaultHashIdentity } from "../../src/hashline/index.js";
 import { snapshotIOFor } from "../../src/snapshot-store";
+import { splitLines } from "../../src/utils.js";
 import {
   getText,
   setupReadTest,
@@ -13,6 +13,11 @@ import {
 } from "../support/fixtures";
 
 useTestHome();
+
+// WHY: an oracle that shares no code with the walk — anchors recorded by the implementation that
+// WHY: predates it, in docs/.archive_issues/0136-fix-edit-target-lost-rejections-must-not-serve-or-lease-the.md:70
+// WHY: and corroborated by 0166-bug-gendiff-silently-truncates-small-middle-gaps-no-marker-l.md:46.
+const RECORDED = ["Wot", "rKa", "BkM", "Rzv", "EaX"] as const;
 
 // WHY: the anchors are the served contract — an edit resolves the file through them — so the walk that
 // WHY: now assigns them has to produce the array the whole-content call produces, element for element.
@@ -27,6 +32,15 @@ function walkAssigned(content: string, assign: (line: string) => string): string
   walkLines(content, [], (line) => void assigned.push(assign(line)));
   return assigned;
 }
+
+describe("the anchors a served read hands out", () => {
+  it("are the ones recorded before this walk existed", async () => {
+    const source = "a\nb\nc\nd\ne\n";
+    const plan = await defaultHashIdentity.anchorsForWalk(source, { path: PATH, persist: false });
+    expect(plan.cached ?? walkAssigned(source, plan.assign!)).toEqual([...RECORDED]);
+    expect(_lineHashesPure(source)).toEqual([...RECORDED]);
+  });
+});
 
 describe("the walk assigns the anchors the whole-content assignment produces", () => {
   it("agrees line for line, in order and in length, on a file that collides", async () => {
