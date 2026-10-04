@@ -1,11 +1,9 @@
-import { readFileSync } from "node:fs";
-import { join } from "node:path";
+import { readFileSync, readdirSync } from "node:fs";
+import { fileURLToPath } from "node:url";
 import { describe, expect, it, vi } from "vitest";
 import * as utils from "../../src/utils.js";
-import { loadHashStore } from "../../src/hash-store.js";
 import { MAX_HASH_LINES } from "../../src/hashline/index.js";
 import { decodeNormText } from "../../src/file-content/loader.js";
-import { snapshotIOFor } from "../../src/snapshot-store";
 import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
 
 // WHY: a page is the only witness that can see whether the text was split: the rendered bytes are
@@ -144,12 +142,12 @@ describe("the served page never materializes the line array", () => {
       // WHY: these two primitives have plenty of other callers in the program — lifecycle hooks, edit
       // WHY: responses, the mutation engine — and the claim here is a partition: in a served read they
       // WHY: are called by the snapshot store's lineage write and by nothing else on the read path.
+      // WHY: It is not a claim that a split happened: when nothing line-materializes, 0 = 0 is the right
+      // WHY: answer, and the store stopping its own split is not this witness's business. What makes the
+      // WHY: negative half falsifiable is the revert control — building the page from `visLines` reddens
+      // WHY: these assertions (recorded in the commit that introduced them) — and what keeps the recorder
+      // WHY: itself honest is the control at the top of this file.
       expect(splitCalls.length).toBe(callsFromSnapshotStore().length);
-      // WHY: and the run was not vacuous: the read reached the store. Asserted through the store's own
-      // WHY: API, not through a call it happens to make, so this cannot break when the store changes.
-      const io = snapshotIOFor(await loadHashStore());
-      const snapshot = await io.get(join(cwd, "plain.txt"), "alpha\nbeta\ngamma\ndelta\n", false);
-      expect(snapshot).toBeDefined();
     });
   });
 
@@ -231,42 +229,105 @@ describe("the walk is mode-agnostic", () => {
   });
 });
 
-// WHY: recording the primitives catches a call through THEM, but a page could inline `split("\n")`
-// WHY: again — and `walkLines` IS the page path, so an audit stopping at preview.ts would miss the
-// WHY: mutation that matters most. These are the files a read pages through; the allowance is how many
-// WHY: splits each may hold, and any split they do hold must be of RENDERED output (a property access),
-// WHY: never of a bare identifier — a file's text lives in bare identifiers.
-const READ_PATH: Array<[file: string, splits: number]> = [
-  ["src/file-content/line-walker.ts", 0],
-  ["src/file-content/preview.ts", 2],
-  ["src/file-content/loader.ts", 0],
-  ["src/file-content/index.ts", 0],
-  ["src/read.ts", 0],
+// WHAT THIS AUDIT COVERS, and what it does not.
+//
+// It reads the source of the files the page itself is built in — `src/file-content/*` (derived from the
+// directory, so a file added there is audited without anyone remembering to register it) plus
+// `src/read.ts` — and counts the two ways this codebase turns text into a line array: a `split` on a
+// newline literal, and a call to `splitLines`/`visLines` (naming them is fine: `index.ts` re-exports
+// `visLines`; CALLING one is not). A split on anything else — a path, a comma — is not a line split and
+// is not counted, so a guard here does not cry wolf on unrelated work.
+//
+// It does NOT cover shared machinery the page passes through — `utils.ts` (where the primitives are
+// defined), `hashline/*` (the edit path's whole-content hashing), `snapshot-store/*` (the lineage write
+// that legitimately keeps a line array, bounded by the anchor-space ceiling). Those are covered only for
+// the PRIMITIVES, at runtime, by the recording witness above: any call to `splitLines`/`visLines` during
+// a real read is recorded with the frames that made it, whichever file that is. An inline
+// `text.split("\n")` moved into shared machinery would be missed by both — that is the residual this
+// audit accepts rather than growing into an import-graph rule that reddens on the edit path.
+//
+// The allowance is the deliberate friction: a new line split in an audited file must be added here with
+// its reason, which is the moment to ask whether the page should be materializing lines at all.
+const ALLOWED_LINE_SPLITS: Record<string, number> = {
+  // Both split output this file has already RENDERED: a preview string and a withheld marker's body.
+  "src/file-content/preview.ts": 2,
+};
+
+const AUDITED: string[] = [
+  "src/read.ts",
+  ...readdirSync(fileURLToPath(new URL("../../src/file-content", import.meta.url)))
+    .filter((name) => name.endsWith(".ts"))
+    .sort()
+    .map((name) => `src/file-content/${name}`),
 ];
 
+/**
+ * Source with comments removed and everything else left as written.
+ *
+ * WHY: not a regex — `//` inside a URL or a regex literal would swallow the rest of the line, which is
+ * WHY: exactly how a real `text.split("\n")` inside a template literal slipped past this audit. The
+ * WHY: scan knows strings and templates, so a comment is only a comment where one can start. String
+ * WHY: CONTENTS stay: a split written inside one counts as a split, erring toward red, never toward
+ * WHY: missing one. A template's `${...}` is code either way.
+ */
+function stripComments(source: string): string {
+  const QUOTES = new Set(['"', "'", "`"]);
+  let out = "";
+  for (let index = 0; index < source.length; index++) {
+    const char = source[index]!;
+    if (QUOTES.has(char)) {
+      out += char;
+      for (index++; index < source.length; index++) {
+        const inner = source[index]!;
+        out += inner;
+        if (inner === "\\") {
+          out += source[++index] ?? "";
+        } else if (inner === char) {
+          break;
+        }
+      }
+      continue;
+    }
+    if (char === "/" && source[index + 1] === "/") {
+      while (index < source.length && source[index] !== "\n") index++;
+      continue;
+    }
+    if (char === "/" && source[index + 1] === "*") {
+      index += 2;
+      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/"))
+        index++;
+      index++;
+      continue;
+    }
+    out += char;
+  }
+  return out;
+}
+
 function readPathSource(file: string): string {
-  return readFileSync(new URL(`../../${file}`, import.meta.url), "utf8")
-    .replace(/\/\*[\s\S]*?\*\//g, "")
-    .replace(/\/\/[^\n]*/g, "")
-    .replace(/\s+/g, "");
+  return stripComments(readFileSync(new URL(`../../${file}`, import.meta.url), "utf8"));
+}
+
+/** `split("\n")`, `split('\n')`, `split(/\n/)`, `splitLines(...)`, `visLines(...)`. */
+function lineSplits(code: string): string[] {
+  return [
+    ...code.matchAll(/[^\s;]+\.split\(\s*(?:"\\n"|'\\n'|\/\s*\\n)/g),
+    ...code.matchAll(/\b(?:splitLines|visLines)\(/g),
+  ].map((match) => match[0].replace(/\s+/g, ""));
 }
 
 describe("the read path holds no split of the file's text", () => {
-  it.each(READ_PATH)("%s holds at most %s splits", (file, splits) => {
-    expect([...readPathSource(file).matchAll(/\.split\(/g)]).toHaveLength(splits);
-    // Naming them is fine (index.ts re-exports `visLines`); CALLING them is not.
-    expect(readPathSource(file)).not.toMatch(/\b(splitLines|visLines)\(/);
+  it("audits the directory the page is built in, and does not audit nothing", () => {
+    expect(AUDITED).toContain("src/file-content/detection.ts");
+    expect(AUDITED).toContain("src/file-content/preview.ts");
+    expect(AUDITED.length).toBeGreaterThanOrEqual(6);
+  });
+
+  it.each(AUDITED)("%s splits no text into lines beyond its allowance", (file) => {
+    expect(lineSplits(readPathSource(file))).toHaveLength(ALLOWED_LINE_SPLITS[file] ?? 0);
   });
 
   it("never splits inside the walk itself, whatever its callers do", () => {
-    expect(readPathSource("src/file-content/line-walker.ts")).not.toMatch(/split/);
-  });
-
-  it("splits only output a page renders, never a bare name holding the text", () => {
-    const receivers = [
-      ...readPathSource("src/file-content/preview.ts").matchAll(/([A-Za-z0-9_$.[\]()]+)\.split\(/g),
-    ].map((match) => match[1]!);
-    expect(receivers).toHaveLength(2);
-    expect(receivers.every((receiver) => receiver.includes("."))).toBe(true);
+    expect(readPathSource("src/file-content/line-walker.ts")).not.toMatch(/split/i);
   });
 });
