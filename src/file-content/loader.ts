@@ -8,7 +8,7 @@ import { detectEnding, toLF, stripBOM } from "../edit-diff.js";
 import { abortIf } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { valKind, valAccess } from "../validation.js";
-import { visLines } from "../utils.js";
+import { visibleLineTotal, walkLines } from "./line-walker.js";
 import { loadHashStore, type HashStore } from "../hash-store.js";
 import { snapshotIOFor } from "../snapshot-store";
 import type { NormFile, NormText } from "./types.js";
@@ -98,7 +98,12 @@ export async function decodeNormText(
   const normalized = toLF(rawContent);
 
   if (options?.maxLines !== undefined) {
-    const lineCount = visLines(normalized).length;
+    // WHY: the decode already counted the newlines any cap needs, so the line count comes back from
+    // WHY: the load instead of a second split: `+ 1` is `splitLines`' total, and `visibleLineTotal`
+    // WHY: is `visLines`'. A preloaded file that carries no tally pays one allocation-free walk.
+    const splitTotal =
+      file.newlineCount !== undefined ? file.newlineCount + 1 : walkLines(rawContent).total;
+    const lineCount = visibleLineTotal(rawContent, splitTotal);
     if (lineCount > options.maxLines) {
       throw new DomainError("E_LARGE_FILE", {
         path,

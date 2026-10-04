@@ -10,6 +10,7 @@ import { DomainError } from "../domain-errors.js";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "../hashline/index.js";
 import type { ServedRow } from "../hashline/served.js";
 import { visLines } from "../utils.js";
+import { visibleLineTotal, walkLines } from "./line-walker.js";
 
 function normPosInt(value: number | undefined, name: string): number | undefined {
   if (value === undefined) {
@@ -298,16 +299,46 @@ function buildWindowSection(params: {
  * shared byte/line budget so N windows cannot multiply the auto-read budget by N. Rows are served
  * only for the lines actually shown, and overlapping windows collapse to one served row per line.
  */
+/**
+ * The lines a preview reads a page out of: how many there are, and a half-open slice of them. Two
+ * implementations answer those two questions, so the render path below is written once for both
+ * render modes.
+ *
+ * WHY: served already holds its line array — its anchors are priced by position in it — so it slices
+ * WHY: the array it has. Verbatim keeps no array at all, so it walks each page out of the text.
+ */
+interface LineSource {
+  /** The read's line total: `visLines(text).length`. */
+  readonly total: number;
+  /** The `[start, end)` lines, 0-indexed and half-open; a slice past the end is short or empty. */
+  slice(start: number, end: number): string[];
+}
+
+function arrayLines(lines: string[]): LineSource {
+  return { total: lines.length, slice: (start, end) => lines.slice(start, end) };
+}
+
+/**
+ * WHY: verbatim keeps no line array, so its page is walked out of the text: one allocation-free walk
+ * WHY: for the total, one for the page. The split this replaces answered the same two questions but
+ * WHY: kept one heap string per line to do it — 4.56× the text, measured in this repo's probe.
+ */
+function walkedLines(text: string): LineSource {
+  return {
+    total: visibleLineTotal(text, walkLines(text).total),
+    slice: (start, end) => walkLines(text, [{ start, end }]).ranges[0] ?? [],
+  };
+}
 function buildWindowedPreview(params: {
   windows: ReadWindow[];
-  allLines: string[];
+  lines: LineSource;
   allHashes: string[];
-  totalLines: number;
   maxBytes: number;
   maxTruncLines: number;
   verbatim: boolean;
 }): { text: string; truncation?: TruncationResult; served: ServedRow[] } {
-  const { windows, allLines, allHashes, totalLines, maxBytes, maxTruncLines, verbatim } = params;
+  const { windows, lines, allHashes, maxBytes, maxTruncLines, verbatim } = params;
+  const totalLines = lines.total;
   const sections: string[] = [];
   const hashByPosition = new Map<number, string>();
   let truncation: TruncationResult | undefined;
@@ -323,7 +354,7 @@ function buildWindowedPreview(params: {
     }
     const endIdx = Math.min(window.offset - 1 + window.limit, totalLines);
     const header = windowHeader(window.offset, endIdx, totalLines);
-    const selected = allLines.slice(window.offset - 1, endIdx);
+    const selected = lines.slice(window.offset - 1, endIdx);
     const selectedHashes = allHashes.slice(window.offset - 1, endIdx);
     if (remainingBytes <= 0 || remainingLines <= 0) {
       sections.push(
@@ -396,9 +427,11 @@ export async function fmtReadPreview(
   nextOffset?: number;
   served: ServedRow[];
 }> {
-  const allLines = visLines(text);
   const verbatim = options.render === "verbatim";
-  const totalLines = allLines.length;
+  // WHY: the render mode decides how the page is addressed, never what it is: both modes read their
+  // WHY: lines out of one `LineSource`, so only served pays for the array it already needs.
+  const lines: LineSource = verbatim ? walkedLines(text) : arrayLines(visLines(text));
+  const totalLines = lines.total;
   const startLine = normPosInt(options.offset, "offset") ?? 1;
   const windows = normWindows(options.windows);
   if (totalLines === 0)
@@ -416,9 +449,8 @@ export async function fmtReadPreview(
       : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
     return buildWindowedPreview({
       windows,
-      allLines,
+      lines,
       allHashes,
-      totalLines,
       maxBytes: maxLineBytes,
       maxTruncLines,
       verbatim,
@@ -433,7 +465,7 @@ export async function fmtReadPreview(
 
   const limit = normPosInt(options.limit, "limit");
   const endIdx = limit ? Math.min(startLine - 1 + limit, totalLines) : totalLines;
-  const selected = allLines.slice(startLine - 1, endIdx);
+  const selected = lines.slice(startLine - 1, endIdx);
   // WHY: the render mode is the hashless authority, not the caller's `[]`: a verbatim preview must
   // WHY: never reach the lazy `lineHashes` (which would allocate anchors and can persist a snapshot),
   // WHY: so a third caller that forgets to precompute gets empty hashes instead of served state.

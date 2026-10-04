@@ -66,6 +66,11 @@ export interface FileStats {
 export interface LFileText {
   kind: "text";
   text: string;
+  /**
+   * The newlines the decode streamed, present when a cap was asked for: the cap throws on this tally
+   * mid-stream, and the load path reads it back as the file's line count instead of splitting again.
+   */
+  newlineCount?: number;
   // WHY: the load path already stat'd this path; handing the result to the caller keeps the read
   // WHY: path at one `stat` syscall per file instead of re-stat'ing for the snapshot id.
   stats?: FileStats;
@@ -87,6 +92,7 @@ export async function loadFileKindAndText(
   filePath: string,
   options?: LoadFileOptions,
 ): Promise<LFile> {
+  const maxLines = options?.maxLines;
   const pathStat = await fsStat(filePath);
   if (pathStat.isDirectory()) {
     return { kind: "directory" };
@@ -125,7 +131,9 @@ export async function loadFileKindAndText(
     if (mimeFile) return mimeFile;
     const decoder = new TextDecoder("utf-8", { fatal: false, ignoreBOM: true });
     let utf8Suspect = false;
-    let newlineCount = 0;
+    // WHY: the cap's own tally: counting what the stream has already decoded lets the cap throw
+    // WHY: mid-stream, and lets the loader read the line count back without a second split.
+    let newlineCount: number | undefined = maxLines === undefined ? undefined : 0;
     const parts: string[] = [];
     // WHY: (04b-rem P2-3) an invalid UTF-8 sequence ALWAYS makes a non-fatal decoder emit U+FFFD,
     // WHY: so the absence of U+FFFD proves the round-trip is lossless; its presence proves
@@ -136,13 +144,13 @@ export async function loadFileKindAndText(
       if (!utf8Suspect && decoded.includes("\uFFFD")) utf8Suspect = true;
     }
     function trackNewlines(decoded: string): void {
-      if (options?.maxLines === undefined) return;
+      if (newlineCount === undefined || maxLines === undefined) return;
       for (let i = 0; i < decoded.length; i++) if (decoded.charCodeAt(i) === 10) newlineCount++;
-      if (newlineCount > options.maxLines) {
+      if (newlineCount > maxLines) {
         throw new DomainError("E_LARGE_FILE", {
-          path: options.displayPath ?? filePath,
+          path: options?.displayPath ?? filePath,
           limitKind: "lines",
-          limit: options.maxLines,
+          limit: maxLines,
         });
       }
     }
@@ -184,6 +192,9 @@ export async function loadFileKindAndText(
     return {
       kind: "text",
       text,
+      // WHY: the load path already counted these newlines for the cap; the loader turns the tally
+      // WHY: into the line count it checks, so neither has to split the text.
+      ...(newlineCount === undefined ? {} : { newlineCount }),
       stats: pathStat,
       ...(hadUtf8DecodeErrors ? { hadUtf8DecodeErrors: true as const } : {}),
     };
