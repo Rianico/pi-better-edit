@@ -1,6 +1,7 @@
 import { Type } from "typebox";
 import { EDITS_MAX_ITEMS } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
+import { HASH_LEN } from "./hashline/alphabet.js";
 import type { EditPlacement } from "./hashline/resolve.js";
 import { rejectUnknownFields } from "./utils.js";
 
@@ -89,11 +90,11 @@ function isNormalizedEdit(input: unknown): input is Record<string, unknown> {
 }
 
 export const anchorFromSchema = Type.String({
-  description: "Bare 3-char hash anchor of the first range line (inclusive)",
+  description: `Bare ${HASH_LEN}-char hash anchor of the first range line (inclusive)`,
 });
 
 export const anchorToSchema = Type.String({
-  description: "Bare 3-char hash anchor of the last range line (inclusive)",
+  description: `Bare ${HASH_LEN}-char hash anchor of the last range line (inclusive)`,
 });
 
 export const editFileSchema = Type.String({
@@ -168,17 +169,15 @@ const EDIT_PAYLOAD_HINT =
   "Edit must be called with exactly one payload per item. Use the canonical payload " +
   '{"file": file, "edits": [{ "anchor_from": anchor_from, "anchor_to": anchor_to, "text": text }, ...], "mode"?: "general" | "literal"}: ' +
   '"file" is the text file to edit (a non-empty string, never a directory); each item names two inclusive ' +
-  'bare-3-char anchors and exactly one payload — "text" (bare replacement content; an empty string deletes the ' +
+  `bare-${HASH_LEN}-char anchors and exactly one payload — "text" (bare replacement content; an empty string deletes the ` +
   'range) or "text_ref" ({ anchor_from, anchor_to, file?, mode (required): "copy" | "cut" } — the served span\'s bytes, ' +
   '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
   '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
   'served rows are refused) or "literal" (declared literal content).';
-export const EDIT_DESCRIPTION =
-  'Edit a range of lines in a text file via `edit`: `{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }` (one top-level file per call). For text files seen via `read`/diff. `anchor_from`/`anchor_to` are bare 3-char HASH anchors — copy the 3 chars before `│` in this file\'s served rows (lease (session, file, anchor)), never `│` or content. Exactly one payload per item: `text` (`\\n` joins lines, `""` deletes) or `text_ref` `{anchor_from, anchor_to, mode (required), file?}` — a served span\'s bytes (`mode` `"copy"`|`"cut"`; `file`=another served file, where `cut` retires the span there too); `at`: "in-place" (default), "before", "after". `[MODEL]` in `content` is your retry instruction.';
-export const EDIT_SNIPPET =
-  'Edit a file range via `edit`: `{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}` — anchors are bare 3-char hashes copied from served `HASH│content` (never copy `│`), one payload per item: `text` is bare content (`""` deletes) or `text_ref` writes a served span (`"copy"` keeps the source, `"cut"` also retires it — in this file or in the `file` it names). `at`: "in-place" (default), "before", "after". Chain from diff anchors with no re-read.';
+export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one top-level file per call). For text files seen via \`read\`/diff. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors — copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)), never \`│\` or content. Exactly one payload per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\` — a served span's bytes (\`mode\` \`"copy"\`|\`"cut"\`; \`file\`=another served file, where \`cut\` retires the span there too); \`at\`: "in-place" (default), "before", "after". \`[MODEL]\` in \`content\` is your retry instruction.`;
+export const EDIT_SNIPPET = `Edit a file range via \`edit\`: \`{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}\` — anchors are bare ${HASH_LEN}-char hashes copied from served \`HASH│content\` (never copy \`│\`), one payload per item: \`text\` is bare content (\`""\` deletes) or \`text_ref\` writes a served span (\`"copy"\` keeps the source, \`"cut"\` also retires it — in this file or in the \`file\` it names). \`at\`: "in-place" (default), "before", "after". Chain from diff anchors with no re-read.`;
 export const EDIT_GUIDELINES: string[] = [
-  'edit: `anchor` vs `HASH│content` — an `anchor` is a bare 3-char hash (e.g. "wUp"); a `HASH│content` line (e.g. `wUp│    pass`) is a served row; the `│` is a separator — copy only the 3 chars before it into `anchor_from`/`anchor_to`.',
+  `edit: \`anchor\` vs \`HASH│content\` — an \`anchor\` is a bare ${HASH_LEN}-char hash (e.g. "wUp"); a \`HASH│content\` line (e.g. \`wUp│    pass\`) is a served row; the \`│\` is a separator — copy only the ${HASH_LEN} chars before it into \`anchor_from\`/\`anchor_to\`.`,
   `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`; both payloads or neither is refused.`,
   "edit: `anchor_from`/`anchor_to` bound the inclusive range — in-place replaces both boundary lines, while `before`/`after` insert at the boundary instead; out-of-band writes (bash, scripts, formatters) bypass serve recording, so when an anchor no longer matches, re-read the file and copy fresh anchors.",
   'edit: `text` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused; `text` is verbatim, so include the indentation you want.',
@@ -310,7 +309,7 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   }
   const { anchor_from, anchor_to, at, text, text_ref } = value;
   if (typeof anchor_from !== "string" || typeof anchor_to !== "string") {
-    return `edit[${index}] "anchor_from"/"anchor_to" must be bare 3-char hash anchor strings copied from served output (before │).`;
+    return `edit[${index}] "anchor_from"/"anchor_to" must be bare ${HASH_LEN}-char hash anchor strings copied from served output (before │).`;
   }
   if (at !== undefined) {
     if (at === "in_place") {
@@ -352,7 +351,7 @@ function analyzeItem(value: unknown, index: number): string | undefined {
     return `edit[${index}] "text_ref" "file" must name a served file to read from — an empty string is not a path (omit "file" to reference this file).`;
   }
   if (typeof text_ref.anchor_from !== "string" || typeof text_ref.anchor_to !== "string") {
-    return `edit[${index}] "text_ref" "anchor_from"/"anchor_to" must be bare 3-char hash anchor strings copied from the served output of the file they name.`;
+    return `edit[${index}] "text_ref" "anchor_from"/"anchor_to" must be bare ${HASH_LEN}-char hash anchor strings copied from the served output of the file they name.`;
   }
   return undefined;
 }

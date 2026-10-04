@@ -35,8 +35,6 @@ export function isValidHashList(value: unknown): value is string[] {
   }
   return true;
 }
-const _HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
-
 // SAFETY: one definition of the canon digest for the whole toolchain — `hash-identity.ts` owns it
 // SAFETY: beside the canonical `canon`, and consumers reach it through either facade (#151).
 export { canonDigest } from "./hash-identity.js";

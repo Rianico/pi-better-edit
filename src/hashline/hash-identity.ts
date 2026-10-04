@@ -82,7 +82,7 @@ export function isValidHashList(value: unknown): value is string[] {
   return true;
 }
 
-const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
+export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
 export const CANON_VERSION = 2;
 const CANON_RE = /[ \t\r\n]+/g;

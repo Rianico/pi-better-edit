@@ -17,9 +17,8 @@ export {
   type HashSnapshotIO,
   type HashPrior,
   type HashOptions,
+  HASH_PROBE_STRIDE,
 } from "./hash-identity.js";
-
-export const HASH_PROBE_STRIDE = 3907;
 
 export { parseHashRef, parseText, type Anchor } from "./parse.js";
 

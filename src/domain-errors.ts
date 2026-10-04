@@ -1,8 +1,9 @@
 /**
  * Domain error registry — the closed, type-safe contract for every
  * negative-path rejection (spec docs/spec/unified-error-and-warning-contract.md
- * section 4, D1). Zero dependencies: no imports, so any seam can throw without
- * wiring a store, session, or hasher.
+ * section 4, D1). Its only import is the dependency-free alphabet leaf
+ * (`./hashline/alphabet.js`, which itself imports nothing), so any seam can
+ * still throw without wiring a store, session, or hasher.
  *
  * INVARIANT (the point of this module): a code is never declared without a
  * producer. Every `DomainErrorCode` member must have at least one
@@ -26,6 +27,8 @@
  * pins the fact that the range already contains the text, but not the
  * model's intent).
  */
+
+import { HASH_LEN } from "./hashline/alphabet.js";
 
 export type Audience = "MODEL" | "USER";
 
@@ -70,7 +73,7 @@ export type DomainWarningCode =
   | "W_NOOP_INSERT";
 
 /**
- * SAFETY: one served row — position is 0-based, hash is the 3-char anchor. Canon evidence is not a
+ * SAFETY: one served row — position is 0-based, hash is the anchor string. Canon evidence is not a
  * row attribute: it is derived on demand from `served_leases.canon_hash`, so no canon text is ever
  * stored (issue #151).
  */
@@ -239,10 +242,9 @@ export const UNVERIFIED_HEADLINE =
 export const TARGET_LOST_RECOVERY =
   "The line you targeted was deleted or replaced; your anchors describe a version of this file that no longer exists. Read the file and re-target.";
 
-// WHY: 3-char is the hashline anchor width (`HASH_LEN`); this module stays
-// WHY: zero-dependency so the width is stated, never imported.
-const ANCHOR_WIDTH = 3;
-
+// WHY: the anchor width is owned by `HASH_LEN` (`./hashline/alphabet.js`, a
+// WHY: dependency-free leaf), so this module derives the count word instead of
+// WHY: stating it.
 function suspiciousTail(count: number): string {
   if (count < 2) return "";
   return (
@@ -313,7 +315,7 @@ function largeFileFormat(payload: ErrorPayloadMap["E_LARGE_FILE"]): string {
   if (payload.limitKind === "hash-space") {
     return (
       `Cannot allocate a unique hash anchor: the file exceeds the ${payload.limit}-line limit ` +
-      `for ${ANCHOR_WIDTH}-char hashline anchors. For very large files use write or a non-line-based approach.`
+      `for ${HASH_LEN}-char hashline anchors. For very large files use write or a non-line-based approach.`
     );
   }
   const observed =
@@ -344,7 +346,7 @@ function numericAnchorNote(anchors: string[]): string {
   const resemblance = numeric.length === 1 ? "resembles a line number" : "resemble line numbers";
   return (
     ` Note: ${noun} ${verb} only of digits and ${resemblance}. ` +
-    `Edit anchors are 3-character alphanumeric content hashes (e.g. "aB3") served by the read tool, not line numbers.`
+    `Edit anchors are ${HASH_LEN}-character alphanumeric content hashes (e.g. "aB3") served by the read tool, not line numbers.`
   );
 }
 
@@ -450,7 +452,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     format: ({ rawAnchor, reason }) => `Invalid anchor "${rawAnchor}": ${reason}`,
     // WHY remedy: the parse rejected the token before any resolution — `rawAnchor` and `reason` name the shape failure. See ADR-0021.
-    remedy: "Pass the bare 3-char anchor and retry.",
+    remedy: `Pass the bare ${HASH_LEN}-char anchor and retry.`,
   },
   E_SUSPICIOUS_TEXT: {
     audience: "MODEL",

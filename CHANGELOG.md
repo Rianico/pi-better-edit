@@ -10,6 +10,10 @@
 
 * **readme:** cite external evidence for hash-anchored lines — token-bleed reduction (Lamberti 2026) and subword-tokenizer drift (TokDrift) — under the failure-modes table and the anchor-hash space explanation. (#41)
 
+### Code Refactoring
+
+* **hashline:** make `HASH_LEN` the single owner of the anchor width — served-guard parse, domain-errors/payload-contract copy, resolve/parse reasons, and the probe stride all derive from it; behaviour and model-visible bytes unchanged at width 3, pinned by a new single-owner arch guard. (#20)
+
 ## [2.6.0] - 2026-10-03
 
 ### Features
