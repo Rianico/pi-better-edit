@@ -5,7 +5,7 @@
 <h1 align="center">pi-better-edit</h1>
 <p align="center">
   <strong>Production-grade, hash-anchored file editing for &pi;.<br>
-  Powered by Content-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.</strong>
+  Powered by (File, Content)-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.</strong>
 </p>
 
 <p align="center">
@@ -30,7 +30,7 @@
 ---
 
 > **What is `pi-better-edit`?**
-> A high-precision file editing extension for [`pi-coding-agent`](https://github.com/can1357/oh-my-pi) that replaces volatile line numbers and token-wasting code echoes with immutable, content-addressed 4-character line hashes (`szJx│code`).
+> A high-precision file editing extension for [`pi-coding-agent`](https://github.com/can1357/oh-my-pi) that replaces volatile line numbers and token-wasting code echoes with immutable 4-character line hashes addressed by (file, content) (`szJx│code`).
 >
 > **Core Philosophy:** Local compute is free; **the model's context window is the most precious resource**. By shifting verification, snapshotting, and alignment to the host, `pi-better-edit` slashes output tokens — line-anchored feedback cut repair tokens by 22–58% in published paired experiments ([Lamberti 2026, arXiv:2607.12713](https://arxiv.org/abs/2607.12713)) — auto-rebases external file drift (e.g., Prettier, Git), and eliminates silent miswrites without forcing full-file re-reads.
 
@@ -343,7 +343,7 @@ referenced span is retired — the current word is `cut`.
 
 | Feature | **pi-better-edit v2** | @oh-my-pi/hashline | Traditional `str_replace` |
 | --- | --- | --- | --- |
-| **Addressing Model** | 4-char content-addressed anchors | File tag + line numbers | Verbatim code strings |
+| **Addressing Model** | 4-char (file, content)-addressed anchors | File tag + line numbers | Verbatim code strings |
 | **Line Identity** | Immutable MVCC `line_id` | Coordinate line numbers | None (text matching) |
 | **Exterior Shift Tolerance** | **Auto-rebases** (0 tokens, 0 retries) | Model must recalculate line numbers | Fails if surrounding context shifts |
 | **Duplicate Line Safety** | **Collision-resolved** unique anchors | Ambiguous position-based indexing | Prone to matching wrong instance |

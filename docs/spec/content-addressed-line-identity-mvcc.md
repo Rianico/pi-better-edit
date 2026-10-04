@@ -1,4 +1,4 @@
-# Spec: Line Identity across File Versions via Content-Addressed Line-Identity MVCC (Revision 24)
+# Spec: Line Identity across File Versions via (File, Content)-Addressed Line-Identity MVCC (Revision 24)
 
 > [!info] Revision 25 patch proposed — the retired-identity reject-and-serve payload can silently miswrite the line that took the target's old number. Normative deltas D1–D5 are in [§9](#9-appendix--revision-25-patch-stale-identity-rejection); full analysis in [`stale-identity-reject-and-serve.md`](stale-identity-reject-and-serve.md) and [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md).
 
@@ -158,7 +158,7 @@ Probe `A` reproduces the exact same miswrite under a partial read (`offset=1, li
            `INSERT INTO file_snapshots (path, snapshot_hash, ...) VALUES (...) ON CONFLICT (path, snapshot_hash) DO NOTHING;`
            If a concurrent session committed `(path, C)` concurrently, roll back local allocations and read back the canonical `snapshot_id` and `line_lineage`.
         4. **Authoritative Anchor Persistence**:
-           `materializeSnapshot(db, path, content, hashes)` receives the authoritative presentation anchor array `hashes` computed/presented for this snapshot. It persists each anchor string **verbatim** into `line_lineage.anchor` ($1 \dots N$). The engine **never** recomputes anchors using an independent hash assignment function (such as `lineHashesPure`) during materialization. This guarantees that `getSnapshot` returns the exact anchors presented to the model, eliminating Downstream #62 anchor reshuffling on identical content.
+           `materializeSnapshot(db, path, content, hashes)` receives the authoritative presentation anchor array `hashes` computed/presented for this snapshot. It persists each anchor string **verbatim** into `line_lineage.anchor` ($1 \dots N$). The engine **never** recomputes anchors using an independent hash assignment function (such as `contentOnlyHashes`) during materialization. This guarantees that `getSnapshot` returns the exact anchors presented to the model, eliminating Downstream #62 anchor reshuffling on identical content.
         5. **Authoritative Lease Upsert**:
            Served lines are upserted into `served_leases` with `retired_at = NULL`.
         6. `COMMIT`.

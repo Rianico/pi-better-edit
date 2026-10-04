@@ -1,6 +1,6 @@
 # Hashline Edit
 
-A hash-anchored file-editing extension for the pi-coding-agent: every line of a file carries a stable, content-derived 4-char hash, and replace operations anchor on hashes, failing closed rather than relocating silently.
+A hash-anchored file-editing extension for the pi-coding-agent: every line of a file carries a stable 4-char hash derived from (canonical path, line content), and replace operations anchor on hashes, failing closed rather than relocating silently.
 
 ## Language
 
@@ -17,7 +17,7 @@ The separation of responsibilities: the tool owns verification of what the model
 _Avoid_: —
 
 **anchor philosophy**:
-The project's core contract: per-line anchors are content-derived with ASCII whitespace (`[ \t\r\n]`) stripped, stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005).
+The project's core contract: per-line anchors derive from the file's canonical path and the line's content (`canon`: ASCII whitespace (`[ \t\r\n]`) stripped), stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005).
 
 **anchor staleness**:
 An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon` miss). Reported as `[E_STALE_ANCHOR]` with the current rows served; the model retries with those rows (no `read` needed).

@@ -22,3 +22,4 @@ Anchors derive from `(canonical path, line content)`: `fileBaseIndex(canon, xxh3
 - Tests pin the §1 residual as a bounded inequality plus a deterministic same-position guard and a deliberately colliding fixture pair, each citing this ADR — never a lucky zero.
 - `HASH_STORE_VERSION` advances 7 → 8 as the record-only schema marker.
 - Undo restores after upgrade serve current-generation anchors; the bytes restored are unchanged, only the anchor set is re-derived.
+- The served admission budget (`SERVED_MAX_LINES`, T7) is independent of the anchor space: neither is derived from the other, so a width change moves the ceiling but never the memory budget.
