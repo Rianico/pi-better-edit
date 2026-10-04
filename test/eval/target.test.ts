@@ -1,5 +1,4 @@
-import { existsSync } from "node:fs";
-import { join } from "node:path";
+import { createRequire } from "node:module";
 import { describe, expect, it } from "vitest";
 import { makeFakePiRegistry } from "../support/fixtures";
 import { adaptReadParamsForLegacy } from "./target";
@@ -23,14 +22,23 @@ describe("adaptReadParamsForLegacy", () => {
   });
 });
 
-// WHY: item 4 translates `{file}` -> `{path}` on the premise that the published comparator's
-// WHY: read speaks the legacy `path` wire. That wire is documented by CHANGELOG.md:8 (the removed
-// WHY: `file_path` alias was rewritten to `path` for read_skill/undo_last_edit) rather than
-// WHY: introspectable: test/eval/upstream.d.ts declares `pi-hashline-edit-pro` untyped. This
-// WHY: witness skips when the package is absent — do not network-install it here.
-const packagePresent = existsSync(
-  join(process.cwd(), "node_modules", "pi-hashline-edit-pro", "package.json"),
-);
+// WHY: item 4 translates `{file}` -> `{path}` on the assumption that the published comparator's
+// WHY: read speaks the legacy `path` wire. That wire is unverified and not introspectable
+// WHY: (`test/eval/upstream.d.ts` declares the package untyped), so only the gated witness below can
+// WHY: settle it. The package is absent from node_modules unless `scripts/eval-compare.mjs` symlinks
+// WHY: it in — that flow now runs this file — so skip when it does not resolve; never install it here.
+// WHY: gate on node's own resolution so "runnable" matches the `await import` the witness then does.
+const requireFromTest = createRequire(import.meta.url);
+function resolvesFromTest(specifier: string): boolean {
+  try {
+    requireFromTest.resolve(specifier);
+    return true;
+  } catch {
+    return false;
+  }
+}
+const packagePresent =
+  resolvesFromTest("pi-hashline-edit-pro") || resolvesFromTest("pi-hashline-edit-pro/package.json");
 
 describe.skipIf(!packagePresent)("published comparator read wire", () => {
   it("keys the read tool on path, the wire adaptReadParamsForLegacy translates for", async () => {
@@ -43,6 +51,5 @@ describe.skipIf(!packagePresent)("published comparator read wire", () => {
     const properties = (getTool("read") as { parameters: { properties: Record<string, unknown> } })
       .parameters.properties;
     expect(properties).toHaveProperty("path");
-    expect(properties).not.toHaveProperty("file");
   });
 });

@@ -46,6 +46,9 @@ export function regRead(pi: ExtensionAPI): void {
     renderCall: (args: ReadRenderArgs, theme, context) =>
       builtinRenderCall({ ...args, path: args?.file ?? args?.path }, theme, context),
     renderResult: (result, options, theme, context) => {
+      // SAFETY: renderers receive raw call args, not the validated payload, so `context.args` may
+      // SAFETY: carry a legacy `path` that `Static<TParams>` does not model; this cast reads only
+      // SAFETY: `file`/`path`, both of which the renderers below already key on.
       const args = context.args as ReadRenderArgs;
       return builtinRenderResult(result, options, theme, {
         ...context,
