@@ -446,7 +446,7 @@ const OP_KEY_NEEDLE =
 // key) -- but NOT docs/agents/*.md, which are LIVE agent instructions
 // (issue-tracker, triage-labels, domain), nor docs/spec/, which holds the
 // LIVE architecture spec agents are pointed at;
-// CHANGELOG.md (release history); benchmarks/ (measurement scripts); the
+// CHANGELOG.md (release history); the repo-root index.ts (re-export barrel). OUT: test/ — refusal fixtures plus
 // repo-root index.ts (re-export barrel). OUT: test/ — refusal fixtures plus
 // this guard's own prose (not shrink-only, so no re-assertion is owed).
 // THE GUARD'S STATED CONTRACT: per-file membership, per surface.
