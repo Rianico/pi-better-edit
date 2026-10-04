@@ -1,10 +1,16 @@
 import { describe, it, expect } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
-import { withTempFile, getText, extractHash } from "../support/fixtures";
-import { resolveTarget, type EvalTarget } from "./target";
-
-const RUN = process.env.RUN_EVAL === "1";
+import register from "../../index";
+import { lineHashes } from "../../src/hashline";
+import { version } from "../../package.json";
+import {
+  withTempFile,
+  getText,
+  extractHash,
+  makeFakePiRegistry,
+  testSessionManager,
+} from "../support/fixtures";
 
 interface Call {
   tool: string;
@@ -21,6 +27,11 @@ interface ScenarioResult {
 
 interface Ctx {
   cwd: string;
+}
+
+function codeOf(text: string): string | undefined {
+  const m = text.match(/\[E_[A-Z_]+\]/);
+  return m ? m[0] : undefined;
 }
 
 async function call(
@@ -43,44 +54,27 @@ async function call(
   }
 }
 
-function codeOf(text: string): string | undefined {
-  return text.match(/\[E_[A-Z_]+\]/)?.[0];
-}
-
 function readAnchor(text: string, marker: string): string {
   const line = text.split("\n").find((l) => l.includes(marker));
   expect(line, `read output should contain "${marker}"`).toBeDefined();
   return extractHash(line!);
 }
 
-function setupTarget(
-  cwd: string,
-  target: EvalTarget,
-): {
+function setupTarget(cwd: string): {
   ctx: Ctx;
   getTool: (name: string) => unknown;
   handlers: Map<string, (...args: unknown[]) => unknown>;
 } {
+  const { pi, getTool } = makeFakePiRegistry();
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
-  const tools = new Map<string, unknown>();
-  const pi = {
-    registerTool(t: any) {
-      const origExecute = t.execute;
-      t.execute = function (callId: string, params: any, signal: any, onUpdate: any, ctx: any) {
-        const adapted = target.adaptEditParams ? target.adaptEditParams(t.name, params) : params;
-        return origExecute.call(this, callId, adapted, signal, onUpdate, ctx);
-      };
-      tools.set(t.name, t);
-    },
-    registerCommand() {},
-    on(event: string, handler: (...args: unknown[]) => unknown) {
-      handlers.set(event, handler);
-    },
-    getActiveTools: () => [] as string[],
-    setActiveTools() {},
-  } as any;
-  target.register(pi);
-  return { ctx: { cwd } as Ctx, getTool: (n) => tools.get(n), handlers };
+  const origOn = pi.on.bind(pi);
+  const wrapped = ((event: string, handler: (...args: unknown[]) => unknown) => {
+    handlers.set(event, handler);
+    return origOn(event, handler);
+  }) as typeof pi.on;
+  pi.on = wrapped;
+  register(pi);
+  return { ctx: { cwd, sessionManager: testSessionManager } as Ctx, getTool, handlers };
 }
 
 async function deliverDiff(
@@ -113,13 +107,9 @@ function sessionCtx(cwd: string, id: string): Ctx {
   return { cwd, sessionManager: { getSessionId: () => id } } as Ctx;
 }
 
-const describeGate = RUN ? describe : describe.skip;
-
-describeGate("EVAL comparison battery", () => {
-  it("runs the battery", async () => {
-    const target = await resolveTarget();
+describe("tool battery (deterministic edit scenarios)", () => {
+  it("runs all 27 scenarios without harness errors", async () => {
     const results: ScenarioResult[] = [];
-
     await withTempFile("b1.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const rec: ScenarioResult = {
         scenario: "B1 single-line replace",
@@ -127,19 +117,13 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b1.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b1.ts" }, ctx);
       const anchor = readAnchor(r1.text, "│bbb");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b1.ts", edits: [{ anchor_from: anchor, anchor_to: anchor, text: "BBB" }] },
         ctx,
       );
@@ -155,20 +139,14 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b2.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b2.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       const b = readAnchor(r1.text, "│ccc");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b2.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY" }] },
         ctx,
       );
@@ -184,21 +162,15 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b3.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b3.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       const b = readAnchor(r1.text, "│ddd");
       await writeFile(path, "aaa\nbbb\nCCC\nddd\n", "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b3.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY\nZ" }] },
         ctx,
       );
@@ -215,21 +187,15 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b4.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b4.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       const b = readAnchor(r1.text, "│ccc");
       await writeFile(path, "AAA\nbbb\nccc\nddd\n", "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b4.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY" }] },
         ctx,
       );
@@ -245,21 +211,15 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b5.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b5.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const b = readAnchor(r1.text, "│c");
       await writeFile(path, "b\nc\nd\ne\n", "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b5.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY" }] },
         ctx,
       );
@@ -276,22 +236,16 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b6.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b6.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const b = readAnchor(r1.text, "│c");
       await writeFile(path, "a\nB\nc\nd\n", "utf-8");
       await writeFile(path, "a\nb\nc\nd\n", "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b6.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY" }] },
         ctx,
       );
@@ -311,27 +265,15 @@ describeGate("EVAL comparison battery", () => {
           calls: [],
           finalContent: "",
         };
-        const { ctx, getTool } = setupTarget(cwd, target);
-        const r1 = await call(
-          rec,
-          getTool(target.toolNames.read),
-          target.toolNames.read,
-          { path: "b7.ts", limit: 3 },
-          ctx,
-        );
-        const r2 = await call(
-          rec,
-          getTool(target.toolNames.read),
-          target.toolNames.read,
-          { path: "b7.ts", offset: 7 },
-          ctx,
-        );
+        const { ctx, getTool } = setupTarget(cwd);
+        const r1 = await call(rec, getTool("read"), "read", { path: "b7.ts", limit: 3 }, ctx);
+        const r2 = await call(rec, getTool("read"), "read", { path: "b7.ts", offset: 7 }, ctx);
         const a = readAnchor(r1.text, "│l3");
         const b = readAnchor(r2.text, "│l7");
         const e1 = await call(
           rec,
-          getTool(target.toolNames.edit),
-          target.toolNames.edit,
+          getTool("edit"),
+          "edit",
           { file: "b7.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY\nZ\nW\nV" }] },
           ctx,
         );
@@ -349,12 +291,12 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const hashes = await target.lineHashes("aaa\nbbb\nccc\n", join(cwd, "b8.ts"));
+      const { ctx, getTool } = setupTarget(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "b8.ts"));
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b8.ts", edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }] },
         ctx,
       );
@@ -371,20 +313,14 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b9.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b9.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       await writeFile(path, "aaa\nBBB\nccc\n", "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b9.ts", edits: [{ anchor_from: a, anchor_to: a, text: "X" }] },
         ctx,
       );
@@ -401,21 +337,15 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b10.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b10.ts" }, ctx);
       const a = readAnchor(r1.text, "│a");
       const b = readAnchor(r1.text, "│d");
       await writeFile(path, "a\nb\nb\nd\n", "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b10.ts", edits: [{ anchor_from: a, anchor_to: b, text: "X\nY\nZ\nW" }] },
         ctx,
       );
@@ -432,19 +362,13 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b11.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b11.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b11.ts", edits: [{ anchor_from: a, anchor_to: a, text: "bbb" }] },
         ctx,
       );
@@ -460,20 +384,14 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b12.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b12.ts" }, ctx);
       const a = readAnchor(r1.text, "│a");
       await writeFile(path, "a\nb\nc\nD\n", "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b12.ts", edits: [{ anchor_from: a, anchor_to: a, text: "a" }] },
         ctx,
       );
@@ -489,24 +407,18 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool, handlers } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b13.ts" },
-        ctx,
-      );
+      const { ctx, getTool, handlers } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b13.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b13.ts", edits: [{ anchor_from: a, anchor_to: a, text: "B" }] },
         ctx,
       );
       const diff = await deliverDiff(handlers, ctx, {
-        toolName: target.toolNames.edit,
+        toolName: "edit",
         isError: false,
         input: { file: "b13.ts" },
         details: e1.r?.details,
@@ -517,8 +429,8 @@ describeGate("EVAL comparison battery", () => {
         const plusHash = plusRow.replace(/^\+/, "").split("│")[0]!;
         const e2 = await call(
           rec,
-          getTool(target.toolNames.edit),
-          target.toolNames.edit,
+          getTool("edit"),
+          "edit",
           { file: "b13.ts", edits: [{ anchor_from: plusHash, anchor_to: plusHash, text: "B2" }] },
           ctx,
         );
@@ -540,20 +452,14 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b14.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b14.ts" }, ctx);
       const emptyHash = r1.text.split("\n")[0]!.split("│")[0]!;
-      expect(emptyHash).toMatch(/^[A-Za-z0-9]{3}$/);
+      expect(emptyHash).toMatch(/^[A-Za-z0-9]{4}$/);
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         {
           file: "b14.ts",
           edits: [{ anchor_from: emptyHash, anchor_to: emptyHash, text: "first\nsecond" }],
@@ -576,14 +482,8 @@ describeGate("EVAL comparison battery", () => {
           calls: [],
           finalContent: "",
         };
-        const { ctx, getTool } = setupTarget(cwd, target);
-        const r1 = await call(
-          rec,
-          getTool(target.toolNames.read),
-          target.toolNames.read,
-          { path: "b15.ts" },
-          ctx,
-        );
+        const { ctx, getTool } = setupTarget(cwd);
+        const r1 = await call(rec, getTool("read"), "read", { path: "b15.ts" }, ctx);
         const a = readAnchor(r1.text, "│line 1");
         const b = readAnchor(r1.text, "│line 200");
         await writeFile(
@@ -595,8 +495,8 @@ describeGate("EVAL comparison battery", () => {
         );
         const e1 = await call(
           rec,
-          getTool(target.toolNames.edit),
-          target.toolNames.edit,
+          getTool("edit"),
+          "edit",
           { file: "b15.ts", edits: [{ anchor_from: a, anchor_to: b, text: "replacement" }] },
           ctx,
         );
@@ -614,23 +514,17 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b16.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b16.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b16.ts", edits: [{ anchor_from: a, anchor_to: a, text: "BBB" }] },
         ctx,
       );
-      const u1 = await call(rec, getTool(target.toolNames.undo), "undo", { path: "b16.ts" }, ctx);
+      const u1 = await call(rec, getTool("undo_last_edit"), "undo", { path: "b16.ts" }, ctx);
       rec.outcome = u1.ok ? "success" : "rejected";
       rec.code = u1.code;
       rec.finalContent = await readFile(path, "utf-8");
@@ -644,24 +538,18 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b16b.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b16b.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b16b.ts", edits: [{ anchor_from: a, anchor_to: a, text: "BBB" }] },
         ctx,
       );
       await writeFile(path, "AAA\nBBB\nccc\n", "utf-8");
-      const u1 = await call(rec, getTool(target.toolNames.undo), "undo", { path: "b16b.ts" }, ctx);
+      const u1 = await call(rec, getTool("undo_last_edit"), "undo", { path: "b16b.ts" }, ctx);
       rec.outcome = u1.ok ? "success" : "rejected";
       rec.code = u1.code;
       rec.finalContent = await readFile(path, "utf-8");
@@ -675,20 +563,14 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b17.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b17.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const b = readAnchor(r1.text, "│c");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b17.ts", edits: [{ anchor_from: b, anchor_to: a, text: "X\nY" }] },
         ctx,
       );
@@ -705,19 +587,13 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b18.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b18.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b18.ts", edits: [{ anchor_from: a, anchor_to: a, text: "a\nX" }] },
         ctx,
       );
@@ -734,22 +610,16 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { getTool, handlers } = setupTarget(cwd, target);
+      const { getTool, handlers } = setupTarget(cwd);
       const mainCtx = sessionCtx(cwd, "eval-main");
       const subCtx = sessionCtx(cwd, "eval-sub");
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b19.ts" },
-        mainCtx,
-      );
+      const r1 = await call(rec, getTool("read"), "read", { path: "b19.ts" }, mainCtx);
       const a = readAnchor(r1.text, "│bbb");
       await fireSessionStart(handlers, subCtx);
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b19.ts", edits: [{ anchor_from: a, anchor_to: a, text: "BBB" }] },
         mainCtx,
       );
@@ -766,36 +636,24 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { getTool, handlers } = setupTarget(cwd, target);
+      const { getTool, handlers } = setupTarget(cwd);
       const mainCtx = sessionCtx(cwd, "eval-main");
       const subCtx = sessionCtx(cwd, "eval-sub");
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b20.ts" },
-        mainCtx,
-      );
+      const r1 = await call(rec, getTool("read"), "read", { path: "b20.ts" }, mainCtx);
       const aC = readAnchor(r1.text, "│c");
       await fireSessionStart(handlers, subCtx);
-      const s1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b20.ts", limit: 2 },
-        subCtx,
-      );
+      const s1 = await call(rec, getTool("read"), "read", { path: "b20.ts", limit: 2 }, subCtx);
       const sB = readAnchor(s1.text, "│b");
       const se = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b20.ts", edits: [{ anchor_from: sB, anchor_to: sB, text: "B" }] },
         subCtx,
       );
       if (se.ok) {
         await deliverDiff(handlers, subCtx, {
-          toolName: target.toolNames.edit,
+          toolName: "edit",
           isError: false,
           input: { file: "b20.ts" },
           details: se.r?.details,
@@ -804,8 +662,8 @@ describeGate("EVAL comparison battery", () => {
       }
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b20.ts", edits: [{ anchor_from: aC, anchor_to: aC, text: "C" }] },
         mainCtx,
       );
@@ -822,22 +680,16 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { getTool, handlers } = setupTarget(cwd, target);
+      const { getTool, handlers } = setupTarget(cwd);
       const mainCtx = sessionCtx(cwd, "eval-main");
       await fireSessionStart(handlers, mainCtx);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b21.ts" },
-        mainCtx,
-      );
+      const r1 = await call(rec, getTool("read"), "read", { path: "b21.ts" }, mainCtx);
       const a = readAnchor(r1.text, "│bbb");
       await fireSessionStart(handlers, mainCtx);
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b21.ts", edits: [{ anchor_from: a, anchor_to: a, text: "BBB" }] },
         mainCtx,
       );
@@ -854,21 +706,15 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { getTool } = setupTarget(cwd, target);
+      const { getTool } = setupTarget(cwd);
       const mainCtx = sessionCtx(cwd, "eval-main");
       const subCtx = sessionCtx(cwd, "eval-sub");
-      await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b22.ts" },
-        subCtx,
-      );
-      const hashes = await target.lineHashes("a\nb\nc\n", join(cwd, "b22.ts"));
+      await call(rec, getTool("read"), "read", { path: "b22.ts" }, subCtx);
+      const hashes = await lineHashes("a\nb\nc\n", join(cwd, "b22.ts"));
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b22.ts", edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "B" }] },
         mainCtx,
       );
@@ -889,20 +735,14 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b23.cpp" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b23.cpp" }, ctx);
       const line2Hash = readAnchor(r1.text, "│\tif (x > 0) {");
       await writeFile(path, B23_F2_ONLY, "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         {
           file: "b23.cpp",
           edits: [{ anchor_from: line2Hash, anchor_to: line2Hash, text: "\tif (x > 100) {" }],
@@ -927,21 +767,15 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b24.js" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b24.js" }, ctx);
       const a = readAnchor(r1.text, "│function alpha() {");
       const b = readAnchor(r1.text, "│} // end alpha");
       await writeFile(path, B24_SWAPPED, "utf-8");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         {
           file: "b24.js",
           edits: [
@@ -969,19 +803,13 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b25a.ts" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b25a.ts" }, ctx);
       const anchorBravo = readAnchor(r1.text, "│bravo");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         {
           file: "b25b.ts",
           edits: [{ anchor_from: anchorBravo, anchor_to: anchorBravo, text: "MODIFIED" }],
@@ -1001,19 +829,13 @@ describeGate("EVAL comparison battery", () => {
         calls: [],
         finalContent: "",
       };
-      const { ctx, getTool } = setupTarget(cwd, target);
-      const r1 = await call(
-        rec,
-        getTool(target.toolNames.read),
-        target.toolNames.read,
-        { path: "b26.txt" },
-        ctx,
-      );
+      const { ctx, getTool } = setupTarget(cwd);
+      const r1 = await call(rec, getTool("read"), "read", { path: "b26.txt" }, ctx);
       const anchor = readAnchor(r1.text, "│second");
       const e1 = await call(
         rec,
-        getTool(target.toolNames.edit),
-        target.toolNames.edit,
+        getTool("edit"),
+        "edit",
         { file: "b26.txt", edits: [{ anchor_from: anchor, anchor_to: anchor, text: "SECOND" }] },
         ctx,
       );
@@ -1023,39 +845,7 @@ describeGate("EVAL comparison battery", () => {
       results.push(rec);
     });
 
-    const totalCalls = results.reduce((s, r) => s + r.calls.length, 0);
-    const totalChars = results.reduce((s, r) => s + r.calls.reduce((t, c) => t + c.outLen, 0), 0);
-    const agg = {
-      version: target.version,
-      scenarios: results.length,
-      byOutcome: results.reduce<Record<string, number>>((m, r) => {
-        m[r.outcome] = (m[r.outcome] ?? 0) + 1;
-        return m;
-      }, {}),
-      totalCalls,
-      totalChars,
-    };
-    const outLines: string[] = [];
-    for (const r of results) {
-      outLines.push(
-        "EVAL_RESULT " +
-          JSON.stringify({
-            scenario: r.scenario,
-            outcome: r.outcome,
-            code: r.code ?? null,
-            calls: r.calls.map((c) => c.tool),
-            callsLen: r.calls.reduce((t, c) => t + c.outLen, 0),
-            finalContent: r.finalContent,
-          }),
-      );
-    }
-    outLines.push("EVAL_AGGREGATE " + JSON.stringify(agg));
-    const evalOut = process.env.EVAL_OUT;
-    if (evalOut) {
-      await writeFile(evalOut, outLines.join("\n") + "\n", "utf-8");
-    }
-    for (const line of outLines) {
-      console.log(line);
-    }
+    expect(results).toHaveLength(27);
+    expect(results.filter((r) => r.outcome === "error")).toEqual([]);
   });
 });

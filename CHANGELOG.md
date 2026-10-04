@@ -26,6 +26,7 @@
 * **hashline:** restore measured width-3 evidence with revision scope instead of repainting it, drive fixture differentials from the fixture token with width-5 tripwires, comment-proof the capacity source pins, generalize the class-quantifier arm past `3|4`, and fix the ADR-0019 supersession link. Docs plus tests only; no shipped logic changed. (#20)
 * **hashline:** restore three revision-pinned archive quotes verbatim, record the width-3 digit rate beside its derived live figure, caveat token claims via ADR-0029, and pin the quantifier off-width filter with a live-width control. Docs plus tests only. (#20)
 * **benchmarks:** remove the in-repo benchmark suite and its wiring — `benchmarks/`, eval/compare scripts, package scripts, config entries and the README project-benchmark surfaces. The independent third-party benchmark keeps its own section. (#20)
+* **e2e:** re-home the deterministic edit battery out of the eval gate — the same 27 local scenarios run counted in `pnpm test` through the validated registry; the package/upstream comparison target is dropped with the benchmark suite. (#20)
 
 ## [2.6.0] - 2026-10-03
 
