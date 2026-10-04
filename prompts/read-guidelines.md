@@ -1,5 +1,5 @@
 - read: call only when you need information the tool never served you — a page you never saw, content past the auto-read diff.
 - read: need several blocks, or both boundaries of one replacement? put every range in ONE call: `windows: [{offset, limit}, ...]` — a single range is also legal as a one-entry array, or as top-level `offset`/`limit` — each listed window is served in that turn, so its anchors are usable in the same edit.
 - read: served rows may cover an expanded window when AST symbol expansion is active (small reads widen to the enclosing symbol) — anchors always match the rows shown, so copy them from this response.
-- read: pass `mode: "verbatim"` for plain content with no anchors when you will not edit the file — a config value, docs, or a README for reference; omit it when you intend to edit so the rows carry anchors.
+- read: pass `mode: "verbatim"` for plain content with no anchors when you will not edit the file — a config value, docs, a README, or skill content (a SKILL.md or any file in its directory) for reference; omit it when you intend to edit so the rows carry anchors.
 - read: send the file as `file`, like `edit` does.

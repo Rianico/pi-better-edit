@@ -110,16 +110,12 @@ _Avoid_: the `blocked hashes` term below (the hash-allocation guard, not a lease
 The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, canon_hash, anchor)`, written inside `BEGIN IMMEDIATE` for every materialized version held in `file_snapshots`. It is the sole coordinate authority: an edit looks its leased `line_id` up here and either rebases to the new coordinate or fails closed. A batch's commit writes it directly from the in-memory working buffer — surviving lines keep the `line_id` they already carry and only lines the batch created take fresh ids from `line_id_counters` — so re-pairing `S_latest` against the new content (`pairSnapshots`) stays a read-path mechanism, used where there is content to align and no working buffer to consult.
 _Avoid_: epoch snapshot, served hash map
 
-**read_skill**:
-To read a file's content as plain text — no hash prefixes, no served rows. The model's tool for loading skill content (SKILL.md or any file in its directory) to invoke and consume; `read` in its default `served` mode remains the hashed read for edit targets.
-_Avoid_: plain read, skill tool
-
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. Both `read_skill` and `read` with `mode: "verbatim"` are reference reads.
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs.
 _Avoid_: unmanaged read
 
 **tool-name-as-intent**:
-The principle that a tool's name encodes the model's intent — `read` (hashed, editable) vs `read_skill` (plain, consumable) — so the model always knows what it's getting. `read` carries one in-payload exception: `mode: "verbatim"` switches it to the plain, consumable contract, so the anchored default stays editing-safe.
+The principle that a tool's name encodes the model's intent — now `read` (served, hashed, editable) vs `read` (verbatim, plain, consumable) — so the model always knows what it's getting; the `mode` payload field selects between the two contracts, with `served` as the editing-safe default.
 _Avoid_: —
 
 **payload contract**:

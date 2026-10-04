@@ -2,7 +2,6 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { regEdit } from "./src/edit.js";
 import { regEditUndo } from "./src/edit-undo.js";
 import { regRead } from "./src/read.js";
-import { regReadSkill } from "./src/read-skill.js";
 import { registerWriteHook } from "./src/write-hook.js";
 import { createLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 import { registerLensCommand } from "./src/integrations/pi-lens/command.js";
@@ -13,7 +12,6 @@ export { createLifecycleHooks, registerLifecycleHooks } from "./src/lifecycle-ho
 
 export default function (pi: ExtensionAPI): void {
   regRead(pi);
-  regReadSkill(pi);
 
   regEdit(pi);
   regEditUndo(pi);
