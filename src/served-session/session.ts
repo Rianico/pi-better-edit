@@ -10,6 +10,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "../hashline/alphabet.js";
+import { CANON_VERSION } from "../hashline/hash.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import {
   loadHashStore,
@@ -208,8 +209,10 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     "SELECT anchor, canon_hash FROM served_leases WHERE session_id = ? AND file_path = ?",
   );
   const snapshotByHashStmt = db.prepare(
+    // WHY: provenance over key: a poisoned current-key row from a pre-bump writer is never
+    // WHY: a pairing source — the grant below binds lease line_ids from this row's lineage.
     "SELECT snapshot_id, snapshot_hash FROM file_snapshots " +
-      "WHERE path = ? AND snapshot_hash = ? AND committed = 1",
+      "WHERE path = ? AND snapshot_hash = ? AND committed = 1 AND canon_version = ?",
   );
   const leaseGetStmt = db.prepare(
     "SELECT session_id, file_path, anchor, line_id, canon_hash, served_snapshot_hash, " +
@@ -298,7 +301,8 @@ function buildStmts(db: DatabaseSync): ServedStmts {
         servedPruneOlderThanStmt.run(updatedBefore);
       });
     },
-    snapshotByHash: (...params) => snapshotByHashStmt.get(...params) as LeaseSnapshot | undefined,
+    snapshotByHash: (path: string, snapshotHash: string) =>
+      snapshotByHashStmt.get(path, snapshotHash, CANON_VERSION) as LeaseSnapshot | undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     lineageAnchorsOf: (...params) =>
       lineageAnchorsStmt.all(...params) as unknown as LeaseLineageRow[],

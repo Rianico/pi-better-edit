@@ -197,16 +197,17 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   // WHY: rows written before the column read as 0 (unknown/foreign), never current.
   addColumnIfMissing(db, "file_snapshots", "canon_version", "INTEGER NOT NULL DEFAULT 0");
   // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave
-  // WHY: foreign-generation leases, snapshots, lineage, or orphan mirrors behind.
-  // WHY: Current-generation rows survive untouched (same-version sessions keep
-  // WHY: their leases); mirrors rebuild on the next serve. Runs wherever the
-  // WHY: schema is ensured, so every store open sweeps.
+  // WHY: unknown/foreign-generation snapshots, orphan lineage, or dangling leases
+  // WHY: behind. Current-generation rows survive untouched (same-version sessions
+  // WHY: keep their leases). The served mirror is TTL-owned, never swept: its
+  // WHY: snapshotId is a load-epoch string (`v2|<path>|<ino>|...`), not a
+  // WHY: file_snapshots id, so no generation predicate can judge it — TTL pruning
+  // WHY: at open owns it, and an absent mirror is recoverable only by a fresh serve.
+  // WHY: Runs wherever the schema is ensured, so every store open sweeps.
   const currentPrefix = `${CANON_VERSION}:%`;
-  // WHY: tables created later in the fresh-build path (served_leases, served) may
-  // WHY: not exist yet when this runs — the sweep touches only what is there.
+  // WHY: tables created later in the fresh-build path (served_leases) may not exist
+  // WHY: yet when this runs — the sweep touches only what is there.
   const hasTable = (table: string): boolean => tableColumns(db, table).size > 0;
-  // WHY: an ancient pre-session-keyed `served` shell has no snapshotId column — the
-  // WHY: compat rebuild below owns that table, so the sweep skips what it cannot judge.
   if (hasTable("served_leases")) {
     db.exec(`DELETE FROM served_leases WHERE served_snapshot_hash NOT LIKE '${currentPrefix}'`);
   }
@@ -214,9 +215,13 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   db.exec(
     "DELETE FROM line_lineage WHERE snapshot_id NOT IN (SELECT snapshot_id FROM file_snapshots)",
   );
-  if (hasTable("served") && tableColumns(db, "served").has("snapshotId")) {
+  // WHY: one provenance rule — a lease that names no surviving snapshot is dangling
+  // WHY: (same-generation pre-column rows read as canon 0 and are swept above: a
+  // WHY: one-time pairing-baseline reset). The orphan delete runs in the same open
+  // WHY: as the snapshot sweep, so no un-retired-but-lineage-less lease survives it.
+  if (hasTable("served_leases")) {
     db.exec(
-      "DELETE FROM served WHERE snapshotId IS NOT NULL AND CAST(snapshotId AS INTEGER) NOT IN (SELECT snapshot_id FROM file_snapshots)",
+      "DELETE FROM served_leases WHERE served_snapshot_hash NOT IN (SELECT snapshot_hash FROM file_snapshots)",
     );
   }
 }

@@ -223,7 +223,11 @@ export function positionsByIdentity(
 ): Map<number, number> {
   const stmts = snapshotStmts(store.db);
   const row = stmts.findSnapshot(path, cacheKey(contentChecksum(content)));
-  if (row) {
+  // WHY: single-owner generation gate — findSnapshot returns the row regardless of
+  // WHY: provenance, so this reader applies the same canon_version miss as getSnapshot:
+  // WHY: a poisoned current-key row is never a pairing source. The miss falls through
+  // WHY: to the generation-gated latestSnapshot below.
+  if (row && row.canon_version === CANON_VERSION) {
     const map = new Map<number, number>();
     for (const entry of stmts.lineageIdentities(row.snapshot_id)) {
       map.set(entry.line_id, entry.line_number);
