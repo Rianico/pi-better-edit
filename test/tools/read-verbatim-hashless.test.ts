@@ -76,6 +76,8 @@ describe("verbatim hashless seam", () => {
       home.testPath,
     );
     expect(result.text).toContain("beta");
+    expect(result.text).not.toMatch(/^[A-Za-z0-9]{3}│/m);
+    expect(result.served).toEqual([]);
   });
 
   it("opens no anchor store for a verbatim read, and does for a served read", async () => {

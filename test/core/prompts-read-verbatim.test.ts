@@ -7,6 +7,8 @@ describe("read prompts serve mode: verbatim", () => {
     expect(description).toContain('mode: "verbatim"');
     expect(description).toContain("HASH│content");
     expect(description).not.toContain("{{");
+    expect(description).not.toContain("shares the 238,328-line");
+    expect(description).toContain("is not capped");
   });
 
   it("loads five read guidelines including the verbatim bullet", () => {

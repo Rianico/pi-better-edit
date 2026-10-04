@@ -92,9 +92,8 @@ async function emptyFilePreview(
 ): Promise<{ text: string; served: ServedRow[] }> {
   if (verbatim) return { text: "[File is empty.]", served: [] };
   if (startLine === 1) {
-    const allHashes = verbatim
-      ? (precomputedHashes ?? [])
-      : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
+    const allHashes =
+      precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
     const emptyLineHash = allHashes[0]!;
     return {
       text: `${emptyLineHash}${hashSep}\n[File is empty. Use edit to insert content.]`,
