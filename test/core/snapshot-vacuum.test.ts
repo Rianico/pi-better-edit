@@ -4,6 +4,7 @@ import { join } from "path";
 import type { DatabaseSync } from "node:sqlite";
 
 import { loadHashStore, shutdownHashStore, type HashStore } from "../../src/hash-store";
+import { CANON_VERSION } from "../../src/hashline";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { readNormFile } from "../../src/file-reader";
 import { createSessionHandle, loadLeases } from "../../src/served-session/index.js";
@@ -46,10 +47,10 @@ function seedVersion(
 ): number {
   const row = db
     .prepare(
-      "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed) " +
-        "VALUES (?, ?, ?, ?, 1) RETURNING snapshot_id",
+      "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) " +
+        "VALUES (?, ?, ?, ?, 1, ?) RETURNING snapshot_id",
     )
-    .get(path, hash, lineCount, createdAt) as { snapshot_id: number };
+    .get(path, hash, lineCount, createdAt, CANON_VERSION) as { snapshot_id: number };
   db.prepare(
     "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
       "VALUES (?, 1, ?, ?, ?)",
@@ -119,10 +120,10 @@ function seedAnchoredSnapshot(
 ): number {
   const row = db
     .prepare(
-      "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed) " +
-        "VALUES (?, ?, ?, ?, 1) RETURNING snapshot_id",
+      "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) " +
+        "VALUES (?, ?, ?, ?, 1, ?) RETURNING snapshot_id",
     )
-    .get(path, hash, anchors.length, createdAt) as { snapshot_id: number };
+    .get(path, hash, anchors.length, createdAt, CANON_VERSION) as { snapshot_id: number };
   const insert = db.prepare(
     "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
       "VALUES (?, ?, ?, ?, ?)",

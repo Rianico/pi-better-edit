@@ -39,6 +39,7 @@
 * **e2e:** pin noop byte-identity and fix the T4b review residuals — B11/B12 assert `finalContent` equals the captured pre-edit bytes instead of an inert substring, the battery row fills its fourth cell, and the scope comment drops its duplicated clause. (#20)
 
 * **hashline:** make the file-scope guarantees refutable — C1 asserts a measured intersection bound plus a deterministic same-position guard with a fixed colliding pair, a runtime shared spelling is shown resolving lease-scoped, C4 pins content-keyed verification against file-scoped allocation, and the tautological probe is deleted. Test-only plus a trailing-separator seed fix. (#20)
+* **hashstore:** cover pre-bump leases and poisoned snapshots — pre-bump lease sets plus mirrors refuse cold and after a fresh read (with a positive control that the file still edits), poisoned current-generation rows are not served and are swept, planted foreign-generation rows miss both lookups, and the C1 cap WHY states the zero regime with the companion carrying refutability. (#20)
 ## [2.6.0] - 2026-10-03
 
 ### Features

@@ -213,13 +213,14 @@ describe("hash-store — concurrency (issue #10)", () => {
       second.exec("BEGIN IMMEDIATE");
       second
         .prepare(
-          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed) VALUES (?, ?, ?, ?, 1)",
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) VALUES (?, ?, ?, ?, 1, ?)",
         )
         .run(
           "/b.ts",
           `${CANON_VERSION}:${contentChecksum("beta\n")}`,
           splitLines("beta\n").length,
           Date.now(),
+          CANON_VERSION,
         );
       const snapshotId = (
         second.prepare("SELECT snapshot_id FROM file_snapshots WHERE path = ?").get("/b.ts") as {
@@ -700,7 +701,15 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       ).run();
       db.close();
 
-      expect(survivors).toEqual(seeded);
+      // WHY: generation discipline — unknown-generation snapshot/lineage/lease state is
+      // WHY: swept at open (it can never verify), while undo, counters, and session
+      // WHY: metadata survive untouched.
+      expect(survivors).toEqual({
+        ...seeded,
+        file_snapshots: [],
+        line_lineage: [],
+        served_leases: [],
+      });
       expect(counter.next_id).toBe(42);
       expect(version.value).toBe(String(HASH_STORE_VERSION));
     });
@@ -729,7 +738,15 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       for (const table of V7_TABLES) {
         expect(tables.filter((name) => name === table)).toEqual([table]);
       }
-      expect(survivors).toEqual(seeded);
+      // WHY: the open-time sweep is idempotent — the first open removes the
+      // WHY: unknown-generation anchor state, later opens find nothing to delete,
+      // WHY: and non-anchor state is untouched throughout.
+      expect(survivors).toEqual({
+        ...seeded,
+        file_snapshots: [],
+        line_lineage: [],
+        served_leases: [],
+      });
     });
   });
 

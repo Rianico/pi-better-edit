@@ -47,8 +47,10 @@ function indexToSpelling(idx: number): string {
 describe("anchor file scope", () => {
   it("C1: byte-identical files at different paths share at most a bounded few anchors", () => {
     // WHY: ADR-0030 §1 — E[shared] = n²/S (0.27 at n = 2000), so a zero is luck, not
-    // WHY: proof. The honest guard is the measured bound plus the deterministic
-    // WHY: same-position guard (P(equal) ≈ n/S per line).
+    // WHY: proof. This fixture sits in the zero regime (it measures 0); the pinned
+    // WHY: companion (`xN7H`, intersection 1) and the regression case (intersection
+    // WHY: 2000) carry the refutability, plus this deterministic same-position
+    // WHY: guard (P(equal) ≈ n/S per line).
     const lines = Array.from({ length: 2_000 }, (_, i) => `row ${i}`);
     const content = lines.join("\n") + "\n";
     const a = fileHashesFor("/test/c1-a.ts", content);
