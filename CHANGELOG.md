@@ -6,6 +6,10 @@
 
 * **tools:** remove the deprecated `file_path` payload alias, with no compatibility window. `read`, `read_skill` and `undo_last_edit` no longer rewrite it to `path` -- their `prepareArguments` seam existed only for that rewrite and is gone -- and the `write` hooks no longer read it. A `file_path` payload is now an unknown field on every surface and is refused; `edit` was already strict. (#40)
 
+### Documentation
+
+* **readme:** cite external evidence for hash-anchored lines — token-bleed reduction (Lamberti 2026) and subword-tokenizer drift (TokDrift) — under the failure-modes table and the anchor-hash space explanation. (#41)
+
 ## [2.6.0] - 2026-10-03
 
 ### Features
