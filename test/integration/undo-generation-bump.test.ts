@@ -1,10 +1,23 @@
 import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { ensureSnapshotTables, loadHashStore, type HashStore } from "../../src/hash-store.js";
+import {
+  ensureSnapshotTables,
+  loadHashStore,
+  shutdownHashStore,
+  type HashStore,
+} from "../../src/hash-store.js";
 import { upsertUndo } from "../../src/undo-store.js";
-import { canonDigest, contentOnlyHashes, fileHashesFor } from "../../src/hashline/index.js";
+import {
+  CANON_VERSION,
+  canonDigest,
+  contentOnlyHashes,
+  fileHashesFor,
+} from "../../src/hashline/index.js";
 import { contentChecksum } from "../../src/hashline/hasher.js";
+import { servedHashEchoDenial } from "../../src/write-hook.js";
+import { resolveTarget } from "../../src/fs-write.js";
+import { toCwd } from "../../src/paths.js";
 import {
   adoptPinnedSnapshotFor,
   anchorsForSnapshotHash,
@@ -226,17 +239,19 @@ describe("generation bump refuses pre-v3 anchors", () => {
           undefined,
           ctx,
         );
-      await expect(submit(v2A[1]!)).rejects.toThrow(
-        /E_(UNKNOWN_ANCHOR|FOREIGN_ANCHOR|STALE_RANGE)/,
-      );
+      // WHY: deterministic route — the v2 leases were planted after the open-time
+      // WHY: sweep, so the generation-gated lease source skips them while the
+      // WHY: session-wide home lookup still finds the a.txt lease: FOREIGN, cold.
+      await expect(submit(v2A[1]!)).rejects.toThrow(/E_FOREIGN_ANCHOR/);
       expect(await readFile(absB, "utf-8")).toBe(PRE);
       const servedB = rows(
         getText(await readTool.execute("r2", { path: "b.txt" }, undefined, undefined, ctx)),
       ).map((r) => r.hash);
       expect(servedB).toEqual(await fileHashesFor(absB, PRE));
-      await expect(submit(v2A[1]!)).rejects.toThrow(
-        /E_(UNKNOWN_ANCHOR|FOREIGN_ANCHOR|STALE_RANGE)/,
-      );
+      // WHY: still FOREIGN after the fresh read — the re-serve retires nothing
+      // WHY: (shared line_ids survive) and the v2 rows are still skipped by the
+      // WHY: lease gate while homed at a.txt.
+      await expect(submit(v2A[1]!)).rejects.toThrow(/E_FOREIGN_ANCHOR/);
       expect(await readFile(absB, "utf-8")).toBe(PRE);
       const ok = (await editTool.execute(
         "e2",
@@ -314,6 +329,187 @@ describe("generation bump refuses pre-v3 anchors", () => {
       plantSnapshotRow(store, absM, v2key, contentOnlyHashes(PRE));
       expect(getSnapshot(store, absM, PRE)).toBeUndefined();
       expect(await anchorsForSnapshotHash(absM, v2key)).toBeUndefined();
+    });
+  });
+
+  it("a served mirror survives a store reopen and the resumed edit writes", async () => {
+    // WHY: P1 regression — the open-time sweep must never touch the served mirror
+    // WHY: (its snapshotId is a load-epoch string, not a file_snapshots id). A real
+    // WHY: read plants the production-shaped row; after a restart the mirror row is
+    // WHY: present and the edit at the just-served anchors writes.
+    await withTempFile("r.txt", PRE, async ({ cwd }) => {
+      const absR = join(cwd, "r.txt");
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      const editTool = getTool("edit");
+      const served = rows(
+        getText(await readTool.execute("r1", { path: "r.txt" }, undefined, undefined, ctx)),
+      );
+      const store = await loadHashStore();
+      const mirrorBefore = store.db
+        .prepare("SELECT snapshotId FROM served WHERE path = ?")
+        .get(absR) as { snapshotId: string | null } | undefined;
+      // WHY: the production shape the broken CAST could not judge — a load-epoch
+      // WHY: string, never an integer snapshot id.
+      expect(mirrorBefore?.snapshotId).toMatch(/^v2\|/);
+      shutdownHashStore();
+      await loadHashStore();
+      const reopened = await loadHashStore();
+      const mirrorAfter = reopened.db
+        .prepare("SELECT snapshotId FROM served WHERE path = ?")
+        .get(absR) as { snapshotId: string | null } | undefined;
+      expect(mirrorAfter?.snapshotId).toBe(mirrorBefore?.snapshotId);
+      const ok = (await editTool.execute(
+        "e1",
+        {
+          file: "r.txt",
+          edits: [{ anchor_from: served[1]!.hash, anchor_to: served[1]!.hash, text: "RESUMED" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      )) as { isError?: boolean };
+      expect(ok.isError).not.toBe(true);
+      expect(await readFile(absR, "utf-8")).toBe("aaa\nRESUMED\nccc\n");
+    });
+  });
+
+  it("the served-hash-echo write guard still refuses across a restart", async () => {
+    // WHY: P1 regression — the echo guard's only evidence is the served mirror. It
+    // WHY: denies in-process; after a restart it must still deny, not go silent.
+    await withTempFile("g.txt", PRE, async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      const served = rows(
+        getText(await readTool.execute("r1", { path: "g.txt" }, undefined, undefined, ctx)),
+      );
+      const payload = served.map((r) => `${r.hash}│${r.text}`).join("\n") + "\n";
+      const io = {
+        resolve: async (rawPath: string, cwdPath: string) => resolveTarget(toCwd(rawPath, cwdPath)),
+      };
+      const sessionKey = testSessionManager.getSessionId();
+      const sameProcess = await servedHashEchoDenial(io, "g.txt", payload, cwd, sessionKey);
+      expect(sameProcess).toMatch(/E_SUSPICIOUS_TEXT/);
+      shutdownHashStore();
+      await loadHashStore();
+      const afterRestart = await servedHashEchoDenial(io, "g.txt", payload, cwd, sessionKey);
+      expect(afterRestart).toMatch(/E_SUSPICIOUS_TEXT/);
+    });
+  });
+
+  it("a swept pre-bump lease is refused cold as unknown", async () => {
+    // WHY: the deterministic swept-row route — leases that died in the open-time
+    // WHY: sweep leave no session-wide home behind, so the refusal is UNKNOWN (not
+    // WHY: FOREIGN, which needs a surviving lease homed at another file).
+    await withTempFile("a.txt", PRE, async ({ cwd }) => {
+      const absA = join(cwd, "a.txt");
+      const absB = join(cwd, "b.txt");
+      await writeFile(absB, PRE, "utf-8");
+      const store = await loadHashStore();
+      const v2A = plantV2File(store, absA, PRE);
+      plantV2File(store, absB, PRE);
+      shutdownHashStore();
+      await loadHashStore();
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const editTool = getTool("edit");
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            file: "b.txt",
+            edits: [{ anchor_from: v2A[1]!, anchor_to: v2A[1]!, text: "REVIVED" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/E_UNKNOWN_ANCHOR/);
+      expect(await readFile(absB, "utf-8")).toBe(PRE);
+    });
+  });
+
+  it("after any open every lease names a live snapshot", async () => {
+    // WHY: P2 invariant — one provenance rule for the whole sweep. A mixture of
+    // WHY: pre-column (canon 0, current key), foreign-generation (canon 0/2, old key)
+    // WHY: and live (canon 3) rows goes through the sweep in place and through a
+    // WHY: real reopen; afterwards no lease dangles and no un-retired lease is
+    // WHY: lineage-less, while the live read's leases survive.
+    await withTempFile("i.txt", PRE, async ({ cwd }) => {
+      const absI = join(cwd, "i.txt");
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "i.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      const liveBefore = (
+        store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }
+      ).n;
+      expect(liveBefore).toBeGreaterThan(0);
+      // WHY: same-generation pre-column shape — a current key with no generation
+      // WHY: stamped (DEFAULT 0), plus leases a 3:-prefix gate alone would keep.
+      // WHY: poison content shares no lines with PRE/POST: content-only anchors
+      // WHY: derive from line text, so a shared line would reuse the spelling and
+      // WHY: collide on the lease primary key.
+      const OTHER = "ddd\neee\nfff\n";
+      plantPoisonSnapshot(store, absI, OTHER);
+      const poisonKey = `3:${contentChecksum(OTHER)}`;
+      const poisonAnchors = contentOnlyHashes(OTHER);
+      const session = testSessionManager.getSessionId();
+      const insPoisonLease = store.db.prepare(
+        "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, served_snapshot_hash, served_line_number, updated_at, retired_at) VALUES (?,?,?,?,?,?,?,?,NULL)",
+      );
+      const postLines = OTHER.split("\n");
+      for (let i = 0; i < poisonAnchors.length; i++) {
+        insPoisonLease.run(
+          session,
+          absI,
+          poisonAnchors[i],
+          100 + i,
+          canonDigest(postLines[i] ?? ""),
+          poisonKey,
+          i + 1,
+          Date.now(),
+        );
+      }
+      // WHY: foreign-generation shape — old key, DEFAULT-0 generation, plus an
+      // WHY: explicit canon_version 2 row for the 0/2/3 mixture.
+      plantV2File(store, absI, PRE);
+      store.db
+        .prepare(
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) VALUES (?,?,?,?,1,2)",
+        )
+        .run(absI, `2:${contentChecksum(OTHER)}`, 3, Date.now());
+      const checkInvariant = (db: HashStore["db"]): void => {
+        const dangling = db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT IN (SELECT snapshot_hash FROM file_snapshots)",
+          )
+          .get() as { n: number };
+        expect(dangling.n).toBe(0);
+        const unretiredLineless = db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases sl WHERE sl.retired_at IS NULL AND NOT EXISTS " +
+              "(SELECT 1 FROM file_snapshots fs JOIN line_lineage ll ON ll.snapshot_id = fs.snapshot_id " +
+              "AND ll.anchor = sl.anchor WHERE fs.snapshot_hash = sl.served_snapshot_hash)",
+          )
+          .get() as { n: number };
+        expect(unretiredLineless.n).toBe(0);
+      };
+      ensureSnapshotTables(store.db);
+      checkInvariant(store.db);
+      // WHY: the live read's leases name the surviving current-generation snapshot.
+      const liveKey = `${CANON_VERSION}:${contentChecksum(PRE)}`;
+      const liveSurvivors = (
+        store.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash = ? AND retired_at IS NULL",
+          )
+          .get(liveKey) as { n: number }
+      ).n;
+      expect(liveSurvivors).toBeGreaterThan(0);
+      shutdownHashStore();
+      await loadHashStore();
+      const reopened = await loadHashStore();
+      checkInvariant(reopened.db);
     });
   });
 });
