@@ -73,7 +73,7 @@ Two rules make the probe honest:
   `read`'s `served` mode from its `verbatim` mode.
 
 > **Why this earns its keep.** A probe reproduced the `edit` contract correctly 11 times out of 11 — and then, on three other
-> tools, emitted the wrong parameter for every one of them. The tool family is split (`file` for `edit`, `path` for the rest) and
+> tools, emitted the wrong parameter for every one of them. The tool family is split (`file` for `edit` and `read`, `path` for `undo_last_edit`) and
 > **no prompt named its parameter at all**. No pin check, linter, or careful reading surfaces that. Only *using* the text does.
 
 ## 4 · Measure every ambiguity against the artifact

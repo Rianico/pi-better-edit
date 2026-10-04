@@ -111,11 +111,11 @@ The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, cano
 _Avoid_: epoch snapshot, served hash map
 
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs.
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It shares the served path's 238,328-line ceiling, so a larger file is refused.
 _Avoid_: unmanaged read
 
-**tool-name-as-intent**:
-The principle that a tool's name encodes the model's intent — now `read` (served, hashed, editable) vs `read` (verbatim, plain, consumable) — so the model always knows what it's getting; the `mode` payload field selects between the two contracts, with `served` as the editing-safe default.
+**mode-as-intent**:
+The principle that the payload's `mode` field, not the tool name, selects the model's read contract — `served` (the editing-safe default: hashed, editable) vs `verbatim` (plain, consumable) — so the model always knows what it's getting.
 _Avoid_: —
 
 **payload contract**:

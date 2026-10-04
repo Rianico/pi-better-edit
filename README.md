@@ -171,7 +171,8 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 ┌────────────────────────────────────────▼─────────────────────────────────────────┐
 │                                SESSION TIER                                      │
 │  src/served-session/session.ts                                                   │
-│  - Leases: Granted on read, diff, rejection fresh-reads, and undo                │
+│  - Leases: Granted on a default (`served`) read, diff, rejection fresh-reads,    │
+│    and undo                                                                      │
 │  - Immutability: Leases are strictly READ-ONLY during edit resolution            │
 │  - Re-Serve Upsert: Atomic upsert updates leases when presentation changes       │
 └────────────────────────────────────────┬─────────────────────────────────────────┘
@@ -196,7 +197,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 ### 1. Immutable Line Identity & Leases
 - Every line has an immutable surrogate key (`line_id`) allocated from a monotonic counter (`line_id_counters`).
-- When lines are delivered to an agent via `read`, diffs, or fresh-read rejections, a session-scoped lease (`served_leases`) binds `(session_id, file_path, anchor) -> line_id`.
+- When lines are delivered to an agent via a default (`served`) `read`, diffs, or fresh-read rejections, a session-scoped lease (`served_leases`) binds `(session_id, file_path, anchor) -> line_id`.
 - During an `edit`, lease lookups are strictly **read-only**. An edit cannot re-stamp or guess a lease.
 
 ### 2. Multi-Version Snapshot Lineage
@@ -226,7 +227,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 | Tool | Parameters | Description |
 | --- | --- | --- |
-| `read` | `file`, `offset` (1-based), `limit`, `windows` (optional), `mode` (optional) | Returns file content formatted as `HASH│content` by default. `mode: "verbatim"` returns plain text with no hash prefixes and records no leases; the default `"served"` leases every shown line. Lines &gt;200KB are replaced with a marker hint. `windows: [{offset, limit}, …]` reads up to 16 disjoint ranges in one turn: each renders under `=== Lines A-B of N ===` and, in the default `"served"` mode, every shown line is leased, so anchors from all of them work in one `edit`. |
+| `read` | `file`, `offset` (1-based), `limit`, `windows` (optional), `mode` (optional) | Returns file content formatted as `HASH│content` by default. `mode: "verbatim"` returns plain text with no hash prefixes and records no leases; the default `"served"` leases every shown line. Lines &gt;50KB are replaced with a marker hint. `windows: [{offset, limit}, …]` reads up to 16 disjoint ranges in one turn: each renders under `=== Lines A-B of N ===` and, in the default `"served"` mode, every shown line is leased, so anchors from all of them work in one `edit`. |
 | `edit` | `file`, `edits`, `mode` (optional) | Applies single or batched edits atomically. Each item bounds an inclusive `anchor_from`/`anchor_to` range, places its payload with optional `at`, and carries exactly one payload — `text` or `text_ref`. `mode: "literal"` declares verbatim text. |
 | `undo_last_edit` | `file` | Restores the previous file state, BOM, line endings, and original anchors. Persists across restarts. |
 

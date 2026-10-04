@@ -5,7 +5,10 @@
 ### Features
 
 * **read:** add `mode: "verbatim"` for plain, anchor-free file text that writes no served state; the default `"served"` render is byte-identical to before. (#21)
-* **tools:** remove the deprecated `file_path` payload alias, with no compatibility window. `read` no longer rewrites it to `file`, and `read_skill` and `undo_last_edit` no longer rewrite it to `path` -- their `prepareArguments` seam existed only for that rewrite and is gone -- and the `write` hooks no longer read it. A `file_path` payload is now an unknown field on every surface and is refused; `edit` was already strict. (#40)
+* **tools:** remove the deprecated `file_path` payload alias, with no compatibility window. `read` no longer rewrites it to `file`, and `undo_last_edit` no longer rewrites it to `path` -- their `prepareArguments` seam existed only for that rewrite and is gone -- and the `write` hooks no longer read it. A `file_path` payload is now an unknown field on every surface and is refused; `edit` was already strict. (#40)
+### Code Refactoring
+
+* **read:** remove the `read_skill` tool; `read` with `mode: "verbatim"` is the reference read. (#21)
 
 ### Documentation
 
