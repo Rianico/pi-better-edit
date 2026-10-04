@@ -15,7 +15,8 @@ const DRIFT_NOTICE_HEADING = "[USER] drift:";
  * (duplicate-hash collapse), and a lease rotation renamed the mirror anchor of an
  * already-reported line, spuriously re-noticing it. The session's reported-set keeps storing
  * strings (schema unchanged); this base-62 encoding of the position at the configured width is the KEY VALUE.
- * Positions are bounded by `MAX_HASH_LINES` (= |ALPHA|^HASH_LEN, files larger cannot be
+ * Positions are bounded by `MAX_HASH_LINES` (= |ALPHA|^HASH_LEN minus the reserved
+ * all-digit spellings, files larger cannot be
  * hashed), so the encoding is injective over every reachable position. An out-of-file
  * position (never shown, never marked) keys on "" — not a valid stored entry, always
  * "not yet reported", matching the legacy behavior for unshown drift.

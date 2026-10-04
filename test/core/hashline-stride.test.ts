@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import { HASH_PROBE_STRIDE, HASH_SPACE, _lineHashesPure, lineHashes } from "../../src/hashline";
+import {
+  HASH_PROBE_STRIDE,
+  HASH_SPACE,
+  USABLE_HASH_SPACE,
+  _lineHashesPure,
+  lineHashes,
+} from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
@@ -24,6 +30,10 @@ function lowThreeCharsDiffer(a: string, b: string): boolean {
 describe("hash probe stride", () => {
   it("is coprime with the hash space so probing visits every index", () => {
     expect(gcd(HASH_PROBE_STRIDE, HASH_SPACE)).toBe(1);
+    // WHY: the probe cycles the raw bitset where reserved indices are just set
+    // WHY: bits — coprimality with the usable space too is what keeps that
+    // WHY: cycling (and exhaustion detection) exact after the reservation.
+    expect(gcd(HASH_PROBE_STRIDE, USABLE_HASH_SPACE)).toBe(1);
   });
 
   it("changes the low three base-62 digits between consecutive allocations", () => {

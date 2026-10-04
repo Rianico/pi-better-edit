@@ -78,6 +78,34 @@ describe("E_UNKNOWN_ANCHOR numeric-anchor diagnosis", () => {
     expect(err.message).toContain("resemble line numbers");
   });
 
+  it("refuses a pasted 4-digit anchor pair through the ordinary unserved path", () => {
+    // WHY: criterion 2 — digit-shaped spellings take no special refusal; they
+    // WHY: fail as unserved leases with the existing code and the line-number
+    // WHY: note, which is the only digit-specific behavior.
+    let caught: unknown;
+    try {
+      resolveLeasedEdit({
+        edit: resEdit({ anchor_from: "1234", anchor_to: "5678", text: "X" }),
+        snapshot: {
+          fileHashes: ["AAAA", "BBBB"],
+          fileLines: ["a", "b"],
+          filePath: "a.py",
+        },
+        served: [],
+        source: emptySource(),
+      });
+    } catch (error) {
+      caught = error;
+    }
+    expect(caught).toBeInstanceOf(DomainError);
+    const err = caught as DomainError;
+    expect(err.code).toBe("E_UNKNOWN_ANCHOR");
+    expect(err.message).toContain(
+      'has not served the anchors "1234", "5678"; nothing was written.',
+    );
+    expect(err.message).toContain('Note: anchors "1234", "5678" consist only of digits');
+  });
+
   it("carries no remedy field per ADR-0021", () => {
     expect(ERROR_REGISTRY.E_UNKNOWN_ANCHOR.remedy).toBeUndefined();
   });

@@ -1,4 +1,4 @@
-import { HASH_LEN, ALPHA, ALPHA_RE as _ALPHA_RE, HASH_RE } from "./alphabet.js";
+import { ALPHA_RE as _ALPHA_RE, HASH_RE } from "./alphabet.js";
 import { defaultHashIdentity as _defaultHI } from "./hash-identity.js";
 import type {
   HashSnapshotIO as _HSIO,
@@ -25,9 +25,9 @@ export function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
 
 export const HASH_SEP = "│";
 
-const HASH_SPACE = ALPHA.length ** HASH_LEN;
-const _MAX_HASH_LINES = HASH_SPACE;
-
+// WHY: single owner of the capacity figures lives in `hash-identity.ts` — this
+// WHY: facade re-exports them so the two cannot drift.
+export { HASH_SPACE, USABLE_HASH_SPACE, MAX_HASH_LINES } from "./hash-identity.js";
 export function isValidHashList(value: unknown): value is string[] {
   if (!Array.isArray(value)) return false;
   for (const hash of value) {

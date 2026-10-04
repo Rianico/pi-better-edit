@@ -3,7 +3,12 @@ import { join } from "node:path";
 import { parse } from "@babel/parser";
 import { describe, expect, it } from "vitest";
 import { ALPHA, HASH_CLASS, HASH_LEN, HASH_RE } from "../../src/hashline/alphabet.js";
-import { ANCHOR_LEN, HASH_SPACE, MAX_HASH_LINES } from "../../src/hashline/hash-identity.js";
+import {
+  ANCHOR_LEN,
+  HASH_SPACE,
+  MAX_HASH_LINES,
+  USABLE_HASH_SPACE,
+} from "../../src/hashline/hash-identity.js";
 import { HASH_PROBE_STRIDE } from "../../src/hashline/index.js";
 
 function tsFiles(dir: string, out: string[] = []): string[] {
@@ -259,9 +264,13 @@ describe("anchor width single owner", () => {
     // WHY: `HASH_SPACE` is the lease capacity — a restated literal here would
     // WHY: cap serves at the wrong width the moment `HASH_LEN` flips.
     expect(HASH_SPACE).toBe(ALPHA.length ** HASH_LEN);
+    // WHY: `USABLE_HASH_SPACE` is the raw space minus the reserved all-digit
+    // WHY: subcube — restating either figure would let the cap drift from the
+    // WHY: alphabet the allocation mask actually enforces.
+    expect(USABLE_HASH_SPACE).toBe(HASH_SPACE - 10 ** HASH_LEN);
     // WHY: `MAX_HASH_LINES` gates allocation against the same space — drift
     // WHY: between the two would refuse files one seam claims to support.
-    expect(MAX_HASH_LINES).toBe(HASH_SPACE);
+    expect(MAX_HASH_LINES).toBe(USABLE_HASH_SPACE);
     // WHY: `ANCHOR_LEN` is the parse-time alias the copy derives its count
     // WHY: word from — a second width constant would fork model-facing copy.
     expect(ANCHOR_LEN).toBe(HASH_LEN);

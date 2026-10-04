@@ -195,7 +195,7 @@ The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used
 _Avoid_: content (byte-level, not canon)
 
 **E_LARGE_FILE**:
-Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,776,336-line ceiling for 4-char anchors, carrying no line count; live width record [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). Nothing was written; use `write` or a non-line-based approach for very large files.
+Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,766,336-line ceiling for allocatable 4-char anchors — 62^4 minus the 10,000 reserved all-digit spellings, carrying no line count; live width record [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). Nothing was written; use `write` or a non-line-based approach for very large files.
 _Avoid_: E_TOO_BIG (unclaimed code)
 
 **E_UNKNOWN**:

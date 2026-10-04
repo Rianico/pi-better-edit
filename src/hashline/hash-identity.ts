@@ -72,12 +72,43 @@ export interface HashOptions {
 export const ANCHOR_LEN = HASH_LEN;
 export const HASH_SEP = "│";
 export const HASH_SPACE = ALPHA.length ** HASH_LEN;
-export const MAX_HASH_LINES = HASH_SPACE;
+const BITSET_WORDS = Math.ceil(HASH_SPACE / 32);
+// WHY: an all-digit anchor is structurally confusable with a line number, and a
+// WHY: served one pasted back resolves to a legitimate line and verifies —
+// WHY: undetectable after the fact. So the digit subcube is reserved at
+// WHY: allocation time and never served; the set derives from ALPHA (no new
+// WHY: width/size literals) so a width or alphabet change recomputes it.
+const DIGIT_CHARS = ALPHA.split("").filter((c) => c >= "0" && c <= "9");
+const RESERVED_HASH_SPELLINGS = DIGIT_CHARS.length ** HASH_LEN;
+export const USABLE_HASH_SPACE = HASH_SPACE - RESERVED_HASH_SPELLINGS;
+// SAFETY: fixed digit set from the trusted alphabet at the configured width, no user input, linear character class, no ReDoS.
+export const DIGIT_ANCHOR_RE = new RegExp(`^[${DIGIT_CHARS.join("")}]{${HASH_LEN}}$`);
+// WHY: the reservation is a fixed pre-set bit mask, so allocation still derives
+// WHY: the base index from content and identical content keeps identical anchors.
+const RESERVED_BITS: Uint32Array = (() => {
+  const digitIdx = DIGIT_CHARS.map((c) => ALPHA.indexOf(c));
+  const radix = digitIdx.length;
+  const base = ALPHA.length;
+  const bits = new Uint32Array(BITSET_WORDS);
+  for (let n = 0; n < RESERVED_HASH_SPELLINGS; n++) {
+    let idx = 0;
+    let mult = 1;
+    let m = n;
+    for (let j = 0; j < HASH_LEN; j++) {
+      idx += digitIdx[m % radix]! * mult;
+      m = Math.floor(m / radix);
+      mult *= base;
+    }
+    bits[idx >>> 5] |= 1 << (idx & 31);
+  }
+  return bits;
+})();
+export const MAX_HASH_LINES = USABLE_HASH_SPACE;
 // WHY: single owner of the space-exhaustion payload — the producer throws it
 // WHY: and the capacity tests assert it, so the binding cannot drift.
 export const HASH_SPACE_EXHAUSTED_PAYLOAD = {
   limitKind: "hash-space",
-  limit: HASH_SPACE,
+  limit: USABLE_HASH_SPACE,
 } as const;
 
 export function isValidHashList(value: unknown): value is string[] {
@@ -88,6 +119,11 @@ export function isValidHashList(value: unknown): value is string[] {
   return true;
 }
 
+// WHY: the stride stays coprime with both the raw space and the usable space
+// WHY: (see the stride pin) — the probe cycles the raw bitset where reserved
+// WHY: indices are just set bits, so exhaustion detection stays exact.
+// WHY: (constraint) the stride must stay coprime with `HASH_SPACE` (currently
+// WHY: true because 3,907 is prime and does not divide 62^4 = 2^4 × 31^4).
 export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
 export const CANON_VERSION = 2;
@@ -114,8 +150,6 @@ function getCanon(cache: Map<string, string>, line: string): string {
   cache.set(line, v);
   return v;
 }
-
-const BITSET_WORDS = Math.ceil(HASH_SPACE / 32);
 
 function hashToIndex(hash: string): number {
   let idx = 0;
@@ -215,6 +249,9 @@ export class HashIdentity {
     const lines = splitLines(content);
     const hashes = new Array<string>(lines.length);
     const used = new Uint32Array(BITSET_WORDS);
+    // WHY: the digit subcube is pre-marked so neither the fast path nor the
+    // WHY: probe in `assignHash` can ever return a reserved index.
+    used.set(RESERVED_BITS);
     const hint = { value: 0 };
     const canonCache = new Map<string, string>();
     if (blockedHashes) {
@@ -351,6 +388,9 @@ export class HashIdentity {
     const canonCache = new Map<string, string>();
     const newHashes = new Array<string>(newLines.length);
     const used = new Uint32Array(BITSET_WORDS);
+    // WHY: pre-marked before old/blocked hashes — survivor reuse is spelling
+    // WHY: reuse (faithful copy), not allocation, so only fresh assignment is gated.
+    used.set(RESERVED_BITS);
     const hint = { value: 0 };
     const removed = removedHashes ?? new Set<string>();
     const oldHashIndex = this.buildOldHashIndex(oldHashes, used);

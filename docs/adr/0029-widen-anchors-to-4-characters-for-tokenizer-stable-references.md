@@ -16,10 +16,11 @@ Stated limits of that measurement: the framing is raw BPE (no chat-template or t
 
 1. **Width 3 → 4 end to end.** `HASH_LEN` (`src/hashline/alphabet.ts`) is the single owner of the anchor width and shape; every producer, consumer, regex, and count word derives from it.
 2. **No compatibility shim.** A 3-char token is rejected through the malformed-anchor path (`E_MALFORMED_ANCHOR`, "Pass the bare 4-char anchor and retry") — there is no legacy-width acceptance anywhere.
-3. **Anchor space 62^4 = 14,776,336.** The `E_LARGE_FILE` hash-space ceiling follows the width; the probe stride stays `62^2 + 62 + 1 = 3,907` (width-independent, coprime with the space).
+3. **Anchor space 62^4 = 14,776,336, usable 62^4 − 10^4 = 14,766,336.** The 10,000 all-digit spellings are reserved at allocation time and never served (`USABLE_HASH_SPACE`, `src/hashline/hash-identity.ts`); `MAX_HASH_LINES` and the `E_LARGE_FILE` hash-space `limit` derive from the usable space. The alphabet is unchanged — the shrink is 0.0677 %, accepted. The probe stride stays `62^2 + 62 + 1 = 3,907`, coprime with both the raw and the usable space (the probe cycles the raw bitset where reserved indices are just set bits, so exhaustion detection stays exact).
 
 ## Consequences
 
 - `README.md`, `CONTEXT.md`, `docs/spec/*`, `prompts/*`, and the worked examples are rewritten to the 4-char contract; this ADR is the live width record.
 - Anchors for identical content change (every anchor is re-served at the new width); leases, snapshots, and lineage written at width 3 do not transfer.
 - ADR-0023 quotes a pre-retitle test title verbatim that names the old width; per the historical-records rule it stays byte-identical — this ADR's declared supersession covers that stale wording (accepted deviation, no edit).
+- All-digit reservation (amendment): a served all-digit anchor is indistinguishable from a line number after the fact — pasted back, it resolves to a legitimate line and verifies, so the dangerous direction is undetectable and only non-existence defends it. There is deliberately no resolve-time refusal of digit-shaped spellings: with the invariant they can never be leases, and such a refusal would be dead code punishing a legitimate copy if the invariant were ever violated. The reservation governs allocation only; a stable hash carried from a pre-change snapshot in the delta path is preserved as-is for faithful copy (unreachable in practice — this branch is unmerged, so no snapshot predates the change; no migration).

@@ -320,7 +320,7 @@ referenced span is retired — the current word is `cut`.
 | `[E_UNDO_STALE]` | Target file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read file. |
 | `[E_UNDO_UNAVAILABLE]` | Undo state could not be persisted to SQLite store. | Edit was refused and file unchanged; retry edit. |
 | `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure; do not re-undo — the next run repairs the interrupted revert. |
-| `[E_LARGE_FILE]` | File exceeds the 14,776,336-line ceiling of 4-char base62 space. | Use `write` or non-hashline tools for very large files. |
+| `[E_LARGE_FILE]` | File exceeds the 14,766,336-line ceiling of allocatable 4-char anchors (62^4 minus the 10,000 reserved all-digit spellings). | Use `write` or non-hashline tools for very large files. |
 | `[E_UNKNOWN]` | Unexpected filesystem or invariant failure. | Check error message details. |
 
 ### Applied Warnings (`[W_*]`)
@@ -388,7 +388,7 @@ referenced span is retired — the current word is `cut`.
 ## How Anchors Work
 
 1. **Whitespace Canonicalization**: Each line is stripped of ASCII whitespace (`[ \t\r\n]`) before hashing. External formatting passes (`prettier`, `black`, `eslint --fix`) do not alter line hashes. Token-level edits (quotes, semicolons, variable names) rotate the hash.
-2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 and mapped to 4-character base62 strings (`A-Za-z0-9`), providing $62^4 = 14,776,336$ unique anchors. Base62 strings occupy tokenizer-stable token regions across model families ([TokDrift, arXiv:2510.14972](https://arxiv.org/abs/2510.14972)). The live width record is [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md).
+2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 and mapped to 4-character base62 strings (`A-Za-z0-9`), providing $62^4 - 10^4 = 14,766,336$ allocatable anchors — the 10,000 all-digit spellings are reserved and never served, since a served one would be indistinguishable from a line number. Base62 strings occupy tokenizer-stable token regions across model families ([TokDrift, arXiv:2510.14972](https://arxiv.org/abs/2510.14972)). The live width record is [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md).
 3. **Collision-Free Coprime Probing**: When duplicate lines occur in a file, collision resolution probes using a stride coprime to the hash space ($62^2 + 62 + 1 = 3,907$). Every line in a file receives a unique anchor.
 4. **SQLite WAL CAS Storage**: Line hashes and snapshots are persisted in `~/.config/pi-better-edit/hash-store.sqlite` (honoring `XDG_CONFIG_HOME`). Snapshot retention is governed by proportional LRU vacuuming under a 50MB budget.
 

@@ -6,6 +6,7 @@ import {
   _lineHashesPure,
   HASH_LEN,
   HASH_SPACE,
+  USABLE_HASH_SPACE,
   lineHashes,
   MAX_HASH_LINES,
 } from "../../src/hashline";
@@ -73,11 +74,12 @@ function stripComments(code: string): string {
 
 describe("hashline limits", () => {
   it("derives the hash space from the alphabet and hash length", () => {
-    // WHY: `62 ** 4 = 14,776,336` lines cannot be materialized, so the space
-    // WHY: itself is pinned algebraically — a restated literal here would let
-    // WHY: the cap drift from the width the leases actually enforce.
+    // WHY: the raw space cannot be materialized, so it is pinned algebraically —
+    // WHY: a restated literal here would let the cap drift from the width the
+    // WHY: leases actually enforce. The usable space (minus the reserved
+    // WHY: all-digit subcube) is pinned in the reservation test.
     expect(HASH_SPACE).toBe(62 ** HASH_LEN);
-    expect(MAX_HASH_LINES).toBe(HASH_SPACE);
+    expect(MAX_HASH_LINES).toBe(USABLE_HASH_SPACE);
   });
 
   it("hashes a bounded line count with unique anchors", () => {
@@ -93,13 +95,13 @@ describe("hashline limits", () => {
   it("formats the hash-space E_LARGE_FILE naming the live limit", () => {
     // WHY: space exhaustion cannot be triggered (see above), so the error is
     // WHY: constructed directly — the assertion pins that the formatted copy
-    // WHY: names the live `HASH_SPACE` limit and the live width, not a stale 3.
+    // WHY: names the live usable-space limit and the live width, not a stale 3.
     const error = new DomainError("E_LARGE_FILE", {
       limitKind: "hash-space",
-      limit: HASH_SPACE,
+      limit: USABLE_HASH_SPACE,
     });
     expect(error.code).toBe("E_LARGE_FILE");
-    expect(error.message).toContain(`${HASH_SPACE}-line limit`);
+    expect(error.message).toContain(`${USABLE_HASH_SPACE}-line limit`);
     expect(error.message).toContain(`${HASH_LEN}-char`);
   });
 
@@ -114,7 +116,7 @@ describe("hashline limits", () => {
       // WHY: wrap plus trailing comma.
       expect(HASH_SPACE_EXHAUSTED_PAYLOAD).toEqual({
         limitKind: "hash-space",
-        limit: HASH_SPACE,
+        limit: USABLE_HASH_SPACE,
       });
       const producer = stripComments(readFileSync("src/hashline/hash-identity.ts", "utf-8"));
       expect(
