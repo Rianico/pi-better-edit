@@ -7,7 +7,7 @@
 
 ## What to build
 
-The tool's **served state** — its session-scoped, per-file, per-line record of the hashes delivered to the model's context — persisted in the hash store: a new `served` table alongside `snapshots` and `undo`. Entries are position-indexed per file and hold either a served 3-char hash or an explicit never-served marker. The record is cleared wholesale at session start and pruned for missing files alongside snapshots and undo. Nothing model-visible changes yet; this is the storage foundation the served-state verification builds on.
+The tool's **served state** — its session-scoped, per-file, per-line record of the hashes delivered to the model's context — persisted in the hash store: a new `served` table alongside `snapshots` and `undo`. Entries are position-indexed per file and hold either a served 4-char hash or an explicit never-served marker. The record is cleared wholesale at session start and pruned for missing files alongside snapshots and undo. Nothing model-visible changes yet; this is the storage foundation the served-state verification builds on.
 
 See `docs/spec/served-state-range-verification.md` (Implementation Decisions 1, 8; user stories 22, 23) and `docs/adr/0001-served-state-range-verification.md`. Use the `CONTEXT.md` glossary vocabulary throughout (serve, served state, never-served).
 

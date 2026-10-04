@@ -8,7 +8,7 @@ Side discussion comparing three hash-anchor editing implementations for LLM codi
 
 - **oh-my-pi** — line numbers + whole-file 4-hex hash tag
 - **pi-hashline-edit** — `LINE#HASH` per-line, context-based hashing
-- **pro** (this project, pi-better-edit) — bare 3-char per-line hashes, persistent store, stable for unchanged lines
+- **pro** (this project, pi-better-edit) — bare 4-char per-line hashes, persistent store, stable for unchanged lines
 
 ## Key decisions & insights
 
@@ -27,8 +27,8 @@ Side discussion comparing three hash-anchor editing implementations for LLM codi
 
 ### 3. Token economics comparison
 
-- **Per read line**: oh-my-pi wins (~2 chars `1:`) vs pro (4 chars) vs pi-hashline-edit (~7–9 chars)
-- **Per edit request**: oh-my-pi's terse patch grammar cheapest; pro's bare 3-char hashes = 1 token each
+- **Per read line**: oh-my-pi wins (~2 chars `1:`) vs pro (5 chars) vs pi-hashline-edit (~7–9 chars)
+- **Per edit request**: oh-my-pi's terse patch grammar cheapest; pro's bare 4-char hashes (tokenizer-stable: exactly 3 tokens ~99%+)
 - **Rereads avoided (dominant cost)**: **pro wins** — persistent store keeps unchanged-line hashes stable; issue #22 eliminates the last defensive rereads
 - **Verdict**: oh-my-pi optimizes patch language, pro optimizes protocol. For LLMs, the protocol is the right place (no silent relocation, fail-closed).
 

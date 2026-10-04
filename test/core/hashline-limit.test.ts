@@ -53,13 +53,16 @@ describe("hashline limits", () => {
       // WHY: binding is pinned twice — the exported payload constant equals the
       // WHY: live limit, and the producer throw site references that constant.
       // WHY: Inlining a different payload at the throw breaks the source pin.
+      // WHY: The pattern anchors `throw` at line start (a comment quoting the
+      // WHY: call cannot satisfy it) and tolerates an oxfmt wrap plus trailing
+      // WHY: comma.
       expect(HASH_SPACE_EXHAUSTED_PAYLOAD).toEqual({
         limitKind: "hash-space",
         limit: HASH_SPACE,
       });
       const producer = readFileSync("src/hashline/hash-identity.ts", "utf-8");
       expect(
-        /throw new DomainError\(\s*"E_LARGE_FILE",\s*HASH_SPACE_EXHAUSTED_PAYLOAD\s*\)/.test(
+        /^\s*throw new DomainError\(\s*"E_LARGE_FILE",\s*HASH_SPACE_EXHAUSTED_PAYLOAD\s*,?\s*\)/m.test(
           producer,
         ),
       ).toBe(true);

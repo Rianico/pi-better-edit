@@ -69,6 +69,21 @@ describe("served prefix mismatch predicate", () => {
     );
   });
 
+  it("fires on a served anchor with a mismatched tail (tier live)", () => {
+    // WHY: differential beside the premise guard — the same candidate shape
+    // WHY: hits when its anchor IS served with a mismatched digest, proving the
+    // WHY: token is row-shaped and the tier consults the served set. At any
+    // WHY: width where the token is shape-skipped this reddens (no hit), so the
+    // WHY: F1 vacuity cannot recur silently at width 5.
+    const content = "one\ntwo\nthree";
+    const hashes = _lineHashesPure(content);
+    const served: (string | null)[] = [...hashes];
+    const canonDigests = canonDigestsFor(content);
+    expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
+    expect(
+      findServedPrefixMismatches([`${hashes[1]}${HASH_SEP}LITERAL`], served, canonDigests, 1),
+    ).not.toEqual([]);
+  });
   it("stays silent without canon data", () => {
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);

@@ -94,7 +94,7 @@ Verified hit list on `ba7c8d2` (all currently command a read):
 
 | Kind | Location | Current text |
 | :--- | :--- | :--- |
-| rejection message | `src/hashline/resolve.ts:202`, `:231` | "Re-read the full file and copy the fresh 3-char anchors…" |
+| rejection message | `src/hashline/resolve.ts:202`, `:231` | "Re-read the full file and copy the fresh 4-char anchors…" |
 | rejection message | `src/hashline/served-verification.ts:692-693` | "A full read will re-sync the served mirror — … retrying without re-reading cannot clear a stale duplicate outside the served window." |
 | rejection message | `src/mutation-engine/pipeline.ts:360`, `:506` | "Re-read the full file…" / "Call read() to get fresh anchors." |
 | refusal message | `src/hashline/served-guard.ts:263`, `:279` | "Re-read the file for fresh anchors if needed." |

@@ -105,6 +105,20 @@ describe("findServedHashEcho — evidence, never shape", () => {
     expect(hit).toBeUndefined();
   });
 
+  it("fires on a served row with a diff marker (tier live)", () => {
+    // WHY: differential beside the premise guard — the same candidate shape
+    // WHY: hits when its anchor IS served, proving the token is row-shaped and
+    // WHY: the tier consults the served set. At any width where the token is
+    // WHY: shape-skipped this reddens (no hit), so the F1 vacuity cannot recur
+    // WHY: silently at width 5.
+    const content = "one\ntwo\nthree";
+    const hashes = _lineHashesPure(content);
+    const served: (string | null)[] = [...hashes];
+    const canonDigests = canonDigestsFor(content);
+    expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
+    const hit = findServedHashEcho([`+${hashes[1]}${HASH_SEP}two`], served, canonDigests, 1);
+    expect(hit).toBeDefined();
+  });
   it("returns undefined for empty candidates", () => {
     const hashes = _lineHashesPure("a\nb\nc");
     const served: (string | null)[] = [...hashes];

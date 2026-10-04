@@ -1,6 +1,6 @@
 # Hashline Edit
 
-A hash-anchored file-editing extension for the pi-coding-agent: every line of a file carries a stable, content-derived 3-char hash, and replace operations anchor on hashes, failing closed rather than relocating silently.
+A hash-anchored file-editing extension for the pi-coding-agent: every line of a file carries a stable, content-derived 4-char hash, and replace operations anchor on hashes, failing closed rather than relocating silently.
 
 ## Language
 
@@ -95,7 +95,7 @@ The file condition where a line's content survives an external write and, becaus
 _Avoid_: duplicate content (implies same hash, which perfect hashing prevents)
 
 **line identity**:
-A line's stable identity across the file's materialized versions: the immutable `line_id` allocated for its content, plus its ancestry in `line_lineage`. Identity follows content, not coordinate — an exterior insert or delete shifts line numbers without changing `line_id`, which is exactly what lets an edit rebase silently. Distinct from the 3-char `anchor`, which is a presentation token the model copies out of a served row.
+A line's stable identity across the file's materialized versions: the immutable `line_id` allocated for its content, plus its ancestry in `line_lineage`. Identity follows content, not coordinate — an exterior insert or delete shifts line numbers without changing `line_id`, which is exactly what lets an edit rebase silently. Distinct from the 4-char `anchor`, which is a presentation token the model copies out of a served row.
 _Avoid_: anchor identity, hash identity, epoch
 
 **lease** (served lease):
@@ -135,7 +135,7 @@ A pair of boundary anchors (`anchor_from`, `anchor_to`) identifying the first an
 _Avoid_: hunk, region
 
 **separator**:
-The `│` character dividing a served row into `HASH│content`. The model copies only the 3 chars before it into `anchor_from`/`anchor_to` and never emits it — in `text`, in anchors, or anywhere in the call — except under a `literal declaration`, which asserts the bytes are content.
+The `│` character dividing a served row into `HASH│content`. The model copies only the 4 chars before it into `anchor_from`/`anchor_to` and never emits it — in `text`, in anchors, or anywhere in the call — except under a `literal declaration`, which asserts the bytes are content.
 _Avoid_: pipe, delimiter
 
 **file**:
@@ -151,7 +151,7 @@ The payload union built at the single admission boundary (`normReq`) from each v
 _Avoid_: DesiredText (retired name), hand-written / span reference / none (retired arm words), payload enum (it is a union, not a closed tag)
 
 **served hash echo**:
-A candidate line that begins with the exact served anchor and reproduces the served content that anchor was served with, at any position (position-agnostic, content-matched) — tool output mistaken for file content. One such row suffices. Detection is evidence-only — the tool never gates on the shape of a line. Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
+A candidate line that begins with the exact served anchor and reproduces the served content that anchor was served with, at any position (position-agnostic, content-matched) — tool output mistaken for file content. One such row suffices. Detection is evidence-only — the tool never gates on the shape of a line. Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{4}│` strip.
 _Avoid_: hash echo (without served qualification — targets the unqualified condition name), anchor echo; served-qualified identifier (findServedHashEcho) is canonical, surface-qualified one (findEditHashEcho) is not
 
 **literal declaration**:
@@ -191,11 +191,11 @@ The fallback verification mode when `epoch!=curId` (concurrent write detected) �
 _Avoid_: always-strict
 
 **canon** (canon_at_serve):
-The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without the `blocked hashes` whole-span signal (retired from verification with the mirror seam, #10; the set lives on as the hash-allocation guard). A canon is **file-scoped**: a 3-char anchor is unique only inside one file's allocation, so it travels with the anchor's lease and there is no process-wide hash→canon lookup (ADR-0022). Canon evidence is compared as a **canon digest** — `String(xxh32(canon(line)))`, exactly the value `line_lineage.canon_hash` / `served_leases.canon_hash` persist — so no canon text is stored: `served.canons` is written by no v7 code path and survives only as a legacy v6 storage shell (issue #151). An absent digest is absent evidence, so an evidence scan stays silent rather than refusing on the shape of a line.
+The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without the `blocked hashes` whole-span signal (retired from verification with the mirror seam, #10; the set lives on as the hash-allocation guard). A canon is **file-scoped**: a 4-char anchor is unique only inside one file's allocation, so it travels with the anchor's lease and there is no process-wide hash→canon lookup (ADR-0022). Canon evidence is compared as a **canon digest** — `String(xxh32(canon(line)))`, exactly the value `line_lineage.canon_hash` / `served_leases.canon_hash` persist — so no canon text is stored: `served.canons` is written by no v7 code path and survives only as a legacy v6 storage shell (issue #151). An absent digest is absent evidence, so an evidence scan stays silent rather than refusing on the shape of a line.
 _Avoid_: content (byte-level, not canon)
 
 **E_LARGE_FILE**:
-Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 238,328-line ceiling for 3-char anchors, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files.
+Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,776,336-line ceiling for 4-char anchors, carrying no line count; live width record [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). Nothing was written; use `write` or a non-line-based approach for very large files.
 _Avoid_: E_TOO_BIG (unclaimed code)
 
 **E_UNKNOWN**:

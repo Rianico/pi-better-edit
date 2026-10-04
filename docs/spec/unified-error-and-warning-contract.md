@@ -232,7 +232,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_MALFORMED_ANCHOR: {
     audience: "MODEL",
     format: ({ rawAnchor, reason }) =>
-      `anchor '${rawAnchor}' is invalid: ${reason}. Expected 3-character alphanumeric hash.`,
+      `anchor '${rawAnchor}' is invalid: ${reason}. Expected 4-character alphanumeric hash.`,
   },
   E_SUSPICIOUS_TEXT: {
     audience: "MODEL",

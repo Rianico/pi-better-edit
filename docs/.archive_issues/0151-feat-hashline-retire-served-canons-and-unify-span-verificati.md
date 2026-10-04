@@ -27,7 +27,7 @@ Implement **Option C** from the #149 architectural review:
    - For non-verification evidence consumers (`findServedHashEcho`, `findServedPrefixMismatches`, `drift`), derive canon identity from `served_leases.canon_hash` / `line_lineage`, or keep in-memory ephemeral producer stamping without persisting parallel arrays to SQLite.
 
 ### Alternatives considered
-- **Option A (Delete canon tier without lease-backing)**: Rejected in review. Deleting the canon tier from `verifyServedRange` leaves a silent false-accept (miswrite) window when an interior line changes externally and collides on the same 3-character hash across paged reads.
+- **Option A (Delete canon tier without lease-backing)**: Rejected in review. Deleting the canon tier from `verifyServedRange` leaves a silent false-accept (miswrite) window when an interior line changes externally and collides on the same 4-character hash across paged reads.
 - **Option B (Per-file structural map)**: Rejected. Still retains duplicate state outside of the MVCC lease store.
 - **Option D (Status Quo - Landed in #149)**: Stamping `canon` onto `ServedRow` and keeping `served.canons` strictly file-scoped. This is fully working and correct today, but keeps the parallel array in SQLite. Option C is the natural structural evolution of Option D.
 
@@ -49,7 +49,7 @@ Scoping notes from the #149 review — these sharpen the acceptance criteria rat
 Counterexample that must become the acceptance test (mixed-snapshot interior + same-anchor collision across paged reads):
 
 1. read lines 1–10 at S₀ → `served`/`servedCanons` populated for 1–10.
-2. external edit changes line 5; snapshot rotates to S₁; by chance the new content hashes to the **same 3-char anchor**.
+2. external edit changes line 5; snapshot rotates to S₁; by chance the new content hashes to the **same 4-char anchor**.
 3. partial re-read of lines 1 and 10 only → boundaries re-leased under S₁, line 5 keeps its S₀ entry.
 4. edit spanning 1–10: fast path qualifies on the boundaries; gap check passes (`served[4] !== null`); the hash tier passes because of the collision.
 

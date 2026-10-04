@@ -121,6 +121,31 @@ describe("regEdit", () => {
     });
   });
 
+  it("refuses a verbatim served row without literal mode (tier live)", async () => {
+    // WHY: differential beside the byte-exact test — the same tier that lets a
+    // WHY: never-served row through refuses a served one, proving the Zz99 row
+    // WHY: above reaches served-set logic rather than a shape skip. At any width
+    // WHY: where the token is shape-skipped this reddens (no refusal).
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
+      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            file: "sample.ts",
+            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│bbb` }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
+    });
+  });
+
   it("writes diff-marker HASH│ bytes through byte-exact", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);

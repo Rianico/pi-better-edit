@@ -7,14 +7,14 @@
 
 ## Problem
 
-### 1. Cross-file 3-character anchor hash collision poisons process-global canon cache
-In `src/hashline/hash-identity.ts`, `defaultHashIdentity` maintains an in-memory `hashToCanon` map (`Map<string, string>`) that keys strictly on the 3-character anchor hash without any file path or session scoping:
+### 1. Cross-file 4-character anchor hash collision poisons process-global canon cache
+In `src/hashline/hash-identity.ts`, `defaultHashIdentity` maintains an in-memory `hashToCanon` map (`Map<string, string>`) that keys strictly on the 4-character anchor hash without any file path or session scoping:
 ```ts
 rememberHashCanon(hash: string, canonText: string): void {
   if (!this.hashToCanon.has(hash)) this.hashToCanon.set(hash, canonText);
 }
 ```
-Because 3 characters yield ^3 = 262,144$ slots, collisions across different files in a repo are mathematically guaranteed.
+Because 4 characters yield 62^4 = 14,776,336$ slots, collisions across different files in a repo remain likely enough to poison an unscoped map.
 When file A (e.g. `src/hashline/apply.ts`) hashes a line to `FU6`, `FU6 -> "}=verification??{};"` is locked into the global map.
 When file B (e.g. `test/tools/lifecycle-hooks.test.ts`) has a line `clearServedRefusals(absolutePath);` that also hashes to `FU6`, `rememberHashCanon` ignores it.
 
@@ -54,13 +54,13 @@ Implemented on `dev/stale-range` (`1070328`), pushed to `origin`. Not yet PR'd/m
 
 ### 1. Canon lookup is file-scoped; the un-scoped map is gone
 
-A 3-char anchor is unique only inside one file's hash allocation, so the process-global `hash -> canon` map was unsound by construction. Rather than scope it by path, it is deleted — its only production readers were the buggy fallback and a drift heuristic; `ServedVerification.ensureCanonsPopulated` *wrote* the map and never read it back.
+A 4-char anchor is unique only inside one file's hash allocation, so the process-global `hash -> canon` map was unsound by construction. Rather than scope it by path, it is deleted — its only production readers were the buggy fallback and a drift heuristic; `ServedVerification.ensureCanonsPopulated` *wrote* the map and never read it back.
 
 - `ServedRow` / `ServedEntry` gain an optional `canon`, stamped by every producer that holds the file's lines: edit-pipeline dense rows (`pipeline.ts`), `edit-response.ts` success/batch rows, rejection serves (`buildRangeServeRows(..., fileLines)`), `noop-guard`, `drift`, `edit-undo`, and the `write` auto-read in `lifecycle-hooks`.
 - `writeServeRecord` persists `row.canon ?? null`; it no longer consults a hash-keyed store. A producer with only hashes records none, and that position degrades to hash-equality verification (the legacy ADR-0005 behavior) instead of claiming a file-blind canon.
 - Removed: `CanonStore`, `createCanonStore`, `globalCanonStore`, `HashIdentity.hashToCanon` / `rememberHashCanon` / `getCanonForHash` / `clearCanon` / `canonEntries`, `ServedVerification`'s write-only store field and `ensureCanonsPopulated`, the `canonStore` params on `verifyServedRange` / `verifyServedRangeResult`, and `_lineHashesPure`'s store param. `drift` reads only `servedCanons[servedPos]`.
 
-Regression test (`test/core/serve-recording.test.ts` -> "scopes served canons per file when two files share one 3-char anchor"): two files recorded under one anchor string each keep their own canon. On the pre-fix code it reads back file A's line — verified by stashing `src/` and re-running:
+Regression test (`test/core/serve-recording.test.ts` -> "scopes served canons per file when two files share one 4-char anchor"): two files recorded under one anchor string each keep their own canon. On the pre-fix code it reads back file A's line — verified by stashing `src/` and re-running:
 
 ```
 AssertionError: expected [ '}=verification??{};' ] to deeply equal [ 'clearServedRefusals(absolutePath);' ]

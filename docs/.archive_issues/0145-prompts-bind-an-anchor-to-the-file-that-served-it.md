@@ -17,7 +17,7 @@ State in the model-facing contract that an anchor is bound to the file whose ser
 
 - `prompts/edit.md` **and its single source** `EDIT_DESCRIPTION` in `src/payload-contract.ts`.
 - `prompts/edit-guidelines.md` **and** `EDIT_GUIDELINES` in `src/payload-contract.ts`.
-- `prompts/read.md` — one clause: the 3-char hash is file-scoped.
+- `prompts/read.md` — one clause: the 4-char hash is file-scoped.
 - Do **not** touch `prompts/read-guidelines.md`: `test/extension/prompts.test.ts` asserts it must not contain the string "re-read".
 
 Wording proposal (must be byte-equal in file and constant):
@@ -53,6 +53,6 @@ Coupling to respect while implementing: `prompts/edit.md` + `EDIT_DESCRIPTION` a
 
 Verified on `main` @ `3b22008` (landed as `ddd01f7`).
 
-`prompts/edit.md` now binds the anchor to its source: "copy the 3 chars before `│` in **this file's** served `HASH│content` lines (lease (session, file, anchor))", with the `EDIT_DESCRIPTION` mirror in `src/payload-contract.ts` kept byte-equal by a test. The cross-file case also gained its own code, so the reuse no longer reads as "the file was never read": `[E_FOREIGN_ANCHOR]` names the path where the anchor was actually served (ADR-0021 decision 3).
+`prompts/edit.md` now binds the anchor to its source: "copy the 4 chars before `│` in **this file's** served `HASH│content` lines (lease (session, file, anchor))", with the `EDIT_DESCRIPTION` mirror in `src/payload-contract.ts` kept byte-equal by a test. The cross-file case also gained its own code, so the reuse no longer reads as "the file was never read": `[E_FOREIGN_ANCHOR]` names the path where the anchor was actually served (ADR-0021 decision 3).
 
 Closing as resolved.

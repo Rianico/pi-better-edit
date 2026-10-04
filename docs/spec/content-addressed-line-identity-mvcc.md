@@ -329,7 +329,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 
 ### 3.7 Decoupling `E_LARGE_FILE` (Fixing B8)
 
-`E_LARGE_FILE` ($> 238,328$ lines exceeding 3-char base62 space) is an anchor-space encoding constraint, not a line-identity concurrency defect. It is removed from the header "Fixes:" and scoped out as a separate tracking issue.
+`E_LARGE_FILE` ($> 14,776,336$ lines exceeding 4-char base62 space) is an anchor-space encoding constraint, not a line-identity concurrency defect. It is removed from the header "Fixes:" and scoped out as a separate tracking issue.
 
 ### 3.8 Verification Rigor (Fixing B9)
 
@@ -641,7 +641,7 @@ An edit qualifies for the $O(1)$ fast path (direct coordinate application using 
 $$\text{lease}_{from}.\text{served\_snapshot\_hash} == C \quad \land \quad \text{lease}_{to}.\text{served\_snapshot\_hash} == C \quad \land \quad \text{lease}_{from}.\text{served\_snapshot\_hash} == \text{lease}_{to}.\text{served\_snapshot\_hash}$$
 If any anchor originates from a different snapshot, or disk content has drifted ($S \neq C$), the edit **MUST** execute the Dynamic Rebase Path through `line_lineage` to resolve rebased coordinates $s'$ for each leased `line_id`.
 
-The iff selects the coordinate space, never the verification: the fast path is the rigid remap whose rebased coordinates happen to equal the served ones ($rebasedStart = servedStart \land rebasedEnd = servedEnd$), so **both** paths run the same whole-window identity gate in `src/hashline/served-verification.ts` (`verifyRebasedSpan`) before any write. For every row $k$ of the served window that the mirror did serve, the gate requires a lease for the anchor it names, `retired_at IS NULL`, and `rebasedLineOf(lease.line\_id) = rebasedStart + k$; rows `0` and `servedLen - 1` — the anchors the model named — must also have a mirror row, so a `null` there stays fail-closed, while an interior `null` is accepted (ADR-0024). A mixed-snapshot span therefore cannot bypass per-line identity verification: the gate rejects it on the interior row whose lease is retired or whose `line_id` no longer lives at its expected coordinate, whether or not the current content happens to present the same 3-char anchor.
+The iff selects the coordinate space, never the verification: the fast path is the rigid remap whose rebased coordinates happen to equal the served ones ($rebasedStart = servedStart \land rebasedEnd = servedEnd$), so **both** paths run the same whole-window identity gate in `src/hashline/served-verification.ts` (`verifyRebasedSpan`) before any write. For every row $k$ of the served window that the mirror did serve, the gate requires a lease for the anchor it names, `retired_at IS NULL`, and `rebasedLineOf(lease.line\_id) = rebasedStart + k$; rows `0` and `servedLen - 1` — the anchors the model named — must also have a mirror row, so a `null` there stays fail-closed, while an interior `null` is accepted (ADR-0024). A mixed-snapshot span therefore cannot bypass per-line identity verification: the gate rejects it on the interior row whose lease is retired or whose `line_id` no longer lives at its expected coordinate, whether or not the current content happens to present the same 4-char anchor.
 
 | Failure Condition | Seam Responsible | Output Error Code | Recovery Action |
 | :--- | :--- | :--- | :--- |

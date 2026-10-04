@@ -90,8 +90,7 @@ function moduleSources(code: string): string[] {
 // WHY: generalised to any single digit (not just 3/4): `src/` must derive every
 // WHY: count word, and the `(^|[^…])` guard spares compounds like `62-char`
 // WHY: (the alphabet size, not a width) since the digit there follows `6`.
-const COUNT_WORD_RE = /(^|[^A-Za-z0-9])\d-chars?\b/;
-const COUNT_CHARACTER_RE = /(^|[^A-Za-z0-9])\d-characters?\b/;
+const COUNT_WORD_RE = /(^|[^A-Za-z0-9])\d-(?:char|chars|character|characters)\b/;
 const COUNT_WORD_SPACE_RE = /(^|[^A-Za-z0-9])\d\s+(?:chars|characters)\b/;
 const CLASS_QUANTIFIER_RE = /\[[^\]]*\]\{(3|4)\}/;
 
@@ -121,7 +120,6 @@ interface WidthHit {
 function scanStrictLine(line: string): WidthHit[] {
   const hits: WidthHit[] = [];
   if (COUNT_WORD_RE.test(line)) hits.push({ arm: "count-word", line });
-  if (COUNT_CHARACTER_RE.test(line)) hits.push({ arm: "count-character", line });
   if (COUNT_WORD_SPACE_RE.test(line)) hits.push({ arm: "count-word-space", line });
   if (CLASS_QUANTIFIER_RE.test(line)) hits.push({ arm: "class-quantifier", line });
   return hits;
@@ -169,16 +167,15 @@ const ALLOWLISTED_LINES = [
 ];
 
 // WHY: width-relative consistency for the shipped contract surface — every
-// WHY: `N-char(s)` / `N-character(s)` must name the live `HASH_LEN`, so T2's
-// WHY: flip turns any leftover static `3` into a failure instead of a silent
-// WHY: mixed-width contract. `README.md` / `docs/**` are deliberately OUT of
-// WHY: this scan (T3 owns their prose); T3/T4 must extend the surface list
-// WHY: when that copy becomes normative.
+// WHY: `N-char(s)` / `N-character(s)` must name the live `HASH_LEN`, so any
+// WHY: leftover static digit fails loudly instead of shipping a mixed-width
+// WHY: contract. `README.md` and `CONTEXT.md` ship (`package.json.files`) and
+// WHY: state the width, so they are scanned; `docs/**` stays out for breadth,
+// WHY: and `CHANGELOG.md` / `docs/adr/**` stay out as frozen history.
 function countWordWidths(line: string): string[] {
   const widths: string[] = [];
   for (const re of [
-    /(^|[^A-Za-z0-9])(\d)-chars?\b/g,
-    /(^|[^A-Za-z0-9])(\d)-characters?\b/g,
+    /(^|[^A-Za-z0-9])(\d)-(?:char|chars|character|characters)\b/g,
     /(^|[^A-Za-z0-9])(\d)\s+(?:chars|characters)\b/g,
   ]) {
     for (const match of line.matchAll(re)) {
@@ -211,6 +208,13 @@ function contractTexts(): { label: string; text: string }[] {
     label: "scripts/runtime-edge-test.mjs",
     text: readFileSync("scripts/runtime-edge-test.mjs", "utf-8"),
   });
+  // WHY: shipped prose states the width normatively — a stale `3-char` here
+  // WHY: ships to every install, so the next width change must touch it too.
+  // WHY: Only these two files, not all of `docs/**` (breadth) and never
+  // WHY: `CHANGELOG.md` / `docs/adr/**` (frozen history).
+  for (const file of ["README.md", "CONTEXT.md"]) {
+    entries.push({ label: file, text: readFileSync(file, "utf-8") });
+  }
   return entries;
 }
 
