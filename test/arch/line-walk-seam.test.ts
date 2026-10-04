@@ -1,5 +1,6 @@
 import { readFileSync, readdirSync } from "node:fs";
 import { fileURLToPath } from "node:url";
+import { parse } from "@babel/parser";
 import { describe, expect, it, vi } from "vitest";
 import * as utils from "../../src/utils.js";
 import { MAX_HASH_LINES } from "../../src/hashline/index.js";
@@ -214,42 +215,55 @@ describe("the served page never materializes the line array", () => {
 // WHY: the second half of the witness: the primitive is adopted by both seams only if it stays
 // WHY: ignorant of them. Comments may name what the walk avoids; the CODE may not mention it.
 describe("the walk is mode-agnostic", () => {
-  const source = readFileSync(
-    new URL("../../src/file-content/line-walker.ts", import.meta.url),
-    "utf8",
-  );
-  const code = source.replace(/\/\*[\s\S]*?\*\//g, "").replace(/\/\/[^\n]*/g, "");
-
   it("names no render mode, anchor, hash, snapshot or store", () => {
-    expect(code).not.toMatch(/verbatim|served|anchor|hash|render|snapshot|store|mode/i);
+    const names = namedValues("src/file-content/line-walker.ts");
+    expect(
+      names.filter((name) => /verbatim|served|anchor|hash|render|snapshot|store|mode/i.test(name)),
+    ).toEqual([]);
   });
 
   it("imports nothing, so any caller can reach it without a dependency on their own seam", () => {
-    expect(code).not.toMatch(/\bimport\b|\brequire\b/);
+    expect(importsAndReExports("src/file-content/line-walker.ts")).toEqual([]);
   });
 });
 
 // WHAT THIS AUDIT COVERS, and what it does not.
 //
-// It reads the source of the files the page itself is built in — `src/file-content/*` (derived from the
-// directory, so a file added there is audited without anyone remembering to register it) plus
-// `src/read.ts` — and counts the two ways this codebase turns text into a line array: a `split` on a
-// newline literal, and a call to `splitLines`/`visLines` (naming them is fine: `index.ts` re-exports
-// `visLines`; CALLING one is not). A split on anything else — a path, a comma — is not a line split and
-// is not counted, so a guard here does not cry wolf on unrelated work.
+// It PARSES the files the page itself is built in — `src/file-content/*` (derived from the directory, so
+// a file added there is audited without anyone registering it) plus `src/read.ts` — with
+// `@babel/parser`, the same instrument two other arch tests use, and walks the AST. Formatting,
+// comments, string contents and regex literals therefore cannot hide a match or invent one; an earlier
+// revision of this audit used a hand-written lexer and needed three patches in two rounds for exactly
+// those.
 //
-// It does NOT cover shared machinery the page passes through — `utils.ts` (where the primitives are
-// defined), `hashline/*` (the edit path's whole-content hashing), `snapshot-store/*` (the lineage write
-// that legitimately keeps a line array, bounded by the anchor-space ceiling). Those are covered only for
-// the PRIMITIVES, at runtime, by the recording witness above: any call to `splitLines`/`visLines` during
-// a real read is recorded with the frames that made it, whichever file that is. An inline
-// `text.split("\n")` moved into shared machinery would be missed by both — that is the residual this
-// audit accepts rather than growing into an import-graph rule that reddens on the edit path.
+// It counts the two ways this codebase turns text into a line array:
+//   * `X.split(<newline literal>)` — `"\n"`, `'\n'`, a lone-quasi `` `\n` `` or `/\n/` — however it is
+//     laid out, including a chain wrapped across lines (`content\n  .split("\n")`, which this repo's own
+//     formatter emits); and
+//   * a CALL to `splitLines(...)` or `visLines(...)` — naming them is fine: `index.ts` re-exports
+//     `visLines`, calling one is not.
+//
+// It does NOT count, and does not claim to:
+//   * a separator held in a variable: `const NL = "\n"; text.split(NL)` is a line split this audit reads
+//     as zero. Widening the pattern to bare identifiers would instead count `split(sep)` for paths, so
+//     the trade is documented rather than won;
+//   * the FILE'S TEXT specifically: only the argument is read — `path.split("/")` is not counted (right)
+//     and neither would `rendered.split("\n")` be distinguished from the text's (wrong, but that is
+//     what the allowance below is for);
+//   * shared machinery outside the register: `src/prompts.ts` (on the read path through `read.ts`, and
+//     already holding a wrapped line split), `utils.ts` (where the primitives are defined),
+//     `hashline/*` (the edit path's whole-content hashing) and `snapshot-store/*` (the lineage write
+//     that legitimately keeps a line array, bounded by the anchor-space ceiling). Those modules are
+//     covered only for the PRIMITIVES, at runtime, by the recording witness above: any call to
+//     `splitLines`/`visLines` during a real read is recorded with the frames that made it, whichever
+//     file that is. An inline `text.split("\n")` in one of them would be missed by both — accepted
+//     rather than growing into an import-graph rule that reddens on the edit path.
 //
 // The allowance is the deliberate friction: a new line split in an audited file must be added here with
 // its reason, which is the moment to ask whether the page should be materializing lines at all.
 const ALLOWED_LINE_SPLITS: Record<string, number> = {
-  // Both split output this file has already RENDERED: a preview string and a withheld marker's body.
+  // Two splits of output this file has already RENDERED: a preview string and a withheld marker's body.
+  // Nothing checks the receivers are those two — only the count is the guard.
   "src/file-content/preview.ts": 2,
 };
 
@@ -261,73 +275,160 @@ const AUDITED: string[] = [
     .map((name) => `src/file-content/${name}`),
 ];
 
-/**
- * Source with comments removed and everything else left as written.
- *
- * WHY: not a regex — `//` inside a URL or a regex literal would swallow the rest of the line, which is
- * WHY: exactly how a real `text.split("\n")` inside a template literal slipped past this audit. The
- * WHY: scan knows strings and templates, so a comment is only a comment where one can start. String
- * WHY: CONTENTS stay: a split written inside one counts as a split, erring toward red, never toward
- * WHY: missing one. A template's `${...}` is code either way.
- */
-function stripComments(source: string): string {
-  const QUOTES = new Set(['"', "'", "`"]);
-  let out = "";
-  for (let index = 0; index < source.length; index++) {
-    const char = source[index]!;
-    if (QUOTES.has(char)) {
-      out += char;
-      for (index++; index < source.length; index++) {
-        const inner = source[index]!;
-        out += inner;
-        if (inner === "\\") {
-          out += source[++index] ?? "";
-        } else if (inner === char) {
-          break;
-        }
+/** An AST node, structurally: this file needs `type` and a handful of fields, nothing else. */
+type AstNode = Record<string, unknown> & { type: string };
+
+function* nodes(root: unknown): Generator<AstNode> {
+  if (Array.isArray(root)) {
+    for (const child of root) yield* nodes(child);
+    return;
+  }
+  if (typeof root !== "object" || root === null) return;
+  const node = root as Record<string, unknown>;
+  if (typeof node.type === "string") yield node as AstNode;
+  for (const [key, value] of Object.entries(node)) {
+    if (key !== "loc" && key !== "start" && key !== "end" && key !== "comments")
+      yield* nodes(value);
+  }
+}
+
+function parseProgram(code: string): AstNode {
+  return parse(code, { sourceType: "module", plugins: ["typescript"] })
+    .program as unknown as AstNode;
+}
+
+function parseFile(file: string): AstNode {
+  return parseProgram(readFileSync(new URL(`../../${file}`, import.meta.url), "utf8"));
+}
+
+function isNewlineLiteral(node: unknown): boolean {
+  const argument = node as AstNode | undefined;
+  if (!argument) return false;
+  if (argument.type === "StringLiteral") return argument.value === "\n";
+  if (argument.type === "RegExpLiteral") return argument.pattern === "\\n";
+  if (argument.type === "TemplateLiteral") {
+    const quasis = argument.quasis as Array<{ value?: { cooked?: string } }> | undefined;
+    const expressions = argument.expressions as unknown[] | undefined;
+    return expressions?.length === 0 && quasis?.length === 1 && quasis[0]?.value?.cooked === "\n";
+  }
+  return false;
+}
+
+function at(node: AstNode): string {
+  const loc = node.loc as { start?: { line?: number } } | undefined;
+  return `line ${loc?.start?.line ?? "?"}`;
+}
+
+/** `X.split(<newline literal>)` and `splitLines(...)`/`visLines(...)`, as the AST sees them. */
+function lineSplitsInSource(code: string): string[] {
+  const found: string[] = [];
+  for (const node of nodes(parseProgram(code))) {
+    if (node.type !== "CallExpression" && node.type !== "OptionalCallExpression") continue;
+    const callee = node.callee as AstNode | undefined;
+    const args = (node.arguments as unknown[] | undefined) ?? [];
+    if (callee?.type === "MemberExpression" || callee?.type === "OptionalMemberExpression") {
+      const property = callee.property as AstNode | undefined;
+      if (
+        property?.type === "Identifier" &&
+        property.name === "split" &&
+        isNewlineLiteral(args[0])
+      ) {
+        found.push(at(node));
       }
       continue;
     }
-    if (char === "/" && source[index + 1] === "/") {
-      while (index < source.length && source[index] !== "\n") index++;
-      continue;
+    if (
+      callee?.type === "Identifier" &&
+      (callee.name === "splitLines" || callee.name === "visLines")
+    ) {
+      found.push(at(node));
     }
-    if (char === "/" && source[index + 1] === "*") {
-      index += 2;
-      while (index < source.length && !(source[index] === "*" && source[index + 1] === "/"))
-        index++;
-      index++;
-      continue;
-    }
-    out += char;
   }
-  return out;
+  return found;
 }
 
-function readPathSource(file: string): string {
-  return stripComments(readFileSync(new URL(`../../${file}`, import.meta.url), "utf8"));
+function lineSplits(file: string): string[] {
+  return lineSplitsInSource(readFileSync(new URL(`../../${file}`, import.meta.url), "utf8"));
 }
 
-/** `split("\n")`, `split('\n')`, `split(/\n/)`, `splitLines(...)`, `visLines(...)`. */
-function lineSplits(code: string): string[] {
-  return [
-    ...code.matchAll(/[^\s;]+\.split\(\s*(?:"\\n"|'\\n'|\/\s*\\n)/g),
-    ...code.matchAll(/\b(?:splitLines|visLines)\(/g),
-  ].map((match) => match[0].replace(/\s+/g, ""));
+/** Every name a file writes in code: identifiers, member properties, literal values. Comments are not
+ * part of an AST, which is what keeps a WHY block from reading as an identifier. */
+function namedValues(file: string): string[] {
+  const found: string[] = [];
+  for (const node of nodes(parseFile(file))) {
+    if (node.type === "Identifier") found.push(String(node.name ?? ""));
+    if (node.type === "StringLiteral") found.push(String(node.value ?? ""));
+    if (node.type === "TemplateElement") {
+      const value = node.value as { cooked?: string } | undefined;
+      found.push(String(value?.cooked ?? ""));
+    }
+  }
+  return found;
+}
+
+/** A file's imports and re-exports, by module specifier. */
+function importsAndReExports(file: string): string[] {
+  const found: string[] = [];
+  for (const node of nodes(parseFile(file))) {
+    if (
+      node.type !== "ImportDeclaration" &&
+      node.type !== "ExportNamedDeclaration" &&
+      node.type !== "ExportAllDeclaration"
+    ) {
+      continue;
+    }
+    const source = node.source as { value?: string } | null | undefined;
+    if (source?.value) found.push(source.value);
+  }
+  return found;
 }
 
 describe("the read path holds no split of the file's text", () => {
-  it("audits the directory the page is built in, and does not audit nothing", () => {
+  it("audits the directory the page is built in, and parses every file it audits", () => {
     expect(AUDITED).toContain("src/file-content/detection.ts");
     expect(AUDITED).toContain("src/file-content/preview.ts");
-    expect(AUDITED.length).toBeGreaterThanOrEqual(6);
+    expect(AUDITED.length).toBeGreaterThanOrEqual(7);
+    for (const file of AUDITED) expect(parseFile(file).type).toBe("Program");
   });
 
   it.each(AUDITED)("%s splits no text into lines beyond its allowance", (file) => {
-    expect(lineSplits(readPathSource(file))).toHaveLength(ALLOWED_LINE_SPLITS[file] ?? 0);
+    expect(lineSplits(file)).toHaveLength(ALLOWED_LINE_SPLITS[file] ?? 0);
   });
 
   it("never splits inside the walk itself, whatever its callers do", () => {
-    expect(readPathSource("src/file-content/line-walker.ts")).not.toMatch(/split/i);
+    expect(
+      namedValues("src/file-content/line-walker.ts").filter((name) => /split/i.test(name)),
+    ).toEqual([]);
+    expect(lineSplits("src/file-content/line-walker.ts")).toEqual([]);
+  });
+});
+
+// WHY: the instrument's own tests. What this audit reads is the thing most likely to rot — an earlier
+// WHY: revision lost a real split to a `//` inside a URL and needed a lexer to recover it — so the reader
+// WHY: is pinned here rather than trusted, and its blind spot is asserted AS a blind spot.
+describe("the audit's reader", () => {
+  it("sees a split through a wrapped chain, a template separator and a regex separator", () => {
+    expect(
+      lineSplitsInSource(`
+        const a = text
+          .split("\\n")
+          .map((line) => line.trim());
+        const b = text.split(\`\\n\`);
+        const c = text.split(/\\n/);
+        const path = name.split("/");
+      `),
+    ).toHaveLength(3);
+  });
+
+  it("sees a split on a line that carries a URL, and one inside a template interpolation", () => {
+    expect(
+      lineSplitsInSource(
+        'const note = `see https://example.com/${text.split("\\n").length}`;\nconst q = /"/;\nconst u = "https://x";\nconst rows = text.split("\\n");',
+      ),
+    ).toHaveLength(2);
+  });
+
+  it("reads a separator held in a variable as zero, which is the documented residual", () => {
+    expect(lineSplitsInSource('const NL = "\\n";\nconst rows = text.split(NL);')).toHaveLength(0);
   });
 });
