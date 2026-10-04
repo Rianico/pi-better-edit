@@ -96,4 +96,38 @@ describe("read tool — TUI renderers for the {file} payload", () => {
     // WHY: ANSI, so it does not wrap each body line in theme.fg("toolOutput", ...).
     expect(calls).not.toContain("toolOutput");
   });
+
+  it("qualifies the windows serve claim with the served default (fix 2)", () => {
+    const tool = readTool();
+    const description = (tool.parameters.properties.windows as { description: string }).description;
+    expect(description).toContain("in the default `served` mode every window's rows are served");
+  });
+
+  it("keeps highlighting and call rendering for a legacy path payload (fix 4)", () => {
+    const tool = readTool();
+    const calls: string[] = [];
+    const recordingTheme = {
+      fg: (name: string, text: string) => {
+        calls.push(name);
+        return text;
+      },
+      bold: (text: string) => text,
+    };
+    const legacyArgs = { path: "notes.ts" };
+    const context = {
+      args: legacyArgs,
+      cwd: "/tmp",
+      showImages: true,
+      isError: false,
+      lastComponent: undefined,
+    };
+    const result = { content: [{ type: "text", text: "const x = 1;\n" }], isError: false };
+
+    const call = tool.renderCall(legacyArgs, recordingTheme, { cwd: "/tmp", expanded: false });
+    expect(call.render(80).join("\n")).toContain("notes.ts");
+
+    calls.length = 0;
+    tool.renderResult(result, { expanded: true }, recordingTheme, context);
+    expect(calls).not.toContain("toolOutput");
+  });
 });

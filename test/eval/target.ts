@@ -4,7 +4,7 @@ export interface EvalTarget {
   lineHashes: (content: string, path?: string) => Promise<string[]>;
   toolNames: { read: string; edit: string; undo: string };
   adaptEditParams?: (name: string, params: any) => any;
-  adaptReadParams?: (name: string, params: any) => any;
+  adaptReadParams?: (name: string, params: unknown) => unknown;
 }
 
 // WHY: the registered read still speaks the legacy wire (`path`); the battery's new-wire read
@@ -70,7 +70,7 @@ export async function resolveTarget(): Promise<EvalTarget> {
         };
       },
 
-      adaptReadParams: (name: string, params: any) =>
+      adaptReadParams: (name, params) =>
         name === "read" ? adaptReadParamsForLegacy(params) : params,
     };
   }

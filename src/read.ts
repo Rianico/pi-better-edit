@@ -24,6 +24,10 @@ function readGuide(): string[] {
   return loadGuide("../prompts/read-guidelines.md");
 }
 
+// WHY: the builtin renderers read `file_path ?? path`; our payload is `file`, but a legacy
+// WHY: `path` caller must still render, so the seam accepts either key.
+type ReadRenderArgs = { file?: string; path?: string };
+
 export function regRead(pi: ExtensionAPI): void {
   // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer reads
   // WHY: `file_path ?? path`. Our payload field is `file`, so re-map it for rendering only —
@@ -39,13 +43,15 @@ export function regRead(pi: ExtensionAPI): void {
     promptGuidelines: readGuide(),
     // SAFETY: the builtin renderers are keyed on `file_path ?? path`; the spread re-maps our
     // SAFETY: `file` payload onto `path` for rendering without mutating the caller's `args`.
-    renderCall: (args, theme, context) =>
-      builtinRenderCall({ ...args, path: args?.file }, theme, context),
-    renderResult: (result, options, theme, context) =>
-      builtinRenderResult(result, options, theme, {
+    renderCall: (args: ReadRenderArgs, theme, context) =>
+      builtinRenderCall({ ...args, path: args?.file ?? args?.path }, theme, context),
+    renderResult: (result, options, theme, context) => {
+      const args = context.args as ReadRenderArgs;
+      return builtinRenderResult(result, options, theme, {
         ...context,
-        args: { ...context.args, path: context.args?.file },
-      }),
+        args: { ...args, path: args?.file ?? args?.path },
+      });
+    },
     parameters: Type.Object({
       file: Type.String({
         description: "Path to the file to read (relative or absolute)",
@@ -77,7 +83,7 @@ export function regRead(pi: ExtensionAPI): void {
           {
             maxItems: MAX_READ_WINDOWS,
             description:
-              "Optional array of disjoint line windows to read in a single turn; every window's rows are served, so anchors from all of them are usable in one edit",
+              "Optional array of disjoint line windows to read in a single turn; in the default `served` mode every window's rows are served, so anchors from all of them are usable in one edit",
           },
         ),
       ),
