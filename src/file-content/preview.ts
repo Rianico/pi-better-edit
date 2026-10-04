@@ -369,11 +369,12 @@ function buildWindowedPreview(params: {
     // WHY: a multi-window request is N discrete slices, not one stream, so the result carries no root
     // WHY: `nextOffset`: a scalar would invite `offset = nextOffset` and silently re-read a window the
     // WHY: caller never asked to continue. A truncated window says so in its own section text.
-    served: verbatim
-      ? []
-      : [...hashByPosition.entries()]
-          .sort((left, right) => left[0] - right[0])
-          .map(([position, hash]) => ({ position, hash })),
+    // WHY: no outer mode check here: `hashByPosition` is empty for verbatim because every inner
+    // WHY: builder guards its own `served` rows (`fmtRows`, `buildOversizedPreview`,
+    // WHY: `buildNormalPreview`), so an outer guard would be unreachable and untestable.
+    served: [...hashByPosition.entries()]
+      .sort((left, right) => left[0] - right[0])
+      .map(([position, hash]) => ({ position, hash })),
   };
 }
 
