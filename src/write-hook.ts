@@ -92,7 +92,7 @@ export function registerWriteHook(pi: ExtensionAPI): void {
   pi.on("tool_call", async (event, ctx) => {
     if (event.toolName !== "write") return;
     const input = event.input as Record<string, unknown> | undefined;
-    const rawPath = (input?.path ?? input?.file_path) as unknown;
+    const rawPath = input?.path as unknown;
     const content = input?.content as unknown;
     if (typeof rawPath !== "string" || typeof content !== "string") return;
     // WHY: pi's builtin `write` schema tolerates the extra top-level `mode` field

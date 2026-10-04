@@ -6,7 +6,7 @@ import { MAX_HASH_LINES } from "./hashline/index.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
-import { abortIf, isRec, normalizeFilePath } from "./utils.js";
+import { abortIf } from "./utils.js";
 import { splitLines, visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { prepareFile } from "./file-content/index.js";
@@ -31,12 +31,6 @@ export function regRead(pi: ExtensionAPI): void {
     description: R_DESC,
     promptSnippet: R_SNIPPET,
     promptGuidelines: readGuide(),
-    prepareArguments: (args: unknown) => {
-      if (!isRec(args)) return args as never;
-      const record = { ...args } as Record<string, unknown>;
-      normalizeFilePath(record);
-      return record as never;
-    },
     parameters: Type.Object({
       path: Type.String({
         description: "Path to the file to read (relative or absolute)",
