@@ -240,13 +240,17 @@ describe("the walk is mode-agnostic", () => {
 //   * `X.split(<newline literal>)` — `"\n"`, `'\n'`, a lone-quasi `` `\n` `` or `/\n/` — however it is
 //     laid out, including a chain wrapped across lines (`content\n  .split("\n")`, which this repo's own
 //     formatter emits); and
-//   * a CALL to `splitLines(...)` or `visLines(...)` — naming them is fine: `index.ts` re-exports
-//     `visLines`, calling one is not.
+//   * a call to `splitLines(...)`/`visLines(...)`, bare or as a member (`deps.visLines(normalized)`, which
+//     this repo has) — naming them is fine: `index.ts` re-exports `visLines`, calling one is not.
 //
 // It does NOT count, and does not claim to:
-//   * a separator held in a variable: `const NL = "\n"; text.split(NL)` is a line split this audit reads
-//     as zero. Widening the pattern to bare identifiers would instead count `split(sep)` for paths, so
-//     the trade is documented rather than won;
+//   * any other spelling of a line split than a literal member access whose argument is the LF literal:
+//     a computed property (`t["split"]("\n")`), a detached or aliased callee (`t.split.bind(t)`,
+//     `const { split } = t`, `String.prototype.split.call(t, "\n")`, `Reflect.apply(...)`), a wrapped
+//     argument (`"\n" as const`, `...["\n"]`) or another newline encoding (`"\r\n"`, `/\r?\n/`) reads
+//     as zero. That is a CLASS, not a list to finish: an audit over a language construct has a boundary,
+//     and this is where this one is stated. Widening it to bare identifiers would instead count
+//     `split(sep)` for paths, which is the false alarm this guard cannot afford;
 //   * the FILE'S TEXT specifically: only the argument is read — `path.split("/")` is not counted (right)
 //     and neither would `rendered.split("\n")` be distinguished from the text's (wrong, but that is
 //     what the allowance below is for);
@@ -319,7 +323,8 @@ function at(node: AstNode): string {
   return `line ${loc?.start?.line ?? "?"}`;
 }
 
-/** `X.split(<newline literal>)` and `splitLines(...)`/`visLines(...)`, as the AST sees them. */
+/** Every call that turns text into lines, as the AST sees them: `X.split(<LF literal>)` and a bare or
+ * member-form call to `splitLines`/`visLines`. */
 function lineSplitsInSource(code: string): string[] {
   const found: string[] = [];
   for (const node of nodes(parseProgram(code))) {
@@ -328,10 +333,13 @@ function lineSplitsInSource(code: string): string[] {
     const args = (node.arguments as unknown[] | undefined) ?? [];
     if (callee?.type === "MemberExpression" || callee?.type === "OptionalMemberExpression") {
       const property = callee.property as AstNode | undefined;
+      const name = property?.type === "Identifier" ? property.name : undefined;
+      // The member form of the primitives — `deps.visLines(normalized)`, which this repo has — is the
+      // same call as the bare form, so both count; so does an optional chain (both are AST shapes).
       if (
-        property?.type === "Identifier" &&
-        property.name === "split" &&
-        isNewlineLiteral(args[0])
+        (name === "split" && isNewlineLiteral(args[0])) ||
+        name === "splitLines" ||
+        name === "visLines"
       ) {
         found.push(at(node));
       }
@@ -366,21 +374,36 @@ function namedValues(file: string): string[] {
   return found;
 }
 
-/** A file's imports and re-exports, by module specifier. */
-function importsAndReExports(file: string): string[] {
+/** Every module a file reaches for at runtime: static imports, re-exports, `import(...)` and
+ * `require(...)`. The last two are why this walks rather than matching the word `import`. */
+function importsInSource(code: string): string[] {
   const found: string[] = [];
-  for (const node of nodes(parseFile(file))) {
-    if (
-      node.type !== "ImportDeclaration" &&
-      node.type !== "ExportNamedDeclaration" &&
-      node.type !== "ExportAllDeclaration"
-    ) {
+  for (const node of nodes(parseProgram(code))) {
+    const source = node.source as { value?: string } | null | undefined;
+    if (node.type === "ImportExpression" || node.type === "ExportAllDeclaration") {
+      if (source?.value) found.push(source.value);
       continue;
     }
-    const source = node.source as { value?: string } | null | undefined;
-    if (source?.value) found.push(source.value);
+    if (node.type === "ImportDeclaration" || node.type === "ExportNamedDeclaration") {
+      if (source?.value) found.push(source.value);
+      continue;
+    }
+    if (node.type === "CallExpression") {
+      const callee = node.callee as AstNode | undefined;
+      const args = (node.arguments as unknown[] | undefined) ?? [];
+      const first = args[0] as { type?: string; value?: string } | undefined;
+      // Babel reads `import("x")` as a CallExpression whose callee IS the `import` keyword (an
+      // `ImportExpression` only appears when the parser is asked to create them), so both shapes count.
+      const reaches =
+        callee?.type === "Import" || (callee?.type === "Identifier" && callee.name === "require");
+      if (reaches && first?.type === "StringLiteral") found.push(String(first.value));
+    }
   }
   return found;
+}
+
+function importsAndReExports(file: string): string[] {
+  return importsInSource(readFileSync(new URL(`../../${file}`, import.meta.url), "utf8"));
 }
 
 describe("the read path holds no split of the file's text", () => {
@@ -428,7 +451,32 @@ describe("the audit's reader", () => {
     ).toHaveLength(2);
   });
 
-  it("reads a separator held in a variable as zero, which is the documented residual", () => {
+  it("reads the residual class as zero: a spelling that is not a literal member access with an LF literal", () => {
     expect(lineSplitsInSource('const NL = "\\n";\nconst rows = text.split(NL);')).toHaveLength(0);
+    expect(lineSplitsInSource('const rows = text["split"]("\\n");')).toHaveLength(0);
+    expect(lineSplitsInSource('const rows = text.split.bind(text)("\\n");')).toHaveLength(0);
+    expect(lineSplitsInSource('const rows = text.split("\\r\\n");')).toHaveLength(0);
+  });
+
+  it("sees an optional chain, because that is a member access like any other", () => {
+    expect(
+      lineSplitsInSource('const a = text?.split("\\n");\nconst b = text.split?.("\\n");'),
+    ).toHaveLength(2);
+  });
+
+  it("sees a primitive call written as a member, which this repo has", () => {
+    expect(
+      lineSplitsInSource(
+        "const rows = visLines(text);\nconst other = deps.visLines(text);\nconst third = deps.splitLines(text);",
+      ),
+    ).toHaveLength(3);
+  });
+
+  it("sees a module reached at runtime, not only a static import", () => {
+    expect(
+      importsInSource(
+        'import a from "./a.js";\nexport { b } from "./b.js";\nconst c = await import("./c.js");\nconst d = require("./d.js");',
+      ),
+    ).toEqual(["./a.js", "./b.js", "./c.js", "./d.js"]);
   });
 });
