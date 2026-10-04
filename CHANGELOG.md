@@ -29,6 +29,7 @@
 * **e2e:** re-home the deterministic edit battery out of the eval gate — the same 27 local scenarios run counted in `pnpm test` through the validated registry; the package/upstream comparison target is dropped with the benchmark suite. (#20)
 * **e2e:** restore per-scenario verdicts in the re-homed battery — outcome, rejection code and preserved content asserted from the recovered comparator table; both accept-where-reject and wrong-content mutants redden. (#20)
 * **readme:** drop the unbacked project-battery row and the stale scope comment — the battery cell now names the live `test/e2e` artifact. (#20)
+* **e2e:** pin noop byte-identity and fix the T4b review residuals — B11/B12 assert `finalContent` equals the captured pre-edit bytes instead of an inert substring, the battery row fills its fourth cell, and the scope comment drops its duplicated clause. (#20)
 
 ## [2.6.0] - 2026-10-03
 

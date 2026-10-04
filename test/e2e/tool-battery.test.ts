@@ -13,11 +13,15 @@ import {
 
 // WHY: per-scenario verdicts recovered from the deleted comparator
 // WHY: (`f6c83a7:scripts/eval-compare.mjs` EXPECTED + `verdict()`). `outcome` and
-// WHY: `preserve` entries below are verbatim from that table; `preserve`
+// WHY: `preserve` semantics mirror `verdict()`; `byteIdentity` pins noop
+// WHY: scenarios to byte-identical content (their `preserve` would be a
+// WHY: substring of the pre-edit file and could never fail).
+// WHY: `preserve` entries below are verbatim from that table except the
+// WHY: two noop scenarios, which use `byteIdentity` instead (see above);
 // WHY: entries on applied scenarios are derived from each scenario's own
 // WHY: replacement text in this file (marked DERIVED). Without them the
 // WHY: battery records outcomes it never compares and cannot fail.
-type Verdict = { outcome: "success" | "rejected"; preserve?: string };
+type Verdict = { outcome: "success" | "rejected"; preserve?: string; byteIdentity?: boolean };
 const EXPECTED: Record<string, Verdict> = {
   "B1 single-line replace": { outcome: "success", preserve: "BBB" }, // DERIVED
   "B2 range replace": { outcome: "success", preserve: "X\nY" }, // DERIVED
@@ -41,8 +45,8 @@ const EXPECTED: Record<string, Verdict> = {
     outcome: "rejected",
     preserve: "\nb\nd\n",
   },
-  "B11 noop replace": { outcome: "success", preserve: "bbb" }, // DERIVED
-  "B12 noop-with-out-of-range-drift": { outcome: "success", preserve: "a\nb\nc\nD\n" }, // DERIVED
+  "B11 noop replace": { outcome: "success", byteIdentity: true },
+  "B12 noop-with-out-of-range-drift": { outcome: "success", byteIdentity: true },
   "B13 chained-edit-from-diff-rows-no-reread": { outcome: "success", preserve: "B2" }, // DERIVED
   "B14 empty-file insert": { outcome: "success", preserve: "first\nsecond" }, // DERIVED
   "B15 large-range drift capped-feedback": {
@@ -88,6 +92,7 @@ interface ScenarioResult {
   code?: string;
   calls: Call[];
   finalContent: string;
+  preEdit?: string;
 }
 
 interface Ctx {
@@ -430,6 +435,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
       const { ctx, getTool } = setupTarget(cwd);
       const r1 = await call(rec, getTool("read"), "read", { path: "b11.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
+      rec.preEdit = await readFile(path, "utf-8");
       const e1 = await call(
         rec,
         getTool("edit"),
@@ -453,6 +459,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
       const r1 = await call(rec, getTool("read"), "read", { path: "b12.ts" }, ctx);
       const a = readAnchor(r1.text, "│a");
       await writeFile(path, "a\nb\nc\nD\n", "utf-8");
+      rec.preEdit = await readFile(path, "utf-8");
       const e1 = await call(
         rec,
         getTool("edit"),
@@ -925,6 +932,9 @@ describe("tool battery (deterministic edit scenarios)", () => {
       }
       if (exp!.preserve !== undefined) {
         expect(rec.finalContent).toContain(exp!.preserve);
+      }
+      if (exp!.byteIdentity === true) {
+        expect(rec.finalContent).toBe(rec.preEdit);
       }
     }
   });

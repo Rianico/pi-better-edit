@@ -351,7 +351,7 @@ referenced span is retired — the current word is `cut`.
 | **Batch Support** | **Atomic** up to 32 items with delta shifts | Multi-section patch preflight | Sequential individual calls |
 | **Undo Persistence** | **Survives restarts** (CAS snapshot pinned) | None | None |
 | **Session Isolation** | Session-keyed leases (`served_leases`) | None | N/A |
-| **Deterministic Battery** | 27 deterministic scenarios run by `pnpm test` (`test/e2e/tool-battery.test.ts`) | N/A |
+| **Deterministic Battery** | 27 deterministic scenarios run by `pnpm test` (`test/e2e/tool-battery.test.ts`) | N/A | N/A |
 
 ### Edge Case Behavior
 
