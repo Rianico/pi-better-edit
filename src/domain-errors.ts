@@ -562,7 +562,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_LARGE_FILE: {
     audience: "MODEL",
     format: largeFileFormat,
-    // WHY remedy: the named limit was exceeded — `limitKind` (lines with `lineCount`, or hash-space) and `limit` pin the capacity. See ADR-0021.
+    // WHY remedy: the named limit was exceeded — `limitKind` (lines: `lineCount` only from the preloaded gate — or hash-space) and `limit` pin the capacity. See ADR-0021.
     remedy: "Use write or a non-line-based approach for very large files.",
   },
 };
