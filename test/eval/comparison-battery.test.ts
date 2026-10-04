@@ -80,7 +80,9 @@ function setupTarget(
     setActiveTools() {},
   } as any;
   target.register(pi);
-  return { ctx: { cwd } as Ctx, getTool: (n) => tools.get(n), handlers };
+  // WHY: #165 made every served tool require `ctx.sessionManager`; this fixture ctx carries the
+  // WHY: fixed battery session so the local read/edit calls exercise the wire instead of failing loud.
+  return { ctx: sessionCtx(cwd, "eval-battery"), getTool: (n) => tools.get(n), handlers };
 }
 
 async function deliverDiff(
@@ -132,7 +134,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b1.ts" },
+        { file: "b1.ts" },
         ctx,
       );
       const anchor = readAnchor(r1.text, "│bbb");
@@ -160,7 +162,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b2.ts" },
+        { file: "b2.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -189,7 +191,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b3.ts" },
+        { file: "b3.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -220,7 +222,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b4.ts" },
+        { file: "b4.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -250,7 +252,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b5.ts" },
+        { file: "b5.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│b");
@@ -281,7 +283,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b6.ts" },
+        { file: "b6.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│b");
@@ -316,14 +318,14 @@ describeGate("EVAL comparison battery", () => {
           rec,
           getTool(target.toolNames.read),
           target.toolNames.read,
-          { path: "b7.ts", limit: 3 },
+          { file: "b7.ts", limit: 3 },
           ctx,
         );
         const r2 = await call(
           rec,
           getTool(target.toolNames.read),
           target.toolNames.read,
-          { path: "b7.ts", offset: 7 },
+          { file: "b7.ts", offset: 7 },
           ctx,
         );
         const a = readAnchor(r1.text, "│l3");
@@ -376,7 +378,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b9.ts" },
+        { file: "b9.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -406,7 +408,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b10.ts" },
+        { file: "b10.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│a");
@@ -437,7 +439,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b11.ts" },
+        { file: "b11.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -465,7 +467,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b12.ts" },
+        { file: "b12.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│a");
@@ -494,7 +496,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b13.ts" },
+        { file: "b13.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│b");
@@ -545,7 +547,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b14.ts" },
+        { file: "b14.ts" },
         ctx,
       );
       const emptyHash = r1.text.split("\n")[0]!.split("│")[0]!;
@@ -581,7 +583,7 @@ describeGate("EVAL comparison battery", () => {
           rec,
           getTool(target.toolNames.read),
           target.toolNames.read,
-          { path: "b15.ts" },
+          { file: "b15.ts" },
           ctx,
         );
         const a = readAnchor(r1.text, "│line 1");
@@ -619,7 +621,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b16.ts" },
+        { file: "b16.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -649,7 +651,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b16b.ts" },
+        { file: "b16b.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -680,7 +682,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b17.ts" },
+        { file: "b17.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│b");
@@ -710,7 +712,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b18.ts" },
+        { file: "b18.ts" },
         ctx,
       );
       const a = readAnchor(r1.text, "│b");
@@ -741,7 +743,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b19.ts" },
+        { file: "b19.ts" },
         mainCtx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -773,7 +775,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b20.ts" },
+        { file: "b20.ts" },
         mainCtx,
       );
       const aC = readAnchor(r1.text, "│c");
@@ -782,7 +784,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b20.ts", limit: 2 },
+        { file: "b20.ts", limit: 2 },
         subCtx,
       );
       const sB = readAnchor(s1.text, "│b");
@@ -829,7 +831,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b21.ts" },
+        { file: "b21.ts" },
         mainCtx,
       );
       const a = readAnchor(r1.text, "│bbb");
@@ -861,7 +863,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b22.ts" },
+        { file: "b22.ts" },
         subCtx,
       );
       const hashes = await target.lineHashes("a\nb\nc\n", join(cwd, "b22.ts"));
@@ -894,7 +896,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b23.cpp" },
+        { file: "b23.cpp" },
         ctx,
       );
       const line2Hash = readAnchor(r1.text, "│\tif (x > 0) {");
@@ -932,7 +934,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b24.js" },
+        { file: "b24.js" },
         ctx,
       );
       const a = readAnchor(r1.text, "│function alpha() {");
@@ -974,7 +976,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b25a.ts" },
+        { file: "b25a.ts" },
         ctx,
       );
       const anchorBravo = readAnchor(r1.text, "│bravo");
@@ -1006,7 +1008,7 @@ describeGate("EVAL comparison battery", () => {
         rec,
         getTool(target.toolNames.read),
         target.toolNames.read,
-        { path: "b26.txt" },
+        { file: "b26.txt" },
         ctx,
       );
       const anchor = readAnchor(r1.text, "│second");

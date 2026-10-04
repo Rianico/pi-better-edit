@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createReadTool } from "@earendil-works/pi-coding-agent";
+import { createReadTool, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MAX_READ_WINDOWS } from "./constants.js";
 import { MAX_HASH_LINES } from "./hashline/index.js";
@@ -25,12 +25,27 @@ function readGuide(): string[] {
 }
 
 export function regRead(pi: ExtensionAPI): void {
+  // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer reads
+  // WHY: `file_path ?? path`. Our payload field is `file`, so re-map it for rendering only —
+  // WHY: the call line and expanded output keep the filename, and `args` is never mutated.
+  const builtinReadDef = createReadToolDefinition("");
+  const builtinRenderCall = builtinReadDef.renderCall as any;
+  const builtinRenderResult = builtinReadDef.renderResult as any;
   pi.registerTool({
     name: "read",
     label: "Read",
     description: R_DESC,
     promptSnippet: R_SNIPPET,
     promptGuidelines: readGuide(),
+    // SAFETY: the builtin renderers are keyed on `file_path ?? path`; the spread re-maps our
+    // SAFETY: `file` payload onto `path` for rendering without mutating the caller's `args`.
+    renderCall: (args, theme, context) =>
+      builtinRenderCall({ ...args, path: args.file }, theme, context),
+    renderResult: (result, options, theme, context) =>
+      builtinRenderResult(result, options, theme, {
+        ...context,
+        args: { ...context.args, path: context.args.file },
+      }),
     parameters: Type.Object({
       file: Type.String({
         description: "Path to the file to read (relative or absolute)",
