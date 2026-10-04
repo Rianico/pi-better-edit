@@ -17,7 +17,7 @@ import { valAccess } from "../validation.js";
 import { abortIf } from "../utils.js";
 import { visLines } from "../utils.js";
 import { loadFileKindAndText, type FileStats, type LFile } from "./detection.js";
-import { readNormFile, decodeNormText, fileSnap, type NormFile } from "./loader.js";
+import { anchorWalkFor, decodeNormText, fileSnap } from "./loader.js";
 import { fmtReadPreview, type ReadWindow } from "./preview.js";
 import type { ServedRow } from "../hashline/served.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
@@ -42,6 +42,12 @@ export interface PrepareResult {
   absolutePath: string;
   bom: string;
   fileHashes: string[];
+  /**
+   * The counts the page walk already produced, in both line stacks: `visLines(normalized).length` for
+   * the read's own line count, and `splitLines(normalized).length` for the snapshot's. WHY: a caller
+   * that split the text again for them would rebuild the line array this path exists to avoid.
+   */
+  lineTotals: { visible: number; split: number };
   hadUtf8DecodeErrors: boolean;
   preview: string;
   served: ServedRow[];
@@ -103,6 +109,7 @@ export async function prepareFile(
         absolutePath: resolved,
         bom: "",
         fileHashes: [],
+        lineTotals: { visible: 0, split: 0 },
         hadUtf8DecodeErrors: false,
         preview: "",
         served: [],
@@ -116,6 +123,7 @@ export async function prepareFile(
         absolutePath: resolved,
         bom: "",
         fileHashes: [],
+        lineTotals: { visible: 0, split: 0 },
         hadUtf8DecodeErrors: false,
         preview: "",
         served: [],
@@ -128,6 +136,7 @@ export async function prepareFile(
       absolutePath: resolved,
       bom: "",
       fileHashes: [],
+      lineTotals: { visible: 0, split: 0 },
       hadUtf8DecodeErrors: false,
       preview: "",
       served: [],
@@ -135,25 +144,22 @@ export async function prepareFile(
   }
 
   // WHY: the ONE seam where verbatim diverges from served. Both modes decode/normalize through
-  // WHY: `decodeNormText`; only served then hashes, because anchors and the anchor-space line cap are
-  // WHY: edit-domain concerns. The `fileHashes: []` is load-bearing: the preview reads a
-  // WHY: present-but-empty array as "hashes already known" and skips its own lazy `lineHashes` call.
-  const norm: NormFile = verbatim
-    ? {
-        ...(await decodeNormText(path, cwd, {
-          signal,
-          accessMode: options?.accessMode,
-          preloadedFile: file,
-        })),
-        fileHashes: [],
-      }
-    : await readNormFile(path, cwd, {
-        signal,
-        accessMode: options?.accessMode,
-        maxLines,
+  // WHY: `decodeNormText`; only served then reaches the anchor store, because anchors and the
+  // WHY: anchor-space line cap are edit-domain concerns.
+  const norm = await decodeNormText(path, cwd, {
+    signal,
+    accessMode: options?.accessMode,
+    ...(maxLines === undefined ? {} : { maxLines }),
+    preloadedFile: file,
+  });
+  // WHY: served hands the preview a walk plan instead of a finished anchor array: the anchors are
+  // WHY: assigned inside the same walk that keeps the page, so the text is traversed once for both.
+  // WHY: Verbatim passes none at all — no store, no snapshot, no hash of any line.
+  const anchors = verbatim
+    ? []
+    : await anchorWalkFor(norm.normalized, norm.absolutePath, {
         store: options?.store,
         noPersist: options?.noPersist,
-        preloadedFile: file,
       });
 
   const preview = await fmtReadPreview(
@@ -164,7 +170,7 @@ export async function prepareFile(
       windows: options?.windows,
       render: options?.render,
     },
-    norm.fileHashes,
+    anchors,
     norm.absolutePath,
     options?.maxLineBytes,
     options?.maxTruncLines ?? AUTO_READ_MAX,
@@ -182,7 +188,8 @@ export async function prepareFile(
     normalized: norm.normalized,
     absolutePath: norm.absolutePath,
     bom: norm.bom,
-    fileHashes: norm.fileHashes,
+    fileHashes: preview.hashes,
+    lineTotals: preview.lineTotals,
     ...(file.stats ? { stats: file.stats } : {}),
     hadUtf8DecodeErrors: norm.hadUtf8DecodeErrors,
     preview: previewText,

@@ -7,10 +7,15 @@ import {
 } from "@earendil-works/pi-coding-agent";
 import { MAX_READ_WINDOWS } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
-import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "../hashline/index.js";
+import {
+  lineHashes,
+  fmtRegion,
+  HASH_SEP,
+  MAX_HASH_LINES,
+  type AnchorWalk,
+} from "../hashline/index.js";
 import type { ServedRow } from "../hashline/served.js";
-import { visLines } from "../utils.js";
-import { visibleLineTotal, walkLines } from "./line-walker.js";
+import { visibleLineTotal, walkLines, type LineRange } from "./line-walker.js";
 
 function normPosInt(value: number | undefined, name: string): number | undefined {
   if (value === undefined) {
@@ -83,18 +88,17 @@ function fmtRows(hashes: string[], lines: string[], verbatim: boolean): string {
   return joined === "" && lines.length > 0 ? "[1 empty line]" : joined;
 }
 
-async function emptyFilePreview(
+function emptyFilePreview(
   startLine: number,
-  text: string,
-  precomputedHashes: string[] | undefined,
-  path: string | undefined,
+  hashes: string[],
   hashSep: string,
   verbatim: boolean,
-): Promise<{ text: string; served: ServedRow[] }> {
+): { text: string; served: ServedRow[] } {
   if (verbatim) return { text: "[File is empty.]", served: [] };
   if (startLine === 1) {
-    const allHashes =
-      precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+    // WHY: the walk already anchored this empty file's one line, so the marker never splits for it.
+    const allHashes = hashes;
+
     const emptyLineHash = allHashes[0]!;
     return {
       text: `${emptyLineHash}${hashSep}\n[File is empty. Use edit to insert content.]`,
@@ -300,52 +304,63 @@ function buildWindowSection(params: {
  * only for the lines actually shown, and overlapping windows collapse to one served row per line.
  */
 /**
- * The lines a preview reads a page out of: how many there are, and a half-open slice of them. Two
- * implementations answer those two questions, so the render path below is written once for both
- * render modes.
- *
- * WHY: served already holds its line array — its anchors are priced by position in it — so it slices
- * WHY: the array it has. Verbatim keeps no array at all, so it walks each page out of the text.
+ * A page the read walked out of the text: the lines the request asked for, and the counts.
  */
-interface LineSource {
+interface WalkedPage {
   /** The read's line total: `visLines(text).length`. */
   readonly total: number;
-  /** The `[start, end)` lines, 0-indexed and half-open; a slice past the end is short or empty. */
-  slice(start: number, end: number): string[];
-}
-
-function arrayLines(lines: string[]): LineSource {
-  return { total: lines.length, slice: (start, end) => lines.slice(start, end) };
+  /** `split("\n")`'s total: the count a snapshot stores as its line count. */
+  readonly splitTotal: number;
+  /** The lines of each requested range, in request order. */
+  readonly ranges: string[][];
+  /** The anchors the walk assigned, in line order. Present only when the walk carried one. */
+  readonly assigned?: string[];
 }
 
 /**
- * WHY: verbatim keeps no line array, so its page is walked out of the text: one allocation-free walk
- * WHY: for the total, one for the page. The split this replaces answered the same two questions but
- * WHY: kept one heap string per line to do it — 4.56× the text, measured in this repo's probe.
+ * The one page primitive: walks the requested ranges once, optionally assigning an anchor per line.
+ *
+ * WHY: this is how the served read gets its anchors and its page out of ONE pass — the assignment runs
+ * WHY: inside the walk, in line order, so nothing splits the text a second time to produce them. One
+ * WHY: allocation-free walk answers the counts, this one answers the page.
  */
-function walkedLines(text: string): LineSource {
+function walkPage(
+  text: string,
+  ranges: readonly LineRange[],
+  assign?: (line: string) => string,
+): WalkedPage {
+  const assigned: string[] = [];
+  const walk = walkLines(
+    text,
+    ranges,
+    assign ? (line: string) => void assigned.push(assign(line)) : undefined,
+  );
   return {
-    total: visibleLineTotal(text, walkLines(text).total),
-    slice: (start, end) => walkLines(text, [{ start, end }]).ranges[0] ?? [],
+    total: visibleLineTotal(text, walk.total),
+    splitTotal: walk.total,
+    ranges: walk.ranges,
+    ...(assign ? { assigned } : {}),
   };
 }
+
 function buildWindowedPreview(params: {
   windows: ReadWindow[];
-  lines: LineSource;
+  /** The lines the walk retained, one array per window in request order. */
+  ranges: string[][];
+  totalLines: number;
   allHashes: string[];
   maxBytes: number;
   maxTruncLines: number;
   verbatim: boolean;
 }): { text: string; truncation?: TruncationResult; served: ServedRow[] } {
-  const { windows, lines, allHashes, maxBytes, maxTruncLines, verbatim } = params;
-  const totalLines = lines.total;
+  const { windows, ranges, totalLines, allHashes, maxBytes, maxTruncLines, verbatim } = params;
   const sections: string[] = [];
   const hashByPosition = new Map<number, string>();
   let truncation: TruncationResult | undefined;
   let remainingBytes = maxBytes;
   let remainingLines = maxTruncLines;
 
-  for (const window of windows) {
+  for (const [index, window] of windows.entries()) {
     if (window.offset > totalLines) {
       sections.push(
         `Offset ${window.offset} is beyond end of file (${totalLines} lines total). Use offset=1 to read from the start, or offset=${totalLines} to read the last line.`,
@@ -354,7 +369,7 @@ function buildWindowedPreview(params: {
     }
     const endIdx = Math.min(window.offset - 1 + window.limit, totalLines);
     const header = windowHeader(window.offset, endIdx, totalLines);
-    const selected = lines.slice(window.offset - 1, endIdx);
+    const selected = ranges[index] ?? [];
     const selectedHashes = allHashes.slice(window.offset - 1, endIdx);
     if (remainingBytes <= 0 || remainingLines <= 0) {
       sections.push(
@@ -409,6 +424,21 @@ function buildWindowedPreview(params: {
   };
 }
 
+/**
+ * The anchors a preview renders with:
+ *
+ * - an array: anchors this caller already holds;
+ * - a walk plan: the served read's assignment, which the same walk that selects the page runs — see
+ *   `HashIdentity.anchorsForWalk`;
+ * - `undefined`: none known yet, so served reaches for its own lazy call and verbatim never does.
+ */
+export type RenderAnchors = string[] | AnchorWalk;
+
+/** Whether the caller handed anchors rather than a walk plan (readonly arrays do not narrow on their own). */
+function isAnchorArray(anchors: RenderAnchors): anchors is string[] {
+  return Array.isArray(anchors);
+}
+
 export async function fmtReadPreview(
   text: string,
   options: {
@@ -417,7 +447,7 @@ export async function fmtReadPreview(
     windows?: ReadWindow[];
     render?: "served" | "verbatim";
   },
-  precomputedHashes?: string[],
+  anchors?: RenderAnchors,
   path?: string,
   maxLineBytes = DEFAULT_MAX_BYTES,
   maxTruncLines = DEFAULT_MAX_LINES,
@@ -426,52 +456,87 @@ export async function fmtReadPreview(
   truncation?: TruncationResult;
   nextOffset?: number;
   served: ServedRow[];
+  /** The anchors this page rendered with, in line order — the served read's line identity. */
+  hashes: string[];
+  /** The walk's counts, so no caller splits the text again to learn them. */
+  lineTotals: { visible: number; split: number };
 }> {
   const verbatim = options.render === "verbatim";
-  // WHY: the render mode decides how the page is addressed, never what it is: both modes read their
-  // WHY: lines out of one `LineSource`, so only served pays for the array it already needs.
-  const lines: LineSource = verbatim ? walkedLines(text) : arrayLines(visLines(text));
-  const totalLines = lines.total;
+  // WHY: only a walk plan carries an assignment. Anchors the caller already holds are rendered as
+  // WHY: they are; verbatim never reaches for anchors at all.
+  const known: string[] | undefined =
+    anchors !== undefined && isAnchorArray(anchors) ? anchors : undefined;
+  const plan: AnchorWalk | undefined =
+    !verbatim && anchors !== undefined && !isAnchorArray(anchors) ? anchors : undefined;
+  const counted = walkLines(text);
+  const totalLines = visibleLineTotal(text, counted.total);
+  const totals = { visible: totalLines, split: counted.total };
   const startLine = normPosInt(options.offset, "offset") ?? 1;
   const windows = normWindows(options.windows);
-  if (totalLines === 0)
-    return emptyFilePreview(
-      windows?.[0]?.offset ?? startLine,
-      text,
-      precomputedHashes,
-      path,
-      HASH_SEP,
-      verbatim,
-    );
+  /**
+   * WHY: one walk per page answers both of a read's questions: the lines to render, and (served) the
+   * WHY: anchors to render them with. Without a plan the anchors keep their own whole-content call,
+   * WHY: and verbatim never makes one — the render mode is the hashless authority.
+   */
+  const pageFor = async (
+    ranges: LineRange[],
+  ): Promise<{ ranges: string[][]; hashes: string[] }> => {
+    const page = walkPage(text, ranges, plan?.assign);
+    const hashes =
+      verbatim || known !== undefined
+        ? (known ?? [])
+        : (plan?.cached ??
+          page.assigned ??
+          (await (path ? lineHashes(text, path) : lineHashes(text))));
+    await plan?.commit?.(hashes, page.splitTotal);
+    return { ranges: page.ranges, hashes };
+  };
+  if (totalLines === 0) {
+    // WHY: an empty file has one line to anchor, so the walk runs before the empty-file marker.
+    const page = await pageFor([]);
+    return {
+      ...emptyFilePreview(windows?.[0]?.offset ?? startLine, page.hashes, HASH_SEP, verbatim),
+      hashes: page.hashes,
+      lineTotals: totals,
+    };
+  }
   if (windows) {
-    const allHashes = verbatim
-      ? (precomputedHashes ?? [])
-      : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
-    return buildWindowedPreview({
-      windows,
-      lines,
-      allHashes,
-      maxBytes: maxLineBytes,
-      maxTruncLines,
-      verbatim,
-    });
+    const page = await pageFor(
+      windows.map((window) => ({
+        start: window.offset - 1,
+        end: Math.min(window.offset - 1 + window.limit, totalLines),
+      })),
+    );
+    return {
+      ...buildWindowedPreview({
+        windows,
+        ranges: page.ranges,
+        totalLines,
+        allHashes: page.hashes,
+        maxBytes: maxLineBytes,
+        maxTruncLines,
+        verbatim,
+      }),
+      hashes: page.hashes,
+      lineTotals: totals,
+    };
   }
   if (startLine > totalLines) {
     return {
+      // WHY: the caller still needs the whole anchor array (it materializes the snapshot), so this
+      // WHY: page still walks the text — with an empty range, since there is no page to keep.
+      ...(await pageFor([])),
       text: `Offset ${startLine} is beyond end of file (${totalLines} lines total). Use offset=1 to read from the start, or offset=${totalLines} to read the last line.`,
       served: [],
+      lineTotals: totals,
     };
   }
 
   const limit = normPosInt(options.limit, "limit");
   const endIdx = limit ? Math.min(startLine - 1 + limit, totalLines) : totalLines;
-  const selected = lines.slice(startLine - 1, endIdx);
-  // WHY: the render mode is the hashless authority, not the caller's `[]`: a verbatim preview must
-  // WHY: never reach the lazy `lineHashes` (which would allocate anchors and can persist a snapshot),
-  // WHY: so a third caller that forgets to precompute gets empty hashes instead of served state.
-  const allHashes = verbatim
-    ? (precomputedHashes ?? [])
-    : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
+  const page = await pageFor([{ start: startLine - 1, end: endIdx }]);
+  const selected = page.ranges[0] ?? [];
+  const allHashes = page.hashes;
   const selectedHashes = allHashes.slice(startLine - 1, endIdx);
   const formatted = fmtRows(selectedHashes, selected, verbatim);
   const maxBytes = maxLineBytes;
@@ -483,16 +548,20 @@ export async function fmtReadPreview(
     ),
   }));
   if (rowSizes.some((row) => row.bytes > maxBytes)) {
-    return buildOversizedPreview({
-      rowSizes,
-      selected,
-      selectedHashes,
-      startLine,
-      totalLines,
-      maxBytes,
-      maxTruncLines,
-      verbatim,
-    });
+    return {
+      ...(await buildOversizedPreview({
+        rowSizes,
+        selected,
+        selectedHashes,
+        startLine,
+        totalLines,
+        maxBytes,
+        maxTruncLines,
+        verbatim,
+      })),
+      hashes: allHashes,
+      lineTotals: totals,
+    };
   }
 
   const normal = buildNormalPreview({
@@ -510,6 +579,8 @@ export async function fmtReadPreview(
     truncation: normal.truncation.truncated ? normal.truncation : undefined,
     ...(normal.nextOffset !== undefined ? { nextOffset: normal.nextOffset } : {}),
     served: normal.served,
+    hashes: allHashes,
+    lineTotals: totals,
   };
 }
 

@@ -12,6 +12,10 @@
 
 * **read:** one row budget and a hashless verbatim path. The read row cap now derives from pi's `DEFAULT_MAX_BYTES` (50KB); the dead 200KB `MAX_READ_LINE_BYTES` default that only tests exercised is gone. `mode: "verbatim"` no longer applies the 238,328-line anchor-space cap or allocates line hashes: a file too large to anchor is still a readable, pageable file through the same `offset`/`limit`/`windows` machinery, the same 50KB per-line withhold, and the same silence on served state. The `served` path stays byte-identical and keeps the cap and its refusal message. (#44)
 
+### Performance Improvements
+
+* **read:** page a file instead of materializing it. A read walks the lines it needs — the page, and on the served path every row's anchor, in the same pass — instead of building one heap string per line for the whole text (4.56x the text, measured). Verbatim pages the same bytes as before with no line array at all, and the decoder's newline tally now settles the anchor-space cap, so the refusal needs no split either. Served is byte-identical: same anchors, same order, same pages, hints and refusals, and the same 238,328-line cap. (#43)
+
 ### Code Refactoring
 
 * **read:** remove the `read_skill` tool; `read` with `mode: "verbatim"` is the reference read. (#44)

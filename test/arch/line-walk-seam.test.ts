@@ -1,5 +1,7 @@
 import { readFileSync } from "node:fs";
 import { describe, expect, it, vi } from "vitest";
+import { MAX_HASH_LINES } from "../../src/hashline/index.js";
+import { decodeNormText } from "../../src/file-content/loader.js";
 import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
 
 // WHY: the structural proof that a page is walked out of the text rather than sliced out of a
@@ -79,6 +81,69 @@ describe("the verbatim page never materializes the line array", () => {
       expect(result.content[0]?.text).toBe("[File is empty.]");
     });
   });
+});
+
+describe("the served page never materializes the line array", () => {
+  // WHY: the array primitives are throwers here, so these pages could not have split the text for
+  // WHY: their lines or their anchors. One caller still legitimately splits a served read's content:
+  // WHY: the snapshot store writes the lineage of every line into its own table (`materializeSnapshot`),
+  // WHY: a separate persisted seam outside this walk — its commit fails here, best-effort, and the
+  // WHY: page below is unaffected. That split is bounded by the same anchor-space cap as the read.
+  it("walks a page, its anchors and disjoint windows, past the end included", async () => {
+    await withTempFile("plain.txt", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd }) => {
+      const { readTool, ctx } = setupReadTest(cwd);
+      const run = async (args: Record<string, unknown>): Promise<string> => {
+        const result = await readTool.execute(
+          "s1",
+          { file: "plain.txt", ...args },
+          undefined,
+          undefined,
+          ctx,
+        );
+        return result.content[0]?.text ?? "";
+      };
+      await expect(run({ limit: 2 })).resolves.toMatch(
+        /^\w{3}│alpha\n\w{3}│beta\n\n\[Showing lines 1-2 of 4\. Use offset=3 to continue\.\]$/,
+      );
+      await expect(
+        run({
+          windows: [
+            { offset: 2, limit: 1 },
+            { offset: 4, limit: 1 },
+          ],
+        }),
+      ).resolves.toMatch(
+        /^=== Lines 2-2 of 4 ===\n\w{3}│beta\n\n=== Lines 4-4 of 4 ===\n\w{3}│delta$/,
+      );
+      await expect(run({ offset: 9, limit: 1 })).resolves.toContain(
+        "Offset 9 is beyond end of file (4 lines total)",
+      );
+    });
+  });
+
+  it("marks an empty file without a line array to count", async () => {
+    await withTempFile("empty.txt", "", async ({ cwd }) => {
+      const { readTool, ctx } = setupReadTest(cwd);
+      const result = await readTool.execute("s1", { file: "empty.txt" }, undefined, undefined, ctx);
+      expect(result.content[0]?.text).toMatch(
+        /^\w{3}│\n\[File is empty\. Use edit to insert content\.\]$/,
+      );
+    });
+  });
+
+  it("refuses a preloaded file over the anchor cap without materializing its lines", async () => {
+    // WHY: a preloaded file skips the decode that counts newlines mid-stream, so this refusal is the
+    // WHY: loader's own line count — the one place a second split could creep back in unnoticed.
+    const text = Array.from({ length: MAX_HASH_LINES + 1 }, () => "x").join("\n");
+    await withTempFile("huge.ts", text, async ({ cwd }) => {
+      await expect(
+        decodeNormText("huge.ts", cwd, {
+          maxLines: MAX_HASH_LINES,
+          preloadedFile: { kind: "text", text },
+        }),
+      ).rejects.toThrow("E_LARGE_FILE");
+    });
+  }, 300_000);
 });
 
 // WHY: the second half of the witness: the primitive is adopted by both seams only if it stays

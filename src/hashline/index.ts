@@ -15,6 +15,7 @@ export {
   HashIdentity,
   defaultHashIdentity,
   type HashSnapshotIO,
+  type AnchorWalk,
   type HashPrior,
   type HashOptions,
 } from "./hash-identity.js";

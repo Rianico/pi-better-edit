@@ -69,6 +69,29 @@ export interface HashOptions {
   retireLeases?: boolean;
 }
 
+/**
+ * The anchor assignment a walk can carry, for a caller that visits every line anyway.
+ *
+ * WHY: `hashesFor` returns a finished array, which forces it to split the text to produce one. The
+ * WHY: served read walks its lines to select a page, so it takes the assignment step instead and
+ * WHY: drives it from that walk — one pass over the text for both. The algorithm is unchanged:
+ * WHY: `newLineAssigner` is the loop body `lineHashesPure` has always run.
+ */
+export interface AnchorWalk {
+  /**
+   * Assigns the next line's anchor, in walk order. Absent when `cached` carries the anchors already:
+   * the store holds this content, so the caller still walks, it just skips the assignment.
+   */
+  assign?: (line: string) => string;
+  /** The anchors this content already has in the store, in line order. */
+  cached?: string[];
+  /**
+   * Persists what the walk produced, best-effort exactly as `hashesFor` does. `lineCount` is the
+   * walk's `split("\n")` total, which is the count the snapshot has always stored.
+   */
+  commit?: (hashes: string[], lineCount: number) => Promise<void>;
+}
+
 export const ANCHOR_LEN = HASH_LEN;
 export const HASH_SEP = "│";
 export const HASH_SPACE = ALPHA.length ** HASH_LEN;
@@ -230,21 +253,28 @@ export class HashIdentity {
     return this.hashAt(nextIdx);
   }
 
-  private lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
-    const lines = splitLines(content);
-    const hashes = new Array<string>(lines.length);
+  /**
+   * WHY: the per-line step of `lineHashesPure`, split out so the served read can run it inside its
+   * WHY: own walk over the text instead of calling back for a whole-content array.
+   */
+  private newLineAssigner(blockedHashes?: ReadonlySet<string>): (line: string) => string {
     const used = new Uint32Array(BITSET_WORDS);
     const hint = { value: 0 };
     const canonCache = new Map<string, string>();
     if (blockedHashes) {
       for (const h of blockedHashes) this.markHashUsed(h, used, hint);
     }
-    for (let i = 0; i < lines.length; i++) {
-      const c = getCanon(canonCache, lines[i]!);
+    return (line: string): string => {
+      const c = getCanon(canonCache, line);
       const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
-      const h = this.assignHash(used, baseIdx, hint);
-      hashes[i] = h;
-    }
+      return this.assignHash(used, baseIdx, hint);
+    };
+  }
+
+  private lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
+    const assign = this.newLineAssigner(blockedHashes);
+    const hashes: string[] = [];
+    for (const line of splitLines(content)) hashes.push(assign(line));
     return hashes;
   }
 
@@ -397,6 +427,70 @@ export class HashIdentity {
     );
     this.allocateFreshHashes(newLines, newHashes, canonCache, used, hint);
     return newHashes;
+  }
+
+  /**
+   * The anchor assignment for a content whose lines the caller is about to walk themselves.
+   *
+   * WHY: the served read walks the text once — assigning an anchor AND keeping the page — which a
+   * WHY: `hashesFor` call cannot drive because it must finish the whole array first. Everything else
+   * WHY: is `hashesFor`'s behaviour: the same snapshot cache, the same re-adopt on a hit, the same
+   * WHY: best-effort persist, and the same `blockedHashes` handling.
+   *
+   * `prior` (the stable remap) needs the old AND new line arrays, and pathless hashing has no store
+   * to hand a walk to, so both stay whole-content calls here.
+   */
+  async anchorsForWalk(content: string, options?: HashOptions): Promise<AnchorWalk> {
+    await initHasher();
+    const path = options?.path;
+    const persist = options?.persist ?? true;
+    const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
+    const upsertOptions: HashSnapshotUpsertOptions = {
+      retireLeases: options?.retireLeases === true,
+    };
+
+    // WHY: committed by the caller once the walk reports the line total, so the snapshot's line count
+    // WHY: is the walk's own count instead of a second split.
+    const commit =
+      (failure: string, target: string) =>
+      async (hashes: string[], lineCount: number): Promise<void> => {
+        if (!persist || !snapshotIO) return;
+        try {
+          await snapshotIO.upsert(
+            target,
+            contentChecksum(content),
+            lineCount,
+            hashes,
+            content,
+            upsertOptions,
+          );
+        } catch (error) {
+          console.error(failure, error);
+        }
+      };
+
+    if (!path || options?.prior) {
+      return { cached: await this.hashesFor(content, options) };
+    }
+
+    let cached: string[] | undefined;
+    if (snapshotIO) {
+      try {
+        cached = await snapshotIO.get(path, content, persist);
+      } catch (error) {
+        // SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
+        console.error("Failed to read hash store snapshot:", error);
+      }
+    }
+    if (cached) {
+      // SAFETY: best-effort cache re-adopt — snapshot/lease update failures are ignored; the hashes are already authoritative and the next materialization retries.
+      return { cached, commit: commit("Failed to re-adopt hash snapshot:", path) };
+    }
+    // SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
+    return {
+      assign: this.newLineAssigner(options?.blockedHashes),
+      commit: commit("Failed to persist hash snapshot:", path),
+    };
   }
 
   async hashesFor(content: string, options?: HashOptions): Promise<string[]> {

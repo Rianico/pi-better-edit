@@ -7,7 +7,6 @@ import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
 import { abortIf, assertNever } from "./utils.js";
-import { splitLines, visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { prepareFile } from "./file-content/index.js";
 import { DomainError } from "./domain-errors.js";
@@ -174,7 +173,9 @@ export function regRead(pi: ExtensionAPI): void {
         ctx as { sessionManager?: { getSessionId(): string } },
         prepared.absolutePath,
       );
-      const lineCount = visLines(prepared.normalized).length;
+      // WHY: the page walk already counted the lines, so the epoch takes its count instead of a
+      // WHY: second split of the normalized text.
+      const lineCount = prepared.lineTotals.visible;
       // WHY: `windows: []` falls back to a full read in the preview, so the full-read contract has to
       // WHY: follow the same rule — otherwise an empty array silently withholds the snapshot id and
       // WHY: skips the drift clear that a full read owes.
@@ -202,7 +203,7 @@ export function regRead(pi: ExtensionAPI): void {
           {
             path: prepared.absolutePath,
             snapshotHash: contentHash,
-            lineCount: splitLines(prepared.normalized).length,
+            lineCount: prepared.lineTotals.split,
             hashes: prepared.fileHashes,
             content: prepared.normalized,
           },
