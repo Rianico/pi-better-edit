@@ -1,4 +1,4 @@
-import { isAbsolute, normalize } from "node:path";
+import { isAbsolute, resolve } from "node:path";
 import { splitLines } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
@@ -197,7 +197,9 @@ export function canonicalAnchorPath(path: string): string {
       message: `Anchor derivation requires an absolute file path, got ${JSON.stringify(path)}.`,
     });
   }
-  return normalize(path);
+  // WHY: `resolve` (lexical on absolute inputs — no realpath, no cwd) strips a
+  // WHY: trailing separator, so `/x/a.ts/` and `/x/a.ts` seed identically.
+  return resolve(path);
 }
 export function contentBaseIndex(canonText: string): number {
   return (xxh32(canonText) >>> 14) % HASH_SPACE;

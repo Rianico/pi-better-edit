@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "node:fs/promises";
+import { join } from "node:path";
 import {
   CANON_VERSION,
   DIGIT_ANCHOR_RE,
@@ -12,7 +13,12 @@ import { ALPHA } from "../../src/hashline/alphabet.js";
 import { canon, canonDigest } from "../../src/hashline/hash.js";
 import { xxh32 } from "../../src/hashline/hasher.js";
 import { applyEdit } from "../../src/hashline/apply.js";
-import { resEdit } from "../../src/hashline/resolve.js";
+import {
+  resEdit,
+  type LeaseIdentityView,
+  type LeaseSpanSource,
+} from "../../src/hashline/resolve.js";
+import { resolveLeasedEdit } from "../../src/hashline/lease-resolve.js";
 import { getText, setupIntegrationTest, withTempFile } from "../support/fixtures";
 
 function ctxFor(cwd: string, id: string): unknown {
@@ -39,21 +45,111 @@ function indexToSpelling(idx: number): string {
 }
 
 describe("anchor file scope", () => {
-  it("C1: byte-identical files at different paths derive disjoint anchor sets", () => {
-    // WHY: the intersection count is the evidence — file-scoping means the same
-    // WHY: bytes under another path share no anchor with this file.
-    const content = Array.from({ length: 2_000 }, (_, i) => `row ${i}`).join("\n") + "\n";
+  it("C1: byte-identical files at different paths share at most a bounded few anchors", () => {
+    // WHY: ADR-0030 §1 — E[shared] = n²/S (0.27 at n = 2000), so a zero is luck, not
+    // WHY: proof. The honest guard is the measured bound plus the deterministic
+    // WHY: same-position guard (P(equal) ≈ n/S per line).
+    const lines = Array.from({ length: 2_000 }, (_, i) => `row ${i}`);
+    const content = lines.join("\n") + "\n";
     const a = fileHashesFor("/test/c1-a.ts", content);
     const b = fileHashesFor("/test/c1-b.ts", content);
-    expect(a).toHaveLength(2_000);
-    expect(b).toHaveLength(2_000);
+    expect(a).toHaveLength(lines.length);
+    expect(b).toHaveLength(lines.length);
     const setA = new Set(a);
     let intersection = 0;
     for (const h of b) if (setA.has(h)) intersection++;
-    expect(intersection).toBe(0);
-    // WHY: and corresponding lines actually differ, not just the sets.
-    expect(a[0]).not.toBe(b[0]);
-    expect(a[1_999]).not.toBe(b[1_999]);
+    expect(intersection).toBeLessThan(lines.length);
+    expect(intersection).toBeLessThanOrEqual(8);
+    for (let i = 0; i < lines.length; i++) expect(a[i]).not.toBe(b[i]);
+  });
+
+  it("C1 companion: a fixed colliding pair shares a spelling (ADR-0030 §1)", () => {
+    // WHY: the residual is real, so it is pinned visibly on a fixed pair — never a
+    // WHY: lucky zero. E[shared] = n²/S makes some pair collide; this one does.
+    const lines = Array.from({ length: 2_000 }, (_, i) => `crow ${i}`);
+    const content = lines.join("\n") + "\n";
+    const a = fileHashesFor("/test/c1c-a.ts", content);
+    const b = fileHashesFor("/test/c1c-1.ts", content);
+    const setA = new Set(a);
+    let intersection = 0;
+    for (const h of b) if (setA.has(h)) intersection++;
+    expect(intersection).toBeGreaterThanOrEqual(1);
+    // WHY: the exact shared spelling is pinned — a derivation change that moves it
+    // WHY: must fail loudly here, not silently re-luck the fixture.
+    expect(b.find((h) => setA.has(h))).toBe("xN7H");
+    expect(a.indexOf("xN7H") + 1).toBe(1211);
+    expect(b.indexOf("xN7H") + 1).toBe(1245);
+  });
+
+  it("C1 companion: a runtime shared spelling resolves lease-scoped", async () => {
+    // WHY: on-disk paths are per-run random, so the colliding pair cannot be
+    // WHY: hardcoded here — at n = 20,000, E[shared] ≈ 27 and P(no shared
+    // WHY: spelling) ≈ 1e-12, and the defined-gate below fails loudly on a miss
+    // WHY: rather than going vacuous. P(a given anchor exists in the sibling) = n/S.
+    // WHY: No end-to-end assertion here claims a wrong write succeeds.
+    const lines = Array.from({ length: 20_000 }, (_, i) => `gull ${i}`);
+    const content = lines.join("\n") + "\n";
+    await withTempFile("gull-a.txt", content, async ({ cwd }) => {
+      const { writeFile, readFile } = await import("node:fs/promises");
+      await writeFile(join(cwd, "gull-b.txt"), content, "utf-8");
+      // WHY: the discovery runs on the exact derivation (fast, in-process) — served
+      // WHY: rows cap at 2,000 per read, so paging 20k rows to find the shared
+      // WHY: spelling would be contortion. The defined-gate below still fails
+      // WHY: loudly on a miss (P ≈ 1e-12) rather than going vacuous.
+      const realA = join(cwd, "gull-a.txt");
+      const realB = join(cwd, "gull-b.txt");
+      const dA = await fileHashesFor(realA, content);
+      const dB = await fileHashesFor(realB, content);
+      const dSet = new Set(dA);
+      const sharedIdxB = dB.findIndex((h) => dSet.has(h));
+      expect(sharedIdxB).toBeGreaterThanOrEqual(0);
+      const shared = dB[sharedIdxB]!;
+      const lineInA = dA.indexOf(shared) + 1;
+      const lineInB = sharedIdxB + 1;
+      const fresh = ctxFor(cwd, "c1c-runtime");
+      const { getTool } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      const editTool = getTool("edit");
+      const readWindow = async (name: string, line: number): Promise<string> =>
+        getText(
+          await readTool.execute(
+            "r1",
+            { path: name, offset: line, limit: 10 },
+            undefined,
+            undefined,
+            fresh,
+          ),
+        );
+      // WHY: the served windows must show the derived shared spelling at the
+      // WHY: derived lines — derivation and serving agree by construction here.
+      const winA = await readWindow("gull-a.txt", lineInA);
+      const winB = await readWindow("gull-b.txt", lineInB);
+      expect(winA.split("\n").find((l) => l.startsWith(shared + "│"))).toBeDefined();
+      expect(winB.split("\n").find((l) => l.startsWith(shared + "│"))).toBeDefined();
+      const lineOf = (text: string): number => {
+        const l = text.split("\n").find((x) => x.startsWith(shared + "│"))!;
+        return Number(l.slice(shared.length + 1 + "gull ".length)) + 1;
+      };
+      expect(lineOf(winA)).toBe(lineInA);
+      expect(lineOf(winB)).toBe(lineInB);
+      await editTool.execute(
+        "e1",
+        {
+          file: "gull-b.txt",
+          edits: [{ anchor_from: shared, anchor_to: shared, text: "RESOLVED" }],
+        },
+        undefined,
+        undefined,
+        fresh,
+      );
+      const afterB = await readFile(join(cwd, "gull-b.txt"), "utf-8");
+      // WHY: lease-scoped resolution — the sibling's own line changed, and the
+      // WHY: identically-spelled line in the other file did not.
+      expect(afterB.split("\n")[lineInB - 1]).toBe("RESOLVED");
+      const afterA = await readFile(join(cwd, "gull-a.txt"), "utf-8");
+      // WHY: `gull ${lineInA - 1}` is the zero-based content line at that 1-based row.
+      expect(afterA.split("\n")[lineInA - 1]).toBe(`gull ${lineInA - 1}`);
+    });
   });
 
   it("C2: an anchor served by A is refused for B and applies to A", async () => {
@@ -135,20 +231,74 @@ describe("anchor file scope", () => {
     });
   });
 
-  it("C4: canon and canonDigest are path-independent", () => {
-    // WHY: canonicalization never sees a path — only the allocation base does.
-    expect(canon("  padded  ")).toBe(canon("  padded  "));
-    expect(canon("a\r\nb")).toBe("ab");
-    expect(canonDigest("alpha\nbeta\n")).toBe(canonDigest("alpha\nbeta\n"));
-    expect(canonDigest("alpha\nbeta\n")).toBe(String(xxh32(canon("alpha\nbeta\n"))));
+  it("C4: allocation is file-scoped while verification keys on the content hash", () => {
+    // WHY: `canon` takes one argument — no path parameter to smuggle — and the
+    // WHY: leases recorded for identical bytes carry an identical canon_hash while
+    // WHY: the served anchors differ per file: allocation file-scoped,
+    // WHY: verification content-only.
+    expect(canon.length).toBe(1);
+    const lines = ["alpha", "beta"];
+    const content = lines.join("\n") + "\n";
+    const hA = fileHashesFor("/test/c4a.ts", content);
+    const hB = fileHashesFor("/test/c4b.ts", content);
+    expect(hA).not.toEqual(hB);
+    const setA = new Set(hA);
+    for (const h of hB) expect(setA.has(h)).toBe(false);
+    const leases: Record<string, LeaseIdentityView> = {};
+    const deal = (hashes: string[], snap: string): void => {
+      hashes.forEach((h, i) => {
+        leases[h] = {
+          lineId: i + 1,
+          canonHash: canonDigest(lines[i]!),
+          servedSnapshotHash: snap,
+          servedLineNumber: i + 1,
+          retiredAt: null,
+        };
+      });
+    };
+    deal(hA, "S");
+    deal(hB, "S");
+    // WHY: the same bytes record the same canon_hash in both files' leases.
+    expect(leases[hA[0]!]!.canonHash).toBe(leases[hB[0]!]!.canonHash);
+    expect(leases[hA[1]!]!.canonHash).toBe(leases[hB[1]!]!.canonHash);
+    const source: LeaseSpanSource = {
+      currentSnapshotHash: "S",
+      leaseFor: (anchor) => leases[anchor],
+      rebasedLineOf: (lineId) => lineId,
+      anchorHomes: () => [],
+    };
+    const snap = (hashes: string[], path: string) => ({
+      fileHashes: hashes,
+      fileLines: lines,
+      filePath: path,
+    });
+    const rA = resolveLeasedEdit({
+      edit: resEdit({ anchor_from: hA[0]!, anchor_to: hA[1]!, text: "X" }),
+      snapshot: snap(hA, "c4a.ts"),
+      served: hA,
+      source,
+    });
+    const rB = resolveLeasedEdit({
+      edit: resEdit({ anchor_from: hB[0]!, anchor_to: hB[1]!, text: "X" }),
+      snapshot: snap(hB, "c4b.ts"),
+      served: hB,
+      source,
+    });
+    // WHY: each file's own anchors resolve fast against its own leases.
+    expect(rA.status).toBe("fast");
+    expect(rB.status).toBe("fast");
+    expect(rA.resolved?.hash_bounds.map((b) => b.line)).toEqual([1, 2]);
+    expect(rB.resolved?.hash_bounds.map((b) => b.line)).toEqual([1, 2]);
   });
 
   it("C6: lexical spellings of one path derive identical anchors", () => {
-    // WHY: `canonicalAnchorPath` normalizes — `.`/`..` spellings seed identically.
+    // WHY: `canonicalAnchorPath` resolves lexically — `.`/`..` spellings and a
+    // WHY: trailing separator seed identically (no realpath, no cwd).
     const content = "x\ny\nz\n";
     const plain = fileHashesFor("/x/a.ts", content);
     expect(fileHashesFor("/x/./a.ts", content)).toEqual(plain);
     expect(fileHashesFor("/x/b/../a.ts", content)).toEqual(plain);
+    expect(fileHashesFor("/x/a.ts/", content)).toEqual(plain);
   });
 
   it("C7: CANON_VERSION is 3", () => {

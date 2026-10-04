@@ -129,17 +129,21 @@ describe("all-digit anchor reservation", () => {
     }
   });
 
-  it("keeps identical content on identical anchors across runs and identities", () => {
-    // WHY: the reservation is a fixed mask, so allocation stays a pure function
-    // WHY: of content — same bytes, same anchors, whatever the caller.
+  it("file scope changes anchors: same bytes differ by path and from content-only", () => {
+    // WHY: refutable file-scoped claim — the same bytes under two paths, and
+    // WHY: under no path, must all differ. A content-only regression (ignoring
+    // WHY: the seed) would collapse all three to one set and fail loudly.
     const content = Array.from({ length: 5_000 }, (_, i) => `stable ${i}`).join("\n");
-    const first = contentOnlyHashes(content);
-    const second = contentOnlyHashes(content);
-    expect(second).toEqual(first);
-    const fresh = new HashIdentity().hashesForSync(content, "/test/determinism.ts");
-    const refetched = fileHashesFor("/test/determinism.ts", content);
-    expect(fresh).toEqual(refetched);
-    for (const h of first) expect(DIGIT_ANCHOR_RE.test(h)).toBe(false);
+    const byPathA = fileHashesFor("/test/determinism-a.ts", content);
+    const byPathB = fileHashesFor("/test/determinism-b.ts", content);
+    const contentOnly = contentOnlyHashes(content);
+    expect(byPathA).not.toEqual(byPathB);
+    expect(byPathA).not.toEqual(contentOnly);
+    expect(byPathB).not.toEqual(contentOnly);
+    // WHY: and each deterministically — same inputs, same anchors, whatever caller.
+    expect(fileHashesFor("/test/determinism-a.ts", content)).toEqual(byPathA);
+    expect(new HashIdentity().hashesForSync(content, "/test/determinism-a.ts")).toEqual(byPathA);
+    for (const h of byPathA) expect(DIGIT_ANCHOR_RE.test(h)).toBe(false);
   });
 
   it("keeps a pasted digit-shaped spelling on the ordinary shape path", () => {

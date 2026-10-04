@@ -37,6 +37,7 @@
 * **readme:** drop the unbacked project-battery row and the stale scope comment — the battery cell now names the live `test/e2e` artifact. (#20)
 * **e2e:** pin noop byte-identity and fix the T4b review residuals — B11/B12 assert `finalContent` equals the captured pre-edit bytes instead of an inert substring, the battery row fills its fourth cell, and the scope comment drops its duplicated clause. (#20)
 
+* **hashline:** make the file-scope guarantees refutable — C1 asserts a measured intersection bound plus a deterministic same-position guard with a fixed colliding pair, a runtime shared spelling is shown resolving lease-scoped, C4 pins content-keyed verification against file-scoped allocation, and the tautological probe is deleted. Test-only plus a trailing-separator seed fix. (#20)
 ## [2.6.0] - 2026-10-03
 
 ### Features

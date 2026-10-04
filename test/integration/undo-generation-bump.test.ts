@@ -4,10 +4,7 @@ import { join } from "node:path";
 import { loadHashStore } from "../../src/hash-store.js";
 import { upsertUndo } from "../../src/undo-store.js";
 import { contentOnlyHashes, fileHashesFor } from "../../src/hashline/index.js";
-import {
-  adoptPinnedSnapshotFor,
-  anchorsForSnapshotHash,
-} from "../../src/snapshot-store/index.js";
+import { adoptPinnedSnapshotFor, anchorsForSnapshotHash } from "../../src/snapshot-store";
 import { getText, setupIntegrationTest, withTempFile } from "../support/fixtures";
 
 const PRE = "aaa\nbbb\nccc\n";
@@ -35,11 +32,13 @@ async function plantLegacyRow(absPath: string): Promise<void> {
     resultContent: POST,
     snapshotHash: null,
   });
-  store.db.exec("UPDATE file_undo SET canon_version = 0 WHERE path = '" + absPath.replace(/'/g, "''") + "'");
+  store.db.exec(
+    "UPDATE file_undo SET canon_version = 0 WHERE path = '" + absPath.replace(/'/g, "''") + "'",
+  );
 }
 
 describe("generation bump refuses pre-v3 anchors", () => {
-  it("a legacy undo row restores file-scoped anchors and refuses cross-file use", async () => {
+  it("a legacy undo row restores file-scoped anchors and refuses use from another file", async () => {
     await withTempFile("a.txt", POST, async ({ cwd }) => {
       const absA = join(cwd, "a.txt");
       const absB = join(cwd, "b.txt");
