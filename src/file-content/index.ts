@@ -9,7 +9,6 @@
  */
 
 import { constants } from "node:fs";
-import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { AUTO_READ_MAX } from "../constants.js";
 import { MAX_HASH_LINES } from "../hashline/index.js";
 import { resolveTarget } from "../fs-write.js";
@@ -18,7 +17,7 @@ import { valAccess } from "../validation.js";
 import { abortIf } from "../utils.js";
 import { visLines } from "../utils.js";
 import { loadFileKindAndText, type FileStats, type LFile } from "./detection.js";
-import { readNormFile, fileSnap } from "./loader.js";
+import { readNormFile, decodeNormText, fileSnap, type NormFile } from "./loader.js";
 import { fmtReadPreview, type ReadWindow } from "./preview.js";
 import type { ServedRow } from "../hashline/served.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
@@ -27,7 +26,9 @@ export type { FileStats, LFile, LoadFileOptions } from "./detection.js";
 export { loadFileKindAndText } from "./detection.js";
 export {
   readNormFile,
+  decodeNormText,
   fileSnap,
+  type NormText,
   type NormFile,
   type SnapInfo,
   type ReadNormOptions,
@@ -78,10 +79,15 @@ export async function prepareFile(
   abortIf(signal);
   await valAccess(absolutePath, path, options?.accessMode ?? constants.R_OK);
   abortIf(signal);
+  const verbatim = options?.render === "verbatim";
+  // WHY: the anchor-space line cap is an edit-domain limit (`MAX_HASH_LINES` is the served cap), so
+  // WHY: verbatim does not apply it: a file too large to anchor is still a file worth reading. The
+  // WHY: 100MB `MAX_BYTES` memory guard in `loadFileKindAndText` still bounds both modes.
+  const maxLines = verbatim ? undefined : (options?.maxLines ?? MAX_HASH_LINES);
   const file =
     options?.preloadedFile ??
     (await loadFileKindAndText(absolutePath, {
-      maxLines: options?.maxLines ?? MAX_HASH_LINES,
+      maxLines,
       displayPath: path,
     }));
   if (file.kind !== "text") {
@@ -124,14 +130,27 @@ export async function prepareFile(
     };
   }
 
-  const norm = await readNormFile(path, cwd, {
-    signal,
-    accessMode: options?.accessMode,
-    maxLines: options?.maxLines ?? MAX_HASH_LINES,
-    store: options?.store,
-    noPersist: options?.noPersist,
-    preloadedFile: file,
-  });
+  // WHY: the ONE seam where verbatim diverges from served. Both modes decode/normalize through
+  // WHY: `decodeNormText`; only served then hashes, because anchors and the anchor-space line cap are
+  // WHY: edit-domain concerns. The `fileHashes: []` is load-bearing: the preview reads a
+  // WHY: present-but-empty array as "hashes already known" and skips its own lazy `lineHashes` call.
+  const norm: NormFile = verbatim
+    ? {
+        ...(await decodeNormText(path, cwd, {
+          signal,
+          accessMode: options?.accessMode,
+          preloadedFile: file,
+        })),
+        fileHashes: [],
+      }
+    : await readNormFile(path, cwd, {
+        signal,
+        accessMode: options?.accessMode,
+        maxLines,
+        store: options?.store,
+        noPersist: options?.noPersist,
+        preloadedFile: file,
+      });
 
   const preview = await fmtReadPreview(
     norm.normalized,
@@ -143,7 +162,7 @@ export async function prepareFile(
     },
     norm.fileHashes,
     norm.absolutePath,
-    options?.maxLineBytes ?? DEFAULT_MAX_BYTES,
+    options?.maxLineBytes,
     options?.maxTruncLines ?? AUTO_READ_MAX,
   );
 

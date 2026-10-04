@@ -2,9 +2,10 @@ import {
   formatSize,
   truncateHead,
   DEFAULT_MAX_LINES,
+  DEFAULT_MAX_BYTES,
   type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
-import { MAX_READ_LINE_BYTES, MAX_READ_WINDOWS } from "../constants.js";
+import { MAX_READ_WINDOWS } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "../hashline/index.js";
 import type { ServedRow } from "../hashline/served.js";
@@ -386,7 +387,7 @@ export async function fmtReadPreview(
   },
   precomputedHashes?: string[],
   path?: string,
-  maxLineBytes = MAX_READ_LINE_BYTES,
+  maxLineBytes = DEFAULT_MAX_BYTES,
   maxTruncLines = DEFAULT_MAX_LINES,
 ): Promise<{
   text: string;
