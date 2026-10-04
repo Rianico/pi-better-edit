@@ -16,7 +16,7 @@ describe("hash heal TDD — MVCC rebase / fail-closed semantics", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -46,7 +46,7 @@ describe("hash heal TDD — MVCC rebase / fail-closed semantics", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,

@@ -39,8 +39,8 @@ async function cutThrough(cwd: string) {
   const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
   await writeFile(join(cwd, "source.txt"), SOURCE_BEFORE, "utf-8");
   await writeFile(join(cwd, "target.txt"), TARGET_BEFORE, "utf-8");
-  await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
-  await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
   const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
   const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
   await editTool.execute(
@@ -165,7 +165,7 @@ describe("correlated undo of a cut transaction (ticket-04b §4)", () => {
       // THE NEXT RUN REPAIRS: any live edit fires repairCutIntents, which finishes the revert
       // from the rows' pre bytes, then retires the rows and the intent. No content lost.
       await writeFile(join(cwd, "misc.txt"), "m\nn\n", "utf-8");
-      await readTool.execute("r9", { path: "misc.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r9", { file: "misc.txt" }, undefined, undefined, ctx);
       const hm = await lineHashes("m\nn\n", `${home.testPath}/misc.txt`);
       const trigger = await execute(
         admit({

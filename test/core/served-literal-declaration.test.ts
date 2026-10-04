@@ -63,7 +63,7 @@ describe("edit served-row gate with declaration", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const before = await readFsFile(path, "utf-8");
       // verbatim single row
       await expect(
@@ -125,7 +125,7 @@ describe("edit served-row gate with declaration", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const payload = {
         file: "sample.txt",
         edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│two` }],
@@ -162,7 +162,7 @@ describe("edit served-row gate with declaration", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const before = await readFsFile(path, "utf-8");
       const refusal = {
         file: "sample.txt",
@@ -207,7 +207,7 @@ describe("edit served-row gate with declaration", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const verbatim = `${hashes[1]}│two`;
       const result = await editTool.execute(
         "e1",
@@ -240,7 +240,7 @@ describe("write served-row gate with declaration", () => {
       const { getTool } = setupIntegrationTest(cwd);
       const rTool = getTool("read");
       const eCtx = { cwd, sessionManager: { getSessionId: () => "sess-w" } } as any;
-      await rTool.execute("r1", { path: "notes.md" }, undefined, undefined, eCtx);
+      await rTool.execute("r1", { file: "notes.md" }, undefined, undefined, eCtx);
       const io = localIO();
       const { lineHashes: lh } = await import("../../src/hashline");
       const hashes = await lh("one\ntwo\n", path);
@@ -298,7 +298,7 @@ describe("write literal audit via tool_result", () => {
       const { getTool } = setupIntegrationTest(cwd);
       const rTool = getTool("read");
       const eCtx = { cwd, sessionManager: { getSessionId: () => "sess-audit" } } as any;
-      await rTool.execute("r1", { path: "notes.md" }, undefined, undefined, eCtx);
+      await rTool.execute("r1", { file: "notes.md" }, undefined, undefined, eCtx);
       const { lineHashes: lh } = await import("../../src/hashline");
       const hashes = await lh("one\ntwo\n", path);
       const verbatim = `${hashes[0]}│one\n${hashes[1]}│two\n`;

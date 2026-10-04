@@ -97,6 +97,18 @@ function main() {
     "does not resolve relative to the artifact",
   );
 
+  // WHY: the REQUIRED_TOOLS check must have a witness — dropping a registration has to redden
+  // WHY: verify-dist, or the guard can rot exactly the way the tool removal let it.
+  const droppedTool = writeMutantArtifact("dropped-tool-registration", (code) =>
+    code.replace('name: "undo_last_edit"', 'name: "__mutated_undo_last_edit"'),
+  );
+  mutants.push(droppedTool);
+  addMutation(
+    "dropped-tool-registration",
+    ["--artifact", droppedTool],
+    "missing tool registrations",
+  );
+
   const promptRef = writeMutantArtifact("prompt-ref", (code) =>
     code.replaceAll("../prompts/read.md", "../prompts/__missing__.md"),
   );

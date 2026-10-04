@@ -9,7 +9,7 @@ describe("disjoint batch drift gap", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -61,7 +61,7 @@ describe("disjoint batch drift gap", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,

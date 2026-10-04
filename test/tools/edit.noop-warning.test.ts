@@ -9,7 +9,7 @@ describe("edit tool noop + warnings", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -29,7 +29,7 @@ describe("edit tool noop + warnings", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       await editTool.execute(
         "e1",

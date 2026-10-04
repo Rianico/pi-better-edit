@@ -133,7 +133,7 @@ for (const target of targets) {
   try {
     const out = join(outDir, `${label}.json`);
     run(
-      `RUN_EVAL=1 EVAL_TARGET=${isPkg ? "package" : "local"} EVAL_OUT=${out} npx vitest run test/eval/comparison-battery.test.ts`,
+      `RUN_EVAL=1 EVAL_TARGET=${isPkg ? "package" : "local"} EVAL_OUT=${out} npx vitest run test/eval/comparison-battery.test.ts test/eval/target.test.ts`,
     );
     collected[target] = parseOut(out);
   } finally {

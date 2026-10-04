@@ -45,8 +45,8 @@ async function seedAndServe(cwd: string) {
   await writeFile(join(cwd, "source.txt"), SOURCE_BEFORE, "utf-8");
   await writeFile(join(cwd, "target.txt"), TARGET_BEFORE, "utf-8");
   const { ctx, readTool } = setupIntegrationTest(cwd);
-  await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
-  await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
   const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
   const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
   return { ctx, readTool, hs, ht };
@@ -72,7 +72,7 @@ async function triggerRepair(
   readTool: { execute: (...a: any[]) => Promise<unknown> },
 ) {
   await writeFile(join(cwd, "misc.txt"), "m\nn\n", "utf-8");
-  await readTool.execute("r9", { path: "misc.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r9", { file: "misc.txt" }, undefined, undefined, ctx);
   const hm = await lineHashes("m\nn\n", `${home.testPath}/misc.txt`);
   const result = await execute(
     admit({ file: "misc.txt", edits: [{ anchor_from: hm[1]!, anchor_to: hm[1]!, text: "N" }] }),
@@ -165,8 +165,8 @@ describe("foreign-cut durability: window state, intent record, next-run repair (
       await writeFile(join(cwd, "source.txt"), SOURCE_BEFORE, "utf-8");
       await writeFile(join(cwd, "target.txt"), TARGET_MIXED_RAW, "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
-      await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
       const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
       const ht = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
       const result = await execute(cutRequest(ht, hs), cwd, {
@@ -283,8 +283,8 @@ describe("foreign-cut durability: window state, intent record, next-run repair (
     await writeFile(join(cwd, "source.txt"), SOURCE_MIXED_RAW, "utf-8");
     await writeFile(join(cwd, "target.txt"), TARGET_BEFORE, "utf-8");
     const { ctx, readTool } = setupIntegrationTest(cwd);
-    await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
-    await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
     const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
     const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
     return { ctx, readTool, hs, ht };

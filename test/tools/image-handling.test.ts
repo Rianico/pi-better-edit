@@ -19,7 +19,7 @@ describe("read tool image delegation", () => {
       register(pi);
       const readTool = getTool("read");
 
-      const result = await readTool.execute("r1", { path: "test.png" }, undefined, undefined, {
+      const result = await readTool.execute("r1", { file: "test.png" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -40,7 +40,7 @@ describe("read tool image delegation", () => {
       register(pi);
       const readTool = getTool("read");
 
-      const result = await readTool.execute("r1", { path: fileName }, undefined, undefined, {
+      const result = await readTool.execute("r1", { file: fileName }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);

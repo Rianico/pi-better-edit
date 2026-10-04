@@ -8,7 +8,7 @@ import { withTempFile, setupIntegrationTest, getText, extractHash } from "../sup
 const NOOP_LINE_1 = "bbb";
 
 async function readSample(ctx: any, readTool: any): Promise<string[]> {
-  await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+  await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
   return await lineHashes("aaa\nbbb\nccc\n");
 }
 
@@ -121,7 +121,7 @@ describe("edit tool noop-loop guard", () => {
       await writeFile(join(cwd, "other.ts"), "aaa\nbbb\nccc\n", "utf-8");
 
       const hashes = await readSample(ctx, readTool);
-      await readTool.execute("r1", { path: "other.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "other.ts" }, undefined, undefined, ctx);
 
       const payloadA = {
         file: "sample.ts",

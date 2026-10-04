@@ -18,7 +18,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -65,7 +65,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -102,7 +102,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -154,7 +154,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -196,7 +196,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       expect((second as any).details?.driftNotice ?? "").toContain("already reported");
       expect(getText(second)).not.toContain("already reported");
 
-      await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx);
 
       await writeFile(path, "alpha\nbeta\ngamma\nDELTA3\n", "utf-8");
       const third = await editTool.execute(
@@ -224,7 +224,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -263,7 +263,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
         const firstRead = await readTool.execute(
           "r1",
-          { path: "sample.ts" },
+          { file: "sample.ts" },
           undefined,
           undefined,
           ctx,
@@ -307,7 +307,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -338,7 +338,7 @@ describe("drift notices for changed served territory outside the edit range", ()
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,

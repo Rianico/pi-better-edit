@@ -2,9 +2,10 @@ import {
   formatSize,
   truncateHead,
   DEFAULT_MAX_LINES,
+  DEFAULT_MAX_BYTES,
   type TruncationResult,
 } from "@earendil-works/pi-coding-agent";
-import { MAX_READ_LINE_BYTES, MAX_READ_WINDOWS } from "../constants.js";
+import { MAX_READ_WINDOWS } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
 import { lineHashes, fmtRegion, HASH_SEP, MAX_HASH_LINES } from "../hashline/index.js";
 import type { ServedRow } from "../hashline/served.js";
@@ -72,6 +73,14 @@ function formatPaginationHint(
   const sizeSuffix = byteLimit !== undefined ? ` (${formatSize(byteLimit)} limit)` : "";
   return `[Showing lines ${startLine}-${endLine} of ${totalLines}${sizeSuffix}. Use offset=${nextOffset} to continue.]`;
 }
+// WHY: verbatim renders the identical admitted rows with no anchor prefix; the row set, budgets,
+// WHY: and hints are computed once, so only this formatter differs between the two modes.
+function fmtRows(hashes: string[], lines: string[], verbatim: boolean): string {
+  if (!verbatim) return fmtRegion(hashes, lines);
+  const joined = lines.join("\n");
+  // WHY: a lone empty line renders as "" — indistinguishable from an empty result, so mark it.
+  return joined === "" && lines.length > 0 ? "[1 empty line]" : joined;
+}
 
 async function emptyFilePreview(
   startLine: number,
@@ -79,7 +88,9 @@ async function emptyFilePreview(
   precomputedHashes: string[] | undefined,
   path: string | undefined,
   hashSep: string,
+  verbatim: boolean,
 ): Promise<{ text: string; served: ServedRow[] }> {
+  if (verbatim) return { text: "[File is empty.]", served: [] };
   if (startLine === 1) {
     const allHashes =
       precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
@@ -120,21 +131,33 @@ function buildOversizedPreview(params: {
   // WHY: a window is a bounded ask, so its section must not advertise a page it never owed
   // WHY: (mirrors buildNormalPreview); a genuinely truncated window still keeps its own hint.
   hintRemainder?: boolean;
+  verbatim: boolean;
 }): { text: string; truncation?: TruncationResult; nextOffset?: number; served: ServedRow[] } {
-  const { rowSizes, selected, selectedHashes, startLine, totalLines, maxBytes, maxTruncLines } =
-    params;
+  const {
+    rowSizes,
+    selected,
+    selectedHashes,
+    startLine,
+    totalLines,
+    maxBytes,
+    maxTruncLines,
+    verbatim,
+  } = params;
   const oversized = rowSizes.filter((row) => row.bytes > maxBytes);
   const rows = rowSizes.map((row, index) =>
     row.bytes > maxBytes
       ? `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`
-      : fmtRegion([selectedHashes[index]!], [selected[index]!]),
+      : fmtRows([selectedHashes[index]!], [selected[index]!], verbatim),
   );
   const skippedTruncation = truncateHead(rows.join("\n"), { maxBytes, maxLines: maxTruncLines });
   const shownRowCount =
     skippedTruncation.content === "" ? 0 : skippedTruncation.content.split("\n").length;
   const lastShownLine = shownRowCount > 0 ? startLine + shownRowCount - 1 : startLine - 1;
   const { lineLabel, verb, addresses } = oversizedWarning(oversized);
-  const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; content not shown because hashline anchors require full lines. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
+  const reason = verbatim
+    ? "content not shown; line exceeds the read byte budget"
+    : "content not shown because hashline anchors require full lines";
+  const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; ${reason}. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
   let preview = skippedTruncation.content;
   let nextOffset: number | undefined;
   if (shownRowCount > 0 && skippedTruncation.truncated) {
@@ -147,9 +170,10 @@ function buildOversizedPreview(params: {
     preview += `\n\n${warning}`;
   }
   const served: ServedRow[] = [];
-  for (let index = 0; index < shownRowCount; index++)
-    if (rowSizes[index]!.bytes <= maxBytes)
-      served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+  if (!verbatim)
+    for (let index = 0; index < shownRowCount; index++)
+      if (rowSizes[index]!.bytes <= maxBytes)
+        served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
   return {
     text: preview,
     truncation: skippedTruncation.truncated ? skippedTruncation : undefined,
@@ -166,6 +190,7 @@ function buildNormalPreview(params: {
   maxBytes: number;
   maxTruncLines: number;
   selectedHashes: string[];
+  verbatim: boolean;
   // WHY: an entry of an explicit `windows` request is a bounded ask, not a page: the caller named
   // WHY: exactly these lines, so a trailing "use offset=N to continue" would invent intent.
   hintRemainder?: boolean;
@@ -175,8 +200,16 @@ function buildNormalPreview(params: {
   truncation: ReturnType<typeof truncateHead>;
   served: ServedRow[];
 } {
-  const { formatted, startLine, endIdx, totalLines, maxBytes, maxTruncLines, selectedHashes } =
-    params;
+  const {
+    formatted,
+    startLine,
+    endIdx,
+    totalLines,
+    maxBytes,
+    maxTruncLines,
+    selectedHashes,
+    verbatim,
+  } = params;
   const truncation = truncateHead(formatted, { maxBytes, maxLines: maxTruncLines });
   let preview = truncation.content;
   let nextOffset: number | undefined;
@@ -192,8 +225,9 @@ function buildNormalPreview(params: {
     preview += `\n\n${formatPaginationHint(startLine, endIdx, totalLines, nextOffset)}`;
   }
   const served: ServedRow[] = [];
-  for (let index = 0; index < truncation.outputLines; index++)
-    served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+  if (!verbatim)
+    for (let index = 0; index < truncation.outputLines; index++)
+      served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
   return { preview, nextOffset, truncation, served };
 }
 
@@ -214,6 +248,7 @@ function buildWindowSection(params: {
   totalLines: number;
   maxBytes: number;
   maxTruncLines: number;
+  verbatim: boolean;
 }): { text: string; truncation?: TruncationResult; served: ServedRow[] } {
   const {
     rowSizes,
@@ -224,6 +259,7 @@ function buildWindowSection(params: {
     totalLines,
     maxBytes,
     maxTruncLines,
+    verbatim,
   } = params;
   if (rowSizes.some((row) => row.bytes > maxBytes)) {
     return buildOversizedPreview({
@@ -235,10 +271,11 @@ function buildWindowSection(params: {
       maxBytes,
       maxTruncLines,
       hintRemainder: false,
+      verbatim,
     });
   }
   const normal = buildNormalPreview({
-    formatted: fmtRegion(selectedHashes, selected),
+    formatted: fmtRows(selectedHashes, selected, verbatim),
     startLine,
     endIdx,
     totalLines,
@@ -246,6 +283,7 @@ function buildWindowSection(params: {
     maxTruncLines,
     selectedHashes,
     hintRemainder: false,
+    verbatim,
   });
   return {
     text: normal.preview,
@@ -267,8 +305,9 @@ function buildWindowedPreview(params: {
   totalLines: number;
   maxBytes: number;
   maxTruncLines: number;
+  verbatim: boolean;
 }): { text: string; truncation?: TruncationResult; served: ServedRow[] } {
-  const { windows, allLines, allHashes, totalLines, maxBytes, maxTruncLines } = params;
+  const { windows, allLines, allHashes, totalLines, maxBytes, maxTruncLines, verbatim } = params;
   const sections: string[] = [];
   const hashByPosition = new Map<number, string>();
   let truncation: TruncationResult | undefined;
@@ -292,7 +331,7 @@ function buildWindowedPreview(params: {
       );
       // WHY: `metrics.truncated` must be honest when the shared budget cut a window away, so the
       // WHY: same function that reports truncation elsewhere derives it from the budget actually spent.
-      const skipped = truncateHead(fmtRegion(selectedHashes, selected), {
+      const skipped = truncateHead(fmtRows(selectedHashes, selected, verbatim), {
         maxBytes: Math.max(0, remainingBytes),
         maxLines: Math.max(0, remainingLines),
       });
@@ -301,7 +340,10 @@ function buildWindowedPreview(params: {
     }
     const rowSizes = selected.map((line, index) => ({
       lineNumber: window.offset + index,
-      bytes: Buffer.byteLength(`${selectedHashes[index]}${HASH_SEP}${line}`, "utf-8"),
+      bytes: Buffer.byteLength(
+        verbatim ? line : `${selectedHashes[index]}${HASH_SEP}${line}`,
+        "utf-8",
+      ),
     }));
     const built = buildWindowSection({
       rowSizes,
@@ -312,6 +354,7 @@ function buildWindowedPreview(params: {
       totalLines,
       maxBytes: remainingBytes,
       maxTruncLines: remainingLines,
+      verbatim,
     });
     sections.push(`${header}\n${built.text}`);
     for (const row of built.served) hashByPosition.set(row.position, row.hash);
@@ -326,6 +369,9 @@ function buildWindowedPreview(params: {
     // WHY: a multi-window request is N discrete slices, not one stream, so the result carries no root
     // WHY: `nextOffset`: a scalar would invite `offset = nextOffset` and silently re-read a window the
     // WHY: caller never asked to continue. A truncated window says so in its own section text.
+    // WHY: no outer mode check here: `hashByPosition` is empty for verbatim because every inner
+    // WHY: builder guards its own `served` rows (`fmtRows`, `buildOversizedPreview`,
+    // WHY: `buildNormalPreview`), so an outer guard would be unreachable and untestable.
     served: [...hashByPosition.entries()]
       .sort((left, right) => left[0] - right[0])
       .map(([position, hash]) => ({ position, hash })),
@@ -334,10 +380,15 @@ function buildWindowedPreview(params: {
 
 export async function fmtReadPreview(
   text: string,
-  options: { offset?: number; limit?: number; windows?: ReadWindow[] },
+  options: {
+    offset?: number;
+    limit?: number;
+    windows?: ReadWindow[];
+    render?: "served" | "verbatim";
+  },
   precomputedHashes?: string[],
   path?: string,
-  maxLineBytes = MAX_READ_LINE_BYTES,
+  maxLineBytes = DEFAULT_MAX_BYTES,
   maxTruncLines = DEFAULT_MAX_LINES,
 ): Promise<{
   text: string;
@@ -346,6 +397,7 @@ export async function fmtReadPreview(
   served: ServedRow[];
 }> {
   const allLines = visLines(text);
+  const verbatim = options.render === "verbatim";
   const totalLines = allLines.length;
   const startLine = normPosInt(options.offset, "offset") ?? 1;
   const windows = normWindows(options.windows);
@@ -356,10 +408,12 @@ export async function fmtReadPreview(
       precomputedHashes,
       path,
       HASH_SEP,
+      verbatim,
     );
   if (windows) {
-    const allHashes =
-      precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+    const allHashes = verbatim
+      ? (precomputedHashes ?? [])
+      : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
     return buildWindowedPreview({
       windows,
       allLines,
@@ -367,6 +421,7 @@ export async function fmtReadPreview(
       totalLines,
       maxBytes: maxLineBytes,
       maxTruncLines,
+      verbatim,
     });
   }
   if (startLine > totalLines) {
@@ -379,13 +434,21 @@ export async function fmtReadPreview(
   const limit = normPosInt(options.limit, "limit");
   const endIdx = limit ? Math.min(startLine - 1 + limit, totalLines) : totalLines;
   const selected = allLines.slice(startLine - 1, endIdx);
-  const allHashes = precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+  // WHY: the render mode is the hashless authority, not the caller's `[]`: a verbatim preview must
+  // WHY: never reach the lazy `lineHashes` (which would allocate anchors and can persist a snapshot),
+  // WHY: so a third caller that forgets to precompute gets empty hashes instead of served state.
+  const allHashes = verbatim
+    ? (precomputedHashes ?? [])
+    : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
   const selectedHashes = allHashes.slice(startLine - 1, endIdx);
-  const formatted = fmtRegion(selectedHashes, selected);
+  const formatted = fmtRows(selectedHashes, selected, verbatim);
   const maxBytes = maxLineBytes;
   const rowSizes = selected.map((line, index) => ({
     lineNumber: startLine + index,
-    bytes: Buffer.byteLength(`${selectedHashes[index]}${HASH_SEP}${line}`, "utf-8"),
+    bytes: Buffer.byteLength(
+      verbatim ? line : `${selectedHashes[index]}${HASH_SEP}${line}`,
+      "utf-8",
+    ),
   }));
   if (rowSizes.some((row) => row.bytes > maxBytes)) {
     return buildOversizedPreview({
@@ -396,6 +459,7 @@ export async function fmtReadPreview(
       totalLines,
       maxBytes,
       maxTruncLines,
+      verbatim,
     });
   }
 
@@ -407,6 +471,7 @@ export async function fmtReadPreview(
     maxBytes,
     maxTruncLines,
     selectedHashes,
+    verbatim,
   });
   return {
     text: normal.preview,

@@ -102,7 +102,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("live lease applies at the served coordinates with no rejection", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
       const result = await editTool.execute(
@@ -120,7 +120,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("in-place retire keeps [E_STALE_RANGE] with the served window", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const alphaRef = extractHash(text.split("\n").find((l) => l.includes("│alpha"))!);
       const gammaRef = extractHash(text.split("\n").find((l) => l.includes("│gamma"))!);
@@ -157,7 +157,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("re-added text elsewhere still rejects [E_TARGET_LOST] with no rows", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
       await writeFile(path, "alpha\nBETA\ngamma\nbeta\n", "utf-8");
@@ -192,7 +192,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("deleted target rejects [E_TARGET_LOST] with no rows", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\ndelta\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const gammaRef = extractHash(text.split("\n").find((l) => l.includes("│gamma"))!);
       await writeFile(path, "alpha\nbeta\ndelta\n", "utf-8");
@@ -224,7 +224,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     const content = ["l1", "l2", "l3", "l4", "l5", "l6", "l7", "l8", "l9"].join("\n") + "\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const l3Ref = extractHash(text.split("\n").find((l) => l.includes("│l3"))!);
       const l7Ref = extractHash(text.split("\n").find((l) => l.includes("│l7"))!);
@@ -268,7 +268,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const first = await readTool.execute(
         "r1",
-        { path: "sample.ts", limit: 3 },
+        { file: "sample.ts", limit: 3 },
         undefined,
         undefined,
         ctx,
@@ -280,7 +280,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       );
       const second = await readTool.execute(
         "r2",
-        { path: "sample.ts", offset: 7 },
+        { file: "sample.ts", offset: 7 },
         undefined,
         undefined,
         ctx,
@@ -307,7 +307,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     const content = "l1\nl2\nl3\nl4\nl5\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.ts", limit: 2 }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts", limit: 2 }, undefined, undefined, ctx);
       const hashes = await lineHashes(content, home.testPath);
       let caught: unknown;
       try {
@@ -359,7 +359,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("batched call rejects atomically and leaves the file unchanged", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const alphaRef = extractHash(text.split("\n").find((l) => l.includes("│alpha"))!);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
@@ -501,7 +501,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("boundary survivor live+unshifted serves [E_UNVERIFIED_RANGE] as a fresh read", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const alphaRef = extractHash(text.split("\n").find((l) => l.includes("│alpha"))!);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
@@ -556,7 +556,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("both bounds stale rejects [E_TARGET_LOST] with no rows", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const alphaRef = extractHash(text.split("\n").find((l) => l.includes("│alpha"))!);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
@@ -595,7 +595,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
   it("survivor shifted rejects [E_TARGET_LOST] with no rows", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const betaRef = extractHash(text.split("\n").find((l) => l.includes("│beta"))!);
       const gammaRef = extractHash(text.split("\n").find((l) => l.includes("│gamma"))!);
@@ -637,7 +637,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     const content = Array.from({ length: 10 }, (_, i) => `l${i + 1}`).join("\n") + "\n";
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const first = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const l9Ref = extractHash(text.split("\n").find((l) => l.includes("│l9"))!);
       const l10Ref = extractHash(text.split("\n").find((l) => l.includes("│l10"))!);
@@ -729,8 +729,8 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       await writeFile(join(cwd, "source.txt"), "a\nb\nc\nd\n", "utf-8");
       await writeFile(join(cwd, "target.txt"), "1\n2\n3\n", "utf-8");
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
-      await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
       const hs = await lineHashes("a\nb\nc\nd\n", `${home.testPath}/source.txt`);
       const ht = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
       // Retire one served interior identity IN TOOL so the leased span is stale, then aim a

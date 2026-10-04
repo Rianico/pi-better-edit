@@ -11,9 +11,9 @@ import { valKind, valAccess } from "../validation.js";
 import { visLines } from "../utils.js";
 import { loadHashStore, type HashStore } from "../hash-store.js";
 import { snapshotIOFor } from "../snapshot-store";
-import type { NormFile } from "./types.js";
+import type { NormFile, NormText } from "./types.js";
 
-export type { NormFile } from "./types.js";
+export type { NormFile, NormText } from "./types.js";
 
 export type SnapInfo = {
   snapshotId: string;
@@ -53,20 +53,29 @@ export async function fileSnap(
   };
 }
 
-export interface ReadNormOptions {
+export interface DecodeNormOptions {
   signal?: AbortSignal;
   accessMode?: number;
   preloadedFile?: LFile;
+  /** The anchor-space line cap; omit to load without one (a caller that serves no anchors). */
   maxLines?: number;
+}
+
+export interface ReadNormOptions extends DecodeNormOptions {
   store?: HashStore;
   noPersist?: boolean;
 }
 
-export async function readNormFile(
+/**
+ * The decode/normalize half of the load path, shared by the served and verbatim seams: kind
+ * admission, BOM strip, CRLF→LF, and the invalid-UTF-8 disclosure. `maxLines` is the anchor-space
+ * cap — an edit-domain limit — so a caller that serves no anchors omits it and gets an uncapped read.
+ */
+export async function decodeNormText(
   path: string,
   cwd: string,
-  options?: ReadNormOptions,
-): Promise<NormFile> {
+  options?: DecodeNormOptions,
+): Promise<NormText> {
   const absolutePath = toCwd(path, cwd);
   const resolvedPath = await resolveTarget(absolutePath);
   const signal = options?.signal;
@@ -100,9 +109,24 @@ export async function readNormFile(
     }
   }
 
+  return {
+    absolutePath: resolvedPath,
+    normalized,
+    bom,
+    originalEnding,
+    hadUtf8DecodeErrors: file.hadUtf8DecodeErrors === true,
+  };
+}
+
+export async function readNormFile(
+  path: string,
+  cwd: string,
+  options?: ReadNormOptions,
+): Promise<NormFile> {
+  const norm = await decodeNormText(path, cwd, options);
   const hashStore = options?.store ?? (await loadHashStore());
-  const fileHashes = await defaultHashIdentity.hashesFor(normalized, {
-    path: resolvedPath,
+  const fileHashes = await defaultHashIdentity.hashesFor(norm.normalized, {
+    path: norm.absolutePath,
     persist: options?.noPersist !== true,
     snapshotIO: snapshotIOFor(hashStore),
     // WHY: this is the read-path materialization of the file's committed bytes (spec §3.1.3 / §3.1.3.3):
@@ -110,12 +134,5 @@ export async function readNormFile(
     // WHY: the load path allowed to retire leases. In-memory working-buffer hashing stays non-authoritative.
     retireLeases: true,
   });
-  return {
-    absolutePath: resolvedPath,
-    normalized,
-    bom,
-    originalEnding,
-    fileHashes,
-    hadUtf8DecodeErrors: file.hadUtf8DecodeErrors === true,
-  };
+  return { ...norm, fileHashes };
 }

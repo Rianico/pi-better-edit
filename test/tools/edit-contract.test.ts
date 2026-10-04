@@ -166,7 +166,7 @@ describe("edit payload contract", () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", path);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const tool = createEditTool();
       const error = await tool
         .execute(

@@ -78,7 +78,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { path: "cand3_edit_mirror_fail.txt" },
+        { file: "cand3_edit_mirror_fail.txt" },
         undefined,
         undefined,
         ctx,
@@ -127,7 +127,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { path: "cand3_edit_lease_fail.txt" },
+        { file: "cand3_edit_lease_fail.txt" },
         undefined,
         undefined,
         ctx,
@@ -174,7 +174,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { path: "cand3_undo_mirror_fail.txt" },
+        { file: "cand3_undo_mirror_fail.txt" },
         undefined,
         undefined,
         ctx,
@@ -246,7 +246,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { path: "cand3_undo_ordering.txt" },
+        { file: "cand3_undo_ordering.txt" },
         undefined,
         undefined,
         ctx,
@@ -297,7 +297,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { path: "cand3_undo_text.txt" },
+        { file: "cand3_undo_text.txt" },
         undefined,
         undefined,
         ctx,
@@ -345,7 +345,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
       const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { path: "cand3_undo_success.txt" },
+        { file: "cand3_undo_success.txt" },
         undefined,
         undefined,
         ctx,

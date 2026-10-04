@@ -23,7 +23,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const undo = getTool("undo_last_edit");
 
       const result = await undo.execute("u1", { path: "sample.ts" }, undefined, undefined, ctx);
@@ -37,7 +37,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -81,7 +81,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -110,7 +110,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -140,7 +140,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nccc\n", home.testPath);
@@ -168,7 +168,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -196,7 +196,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -224,7 +224,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -253,7 +253,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -283,7 +283,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
@@ -327,7 +327,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -376,7 +376,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -410,7 +410,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -465,7 +465,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -494,7 +494,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "line1\nline2\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("line1\nline2\n", home.testPath);
@@ -525,7 +525,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -561,7 +561,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -592,7 +592,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -623,7 +623,7 @@ describe("undo_last_edit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
@@ -680,7 +680,7 @@ describe("undo cleared after write", () => {
       const editTool = tools.get("edit")!;
       const undo = tools.get("undo_last_edit")!;
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await tools.get("read")!.execute("r1", { path: "sample.ts" }, undefined, undefined, {
+      await tools.get("read")!.execute("r1", { file: "sample.ts" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -725,7 +725,7 @@ describe("undo cleared after write", () => {
       const editTool = tools.get("edit")!;
       const undo = tools.get("undo_last_edit")!;
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      await tools.get("read")!.execute("r1", { path: "sample.ts" }, undefined, undefined, {
+      await tools.get("read")!.execute("r1", { file: "sample.ts" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);

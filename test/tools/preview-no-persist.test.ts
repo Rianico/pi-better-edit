@@ -16,7 +16,7 @@ describe("compPreview no-persist guarantee", () => {
         await import("../../src/fs-write")
       ).resolveTarget(await (await import("../../src/paths")).toCwd("sample.txt", cwd));
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
 
       const hashes = await lineHashes(content, absolutePath);
 
@@ -48,7 +48,7 @@ describe("compPreview no-persist guarantee", () => {
         await import("../../src/fs-write")
       ).resolveTarget(await (await import("../../src/paths")).toCwd("sample.txt", cwd));
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
 
       const hashes = await lineHashes(content, absolutePath);
 
@@ -73,7 +73,7 @@ describe("compPreview no-persist guarantee", () => {
         await import("../../src/fs-write")
       ).resolveTarget(await (await import("../../src/paths")).toCwd("sample.txt", cwd));
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
 
       const hashes = await lineHashes(content, absolutePath);
 
@@ -99,7 +99,7 @@ describe("compPreview no-persist guarantee", () => {
         await import("../../src/fs-write")
       ).resolveTarget(await (await import("../../src/paths")).toCwd("sample.txt", cwd));
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const hashes = await lineHashes(content, absolutePath);
       const db = new DatabaseSync(hashStorePath(), { defensive: false } as any);
       db.prepare(
@@ -139,7 +139,7 @@ describe("compPreview no-persist guarantee", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.txt" },
+        { file: "sample.txt" },
         undefined,
         undefined,
         ctx,
@@ -183,14 +183,14 @@ describe("compPreview no-persist guarantee", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       await readTool.execute(
         "r1",
-        { path: "sample.txt", offset: 1, limit: 1 },
+        { file: "sample.txt", offset: 1, limit: 1 },
         undefined,
         undefined,
         ctx,
       );
       await readTool.execute(
         "r2",
-        { path: "sample.txt", offset: 4, limit: 1 },
+        { file: "sample.txt", offset: 4, limit: 1 },
         undefined,
         undefined,
         ctx,

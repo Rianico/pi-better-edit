@@ -11,7 +11,7 @@ const ATOMICITY_TRAILER =
   "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
 
 async function doRead(ctx: any, readTool: any, path: string) {
-  await readTool.execute("r1", { path }, undefined, undefined, ctx);
+  await readTool.execute("r1", { file: path }, undefined, undefined, ctx);
 }
 
 describe("edit multi-item tool", () => {
