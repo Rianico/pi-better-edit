@@ -19,7 +19,10 @@ export const SERVED_MAX_LINES = 200_000;
 export const MAX_READ_WINDOWS = 16;
 
 export const HASH_STORE_BUSY_TIMEOUT = 1000;
-export const HASH_STORE_VERSION = 7;
+// WHY: v8 versions the persisted undo anchor generation — pre-v3 rows must never be
+// WHY: adopted as current. Record-only marker; schema evolution itself is additive
+// WHY: (`addColumnIfMissing`), never a drop.
+export const HASH_STORE_VERSION = 8;
 export const EDITS_MAX_ITEMS = 32;
 // WHY: the served-lease session TTL: an un-retired lease pins its snapshot for this long, and
 // WHY: the LRU vacuum's active-pin cutoff (spec §3.6.1) is measured with the same window.

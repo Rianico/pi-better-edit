@@ -184,6 +184,8 @@ describe("undo-store — raw entries", () => {
       snapshotHash: null,
       transactionId: null,
       rawPre: null,
+      // P1: every upsert stamps the current anchor generation.
+      canonVersion: 3,
     });
   });
 

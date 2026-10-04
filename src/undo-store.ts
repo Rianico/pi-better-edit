@@ -7,7 +7,7 @@ import {
   ensureFileUndoSchema,
   type HashStore,
 } from "./hash-store.js";
-import { isValidHashList } from "./hashline/hash.js";
+import { CANON_VERSION, isValidHashList } from "./hashline/hash.js";
 
 export interface UndoRecord {
   content: string;
@@ -15,6 +15,11 @@ export interface UndoRecord {
   ending: string;
   hashes: string[];
   resultContent: string;
+  /**
+   * The anchor generation the stored hashes were derived under. Absent (or 0) is a
+   * pre-v3 row: never adopted as current — the undo path re-derives instead.
+   */
+  canonVersion?: number | null;
   snapshotHash?: string | null;
   /**
    * (ticket-04b §4) The correlated multi-file cut transaction this row belongs to; `null` is an
@@ -50,6 +55,7 @@ export interface UndoStmts {
     snapshotHash: string | null,
     transactionId: string | null,
     rawPre: string | null,
+    canonVersion: number,
     updatedAt: number,
   ) => void;
   undoGet: (path: string) => Record<string, unknown> | undefined;
@@ -74,15 +80,15 @@ export function undoStmts(db: DatabaseSync): UndoStmts {
 
 function buildStmts(db: DatabaseSync): UndoStmts {
   const undoUpsertStmt = db.prepare(
-    "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
-      "ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, snapshot_hash = excluded.snapshot_hash, transaction_id = excluded.transaction_id, raw_pre = excluded.raw_pre, updated_at = excluded.updated_at",
+    "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre, canon_version, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?) " +
+      "ON CONFLICT(path) DO UPDATE SET content = excluded.content, bom = excluded.bom, ending = excluded.ending, hashes = excluded.hashes, result_content = excluded.result_content, snapshot_hash = excluded.snapshot_hash, transaction_id = excluded.transaction_id, raw_pre = excluded.raw_pre, canon_version = excluded.canon_version, updated_at = excluded.updated_at",
   );
   const undoGetStmt = db.prepare(
-    "SELECT content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre FROM file_undo WHERE path = ?",
+    "SELECT content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre, canon_version FROM file_undo WHERE path = ?",
   );
   const undoDelStmt = db.prepare("DELETE FROM file_undo WHERE path = ?");
   const undoGetTransactionStmt = db.prepare(
-    "SELECT path, content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre FROM file_undo WHERE transaction_id = ? ORDER BY path",
+    "SELECT path, content, bom, ending, hashes, result_content, snapshot_hash, transaction_id, raw_pre, canon_version FROM file_undo WHERE transaction_id = ? ORDER BY path",
   );
   const undoDelTransactionStmt = db.prepare("DELETE FROM file_undo WHERE transaction_id = ?");
   const intentUpsertStmt = db.prepare(
@@ -104,6 +110,7 @@ function buildStmts(db: DatabaseSync): UndoStmts {
       snapshotHash,
       transactionId,
       rawPre,
+      canonVersion,
       updatedAt,
     ) => {
       withBusyRetry(() => {
@@ -117,6 +124,7 @@ function buildStmts(db: DatabaseSync): UndoStmts {
           snapshotHash,
           transactionId,
           rawPre,
+          canonVersion,
           updatedAt,
         );
       });
@@ -175,6 +183,7 @@ function parseUndoRow(row: Record<string, unknown> | undefined): UndoRecord | un
       snapshotHash: (row.snapshot_hash as string | null) ?? null,
       transactionId: (row.transaction_id as string | null) ?? null,
       rawPre: (row.raw_pre as string | null) ?? null,
+      canonVersion: (row.canon_version as number | null) ?? 0,
     };
   } catch {
     return undefined;
@@ -192,6 +201,7 @@ export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): v
     entry.snapshotHash ?? null,
     entry.transactionId ?? null,
     entry.rawPre ?? null,
+    CANON_VERSION,
     Date.now(),
   );
 }

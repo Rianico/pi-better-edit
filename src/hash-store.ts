@@ -238,6 +238,9 @@ export function ensureFileUndoSchema(db: DatabaseSync): void {
   addColumnIfMissing(db, "file_undo", "snapshot_hash", "TEXT");
   addColumnIfMissing(db, "file_undo", "transaction_id", "TEXT");
   addColumnIfMissing(db, "file_undo", "raw_pre", "TEXT");
+  // WHY: versions the persisted anchor set — existing rows keep 0 (never current),
+  // WHY: so a pre-bump store is refused, not migrated, on first open after upgrade.
+  addColumnIfMissing(db, "file_undo", "canon_version", "INTEGER NOT NULL DEFAULT 0");
   db.exec("CREATE INDEX IF NOT EXISTS idx_file_undo_transaction_id ON file_undo (transaction_id)");
   db.exec(CUT_INTENT_DDL);
   addColumnIfMissing(db, "cut_intent", "direction", "TEXT");

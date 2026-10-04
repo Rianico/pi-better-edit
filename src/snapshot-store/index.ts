@@ -9,6 +9,7 @@ import {
   type HashSnapshotIO,
   type HashSnapshotUpsertOptions,
 } from "../hashline/hash.js";
+import { DomainError } from "../domain-errors.js";
 import { splitLines } from "../utils.js";
 import {
   loadHashStore,
@@ -261,10 +262,17 @@ export function getSnapshot(
  * verbatim when it adopts the pinned snapshot (spec §3.1.4 step 4: anchors are never re-derived),
  * so the restored rows are exactly the rows the adopted `line_id`s were leased for.
  */
+/** Whether a snapshot cache key belongs to the current anchor generation. */
+function isCurrentGenerationKey(snapshotHash: string): boolean {
+  return snapshotHash.startsWith(`${CANON_VERSION}:`);
+}
 export async function anchorsForSnapshotHash(
   path: string,
   snapshotHash: string,
 ): Promise<string[] | undefined> {
+  // WHY: a foreign-generation descriptor is never resolved — its anchors were
+  // WHY: derived under another canon version and must not be leased or edited.
+  if (!isCurrentGenerationKey(snapshotHash)) return undefined;
   const store = await loadHashStore();
   const row = snapshotStmts(store.db).findSnapshot(path, snapshotHash);
   if (!row) return undefined;
@@ -346,6 +354,14 @@ export async function adoptPinnedSnapshotFor(
   descriptor: SnapshotDescriptor,
   options?: SnapshotAdoptOptions,
 ): Promise<void> {
+  // WHY: a foreign-generation descriptor must never write lineage — its anchors
+  // WHY: were derived under another canon version. Fail closed (programmer error),
+  // WHY: never adopt verbatim.
+  if (!isCurrentGenerationKey(descriptor.snapshotHash)) {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: `Refusing to adopt snapshot from another anchor generation: ${JSON.stringify(descriptor.snapshotHash)}.`,
+    });
+  }
   const store = await loadHashStore();
   materializeSnapshot(store, descriptor, {
     retireLeases: options?.retireLeases === true,
