@@ -24,6 +24,7 @@
 * **hashline:** harden the anchor-width guard to refute numeric and cross-surface drift — leaf walker sees re-exports and dynamic imports (with positive control), exact-line allowlists, a numeric-shape arm on `src/hashline/**`, derived shape samples, and a width-consistency check over `src/**`, `prompts/**` and the package description; `prompts/read.md` presence assertions become width-consistent. Test-only, behaviour unchanged. (#20)
 * **hashline:** close the T1b guard gaps — one-arg numeric slice arm, space-form count words, derived foreign-width control, non-vacuous walk pins, dead allowlist entry removed, and dispatch refutation through the shared walk helper. Test-only, `HASH_LEN` stays 3. (#20)
 * **hashline:** restore measured width-3 evidence with revision scope instead of repainting it, drive fixture differentials from the fixture token with width-5 tripwires, comment-proof the capacity source pins, generalize the class-quantifier arm past `3|4`, and fix the ADR-0019 supersession link. Docs plus tests only; no shipped logic changed. (#20)
+* **hashline:** restore three revision-pinned archive quotes verbatim, record the width-3 digit rate beside its derived live figure, caveat token claims via ADR-0029, and pin the quantifier off-width filter with a live-width control. Docs plus tests only. (#20)
 ## [2.6.0] - 2026-10-03
 
 ### Features

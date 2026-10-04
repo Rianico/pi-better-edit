@@ -359,6 +359,10 @@ describe("anchor width single owner", () => {
       "copy only the 3 chars before │",
     ];
     expect(plantedStrict.flatMap((line) => scanStrictLine(line))).toHaveLength(3);
+    // WHY: live-width control — a `{HASH_LEN}` class is consistent and must NOT
+    // WHY: fire. It reddens both on a flag-everything mutant (`match[1] !== null`
+    // WHY: flags every `{N}`) and on a revert to the old `(3|4)` positive arm.
+    expect(scanStrictLine(`const S = /[A-Za-z0-9]{${HASH_LEN}}$/;`)).toEqual([]);
     const plantedNumeric = [
       "const ANCHOR_WIDTH = 3;",
       "if (text[3] !== HASH_SEP) return undefined;",

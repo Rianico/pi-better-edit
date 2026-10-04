@@ -15,30 +15,43 @@ import { useTestHome, withTempFile, setupReadTest } from "../support/fixtures";
 
 const home = useTestHome();
 
-// WHY: the producer pin matches against comment-stripped source so neither a
-// WHY: `/* … */` block nor a `// …` line quoting the throw can satisfy it. The
-// WHY: scanner is string-aware (`//` inside a literal, e.g. a URL, is kept).
+// WHY: the producer pin matches against comment- and literal-blanked source so
+// WHY: neither a `/* … */` block, a `// …` line, nor a quoted/template body quoting
+// WHY: the throw can satisfy it (a real `throw` call is never inside a literal).
+// WHY: The scanner is string-aware (`//` inside a literal never starts a comment).
 function stripComments(code: string): string {
   let out = "";
   let i = 0;
   let quote: string | null = null;
+  let blanking = false;
   while (i < code.length) {
     const ch = code[i]!;
     const next = code[i + 1] ?? "";
     if (quote !== null) {
-      out += ch;
+      // WHY: only a template literal can span lines, so only its body is
+      // WHY: blanked (newlines kept) — a quoted `throw …` line inside one must
+      // WHY: not satisfy the pin, while single/double-quoted code like
+      // WHY: `"E_LARGE_FILE"` stays intact for the pin to match.
+      if (blanking) out += ch === "\n" ? "\n" : " ";
+      else out += ch;
       if (ch === "\\") {
-        out += next;
+        out += blanking ? " " : next;
         i += 2;
         continue;
       }
-      if (ch === quote) quote = null;
+      if (ch === quote) {
+        quote = null;
+        blanking = false;
+      }
       i += 1;
       continue;
     }
     if (ch === '"' || ch === "'" || ch === "`") {
       quote = ch;
-      out += ch;
+      blanking = ch === "`";
+      // WHY: the opening delimiter is blanked for templates (so the body and
+      // WHY: the delimiter never match pin text) and kept otherwise.
+      out += blanking ? '"' : ch;
       i += 1;
       continue;
     }

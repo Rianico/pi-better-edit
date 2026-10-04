@@ -60,7 +60,7 @@ A 4-char anchor is unique only inside one file's hash allocation, so the process
 - `writeServeRecord` persists `row.canon ?? null`; it no longer consults a hash-keyed store. A producer with only hashes records none, and that position degrades to hash-equality verification (the legacy ADR-0005 behavior) instead of claiming a file-blind canon.
 - Removed: `CanonStore`, `createCanonStore`, `globalCanonStore`, `HashIdentity.hashToCanon` / `rememberHashCanon` / `getCanonForHash` / `clearCanon` / `canonEntries`, `ServedVerification`'s write-only store field and `ensureCanonsPopulated`, the `canonStore` params on `verifyServedRange` / `verifyServedRangeResult`, and `_lineHashesPure`'s store param. `drift` reads only `servedCanons[servedPos]`.
 
-Regression test (`test/core/serve-recording.test.ts` -> "scopes served canons per file when two files share one 4-char anchor"): two files recorded under one anchor string each keep their own canon. On the pre-fix code it reads back file A's line — verified by stashing `src/` and re-running:
+Regression test (`test/core/serve-recording.test.ts` -> "scopes served canons per file when two files share one 3-char anchor (#149)" as measured at `47a04f7`): two files recorded under one anchor string each keep their own canon. On the pre-fix code it reads back file A's line — verified by stashing `src/` and re-running:
 
 ```
 AssertionError: expected [ '}=verification??{};' ] to deeply equal [ 'clearServedRefusals(absolutePath);' ]
