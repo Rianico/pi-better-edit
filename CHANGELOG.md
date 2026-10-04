@@ -14,7 +14,7 @@
 
 ### Performance Improvements
 
-* **read:** page a file instead of materializing it. A read walks the lines it needs — the page, and on the served path every row's anchor, in the same pass — instead of building one heap string per line for the whole text (4.56x the text, measured). Verbatim pages the same bytes as before with no line array at all, and the decoder's newline tally now settles the anchor-space cap, so the refusal needs no split either. Served is byte-identical: same anchors, same order, same pages, hints and refusals, and the same 238,328-line cap. (#43)
+* **read:** page a file instead of materializing it. A read walks the lines it needs — the page, and on the served path every row's anchor in that same walk — instead of building one heap string per line for the whole text (`split("\n")` costs ~50 B per line: 47.2 MB of heap for a 29.9 MB, one-million-line file). Verbatim pages the same bytes as before and builds no line array to slice a page out of — though an unbounded verbatim read still holds the lines it shows, since its page is the whole file. An oversized file still refuses with the same message at the same point. Served is byte-identical: same anchors, same order, same pages, hints and refusals, and the same 238,328-line cap. (#43)
 
 ### Code Refactoring
 

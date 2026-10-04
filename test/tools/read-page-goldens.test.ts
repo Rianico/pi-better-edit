@@ -2,8 +2,14 @@ import { describe, expect, it } from "vitest";
 import { MAX_HASH_LINES } from "../../src/hashline";
 import { setupReadTest, withTempFile } from "../support/fixtures";
 
-// WHY: captured from the implementation that materialized `split("\n")` for every read (6bca8d9), so
-// WHY: the walk that replaced it can be held to byte-identical pages, hints and refusals — in BOTH
+// Provenance, verified by an independent review rather than by this file: these literals were captured
+// from the implementation before this branch (6bca8d9), and a clean `git archive main` checkout
+// reproduces them — the anchor arrays for NL, CRLF, LONE_CR, NO_TRAILING and the empty file are
+// byte-identical to main's served output, constants included (`MEo,Mxn,nZ8,OMe,u9d`,
+// `658,tgj,nHm,pLz,1nL`, `AuN`). To re-verify: extract main (`git archive main | tar -x -C <dir>`, and
+// symlink this tree's `node_modules`), run this file there, and diff the rendered pages.
+//
+// WHY: the walk must hold the split-based reader's pages, hints and refusals byte for byte — in BOTH
 // WHY: render modes, since the anchor array and the page now come out of one walk.
 const NL = Array.from({ length: 40 }, (_, i) => `l${i}`).join("\n") + "\n";
 const CRLF = "a\r\nb\r\nc\r\n";

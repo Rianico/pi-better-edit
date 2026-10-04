@@ -4,16 +4,18 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { walkLines } from "../../src/file-content/line-walker.js";
 
-// WHY: the numbers behind "page the file": `split("\n")` costs ~41 B per line — 4.56x the text,
-// WHY: measured here as a 45.0 MB text taking +205.0 MB of heap — while the walk keeps the page it was
-// WHY: asked for and nothing else. Behind RUN_EVAL because a heap delta is only comparable on an idle,
-// WHY: warmed process: run `pnpm run eval:heap`, and read the JSON it writes for the numbers.
+// WHY: the numbers behind "page the file", as this probe measures them: a 29.9 MB, one-million-line text
+// WHY: costs +47.2 MB of heap as `split("\n")` — 50 B per line, 1.65x the text — while a fifty-line page
+// WHY: walked out of the same text costs +38.8 KB, and counting every line costs +20.6 KB. (The brief's
+// WHY: 4.56x figure was measured on a fixture with shorter lines and is not this probe's number.) Behind
+// WHY: RUN_EVAL because a heap delta is only comparable on an idle, warmed process: run
+// WHY: `pnpm run eval:heap` and read the JSON it writes for the current numbers.
 const RUN = process.env.RUN_EVAL === "1";
 const LINES = 1_000_000;
 const PAGE = 50;
 
 /**
- * Why: the materialized value is handed back to the caller so the measurement cannot be flattered by a
+ * WHY: the materialized value is handed back to the caller so the measurement cannot be flattered by a
  * collection of a result nothing holds any more.
  */
 function heapDelta(run: () => unknown): { delta: number; kept: unknown } {
