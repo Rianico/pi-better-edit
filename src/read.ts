@@ -66,10 +66,17 @@ export function regRead(pi: ExtensionAPI): void {
           },
         ),
       ),
+      mode: Type.Optional(
+        Type.Union([Type.Literal("served"), Type.Literal("verbatim")], {
+          description:
+            'Render mode: "served" (default) returns each line as a 3-char anchor plus content; "verbatim" returns plain text with no anchor prefix.',
+        }),
+      ),
     }),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       const rawPath = params.file;
+      const mode = params.mode ?? "served";
       abortIf(signal);
       // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
       // WHY: `noPersist` defers the authoritative materialization until the served window is
@@ -84,6 +91,7 @@ export function regRead(pi: ExtensionAPI): void {
         maxLines: MAX_HASH_LINES,
         store: await loadHashStore(),
         noPersist: true,
+        render: mode,
       });
 
       if (prepared.kind === "image") {
@@ -114,6 +122,22 @@ export function regRead(pi: ExtensionAPI): void {
           });
         }
         throw new DomainError("E_UNSUPPORTED_FILE", { path: rawPath, kind: "image" });
+      }
+
+      if (mode === "verbatim") {
+        // WHY: a verbatim read shares admission/normalization but must not touch served state —
+        // WHY: no lease, snapshot, epoch, drift clear, or span notification. Return before any of it.
+        return {
+          content: [{ type: "text", text: prepared.preview }],
+          details: {
+            truncation: prepared.truncation,
+            ...(prepared.nextOffset !== undefined ? { nextOffset: prepared.nextOffset } : {}),
+            metrics: {
+              truncated: Boolean(prepared.truncation),
+              ...(prepared.nextOffset !== undefined ? { next_offset: prepared.nextOffset } : {}),
+            },
+          },
+        };
       }
 
       const session = sessionFromContext(

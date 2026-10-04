@@ -62,6 +62,7 @@ export interface PrepareOptions {
   accessMode?: number;
   maxLineBytes?: number;
   maxTruncLines?: number;
+  render?: "served" | "verbatim";
   store?: import("../hash-store.js").HashStore;
   noPersist?: boolean;
   preloadedFile?: LFile;
@@ -134,7 +135,12 @@ export async function prepareFile(
 
   const preview = await fmtReadPreview(
     norm.normalized,
-    { offset: options?.offset, limit: options?.limit, windows: options?.windows },
+    {
+      offset: options?.offset,
+      limit: options?.limit,
+      windows: options?.windows,
+      render: options?.render,
+    },
     norm.fileHashes,
     norm.absolutePath,
     options?.maxLineBytes ?? DEFAULT_MAX_BYTES,
