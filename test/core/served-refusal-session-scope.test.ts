@@ -19,7 +19,7 @@ import {
 import { lineHashes } from "../../src/hashline";
 import { setupIntegrationTest, useTestHome, withTempFile } from "../support/fixtures";
 
-const REFUSED_LINE = "Ab3│hello";
+const REFUSED_LINE = "Ab3X│hello";
 const home = useTestHome();
 
 beforeEach(() => {
@@ -41,11 +41,11 @@ describe("served-refusal tally — session scope (#132)", () => {
   it("sharpens within one session and restarts when the refused payload changes", () => {
     const path = "/tmp/132-sharpen.txt";
     const sessionKey = "sess-sharpen";
-    expect(trackServedEditRefusal(sessionKey, path, "Ab3", "Cd4", REFUSED_LINE)).toBe(1);
-    expect(trackServedEditRefusal(sessionKey, path, "Ab3", "Cd4", REFUSED_LINE)).toBe(2);
-    expect(trackServedEditRefusal(sessionKey, path, "Ab3", "Cd4", REFUSED_LINE)).toBe(3);
+    expect(trackServedEditRefusal(sessionKey, path, "Ab3X", "Cd4X", REFUSED_LINE)).toBe(1);
+    expect(trackServedEditRefusal(sessionKey, path, "Ab3X", "Cd4X", REFUSED_LINE)).toBe(2);
+    expect(trackServedEditRefusal(sessionKey, path, "Ab3X", "Cd4X", REFUSED_LINE)).toBe(3);
     // A different refused payload is a new refusal, not a continuum.
-    expect(trackServedEditRefusal(sessionKey, path, "Ab3", "Cd4", "Zz9│hello")).toBe(1);
+    expect(trackServedEditRefusal(sessionKey, path, "Ab3X", "Cd4X", "Zz9X│hello")).toBe(1);
     expect(_servedRefusalSize()).toBe(1);
   });
 
@@ -119,7 +119,7 @@ describe("served-refusal tally — session scope (#132)", () => {
       trackServedWriteRefusal("sess-nul", "/tmp/132\0injected.txt", REFUSED_LINE),
     ).toThrow(/NUL/);
     expect(() =>
-      trackServedEditRefusal("sess\0injected", "/tmp/132-nul.txt", "Ab3", "Cd4", REFUSED_LINE),
+      trackServedEditRefusal("sess\0injected", "/tmp/132-nul.txt", "Ab3X", "Cd4X", REFUSED_LINE),
     ).toThrow(TypeError);
     expect(() => clearServedRefusals("sess-nul", "/tmp/132\0injected.txt")).toThrow(TypeError);
     // A rejected scope inserts nothing: the tracker stays empty.

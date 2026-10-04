@@ -46,13 +46,13 @@ const FREE_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K] } = {
   E_FOREIGN_ANCHOR: { path: "a.py", anchors: ["wUp"], homes: ["b.py"] },
   E_UNVERIFIED_RANGE: {
     servedRows: [{ position: 0, hash: "abc" }],
-    servedBlock: "abc│alpha",
+    servedBlock: "abcc│alpha",
     cause: "retirement",
   },
   E_STALE_RANGE: {
     headline: "line 1 differs from what was served.",
     servedRows: [{ position: 0, hash: "abc" }],
-    servedBlock: "abc│alpha",
+    servedBlock: "abcc│alpha",
     cause: "served-range staleness",
   },
   E_NOOP_LOOP: {
@@ -62,7 +62,7 @@ const FREE_EXAMPLES: { [K in RemedyFreeCode]: ErrorPayloadMap[K] } = {
     count: 3,
     batch: false,
     servedRows: [{ position: 0, hash: "abc" }],
-    servedBlock: "abc│alpha",
+    servedBlock: "abcc│alpha",
   },
 };
 

@@ -1,6 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
+import { _lineHashesPure } from "../../src/hashline/hash";
+import { applyEdit } from "../../src/hashline/apply";
+import { canonDigest } from "../../src/hashline/hash-identity";
+import type { LeaseIdentityView, LeaseSpanSource, HEdit } from "../../src/hashline/resolve";
 import { HASH_RE } from "../../src/hashline/alphabet.js";
 import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
@@ -104,6 +108,9 @@ describe("regEdit", () => {
       // WHY: premise guard — the never-served row below reaches the served-set
       // WHY: logic only if the served set itself is live-width.
       expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
+      // WHY: width-5 tripwire — pins the fixture token itself row-shaped, so
+      // WHY: this fixture reddens (not just its differential) if a flip strands it.
+      expect(HASH_RE.test("Zz99")).toBe(true);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const result = await editTool.execute(
         "e1",
@@ -121,29 +128,41 @@ describe("regEdit", () => {
     });
   });
 
-  it("refuses a verbatim served row without literal mode (tier live)", async () => {
-    // WHY: differential beside the byte-exact test — the same tier that lets a
-    // WHY: never-served row through refuses a served one, proving the Zz99 row
-    // WHY: above reaches served-set logic rather than a shape skip. At any width
-    // WHY: where the token is shape-skipped this reddens (no refusal).
-    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
-      expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-      await expect(
-        editTool.execute(
-          "e1",
-          {
-            file: "sample.ts",
-            edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: `${hashes[1]}│bbb` }],
-          },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      ).rejects.toThrow(/E_SUSPICIOUS_TEXT/);
-    });
+  it("refuses the fixture token when served (tier live)", () => {
+    // WHY: drives the fixture token itself — with "Zz99" served, the same
+    // WHY: "Zz99│BBB" row the byte-exact test writes through is refused. At any
+    // WHY: width where Zz99 is not row-shaped this reddens (no refusal), so the
+    // WHY: F1 vacuity cannot recur silently.
+    const content = "aaa\nbbb\nccc\n";
+    const hashes = _lineHashesPure(content);
+    expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
+    const served: (string | null)[] = ["Zz99", ...hashes.slice(1)];
+    const leases: Record<string, LeaseIdentityView> = {
+      Zz99: {
+        lineId: 1,
+        canonHash: canonDigest("BBB"),
+        servedSnapshotHash: "S",
+        servedLineNumber: 1,
+        retiredAt: null,
+      },
+    };
+    const identity: LeaseSpanSource = {
+      currentSnapshotHash: "C",
+      leaseFor: (anchor) => leases[anchor],
+      rebasedLineOf: (lineId) => lineId,
+    };
+    const edit = {
+      hash_bounds: [{ hash: "Zz99" }, { hash: "Zz99" }],
+      content_lines: ["Zz99│BBB"],
+    } as unknown as HEdit;
+    expect(() =>
+      applyEdit(content, edit, undefined, hashes, {
+        filePath: "sample.ts",
+        served,
+        canonDigests: [canonDigest("BBB"), null, null],
+        identity,
+      }),
+    ).toThrow(/E_SUSPICIOUS_TEXT/);
   });
 
   it("writes diff-marker HASH│ bytes through byte-exact", async () => {

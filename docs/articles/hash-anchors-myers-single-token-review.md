@@ -126,7 +126,7 @@ The cost of the divergence is small and on the axis the article itself ranks low
 ## 7. Where the article has the edge
 
 - **Proactive external-edit reconciliation.** A file-update hook re-anchors immediately; we detect at next read/validate. Correctness is equal; latency differs by one roundtrip.
-- **Read-prefix token economy.** A single-token word is a guaranteed 1 token; a 4-char hash is exactly 3 tokens ~99%+ of the time. Still on the cheap axis next to the echo it replaces.
+- **Read-prefix token economy.** A single-token word is a guaranteed 1 token; a 4-char hash sits in a tokenizer-stable region (ADR-0029; raw-BPE framing, gated families unmeasured). Still on the cheap axis next to the echo it replaces.
 
 ---
 

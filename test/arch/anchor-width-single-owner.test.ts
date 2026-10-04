@@ -92,7 +92,8 @@ function moduleSources(code: string): string[] {
 // WHY: (the alphabet size, not a width) since the digit there follows `6`.
 const COUNT_WORD_RE = /(^|[^A-Za-z0-9])\d-(?:char|chars|character|characters)\b/;
 const COUNT_WORD_SPACE_RE = /(^|[^A-Za-z0-9])\d\s+(?:chars|characters)\b/;
-const CLASS_QUANTIFIER_RE = /\[[^\]]*\]\{(3|4)\}/;
+// WHY: the class-quantifier arm is inline in `scanStrictLine` (generalized to
+// WHY: any `{N}` off the live width) — no separate constant to drift.
 
 // WHY: the numeric width shapes T1 deleted from the anchor-shape surface —
 // WHY: `ANCHOR_WIDTH = 3`, `text[3]`, `slice(0, 3)`, the one-arg `slice(4)` tail,
@@ -121,7 +122,16 @@ function scanStrictLine(line: string): WidthHit[] {
   const hits: WidthHit[] = [];
   if (COUNT_WORD_RE.test(line)) hits.push({ arm: "count-word", line });
   if (COUNT_WORD_SPACE_RE.test(line)) hits.push({ arm: "count-word-space", line });
-  if (CLASS_QUANTIFIER_RE.test(line)) hits.push({ arm: "class-quantifier", line });
+  // WHY: generalized quantifier — flags `[class]{N}` for any `N` that is not
+  // WHY: the live `HASH_LEN`, so the arm stays load-bearing at width 5 instead
+  // WHY: of going blind past `3|4`. The `TEMP_UUID_RE` exact-line allowlist
+  // WHY: still excuses the UUID shape (its `{8}`/`{12}` groups now flag too).
+  for (const match of line.matchAll(/\[[^\]]*\]\{([0-9]+)\}/g)) {
+    if (match[1] !== String(HASH_LEN)) {
+      hits.push({ arm: "class-quantifier", line });
+      break;
+    }
+  }
   return hits;
 }
 
@@ -342,7 +352,10 @@ describe("anchor width single owner", () => {
     // WHY: regex fails here rather than shipping a blind guard.
     const plantedStrict = [
       "reason: `Pass the bare 4-char anchor and retry.`",
-      "const SHAPE = /^[A-Za-z0-9]{4}$/;",
+      // WHY: width-5 plant — the generalized quantifier arm flags any
+      // WHY: `[class]{N}` with `N` off the live width; a `{4}` plant would be
+      // WHY: consistent at width 4 and must NOT fire.
+      "const SHAPE5 = /^[A-Za-z0-9]{5}$/;",
       "copy only the 3 chars before │",
     ];
     expect(plantedStrict.flatMap((line) => scanStrictLine(line))).toHaveLength(3);

@@ -124,7 +124,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
   });
 
   it("bad syntax resolves to E_MALFORMED_ANCHOR", () => {
-    expect(() => resEdit({ anchor_from: "wUp│x", anchor_to: "BBBB", text: "X" })).toThrow(
+    expect(() => resEdit({ anchor_from: "wUpX│x", anchor_to: "BBBB", text: "X" })).toThrow(
       /E_MALFORMED_ANCHOR/,
     );
   });

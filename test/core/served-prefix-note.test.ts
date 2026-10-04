@@ -63,25 +63,27 @@ describe("served prefix mismatch predicate", () => {
     // WHY: real anchor is live-width; a foreign-width `hashes` array would pass
     // WHY: without exercising the prefix tier.
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
+    // WHY: width-5 tripwire — pins the fixture token itself row-shaped, so
+    // WHY: this fixture reddens (not just its differential) if a flip strands it.
+    expect(HASH_RE.test("Zz99")).toBe(true);
     expect(hashes).not.toContain("Zz99");
     expect(findServedPrefixMismatches([`Zz99${HASH_SEP}literal`], served, canonDigests, 1)).toEqual(
       [],
     );
   });
 
-  it("fires on a served anchor with a mismatched tail (tier live)", () => {
-    // WHY: differential beside the premise guard — the same candidate shape
-    // WHY: hits when its anchor IS served with a mismatched digest, proving the
-    // WHY: token is row-shaped and the tier consults the served set. At any
-    // WHY: width where the token is shape-skipped this reddens (no hit), so the
-    // WHY: F1 vacuity cannot recur silently at width 5.
+  it("fires on the fixture token when served with a mismatched digest (tier live)", () => {
+    // WHY: drives the fixture token itself — "Zz99" served with a mismatched
+    // WHY: tail digest must hit, proving the token is row-shaped and the tier
+    // WHY: consults the served set. At any width where Zz99 is not row-shaped
+    // WHY: this reddens (no hit), so the F1 vacuity cannot recur silently.
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
-    const served: (string | null)[] = [...hashes];
-    const canonDigests = canonDigestsFor(content);
+    const served: (string | null)[] = ["Zz99", ...hashes.slice(1)];
+    const canonDigests = [canonDigest("OTHER"), ...canonDigestsFor(content).slice(1)];
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
     expect(
-      findServedPrefixMismatches([`${hashes[1]}${HASH_SEP}LITERAL`], served, canonDigests, 1),
+      findServedPrefixMismatches([`Zz99${HASH_SEP}literal`], served, canonDigests, 1),
     ).not.toEqual([]);
   });
   it("stays silent without canon data", () => {

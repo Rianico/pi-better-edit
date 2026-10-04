@@ -80,7 +80,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       );
       const bravoHash = extractHash(getText(r1).split("\n")[1]!);
       // WHY: the served anchor the lease materializes from must be a live-width
-      // WHY: token — a hardcoded 3-char here would pass while the stack moved on.
+      // WHY: token — a hardcoded width here would pass while the stack moved on.
       expect(bravoHash).toHaveLength(HASH_LEN);
 
       await editTool.execute(

@@ -197,7 +197,7 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
   E_STALE_ANCHOR: {
     headline: 'anchor "abc" is not present in the served leases for probe.ts; nothing was written.',
     servedRows: [{ position: 0, hash: "abc" }],
-    servedBlock: "abc│alpha",
+    servedBlock: "abcc│alpha",
     cause: "never-served",
   },
   E_UNKNOWN_ANCHOR: { path: "a.py", anchors: ["ZZZ"] },
@@ -205,14 +205,14 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
   E_STALE_RANGE: {
     headline: 'line 2 in probe.ts differs from what was served (expected "a" vs actual "b").',
     servedRows: [{ position: 1, hash: "def" }],
-    servedBlock: "def│b",
+    servedBlock: "deff│b",
     cause: "served-range staleness",
     firstOffendingLine: 2,
   },
   E_TARGET_LOST: { servedLine: 2, path: "probe.ts", cause: "retirement" },
   E_UNVERIFIED_RANGE: {
     servedRows: [{ position: 0, hash: "abc" }],
-    servedBlock: "abc│alpha",
+    servedBlock: "abcc│alpha",
     cause: "retirement",
   },
   E_MALFORMED_ANCHOR: { rawAnchor: "wUp│x", reason: "anchor carries a row suffix" },
@@ -232,7 +232,7 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
     laterStart: 2,
     laterEnd: 3,
     path: "probe.ts",
-    servedBlock: "abc│alpha",
+    servedBlock: "abcc│alpha",
   },
   E_NOOP_LOOP: {
     ref: "edit[0] (probe.ts)",
@@ -241,7 +241,7 @@ const EXAMPLES: { [K in DomainErrorCode]: ErrorPayloadMap[K] } = {
     count: 3,
     batch: false,
     servedRows: [{ position: 0, hash: "abc" }],
-    servedBlock: "abc│alpha",
+    servedBlock: "abcc│alpha",
   },
   E_UNSUPPORTED_FILE: {
     path: "probe.bin",
@@ -435,7 +435,7 @@ describe("domain error registry: closed contract, not a list", () => {
     // beside an absent headline (target-side shape).
     const withRows = new DomainError("E_UNVERIFIED_RANGE", {
       servedRows: [{ position: 0, hash: "abc" }],
-      servedBlock: "abc│alpha",
+      servedBlock: "abcc│alpha",
       cause: "retirement",
     });
     expect(withRows.message).toContain(UNVERIFIED_HEADLINE);

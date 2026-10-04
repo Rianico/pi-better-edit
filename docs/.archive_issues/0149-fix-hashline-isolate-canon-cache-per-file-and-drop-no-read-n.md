@@ -14,7 +14,7 @@ rememberHashCanon(hash: string, canonText: string): void {
   if (!this.hashToCanon.has(hash)) this.hashToCanon.set(hash, canonText);
 }
 ```
-Because 4 characters yield 62^4 = 14,776,336$ slots, collisions across different files in a repo remain likely enough to poison an unscoped map.
+Because 4 characters yield 62^4 = 14,776,336 slots, collisions across different files in a repo remain likely enough to poison an unscoped map.
 When file A (e.g. `src/hashline/apply.ts`) hashes a line to `FU6`, `FU6 -> "}=verification??{};"` is locked into the global map.
 When file B (e.g. `test/tools/lifecycle-hooks.test.ts`) has a line `clearServedRefusals(absolutePath);` that also hashes to `FU6`, `rememberHashCanon` ignores it.
 

@@ -60,7 +60,7 @@ describe("edit payload contract", () => {
     // WHY: pi-lens ships a shape-adapter registry over third-party edit tools
     // WHY: (`dist/clients/mutating-tool.js`): it recognizes `set_line` / `replace_lines`,
     // WHY: `operations` / `ops` batches and `remove_from` + `remove_to` + `replacement_lines`,
-    // WHY: and it resolves bare 3-char anchors through a content-hash port
+    // WHY: and it resolves bare 4-char anchors through a content-hash port
     // WHY: (`dist/clients/hashline-anchor.js`). Our payload matches none of those shapes, which is
     // WHY: exactly what keeps its read-guard inert for our edits (`reasonKind: "no_line_info"`);
     // WHY: its path resolver takes `path` / `filePath` / `file_path`, never our `file`.

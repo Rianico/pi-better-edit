@@ -4,7 +4,7 @@ Date: 2026-10-04
 
 ## Status
 
-accepted — supersedes the 3-char statements in [ADR-0013](0013-pos-free-roundtrip-optimization.md), [ADR-0016](0016-content-addressed-line-identity-supersedes-healing.md), [ADR-0019](0019-served-hash-echo-refusal-and-literal-escape.md), [ADR-0022](0022-file-scoped-canons-and-fresh-read-stale-range.md), [ADR-0023](0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md) and any other record asserting 3-char; those ADRs stay byte-identical as historical records. No other ADR is touched.
+accepted — supersedes the 3-char statements in [ADR-0013](0013-pos-free-roundtrip-optimization.md), [ADR-0016](0016-content-addressed-line-identity-supersedes-healing.md), [ADR-0019](0019-malformed-code-rename.md), [ADR-0022](0022-file-scoped-canons-and-fresh-read-stale-range.md), [ADR-0023](0023-lease-lineage-is-the-span-verification-authority-served-canons-retire.md) and any other record asserting 3-char; those ADRs stay byte-identical as historical records. No other ADR is touched.
 
 ## Context
 

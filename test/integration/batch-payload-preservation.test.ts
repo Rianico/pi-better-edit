@@ -138,9 +138,9 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
   it("negative control: rows absent from the block fail the preservation check", () => {
     const planted = plantedEnvelope({
       code: "E_STALE_RANGE",
-      message: "[MODEL] [E_STALE_RANGE] lines 2-4 differ.\nCurrent range (fresh read):\nabc│beta",
-      servedRows: [{ position: 1, hash: "zzz" }],
-      servedBlock: "abc│beta",
+      message: "[MODEL] [E_STALE_RANGE] lines 2-4 differ.\nCurrent range (fresh read):\nabcc│beta",
+      servedRows: [{ position: 1, hash: "zzzz" }],
+      servedBlock: "abcc│beta",
     });
     expect(() => assertPayloadPreserved(planted, "E_STALE_RANGE")).toThrow();
   });

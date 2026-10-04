@@ -100,23 +100,26 @@ describe("findServedHashEcho — evidence, never shape", () => {
     // WHY: premise guard — same vacuity hazard as the prefix tier: the echo
     // WHY: refusal below is real only if the served set is live-width.
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
+    // WHY: width-5 tripwire — pins the fixture token itself row-shaped, so
+    // WHY: this fixture reddens (not just its differential) if a flip strands it.
+    expect(HASH_RE.test("Zz99")).toBe(true);
     expect(hashes).not.toContain("Zz99");
     const hit = findServedHashEcho([`Zz99${HASH_SEP}literal`], served, canonDigests, 1);
     expect(hit).toBeUndefined();
   });
 
-  it("fires on a served row with a diff marker (tier live)", () => {
-    // WHY: differential beside the premise guard — the same candidate shape
-    // WHY: hits when its anchor IS served, proving the token is row-shaped and
-    // WHY: the tier consults the served set. At any width where the token is
-    // WHY: shape-skipped this reddens (no hit), so the F1 vacuity cannot recur
-    // WHY: silently at width 5.
+  it("fires on the fixture token with a diff marker when served (tier live)", () => {
+    // WHY: drives the fixture token itself — "Zz99" served with a matching
+    // WHY: digest must hit in diff-marked form, proving the token is row-shaped
+    // WHY: and the tier consults the served set. At any width where Zz99 is not
+    // WHY: row-shaped this reddens (no hit), so the F1 vacuity cannot recur
+    // WHY: silently.
     const content = "one\ntwo\nthree";
     const hashes = _lineHashesPure(content);
-    const served: (string | null)[] = [...hashes];
-    const canonDigests = canonDigestsFor(content);
+    const served: (string | null)[] = ["Zz99", ...hashes.slice(1)];
+    const canonDigests = [canonDigest("literal"), ...canonDigestsFor(content).slice(1)];
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
-    const hit = findServedHashEcho([`+${hashes[1]}${HASH_SEP}two`], served, canonDigests, 1);
+    const hit = findServedHashEcho([`+Zz99${HASH_SEP}literal`], served, canonDigests, 1);
     expect(hit).toBeDefined();
   });
   it("returns undefined for empty candidates", () => {

@@ -15,6 +15,49 @@ import { useTestHome, withTempFile, setupReadTest } from "../support/fixtures";
 
 const home = useTestHome();
 
+// WHY: the producer pin matches against comment-stripped source so neither a
+// WHY: `/* … */` block nor a `// …` line quoting the throw can satisfy it. The
+// WHY: scanner is string-aware (`//` inside a literal, e.g. a URL, is kept).
+function stripComments(code: string): string {
+  let out = "";
+  let i = 0;
+  let quote: string | null = null;
+  while (i < code.length) {
+    const ch = code[i]!;
+    const next = code[i + 1] ?? "";
+    if (quote !== null) {
+      out += ch;
+      if (ch === "\\") {
+        out += next;
+        i += 2;
+        continue;
+      }
+      if (ch === quote) quote = null;
+      i += 1;
+      continue;
+    }
+    if (ch === '"' || ch === "'" || ch === "`") {
+      quote = ch;
+      out += ch;
+      i += 1;
+      continue;
+    }
+    if (ch === "/" && next === "*") {
+      const end = code.indexOf("*/", i + 2);
+      i = end === -1 ? code.length : end + 2;
+      continue;
+    }
+    if (ch === "/" && next === "/") {
+      const end = code.indexOf("\n", i + 2);
+      i = end === -1 ? code.length : end;
+      continue;
+    }
+    out += ch;
+    i += 1;
+  }
+  return out;
+}
+
 describe("hashline limits", () => {
   it("derives the hash space from the alphabet and hash length", () => {
     // WHY: `62 ** 4 = 14,776,336` lines cannot be materialized, so the space
@@ -53,14 +96,14 @@ describe("hashline limits", () => {
       // WHY: binding is pinned twice — the exported payload constant equals the
       // WHY: live limit, and the producer throw site references that constant.
       // WHY: Inlining a different payload at the throw breaks the source pin.
-      // WHY: The pattern anchors `throw` at line start (a comment quoting the
-      // WHY: call cannot satisfy it) and tolerates an oxfmt wrap plus trailing
-      // WHY: comma.
+      // WHY: The match runs on comment-stripped source (a `/* … */` or `// …`
+      // WHY: line quoting the call cannot satisfy it) and tolerates an oxfmt
+      // WHY: wrap plus trailing comma.
       expect(HASH_SPACE_EXHAUSTED_PAYLOAD).toEqual({
         limitKind: "hash-space",
         limit: HASH_SPACE,
       });
-      const producer = readFileSync("src/hashline/hash-identity.ts", "utf-8");
+      const producer = stripComments(readFileSync("src/hashline/hash-identity.ts", "utf-8"));
       expect(
         /^\s*throw new DomainError\(\s*"E_LARGE_FILE",\s*HASH_SPACE_EXHAUSTED_PAYLOAD\s*,?\s*\)/m.test(
           producer,
