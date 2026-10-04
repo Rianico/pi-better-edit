@@ -26,7 +26,7 @@ describe("format-tolerance across edits (whitespace-only external reformat)", ()
     await withTempFile("sample.ts", CLEAN, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const hashes = await lineHashes(CLEAN, path);
       const lastHash = hashes[hashes.length - 1]!;

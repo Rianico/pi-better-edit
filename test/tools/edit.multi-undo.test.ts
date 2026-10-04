@@ -13,7 +13,7 @@ describe("edit multi-item undo", () => {
       const { ctx, readTool, editTool, getTool } = setupIntegrationTest(dir);
       const undoTool = getTool("undo_last_edit");
       const hashes = await lineHashes("alpha\nbeta\ngamma\ndelta\n", first);
-      await readTool.execute("r1", { path: "a.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",

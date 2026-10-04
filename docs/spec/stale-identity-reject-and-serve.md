@@ -131,7 +131,7 @@ Gates: `pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:
 
 ```ts
 // test/integration/stale-identity-serve.test.ts (sketch)
-const read = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+const read = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 const gamma = extractHash(getText(read).split("\n").find((l) => l.includes("│gamma"))!);
 await writeFile(path, "alpha\nbeta\ndelta\n", "utf-8");          // external delete of `gamma`
 

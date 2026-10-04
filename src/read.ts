@@ -1,12 +1,12 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createReadTool } from "@earendil-works/pi-coding-agent";
+import { createReadTool, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MAX_READ_WINDOWS } from "./constants.js";
 import { MAX_HASH_LINES } from "./hashline/index.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
-import { abortIf } from "./utils.js";
+import { abortIf, assertNever } from "./utils.js";
 import { splitLines, visLines } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { prepareFile } from "./file-content/index.js";
@@ -24,15 +24,39 @@ function readGuide(): string[] {
   return loadGuide("../prompts/read-guidelines.md");
 }
 
+// WHY: the builtin renderers read `file_path ?? path`; our payload is `file`, but a legacy
+// WHY: `path` caller must still render, so the seam accepts either key.
+type ReadRenderArgs = { file?: string; path?: string };
+
 export function regRead(pi: ExtensionAPI): void {
+  // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer reads
+  // WHY: `file_path ?? path`. Our payload field is `file`, so re-map it for rendering only —
+  // WHY: the call line and expanded output keep the filename, and `args` is never mutated.
+  const builtinReadDef = createReadToolDefinition("");
+  const builtinRenderCall = builtinReadDef.renderCall as any;
+  const builtinRenderResult = builtinReadDef.renderResult as any;
   pi.registerTool({
     name: "read",
     label: "Read",
     description: R_DESC,
     promptSnippet: R_SNIPPET,
     promptGuidelines: readGuide(),
+    // SAFETY: the builtin renderers are keyed on `file_path ?? path`; the spread re-maps our
+    // SAFETY: `file` payload onto `path` for rendering without mutating the caller's `args`.
+    renderCall: (args: ReadRenderArgs, theme, context) =>
+      builtinRenderCall({ ...args, path: args?.file ?? args?.path }, theme, context),
+    renderResult: (result, options, theme, context) => {
+      // SAFETY: renderers receive raw call args, not the validated payload, so `context.args` may
+      // SAFETY: carry a legacy `path` that `Static<TParams>` does not model; this cast reads only
+      // SAFETY: `file`/`path`, both of which the renderers below already key on.
+      const args = context.args as ReadRenderArgs;
+      return builtinRenderResult(result, options, theme, {
+        ...context,
+        args: { ...args, path: args?.file ?? args?.path },
+      });
+    },
     parameters: Type.Object({
-      path: Type.String({
+      file: Type.String({
         description: "Path to the file to read (relative or absolute)",
       }),
       offset: Type.Optional(
@@ -62,14 +86,21 @@ export function regRead(pi: ExtensionAPI): void {
           {
             maxItems: MAX_READ_WINDOWS,
             description:
-              "Optional array of disjoint line windows to read in a single turn; every window's rows are served, so anchors from all of them are usable in one edit",
+              "Optional array of disjoint line windows to read in a single turn; in the default `served` mode every window's rows are served, so anchors from all of them are usable in one edit",
           },
         ),
+      ),
+      mode: Type.Optional(
+        Type.Union([Type.Literal("served"), Type.Literal("verbatim")], {
+          description:
+            'Render mode: "served" (default) returns each line as a 3-char anchor plus content; "verbatim" returns plain text with no anchor prefix.',
+        }),
       ),
     }),
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const rawPath = params.path;
+      const rawPath = params.file;
+      const mode = params.mode ?? "served";
       abortIf(signal);
       // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
       // WHY: `noPersist` defers the authoritative materialization until the served window is
@@ -82,13 +113,14 @@ export function regRead(pi: ExtensionAPI): void {
         limit: params.limit,
         windows: params.windows,
         maxLines: MAX_HASH_LINES,
-        store: await loadHashStore(),
+        store: mode === "served" ? await loadHashStore() : undefined,
         noPersist: true,
+        render: mode,
       });
 
       if (prepared.kind === "image") {
         const builtinRead = createReadTool(ctx.cwd);
-        // SAFETY: pi-coding-agent's createReadTool returns untyped execute; cast narrows to typed signature validated by runtime params and is only used to delegate with same args.
+        // SAFETY: pi-coding-agent's createReadTool returns untyped execute; cast narrows to typed signature validated by runtime params. The builtin read names the file `path`, so forward our `file` under its name.
         const executeBuiltinRead = builtinRead.execute as unknown as (
           toolCallId: string,
           input: typeof params,
@@ -98,7 +130,9 @@ export function regRead(pi: ExtensionAPI): void {
         ) => ReturnType<typeof builtinRead.execute>;
         // WHY: an image has no line address space, so `windows` is meaningless here; the delegated
         // WHY: builtin read ignores fields it does not read and returns the image itself.
-        return executeBuiltinRead(_toolCallId, params, signal, _onUpdate, ctx);
+        // SAFETY: spread keeps offset/limit/windows; `path` fills the builtin's filename slot (ours is `file`). Cast through unknown: the shapes agree at runtime, only the key name differs.
+        const builtinInput = { ...params, path: rawPath } as unknown as typeof params;
+        return executeBuiltinRead(_toolCallId, builtinInput, signal, _onUpdate, ctx);
       }
       if (prepared.kind !== "text") {
         if (prepared.kind === "directory") {
@@ -112,6 +146,28 @@ export function regRead(pi: ExtensionAPI): void {
           });
         }
         throw new DomainError("E_UNSUPPORTED_FILE", { path: rawPath, kind: "image" });
+      }
+
+      switch (mode) {
+        case "verbatim": {
+          // WHY: a verbatim read shares admission/normalization but must not touch served state —
+          // WHY: no lease, snapshot, epoch, drift clear, or span notification. Return before any of it.
+          return {
+            content: [{ type: "text", text: prepared.preview }],
+            details: {
+              truncation: prepared.truncation,
+              ...(prepared.nextOffset !== undefined ? { nextOffset: prepared.nextOffset } : {}),
+              metrics: {
+                truncated: Boolean(prepared.truncation),
+                ...(prepared.nextOffset !== undefined ? { next_offset: prepared.nextOffset } : {}),
+              },
+            },
+          };
+        }
+        case "served":
+          break;
+        default:
+          return assertNever(mode);
       }
 
       const session = sessionFromContext(

@@ -14,7 +14,7 @@ describe("edit tool file mutation queue", () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const r1 = await editTool.execute(
         "e1",
@@ -51,7 +51,7 @@ describe("edit tool file mutation queue", () => {
         const { symlink } = await import("fs/promises");
         await symlink(cwd + "/target.ts", cwd + "/link.ts");
         const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
-        await readTool.execute("r1", { path: "target.ts" }, undefined, undefined, ctx);
+        await readTool.execute("r1", { file: "target.ts" }, undefined, undefined, ctx);
 
         const r1 = await editTool.execute(
           "e1",
@@ -97,7 +97,7 @@ describe("edit tool file mutation queue", () => {
 
       const { ctx, readTool, editTool } = setupIntegrationTest(tmpDir);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
-      await readTool.execute("r1", { path: "sub/target.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sub/target.ts" }, undefined, undefined, ctx);
 
       const r1 = await editTool.execute(
         "e1",

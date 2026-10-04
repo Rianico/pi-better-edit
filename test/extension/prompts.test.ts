@@ -78,6 +78,10 @@ describe("prompts/read.md (model-facing contract)", () => {
     expect(readPrompt).toMatch(/Binary/);
     expect(readPrompt).toMatch(/directory/);
   });
+
+  it("documents the verbatim mode", () => {
+    expect(readPrompt).toContain('mode: "verbatim"');
+  });
 });
 
 describe("prompt guidelines", () => {

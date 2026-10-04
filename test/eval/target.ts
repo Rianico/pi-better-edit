@@ -4,6 +4,17 @@ export interface EvalTarget {
   lineHashes: (content: string, path?: string) => Promise<string[]>;
   toolNames: { read: string; edit: string; undo: string };
   adaptEditParams?: (name: string, params: any) => any;
+  adaptReadParams?: (name: string, params: unknown) => unknown;
+}
+
+// WHY: the registered read still speaks the legacy wire (`path`); the battery's new-wire read
+// WHY: items are translated for comparison only, the way adaptEditParams translates edit items.
+export function adaptReadParamsForLegacy(params: unknown): unknown {
+  if (!params || typeof params !== "object") return params;
+  const record = params as Record<string, unknown>;
+  if (!("file" in record)) return params;
+  const { file, ...rest } = record;
+  return { ...rest, path: file };
 }
 
 export async function resolveTarget(): Promise<EvalTarget> {
@@ -58,6 +69,9 @@ export async function resolveTarget(): Promise<EvalTarget> {
           })),
         };
       },
+
+      adaptReadParams: (name, params) =>
+        name === "read" ? adaptReadParamsForLegacy(params) : params,
     };
   }
   throw new Error(`Unknown EVAL_TARGET "${target}" (expected "local" or "package")`);

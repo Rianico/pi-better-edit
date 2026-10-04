@@ -40,7 +40,7 @@ describe("undo_last_edit adopts the pinned canonical snapshot", () => {
 
       const r1 = await readTool.execute(
         "r1",
-        { path: "undo_lease.txt" },
+        { file: "undo_lease.txt" },
         undefined,
         undefined,
         ctx,

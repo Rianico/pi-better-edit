@@ -8,7 +8,7 @@ const ATOMICITY_TRAILER =
   "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
 
 async function doRead(ctx: any, readTool: any): Promise<void> {
-  await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+  await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 }
 
 describe("edit noop-loop counter commit boundary", () => {

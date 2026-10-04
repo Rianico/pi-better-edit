@@ -46,7 +46,7 @@ describe("multi-session — lease isolation", () => {
 
       const aRows = rows(
         getText(
-          await readTool.execute("a1", { path: "small.cpp" }, undefined, undefined, sessionA),
+          await readTool.execute("a1", { file: "small.cpp" }, undefined, undefined, sessionA),
         ),
       );
       const line9 = aRows[8]!.hash;
@@ -69,7 +69,7 @@ describe("multi-session — lease isolation", () => {
       // control: the very same anchor is authorized once B holds its own lease
       const bRows = rows(
         getText(
-          await readTool.execute("b2", { path: "small.cpp" }, undefined, undefined, sessionB),
+          await readTool.execute("b2", { file: "small.cpp" }, undefined, undefined, sessionB),
         ),
       );
       expect(bRows[8]!.hash).toBe(line9);
@@ -97,12 +97,12 @@ describe("multi-session — lease isolation", () => {
 
       const aRows = rows(
         getText(
-          await readTool.execute("a1", { path: "small.cpp" }, undefined, undefined, sessionA),
+          await readTool.execute("a1", { file: "small.cpp" }, undefined, undefined, sessionA),
         ),
       );
       const bRows = rows(
         getText(
-          await readTool.execute("b1", { path: "small.cpp" }, undefined, undefined, sessionB),
+          await readTool.execute("b1", { file: "small.cpp" }, undefined, undefined, sessionB),
         ),
       );
       // content-addressed anchors agree across sessions for identical content
@@ -155,12 +155,12 @@ describe("multi-session — concurrent edits are external changes", () => {
 
       const aRows = rows(
         getText(
-          await readTool.execute("a1", { path: "small.cpp" }, undefined, undefined, sessionA),
+          await readTool.execute("a1", { file: "small.cpp" }, undefined, undefined, sessionA),
         ),
       );
       const bRows = rows(
         getText(
-          await readTool.execute("b1", { path: "small.cpp" }, undefined, undefined, sessionB),
+          await readTool.execute("b1", { file: "small.cpp" }, undefined, undefined, sessionB),
         ),
       );
 
@@ -208,7 +208,7 @@ describe("multi-session — restart semantics", () => {
       const after = ctxFor(cwd, "boot-2"); // fresh session key, same store/HOME
 
       const pre = rows(
-        getText(await readTool.execute("r1", { path: "small.cpp" }, undefined, undefined, before)),
+        getText(await readTool.execute("r1", { file: "small.cpp" }, undefined, undefined, before)),
       );
       expect(await createSessionHandle("boot-1", path).load()).toContain(pre[8]!.hash);
 
@@ -231,7 +231,7 @@ describe("multi-session — restart semantics", () => {
 
       // and after its own read the new session works normally
       const post = rows(
-        getText(await readTool.execute("r2", { path: "small.cpp" }, undefined, undefined, after)),
+        getText(await readTool.execute("r2", { file: "small.cpp" }, undefined, undefined, after)),
       );
       await editTool.execute(
         "e2",
@@ -261,11 +261,11 @@ describe("multi-session — path scoping", () => {
       const ctx = ctxFor(cwd, "path-scope");
 
       const oneRows = rows(
-        getText(await readTool.execute("r1", { path: "one.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r1", { file: "one.txt" }, undefined, undefined, ctx)),
       );
       const copyRows = rows(
         getText(
-          await readTool.execute("r2", { path: "one.txt.copy.txt" }, undefined, undefined, ctx),
+          await readTool.execute("r2", { file: "one.txt.copy.txt" }, undefined, undefined, ctx),
         ),
       );
       // same content ⇒ same anchors, different files ⇒ different leases
@@ -314,7 +314,7 @@ describe("multi-session — churn does not poison a fresh session", () => {
         const ctx = ctxFor(cwd, `churn-${round}`);
         const served = rows(
           getText(
-            await readTool.execute(`r${round}`, { path: "churn.txt" }, undefined, undefined, ctx),
+            await readTool.execute(`r${round}`, { file: "churn.txt" }, undefined, undefined, ctx),
           ),
         );
         const victim = served[0]!.hash;
@@ -329,7 +329,7 @@ describe("multi-session — churn does not poison a fresh session", () => {
 
       const fresh = ctxFor(cwd, "churn-fresh");
       const served = rows(
-        getText(await readTool.execute("rf", { path: "churn.txt" }, undefined, undefined, fresh)),
+        getText(await readTool.execute("rf", { file: "churn.txt" }, undefined, undefined, fresh)),
       );
       expect(served).toHaveLength(16);
       expect(served.map((r) => r.text)[0]).toBe("row 9");

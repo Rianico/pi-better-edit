@@ -24,7 +24,7 @@ A tool may present **three surfaces** to a model, and they have different lifesp
 - **Constant-is-source.** `edit`'s three surfaces live in `src/payload-contract.ts`; `loadP`/`loadGuide` intercept the prompt
   paths and return the constants; the `prompts/*.md` files are **generated mirrors** with a parity test. Edit the constant, then
   regenerate — editing the mirror alone leaves the served text unchanged and reddens the parity test.
-- **File-is-source.** `read`, `read_skill` and `undo_last_edit` load their mirror files directly with no interception set.
+- **File-is-source.** `read` and `undo_last_edit` load their mirror files directly with no interception set.
   **Editing the mirror IS editing the served text** — no generator step, no parity test, and no `src/` change permitted.
 
 ```bash
@@ -70,10 +70,10 @@ Two rules make the probe honest:
 - **Withhold the source and tests, and run the probe outside the repo.** The isolation is the instrument. A reader who can read
   the implementation is not testing the prompt.
 - **Ask it to name the tool as well as the call** (`TOOL:` and `CALL:`). A probe that returns only the arguments cannot tell
-  `read` from `read_skill`.
+  `read`'s `served` mode from its `verbatim` mode.
 
 > **Why this earns its keep.** A probe reproduced the `edit` contract correctly 11 times out of 11 — and then, on three other
-> tools, emitted the wrong parameter for every one of them. The tool family is split (`file` for `edit`, `path` for the rest) and
+> tools, emitted the wrong parameter for every one of them. The tool family is split (`file` for `edit` and `read`, `path` for `undo_last_edit`) and
 > **no prompt named its parameter at all**. No pin check, linter, or careful reading surfaces that. Only *using* the text does.
 
 ## 4 · Measure every ambiguity against the artifact

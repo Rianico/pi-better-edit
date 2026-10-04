@@ -171,7 +171,8 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 ┌────────────────────────────────────────▼─────────────────────────────────────────┐
 │                                SESSION TIER                                      │
 │  src/served-session/session.ts                                                   │
-│  - Leases: Granted on read, diff, rejection fresh-reads, and undo                │
+│  - Leases: Granted on every serve path: read, diff, write auto-read, truncated   │
+│    serves, fresh-read rejections, undo (see §1)                                  │
 │  - Immutability: Leases are strictly READ-ONLY during edit resolution            │
 │  - Re-Serve Upsert: Atomic upsert updates leases when presentation changes       │
 └────────────────────────────────────────┬─────────────────────────────────────────┘
@@ -196,7 +197,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 ### 1. Immutable Line Identity & Leases
 - Every line has an immutable surrogate key (`line_id`) allocated from a monotonic counter (`line_id_counters`).
-- When lines are delivered to an agent via `read`, diffs, or fresh-read rejections, a session-scoped lease (`served_leases`) binds `(session_id, file_path, anchor) -> line_id`.
+- When lines are delivered to an agent on any serve path — a default (`served`) `read`, diffs, the `write` auto-read hook, truncated serves, fresh-read rejections, or `undo_last_edit` — a session-scoped lease (`served_leases`) binds `(session_id, file_path, anchor) -> line_id`.
 - During an `edit`, lease lookups are strictly **read-only**. An edit cannot re-stamp or guess a lease.
 
 ### 2. Multi-Version Snapshot Lineage
@@ -226,10 +227,9 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 | Tool | Parameters | Description |
 | --- | --- | --- |
-| `read` | `file`, `offset` (1-based), `limit`, `windows` (optional) | Returns file content formatted as `HASH│content`. Lines &gt;200KB are replaced with a marker hint. `windows: [{offset, limit}, …]` reads up to 16 disjoint ranges in one turn: each renders under `=== Lines A-B of N ===` and every shown line is leased, so anchors from all of them work in one `edit`. |
-| `read_skill` | `file` | Reads file content as plain text without hash prefixes or lease recording (ideal for prompts, docs, and skills). |
+| `read` | `file`, `offset` (1-based), `limit`, `windows` (optional), `mode` (optional) | Returns file content formatted as `HASH│content` by default. `mode: "verbatim"` returns plain text with no hash prefixes and records no leases; the default `"served"` leases every shown line. Lines &gt;50KB are replaced with a marker hint. `windows: [{offset, limit}, …]` reads up to 16 disjoint ranges in one turn: each renders under `=== Lines A-B of N ===` and, in the default `"served"` mode, every shown line is leased, so anchors from all of them work in one `edit`. |
 | `edit` | `file`, `edits`, `mode` (optional) | Applies single or batched edits atomically. Each item bounds an inclusive `anchor_from`/`anchor_to` range, places its payload with optional `at`, and carries exactly one payload — `text` or `text_ref`. `mode: "literal"` declares verbatim text. |
-| `undo_last_edit` | `file` | Restores the previous file state, BOM, line endings, and original anchors. Persists across restarts. |
+| `undo_last_edit` | `path` | Restores the previous file state, BOM, line endings, and original anchors. Persists across restarts. |
 
 ### Payload Contract
 
@@ -321,7 +321,7 @@ referenced span is retired — the current word is `cut`.
 | `[E_UNDO_STALE]` | Target file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read file. |
 | `[E_UNDO_UNAVAILABLE]` | Undo state could not be persisted to SQLite store. | Edit was refused and file unchanged; retry edit. |
 | `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure; do not re-undo — the next run repairs the interrupted revert. |
-| `[E_LARGE_FILE]` | File exceeds the 238,328-line ceiling of 3-char base62 space. | Use `write` or non-hashline tools for very large files. |
+| `[E_LARGE_FILE]` | A served read or edit load exceeds the 238,328-line ceiling of 3-char base62 space; `mode: "verbatim"` reads are not capped. | Use `write` or non-hashline tools for very large files. |
 | `[E_UNKNOWN]` | Unexpected filesystem or invariant failure. | Check error message details. |
 
 ### Applied Warnings (`[W_*]`)

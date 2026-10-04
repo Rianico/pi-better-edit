@@ -16,8 +16,8 @@ describe("edit noop-loop tracker session scope", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const ctxA = sessionCtx(ctx, "noop-session-a");
       const ctxB = sessionCtx(ctx, "noop-session-b");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctxA);
-      await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctxB);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctxA);
+      await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctxB);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
       const payload = {
         file: "sample.ts",
@@ -49,8 +49,8 @@ describe("edit noop-loop tracker session scope", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const ctxA = sessionCtx(ctx, "noop-session-a-apply");
       const ctxB = sessionCtx(ctx, "noop-session-b-apply");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctxA);
-      await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctxB);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctxA);
+      await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctxB);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", `${cwd}/sample.ts`);
       const noopPayload = {
         file: "sample.ts",

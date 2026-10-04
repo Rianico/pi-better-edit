@@ -36,7 +36,7 @@ describe("read tool line cap", () => {
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       await expect(
-        readTool.execute("r1", { path: "huge.ts" }, undefined, undefined, ctx),
+        readTool.execute("r1", { file: "huge.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow("E_LARGE_FILE");
     });
   });
@@ -45,10 +45,49 @@ describe("read tool line cap", () => {
     const content = Array.from({ length: MAX_HASH_LINES }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
-      const result = await readTool.execute("r1", { path: "big.ts" }, undefined, undefined, ctx);
+      const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│x0");
       expect(text).toContain("[Showing lines 1-");
     });
   }, 300_000);
+
+  it("verbatim pages a file above the anchor-space cap; served still refuses it (one seam)", async () => {
+    const content = Array.from({ length: MAX_HASH_LINES + 1 }, () => "x").join("\n");
+    await withTempFile("huge-verbatim.ts", content, async ({ cwd }) => {
+      const { readTool, ctx } = setupReadTest(cwd);
+      const verbatim = await readTool.execute(
+        "v1",
+        { file: "huge-verbatim.ts", mode: "verbatim", limit: 3 },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const text = verbatim.content?.[0]?.text ?? "";
+      expect(text).toBe(
+        `x\nx\nx\n\n[Showing lines 1-3 of ${MAX_HASH_LINES + 1}. Use offset=4 to continue.]`,
+      );
+      expect(verbatim.details?.snapshotId).toBeUndefined();
+
+      await expect(
+        readTool.execute("s1", { file: "huge-verbatim.ts" }, undefined, undefined, ctx),
+      ).rejects.toThrow(
+        new RegExp(`\\[E_LARGE_FILE\\].*exceeding the ${MAX_HASH_LINES}-line edit limit`),
+      );
+    });
+  }, 300_000);
+});
+
+describe("read tool row budget", () => {
+  it("withholds a 60KB line through the real read path (pi's 50KB budget)", async () => {
+    const big = "X".repeat(60_000);
+    await withTempFile("wide.txt", `${big}\nsmall\n`, async ({ cwd }) => {
+      const { readTool, ctx } = setupReadTest(cwd);
+      const result = await readTool.execute("r1", { file: "wide.txt" }, undefined, undefined, ctx);
+      const text = result.content?.[0]?.text ?? "";
+      expect(text).toContain("│small");
+      expect(text).not.toContain("│X");
+      expect(text).toContain("exceeds 50.0KB");
+    });
+  });
 });

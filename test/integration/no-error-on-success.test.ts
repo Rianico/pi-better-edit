@@ -26,7 +26,7 @@ function assertNoErrorOnSuccess(args: { text: string; warnings?: string[] }): vo
 }
 
 async function servedHashes(ctx: unknown, readTool: any, name: string): Promise<string[]> {
-  const result = await readTool.execute("r1", { path: name }, undefined, undefined, ctx);
+  const result = await readTool.execute("r1", { file: name }, undefined, undefined, ctx);
   return getText(result)
     .split("\n")
     .filter((line) => /^[A-Za-z0-9]{3}│/.test(line))

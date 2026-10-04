@@ -5,7 +5,7 @@ A hash-anchored file-editing extension for the pi-coding-agent: every line of a 
 ## Language
 
 **serve**:
-To deliver a line's `HASH│content` row into the model's context through tool output. Reading serves the rows it shows; a post-edit diff serves its rows; an error's fresh-anchor feedback serves its rows.
+To deliver a line's `HASH│content` row into the model's context through tool output. A default (`served`) read serves the rows it shows; a post-edit diff serves its rows; an error's fresh-anchor feedback serves its rows.
 _Avoid_: display, show, echo
 
 **served state**:
@@ -110,16 +110,12 @@ _Avoid_: the `blocked hashes` term below (the hash-allocation guard, not a lease
 The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, canon_hash, anchor)`, written inside `BEGIN IMMEDIATE` for every materialized version held in `file_snapshots`. It is the sole coordinate authority: an edit looks its leased `line_id` up here and either rebases to the new coordinate or fails closed. A batch's commit writes it directly from the in-memory working buffer — surviving lines keep the `line_id` they already carry and only lines the batch created take fresh ids from `line_id_counters` — so re-pairing `S_latest` against the new content (`pairSnapshots`) stays a read-path mechanism, used where there is content to align and no working buffer to consult.
 _Avoid_: epoch snapshot, served hash map
 
-**read_skill**:
-To read a file's content as plain text — no hash prefixes, no served rows. The model's tool for loading skill content (SKILL.md or any file in its directory) to invoke and consume; `read` remains the hashed read for edit targets.
-_Avoid_: plain read, skill tool
-
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read_skill` is the only reference read.
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's 238,328-line anchor-space ceiling, so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read — the preview still materializes the whole line array before slicing a page (an accepted tradeoff).
 _Avoid_: unmanaged read
 
-**tool-name-as-intent**:
-The principle that a tool's name encodes the model's intent — `read` (hashed, editable) vs `read_skill` (plain, consumable) — so the model always knows what it's getting.
+**mode-as-intent**:
+The principle that the payload's `mode` field, not the tool name, selects the model's read contract — `served` (the editing-safe default: hashed, editable) vs `verbatim` (plain, consumable) — so the model always knows what it's getting.
 _Avoid_: —
 
 **payload contract**:
@@ -195,7 +191,7 @@ The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used
 _Avoid_: content (byte-level, not canon)
 
 **E_LARGE_FILE**:
-Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 238,328-line ceiling for 3-char anchors, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files.
+Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the served read/edit load path (a `mode: "verbatim"` read is not capped; `limitKind: "lines"`, reporting the count when it is known), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 238,328-line ceiling for 3-char anchors, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files.
 _Avoid_: E_TOO_BIG (unclaimed code)
 
 **E_UNKNOWN**:

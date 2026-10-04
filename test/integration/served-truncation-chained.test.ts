@@ -44,7 +44,7 @@ async function hashRefs(
   ctx: ToolResultCtx,
   needles: string[],
 ): Promise<Record<string, string>> {
-  const read = await readTool.execute("r1", { path }, undefined, undefined, ctx);
+  const read = await readTool.execute("r1", { file: path }, undefined, undefined, ctx);
   const lines = getText(read).split("\n");
   const out: Record<string, string> = {};
   for (const needle of needles) {
@@ -94,7 +94,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
       );
       expect(delivered).toBeDefined();
 
-      await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const edit2 = await editTool.execute(
         "e2",
@@ -123,10 +123,10 @@ describe("served-state truncation keeps chained edits verifiable", () => {
       expect(toolResultHandler).toBeDefined();
       const ctx = { cwd, sessionManager: testSessionManager };
 
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       await writeFile(join(cwd, "sample.ts"), "b\nd\ne\nb\nf\n", "utf-8");
-      await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const refs = await hashRefs(readTool, "sample.ts", ctx, ["d", "e"]);
       const edit = await editTool.execute(
@@ -185,7 +185,7 @@ describe("served-state truncation keeps chained edits verifiable", () => {
       );
       expect(delivered).toBeDefined();
 
-      await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const edit = await editTool.execute(
         "e1",

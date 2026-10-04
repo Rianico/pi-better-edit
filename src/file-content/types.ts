@@ -3,13 +3,16 @@ import type { LFile } from "./detection.js";
 
 export type { FileStats, LFile, LoadFileOptions } from "./detection.js";
 
-export interface NormFile {
+export interface NormText {
   absolutePath: string;
   normalized: string;
   bom: string;
   originalEnding: LineEnding;
-  fileHashes: string[];
   hadUtf8DecodeErrors: boolean;
+}
+
+export interface NormFile extends NormText {
+  fileHashes: string[];
 }
 
 export interface FileContent {

@@ -174,8 +174,8 @@ describe("Edit wire contract — admission (finite key-set gate)", () => {
       await writeFile(join(cwd, "sample.txt"), "a\nb\nc\n", "utf-8");
       await writeFile(join(cwd, "other.txt"), "x\ny\nz\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
-      await readTool.execute("r2", { path: "other.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "other.txt" }, undefined, undefined, ctx);
       const hs = await lineHashes("x\ny\nz\n", `${home.testPath}/other.txt`);
       const ht = await lineHashes("a\nb\nc\n", `${home.testPath}/sample.txt`);
       const raw = {
@@ -205,7 +205,7 @@ describe("Edit wire contract — behavior", () => {
       await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
         const { ctx, readTool } = setupIntegrationTest(cwd);
         const h = await lineHashes("a\nb\nc\n", `${home.testPath}/sample.txt`);
-        await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+        await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
         const raw = req([{ anchor_from: h[0]!, anchor_to: h[2]!, text: "Z", at: "before" }]);
         const request = admit(raw);
         const result = await execute(request, cwd, { sessionKey: TEST_SESSION_ID });
@@ -220,7 +220,7 @@ describe("Edit wire contract — behavior", () => {
       await withTempFile("sample.txt", "a\nb\nb\nc\n", async ({ cwd }) => {
         const { ctx, readTool } = setupIntegrationTest(cwd);
         const h = await lineHashes("a\nb\nb\nc\n", `${home.testPath}/sample.txt`);
-        await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+        await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
         // WHY: each served occurrence gets its own anchor even when the text is identical.
         expect(h[1]).not.toBe(h[2]);
         const raw = req([{ anchor_from: h[1]!, anchor_to: h[2]!, text: "Z", at: "before" }]);
@@ -238,7 +238,7 @@ describe("Edit wire contract — behavior", () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([{ anchor_from: h[1]!, anchor_to: h[1]!, text: "" }]);
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
       expect(isMutationSuccess(result)).toBe(true);
@@ -253,7 +253,7 @@ describe("Edit wire contract — behavior", () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([{ anchor_from: h[1]!, anchor_to: h[1]!, text: "", at: "before" }]);
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
       expect(isMutationSuccess(result)).toBe(true);
@@ -275,7 +275,7 @@ describe("Edit wire contract — behavior", () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([{ anchor_from: h[1]!, anchor_to: h[1]!, text: "", at: "after" }]);
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
       expect(isMutationSuccess(result)).toBe(true);
@@ -297,7 +297,7 @@ describe("Edit wire contract — behavior", () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\nd\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([
         {
           anchor_from: h[1]!,
@@ -314,7 +314,7 @@ describe("Edit wire contract — behavior", () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\nd\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([{ anchor_from: h[1]!, anchor_to: h[1]!, at: "before", text: "c\nd" }]);
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
       expect(isMutationSuccess(result)).toBe(true);
@@ -330,8 +330,8 @@ describe("Edit wire contract — behavior", () => {
       await writeFile(join(cwd, "target.txt"), "1\n2\n3\n", "utf-8");
       await writeFile(join(cwd, "source.txt"), "x\ny\nz\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
-      await readTool.execute("r2", { path: "source.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "source.txt" }, undefined, undefined, ctx);
       const t = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
       const s = await lineHashes("x\ny\nz\n", `${home.testPath}/source.txt`);
       const raw = {
@@ -372,7 +372,7 @@ describe("Edit wire contract — behavior", () => {
       await writeFile(join(cwd, "target.txt"), "1\n2\n3\n", "utf-8");
       await writeFile(join(cwd, "source.txt"), "x\ny\nz\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
       const t = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
       const s = await lineHashes("x\ny\nz\n");
       const raw = {
@@ -408,9 +408,9 @@ describe("Edit wire contract — behavior", () => {
       await writeFile(join(cwd, "other.txt"), "x\ny\nz\n", "utf-8");
       await writeFile(join(cwd, "source.txt"), "x\ny\nz\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
       // WHY: the anchors are served under `other.txt` — identical content, identical anchors.
-      await readTool.execute("r2", { path: "other.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "other.txt" }, undefined, undefined, ctx);
       const t = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
       const s = await lineHashes("x\ny\nz\n", `${home.testPath}/other.txt`);
       const raw = {
@@ -443,7 +443,7 @@ describe("Edit wire contract — behavior", () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\nd\ne\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([
         {
           anchor_from: h[4]!,
@@ -465,7 +465,7 @@ describe("Edit wire contract — behavior", () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([{ anchor_from: h[1]!, anchor_to: h[1]!, text: "B" }]);
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
       expect(isMutationSuccess(result)).toBe(true);
@@ -479,7 +479,7 @@ describe("Edit wire contract — behavior", () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([{ anchor_from: h[0]!, anchor_to: h[2]!, text: "X\nY" }]);
       const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
       expect(isMutationSuccess(result)).toBe(true);
@@ -512,7 +512,7 @@ async function runCopyPair(tc: CopyPairCase): Promise<{ viaFile: string; viaFore
   await withTempFile("target.txt", tc.controlContent, async ({ cwd }) => {
     const { ctx, readTool } = setupIntegrationTest(cwd);
     const h = await lineHashes(toLF(tc.controlContent), `${home.testPath}/target.txt`);
-    await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
     const [l1, l2] = tc.controlSpan;
     const raw = req(
       [
@@ -538,8 +538,8 @@ async function runCopyPair(tc: CopyPairCase): Promise<{ viaFile: string; viaFore
     await writeFile(join(cwd, "target.txt"), tc.controlContent, "utf-8");
     await writeFile(join(cwd, "source.txt"), tc.foreignContent, "utf-8");
     const { ctx, readTool } = setupIntegrationTest(cwd);
-    await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
-    await readTool.execute("r2", { path: "source.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
+    await readTool.execute("r2", { file: "source.txt" }, undefined, undefined, ctx);
     const h = await lineHashes(toLF(tc.controlContent), `${home.testPath}/target.txt`);
     const s = await lineHashes(toLF(tc.foreignContent), `${home.testPath}/source.txt`);
     const [f1, f2] = tc.foreignSpan;
@@ -692,8 +692,8 @@ async function seedForeign(cwd: string, tc: CopyPairCase) {
   await writeFile(join(cwd, "target.txt"), tc.controlContent, "utf-8");
   await writeFile(join(cwd, "source.txt"), tc.foreignContent, "utf-8");
   const { ctx, readTool } = setupIntegrationTest(cwd);
-  await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
-  await readTool.execute("r2", { path: "source.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r2", { file: "source.txt" }, undefined, undefined, ctx);
   const h = await lineHashes(toLF(tc.controlContent), `${home.testPath}/target.txt`);
   const s = await lineHashes(toLF(tc.foreignContent), `${home.testPath}/source.txt`);
   return { ctx, h, s };
@@ -726,7 +726,7 @@ describe("Edit wire contract — §11 byte fence: foreign cut mirrors the intra-
         await writeFile(join(cwd, "target.txt"), tc.controlContent, "utf-8");
         const { ctx, readTool } = setupIntegrationTest(cwd);
         const h = await lineHashes(toLF(tc.controlContent), `${home.testPath}/target.txt`);
-        await readTool.execute("r1", { path: "target.txt" }, undefined, undefined, ctx);
+        await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
         const [l1, l2] = tc.controlSpan;
         const raw = req(
           [
@@ -859,7 +859,7 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\nd\ne\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([
         {
           anchor_from: h[4]!,
@@ -893,7 +893,7 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
     await withTempFile("sample.txt", "a\n\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\n\nb\nc\nd\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([
         {
           anchor_from: h[4]!,
@@ -909,7 +909,7 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
     await withTempFile("sample.txt", "a\n\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\n\nb\nc\nd\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([
         {
           anchor_from: h[4]!,
@@ -937,7 +937,7 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const h = await lineHashes("a\nb\nc\nd\ne\n", `${home.testPath}/sample.txt`);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const raw = req([
         {
           anchor_from: h[4]!,
