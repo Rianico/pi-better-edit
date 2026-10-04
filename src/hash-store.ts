@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { errCode } from "./utils.js";
 import { initHasher } from "./hashline/hasher.js";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
+import { CANON_VERSION } from "./hashline/hash-identity.js";
 
 function homeBase(): string {
   const envHome = process.env.HOME;
@@ -192,6 +193,32 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_snapshot_line_id " +
       "ON line_lineage (snapshot_id, line_id)",
   );
+  // WHY: versions the persisted snapshot anchor set — same idiom as file_undo:
+  // WHY: rows written before the column read as 0 (unknown/foreign), never current.
+  addColumnIfMissing(db, "file_snapshots", "canon_version", "INTEGER NOT NULL DEFAULT 0");
+  // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave
+  // WHY: foreign-generation leases, snapshots, lineage, or orphan mirrors behind.
+  // WHY: Current-generation rows survive untouched (same-version sessions keep
+  // WHY: their leases); mirrors rebuild on the next serve. Runs wherever the
+  // WHY: schema is ensured, so every store open sweeps.
+  const currentPrefix = `${CANON_VERSION}:%`;
+  // WHY: tables created later in the fresh-build path (served_leases, served) may
+  // WHY: not exist yet when this runs — the sweep touches only what is there.
+  const hasTable = (table: string): boolean => tableColumns(db, table).size > 0;
+  // WHY: an ancient pre-session-keyed `served` shell has no snapshotId column — the
+  // WHY: compat rebuild below owns that table, so the sweep skips what it cannot judge.
+  if (hasTable("served_leases")) {
+    db.exec(`DELETE FROM served_leases WHERE served_snapshot_hash NOT LIKE '${currentPrefix}'`);
+  }
+  db.exec(`DELETE FROM file_snapshots WHERE canon_version != ${CANON_VERSION}`);
+  db.exec(
+    "DELETE FROM line_lineage WHERE snapshot_id NOT IN (SELECT snapshot_id FROM file_snapshots)",
+  );
+  if (hasTable("served") && tableColumns(db, "served").has("snapshotId")) {
+    db.exec(
+      "DELETE FROM served WHERE snapshotId IS NOT NULL AND CAST(snapshotId AS INTEGER) NOT IN (SELECT snapshot_id FROM file_snapshots)",
+    );
+  }
 }
 
 // WHY: file_undo is the single source of truth for undo history in v7; the DDL lives here

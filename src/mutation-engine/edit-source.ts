@@ -17,7 +17,7 @@ import {
   loadLeases,
   type ServedLease,
 } from "../served-session/session.js";
-import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
+import { snapshotHashFor, positionsByIdentity, isCurrentAnchorGeneration } from "../snapshot-store";
 import { DomainError } from "../domain-errors.js";
 import { identityPositions } from "./batch-span-gate.js";
 
@@ -162,6 +162,10 @@ export function leaseSpanSource(input: {
 }): LeaseSpanSource {
   const byAnchor = new Map<string, ServedLease>();
   for (const lease of loadLeases(input.store, input.sessionKey, input.absolutePath)) {
+    // WHY: generation-gated lease source — a pre-bump lease is never honoured, so a
+    // WHY: stale generation cannot resolve by line_id alone. The open-time sweep
+    // WHY: deletes these rows; this gate covers rows written between sweep and read.
+    if (!isCurrentAnchorGeneration(lease.served_snapshot_hash)) continue;
     byAnchor.set(lease.anchor, lease);
   }
   const positions = input.currentIds
