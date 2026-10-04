@@ -4,8 +4,10 @@
 
 ### Features
 
+* **canon:** **breaking** — the anchor whitespace class bumps to version 3: a frozen 28-code-point set (C0 whitespace except the U+001C–U+001F separators, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM) replaces the v2 ASCII-only strip; ZWSP/ZWNJ/ZWJ, SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the other C1 controls stay significant (ADR-0029, issue #22). Upgrading rotates anchors on lines containing newly-normalized code points exactly once: old `2:`-prefixed snapshot rows become unreachable and are reclaimed by the LRU vacuum, `file_undo` pins written under v2 keep resolving their own lineage (undo serves the stored v2 anchors verbatim — never re-derived), and live v2 leases may emit one bounded false drift signal before short-lived served state clears. (#45)
 * **read:** add `mode: "verbatim"` for plain, anchor-free file text that writes no served state; the default `"served"` render is byte-identical to before. (#44)
 * **tools:** remove the deprecated `file_path` payload alias, with no compatibility window. `read` no longer rewrites it to `file`, and `undo_last_edit` no longer rewrites it to `path` -- their `prepareArguments` seam existed only for that rewrite and is gone -- and the `write` hooks no longer read it. A `file_path` payload is now an unknown field on every surface and is refused; `edit` was already strict. (#40)
+
 ### Bug Fixes
 
 * **read:** one row budget and a hashless verbatim path. The read row cap now derives from pi's `DEFAULT_MAX_BYTES` (50KB); the dead 200KB `MAX_READ_LINE_BYTES` default that only tests exercised is gone. `mode: "verbatim"` no longer applies the 238,328-line anchor-space cap or allocates line hashes: a file too large to anchor is still a readable, pageable file through the same `offset`/`limit`/`windows` machinery, the same 50KB per-line withhold, and the same silence on served state. The `served` path stays byte-identical and keeps the cap and its refusal message. (#44)

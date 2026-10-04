@@ -67,7 +67,7 @@ File editing is the #1 point of failure for autonomous agents. Traditional tools
 - **Atomic Multi-Item Batches**: Apply up to 32 same-file edits in one tool call; overlapping spans abort atomically before touching disk.
 
 ### 2. 🛡️ Resistance to External Writes (Drift & Concurrency)
-- **Auto-Formatter Immunity**: Strips ASCII whitespace before hashing. Prettier, Black, and ESLint format-on-save passes never rotate anchors.
+- **Auto-Formatter Immunity**: Strips a frozen 28-code-point whitespace class ([ADR-0029](docs/adr/0029-canon-v3-frozen-whitespace-class.md)) before hashing, so Prettier, Black, gofmt, and rustfmt format-on-save passes do not rotate anchors. Not total immunity: measured formatter churn includes rewriting U+200B ZWSP to a space, which rotates the affected anchor and fails closed.
 - **Exterior Shift Auto-Rebase**: External edits, git checkouts, or background processes outside the edit span rebase seamlessly without agent intervention.
 - **Fail-Closed Reject-and-Serve**: Contested interior spans fail closed without disk corruption and immediately return fresh on-disk rows in the error (`[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]`) — recovering in **exactly 1 turn**.
 - **Session-Keyed Leases**: Leases are isolated per session (`served_leases`), preventing cross-agent race conditions or state pollution.
@@ -429,7 +429,7 @@ pnpm run benchmark:tokens
 
 ## How Anchors Work
 
-1. **Whitespace Canonicalization**: Each line is stripped of ASCII whitespace (`[ \t\r\n]`) before hashing. External formatting passes (`prettier`, `black`, `eslint --fix`) do not alter line hashes. Token-level edits (quotes, semicolons, variable names) rotate the hash.
+1. **Whitespace Canonicalization**: Each line is stripped of a frozen 28-code-point whitespace class (ASCII plus Unicode spaces, NBSP, BOM, and directional marks — [ADR-0029](docs/adr/0029-canon-v3-frozen-whitespace-class.md)) before hashing. External formatting passes (`prettier`, `black`, `gofmt`, `rustfmt`) do not alter line hashes. Token-level edits (quotes, semicolons, variable names) rotate the hash, and so do the significant zero-width characters the class deliberately excludes (U+200B ZWSP, U+200C/D ZWNJ/ZWJ) — `oxfmt` normalizes ZWSP to a space, which rotates the anchor and fails closed rather than passing silently.
 2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 and mapped to 3-character base62 strings (`A-Za-z0-9`), providing $62^3 = 238,328$ unique anchors. Base62 strings occupy tokenizer-stable token regions across model families ([TokDrift, arXiv:2510.14972](https://arxiv.org/abs/2510.14972)).
 3. **Collision-Free Coprime Probing**: When duplicate lines occur in a file, collision resolution probes using a stride coprime to the hash space ($62^2 + 62 + 1 = 3,907$). Every line in a file receives a unique anchor.
 4. **SQLite WAL CAS Storage**: Line hashes and snapshots are persisted in `~/.config/pi-better-edit/hash-store.sqlite` (honoring `XDG_CONFIG_HOME`). Snapshot retention is governed by proportional LRU vacuuming under a 50MB budget.

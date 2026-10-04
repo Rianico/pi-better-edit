@@ -17,7 +17,12 @@ The separation of responsibilities: the tool owns verification of what the model
 _Avoid_: —
 
 **anchor philosophy**:
-The project's core contract: per-line anchors are content-derived with ASCII whitespace (`[ \t\r\n]`) stripped, stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005).
+The project's core contract: per-line anchors are content-derived with the frozen v3 whitespace class stripped, stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005, class amended by ADR-0029).
+_Avoid_: —
+
+**whitespace class**:
+The single frozen code-point set the canon strips from a line before hashing — `CANON_VERSION = 3`, 28 code points (C0 whitespace except U+001C–U+001F, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM), defined once in `src/hashline/hash-identity.ts` (ADR-0029). Zero-width and joiner characters (ZWSP/ZWNJ/ZWJ), SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the C1 controls (except NEL) are significant and survive the canon. The executable per-code-point record is `test/core/canon-v3-disposition.test.ts`; formatter churn against the class is re-measured by `scripts/canon-churn-audit.mjs`.
+_Avoid_: whitespace set, trim set (use canon)
 
 **anchor staleness**:
 An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon` miss). Reported as `[E_STALE_ANCHOR]` with the current rows served; the model retries with those rows (no `read` needed).

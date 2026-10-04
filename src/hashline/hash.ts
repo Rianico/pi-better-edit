@@ -37,16 +37,9 @@ export function isValidHashList(value: unknown): value is string[] {
 }
 const _HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
-// SAFETY: one definition of the canon digest for the whole toolchain — `hash-identity.ts` owns it
-// SAFETY: beside the canonical `canon`, and consumers reach it through either facade (#151).
-export { canonDigest } from "./hash-identity.js";
-
-export const CANON_VERSION = 2;
-const CANON_RE = /[ \t\r\n]+/g;
-
-export function canon(line: string): string {
-  return line.replace(CANON_RE, "");
-}
+// SAFETY: one definition of the canon digest and version for the whole toolchain — `hash-identity.ts`
+// SAFETY: owns them; `canonDigest`/`CANON_VERSION` stay reachable through this facade (#151, #22).
+export { canonDigest, CANON_VERSION } from "./hash-identity.js";
 
 export function _lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
   return _defaultHI.hashesForSync(content, blockedHashes);
