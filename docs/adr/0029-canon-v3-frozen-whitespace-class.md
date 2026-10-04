@@ -27,7 +27,7 @@ The following stay **significant** (never stripped): U+200B ZWSP, U+200C ZWNJ, U
 - **Keep the v2 ASCII-only class (rejected)** — the churn the audit script measures is exactly the anchor rotation v2 pays in re-reads; NBSP- and en-space-heavy sources (CJK prose, pasted documents) never survive a format pass under v2.
 - **Unicode property escapes `\p{White_Space}` / `\p{Cf}` instead of a frozen list (rejected)** — a versioned canon must be a frozen function; property sets drift with the engine/ICU version, so the same file could canonicalize differently across runtimes or silently change meaning under one `CANON_VERSION`.
 - **Per-language or per-file-type canons (rejected)** — one global canon; the line model is language-blind and a per-language class would multiply the version space and re-derive identity from file naming.
-- **Normalize ZWSP / ZWNJ / ZWJ (rejected)** — ZWNJ/ZWJ are identifier characters in Python, Rust and ECMAScript (content, not layout), and ZWSP is whitespace in none of the target languages; it survives every formatter's trim in the audit except the measured oxfmt deletion below, which is handled as an accepted tension.
+- **Normalize ZWSP / ZWNJ / ZWJ (rejected)** — ZWNJ/ZWJ are identifier characters in Python, Rust and ECMAScript (content, not layout), and ZWSP is whitespace in none of the target languages; it survives every formatter's trim in the audit except the measured oxfmt ZWSP-to-space normalization below, which is handled as an accepted tension.
 
 ## Consequences
 
@@ -39,7 +39,7 @@ Migration for a running store, none active — all three effects are self-cleari
 
 ### Risk / limitation — the oxfmt ZWSP churn
 
-The audit script measures local `oxfmt` **deleting U+200B ZWSP** from source (`const a <ZWSP>= 1;` → ZWSP gone, exit 0) even though v3 keeps ZWSP significant. Stated as accepted v4 tension: ZWSP remains significant because it is whitespace in no target language and survives every other measured formatter's trim; the oxfmt-ZWSP interaction is a known, bounded false-drift source (one rejection + re-read on the affected line), and the re-runnable audit script (`scripts/canon-churn-audit.mjs`, npm `canon:audit`) flags it on every run rather than letting it rot into folklore.
+The audit script measures local `oxfmt` **rewriting U+200B ZWSP to a space** (`const<ZWSP>b = 2;` → `const b = 2;`, exit 0; the script's presence check detects the change but cannot distinguish normalization from deletion) even though v3 keeps ZWSP significant. Stated as accepted v4 tension: ZWSP remains significant because it is whitespace in no target language and survives every other measured formatter's trim; the oxfmt-ZWSP interaction is a known, bounded false-drift source (one rejection + re-read on the affected line), and the re-runnable audit script (`scripts/canon-churn-audit.mjs`, npm `canon:audit`) flags it on every run rather than letting it rot into folklore.
 
 ## Evidence
 
