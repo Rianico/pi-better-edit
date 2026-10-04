@@ -66,35 +66,14 @@ describe("undo_last_edit", () => {
     });
   });
 
-  it("undo works with the file_path alias", async () => {
+  it("undo refuses the removed file_path alias", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
-      const readTool = getTool("read");
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
-      const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
 
-      await editTool.execute(
-        "e1",
-        {
-          file: "sample.ts",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
-        },
-        undefined,
-        undefined,
-        ctx,
-      );
-
-      const undoResult = await undo.execute(
-        "u1",
-        { file_path: "sample.ts" },
-        undefined,
-        undefined,
-        ctx,
-      );
-      expect(undoResult.isError).toBeFalsy();
-      expect(getText(undoResult)).toMatch(/undone last edit/i);
+      await expect(
+        undo.execute("u1", { file_path: "sample.ts" }, undefined, undefined, ctx),
+      ).rejects.toThrow();
     });
   });
 

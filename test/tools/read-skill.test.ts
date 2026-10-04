@@ -47,18 +47,18 @@ describe("read_skill tool", () => {
     });
   });
 
-  it("accepts the file_path alias", async () => {
+  it("refuses the removed file_path alias", async () => {
     await withTempFile("SKILL.md", "content\n", async ({ cwd }) => {
       const { pi, getTool } = makeFakePiRegistry();
       register(pi);
       const tool = getTool("read_skill");
 
-      const result = await tool.execute("r1", { file_path: "SKILL.md" }, undefined, undefined, {
-        cwd,
-        sessionManager: testSessionManager,
-      } as any);
-
-      expect(result.content[0].text).toContain("content");
+      await expect(
+        tool.execute("r1", { file_path: "SKILL.md" }, undefined, undefined, {
+          cwd,
+          sessionManager: testSessionManager,
+        } as any),
+      ).rejects.toThrow();
     });
   });
 

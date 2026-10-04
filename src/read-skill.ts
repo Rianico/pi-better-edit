@@ -2,7 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadTool, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { toCwd } from "./paths.js";
-import { abortIf, isRec, normalizeFilePath } from "./utils.js";
+import { abortIf } from "./utils.js";
 import { loadP } from "./prompts.js";
 import { valAccess } from "./validation.js";
 
@@ -21,12 +21,6 @@ export function regReadSkill(pi: ExtensionAPI): void {
     promptSnippet: RS_SNIPPET,
     renderCall: builtinRenderCall,
     renderResult: builtinRenderResult,
-    prepareArguments: (args: unknown) => {
-      if (!isRec(args)) return args as any;
-      const record = { ...args };
-      normalizeFilePath(record);
-      return record;
-    },
     parameters: Type.Object({
       path: Type.String({
         description: "Path to the skill file to read (relative or absolute)",

@@ -84,18 +84,13 @@ describe("read tool — snapshot failure", () => {
   });
 });
 
-describe("read tool — file_path alias", () => {
-  it("reads a file via the file_path alias", async () => {
+describe("read tool — file_path alias is removed", () => {
+  it("refuses a file_path payload instead of reading it", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const result = await readTool.execute(
-        "r1",
-        { file_path: "sample.ts" },
-        undefined,
-        undefined,
-        ctx,
-      );
-      expect(result.content[0].text).toContain("│aaa");
+      await expect(
+        readTool.execute("r1", { file_path: "sample.ts" }, undefined, undefined, ctx),
+      ).rejects.toThrow();
     });
   });
 });

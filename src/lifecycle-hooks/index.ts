@@ -137,7 +137,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     ctx: ToolContext,
   ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {
     const rawInput = event.input as Record<string, unknown> | undefined;
-    const writtenPath = rawInput?.file ?? rawInput?.path ?? rawInput?.file_path;
+    const writtenPath = rawInput?.file ?? rawInput?.path;
     if (typeof writtenPath === "string") {
       try {
         await deps.clearUndo(await deps.resolveTarget(deps.toCwd(writtenPath, ctx.cwd)));

@@ -18,7 +18,7 @@ import { readBytes, resolveTarget, writeAtomic } from "./fs-write.js";
 import { toCwd } from "./paths.js";
 import { DEFERRED_STORE_SYNC_WARNING } from "./constants.js";
 import { toLF, stripBOM, genDiff, restoreEndings, type LineEnding } from "./edit-diff.js";
-import { visLines, splitLines, errCode, isRec, normalizeFilePath } from "./utils.js";
+import { visLines, splitLines, errCode } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError } from "./domain-errors.js";
@@ -519,12 +519,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
     description: loadP("../prompts/undo-last-edit.md"),
     promptSnippet: loadP("../prompts/undo-last-edit-snippet.md"),
     promptGuidelines: loadGuide("../prompts/undo-last-edit-guidelines.md"),
-    prepareArguments: (args: unknown) => {
-      if (!isRec(args)) return args as any;
-      const record = { ...args };
-      normalizeFilePath(record);
-      return record;
-    },
     parameters: Type.Object({
       path: Type.String({
         description: "Path to the file to undo",

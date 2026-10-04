@@ -262,7 +262,7 @@ describe("lifecycle-hooks", () => {
     clearServedRefusals("sk", absolutePath);
   });
 
-  it("onWrite accepts file_path input (#70)", async () => {
+  it("onWrite ignores the removed file_path alias (#70)", async () => {
     const recordDiffServes = vi.fn(async () => {});
     const hooks = createLifecycleHooks({
       resolveTarget: async (p: string) => p,
@@ -292,7 +292,7 @@ describe("lifecycle-hooks", () => {
       },
       ctx(),
     );
-    expect(result?.content[1]?.text).toContain("Auto-read");
-    expect(recordDiffServes).toHaveBeenCalledOnce();
+    expect(result).toBeUndefined();
+    expect(recordDiffServes).not.toHaveBeenCalled();
   });
 });
