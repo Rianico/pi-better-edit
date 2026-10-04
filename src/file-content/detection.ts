@@ -143,9 +143,6 @@ export async function loadFileKindAndText(
           path: options.displayPath ?? filePath,
           limitKind: "lines",
           limit: options.maxLines,
-          // WHY: the counter's value at the trip instant, so the refusal names
-          // WHY: the observed count rather than "more than the limit".
-          lineCount: newlineCount,
         });
       }
     }

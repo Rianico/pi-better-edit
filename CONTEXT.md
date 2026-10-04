@@ -195,7 +195,7 @@ The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used
 _Avoid_: content (byte-level, not canon)
 
 **E_LARGE_FILE**:
-Refusal that the file exceeds the hashline size contract — more than 200,000 lines on the read/edit load path (`limitKind: "lines"`, reporting the counted lines; served admission budget `SERVED_MAX_LINES`), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,766,336-line ceiling for allocatable 4-char anchors — 62^4 minus the 10,000 reserved all-digit spellings, carrying no line count; live width record [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). Nothing was written; use `write` or a non-line-based approach for very large files.
+Refusal that the file exceeds the hashline size contract — more than 200,000 lines on the read/edit load path (`limitKind: "lines"`, served admission budget `SERVED_MAX_LINES`), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,766,336-line ceiling for allocatable 4-char anchors — 62^4 minus the 10,000 reserved all-digit spellings, carrying no line count; live width record [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). The streaming gate reports a lower bound ("more than N lines") — its count is trip-instant, not a total; the preloaded gate counts the materialized text and reports the exact line count. Nothing was written; use `write` or a non-line-based approach for very large files.
 _Avoid_: E_TOO_BIG (unclaimed code)
 
 **E_UNKNOWN**:

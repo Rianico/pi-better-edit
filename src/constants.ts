@@ -3,14 +3,17 @@ export const SNIFF_BYTES = 8192;
 export const MAX_BYTES = 100 * 1024 * 1024;
 export const MAX_READ_LINE_BYTES = 200 * 1024;
 // WHY: the served admission budget — the most lines any read/edit/serve seam will
-// WHY: materialize for one file. Memory target ~15 MB retained: at the measured
-// WHY: ~77 B/line retained cost (split array + anchors) 200,000 lines cost ~15 MB,
-// WHY: generous for real source files and two orders of magnitude below what the
-// WHY: anchor space would admit (14.7 M lines ≈ 1.1 GB). This is deliberately NOT
-// WHY: derived from ALPHA/HASH_LEN/HASH_SPACE — deriving admission from the anchor
-// WHY: space was the defect (a width change must never move the memory budget).
-// WHY: Lane #43 halves the retained cost to ~36 B/line; when the per-line cost
-// WHY: changes, re-derive this budget from the new cost and the same target.
+// WHY: materialize for one file. Memory target ~15 MB marginal over the loaded text:
+// WHY: at the measured ~77 B/line retained structural cost (split array + anchors;
+// WHY: the source text itself is additional) 200,000 lines cost ~15 MB — a
+// WHY: source-like budget-max file is ~27 MB resident today. Generous for real source
+// WHY: files and two orders of magnitude below what the anchor space would admit
+// WHY: (14.7 M lines ≈ 1.1 GB). This is deliberately NOT derived from
+// WHY: ALPHA/HASH_LEN/HASH_SPACE — deriving admission from the anchor space was the
+// WHY: defect (a width change must never move the memory budget).
+// WHY: Lane #43 halves the structural cost to ~36 B/line (~19 MB resident for the
+// WHY: same file); when the per-line cost changes, re-derive this budget from the
+// WHY: new cost and the same target.
 export const SERVED_MAX_LINES = 200_000;
 
 // WHY: a multi-window read is still ONE tool result, so the window count is bounded — otherwise

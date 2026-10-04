@@ -129,16 +129,21 @@ describe("hashline limits", () => {
     it("pins the served admission budget binding", () => {
       // WHY: ordinary multi-thousand-line reads pass under the served budget — the
       // WHY: seam binding is pinned directly: the read seam passes the memory
-      // WHY: budget, not the anchor-space ceiling. A hidden re-derivation from
-      // WHY: the anchor space breaks the source pins below.
+      // WHY: budget, not the anchor-space ceiling. The first pin below refutes a
+      // WHY: hidden re-derivation only through its consequence (a moved value);
+      // WHY: the declaration-shape pin refutes the spelling (a derived
+      // WHY: expression or a re-export stays green on the value assert).
       expect(SERVED_MAX_LINES).toBe(200_000);
       expect(SERVED_MAX_LINES).not.toBe(MAX_HASH_LINES);
       const seam = readFileSync("src/read.ts", "utf-8");
       expect(/maxLines:\s*SERVED_MAX_LINES/.test(seam)).toBe(true);
-      // WHY: the budget's source must not reference the anchor space — the
+      const budgetSrc = stripComments(readFileSync("src/constants.ts", "utf-8"));
+      // WHY: the declaration is the literal itself — a re-export or a derived
+      // WHY: expression reddens here even while the value assert stays green.
+      expect(/^export const SERVED_MAX_LINES = 200_000;$/m.test(budgetSrc)).toBe(true);
+      // WHY: and the budget's source must not reference the anchor space — the
       // WHY: match runs on comment-stripped source, so the rationale's mention
       // WHY: of the anchor figures cannot satisfy it.
-      const budgetSrc = stripComments(readFileSync("src/constants.ts", "utf-8"));
       expect(/ALPHA|HASH_LEN|HASH_SPACE|USABLE_HASH_SPACE|MAX_HASH_LINES/.test(budgetSrc)).toBe(
         false,
       );
@@ -190,7 +195,7 @@ describe("read tool line cap", () => {
     });
   });
 
-  it("rejects an over-budget file naming count and budget", async () => {
+  it("rejects an over-budget file without stating a false total", async () => {
     // WHY: the boundary file is ~2 MB — comfortably under MAX_BYTES but over the
     // WHY: budget. This is the exposure the widening must not move: admission
     // WHY: refuses on lines long before the anchor space could matter.
@@ -206,12 +211,43 @@ describe("read tool line cap", () => {
       expect(caught).toBeInstanceOf(DomainError);
       const err = caught as DomainError;
       expect(err.code).toBe("E_LARGE_FILE");
-      const payload = err.payload as { limitKind: string; limit: number; lineCount: number };
+      const payload = err.payload as { limitKind: string; limit: number; lineCount?: number };
       expect(payload.limitKind).toBe("lines");
       expect(payload.limit).toBe(SERVED_MAX_LINES);
-      // WHY: the trip-instant count exceeds the budget (chunk granularity decides
-      // WHY: the exact value, so the pin is the inequality, not the number).
-      expect(payload.lineCount).toBeGreaterThan(SERVED_MAX_LINES);
+      // WHY: the streaming counter reports a trip-instant count, not a total — the
+      // WHY: payload carries no lineCount and the copy says "more than", never a number.
+      expect("lineCount" in payload).toBe(false);
+      expect(err.message).toContain(
+        `more than ${SERVED_MAX_LINES} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit`,
+      );
+    });
+  });
+
+  it("reports the exact count on the preloaded path for the same file", async () => {
+    // WHY: the honest distinction — the preloaded gate counts the materialized
+    // WHY: text, so it names the exact total where the streaming path may only say
+    // WHY: "more than". Same bytes, same budget, different surfaces.
+    const over =
+      Array.from({ length: SERVED_MAX_LINES + 100 }, (_, i) => `x${i}`).join("\n") + "\n";
+    await withTempFile("over.ts", over, async ({ cwd }) => {
+      let caught: unknown;
+      try {
+        await prepareFile("over.ts", cwd, {
+          preloadedFile: { kind: "text", text: over },
+        });
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(DomainError);
+      const err = caught as DomainError;
+      expect(err.code).toBe("E_LARGE_FILE");
+      const payload = err.payload as { limitKind: string; limit: number; lineCount?: number };
+      expect(payload.limitKind).toBe("lines");
+      expect(payload.limit).toBe(SERVED_MAX_LINES);
+      expect(payload.lineCount).toBe(SERVED_MAX_LINES + 100);
+      expect(err.message).toContain(
+        `has ${SERVED_MAX_LINES + 100} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit`,
+      );
     });
   });
 
