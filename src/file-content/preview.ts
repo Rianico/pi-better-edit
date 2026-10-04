@@ -92,8 +92,9 @@ async function emptyFilePreview(
 ): Promise<{ text: string; served: ServedRow[] }> {
   if (verbatim) return { text: "[File is empty.]", served: [] };
   if (startLine === 1) {
-    const allHashes =
-      precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+    const allHashes = verbatim
+      ? (precomputedHashes ?? [])
+      : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
     const emptyLineHash = allHashes[0]!;
     return {
       text: `${emptyLineHash}${hashSep}\n[File is empty. Use edit to insert content.]`,
@@ -410,8 +411,9 @@ export async function fmtReadPreview(
       verbatim,
     );
   if (windows) {
-    const allHashes =
-      precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+    const allHashes = verbatim
+      ? (precomputedHashes ?? [])
+      : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
     return buildWindowedPreview({
       windows,
       allLines,
@@ -432,7 +434,12 @@ export async function fmtReadPreview(
   const limit = normPosInt(options.limit, "limit");
   const endIdx = limit ? Math.min(startLine - 1 + limit, totalLines) : totalLines;
   const selected = allLines.slice(startLine - 1, endIdx);
-  const allHashes = precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+  // WHY: the render mode is the hashless authority, not the caller's `[]`: a verbatim preview must
+  // WHY: never reach the lazy `lineHashes` (which would allocate anchors and can persist a snapshot),
+  // WHY: so a third caller that forgets to precompute gets empty hashes instead of served state.
+  const allHashes = verbatim
+    ? (precomputedHashes ?? [])
+    : (precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text))));
   const selectedHashes = allHashes.slice(startLine - 1, endIdx);
   const formatted = fmtRows(selectedHashes, selected, verbatim);
   const maxBytes = maxLineBytes;

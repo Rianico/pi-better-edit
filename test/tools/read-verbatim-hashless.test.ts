@@ -1,6 +1,8 @@
+import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { defaultHashIdentity } from "../../src/hashline/index.js";
 import { fmtReadPreview } from "../../src/read";
+import { hashStorePath } from "../../src/hash-store.js";
 import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
 
 // WHY: the structural proof that verbatim allocates no anchors: the preview's lazy hash entry point
@@ -53,6 +55,45 @@ describe("verbatim hashless seam", () => {
       const result = await readTool.execute("s1", { file: "plain.txt" }, undefined, undefined, ctx);
       expect(result.content[0]!.text).toContain("│alpha");
       expect(spy).toHaveBeenCalled();
+    });
+  });
+  it("keeps verbatim hashless with no precomputed hashes (render is the authority)", async () => {
+    const result = await fmtReadPreview(
+      "alpha\nbeta\n",
+      { render: "verbatim" },
+      undefined,
+      home.testPath,
+    );
+    expect(result.text).toBe("alpha\nbeta");
+    expect(result.served).toEqual([]);
+  });
+
+  it("keeps verbatim hashless with no precomputed hashes in windows mode", async () => {
+    const result = await fmtReadPreview(
+      "alpha\nbeta\ngamma\n",
+      { render: "verbatim", windows: [{ offset: 2, limit: 1 }] },
+      undefined,
+      home.testPath,
+    );
+    expect(result.text).toContain("beta");
+  });
+
+  it("opens no anchor store for a verbatim read, and does for a served read", async () => {
+    await withTempFile("plain.txt", "alpha\nbeta\n", async ({ cwd }) => {
+      const { readTool, ctx } = setupReadTest(cwd);
+      const storePath = hashStorePath();
+
+      await readTool.execute(
+        "v2",
+        { file: "plain.txt", mode: "verbatim" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(existsSync(storePath)).toBe(false);
+
+      await readTool.execute("s2", { file: "plain.txt" }, undefined, undefined, ctx);
+      expect(existsSync(storePath)).toBe(true);
     });
   });
 });

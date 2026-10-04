@@ -59,6 +59,7 @@ export interface PrepareOptions {
   offset?: number;
   limit?: number;
   windows?: ReadWindow[];
+  /** The anchor-space line cap for served reads; ignored when `render` is `"verbatim"`. */
   maxLines?: number;
   accessMode?: number;
   maxLineBytes?: number;
@@ -81,8 +82,12 @@ export async function prepareFile(
   abortIf(signal);
   const verbatim = options?.render === "verbatim";
   // WHY: the anchor-space line cap is an edit-domain limit (`MAX_HASH_LINES` is the served cap), so
-  // WHY: verbatim does not apply it: a file too large to anchor is still a file worth reading. The
-  // WHY: 100MB `MAX_BYTES` memory guard in `loadFileKindAndText` still bounds both modes.
+  // WHY: verbatim ignores a caller-supplied cap: a file too large to anchor is still a file worth
+  // WHY: reading. Only the 100MB `MAX_BYTES` guard in `loadFileKindAndText` bounds both modes, and it
+  // WHY: bounds BYTES READ only: the preview still materializes the whole line array (`visLines`)
+  // WHY: before slicing a page, so a newline-dense ~100MB file can hold ~10M array entries (measured:
+  // WHY: 50M short lines -> +533MB RSS) before a 2000-line page is taken. Accepted tradeoff — the lazy
+  // WHY: pipeline that would remove it is a separate ticket, so no cap returns here.
   const maxLines = verbatim ? undefined : (options?.maxLines ?? MAX_HASH_LINES);
   const file =
     options?.preloadedFile ??

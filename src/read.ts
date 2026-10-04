@@ -113,7 +113,7 @@ export function regRead(pi: ExtensionAPI): void {
         limit: params.limit,
         windows: params.windows,
         maxLines: MAX_HASH_LINES,
-        store: await loadHashStore(),
+        store: mode === "served" ? await loadHashStore() : undefined,
         noPersist: true,
         render: mode,
       });
