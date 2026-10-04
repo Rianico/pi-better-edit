@@ -6,7 +6,7 @@
   },
   "overrides": [
     {
-      "files": ["test/**", "**/*.test.ts", "**/*.spec.ts", "benchmarks/**", "scripts/**"],
+      "files": ["test/**", "**/*.test.ts", "**/*.spec.ts", "scripts/**"],
       "rules": {
         "harness/no-comments": "off"
       }

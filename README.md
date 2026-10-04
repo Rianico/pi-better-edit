@@ -11,7 +11,6 @@
 <p align="center">
   <a href="#systematic-architecture"><img src="https://img.shields.io/badge/architecture-MVCC_v2-blue?style=flat" alt="MVCC v2"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-30s-brightgreen?style=flat" alt="quick start 30s"></a>
-  <a href="#reproducible-benchmarks"><img src="https://img.shields.io/badge/correctness-27%2F27-success?style=flat" alt="27/27 battery"></a>
   <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/v/pi-better-edit?color=crimson" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/dm/pi-better-edit?color=blue" alt="npm downloads"></a>
   <a href="https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-better-edit%40latest"><img src="https://img.shields.io/endpoint?url=https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark/resolve/main/badges/pi-better-edit.json&style=flat" alt="Explicit Edit Benchmark (1.7.0 arm)"></a>
@@ -25,8 +24,7 @@
   <a href="#systematic-architecture">Architecture</a> •
   <a href="#tools">Tools</a> •
   <a href="#error-and-warning-contract">Errors & Warnings</a> •
-  <a href="#comparison">Comparison</a> •
-  <a href="#reproducible-benchmarks">Benchmarks</a>
+  <a href="#comparison">Comparison</a>
 </p>
 
 ---
@@ -367,49 +365,8 @@ referenced span is retired — the current word is `cut`.
 
 ---
 
-## Reproducible Benchmarks
+## Independent Benchmark
 
-All claims are backed by deterministic verification batteries and reproducible benchmarks.
-
-### 1. Deterministic Tool Battery (27 Scenarios)
-
-The tool battery executes 27 complex edge-case scenarios (concurrent exterior inserts, duplicate function blocks, interior modifications, symmetric reorders, foreign-anchor isolation, BOM preservation, and batch interactions) without LLM sampling:
-
-| Test Suite | Result | Silent Data Loss |
-| --- | :---: | :---: |
-| **pi-better-edit v2** | **27/27** | **0** |
-
-Reproduce locally:
-```bash
-pnpm run eval
-```
-
-### 2. Practical Coding-Agent Benchmark
-
-Measures a realistic refactoring workflow in `pi` with model thinking enabled (`opencode-go/gpt-5.6-luna`), testing recovery from external drift:
-
-| Editing Tool | Tool Calls | Total Tokens | Token Savings vs Baseline | Correctness |
-| --- | :---: | :---: | :---: | :---: |
-| OMP Patch Wrapper | 6 | 28,467 | Baseline | &#x2705; |
-| **pi-better-edit v2** | **3 (fewest)** | **12,593** | **-55.8%** | &#x2705; |
-
-Reproduce locally:
-```bash
-pnpm run benchmark:practical
-```
-
-### 3. Theoretical Envelope Savings
-
-Measures raw payload serialization overhead across a pinned 12-edit corpus:
-- **Single edit**: -40.0% token overhead vs `str_replace`.
-- **Multi-item batch**: -42.7% token overhead vs `str_replace`.
-
-Reproduce locally:
-```bash
-pnpm run benchmark:tokens
-```
-
-### 4. Independent Benchmark: Explicit Edit Benchmark
 
 [**Explicit Edit Benchmark**](https://github.com/alexshpunt/explicit-edit-benchmark) is an independent, community-run dataset that scores harnesses and Pi editing extensions on the same 226 byte-exact edit tasks (replacements, insertions, deletions, moves, copies, unicode, large files). It is maintained by [alexshpunt](https://github.com/alexshpunt), not by this project, and every observation ships with its configuration.
 
@@ -462,8 +419,6 @@ pnpm run lint
 pnpm run format
 pnpm run typecheck
 
-# Run evaluation batteries
-pnpm run eval
 ```
 
 ---

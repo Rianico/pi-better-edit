@@ -513,7 +513,7 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
       if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f);
     for (const f of walkFiles("scripts").filter((f) => !f.endsWith(".pyc")))
       if (!RETIRED_WIRE_CARVE_OUT.has(f)) expect(scope).toContain(f); // every script a member or carve-out
-    expect(scope).toContain("scripts/practical-token-benchmark.mjs"); // the motivated artifact, pinned BY NAME
+    expect(scope).toContain("scripts/runtime-edge-test.mjs"); // the motivated artifact, pinned BY NAME (model-facing strings on a declared entry point)
     expect(scope).not.toContain("src/edit.ts"); // the carve-out is still applied
     expect([...RETIRED_WIRE_CARVE_OUT]).toEqual(["src/edit.ts", "src/hashline/apply.ts"]); // J4: carve-out set pinned against addition
     expect(retiredWireViolations()).toEqual([]);
