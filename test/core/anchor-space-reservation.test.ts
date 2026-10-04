@@ -76,11 +76,13 @@ describe("all-digit anchor reservation", () => {
   it("reaches the reserved band on duplicate-heavy content and serves zero digit anchors", () => {
     // WHY: cursor arithmetic — `baseIdx = (xxh32(c) >>> 14) % HASH_SPACE` confines
     // WHY: content-derived base indices to `[0, 2**18)`, while the digit subcube
-    // WHY: starts at `62^3 * 52 = SUBCUBE_START`; only the probe cursor (stride
+    // WHY: starts at `52 × (62^3 + 62^2 + 62 + 1) = 12,596,220 = SUBCUBE_START`;
     // WHY: ~3,907/step) advances into the band, needing ~3,200 consecutive probe
     // WHY: steps. Identical lines collide on one base index, so 20,000 of them
-    // WHY: drive the cursor deep into the band — a broad distinct-line sample
-    // WHY: tops out near 7.8 M and can never observe the guard.
+    // WHY: drive the cursor deep into the band — a distinct-line sample stays in
+    // WHY: its base-index neighbourhood (≤282,297 at 100k lines) and the shipped
+    // WHY: mixed 53k-line sample tops out at 11,705,777, below the band start,
+    // WHY: so neither can ever observe the guard.
     const dupContent = Array.from({ length: 20_000 }, () => "dup line 9").join("\n");
     const hashes = _lineHashesPure(dupContent);
     expect(hashes).toHaveLength(20_000);
