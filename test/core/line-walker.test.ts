@@ -1,9 +1,5 @@
 import { describe, expect, it } from "vitest";
-import {
-  visibleLineCount,
-  visibleLineTotal,
-  walkLines,
-} from "../../src/file-content/line-walker.js";
+import { visibleLineTotal, walkLines } from "../../src/file-content/line-walker.js";
 import { splitLines, visLines } from "../../src/utils.js";
 
 // WHY: the oracle is the codebase's own line decomposition, never a hand-written expectation and
@@ -30,6 +26,9 @@ const ORACLE_CASES = [
   "  \n\t\n",
   "no trailing",
   "one\nline",
+  // WHY: a BOM is the first line's first character, not a line break: the loader strips it before the
+  // WHY: walk, so what reaches the walk is a plain leading character and nothing more.
+  "\uFEFFa\nb\n",
 ] as const;
 
 function fullRange(total: number): { start: number; end: number } {
@@ -151,22 +150,16 @@ describe("walkLines — visit", () => {
   });
 });
 
-describe("visibleLineTotal and visibleLineCount — the read's line count", () => {
-  it("both match visLines(text).length without materializing the lines", () => {
+describe("visibleLineTotal — the read's line count", () => {
+  it("matches visLines(text).length without materializing the lines", () => {
     for (const text of ORACLE_CASES) {
-      const walks = walkLines(text);
-      const newlines = text.split("\n").length - 1;
-      expect(visibleLineTotal(text, walks.total)).toBe(visLines(text).length);
-      expect(visibleLineCount(text, newlines)).toBe(visLines(text).length);
+      expect(visibleLineTotal(text, walkLines(text).total)).toBe(visLines(text).length);
     }
   });
 
   it("counts the empty text as no lines, the one case where visLines and splitLines differ", () => {
     expect(visibleLineTotal("", 1)).toBe(0);
-    expect(visibleLineCount("", 0)).toBe(0);
     expect(visibleLineTotal("a\nb\n", 2)).toBe(2);
-    expect(visibleLineCount("a\nb\n", 2)).toBe(2);
-    expect(visibleLineCount("a\nb", 1)).toBe(2);
-    expect(visibleLineCount("\r", 0)).toBe(1);
+    expect(visibleLineTotal("\r", 1)).toBe(1);
   });
 });

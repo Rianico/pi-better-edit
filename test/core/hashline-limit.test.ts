@@ -41,6 +41,26 @@ describe("read tool line cap", () => {
     });
   });
 
+  it("refuses a CR-only file above the cap with the line cap's refusal, not the anchor space's", async () => {
+    // WHY: `toLF` rewrites a lone `\r` into a line break, so the count that decides this cap has to be
+    // WHY: the NORMALIZED text's. Counting the raw bytes lets a 238,329-line CR-only file through the
+    // WHY: cap and into the anchor space, which then refuses the same read with the same error code and
+    // WHY: a different reason — after allocating every anchor it was going to refuse.
+    const content = "x\r".repeat(MAX_HASH_LINES + 1);
+    await withTempFile("cr-only.ts", content, async ({ cwd }) => {
+      const { readTool, ctx } = setupReadTest(cwd);
+      const error = await readTool
+        .execute("r1", { file: "cr-only.ts" }, undefined, undefined, ctx)
+        .then(
+          () => undefined,
+          (thrown: unknown) => thrown as Error,
+        );
+      expect(error?.message).toBe(
+        `[MODEL] [E_LARGE_FILE] cr-only.ts has ${MAX_HASH_LINES + 1} lines, exceeding the ${MAX_HASH_LINES}-line edit limit. ` +
+          "Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.",
+      );
+    });
+  }, 300_000);
   it("reads a file at the limit without hashing errors", async () => {
     const content = Array.from({ length: MAX_HASH_LINES }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {

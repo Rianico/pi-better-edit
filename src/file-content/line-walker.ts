@@ -91,14 +91,3 @@ export function walkLines(
 export function visibleLineTotal(text: string, total: number): number {
   return text === "" ? 0 : total;
 }
-
-/**
- * The same count, derived from the newlines a decode counted instead of from a walk.
- *
- * WHY: the decode already tallies `\n` per chunk to enforce the anchor-space cap, so the cap needs no
- * WHY: second pass over the text to learn `visLines(text).length`. A terminal newline adds no line.
- */
-export function visibleLineCount(text: string, newlineCount: number): number {
-  if (text === "") return 0;
-  return text.endsWith("\n") ? newlineCount : newlineCount + 1;
-}

@@ -8,7 +8,7 @@ import { detectEnding, toLF, stripBOM } from "../edit-diff.js";
 import { abortIf } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { valKind, valAccess } from "../validation.js";
-import { visibleLineCount, visibleLineTotal, walkLines } from "./line-walker.js";
+import { visibleLineTotal, walkLines } from "./line-walker.js";
 import { loadHashStore, type HashStore } from "../hash-store.js";
 import type { AnchorWalk } from "../hashline/hash-identity.js";
 import { snapshotIOFor } from "../snapshot-store";
@@ -99,13 +99,10 @@ export async function decodeNormText(
   const normalized = toLF(rawContent);
 
   if (options?.maxLines !== undefined) {
-    // WHY: the decode already counted the newlines any cap needs, so the line count comes back from
-    // WHY: the load instead of a second split. A preloaded file that carries no tally pays one
-    // WHY: allocation-free walk instead of a line array.
-    const lineCount =
-      file.newlineCount !== undefined
-        ? visibleLineCount(rawContent, file.newlineCount)
-        : visibleLineTotal(rawContent, walkLines(rawContent).total);
+    // WHY: the count is the NORMALIZED text's, because `toLF` turns a lone `\r` into a line break: a
+    // WHY: count taken before it under-reads a CR-only file, which would then pass this cap and die in
+    // WHY: the anchor space instead. One walk settles it without holding a line.
+    const lineCount = visibleLineTotal(normalized, walkLines(normalized).total);
     if (lineCount > options.maxLines) {
       throw new DomainError("E_LARGE_FILE", {
         path,
