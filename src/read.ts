@@ -173,8 +173,8 @@ export function regRead(pi: ExtensionAPI): void {
         ctx as { sessionManager?: { getSessionId(): string } },
         prepared.absolutePath,
       );
-      // WHY: the page walk already counted the lines, so the epoch takes its count instead of a
-      // WHY: second split of the normalized text.
+      // WHY: the read's count-only walk already counted the lines, so the epoch takes its count instead of
+      // WHY: a second split of the normalized text; retiring leases is `upsertSnapshotFor`'s, below.
       const lineCount = prepared.lineTotals.visible;
       // WHY: `windows: []` falls back to a full read in the preview, so the full-read contract has to
       // WHY: follow the same rule — otherwise an empty array silently withholds the snapshot id and

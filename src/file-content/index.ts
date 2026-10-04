@@ -43,8 +43,8 @@ export interface PrepareResult {
   bom: string;
   fileHashes: string[];
   /**
-   * The counts the page walk already produced, in both line stacks: `visLines(normalized).length` for
-   * the read's own line count, and `splitLines(normalized).length` for the snapshot's. WHY: a caller
+   * The counts the read's count-only walk produced, in both line stacks: `visLines(normalized).length`
+   * for the read's own line count, and `splitLines(normalized).length` for the snapshot's. WHY: a caller
    * that split the text again for them would rebuild the line array this path exists to avoid.
    */
   lineTotals: { visible: number; split: number };

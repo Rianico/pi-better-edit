@@ -158,9 +158,5 @@ export async function anchorWalkFor(
     path: absolutePath,
     persist: options?.noPersist !== true,
     snapshotIO: snapshotIOFor(hashStore),
-    // WHY: this is the read-path materialization of the file's committed bytes (spec §3.1.3 / §3.1.3.3):
-    // WHY: it is the single authoritative source of line survival, so it is the only hashing call in
-    // WHY: the load path allowed to retire leases. In-memory working-buffer hashing stays non-authoritative.
-    retireLeases: true,
   });
 }

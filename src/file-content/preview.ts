@@ -306,8 +306,6 @@ function buildWindowSection(params: {
  * A page the read walked out of the text: the lines the request asked for, and the counts.
  */
 interface WalkedPage {
-  /** `split("\n")`'s total: the count a snapshot stores as its line count. */
-  readonly splitTotal: number;
   /** The lines of each requested range, in request order. */
   readonly ranges: string[][];
   /** The anchors the walk assigned, in line order. Present only when the walk carried one. */
@@ -333,7 +331,6 @@ function walkPage(
     assign ? (line: string) => void assigned.push(assign(line)) : undefined,
   );
   return {
-    splitTotal: walk.total,
     ranges: walk.ranges,
     ...(assign ? { assigned } : {}),
   };

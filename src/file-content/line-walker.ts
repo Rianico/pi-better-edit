@@ -1,10 +1,10 @@
 /**
  * Walking a file's lines, one page at a time.
  *
- * WHY: `split("\n")` buys line addressing with one heap string per line — ~4.56× the text, measured
- * WHY: in this repo's probe (a 45 MB text cost a 205 MB line array) — which a read that keeps a page
- * WHY: of rows never needs. `walkLines` yields the same lines as `splitLines` — same lines, same
- * WHY: order, same total — while retaining only the ranges the caller asked for.
+ * WHY: `split("\n")` buys line addressing with one heap string per line — measured by this repo's own
+ * WHY: probe at ~50 B per line (47.2 MB of heap for a 29.9 MB text; `pnpm run eval:heap`) — which a read
+ * WHY: that keeps a page of rows never needs. `walkLines` yields the same lines as `splitLines` — same
+ * WHY: lines, same order, same total — while retaining only the ranges the caller asked for.
  *
  * The walk is mode-agnostic by construction: text in, lines out. It knows nothing about render
  * modes, anchors, or served state, so every caller can adopt it without teaching it their language.
