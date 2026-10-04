@@ -12,6 +12,7 @@
 * **readme:** cite external evidence for hash-anchored lines — token-bleed reduction (Lamberti 2026) and subword-tokenizer drift (TokDrift) — under the failure-modes table and the anchor-hash space explanation. (#41)
 * **readme:** state the 4-char anchor contract end to end — width words, worked `HASH│content` examples, the 62^4 space with the TokDrift citation, and ADR-0029 as the live width record. (#20)
 * **docs:** rewrite CONTEXT.md, the live specs, the hash-anchors article, the absorption plan, the benchmarks anchor statement and the archive width mentions to the 4-char contract. (#20)
+* **readme:** re-source token economics to Lamberti 2026 (22–58% repair-token cuts), removing the project-derived 40–60% claims. (#20)
 
 ### Code Refactoring
 

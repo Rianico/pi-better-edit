@@ -34,7 +34,7 @@
 > **What is `pi-better-edit`?**
 > A high-precision file editing extension for [`pi-coding-agent`](https://github.com/can1357/oh-my-pi) that replaces volatile line numbers and token-wasting code echoes with immutable, content-addressed 4-character line hashes (`szJx│code`).
 >
-> **Core Philosophy:** Local compute is free; **the model's context window is the most precious resource**. By shifting verification, snapshotting, and alignment to the host, `pi-better-edit` slashes output tokens by 40–60%, auto-rebases external file drift (e.g., Prettier, Git), and eliminates silent miswrites without forcing full-file re-reads.
+> **Core Philosophy:** Local compute is free; **the model's context window is the most precious resource**. By shifting verification, snapshotting, and alignment to the host, `pi-better-edit` slashes output tokens — line-anchored feedback cut repair tokens by 22–58% in published paired experiments ([Lamberti 2026, arXiv:2607.12713](https://arxiv.org/abs/2607.12713)) — auto-rebases external file drift (e.g., Prettier, Git), and eliminates silent miswrites without forcing full-file re-reads.
 
 ---
 
@@ -46,7 +46,7 @@ File editing is the #1 point of failure for autonomous agents. Traditional tools
 
 | Fatal Trap in Traditional Tools | Why It Breaks Agents | How `pi-better-edit` Solves It |
 | --- | --- | --- |
-| **`str_replace` Token Bleed** | Must re-type 30+ lines of unchanged code just to change 1 line ($O(S+R)$), burning expensive output tokens (billed ~5–6× input). | **$O(R)$ Payloads**: Sends only two 4-char hashes (`anchor_from`, `anchor_to`) + replacement. Cuts output tokens by 40–60%. |
+| **`str_replace` Token Bleed** | Must re-type 30+ lines of unchanged code just to change 1 line ($O(S+R)$), burning expensive output tokens (billed ~5–6× input). | **$O(R)$ Payloads**: Sends only two 4-char hashes (`anchor_from`, `anchor_to`) + replacement. Cuts output tokens — 22–58% repair-token cuts in published paired experiments ([Lamberti 2026](https://arxiv.org/abs/2607.12713)). |
 | **Line-Number Coordinate Rot** | Inserting 1 line shifts all line numbers below it. Agents suffer off-by-one errors or must repeatedly re-read the file. | **Position-Independent Anchors**: Line hashes follow content, not line coordinates. Exterior shifts auto-rebase cleanly. |
 | **Silent Miswrites & Drift** | Duplicate lines match the wrong function; external formatters (Prettier) or git updates cause blind overwrites or fatal errors. | **Line-Identity MVCC**: Unique anchors via coprime probing; format-tolerant whitespace hashing; fail-closed reject-and-serve. |
 
@@ -59,7 +59,8 @@ File editing is the #1 point of failure for autonomous agents. Traditional tools
 
 ## Core Pillars
 
-### 1. 🪙 Token Economics (40–60% Context Savings)
+### 1. 🪙 Token Economics
+Published paired experiments report 22–58% repair-token cuts for line-anchored feedback ([Lamberti 2026, arXiv:2607.12713](https://arxiv.org/abs/2607.12713)).
 - **$O(R)$ Edit Payloads**: The model emits only `{ "anchor_from": "a1bX", "anchor_to": "c3dX", "text": "..." }`, never regurgitating existing code.
 - **Self-Serving Diffs**: Every applied edit returns fresh anchors in the post-edit diff — zero re-read roundtrips to chain edits.
 - **Disjoint Multi-Window Reads**: Query up to 16 disjoint slices (`windows: [{offset, limit}, ...]`) in one turn instead of dumping 2,000 lines into context.
