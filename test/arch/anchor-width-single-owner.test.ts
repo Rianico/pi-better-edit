@@ -68,12 +68,6 @@ function moduleSources(code: string): string[] {
     ) {
       const value = stringValue(node.source);
       if (value !== undefined) sources.push(value);
-    } else if (node.type === "ImportExpression") {
-      const value = stringValue(node.source);
-      if (value !== undefined) sources.push(value);
-      // WHY: this repo's parser emits dynamic import() as CallExpression
-      // WHY: with an Import callee (older AST shape), not ImportExpression;
-      // WHY: collect both or the dynamic arm never fires.
     } else if (
       node.type === "CallExpression" &&
       node.callee !== null &&
@@ -98,14 +92,16 @@ function moduleSources(code: string): string[] {
 // WHY: (the alphabet size, not a width) since the digit there follows `6`.
 const COUNT_WORD_RE = /(^|[^A-Za-z0-9])\d-chars?\b/;
 const COUNT_CHARACTER_RE = /(^|[^A-Za-z0-9])\d-characters?\b/;
+const COUNT_WORD_SPACE_RE = /(^|[^A-Za-z0-9])\d\s+(?:chars|characters)\b/;
 const CLASS_QUANTIFIER_RE = /\[[^\]]*\]\{(3|4)\}/;
 
 // WHY: the numeric width shapes T1 deleted from the anchor-shape surface —
-// WHY: `ANCHOR_WIDTH = 3`, `text[3]`, `slice(0, 3)`, `length < 4`, and the
-// WHY: `3907` stride literal. Reverting the refactor to any of these keeps the
-// WHY: count-word arms green, so this third arm watches `src/hashline/**`
-// WHY: for digits where only `HASH_LEN` may stand. (`[1-9]`/`[2-9]` lead:
-// WHY: index `0`, emptiness checks like `length > 0`, and the shipped
+// WHY: `ANCHOR_WIDTH = 3`, `text[3]`, `slice(0, 3)`, the one-arg `slice(4)` tail,
+// WHY: `length < 4`, and the `3907` stride literal. Reverting the refactor to any
+// WHY: of these keeps the count-word arms green, so this third arm watches
+// WHY: `src/hashline/**` for digits where only `HASH_LEN` may stand.
+// WHY: (`[1-9]`/`[2-9]` lead: index `0`, one-arg `slice(1)` (the diff-marker
+// WHY: strip), emptiness checks like `length > 0`, and the shipped
 // WHY: pluralisation `length > 1` are live idioms on the surface, while a
 // WHY: width literal is always a positive count above one — `0`/`1` can never
 // WHY: encode one. The ticket's "matching at least" covers every shape below,
@@ -113,6 +109,7 @@ const CLASS_QUANTIFIER_RE = /\[[^\]]*\]\{(3|4)\}/;
 const ANCHOR_ASSIGN_RE = /ANCHOR_(?:WIDTH|LEN)\s*=\s*[0-9]/;
 const TEXT_INDEX_RE = /\btext\s*\[\s*[1-9][0-9]*\s*\]/;
 const SLICE_PREFIX_RE = /\b(?:slice|substring|substr)\(\s*0\s*,\s*[0-9]+\s*\)/;
+const SLICE_OFFSET_RE = /\b(?:slice|substring|substr)\(\s*[2-9][0-9]*\s*\)/;
 const LENGTH_CMP_RE = /\.length\s*[<>]=?\s*[2-9][0-9]*\b/;
 const STRIDE_ASSIGN_RE = /HASH_PROBE_STRIDE\s*=\s*[0-9]/;
 
@@ -125,6 +122,7 @@ function scanStrictLine(line: string): WidthHit[] {
   const hits: WidthHit[] = [];
   if (COUNT_WORD_RE.test(line)) hits.push({ arm: "count-word", line });
   if (COUNT_CHARACTER_RE.test(line)) hits.push({ arm: "count-character", line });
+  if (COUNT_WORD_SPACE_RE.test(line)) hits.push({ arm: "count-word-space", line });
   if (CLASS_QUANTIFIER_RE.test(line)) hits.push({ arm: "class-quantifier", line });
   return hits;
 }
@@ -132,9 +130,10 @@ function scanStrictLine(line: string): WidthHit[] {
 // WHY: split by false-positive radius — the two name-specific arms fire
 // WHY: only on the exact former-owner spellings (`ANCHOR_WIDTH = 3`, the
 // WHY: `3907` stride), so they run src-wide with zero live hits; the three
-// WHY: positional arms (`text[3]`, `slice(0, 3)`, `length < 4`) also match
-// WHY: innocent code elsewhere (`homes.slice(0, 3)`, BOM `length >= 4`), so
-// WHY: they stay on the anchor-shape surface `src/hashline/**`.
+// WHY: positional arms (`text[3]`, `slice(0, 3)`, the one-arg `slice(4)`,
+// WHY: `length < 4`) also match innocent code elsewhere (`homes.slice(0, 3)`,
+// WHY: BOM `length >= 4`), so they stay on the anchor-shape surface
+// WHY: `src/hashline/**`.
 function scanNumericNameLine(line: string): WidthHit[] {
   const hits: WidthHit[] = [];
   if (ANCHOR_ASSIGN_RE.test(line)) hits.push({ arm: "anchor-assign", line });
@@ -146,6 +145,7 @@ function scanNumericPositionalLine(line: string): WidthHit[] {
   const hits: WidthHit[] = [];
   if (TEXT_INDEX_RE.test(line)) hits.push({ arm: "text-index", line });
   if (SLICE_PREFIX_RE.test(line)) hits.push({ arm: "slice-prefix", line });
+  if (SLICE_OFFSET_RE.test(line)) hits.push({ arm: "slice-offset", line });
   if (LENGTH_CMP_RE.test(line)) hits.push({ arm: "length-cmp", line });
   return hits;
 }
@@ -160,14 +160,12 @@ function scanNumericPositionalLine(line: string): WidthHit[] {
 // WHY:   `.slice(0, 5)` samples candidate anchors for a message — both slice
 // WHY:   content, not an anchor prefix, but no regex can tell them apart from
 // WHY:   `text.slice(0, 3)`.
-// WHY: - `export const HASH_LEN = 3;` is the single owner itself: no numeric
-// WHY:   arm matches it today, and the entry exists so a future arm
-// WHY:   generalisation can never flag the declaration it protects.
+// WHY: allowlist entries are exact and live — an entry that suppresses no hit
+// WHY: is dead weight, so the single owner `HASH_LEN` carries none.
 const ALLOWLISTED_LINES = [
   String.raw`const TEMP_UUID_RE = /^\.tmp-[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/;`,
   String.raw`const preview = first.slice(0, 60);`,
   String.raw`const sample = (m.candidates ?? []).slice(0, 5);`,
-  String.raw`export const HASH_LEN = 3;`,
 ];
 
 // WHY: width-relative consistency for the shipped contract surface — every
@@ -178,7 +176,11 @@ const ALLOWLISTED_LINES = [
 // WHY: when that copy becomes normative.
 function countWordWidths(line: string): string[] {
   const widths: string[] = [];
-  for (const re of [/(^|[^A-Za-z0-9])(\d)-chars?\b/g, /(^|[^A-Za-z0-9])(\d)-characters?\b/g]) {
+  for (const re of [
+    /(^|[^A-Za-z0-9])(\d)-chars?\b/g,
+    /(^|[^A-Za-z0-9])(\d)-characters?\b/g,
+    /(^|[^A-Za-z0-9])(\d)\s+(?:chars|characters)\b/g,
+  ]) {
     for (const match of line.matchAll(re)) {
       const width = match[2];
       if (width !== undefined) widths.push(width);
@@ -202,6 +204,32 @@ function contractTexts(): { label: string; text: string }[] {
     entries.push({ label: "package.json:description", text: packageJson.description });
   }
   return entries;
+}
+
+// WHY: the file-walk dispatch lives here — not inline in the test — so the
+// WHY: negative control can drive it directly: moving the src-wide name arms
+// WHY: inside the hashline branch would silently drop the exact T1
+// WHY: `ANCHOR_WIDTH` case, and only a control through this helper reddens.
+function scanSrcFile(file: string, text: string): string[] {
+  const hashlineSurface = file.startsWith(join("src", "hashline") + "/");
+  const violations: string[] = [];
+  for (const raw of text.split("\n")) {
+    const line = raw.trim();
+    if (ALLOWLISTED_LINES.includes(line)) continue;
+    for (const hit of scanStrictLine(line)) {
+      violations.push(`${file}: ${hit.arm}: ${hit.line}`);
+    }
+    if (hashlineSurface) {
+      for (const hit of scanNumericNameLine(line).concat(scanNumericPositionalLine(line))) {
+        violations.push(`${file}: ${hit.arm}: ${hit.line}`);
+      }
+    } else {
+      for (const hit of scanNumericNameLine(line)) {
+        violations.push(`${file}: ${hit.arm}: ${hit.line}`);
+      }
+    }
+  }
+  return violations;
 }
 
 describe("anchor width single owner", () => {
@@ -261,26 +289,12 @@ describe("anchor width single owner", () => {
     // WHY: every count word, class shape, and numeric width form outside the
     // WHY: alphabet leaf is a second owner of the width — the flip to 4 must
     // WHY: propagate from `HASH_LEN` alone, so the scan below must stay empty.
-    const violations: string[] = [];
-    for (const file of tsFiles("src")) {
-      const hashlineSurface = file.startsWith(join("src", "hashline") + "/");
-      for (const raw of readFileSync(file, "utf-8").split("\n")) {
-        const line = raw.trim();
-        if (ALLOWLISTED_LINES.includes(line)) continue;
-        for (const hit of scanStrictLine(line)) {
-          violations.push(`${file}: ${hit.arm}: ${hit.line}`);
-        }
-        if (hashlineSurface) {
-          for (const hit of scanNumericNameLine(line).concat(scanNumericPositionalLine(line))) {
-            violations.push(`${file}: ${hit.arm}: ${hit.line}`);
-          }
-        } else {
-          for (const hit of scanNumericNameLine(line)) {
-            violations.push(`${file}: ${hit.arm}: ${hit.line}`);
-          }
-        }
-      }
-    }
+    const files = tsFiles("src");
+    // WHY: an empty walk yields zero violations and a green test — assert the
+    // WHY: surface is non-trivial so a cwd change or `src` rename cannot
+    // WHY: silently no-op the guard.
+    expect(files.length).toBeGreaterThan(50);
+    const violations = files.flatMap((file) => scanSrcFile(file, readFileSync(file, "utf-8")));
     expect(violations).toEqual([]);
   });
 
@@ -291,7 +305,12 @@ describe("anchor width single owner", () => {
     // WHY: flip every leftover `3` fails loudly instead of shipping a
     // WHY: mixed-width model contract.
     const mismatches: string[] = [];
-    for (const { label, text } of contractTexts()) {
+    const surfaces = contractTexts();
+    // WHY: same vacuous-walk hazard as the src scan — pin the prompts
+    // WHY: md-walk and the contract surface before asserting emptiness.
+    expect(surfaces.some((e) => e.label.startsWith("prompts"))).toBe(true);
+    expect(mdFiles("prompts").length).toBeGreaterThan(0);
+    for (const { label, text } of surfaces) {
       for (const raw of text.split("\n")) {
         const line = raw.trim();
         if (ALLOWLISTED_LINES.includes(line)) continue;
@@ -312,30 +331,49 @@ describe("anchor width single owner", () => {
     const plantedStrict = [
       "reason: `Pass the bare 4-char anchor and retry.`",
       "const SHAPE = /^[A-Za-z0-9]{4}$/;",
+      "copy only the 3 chars before │",
     ];
-    expect(plantedStrict.flatMap((line) => scanStrictLine(line))).toHaveLength(2);
+    expect(plantedStrict.flatMap((line) => scanStrictLine(line))).toHaveLength(3);
     const plantedNumeric = [
       "const ANCHOR_WIDTH = 3;",
       "if (text[3] !== HASH_SEP) return undefined;",
       "const anchor = text.slice(0, 3);",
+      "return { anchor, tail: text.slice(4) };",
       "if (text.length < 4) return undefined;",
       "export const HASH_PROBE_STRIDE = 3907;",
     ];
     const numericHits = plantedNumeric.map((line) =>
       scanNumericNameLine(line).concat(scanNumericPositionalLine(line)),
     );
-    expect(numericHits.map((hits) => hits.length)).toEqual([1, 1, 1, 1, 1]);
+    expect(numericHits.map((hits) => hits.length)).toEqual([1, 1, 1, 1, 1, 1]);
     expect(numericHits.map((hits) => hits[0]?.arm)).toEqual([
       "anchor-assign",
       "text-index",
       "slice-prefix",
+      "slice-offset",
       "length-cmp",
       "stride-assign",
     ]);
     // WHY: the consistency arm must flag a foreign width on the contract
     // WHY: surface while accepting the live one.
-    expect(countWordWidths("a 4-char anchor")).toEqual(["4"]);
-    expect(countWordWidths("a 4-char anchor")).not.toContain(String(HASH_LEN));
+    // WHY: the foreign width is derived (`HASH_LEN + 1`), never the literal
+    // WHY: `4` — at the flip the sample stays foreign instead of inverting
+    // WHY: into the live width and reddening for the wrong reason.
+    const foreign = String(HASH_LEN + 1);
+    expect(countWordWidths(`a ${foreign}-char anchor`)).toEqual([foreign]);
+    expect(countWordWidths(`a ${foreign}-char anchor`)).not.toContain(String(HASH_LEN));
+    // WHY: the walk dispatch itself is refuted through the shared helper — a
+    // WHY: non-hashline name-arm hit (the exact T1 `ANCHOR_WIDTH` case) and a
+    // WHY: hashline positional hit must both be reported, so moving the
+    // WHY: src-wide name arms inside the hashline branch reddens here.
+    const dispatchName = scanSrcFile("src/domain-errors.ts", "const ANCHOR_WIDTH = 3;");
+    expect(dispatchName).toHaveLength(1);
+    expect(dispatchName[0]).toContain("anchor-assign");
+    const dispatchPositional = scanSrcFile(
+      "src/hashline/served-guard.ts",
+      "if (text[3] !== HASH_SEP) return undefined;",
+    );
+    expect(dispatchPositional.some((v) => v.includes("text-index"))).toBe(true);
     expect(scanStrictLine("no width here")).toEqual([]);
   });
 });

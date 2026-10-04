@@ -17,6 +17,7 @@
 ### Tests
 
 * **hashline:** harden the anchor-width guard to refute numeric and cross-surface drift — leaf walker sees re-exports and dynamic imports (with positive control), exact-line allowlists, a numeric-shape arm on `src/hashline/**`, derived shape samples, and a width-consistency check over `src/**`, `prompts/**` and the package description; `prompts/read.md` presence assertions become width-consistent. Test-only, behaviour unchanged. (#20)
+* **hashline:** close the T1b guard gaps — one-arg numeric slice arm, space-form count words, derived foreign-width control, non-vacuous walk pins, dead allowlist entry removed, and dispatch refutation through the shared walk helper. Test-only, `HASH_LEN` stays 3. (#20)
 ## [2.6.0] - 2026-10-03
 
 ### Features
