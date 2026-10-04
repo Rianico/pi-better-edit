@@ -15,8 +15,9 @@ import {
 useTestHome();
 
 // WHY: an oracle that shares no code with the walk — anchors recorded by the implementation that
-// WHY: predates it, in docs/.archive_issues/0136-fix-edit-target-lost-rejections-must-not-serve-or-lease-the.md:70
-// WHY: and corroborated by 0166-bug-gendiff-silently-truncates-small-middle-gaps-no-marker-l.md:46.
+// WHY: predates it, in docs/.archive_issues/0136-fix-edit-target-lost-rejections-must-not-serve-or-lease-the.md:70,
+// WHY: which carries all five in order (0166-bug-gendiff-silently-truncates-small-middle-gaps-no-marker-l.md:46
+// WHY: corroborates only two of them: Wot and Rzv).
 const RECORDED = ["Wot", "rKa", "BkM", "Rzv", "EaX"] as const;
 
 // WHY: the anchors are the served contract — an edit resolves the file through them — so the walk that

@@ -4,12 +4,12 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { walkLines } from "../../src/file-content/line-walker.js";
 
-// WHY: the numbers behind "page the file", as this probe measures them: a 29.9 MB, one-million-line text
-// WHY: costs +47.2 MB of heap as `split("\n")` — 50 B per line, 1.65x the text — while a fifty-line page
-// WHY: walked out of the same text costs +38.8 KB, and counting every line costs +20.6 KB. (The brief's
-// WHY: 4.56x figure was measured on a fixture with shorter lines and is not this probe's number.) Behind
-// WHY: RUN_EVAL because a heap delta is only comparable on an idle, warmed process: run
-// WHY: `pnpm run eval:heap` and read the JSON it writes for the current numbers.
+// WHY: the numbers behind "page the file", as this probe measures them: a 29,888,890-byte, one-million-line
+// WHY: text costs +47.2 MB of heap as `split("\n")` — 50 B per line — while a fifty-line page walked out of
+// WHY: the same text costs +38.8 KB, and counting every line costs +20.6 KB. A heap delta moves a little
+// WHY: run to run, so the JSON is authoritative and those figures are one run of it. (The brief's 4.56x
+// WHY: figure was measured on a fixture with shorter lines and is not this probe's number.) Behind
+// WHY: RUN_EVAL because a delta is only comparable on an idle, warmed process: run `pnpm run eval:heap`.
 const RUN = process.env.RUN_EVAL === "1";
 const LINES = 1_000_000;
 const PAGE = 50;

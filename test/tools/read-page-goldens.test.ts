@@ -2,12 +2,15 @@ import { describe, expect, it } from "vitest";
 import { MAX_HASH_LINES } from "../../src/hashline";
 import { setupReadTest, withTempFile } from "../support/fixtures";
 
-// Provenance, verified by an independent review rather than by this file: these literals were captured
-// from the implementation before this branch (6bca8d9), and a clean `git archive main` checkout
-// reproduces them — the anchor arrays for NL, CRLF, LONE_CR, NO_TRAILING and the empty file are
-// byte-identical to main's served output, constants included (`MEo,Mxn,nZ8,OMe,u9d`,
-// `658,tgj,nHm,pLz,1nL`, `AuN`). To re-verify: extract main (`git archive main | tar -x -C <dir>`, and
-// symlink this tree's `node_modules`), run this file there, and diff the rendered pages.
+// Provenance. These literals were captured from the implementation before this branch (6bca8d9), and an
+// independent review confirmed a clean checkout of `main` reproduces them: the anchor arrays for NL,
+// CRLF, LONE_CR, NO_TRAILING and the empty file are byte-identical to main's served output, constants
+// included (`MEo,Mxn,nZ8,OMe,u9d`, `658,tgj,nHm,pLz,1nL`, `AuN`). The two served rows for CRLF and a lone
+// `\r` were captured the same way, mechanically:
+//   git archive main | tar -x -C /tmp/pi-main && ln -s $PWD/node_modules /tmp/pi-main/node_modules
+//   # probe importing ./support/fixtures, rendering both files in the default (served) mode:
+//   (cd /tmp/pi-main && npx vitest run test/tmp-served-probe.test.ts)
+//   -> "Wot│a\nrKa│b\nBkM│c" and "hvX│one\nn4z│two\nqGt│three"
 //
 // WHY: the walk must hold the split-based reader's pages, hints and refusals byte for byte — in BOTH
 // WHY: render modes, since the anchor array and the page now come out of one walk.
@@ -118,6 +121,10 @@ const SERVED_GOLDENS: Array<[string, string, Record<string, unknown>, string]> =
   ["no trailing newline", NO_TRAILING, {}, `658│n0\ntgj│n1\nnHm│n2\npLz│n3\n1nL│n4`],
   ["an empty file", "", {}, `AuN│\n[File is empty. Use edit to insert content.]`],
   ["a file that is one newline", "\n", {}, `AuN│`],
+  // WHY: the served proof for these two fixtures, which the header used to claim without a row for: run
+  // WHY: in a `git archive main` checkout (the procedure the header records) they render exactly this.
+  ["CRLF text (normalized to LF)", CRLF, {}, `Wot│a\nrKa│b\nBkM│c`],
+  ["a lone \\r is not a break", LONE_CR, {}, `hvX│one\nn4z│two\nqGt│three`],
 ];
 
 async function read(file: string, content: string, args: Record<string, unknown>): Promise<string> {

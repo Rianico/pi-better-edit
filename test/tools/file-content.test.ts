@@ -1,6 +1,9 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
+import { loadHashStore } from "../../src/hash-store.js";
 import { prepareFile } from "../../src/file-content/index.js";
+import { contentChecksum } from "../../src/hashline/hasher.js";
+import { snapshotIOFor } from "../../src/snapshot-store";
 import { withTempFile } from "../support/fixtures.js";
 
 describe("FileContent — deep seam", () => {
@@ -53,11 +56,23 @@ describe("FileContent — deep seam", () => {
     });
   });
 
-  it("snapshot hit via loader cache", async () => {
+  it("serves the anchors the snapshot store already holds, instead of recomputing them", async () => {
+    // WHY: the read path passes `noPersist`, so nothing it does writes this snapshot: seeding it directly
+    // WHY: is the only way to prove the cache is consulted rather than coincidentally agreeing. The
+    // WHY: seeded anchors are deliberately unreachable from `hello\n`, so recomputation would fail here.
     await withTempFile("cache.txt", "hello\n", async ({ cwd }) => {
-      const a = await prepareFile("cache.txt", cwd, {});
-      const b = await prepareFile("cache.txt", cwd, {});
-      expect(a.fileHashes).toEqual(b.fileHashes);
+      const store = await loadHashStore();
+      const content = "hello\n";
+      await snapshotIOFor(store).upsert(
+        join(cwd, "cache.txt"),
+        contentChecksum(content),
+        1,
+        ["ZZZ"],
+        content,
+        {},
+      );
+      const res = await prepareFile("cache.txt", cwd, { store, noPersist: true });
+      expect(res.fileHashes).toEqual(["ZZZ"]);
     });
   });
 });
