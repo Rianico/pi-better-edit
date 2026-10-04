@@ -7,6 +7,7 @@ import { regRead } from "../../src/read";
 import { makeFakePiRegistry } from "../support/fixtures";
 import { EDIT_DESCRIPTION, EDIT_SNIPPET, EDIT_GUIDELINES } from "../../src/payload-contract";
 import { buildToolDef } from "../../src/edit";
+import { HASH_LEN } from "../../src/hashline/alphabet.js";
 
 function collectTsFiles(dir: string): string[] {
   const out: string[] = [];
@@ -61,11 +62,11 @@ const readPrompt = readFileSync(new URL("../../prompts/read.md", import.meta.url
 describe("prompts/read.md (model-facing contract)", () => {
   it("declares the HASH|content output format", () => {
     expect(readPrompt).toMatch(/HASH│content/);
-    expect(readPrompt).toMatch(/3-char/);
+    expect(readPrompt).toContain(`${HASH_LEN}-char`);
   });
 
   it("specifies the alphanumeric hash alphabet", () => {
-    expect(readPrompt).toMatch(/3-char/);
+    expect(readPrompt).toContain(`${HASH_LEN}-char`);
     expect(readPrompt).toContain("alphanumeric");
   });
 

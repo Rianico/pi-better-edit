@@ -14,6 +14,9 @@
 
 * **hashline:** make `HASH_LEN` the single owner of the anchor width — served-guard parse, domain-errors/payload-contract copy, resolve/parse reasons, and the probe stride all derive from it; behaviour and model-visible bytes unchanged at width 3, pinned by a new single-owner arch guard. (#20)
 
+### Tests
+
+* **hashline:** harden the anchor-width guard to refute numeric and cross-surface drift — leaf walker sees re-exports and dynamic imports (with positive control), exact-line allowlists, a numeric-shape arm on `src/hashline/**`, derived shape samples, and a width-consistency check over `src/**`, `prompts/**` and the package description; `prompts/read.md` presence assertions become width-consistent. Test-only, behaviour unchanged. (#20)
 ## [2.6.0] - 2026-10-03
 
 ### Features
