@@ -203,6 +203,14 @@ function contractTexts(): { label: string; text: string }[] {
   if (typeof packageJson.description === "string") {
     entries.push({ label: "package.json:description", text: packageJson.description });
   }
+  // WHY: the runtime edge script was hand-migrated to `4-char-hash` and is
+  // WHY: scanned by nothing else — pinning it here so the next width change
+  // WHY: cannot forget it. Only this file, not all of `scripts/`: the count
+  // WHY: arms would false-positive on unrelated script prose.
+  entries.push({
+    label: "scripts/runtime-edge-test.mjs",
+    text: readFileSync("scripts/runtime-edge-test.mjs", "utf-8"),
+  });
   return entries;
 }
 

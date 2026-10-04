@@ -605,7 +605,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
     });
   });
 
-  it("scopes canon evidence per file when two files share one 3-char anchor (#149, #151)", async () => {
+  it("scopes canon evidence per file when two files share one 4-char anchor (#149, #151)", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const pathA = join(home, "a.ts");

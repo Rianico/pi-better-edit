@@ -236,7 +236,7 @@ export interface NeverServedAnchorShape {
  * refusal gate and the served prefix mismatch tier.
  *
  * A candidate reports here when it opens with an anchor-shaped prefix
- * (3 alphanumerics plus the separator, after one optional leading diff marker)
+ * (the live anchor width of alphanumerics plus the separator, after one optional leading diff marker)
  * whose anchor was never served for this session and file. Shape-only by design:
  * the hint never blocks and never rewrites, so evidence gating does not apply.
  * Served anchors are excluded (the gate and the mismatch tier own them).

@@ -12,6 +12,7 @@ import {
 } from "../../src/hashline/served-guard";
 import { initHasher, lineHashes } from "../../src/hashline";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
+import { HASH_RE } from "../../src/hashline/alphabet.js";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
 
@@ -58,8 +59,12 @@ describe("served prefix mismatch predicate", () => {
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
-    expect(hashes).not.toContain("Zz9");
-    expect(findServedPrefixMismatches([`Zz9${HASH_SEP}literal`], served, canonDigests, 1)).toEqual(
+    // WHY: premise guard — the `not.toContain` below is vacuous unless every
+    // WHY: real anchor is live-width; a foreign-width `hashes` array would pass
+    // WHY: without exercising the prefix tier.
+    expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
+    expect(hashes).not.toContain("Zz99");
+    expect(findServedPrefixMismatches([`Zz99${HASH_SEP}literal`], served, canonDigests, 1)).toEqual(
       [],
     );
   });

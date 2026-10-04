@@ -16,6 +16,9 @@ import { fileSnap } from "./file-reader.js";
 import { snapshotHashFor, upsertSnapshotFor } from "./snapshot-store";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
+// WHY: the live ceiling the read seam enforces — capacity tests pin this
+// WHY: binding instead of the unreachable fourteen-million-line top.
+export const READ_MAX_LINES = MAX_HASH_LINES;
 
 const R_DESC = loadP("../prompts/read.md");
 const R_SNIPPET = loadP("../prompts/read-snippet.md");
@@ -81,7 +84,7 @@ export function regRead(pi: ExtensionAPI): void {
         offset: params.offset,
         limit: params.limit,
         windows: params.windows,
-        maxLines: MAX_HASH_LINES,
+        maxLines: READ_MAX_LINES,
         store: await loadHashStore(),
         noPersist: true,
       });

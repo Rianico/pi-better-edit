@@ -73,6 +73,12 @@ export const ANCHOR_LEN = HASH_LEN;
 export const HASH_SEP = "│";
 export const HASH_SPACE = ALPHA.length ** HASH_LEN;
 export const MAX_HASH_LINES = HASH_SPACE;
+// WHY: single owner of the space-exhaustion payload — the producer throws it
+// WHY: and the capacity tests assert it, so the binding cannot drift.
+export const HASH_SPACE_EXHAUSTED_PAYLOAD = {
+  limitKind: "hash-space",
+  limit: HASH_SPACE,
+} as const;
 
 export function isValidHashList(value: unknown): value is string[] {
   if (!Array.isArray(value)) return false;
@@ -190,10 +196,7 @@ export class HashIdentity {
       idx += HASH_PROBE_STRIDE;
       if (idx >= totalBits) idx -= totalBits;
     }
-    throw new DomainError("E_LARGE_FILE", {
-      limitKind: "hash-space",
-      limit: HASH_SPACE,
-    });
+    throw new DomainError("E_LARGE_FILE", HASH_SPACE_EXHAUSTED_PAYLOAD);
   }
 
   private assignHash(used: Uint32Array, baseIdx: number, hint: { value: number }): string {

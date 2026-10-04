@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
+import { HASH_RE } from "../../src/hashline/alphabet.js";
 import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
@@ -100,12 +101,15 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      // WHY: premise guard — the never-served row below reaches the served-set
+      // WHY: logic only if the served set itself is live-width.
+      expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const result = await editTool.execute(
         "e1",
         {
           file: "sample.ts",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "Zz9│BBB" }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "Zz99│BBB" }],
         },
         undefined,
         undefined,
@@ -113,7 +117,7 @@ describe("regEdit", () => {
       );
       expect(result.content[0].text).toContain("Successfully edited");
       const content = await readFile(path, "utf-8");
-      expect(content).toBe("aaa\nZz9│BBB\nccc\n");
+      expect(content).toBe("aaa\nZz99│BBB\nccc\n");
     });
   });
 

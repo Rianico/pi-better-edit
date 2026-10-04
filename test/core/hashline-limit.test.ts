@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { DomainError } from "../../src/domain-errors.js";
 import { prepareFile } from "../../src/file-content/index.js";
+import { readFileSync } from "node:fs";
 import {
   _lineHashesPure,
   HASH_LEN,
@@ -8,6 +9,8 @@ import {
   lineHashes,
   MAX_HASH_LINES,
 } from "../../src/hashline";
+import { HASH_SPACE_EXHAUSTED_PAYLOAD } from "../../src/hashline/hash-identity.js";
+import { READ_MAX_LINES } from "../../src/read.js";
 import { useTestHome, withTempFile, setupReadTest } from "../support/fixtures";
 
 const home = useTestHome();
@@ -44,6 +47,34 @@ describe("hashline limits", () => {
     expect(error.message).toContain(`${HASH_LEN}-char`);
   });
 
+  describe("capacity bindings", () => {
+    it("pins the space-exhaustion producer payload and its binding", () => {
+      // WHY: the top-of-space throw cannot be reached (see above), so the
+      // WHY: binding is pinned twice — the exported payload constant equals the
+      // WHY: live limit, and the producer throw site references that constant.
+      // WHY: Inlining a different payload at the throw breaks the source pin.
+      expect(HASH_SPACE_EXHAUSTED_PAYLOAD).toEqual({
+        limitKind: "hash-space",
+        limit: HASH_SPACE,
+      });
+      const producer = readFileSync("src/hashline/hash-identity.ts", "utf-8");
+      expect(
+        /throw new DomainError\(\s*"E_LARGE_FILE",\s*HASH_SPACE_EXHAUSTED_PAYLOAD\s*\)/.test(
+          producer,
+        ),
+      ).toBe(true);
+    });
+
+    it("pins the read seam cap binding", () => {
+      // WHY: the 20 000-line read above passes under any cap in
+      // WHY: `(20 000, 14 776 336)`, so the seam binding is pinned directly —
+      // WHY: the exported ceiling equals `MAX_HASH_LINES` and the read seam
+      // WHY: passes that binding. A smaller hidden cap breaks the source pin.
+      expect(READ_MAX_LINES).toBe(MAX_HASH_LINES);
+      const seam = readFileSync("src/read.ts", "utf-8");
+      expect(/maxLines:\s*READ_MAX_LINES/.test(seam)).toBe(true);
+    });
+  });
   it("preserves unique hashes at the boundary through the store path", async () => {
     // WHY: same bounded stand-in through persistence — the seam, not the full
     // WHY: fourteen-million-line space, is what this exercises.

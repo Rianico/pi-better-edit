@@ -3,6 +3,7 @@ import { _lineHashesPure } from "../../src/hashline/hash";
 import { findServedHashEcho, applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
+import { HASH_RE } from "../../src/hashline/alphabet.js";
 import type { LeaseIdentityView, LeaseSpanSource, HEdit } from "../../src/hashline/resolve";
 
 beforeAll(async () => {
@@ -96,8 +97,11 @@ describe("findServedHashEcho — evidence, never shape", () => {
     const hashes = _lineHashesPure(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
+    // WHY: premise guard — same vacuity hazard as the prefix tier: the echo
+    // WHY: refusal below is real only if the served set is live-width.
+    expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
     expect(hashes).not.toContain("Zz99");
-    const hit = findServedHashEcho([`Zz9${HASH_SEP}literal`], served, canonDigests, 1);
+    const hit = findServedHashEcho([`Zz99${HASH_SEP}literal`], served, canonDigests, 1);
     expect(hit).toBeUndefined();
   });
 
