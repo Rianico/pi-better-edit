@@ -3,7 +3,7 @@ import {
   HASH_PROBE_STRIDE,
   HASH_SPACE,
   USABLE_HASH_SPACE,
-  _lineHashesPure,
+  contentOnlyHashes,
   lineHashes,
 } from "../../src/hashline";
 import { useTestHome } from "../support/fixtures";
@@ -49,7 +49,7 @@ describe("hash probe stride", () => {
 
   it("spreads blank lines so consecutive hashes differ in the low three positions", () => {
     const content = Array.from({ length: 20 }, () => "").join("\n");
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     for (let i = 1; i < hashes.length; i++) {
       expect(lowThreeCharsDiffer(hashes[i - 1]!, hashes[i]!)).toBe(true);
     }
@@ -57,7 +57,7 @@ describe("hash probe stride", () => {
 
   it("spreads repeated closing braces the same way", () => {
     const content = Array.from({ length: 20 }, () => "}").join("\n");
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     for (let i = 1; i < hashes.length; i++) {
       expect(lowThreeCharsDiffer(hashes[i - 1]!, hashes[i]!)).toBe(true);
     }

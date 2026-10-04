@@ -268,9 +268,12 @@ describe("multi-session — path scoping", () => {
           await readTool.execute("r2", { path: "one.txt.copy.txt" }, undefined, undefined, ctx),
         ),
       );
-      // same content ⇒ same anchors, different files ⇒ different leases
-      expect(copyRows.map((r) => r.hash)).toEqual(oneRows.map((r) => r.hash));
+      // WHY: file-scoped derivation — same content in different files yields
+      // WHY: different anchors (C1); each file's rows carry their own leases.
+      expect(copyRows.map((r) => r.hash)).not.toEqual(oneRows.map((r) => r.hash));
 
+      // WHY: one's anchor is foreign to the copy even though the content is
+      // WHY: byte-identical — another-file spelling reuse authorizes nothing.
       await expect(
         editTool.execute(
           "e1",
@@ -282,8 +285,25 @@ describe("multi-session — path scoping", () => {
           undefined,
           ctx,
         ),
-      ).resolves.toBeDefined(); // the copy has its own lease from r2, so this is authorized
+      ).rejects.toThrow(/E_FOREIGN_ANCHOR/);
+      expect(await readFile(other, "utf-8")).toBe("alpha\nbravo\ncharlie\n");
 
+      // WHY: the copy's own lease authorizes its own anchor.
+      await expect(
+        editTool.execute(
+          "e1b",
+          {
+            file: "one.txt.copy.txt",
+            edits: [
+              { anchor_from: copyRows[1]!.hash, anchor_to: copyRows[1]!.hash, text: "BRAVO" },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).resolves.toBeDefined();
+      expect(await readFile(other, "utf-8")).toBe("alpha\nBRAVO\ncharlie\n");
       await writeFile(other, "alpha\nbravo\ncharlie\n", "utf-8"); // reset
       const neverRead = `${path}.never-read.txt`;
       await writeFile(neverRead, "alpha\nbravo\ncharlie\n", "utf-8");

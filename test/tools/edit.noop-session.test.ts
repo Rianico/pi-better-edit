@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lineHashes, _lineHashesPure } from "../../src/hashline";
+import { lineHashes, contentOnlyHashes } from "../../src/hashline";
 import { _noopLoopHasSession, clearNoopLoop, runNoopPolicy } from "../../src/noop-guard";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
 
@@ -80,7 +80,7 @@ describe("edit noop-loop tracker session scope", () => {
 
   it("clears only the named session", async () => {
     const lines = ["aaa", "bbb", "ccc"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const absolutePath = "/tmp/noop-session-guard-a.ts";
     const base = {
       absolutePath,
@@ -116,7 +116,7 @@ describe("edit noop-loop tracker session scope", () => {
 
   it("clears only the named file when both keys are given", async () => {
     const lines = ["aaa", "bbb", "ccc"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const fileOne = "/tmp/noop-session-guard-p1.ts";
     const fileTwo = "/tmp/noop-session-guard-p2.ts";
     const sessionKey = "guard-path";
@@ -151,7 +151,7 @@ describe("edit noop-loop tracker session scope", () => {
 
   it("releases the session entry once its last path is cleared", async () => {
     const lines = ["aaa", "bbb", "ccc"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const fileOne = "/tmp/noop-session-guard-r1.ts";
     const fileTwo = "/tmp/noop-session-guard-r2.ts";
     const sessionKey = "guard-path-release";

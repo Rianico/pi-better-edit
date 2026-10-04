@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
@@ -18,7 +18,7 @@ function canonDigestsFor(content: string): (string | null)[] {
 describe("applyEdit — verification descriptor (issue #115)", () => {
   it("carries filePath + served in one descriptor and still refuses a served row", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
@@ -35,7 +35,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
 
   it("accepts a clean retry through the descriptor", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
@@ -51,7 +51,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
 
   it("E_SUSPICIOUS_TEXT pinned: anchor-shaped repeat with differing content is accepted", () => {
     const content = "z\nq\nw";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     expect(hashes).not.toContain("AAAA");
     expect(hashes).not.toContain("BBBB");
     const served: (string | null)[] = ["AAAA", "BBBB", null];
@@ -91,7 +91,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
 
   it("E_SUSPICIOUS_TEXT pinned: reproduced served row is refused", () => {
     const content = "z\nq\nw";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = ["AAAA", "BBBB", null];
     const leases: Record<string, LeaseIdentityView> = {
       AAAA: {

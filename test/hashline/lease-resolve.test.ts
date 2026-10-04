@@ -13,7 +13,7 @@ import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import { applyEdit } from "../../src/hashline/apply";
 import { DomainError } from "../../src/domain-errors.js";
 import { makeServedRejection, verifyRebasedSpan } from "../../src/hashline/served-verification";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 
 beforeAll(async () => {
@@ -424,7 +424,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
 
 describe("applyEdit — lease resolution owns every served anchor", () => {
   const content = "alpha\nbeta\ngamma";
-  const hashes = _lineHashesPure(content);
+  const hashes = contentOnlyHashes(content);
   const served: (string | null)[] = [...hashes];
   const edit: HEdit = {
     hash_bounds: [{ hash: hashes[0]! }, { hash: hashes[1]! }],
@@ -482,7 +482,7 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
     // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> unverified fresh read, never E_STALE_ANCHOR,
     // even when the anchor string is gone from the content entirely.
     const staleContent = "alpha\nBETA";
-    const staleHashes = _lineHashesPure(staleContent);
+    const staleHashes = contentOnlyHashes(staleContent);
     const oldBeta = "OLD";
     const leases = new Map<string, LeaseIdentityView>([
       [staleHashes[0]!, lease({ lineId: 1, servedSnapshotHash: "C" })],
@@ -519,7 +519,7 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
 });
 
 describe("verifyRebasedSpan — contiguity + identity gate", () => {
-  const hashes = _lineHashesPure("row 1\nrow 2\nrow 3\nrow 4");
+  const hashes = contentOnlyHashes("row 1\nrow 2\nrow 3\nrow 4");
   const fileLines = ["row 1", "row 2", "row 3", "row 4"];
 
   it("accepts a rigid remap of the whole served window", () => {
@@ -657,7 +657,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
 });
 
 describe("makeServedRejection — reject-and-serve serve block", () => {
-  const hashes = _lineHashesPure("alpha\nbeta\ngamma");
+  const hashes = contentOnlyHashes("alpha\nbeta\ngamma");
   const fileLines = ["alpha", "beta", "gamma"];
 
   it("serves the current range with fresh anchors and marks the offending line", () => {
@@ -685,7 +685,7 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
   });
 
   it("caps a large serve block with a pagination hint", () => {
-    const many = _lineHashesPure(Array.from({ length: 200 }, (_, i) => `l${i}`).join("\n"));
+    const many = contentOnlyHashes(Array.from({ length: 200 }, (_, i) => `l${i}`).join("\n"));
     const err = makeServedRejection({
       code: "E_STALE_RANGE",
       headline: "torn",

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { _lineHashesPure, applyEdit, lineHashes, resEdit } from "../../src/hashline";
+import { contentOnlyHashes, applyEdit, lineHashes, resEdit } from "../../src/hashline";
 import { firstNonEmpty, lastNonEmpty, splitLines } from "../../src/utils";
 import { useTestHome, expectedEditContent } from "../support/fixtures";
 
@@ -236,7 +236,7 @@ describe("property: pure hashing uniqueness", () => {
     for (let iter = 0; iter < 100; iter++) {
       const rnd = mulberry32(iter * 15485863 + 3);
       const content = Array.from({ length: randInt(rnd, 0, 200) }, () => randLine(rnd)).join("\n");
-      const hashes = _lineHashesPure(content);
+      const hashes = contentOnlyHashes(content);
       expect(hashes).toHaveLength(splitLines(content).length);
       expect(new Set(hashes).size).toBe(hashes.length);
     }

@@ -22,7 +22,7 @@ import {
 //   3. legal U+FFFD   → the BYTES round-trip (EF BF BD is valid UTF-8), so the edit APPLIES and
 //      no disclosure warning rides along — this is the round-trip oracle, not the old
 //      "decoded text contains U+FFFD" heuristic, which could not tell the two apart.
-const home = useTestHome();
+useTestHome();
 
 beforeAll(async () => {
   await initHasher();
@@ -51,7 +51,7 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       await writeFile(join(cwd, "lossy.txt"), LOSSY_BYTES);
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "lossy.txt" }, undefined, undefined, ctx);
-      const h = await lineHashes(LOSSY_DECODED, `${home.testPath}/lossy.txt`);
+      const h = await lineHashes(LOSSY_DECODED, join(cwd, "lossy.txt"));
       const result = await execute(
         admit({
           file: "lossy.txt",
@@ -76,8 +76,8 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "lossy.txt" }, undefined, undefined, ctx);
       await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
-      const hs = await lineHashes(LOSSY_DECODED, `${home.testPath}/lossy.txt`);
-      const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
+      const hs = await lineHashes(LOSSY_DECODED, join(cwd, "lossy.txt"));
+      const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const result = await execute(
         admit({
           file: "target.txt",
@@ -111,7 +111,7 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       await writeFile(join(cwd, "rep.txt"), "x\n\uFFFD\ny\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "rep.txt" }, undefined, undefined, ctx);
-      const h = await lineHashes("x\n\uFFFD\ny\n", `${home.testPath}/rep.txt`);
+      const h = await lineHashes("x\n\uFFFD\ny\n", join(cwd, "rep.txt"));
       const result = await execute(
         admit({
           file: "rep.txt",
@@ -148,7 +148,7 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "bomrep.txt" }, undefined, undefined, ctx);
       const decoded = "alpha\n\uFFFD\nbeta\n";
-      const h = await lineHashes(decoded, `${home.testPath}/bomrep.txt`);
+      const h = await lineHashes(decoded, join(cwd, "bomrep.txt"));
       const result = await execute(
         admit({
           file: "bomrep.txt",

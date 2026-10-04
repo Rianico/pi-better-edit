@@ -8,6 +8,7 @@
  * let a long-running process retain one entry per refused path forever.
  */
 import { beforeEach, describe, expect, it } from "vitest";
+import { join } from "node:path";
 import {
   SERVED_REFUSAL_MAX_ENTRIES,
   _servedRefusalSize,
@@ -20,7 +21,7 @@ import { lineHashes } from "../../src/hashline";
 import { setupIntegrationTest, useTestHome, withTempFile } from "../support/fixtures";
 
 const REFUSED_LINE = "Ab3X│hello";
-const home = useTestHome();
+useTestHome();
 
 beforeEach(() => {
   clearAllServedRefusalsForTest();
@@ -131,7 +132,7 @@ describe("served-refusal tally — two sessions, one path, end to end (#132)", (
   it("gives each session its own submission tally through the edit tool", async () => {
     await withTempFile("shared.txt", "one\ntwo\nthree\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "shared.txt"));
       const sessionA = { ...ctx, sessionManager: { getSessionId: () => "sess-132-a" } };
       const sessionB = { ...ctx, sessionManager: { getSessionId: () => "sess-132-b" } };
       // Each session serves itself the file, so each holds its own served mirror.

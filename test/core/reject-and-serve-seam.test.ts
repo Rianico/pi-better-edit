@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { finalizeToolResult } from "../../src/edit-response";
 import { createSessionHandle } from "../../src/served-session/index.js";
-import { applyEdit, _lineHashesPure, type HEdit } from "../../src/hashline";
+import { applyEdit, contentOnlyHashes, type HEdit } from "../../src/hashline";
 import { shutdownHashStore } from "../../src/hash-store";
 import { initHasher } from "../../src/hashline/hasher";
 import { getWritableTempRoot } from "../support/fixtures";
@@ -66,12 +66,12 @@ describe("finalizeToolResult", () => {
 describe("applyEdit — resolved range geometry", () => {
   it("returns startLine, endLine, boundary hashes, and delta as one value", () => {
     const content = "aaa\nbbb\nccc";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const edit: HEdit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
       content_lines: ["BBBB", "B2"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, hashes);
     expect(result.range).toEqual({
       startLine: 2,
       endLine: 2,
@@ -83,16 +83,26 @@ describe("applyEdit — resolved range geometry", () => {
 
   it("reports zero delta for a noop and negative delta for a deletion", () => {
     const content = "aaa\nbbb\nccc";
-    const hashes = _lineHashesPure(content);
-    const noop = applyEdit(content, {
-      hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
-      content_lines: ["bbbb"],
-    });
+    const hashes = contentOnlyHashes(content);
+    const noop = applyEdit(
+      content,
+      {
+        hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
+        content_lines: ["bbbb"],
+      },
+      undefined,
+      hashes,
+    );
     expect(noop.range.delta).toBe(0);
-    const deleted = applyEdit(content, {
-      hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
-      content_lines: [],
-    });
+    const deleted = applyEdit(
+      content,
+      {
+        hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
+        content_lines: [],
+      },
+      undefined,
+      hashes,
+    );
     expect(deleted.range.delta).toBe(-1);
   });
 });

@@ -20,7 +20,7 @@ import {
 // undo of EITHER file reverts BOTH, or fails closed with no partial revert. The stale signal is
 // the EXISTING `E_UNDO_STALE` code (unchanged registry member, MODEL audience) extended to every
 // file of the transaction — the payload names the member that broke freshness.
-const home = useTestHome();
+useTestHome();
 
 beforeAll(async () => {
   await initHasher();
@@ -41,8 +41,8 @@ async function cutThrough(cwd: string) {
   await writeFile(join(cwd, "target.txt"), TARGET_BEFORE, "utf-8");
   await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
   await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
-  const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
-  const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
+  const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
+  const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
   await editTool.execute(
     "e1",
     {
@@ -166,7 +166,7 @@ describe("correlated undo of a cut transaction (ticket-04b §4)", () => {
       // from the rows' pre bytes, then retires the rows and the intent. No content lost.
       await writeFile(join(cwd, "misc.txt"), "m\nn\n", "utf-8");
       await readTool.execute("r9", { path: "misc.txt" }, undefined, undefined, ctx);
-      const hm = await lineHashes("m\nn\n", `${home.testPath}/misc.txt`);
+      const hm = await lineHashes("m\nn\n", join(cwd, "misc.txt"));
       const trigger = await execute(
         admit({
           file: "misc.txt",

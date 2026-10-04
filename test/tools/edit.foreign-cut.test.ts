@@ -25,7 +25,7 @@ import {
 // reported success and LEFT THE SOURCE BEHIND. Ticket-04b supplies the missing half (the ordered
 // two-file commit of ADR-0028), so the refusal is deleted deliberately in this commit; the tests
 // below are its replacement witnesses, and `edit.wire-contract.test.ts` keeps the copy-path pins.
-const home = useTestHome();
+useTestHome();
 
 beforeAll(async () => {
   await initHasher();
@@ -96,8 +96,8 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
     await withTempDir("foreign-cut-", async (cwd) => {
       await seed(cwd);
       await serveBoth(cwd);
-      const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
-      const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
+      const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
+      const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const result = await cutSpan(cwd, [hs[1]!, hs[2]!], ht[0]!);
       expect(isMutationSuccess(result), "the foreign-source cut must succeed").toBe(true);
       // In-place: the target span [ht0,ht0] (line `1`) is replaced by the cut bytes.
@@ -110,8 +110,8 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
     await withTempDir("foreign-cut-response-", async (cwd) => {
       await seed(cwd);
       await serveBoth(cwd);
-      const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
-      const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
+      const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
+      const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const result = await cutSpan(cwd, [hs[1]!, hs[2]!], ht[0]!);
       expect(isMutationSuccess(result)).toBe(true);
       if (!isMutationSuccess(result)) return;
@@ -130,8 +130,8 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
     await withTempDir("foreign-cut-drift-", async (cwd) => {
       await seed(cwd);
       await serveBoth(cwd);
-      const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
-      const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
+      const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
+      const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       // Disturb the leased interior of the source only â€” the same recipe as the attribution tests.
       await writeFile(join(cwd, "source.txt"), "a\nB\nc\nd\n", "utf-8");
       const result = await cutSpan(cwd, [hs[1]!, hs[2]!], ht[0]!);
@@ -157,8 +157,8 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
       await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
-      const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
-      const ht = await lineHashes("1\n2\n3\n4\n5\n", `${home.testPath}/target.txt`);
+      const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
+      const ht = await lineHashes("1\n2\n3\n4\n5\n", join(cwd, "target.txt"));
       const result = await execute(
         admit({
           file: "target.txt",
@@ -201,8 +201,8 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       await writeFile(join(cwd, "source.txt"), "a\r\nb\r\nc\r\n", "utf-8");
       await writeFile(join(cwd, "target.txt"), TARGET_BEFORE, "utf-8");
       await serveBoth(cwd);
-      const hs = await lineHashes("a\nb\nc\n", `${home.testPath}/source.txt`);
-      const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
+      const hs = await lineHashes("a\nb\nc\n", join(cwd, "source.txt"));
+      const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const result = await cutSpan(cwd, [hs[1]!, hs[1]!], ht[0]!);
       expect(isMutationSuccess(result)).toBe(true);
       // One convention, no third path: the retirement re-serializes through the source's own
@@ -216,8 +216,8 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
     await withTempDir("foreign-cut-preview-", async (cwd) => {
       await seed(cwd);
       await serveBoth(cwd);
-      const hs = await lineHashes(SOURCE_BEFORE, `${home.testPath}/source.txt`);
-      const ht = await lineHashes(TARGET_BEFORE, `${home.testPath}/target.txt`);
+      const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
+      const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const store = await loadHashStore();
       // WHY: the store-side witness for the preview path (ticket-04b falsifiers): the oracle is
       // WHY: the table-state comparison itself â€” every row of every store table the live cut

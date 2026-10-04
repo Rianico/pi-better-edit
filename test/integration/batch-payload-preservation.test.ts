@@ -3,6 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 import type { ServedRow } from "../../src/domain-errors.js";
+import { fileHashesFor } from "../../src/hashline/index.js";
 
 /**
  * Payload-preservation oracle (spec section 6, item 2: PAYLOAD
@@ -118,8 +119,22 @@ describe("batch abort preserves the failing item payload (spec 6.2)", () => {
         "The whole edit call was rejected and NOTHING was written",
       );
       assertPayloadPreserved(envelope, "E_STALE_RANGE");
-      expect(envelope.servedBlock).toBe(lone.servedBlock);
-      expect(envelope.servedRows).toEqual(lone.servedRows);
+      // WHY: file-scoped anchors make other-file block equality false by design —
+      // WHY: the verbatim reference for the batch item is the batch file's own
+      // WHY: served range, re-derived for the drifted on-disk content (the read
+      // WHY: predates the drift; the envelope renders the current range).
+      const driftedHashes = await fileHashesFor(join(cwd, batchName), drifted);
+      const driftedLines = drifted.split("\n");
+      const batchRangeRows = [1, 2, 3].map((i, k) => ({
+        // WHY: range-relative 1-based positions, as the envelope carries them.
+        position: k + 1,
+        hash: driftedHashes[i]!,
+      }));
+      const batchRangeBlock = batchRangeRows
+        .map((r) => `${r.hash}│${driftedLines[r.position]}`)
+        .join("\n");
+      expect(envelope.servedBlock).toBe(batchRangeBlock);
+      expect(envelope.servedRows).toEqual(batchRangeRows);
       expect(await readFile(join(cwd, batchName), "utf-8")).toBe(drifted);
     });
   });

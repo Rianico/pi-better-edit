@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 import { applyEdit, serializeLineList } from "../../src/hashline/apply";
 import { splitLines } from "../../src/utils";
@@ -65,7 +65,7 @@ describe("applyEdit — span-ref move sweep (744 configurations, 0 mismatches)",
     const mismatches: string[] = [];
     for (const content of files) {
       const n = splitLines(content).length;
-      const H = _lineHashesPure(content);
+      const H = contentOnlyHashes(content);
       for (let s1 = 1; s1 <= n; s1++)
         for (let s2 = s1; s2 <= n; s2++)
           for (let t = 1; t <= n; t++)
@@ -87,7 +87,7 @@ describe("applyEdit — span-ref move sweep (744 configurations, 0 mismatches)",
               let out: string | undefined;
               let code: string | undefined;
               try {
-                out = applyEdit(content, edit).content;
+                out = applyEdit(content, edit, undefined, H).content;
               } catch (error) {
                 code = (error as { code?: string }).code;
               }

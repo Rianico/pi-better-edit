@@ -15,7 +15,7 @@ import {
 // rows SERVED or ABSENT — never unattributable foreign rows under the target-side fresh-read
 // heading. These tests drive the same seam pair the tool uses (normReq + assertReq, then the
 // engine `execute`), so each refusal is witnessed through the entry point that reaches it.
-const home = useTestHome();
+useTestHome();
 
 beforeAll(async () => {
   await initHasher();
@@ -39,8 +39,7 @@ type ForeignFailure = {
 // red-first verified against the pre-fix tree: the pass-through returned the leased code with the
 // FOREIGN file's fresh rows rendered under `Current range (fresh read):` and no file name.
 async function foreignLeasedFailure(
-  disturb: (cwd: string, hs: string[]) => Promise<void>,
-  span: [string, string],
+  disturb: (cwd: string, hs: string[]) => Promise<[string, string]>,
   expectSourceAfter: string,
 ): Promise<ForeignFailure> {
   const sourceBefore = "a\nb\nc\nd\n";
@@ -51,9 +50,9 @@ async function foreignLeasedFailure(
     const { ctx, readTool } = setupIntegrationTest(cwd);
     await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
     await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
-    const hs = await lineHashes(sourceBefore, `${home.testPath}/source.txt`);
-    const ht = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
-    await disturb(cwd, hs);
+    const hs = await lineHashes(sourceBefore, join(cwd, "source.txt"));
+    const ht = await lineHashes("1\n2\n3\n", join(cwd, "target.txt"));
+    const span = await disturb(cwd, hs);
     const result = await execute(
       admit({
         file: "target.txt",
@@ -103,10 +102,11 @@ async function retireByEdit(cwd: string, edit: { from: string; to: string; text:
 
 describe("foreign leased rejections render rows served or absent (remediation-2 item A)", () => {
   it("E_UNVERIFIED_RANGE names the foreign file and renders no foreign rows", async () => {
-    const hs = await lineHashes("a\nb\nc\nd\n", `${home.testPath}/source.txt`);
     const { code, message, sourceBytes, targetBytes } = await foreignLeasedFailure(
-      (cwd) => retireByEdit(cwd, { from: hs[0]!, to: hs[0]!, text: "B" }),
-      [hs[0]!, hs[2]!],
+      async (_cwd, hs) => {
+        await retireByEdit(_cwd, { from: hs[0]!, to: hs[0]!, text: "B" });
+        return [hs[0]!, hs[2]!] as [string, string];
+      },
       "B\nb\nc\nd\n",
     );
     // §0 exact-code pins hold: the leased code passes through unchanged.
@@ -121,7 +121,6 @@ describe("foreign leased rejections render rows served or absent (remediation-2 
   });
 
   it("E_STALE_RANGE names the foreign file and renders no foreign rows", async () => {
-    const hs = await lineHashes("a\nb\nc\nd\n", `${home.testPath}/source.txt`);
     // WHY: an EXTERNAL same-length rewrite of one interior line kills that line's identity without
     // WHY: moving anything: the boundaries stay live at their served coordinates, but the interior
     // WHY: served line `b` is retired in the fresh snapshot, so `verifyRebasedSpan` fails closed
@@ -129,10 +128,10 @@ describe("foreign leased rejections render rows served or absent (remediation-2 
     // WHY: served-range-verification.test.ts:15-44). A pure shift is NOT enough: the foreign
     // WHY: pre-pass rebases it back into agreement and the copy succeeds.
     const { code, message, sourceBytes, targetBytes } = await foreignLeasedFailure(
-      async (cwd) => {
+      async (cwd, hs) => {
         await writeFile(join(cwd, "source.txt"), "a\nB\nc\nd\n", "utf-8");
+        return [hs[0]!, hs[3]!] as [string, string];
       },
-      [hs[0]!, hs[3]!],
       "a\nB\nc\nd\n",
     );
     expect(code).toBe("E_STALE_RANGE");
@@ -144,10 +143,11 @@ describe("foreign leased rejections render rows served or absent (remediation-2 
   });
 
   it("E_TARGET_LOST already names the foreign file and carries no rows (compliant arm)", async () => {
-    const hs = await lineHashes("a\nb\nc\nd\n", `${home.testPath}/source.txt`);
     const { code, message, sourceBytes, targetBytes } = await foreignLeasedFailure(
-      (cwd) => retireByEdit(cwd, { from: hs[1]!, to: hs[2]!, text: "Z" }),
-      [hs[1]!, hs[2]!],
+      async (cwd, hs) => {
+        await retireByEdit(cwd, { from: hs[1]!, to: hs[2]!, text: "Z" });
+        return [hs[1]!, hs[2]!] as [string, string];
+      },
       "a\nZ\nd\n",
     );
     expect(code).toBe("E_TARGET_LOST");

@@ -3,7 +3,7 @@ import { DomainError } from "../../src/domain-errors.js";
 import { prepareFile } from "../../src/file-content/index.js";
 import { readFileSync } from "node:fs";
 import {
-  _lineHashesPure,
+  contentOnlyHashes,
   HASH_LEN,
   HASH_SPACE,
   USABLE_HASH_SPACE,
@@ -87,7 +87,7 @@ describe("hashline limits", () => {
     // WHY: uniqueness run stands in — it exercises allocation without building
     // WHY: fourteen million lines.
     const content = Array.from({ length: 50_000 }, (_, i) => `line ${i}`).join("\n");
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     expect(hashes).toHaveLength(50_000);
     expect(new Set(hashes).size).toBe(50_000);
   });

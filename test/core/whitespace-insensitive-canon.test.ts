@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
-import { lineHashes, _lineHashesPure, CANON_VERSION } from "../../src/hashline";
+import { lineHashes, contentOnlyHashes, CANON_VERSION } from "../../src/hashline";
 import { initHasher } from "../../src/hashline/hasher";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { getSnapshot, upsertSnapshot } from "../../src/snapshot-store";
@@ -17,11 +17,11 @@ beforeAll(async () => {
 
 describe("canon — ASCII whitespace stripping (ADR-0005)", () => {
   it("hashes whitespace variants of a line identically", async () => {
-    const base = await _lineHashesPure("func hello\n");
-    const double = await _lineHashesPure("func  hello\n");
-    const leading = await _lineHashesPure("  func hello\n");
-    const trailing = await _lineHashesPure("func hello \n");
-    const tab = await _lineHashesPure("func\thello\n");
+    const base = await contentOnlyHashes("func hello\n");
+    const double = await contentOnlyHashes("func  hello\n");
+    const leading = await contentOnlyHashes("  func hello\n");
+    const trailing = await contentOnlyHashes("func hello \n");
+    const tab = await contentOnlyHashes("func\thello\n");
     expect(base[0]).toBe(double[0]);
     expect(base[0]).toBe(leading[0]);
     expect(base[0]).toBe(trailing[0]);
@@ -29,18 +29,18 @@ describe("canon — ASCII whitespace stripping (ADR-0005)", () => {
   });
 
   it("keeps NBSP and Unicode whitespace significant", async () => {
-    const ascii = await _lineHashesPure("func hello\n");
-    const nbsp = await _lineHashesPure("func\u00A0hello\n");
-    const em = await _lineHashesPure("func\u2003hello\n");
+    const ascii = await contentOnlyHashes("func hello\n");
+    const nbsp = await contentOnlyHashes("func\u00A0hello\n");
+    const em = await contentOnlyHashes("func\u2003hello\n");
     expect(nbsp[0]).not.toBe(ascii[0]);
     expect(em[0]).not.toBe(ascii[0]);
     expect(nbsp[0]).not.toBe(em[0]);
   });
 
   it("hashes whitespace-only lines as blank lines", async () => {
-    const blank = await _lineHashesPure("\n");
-    const spaces = await _lineHashesPure("   \n");
-    const tab = await _lineHashesPure("\t\n");
+    const blank = await contentOnlyHashes("\n");
+    const spaces = await contentOnlyHashes("   \n");
+    const tab = await contentOnlyHashes("\t\n");
     expect(spaces[0]).toBe(blank[0]);
     expect(tab[0]).toBe(blank[0]);
   });
@@ -48,8 +48,8 @@ describe("canon — ASCII whitespace stripping (ADR-0005)", () => {
 
 describe("stable mapping — whitespace-insensitive reuse (ADR-0005)", () => {
   it("reuses a hash across a whitespace-only edit", async () => {
-    const old = await _lineHashesPure("a\nfunc hello\nc\n");
-    const mapped = await lineHashes("a\nfunc  hello\nc\n", undefined, {
+    const old = await contentOnlyHashes("a\nfunc hello\nc\n");
+    const mapped = await lineHashes("a\nfunc  hello\nc\n", "/test/ws-reuse.ts", {
       content: "a\nfunc hello\nc\n",
       hashes: old,
       removedHashes: new Set([old[0]!]),
@@ -58,8 +58,8 @@ describe("stable mapping — whitespace-insensitive reuse (ADR-0005)", () => {
   });
 
   it("rotates when a token is added (brace merged onto the line)", async () => {
-    const old = await _lineHashesPure("a\nfunc hello()\n");
-    const mapped = await lineHashes("a\nfunc hello() {\n", undefined, {
+    const old = await contentOnlyHashes("a\nfunc hello()\n");
+    const mapped = await lineHashes("a\nfunc hello() {\n", "/test/ws-rotate.ts", {
       content: "a\nfunc hello()\n",
       hashes: old,
       removedHashes: new Set([old[0]!]),

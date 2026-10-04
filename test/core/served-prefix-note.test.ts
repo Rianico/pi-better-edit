@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { applyEdit } from "../../src/hashline/apply";
 import {
   findServedPrefixMismatches,
@@ -16,7 +16,7 @@ import { HASH_RE } from "../../src/hashline/alphabet.js";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
 
-const home = useTestHome();
+useTestHome();
 
 beforeAll(async () => {
   await initHasher();
@@ -31,7 +31,7 @@ function canonDigestsFor(content: string): (string | null)[] {
 describe("served prefix mismatch predicate", () => {
   it("reports a served anchor prefix whose remainder differs", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const hits = findServedPrefixMismatches(
@@ -46,7 +46,7 @@ describe("served prefix mismatch predicate", () => {
 
   it("stays silent for a verbatim served row", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     expect(
@@ -56,7 +56,7 @@ describe("served prefix mismatch predicate", () => {
 
   it("stays silent for a never-served prefix", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     // WHY: premise guard — the `not.toContain` below is vacuous unless every
@@ -78,7 +78,7 @@ describe("served prefix mismatch predicate", () => {
     // WHY: consults the served set. At any width where Zz99 is not row-shaped
     // WHY: this reddens (no hit), so the F1 vacuity cannot recur silently.
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = ["Zz99", ...hashes.slice(1)];
     const canonDigests = [canonDigest("OTHER"), ...canonDigestsFor(content).slice(1)];
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
@@ -88,7 +88,7 @@ describe("served prefix mismatch predicate", () => {
   });
   it("stays silent without canon data", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     expect(findServedPrefixMismatches([`${hashes[1]}${HASH_SEP}CHANGED`], served, [], 1)).toEqual(
       [],
@@ -99,7 +99,7 @@ describe("served prefix mismatch predicate", () => {
 describe("applyEdit ambiguous tier", () => {
   it("applies the bytes as-is with a model note", () => {
     const content = "alpha\nbeta\ngamma";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -125,7 +125,7 @@ describe("applyEdit ambiguous tier", () => {
 
   it("emits no note when no served-anchor prefix matches", () => {
     const content = "alpha\nbeta\ngamma";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -143,7 +143,7 @@ describe("applyEdit ambiguous tier", () => {
 
   it("emits no ambiguous note when the evidence gate refuses", () => {
     const content = "alpha\nbeta\ngamma";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -220,7 +220,7 @@ describe("edit result content carries the note", () => {
   it("applies an ambiguous line and informs the model channel", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const ambiguous = `${hashes[1]}${HASH_SEP}CHANGED`;
       const result = await editTool.execute(
@@ -248,7 +248,7 @@ describe("edit result content carries the note", () => {
   it("leaves clean edits without a note", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
       const result = await editTool.execute(
         "e1",

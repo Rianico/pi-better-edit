@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { join } from "path";
 import { lineHashes } from "../../src/hashline";
 import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("details.metrics surface (Phase 2 C — host-only observability)", () => {
   it("changed-mode edit reports applied classification + edits_attempted", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "sample.ts"));
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
@@ -29,7 +30,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
   it("noop edit reports classification noop and edits_noop count", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\n", join(cwd, "sample.ts"));
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
@@ -50,7 +51,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
   it("hash-anchored edit records a single edit in metrics", async () => {
     await withTempFile("sample.ts", "one\ntwo\nthree\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.ts"));
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
@@ -70,7 +71,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
   it("noop edit reports warnings count in metrics", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\n", join(cwd, "sample.ts"));
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(

@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { writeFile } from "fs/promises";
 import { initHasher } from "../../src/hashline/hasher";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { lineHashes } from "../../src/hashline";
 import { fmtMismatchWithServes, resEdit, valEdit } from "../../src/hashline/resolve";
 import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
@@ -21,7 +21,7 @@ function countMatches(text: string, re: RegExp): number {
 describe("task-147 rejection diagnostics", () => {
   it("counts one anchor used as both bounds once with singular label (content path)", () => {
     const lines = ["alpha", "beta"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const snapshot = { fileHashes: hashes, fileLines: lines, filePath: "sample.ts" };
     const edit = resEdit({ anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "x" });
     const { mismatches } = valEdit(edit, snapshot, undefined);
@@ -84,7 +84,7 @@ describe("task-147 rejection diagnostics", () => {
 
   it("marks noop-loop rejects for the model and keeps notices on the dimmed channel", async () => {
     const lines = ["aaa", "bbb", "ccc"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const base = {
       absolutePath: "/tmp/task147-noop.ts",
       removeFrom: hashes[1]!,

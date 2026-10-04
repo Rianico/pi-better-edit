@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { lineHashes } from "../../src/hashline";
 import {
   withTempFile,
@@ -7,13 +8,13 @@ import {
   getWritableTempRoot,
 } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("edit tool file mutation queue", () => {
   it("uses the same queue key for repeated edits to the same path", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "sample.ts"));
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
 
       const r1 = await editTool.execute(
@@ -50,7 +51,7 @@ describe("edit tool file mutation queue", () => {
         const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
         const { symlink } = await import("fs/promises");
         await symlink(cwd + "/target.ts", cwd + "/link.ts");
-        const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+        const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "target.ts"));
         await readTool.execute("r1", { path: "target.ts" }, undefined, undefined, ctx);
 
         const r1 = await editTool.execute(
@@ -96,7 +97,7 @@ describe("edit tool file mutation queue", () => {
       await symlink(subDir, join(linkDir, "sub"));
 
       const { ctx, readTool, editTool } = setupIntegrationTest(tmpDir);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(tmpDir, "sub", "target.ts"));
       await readTool.execute("r1", { path: "sub/target.ts" }, undefined, undefined, ctx);
 
       const r1 = await editTool.execute(

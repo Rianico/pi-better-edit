@@ -13,7 +13,9 @@ describe("edit input validation", () => {
       anchor_to: hashes[0]!,
       text: `${hashes[0]!}│FOO`,
     };
-    const result = applyEdit(file, resEdit(toolEdit));
+    const result = applyEdit(file, resEdit(toolEdit), undefined, undefined, {
+      filePath: home.testPath,
+    });
     expect(result.content).toBe(`${hashes[0]!}│FOO\nbar`);
     expect(result.warnings ?? []).toEqual([]);
   });

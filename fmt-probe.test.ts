@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { lineHashes, _lineHashesPure } from "./src/hashline";
+import { lineHashes, contentOnlyHashes } from "./src/hashline";
 import { initHasher } from "./src/hashline/hasher";
 
 beforeAll(async () => {
@@ -10,14 +10,16 @@ describe("format-tolerance probe", () => {
   it("fresh recompute after whitespace-only reformat", async () => {
     // Simulate: read clean file (hashes H0 from pure pass)
     const cleanBefore = "function hello() {\n  const x = 1;\n  return x;\n}\n";
-    const H0 = await _lineHashesPure(cleanBefore);
+    const H0 = await contentOnlyHashes(cleanBefore);
     console.log("H0 (clean before):", H0);
 
     // Edit: replace last line "}" with messy inserted lines (whitespace-variant)
     const messy =
       "function hello() {\n  const x = 1;\n  return x;\n}\nfunction   multiply( a:  number,   b:  number )  {\n  return   a  *  b;\n}\n";
     // pipeline computes nextHashes via stable mapping
-    const nextHashes = await lineHashes(messy, undefined, {
+    // pipeline computes nextHashes via stable mapping (fixed fixture path —
+    // the probe only demonstrates the mapping, it asserts nothing).
+    const nextHashes = await lineHashes(messy, "/test/fmt-probe.ts", {
       content: cleanBefore,
       hashes: H0,
       removedHashes: new Set([H0[3]!]),
@@ -28,7 +30,7 @@ describe("format-tolerance probe", () => {
     const cleanAfter =
       "function hello() {\n  const x = 1;\n  return x;\n}\nfunction multiply(a: number, b: number) {\n  return a * b;\n}\n";
     // NEXT tool invocation loads from disk fresh: snapshot miss (checksum differs) -> pure pass
-    const H2 = await _lineHashesPure(cleanAfter);
+    const H2 = await contentOnlyHashes(cleanAfter);
     console.log("H2 (clean after, fresh pure):", H2);
 
     // Which anchors from the post-edit diff (nextHashes) survive in H2?

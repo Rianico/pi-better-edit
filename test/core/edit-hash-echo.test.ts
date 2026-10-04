@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { findServedHashEcho, applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
@@ -19,7 +19,7 @@ function canonDigestsFor(content: string): (string | null)[] {
 describe("findServedHashEcho — evidence, never shape", () => {
   it("detects a verbatim served row at any position", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     // hash for line 1 placed at candidate 1 with its served content verbatim
@@ -29,7 +29,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
 
   it("detects a multi-row chain copied from another position", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     // rows for lines 1-2 reproduced verbatim, submitted as a chain
@@ -44,7 +44,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
 
   it("detects a verbatim row copied from another position", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     // line-1 row submitted where line-2 content is expected: position-agnostic
@@ -54,7 +54,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
 
   it("tolerates one leading diff marker", () => {
     const content = "one\ntwo";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     for (const marker of ["+", "-", " "]) {
@@ -70,7 +70,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
 
   it("stays silent for a served prefix with differing content", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const hit = findServedHashEcho([`${hashes[1]}${HASH_SEP}CHANGED`], served, canonDigests, 1);
@@ -79,7 +79,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
 
   it("stays silent without canon data, never falling back to shape", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const hit = findServedHashEcho([`${hashes[1]}${HASH_SEP}two`], served, [], 1);
     expect(hit).toBeUndefined();
@@ -94,7 +94,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
 
   it("stays silent for a never-served shape", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     // WHY: premise guard — same vacuity hazard as the prefix tier: the echo
@@ -115,7 +115,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
     // WHY: row-shaped this reddens (no hit), so the F1 vacuity cannot recur
     // WHY: silently.
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = ["Zz99", ...hashes.slice(1)];
     const canonDigests = [canonDigest("literal"), ...canonDigestsFor(content).slice(1)];
     expect(hashes.every((h) => HASH_RE.test(h))).toBe(true);
@@ -123,7 +123,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
     expect(hit).toBeDefined();
   });
   it("returns undefined for empty candidates", () => {
-    const hashes = _lineHashesPure("a\nb\nc");
+    const hashes = contentOnlyHashes("a\nb\nc");
     const served: (string | null)[] = [...hashes];
     expect(findServedHashEcho([], served, canonDigestsFor("a\nb\nc"), 2)).toBeUndefined();
   });
@@ -132,7 +132,7 @@ describe("findServedHashEcho — evidence, never shape", () => {
 describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
   it("refuses a verbatim served row", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -149,7 +149,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
   it("accepts a clean retry", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const editDenied = {
@@ -177,7 +177,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
   it("accepts a served prefix with differing content", () => {
     const content = "alpha\nbeta\ngamma";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -194,7 +194,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
   it("denied edit leaves file byte-identical (pure)", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -212,7 +212,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
   it("names the offending line, the anchor, and the served line", () => {
     const content = "one\ntwo\nthree";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -238,7 +238,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
   it("raw served row before stripping is still refused", () => {
     const content = "alpha\nbeta\ngamma";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -252,7 +252,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
   it("no served means no refusal, bytes reach disk unchanged", () => {
     const content = "alpha\nbeta\ngamma";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [`${hashes[1]}${HASH_SEP}beta`],
@@ -264,7 +264,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
   it("honours a literal declaration byte-exact with a human line", () => {
     const content = "alpha\nbeta\ngamma";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -284,7 +284,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
   it("refuses a served hash echo submitted with reversed anchors ([E_SUSPICIOUS_TEXT] healed path)", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const canonDigests = canonDigestsFor(content);
     const edit = {
@@ -299,7 +299,7 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
 
 describe("applyEdit — rebased served check stays evidence-only", () => {
   const content = "z\nq\nw";
-  const hashes = _lineHashesPure(content);
+  const hashes = contentOnlyHashes(content);
   const served: (string | null)[] = ["AAAA", "BBBB", null];
   const leases: Record<string, LeaseIdentityView> = {
     AAAA: {

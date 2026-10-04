@@ -1,3 +1,4 @@
+import { isAbsolute, normalize } from "node:path";
 import { splitLines } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
@@ -60,7 +61,9 @@ export type HashPrior = {
 };
 
 export interface HashOptions {
-  path?: string;
+  // WHY: required — file materialization has no content-only fallback. Tests that
+  // WHY: need content-only derivation use the explicit `contentOnlyHashes` instead.
+  path: string;
   prior?: HashPrior;
   persist?: boolean;
   snapshotIO?: HashSnapshotIO;
@@ -126,7 +129,9 @@ export function isValidHashList(value: unknown): value is string[] {
 // WHY: true because 3,907 is prime and does not divide 62^4 = 2^4 × 31^4).
 export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
-export const CANON_VERSION = 2;
+// WHY: bumped to 3 for file-scoped derivation — the snapshot cache key
+// WHY: `${CANON_VERSION}:${checksum}` then misses every pre-change snapshot.
+export const CANON_VERSION = 3;
 const CANON_RE = /[ \t\r\n]+/g;
 
 export function canon(line: string): string {
@@ -180,6 +185,26 @@ function nearestNew(candidates: number[], target: number): number {
   return right < candidates.length ? right : -1;
 }
 
+// WHY: single owner of anchor derivation — every allocation base index flows
+// WHY: through `contentBaseIndex` (content-only) or `fileBaseIndex` (file-scoped).
+// WHY: The file-scoped path uses the full 32 bits while the content-only path
+// WHY: keeps `>>> 14`: the 18-bit confinement makes same-spelling-different-file collisions
+// WHY: likely (`n²/2^18`), and the pre-set `RESERVED_BITS` mask makes `assignHash`
+// WHY: refuse a reserved fast-path index, so the reservation is safe in the full space.
+export function canonicalAnchorPath(path: string): string {
+  if (!isAbsolute(path)) {
+    throw new DomainError("E_BAD_PAYLOAD", {
+      message: `Anchor derivation requires an absolute file path, got ${JSON.stringify(path)}.`,
+    });
+  }
+  return normalize(path);
+}
+export function contentBaseIndex(canonText: string): number {
+  return (xxh32(canonText) >>> 14) % HASH_SPACE;
+}
+export function fileBaseIndex(canonText: string, pathSeed: number): number {
+  return (xxh32(canonText, pathSeed) >>> 0) % HASH_SPACE;
+}
 // SAFETY: large-class — HashIdentity owns hash allocation, canon cache, and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
 export class HashIdentity {
   private hashCache = new Map<number, string>();
@@ -245,7 +270,9 @@ export class HashIdentity {
     return this.hashAt(nextIdx);
   }
 
-  private lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
+  // WHY: content-only derivation — never a file's served rows. File materialization
+  // WHY: goes through `fileScopedHashes`/the `hashesFor` path branch instead.
+  contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<string>): string[] {
     const lines = splitLines(content);
     const hashes = new Array<string>(lines.length);
     const used = new Uint32Array(BITSET_WORDS);
@@ -259,8 +286,29 @@ export class HashIdentity {
     }
     for (let i = 0; i < lines.length; i++) {
       const c = getCanon(canonCache, lines[i]!);
-      const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
+      const baseIdx = contentBaseIndex(c);
       const h = this.assignHash(used, baseIdx, hint);
+      hashes[i] = h;
+    }
+    return hashes;
+  }
+  private fileScopedHashes(
+    content: string,
+    pathSeed: number,
+    blockedHashes?: ReadonlySet<string>,
+  ): string[] {
+    const lines = splitLines(content);
+    const hashes = Array.from<string>({ length: lines.length });
+    const used = new Uint32Array(BITSET_WORDS);
+    used.set(RESERVED_BITS);
+    const hint = { value: 0 };
+    const canonCache = new Map<string, string>();
+    if (blockedHashes) {
+      for (const h of blockedHashes) this.markHashUsed(h, used, hint);
+    }
+    for (let i = 0; i < lines.length; i++) {
+      const c = getCanon(canonCache, lines[i]!);
+      const h = this.assignHash(used, fileBaseIndex(c, pathSeed), hint);
       hashes[i] = h;
     }
     return hashes;
@@ -367,11 +415,12 @@ export class HashIdentity {
     canonCache: Map<string, string>,
     used: Uint32Array,
     hint: { value: number },
+    pathSeed: number,
   ): void {
     for (let i = 0; i < newLines.length; i++) {
       if (newHashes[i]) continue;
       const c = getCanon(canonCache, newLines[i]!);
-      const baseIdx = (xxh32(c) >>> 14) % HASH_SPACE;
+      const baseIdx = fileBaseIndex(c, pathSeed);
       const h = this.assignHash(used, baseIdx, hint);
       newHashes[i] = h;
     }
@@ -380,6 +429,7 @@ export class HashIdentity {
     oldContent: string,
     oldHashes: string[],
     newContent: string,
+    pathSeed: number,
     removedHashes?: Set<string>,
     blockedHashes?: ReadonlySet<string>,
   ): string[] {
@@ -416,13 +466,16 @@ export class HashIdentity {
       spanEnd,
       shiftAfterSpan,
     );
-    this.allocateFreshHashes(newLines, newHashes, canonCache, used, hint);
+    this.allocateFreshHashes(newLines, newHashes, canonCache, used, hint, pathSeed);
     return newHashes;
   }
 
   async hashesFor(content: string, options?: HashOptions): Promise<string[]> {
     await initHasher();
-    const path = options?.path;
+    const path = options?.path ?? "";
+    // WHY: computed once per materialization and threaded into the allocator —
+    // WHY: per-line reseeding would cost an xxh32 per line for no benefit.
+    const pathSeed = xxh32(canonicalAnchorPath(path));
     const prior = options?.prior;
     const persist = options?.persist ?? true;
     const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
@@ -430,24 +483,12 @@ export class HashIdentity {
       retireLeases: options?.retireLeases === true,
     };
 
-    if (!path) {
-      if (prior) {
-        return this.mapStableHashes(
-          prior.content,
-          prior.hashes,
-          content,
-          prior.removedHashes,
-          options?.blockedHashes,
-        );
-      }
-      return this.lineHashesPure(content, options?.blockedHashes);
-    }
-
     if (prior) {
       const newHashes = this.mapStableHashes(
         prior.content,
         prior.hashes,
         content,
+        pathSeed,
         prior.removedHashes,
         options?.blockedHashes,
       );
@@ -501,7 +542,7 @@ export class HashIdentity {
       return cached;
     }
 
-    const newHashes = this.lineHashesPure(content, options?.blockedHashes);
+    const newHashes = this.fileScopedHashes(content, pathSeed, options?.blockedHashes);
     if (persist && snapshotIO) {
       try {
         await snapshotIO.upsert(
@@ -520,8 +561,8 @@ export class HashIdentity {
     return newHashes;
   }
 
-  hashesForSync(content: string, blockedHashes?: ReadonlySet<string>): string[] {
-    return this.lineHashesPure(content, blockedHashes);
+  hashesForSync(content: string, path: string, blockedHashes?: ReadonlySet<string>): string[] {
+    return this.fileScopedHashes(content, xxh32(canonicalAnchorPath(path)), blockedHashes);
   }
 
   static create(snapshotIO?: HashSnapshotIO): HashIdentity {
@@ -537,13 +578,21 @@ function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
   defaultHashIdentity.setSnapshotIO(io);
 }
 
-export function _lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
-  return defaultHashIdentity.hashesForSync(content, blockedHashes);
+export function contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<string>): string[] {
+  return defaultHashIdentity.contentOnlyHashes(content, blockedHashes);
+}
+
+export function fileHashesFor(
+  path: string,
+  content: string,
+  blockedHashes?: ReadonlySet<string>,
+): string[] {
+  return defaultHashIdentity.hashesForSync(content, path, blockedHashes);
 }
 
 export async function lineHashes(
   content: string,
-  path?: string,
+  path: string,
   previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
   io?: HashSnapshotIO,
   persist?: boolean,

@@ -77,12 +77,11 @@ async function emptyFilePreview(
   startLine: number,
   text: string,
   precomputedHashes: string[] | undefined,
-  path: string | undefined,
+  path: string,
   hashSep: string,
 ): Promise<{ text: string; served: ServedRow[] }> {
   if (startLine === 1) {
-    const allHashes =
-      precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+    const allHashes = precomputedHashes ?? (await lineHashes(text, path));
     const emptyLineHash = allHashes[0]!;
     return {
       text: `${emptyLineHash}${hashSep}\n[File is empty. Use edit to insert content.]`,
@@ -335,8 +334,8 @@ function buildWindowedPreview(params: {
 export async function fmtReadPreview(
   text: string,
   options: { offset?: number; limit?: number; windows?: ReadWindow[] },
-  precomputedHashes?: string[],
-  path?: string,
+  precomputedHashes: string[] | undefined,
+  path: string,
   maxLineBytes = MAX_READ_LINE_BYTES,
   maxTruncLines = DEFAULT_MAX_LINES,
 ): Promise<{
@@ -358,8 +357,7 @@ export async function fmtReadPreview(
       HASH_SEP,
     );
   if (windows) {
-    const allHashes =
-      precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+    const allHashes = precomputedHashes ?? (await lineHashes(text, path));
     return buildWindowedPreview({
       windows,
       allLines,
@@ -379,7 +377,7 @@ export async function fmtReadPreview(
   const limit = normPosInt(options.limit, "limit");
   const endIdx = limit ? Math.min(startLine - 1 + limit, totalLines) : totalLines;
   const selected = allLines.slice(startLine - 1, endIdx);
-  const allHashes = precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
+  const allHashes = precomputedHashes ?? (await lineHashes(text, path));
   const selectedHashes = allHashes.slice(startLine - 1, endIdx);
   const formatted = fmtRegion(selectedHashes, selected);
   const maxBytes = maxLineBytes;

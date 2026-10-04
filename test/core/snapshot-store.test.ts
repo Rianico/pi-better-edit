@@ -13,7 +13,7 @@ import {
 } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { initHasher, contentChecksum, xxh32 } from "../../src/hashline/hasher";
-import { CANON_VERSION, canon, _lineHashesPure, lineHashes } from "../../src/hashline";
+import { CANON_VERSION, canon, contentOnlyHashes, lineHashes } from "../../src/hashline";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";
 
@@ -112,6 +112,23 @@ function standardizedHash(content: string): string {
 }
 
 describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
+  it("misses a version-2 snapshot key after the file-scoped derivation bump", async () => {
+    // WHY: C7 — CANON_VERSION 3 changes every anchor, so a pre-change snapshot
+    // WHY: planted under the old key must miss (and recompute) rather than hit.
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const content = "hello\nworld\n";
+      const hashes = ["aB33", "xY77"];
+      upsertSnapshot(store, {
+        path: "/path/to/file.ts",
+        snapshotHash: `2:${contentChecksum(content)}`,
+        lineCount: 2,
+        hashes,
+        content,
+      });
+      expect(getSnapshot(store, "/path/to/file.ts", content)).toBeUndefined();
+    });
+  });
   it("round-trips a snapshot through file_snapshots and line_lineage", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
@@ -288,7 +305,7 @@ describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
       const content = "x\n";
       put(store, "/p.ts", content, ["zZ99"]);
 
-      expect(_lineHashesPure(content)).not.toEqual(["zZ99"]);
+      expect(contentOnlyHashes(content)).not.toEqual(["zZ99"]);
       expect(getSnapshot(store, "/p.ts", content)).toEqual(["zZ99"]);
     });
   });

@@ -11,6 +11,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[3]!, anchor_to: hashes[1]!, text: "X" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nX\ne");
     expect(result.warnings?.[0]).toMatch(/\[USER\] \[W_REVERSED_ANCHORS\].*were reversed/);
@@ -35,7 +38,13 @@ describe("applyEdit — recovery scenarios", () => {
     const staleStart = "ZZZZ";
     let caught: Error | undefined;
     try {
-      applyEdit(content, resEdit({ anchor_from: staleStart, anchor_to: hashes[2]!, text: "X" }));
+      applyEdit(
+        content,
+        resEdit({ anchor_from: staleStart, anchor_to: hashes[2]!, text: "X" }),
+        undefined,
+        undefined,
+        { filePath: home.testPath },
+      );
     } catch (error) {
       caught = error as Error;
     }
@@ -50,7 +59,13 @@ describe("applyEdit — recovery scenarios", () => {
     const staleEnd = "ZZZZ";
     let caught: Error | undefined;
     try {
-      applyEdit(content, resEdit({ anchor_from: hashes[0]!, anchor_to: staleEnd, text: "X" }));
+      applyEdit(
+        content,
+        resEdit({ anchor_from: hashes[0]!, anchor_to: staleEnd, text: "X" }),
+        undefined,
+        undefined,
+        { filePath: home.testPath },
+      );
     } catch (error) {
       caught = error as Error;
     }
@@ -63,7 +78,13 @@ describe("applyEdit — recovery scenarios", () => {
     const content = "a\nb\nc";
     let caught: Error | undefined;
     try {
-      applyEdit(content, resEdit({ anchor_from: "ZZZZ", anchor_to: "YYYY", text: "X" }));
+      applyEdit(
+        content,
+        resEdit({ anchor_from: "ZZZZ", anchor_to: "YYYY", text: "X" }),
+        undefined,
+        undefined,
+        { filePath: home.testPath },
+      );
     } catch (error) {
       caught = error as Error;
     }
@@ -126,6 +147,9 @@ describe("applyEdit — recovery scenarios", () => {
         anchor_to: hashes[2]!,
         text: `${hashes[1]!}│b\nX`,
       }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe(`a\n${hashes[1]!}│b\nX\nd\ne`);
     expect(result.warnings ?? []).toEqual([]);
@@ -141,6 +165,9 @@ describe("applyEdit — recovery scenarios", () => {
         anchor_to: hashes[1]!,
         text: `+${hashes[1]!}│B`,
       }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe(`a\n+${hashes[1]!}│B\nc`);
     expect(result.warnings ?? []).toEqual([]);
@@ -152,6 +179,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "\\uDDDD" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.warnings).toBeDefined();
     expect(result.warnings![0]).toContain("\\uDDDD");
@@ -163,6 +193,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "\t\treplaced" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nb\n\t\treplaced");
   });
@@ -173,6 +206,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "\t\treplaced" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toContain("\t\treplaced");
   });
@@ -183,6 +219,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "b" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.noopEdit).toBeDefined();
   });
@@ -193,6 +232,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "b\nc" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.noopEdit).toBeDefined();
   });
@@ -203,6 +245,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "world" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("world");
   });
@@ -213,6 +258,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "b\nc" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nb\nc");
   });
@@ -223,6 +271,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("b\nc");
   });
@@ -233,6 +284,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nb");
   });
@@ -243,6 +297,9 @@ describe("applyEdit — recovery scenarios", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "x\ny" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("x\ny");
   });

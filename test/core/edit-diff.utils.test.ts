@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { detectEnding, toLF, restoreEndings, stripBOM, genDiff } from "../../src/edit-diff";
-import { _lineHashesPure, initHasher } from "../../src/hashline";
+import { contentOnlyHashes, initHasher } from "../../src/hashline";
 
 beforeAll(async () => {
   await initHasher();
@@ -128,7 +128,14 @@ describe("genDiff", () => {
   it("renders a literal __ELLIPSIS__ line as content, not as a truncation marker", () => {
     const oldContent = "a\n__ELLIPSIS__\nc\nd\n";
     const newContent = "a\n__ELLIPSIS__\nc\nD\n";
-    const { diff } = genDiff(oldContent, newContent, 3);
+    const { diff } = genDiff(
+      oldContent,
+      newContent,
+      3,
+      undefined,
+      undefined,
+      "/test/diff-utils.ts",
+    );
     const lines = diff.split("\n");
     expect(lines.some((line) => line.endsWith("│__ELLIPSIS__"))).toBe(true);
     expect(lines.filter((line) => line.trim() === "...")).toHaveLength(0);
@@ -137,7 +144,7 @@ describe("genDiff", () => {
   it("keeps hashes aligned when a literal __ELLIPSIS__ line sits in diff context", () => {
     const oldContent = "a\n__ELLIPSIS__\nc\nd\n";
     const newContent = "a\n__ELLIPSIS__\nc\nD\n";
-    const hashes = _lineHashesPure(newContent);
+    const hashes = contentOnlyHashes(newContent);
     const { diff } = genDiff(oldContent, newContent, 2, hashes);
     const matchedLine = diff.split("\n").find((line) => line.endsWith("│c"))!;
     expect(matchedLine.startsWith(` ${hashes[2]}`)).toBe(true);

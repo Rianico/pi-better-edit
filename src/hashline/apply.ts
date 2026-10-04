@@ -355,7 +355,17 @@ export function applyEdit(
   } = verification ?? {};
 
   const lineIndex = buildIdx(content);
-  const fileHashes = precomputedHashes ?? defaultHashIdentity.hashesForSync(content);
+  // WHY: no pathless file materialization — without precomputed hashes the file
+  // WHY: path is required so anchors derive file-scoped, never content-only.
+  const fileHashes =
+    precomputedHashes ??
+    (filePath === undefined
+      ? (() => {
+          throw new DomainError("E_BAD_PAYLOAD", {
+            message: "applyEdit requires precomputed hashes or a file path.",
+          });
+        })()
+      : defaultHashIdentity.hashesForSync(content, filePath));
   const warnings: string[] = [];
   let literalBypass = false;
 

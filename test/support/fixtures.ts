@@ -1,7 +1,7 @@
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { beforeAll, afterAll, vi } from "vitest";
-import { _lineHashesPure, initHasher } from "../../src/hashline";
+import { initHasher } from "../../src/hashline";
 import { Compile } from "typebox/compile";
 import register from "../../index";
 import { regEdit } from "../../src/edit";

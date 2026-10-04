@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import {
   buildRangeServeRows,
   denseServeRows,
@@ -14,7 +14,7 @@ beforeAll(async () => {
 
 describe("served-verification helpers", () => {
   it("serves rows as position + hash only; canon evidence is never a row attribute", () => {
-    const hashesA = _lineHashesPure("a\nb\nc");
+    const hashesA = contentOnlyHashes("a\nb\nc");
     const rowsA = buildRangeServeRows(1, 3, hashesA);
     // WHY: canon evidence is derived from the leases a serve grants (#151), so a row carries no canon
     // WHY: and a producer holding the file's lines has nothing extra to stamp (issue #149).

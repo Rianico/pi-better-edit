@@ -8,7 +8,8 @@ import {
   HashIdentity,
   MAX_HASH_LINES,
   USABLE_HASH_SPACE,
-  _lineHashesPure,
+  contentOnlyHashes,
+  fileHashesFor,
   lineHashes,
 } from "../../src/hashline/index.js";
 import {
@@ -63,7 +64,7 @@ describe("all-digit anchor reservation", () => {
     const content = lines.join("\n");
     const blocked = new Set<string>();
     for (let i = 0; i < 500; i++) blocked.add(`B${i}`);
-    const hashes = _lineHashesPure(content, blocked);
+    const hashes = contentOnlyHashes(content, blocked);
     expect(hashes).toHaveLength(lines.length);
     let digitCount = 0;
     for (const h of hashes) {
@@ -84,7 +85,7 @@ describe("all-digit anchor reservation", () => {
     // WHY: mixed 53k-line sample tops out at 11,705,777, below the band start,
     // WHY: so neither can ever observe the guard.
     const dupContent = Array.from({ length: 20_000 }, () => "dup line 9").join("\n");
-    const hashes = _lineHashesPure(dupContent);
+    const hashes = contentOnlyHashes(dupContent);
     expect(hashes).toHaveLength(20_000);
     let maxIdx = -1;
     for (const h of hashes) {
@@ -132,11 +133,12 @@ describe("all-digit anchor reservation", () => {
     // WHY: the reservation is a fixed mask, so allocation stays a pure function
     // WHY: of content — same bytes, same anchors, whatever the caller.
     const content = Array.from({ length: 5_000 }, (_, i) => `stable ${i}`).join("\n");
-    const first = _lineHashesPure(content);
-    const second = _lineHashesPure(content);
+    const first = contentOnlyHashes(content);
+    const second = contentOnlyHashes(content);
     expect(second).toEqual(first);
-    const fresh = new HashIdentity().hashesForSync(content);
-    expect(fresh).toEqual(first);
+    const fresh = new HashIdentity().hashesForSync(content, "/test/determinism.ts");
+    const refetched = fileHashesFor("/test/determinism.ts", content);
+    expect(fresh).toEqual(refetched);
     for (const h of first) expect(DIGIT_ANCHOR_RE.test(h)).toBe(false);
   });
 

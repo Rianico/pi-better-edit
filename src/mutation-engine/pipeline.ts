@@ -169,7 +169,6 @@ interface ApplyOneEditInput {
   hashes: string[];
   edit: HEdit;
   signal?: AbortSignal;
-  filePath: string;
   served: (string | null)[];
   blockedHashes?: ReadonlySet<string>;
   canonDigests?: (string | null)[];
@@ -229,7 +228,9 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   let anchorResult: ReturnType<typeof applyEdit>;
   try {
     anchorResult = applyEdit(input.content, input.edit, input.signal, input.hashes, {
-      filePath: input.filePath,
+      // WHY: read/write agreement — the verify path is literally the same
+      // WHY: canonical absolute path the `hashesFor` call below uses (one field).
+      filePath: input.absolutePath,
       absolutePath: input.absolutePath,
       sessionKey: input.sessionKey,
       served: input.served,
@@ -887,7 +888,6 @@ async function runMutations(
       hashes: currentHashes,
       edit,
       signal: options?.signal,
-      filePath: path,
       served,
       blockedHashes: batchBlockedHashes,
       canonDigests: baseCanonDigests,

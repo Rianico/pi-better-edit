@@ -2,7 +2,7 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { genDiff } from "../../src/edit-diff";
 import { ANCHOR_LEN, HASH_SEP } from "../../src/hashline/hash-identity";
 import type { ServedRow } from "../../src/hashline/served";
-import { _lineHashesPure, initHasher } from "../../src/hashline";
+import { contentOnlyHashes, initHasher } from "../../src/hashline";
 
 beforeAll(async () => {
   await initHasher();
@@ -37,8 +37,8 @@ function deletedRunCase(runSize: number): { oldContent: string; newContent: stri
 // position its cursor says it occupies, every marker's count is the exact span it hides, and
 // servedRows mirror exactly the rendered context/addition rows.
 function auditProjection(oldContent: string, newContent: string, contextLines: number) {
-  const newHashes = _lineHashesPure(newContent);
-  const oldHashes = _lineHashesPure(oldContent);
+  const newHashes = contentOnlyHashes(newContent);
+  const oldHashes = contentOnlyHashes(oldContent);
   const newLines = splitLines(newContent);
   const oldLines = splitLines(oldContent);
   const { diff, servedRows } = genDiff(oldContent, newContent, contextLines, newHashes, oldHashes);
@@ -168,8 +168,8 @@ describe("projection contract audit — middle-gap corpus (#169/#170)", () => {
         oldContent,
         newContent,
         contextLines,
-        _lineHashesPure(newContent),
-        _lineHashesPure(oldContent),
+        contentOnlyHashes(newContent),
+        contentOnlyHashes(oldContent),
       );
       expect(diff.split("\n").filter((line) => line === " ...")).toEqual([]);
     }
@@ -182,7 +182,7 @@ describe("projection contract audit — middle-gap corpus (#169/#170)", () => {
     const rows = diff.split("\n");
     const markerIdx = rows.findIndex((line) => UNTOUCHED_MARKER.test(line));
     expect(rows[markerIdx]).toBe(" ... [275 lines untouched] ...");
-    const hashes = _lineHashesPure(newContent);
+    const hashes = contentOnlyHashes(newContent);
     expect(rows[markerIdx - 1]).toBe(` ${hashes[3]}│g2`);
     expect(rows[markerIdx + 1]).toBe(` ${hashes[279]}│g278`);
   });
@@ -195,8 +195,8 @@ describe("projection contract audit — middle-gap corpus (#169/#170)", () => {
     const rows = diff.split("\n");
     const markerIdx = rows.findIndex((line) => UNTOUCHED_MARKER.test(line));
     expect(rows[markerIdx]).toBe(" ... [5 lines untouched] ...");
-    const newHashes = _lineHashesPure(newContent);
-    const oldHashes = _lineHashesPure(oldContent);
+    const newHashes = contentOnlyHashes(newContent);
+    const oldHashes = contentOnlyHashes(oldContent);
     // Both cursors land on `c`/`C` at index 2+5: the next emitted anchors are their true hashes.
     expect(rows[markerIdx + 1]).toBe(`-${oldHashes[7]}│c`);
     expect(rows[markerIdx + 2]).toBe(`+${newHashes[7]}│C`);
@@ -223,7 +223,7 @@ describe("projection contract audit — deleted-run corpus (#169/#170)", () => {
     const markerIdx = rows.findIndex((line) => DELETED_MARKER.test(line));
     expect(rows[markerIdx]).toBe(" - ... [36 lines deleted] ...");
     // The two tail rows after the marker keep their true old-file hashes (the run is x1..x40).
-    const oldHashes = _lineHashesPure(oldContent);
+    const oldHashes = contentOnlyHashes(oldContent);
     expect(rows[markerIdx + 1]).toBe(`-${oldHashes[39]}│x39`);
     expect(rows[markerIdx + 2]).toBe(`-${oldHashes[40]}│x40`);
   });

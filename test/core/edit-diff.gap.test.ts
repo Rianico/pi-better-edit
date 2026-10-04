@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { genDiff } from "../../src/edit-diff";
-import { _lineHashesPure, initHasher } from "../../src/hashline";
+import { contentOnlyHashes, initHasher } from "../../src/hashline";
 
 beforeAll(async () => {
   await initHasher();
@@ -23,7 +23,7 @@ describe("genDiff gap trimming (#166)", () => {
     const gap = ["g1", "g2", "g3", "g4", "g5", "g6"];
     const oldContent = ["a", "b", ...gap, "c", "d"].join("\n") + "\n";
     const newContent = ["a", "B", ...gap, "C", "d"].join("\n") + "\n";
-    const hashes = _lineHashesPure(newContent);
+    const hashes = contentOnlyHashes(newContent);
 
     const { diff } = genDiff(oldContent, newContent, 4, hashes);
 
@@ -41,7 +41,7 @@ describe("genDiff gap trimming (#166)", () => {
   it("renders a 2-line middle gap whole at context 1 with aligned anchors", () => {
     const oldContent = ["a", "b", "g1", "g2", "c", "d"].join("\n") + "\n";
     const newContent = ["a", "B", "g1", "g2", "C", "d"].join("\n") + "\n";
-    const hashes = _lineHashesPure(newContent);
+    const hashes = contentOnlyHashes(newContent);
 
     const { diff } = genDiff(oldContent, newContent, 1, hashes);
 
@@ -56,7 +56,7 @@ describe("genDiff gap trimming (#166)", () => {
     const gap = ["g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8"];
     const oldContent = ["a", "b", ...gap, "c", "d"].join("\n") + "\n";
     const newContent = ["a", "B", ...gap, "C", "d"].join("\n") + "\n";
-    const hashes = _lineHashesPure(newContent);
+    const hashes = contentOnlyHashes(newContent);
 
     const { diff } = genDiff(oldContent, newContent, 4, hashes);
 
@@ -70,7 +70,7 @@ describe("genDiff gap trimming (#166)", () => {
     const gap = ["g1", "g2", "g3", "g4", "g5", "g6", "g7", "g8", "g9"];
     const oldContent = ["a", "b", ...gap, "c", "d"].join("\n") + "\n";
     const newContent = ["a", "B", ...gap, "C", "d"].join("\n") + "\n";
-    const hashes = _lineHashesPure(newContent);
+    const hashes = contentOnlyHashes(newContent);
 
     const { diff, servedRows } = genDiff(oldContent, newContent, 4, hashes);
 
@@ -97,8 +97,8 @@ describe("genDiff gap trimming (#166)", () => {
     const gap = ["g1", "g2", "g3", "g4", "g5"];
     const oldContent = ["a", "b", ...gap, "c", "d"].join("\n") + "\n";
     const newContent = ["a", "B", ...gap, "C", "d"].join("\n") + "\n";
-    const newHashes = _lineHashesPure(newContent);
-    const oldHashes = _lineHashesPure(oldContent);
+    const newHashes = contentOnlyHashes(newContent);
+    const oldHashes = contentOnlyHashes(oldContent);
 
     const { diff, servedRows } = genDiff(oldContent, newContent, 0, newHashes, oldHashes);
 
@@ -125,7 +125,7 @@ describe("genDiff gap trimming (#166)", () => {
     const tail = ["t1", "t2", "t3", "t4", "t5", "t6"];
     const oldContent = ["a", ...tail].join("\n") + "\n";
     const newContent = ["A", ...tail].join("\n") + "\n";
-    const hashes = _lineHashesPure(newContent);
+    const hashes = contentOnlyHashes(newContent);
 
     const { diff } = genDiff(oldContent, newContent, 2, hashes);
 
@@ -141,7 +141,7 @@ describe("genDiff gap trimming (#166)", () => {
     const big = ["G1", "G2", "G3", "G4", "G5", "G6", "G7", "G8", "G9"];
     const oldContent = ["a", "b", ...small, "c", ...big, "d", "e"].join("\n") + "\n";
     const newContent = ["a", "B", ...small, "C", ...big, "D", "e"].join("\n") + "\n";
-    const hashes = _lineHashesPure(newContent);
+    const hashes = contentOnlyHashes(newContent);
 
     const { diff } = genDiff(oldContent, newContent, 4, hashes);
 

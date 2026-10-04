@@ -16,7 +16,7 @@ import {
 } from "../support/fixtures";
 import register from "../../index";
 
-const home = useTestHome();
+useTestHome();
 
 describe("undo_last_edit", () => {
   it("returns error when there is no undo history", async () => {
@@ -40,7 +40,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -84,7 +84,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -113,7 +113,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -130,7 +130,7 @@ describe("undo_last_edit", () => {
 
       const diff = undoResult.details?.diff as string | undefined;
       expect(diff).toBeDefined();
-      const postHashes = await lineHashes("aaa\nBBB\nccc\n", home.testPath);
+      const postHashes = await lineHashes("aaa\nBBB\nccc\n", join(cwd, "sample.ts"));
       expect(diff).toContain(`-${postHashes[1]}│BBB`);
       expect(diff).toContain(`+${hashes[1]}│bbb`);
     });
@@ -143,7 +143,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -171,7 +171,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -199,7 +199,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -227,7 +227,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -256,7 +256,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -285,7 +285,7 @@ describe("undo_last_edit", () => {
       const readTool = getTool("read");
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       const spy = vi.spyOn(undoStoreModule, "writeUndo").mockImplementation(() => {
         throw new Error("store down");
@@ -330,7 +330,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       const first = await editTool.execute(
         "e1",
@@ -379,7 +379,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       const spy = vi
         .spyOn(fsWriteModule, "writeAtomic")
@@ -413,7 +413,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       const first = await editTool.execute(
         "e1",
@@ -468,7 +468,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -497,7 +497,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("line1\nline2\n", home.testPath);
+      const hashes = await lineHashes("line1\nline2\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -528,7 +528,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -564,7 +564,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -595,7 +595,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -626,7 +626,7 @@ describe("undo_last_edit", () => {
       await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
       const editTool = getTool("edit");
       const undo = getTool("undo_last_edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       await editTool.execute(
         "e1",
@@ -679,7 +679,7 @@ describe("undo cleared after write", () => {
       register(pi);
       const editTool = tools.get("edit")!;
       const undo = tools.get("undo_last_edit")!;
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       await tools.get("read")!.execute("r1", { path: "sample.ts" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
@@ -724,7 +724,7 @@ describe("undo cleared after write", () => {
       register(pi);
       const editTool = tools.get("edit")!;
       const undo = tools.get("undo_last_edit")!;
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       await tools.get("read")!.execute("r1", { path: "sample.ts" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,

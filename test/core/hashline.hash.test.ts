@@ -28,7 +28,9 @@ describe("strict hashline contract", () => {
       hash_bounds: [{ hash: "ZZZZ" }, { hash: "ZZZZ" }],
       content_lines: ["updated"],
     } as any;
-    expect(() => applyEdit(content, stale)).toThrow(/E_UNKNOWN_ANCHOR/);
+    expect(() =>
+      applyEdit(content, stale, undefined, undefined, { filePath: home.testPath }),
+    ).toThrow(/E_UNKNOWN_ANCHOR/);
   });
 });
 
@@ -64,10 +66,16 @@ describe("perfect hashing", () => {
   it("lets the edit tool target a specific occurrence when content is duplicated", async () => {
     const file = ["const x = 1;", "const y = 2;", "const x = 1;"].join("\n");
     const hashes = await lineHashes(file, home.testPath);
-    const result = applyEdit(file, {
-      hash_bounds: [{ hash: hashes[2]! }, { hash: hashes[2]! }],
-      content_lines: ["const x = 999;"],
-    });
+    const result = applyEdit(
+      file,
+      {
+        hash_bounds: [{ hash: hashes[2]! }, { hash: hashes[2]! }],
+        content_lines: ["const x = 999;"],
+      },
+      undefined,
+      undefined,
+      { filePath: home.testPath },
+    );
     expect(result.content).toBe("const x = 1;\nconst y = 2;\nconst x = 999;");
   });
 
@@ -76,10 +84,16 @@ describe("perfect hashing", () => {
     const staleHash = "ZZZZ";
     let caught: Error | undefined;
     try {
-      applyEdit(file, {
-        hash_bounds: [{ hash: staleHash }, { hash: staleHash }],
-        content_lines: ["X"],
-      });
+      applyEdit(
+        file,
+        {
+          hash_bounds: [{ hash: staleHash }, { hash: staleHash }],
+          content_lines: ["X"],
+        },
+        undefined,
+        undefined,
+        { filePath: home.testPath },
+      );
     } catch (e) {
       caught = e as Error;
     }

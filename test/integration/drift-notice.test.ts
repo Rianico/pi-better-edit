@@ -9,7 +9,7 @@ import {
   extractHash,
 } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("drift notices for changed served territory outside the edit range", () => {
   it("appends a drift notice with the current drifted content; the notice rows verify cleanly in a follow-up edit", async () => {
@@ -91,7 +91,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       expect(resultText).not.toContain("drift:");
       const driftNotice = (result as any).details?.driftNotice ?? "";
       expect(driftNotice).toContain("drift:");
-      const currentHashes = await lineHashes("alpha\nbeta\ngamma\nDELTA\n", home.testPath);
+      const currentHashes = await lineHashes("alpha\nbeta\ngamma\nDELTA\n", path);
       expect(driftNotice).toContain(`${currentHashes[3]}│DELTA`);
     });
   });

@@ -1,5 +1,6 @@
 import * as Diff from "diff";
 import { DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE } from "./constants.js";
+import { DomainError } from "./domain-errors.js";
 import { ANCHOR_LEN, HASH_SEP, defaultHashIdentity } from "./hashline/hash-identity.js";
 import type { ServedRow } from "./hashline/served.js";
 
@@ -129,13 +130,24 @@ export function genDiff(
   contextLines = 2,
   newContentHashes?: string[],
   oldContentHashes?: string[],
+  // WHY: required only when the caller omits precomputed hashes — the diff
+  // WHY: renderer must never derive content-only anchors for a file.
+  filePath?: string,
 ): {
   diff: string;
   firstChangedLine: number | undefined;
   lastChangedLine: number | undefined;
   servedRows: ServedRow[];
 } {
-  const effectiveNewHashes = newContentHashes ?? defaultHashIdentity.hashesForSync(newContent);
+  const effectiveNewHashes =
+    newContentHashes ??
+    (filePath === undefined
+      ? (() => {
+          throw new DomainError("E_BAD_PAYLOAD", {
+            message: "genDiff requires precomputed hashes or a file path.",
+          });
+        })()
+      : defaultHashIdentity.hashesForSync(newContent, filePath));
 
   const parts = Diff.diffLines(oldContent, newContent);
   const output: string[] = [];

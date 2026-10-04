@@ -11,6 +11,9 @@ describe("indentation: pure edit preserves duplicates verbatim", () => {
     const result = applyEdit(
       file,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "  foo\n  bar" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("  foo\n  foo\n  bar\n  baz");
   });
@@ -21,6 +24,9 @@ describe("indentation: pure edit preserves duplicates verbatim", () => {
     const result = applyEdit(
       file,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "  foo\n  new" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("  foo\n  foo\n  new\n  baz");
   });
