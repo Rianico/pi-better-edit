@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { parseHashRef } from "../../src/hashline/parse.js";
-import { HASH_RE } from "../../src/hashline/alphabet.js";
+import { ALPHA, HASH_RE } from "../../src/hashline/alphabet.js";
 import {
   DIGIT_ANCHOR_RE,
   HASH_LEN,
@@ -11,10 +11,38 @@ import {
   _lineHashesPure,
   lineHashes,
 } from "../../src/hashline/index.js";
+import {
+  resEdit,
+  type LeaseIdentityView,
+  type LeaseSpanSource,
+} from "../../src/hashline/resolve.js";
+import { resolveLeasedEdit } from "../../src/hashline/lease-resolve.js";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
-
+// WHY: independent subcube arithmetic — derived from the public alphabet, not
+// WHY: from the mask under test, so the regime pins cannot share its bug.
+const BASE = ALPHA.length;
+function spellingToIndex(spelling: string): number {
+  let idx = 0;
+  for (const ch of spelling) idx = idx * BASE + ALPHA.indexOf(ch);
+  return idx;
+}
+function indexToSpelling(idx: number): string {
+  let out = "";
+  let m = idx;
+  for (let j = 0; j < HASH_LEN; j++) {
+    out = ALPHA[m % BASE] + out;
+    m = Math.floor(m / BASE);
+  }
+  return out;
+}
+const SUBCUBE_START = spellingToIndex("0".repeat(HASH_LEN));
+// WHY: reaches the production probe through the prototype so the assertions
+// WHY: pin the shipped code, not a reimplementation.
+const productionProbe = new HashIdentity() as unknown as {
+  nextZeroBit(bits: Uint32Array, start: number): number;
+};
 describe("all-digit anchor reservation", () => {
   it("derives the usable space from the alphabet with no new literals", () => {
     // WHY: the reservation is `(#digit chars) ** HASH_LEN` — a restated 10_000
@@ -45,6 +73,59 @@ describe("all-digit anchor reservation", () => {
     expect(digitCount).toBe(0);
   });
 
+  it("reaches the reserved band on duplicate-heavy content and serves zero digit anchors", () => {
+    // WHY: cursor arithmetic — `baseIdx = (xxh32(c) >>> 14) % HASH_SPACE` confines
+    // WHY: content-derived base indices to `[0, 2**18)`, while the digit subcube
+    // WHY: starts at `62^3 * 52 = SUBCUBE_START`; only the probe cursor (stride
+    // WHY: ~3,907/step) advances into the band, needing ~3,200 consecutive probe
+    // WHY: steps. Identical lines collide on one base index, so 20,000 of them
+    // WHY: drive the cursor deep into the band — a broad distinct-line sample
+    // WHY: tops out near 7.8 M and can never observe the guard.
+    const dupContent = Array.from({ length: 20_000 }, () => "dup line 9").join("\n");
+    const hashes = _lineHashesPure(dupContent);
+    expect(hashes).toHaveLength(20_000);
+    let maxIdx = -1;
+    for (const h of hashes) {
+      expect(DIGIT_ANCHOR_RE.test(h)).toBe(false);
+      const idx = spellingToIndex(h);
+      if (idx > maxIdx) maxIdx = idx;
+    }
+    // WHY: in-regime pin — without it a future edit could silently shorten the
+    // WHY: sample back below the band and the zero-digit assertion would go vacuous.
+    expect(maxIdx).toBeGreaterThanOrEqual(SUBCUBE_START);
+  });
+
+  it("probe skips reserved indices from any start", () => {
+    // WHY: direct probe shape — a bitset holding exactly the reserved subcube
+    // WHY: must never yield a reserved index, and a bitset with one free usable
+    // WHY: bit must yield it from a usable start, a reserved start, and the top.
+    const words = Math.ceil(HASH_SPACE / 32);
+    const reservedOnly = new Uint32Array(words);
+    const digitIdx = ALPHA.split("")
+      .map((c, i) => (c >= "0" && c <= "9" ? i : -1))
+      .filter((i) => i >= 0);
+    for (let n = 0; n < digitIdx.length ** HASH_LEN; n++) {
+      let idx = 0;
+      let mult = 1;
+      let m = n;
+      for (let j = 0; j < HASH_LEN; j++) {
+        idx += digitIdx[m % digitIdx.length]! * mult;
+        m = Math.floor(m / digitIdx.length);
+        mult *= BASE;
+      }
+      reservedOnly[idx >>> 5]! |= 1 << (idx & 31);
+    }
+    const landed = productionProbe.nextZeroBit(reservedOnly, SUBCUBE_START);
+    expect(DIGIT_ANCHOR_RE.test(indexToSpelling(landed))).toBe(false);
+    const FREE = 100;
+    expect(DIGIT_ANCHOR_RE.test(indexToSpelling(FREE))).toBe(false);
+    const singleFree = new Uint32Array(words).fill(0xff_ff_ff_ff);
+    singleFree[FREE >>> 5]! &= ~(1 << (FREE & 31));
+    for (const start of [0, SUBCUBE_START, HASH_SPACE - 1]) {
+      expect(productionProbe.nextZeroBit(singleFree, start)).toBe(FREE);
+    }
+  });
+
   it("keeps identical content on identical anchors across runs and identities", () => {
     // WHY: the reservation is a fixed mask, so allocation stays a pure function
     // WHY: of content — same bytes, same anchors, whatever the caller.
@@ -63,12 +144,57 @@ describe("all-digit anchor reservation", () => {
     expect(parseHashRef("1234")).toEqual({ hash: "1234" });
     expect(parseHashRef("8334")).toEqual({ hash: "8334" });
   });
+  it("delta path reserves on duplicate-heavy new content", async () => {
+    // WHY: `mapStableHashes` is the second allocation site — the pure-path tests
+    // WHY: above cannot observe its guard, so the delta path gets its own
+    // WHY: in-regime sample: wholly fresh duplicate-heavy content forces the full
+    // WHY: fresh-allocation probe inside the stable mapping.
+    const oldContent = "old a\nold b\nold c\n";
+    const priorHashes = await lineHashes(oldContent, home.testPath);
+    const dupContent = Array.from({ length: 20_000 }, () => "dup line 27").join("\n");
+    const fresh = await lineHashes(dupContent, home.testPath, {
+      content: oldContent,
+      hashes: priorHashes,
+    });
+    expect(fresh).toHaveLength(20_000);
+    let maxIdx = -1;
+    for (const h of fresh) {
+      expect(DIGIT_ANCHOR_RE.test(h)).toBe(false);
+      const idx = spellingToIndex(h);
+      if (idx > maxIdx) maxIdx = idx;
+    }
+    expect(maxIdx).toBeGreaterThanOrEqual(SUBCUBE_START);
+  });
   it("serves non-digit anchors that still resolve by exact spelling", async () => {
     // WHY: faithful copy — the reservation gates allocation, not resolution, so
-    // WHY: a served non-digit anchor keeps resolving exactly.
-    const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+    // WHY: a served non-digit anchor keeps resolving exactly through the leased
+    // WHY: seam (fast path, served bounds [1,3]).
+    const lines = ["alpha", "beta", "gamma"];
+    const hashes = await lineHashes(lines.join("\n"), home.testPath);
     expect(hashes).toHaveLength(3);
-    expect(new Set(hashes).size).toBe(3);
-    for (const h of hashes) expect(DIGIT_ANCHOR_RE.test(h)).toBe(false);
+    const leases: Record<string, LeaseIdentityView> = {};
+    hashes.forEach((h, i) => {
+      leases[h] = {
+        canonHash: "0",
+        lineId: i + 1,
+        servedSnapshotHash: "S",
+        servedLineNumber: i + 1,
+        retiredAt: null,
+      };
+    });
+    const source: LeaseSpanSource = {
+      currentSnapshotHash: "S",
+      leaseFor: (anchor) => leases[anchor],
+      rebasedLineOf: (lineId) => lineId,
+      anchorHomes: () => [],
+    };
+    const resolution = resolveLeasedEdit({
+      edit: resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "X" }),
+      snapshot: { fileHashes: hashes, fileLines: lines, filePath: "sample.ts" },
+      served: hashes,
+      source,
+    });
+    expect(resolution.status).toBe("fast");
+    expect(resolution.resolved?.hash_bounds.map((b) => b.line)).toEqual([1, 3]);
   });
 });
