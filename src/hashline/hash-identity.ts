@@ -73,9 +73,13 @@ export interface HashOptions {
  * The anchor assignment a walk can carry, for a caller that visits every line anyway.
  *
  * WHY: `hashesFor` returns a finished array, which forces it to split the text to produce one. The
- * WHY: served read walks its lines to select a page, so it takes the assignment step instead and
- * WHY: drives it from that walk — one pass over the text for both. The algorithm is unchanged:
- * WHY: `newLineAssigner` is the loop body `lineHashesPure` has always run.
+ * WHY: served read walks its lines to select a page, so it takes the assignment step instead and drives
+ * WHY: it from that walk — one pass over the text for both.
+ *
+ * A plan is single-use: `assign` carries the bit set of every anchor it has handed out, so replaying one
+ * over a second walk keeps assigning from a space the first walk already spent. Ask for a fresh plan
+ * instead. Nothing persists through it — the read path passes `noPersist`, and the authoritative
+ * snapshot and lease write is `upsertSnapshotFor`, after the page is rendered.
  */
 export interface AnchorWalk {
   /**
@@ -85,11 +89,6 @@ export interface AnchorWalk {
   assign?: (line: string) => string;
   /** The anchors this content already has in the store, in line order. */
   cached?: string[];
-  /**
-   * Persists what the walk produced, best-effort exactly as `hashesFor` does. `lineCount` is the
-   * walk's `split("\n")` total, which is the count the snapshot has always stored.
-   */
-  commit?: (hashes: string[], lineCount: number) => Promise<void>;
 }
 
 export const ANCHOR_LEN = HASH_LEN;
@@ -433,9 +432,8 @@ export class HashIdentity {
    * The anchor assignment for a content whose lines the caller is about to walk themselves.
    *
    * WHY: the served read walks the text once — assigning an anchor AND keeping the page — which a
-   * WHY: `hashesFor` call cannot drive because it must finish the whole array first. Everything else
-   * WHY: is `hashesFor`'s behaviour: the same snapshot cache, the same re-adopt on a hit, the same
-   * WHY: best-effort persist, and the same `blockedHashes` handling.
+   * WHY: `hashesFor` call cannot drive because it must finish the whole array first. Everything else is
+   * WHY: `hashesFor`'s behaviour: the same snapshot cache and the same `blockedHashes` handling.
    *
    * `prior` (the stable remap) needs the old AND new line arrays, and pathless hashing has no store
    * to hand a walk to, so both stay whole-content calls here.
@@ -445,30 +443,6 @@ export class HashIdentity {
     const path = options?.path;
     const persist = options?.persist ?? true;
     const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
-    const upsertOptions: HashSnapshotUpsertOptions = {
-      retireLeases: options?.retireLeases === true,
-    };
-
-    // WHY: committed by the caller once the walk reports the line total, so the snapshot's line count
-    // WHY: is the walk's own count instead of a second split.
-    const commit =
-      (failure: string, target: string) =>
-      async (hashes: string[], lineCount: number): Promise<void> => {
-        if (!persist || !snapshotIO) return;
-        try {
-          await snapshotIO.upsert(
-            target,
-            contentChecksum(content),
-            lineCount,
-            hashes,
-            content,
-            upsertOptions,
-          );
-        } catch (error) {
-          console.error(failure, error);
-        }
-      };
-
     if (!path || options?.prior) {
       return { cached: await this.hashesFor(content, options) };
     }
@@ -482,15 +456,10 @@ export class HashIdentity {
         console.error("Failed to read hash store snapshot:", error);
       }
     }
-    if (cached) {
-      // SAFETY: best-effort cache re-adopt — snapshot/lease update failures are ignored; the hashes are already authoritative and the next materialization retries.
-      return { cached, commit: commit("Failed to re-adopt hash snapshot:", path) };
-    }
-    // SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
-    return {
-      assign: this.newLineAssigner(options?.blockedHashes),
-      commit: commit("Failed to persist hash snapshot:", path),
-    };
+    if (cached) return { cached };
+    // WHY: the plan assigns one line at a time and writes nothing: the read path persists its snapshot
+    // WHY: and leases through `upsertSnapshotFor`, once the page has been rendered.
+    return { assign: this.newLineAssigner(options?.blockedHashes) };
   }
 
   async hashesFor(content: string, options?: HashOptions): Promise<string[]> {

@@ -90,9 +90,8 @@ export async function prepareFile(
   // WHY: the anchor-space line cap is an edit-domain limit (`MAX_HASH_LINES` is the served cap), so
   // WHY: verbatim ignores a caller-supplied cap: a file too large to anchor is still a file worth
   // WHY: reading. Only the 100MB `MAX_BYTES` guard in `loadFileKindAndText` bounds both modes, and it
-  // WHY: bounds BYTES READ: verbatim pages the file by walking its lines and never holds a line
-  // WHY: array, while served still materializes one (`visLines`) before slicing a page, so no cap
-  // WHY: returns here.
+  // WHY: bounds BYTES READ: both modes page a file by walking its lines and hold no line array, so
+  // WHY: verbatim takes no cap and served takes the anchor-space one.
   const maxLines = verbatim ? undefined : (options?.maxLines ?? MAX_HASH_LINES);
   const file =
     options?.preloadedFile ??
@@ -153,8 +152,8 @@ export async function prepareFile(
     preloadedFile: file,
   });
   // WHY: served hands the preview a walk plan instead of a finished anchor array: the anchors are
-  // WHY: assigned inside the same walk that keeps the page, so the text is traversed once for both.
-  // WHY: Verbatim passes none at all — no store, no snapshot, no hash of any line.
+  // WHY: assigned inside the same walk that keeps the page, so the page costs one pass and the anchors
+  // WHY: ride along in it. Verbatim passes none at all — no store, no snapshot, no hash of a line.
   const anchors = verbatim
     ? []
     : await anchorWalkFor(norm.normalized, norm.absolutePath, {

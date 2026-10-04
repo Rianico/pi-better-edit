@@ -96,10 +96,9 @@ function emptyFilePreview(
 ): { text: string; served: ServedRow[] } {
   if (verbatim) return { text: "[File is empty.]", served: [] };
   if (startLine === 1) {
-    // WHY: the walk already anchored this empty file's one line, so the marker never splits for it.
-    const allHashes = hashes;
-
-    const emptyLineHash = allHashes[0]!;
+    // WHY: the walk already anchored this empty file's one line, which is the anchor of the empty
+    // WHY: string — the only line an empty file has (`splitLines("")`), so it is the marker's own.
+    const emptyLineHash = hashes[0]!;
     return {
       text: `${emptyLineHash}${hashSep}\n[File is empty. Use edit to insert content.]`,
       served: [{ position: 0, hash: emptyLineHash }],
@@ -307,8 +306,6 @@ function buildWindowSection(params: {
  * A page the read walked out of the text: the lines the request asked for, and the counts.
  */
 interface WalkedPage {
-  /** The read's line total: `visLines(text).length`. */
-  readonly total: number;
   /** `split("\n")`'s total: the count a snapshot stores as its line count. */
   readonly splitTotal: number;
   /** The lines of each requested range, in request order. */
@@ -336,7 +333,6 @@ function walkPage(
     assign ? (line: string) => void assigned.push(assign(line)) : undefined,
   );
   return {
-    total: visibleLineTotal(text, walk.total),
     splitTotal: walk.total,
     ranges: walk.ranges,
     ...(assign ? { assigned } : {}),
@@ -468,6 +464,8 @@ export async function fmtReadPreview(
     anchors !== undefined && isAnchorArray(anchors) ? anchors : undefined;
   const plan: AnchorWalk | undefined =
     !verbatim && anchors !== undefined && !isAnchorArray(anchors) ? anchors : undefined;
+  // WHY: the page walk below cannot know which lines to keep until the total is known, so the counts
+  // WHY: come from one allocation-free walk of their own — two passes, neither holding a line.
   const counted = walkLines(text);
   const totalLines = visibleLineTotal(text, counted.total);
   const totals = { visible: totalLines, split: counted.total };
@@ -488,7 +486,6 @@ export async function fmtReadPreview(
         : (plan?.cached ??
           page.assigned ??
           (await (path ? lineHashes(text, path) : lineHashes(text))));
-    await plan?.commit?.(hashes, page.splitTotal);
     return { ranges: page.ranges, hashes };
   };
   if (totalLines === 0) {
@@ -522,12 +519,14 @@ export async function fmtReadPreview(
     };
   }
   if (startLine > totalLines) {
+    // WHY: the caller still needs the whole anchor array (it materializes the snapshot), so this page
+    // WHY: still walks the text — with an empty range, since there is no page to keep — and returns only
+    // WHY: what it names: a spread here would put the walk's ranges on the result too.
+    const page = await pageFor([]);
     return {
-      // WHY: the caller still needs the whole anchor array (it materializes the snapshot), so this
-      // WHY: page still walks the text — with an empty range, since there is no page to keep.
-      ...(await pageFor([])),
       text: `Offset ${startLine} is beyond end of file (${totalLines} lines total). Use offset=1 to read from the start, or offset=${totalLines} to read the last line.`,
       served: [],
+      hashes: page.hashes,
       lineTotals: totals,
     };
   }
