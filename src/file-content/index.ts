@@ -10,8 +10,7 @@
 
 import { constants } from "node:fs";
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
-import { AUTO_READ_MAX } from "../constants.js";
-import { MAX_HASH_LINES } from "../hashline/index.js";
+import { AUTO_READ_MAX, SERVED_MAX_LINES } from "../constants.js";
 import { resolveTarget } from "../fs-write.js";
 import { toCwd } from "../paths.js";
 import { valAccess } from "../validation.js";
@@ -80,7 +79,7 @@ export async function prepareFile(
   const file =
     options?.preloadedFile ??
     (await loadFileKindAndText(absolutePath, {
-      maxLines: options?.maxLines ?? MAX_HASH_LINES,
+      maxLines: options?.maxLines ?? SERVED_MAX_LINES,
       displayPath: path,
     }));
   if (file.kind !== "text") {
@@ -126,7 +125,7 @@ export async function prepareFile(
   const norm = await readNormFile(path, cwd, {
     signal,
     accessMode: options?.accessMode,
-    maxLines: options?.maxLines ?? MAX_HASH_LINES,
+    maxLines: options?.maxLines ?? SERVED_MAX_LINES,
     store: options?.store,
     noPersist: options?.noPersist,
     preloadedFile: file,

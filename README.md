@@ -320,7 +320,7 @@ referenced span is retired — the current word is `cut`.
 | `[E_UNDO_STALE]` | Target file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read file. |
 | `[E_UNDO_UNAVAILABLE]` | Undo state could not be persisted to SQLite store. | Edit was refused and file unchanged; retry edit. |
 | `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure; do not re-undo — the next run repairs the interrupted revert. |
-| `[E_LARGE_FILE]` | File exceeds the 14,766,336-line ceiling of allocatable 4-char anchors (62^4 minus the 10,000 reserved all-digit spellings). | Use `write` or non-hashline tools for very large files. |
+| `[E_LARGE_FILE]` | File exceeds the served admission budget (200,000 lines, `SERVED_MAX_LINES`) or the 14,766,336-line ceiling of allocatable 4-char anchors (62^4 minus the 10,000 reserved all-digit spellings). | Use `write` or non-hashline tools for very large files. |
 | `[E_UNKNOWN]` | Unexpected filesystem or invariant failure. | Check error message details. |
 
 ### Applied Warnings (`[W_*]`)

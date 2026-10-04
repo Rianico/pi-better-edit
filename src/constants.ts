@@ -2,6 +2,16 @@ export const AUTO_READ_MAX = 2000;
 export const SNIFF_BYTES = 8192;
 export const MAX_BYTES = 100 * 1024 * 1024;
 export const MAX_READ_LINE_BYTES = 200 * 1024;
+// WHY: the served admission budget — the most lines any read/edit/serve seam will
+// WHY: materialize for one file. Memory target ~15 MB retained: at the measured
+// WHY: ~77 B/line retained cost (split array + anchors) 200,000 lines cost ~15 MB,
+// WHY: generous for real source files and two orders of magnitude below what the
+// WHY: anchor space would admit (14.7 M lines ≈ 1.1 GB). This is deliberately NOT
+// WHY: derived from ALPHA/HASH_LEN/HASH_SPACE — deriving admission from the anchor
+// WHY: space was the defect (a width change must never move the memory budget).
+// WHY: Lane #43 halves the retained cost to ~36 B/line; when the per-line cost
+// WHY: changes, re-derive this budget from the new cost and the same target.
+export const SERVED_MAX_LINES = 200_000;
 
 // WHY: a multi-window read is still ONE tool result, so the window count is bounded — otherwise
 // WHY: `windows` would multiply the auto-read budget by N — and every window draws on the same

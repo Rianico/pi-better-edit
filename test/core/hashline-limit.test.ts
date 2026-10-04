@@ -11,7 +11,7 @@ import {
   MAX_HASH_LINES,
 } from "../../src/hashline";
 import { HASH_SPACE_EXHAUSTED_PAYLOAD } from "../../src/hashline/hash-identity.js";
-import { READ_MAX_LINES } from "../../src/read.js";
+import { SERVED_MAX_LINES } from "../../src/constants.js";
 import { useTestHome, withTempFile, setupReadTest } from "../support/fixtures";
 
 const home = useTestHome();
@@ -126,14 +126,22 @@ describe("hashline limits", () => {
       ).toBe(true);
     });
 
-    it("pins the read seam cap binding", () => {
-      // WHY: the 20 000-line read above passes under any cap in
-      // WHY: `(20 000, 14 776 336)`, so the seam binding is pinned directly —
-      // WHY: the exported ceiling equals `MAX_HASH_LINES` and the read seam
-      // WHY: passes that binding. A smaller hidden cap breaks the source pin.
-      expect(READ_MAX_LINES).toBe(MAX_HASH_LINES);
+    it("pins the served admission budget binding", () => {
+      // WHY: ordinary multi-thousand-line reads pass under the served budget — the
+      // WHY: seam binding is pinned directly: the read seam passes the memory
+      // WHY: budget, not the anchor-space ceiling. A hidden re-derivation from
+      // WHY: the anchor space breaks the source pins below.
+      expect(SERVED_MAX_LINES).toBe(200_000);
+      expect(SERVED_MAX_LINES).not.toBe(MAX_HASH_LINES);
       const seam = readFileSync("src/read.ts", "utf-8");
-      expect(/maxLines:\s*READ_MAX_LINES/.test(seam)).toBe(true);
+      expect(/maxLines:\s*SERVED_MAX_LINES/.test(seam)).toBe(true);
+      // WHY: the budget's source must not reference the anchor space — the
+      // WHY: match runs on comment-stripped source, so the rationale's mention
+      // WHY: of the anchor figures cannot satisfy it.
+      const budgetSrc = stripComments(readFileSync("src/constants.ts", "utf-8"));
+      expect(/ALPHA|HASH_LEN|HASH_SPACE|USABLE_HASH_SPACE|MAX_HASH_LINES/.test(budgetSrc)).toBe(
+        false,
+      );
     });
   });
   it("preserves unique hashes at the boundary through the store path", async () => {
@@ -168,9 +176,10 @@ describe("read tool line cap", () => {
   });
 
   it("reads a file well within the live seam limit without hashing errors", async () => {
-    // WHY: the real seams pass `MAX_HASH_LINES` (read.ts), so a file far below
-    // WHY: the fourteen-million-line cap must read cleanly — this proves the
-    // WHY: seam tolerates a large load rather than imposing a smaller hidden cap.
+    // WHY: the real seams pass the served admission budget, so a 20 000-line
+    // WHY: file — an order of magnitude under the budget — must read cleanly.
+    // WHY: This proves the seams admit realistic large files while the budget,
+    // WHY: not the anchor-space ceiling, is the binding cap.
     const content = Array.from({ length: 20_000 }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
@@ -179,5 +188,56 @@ describe("read tool line cap", () => {
       expect(text).toContain("│x0");
       expect(text).toContain("[Showing lines 1-");
     });
+  });
+
+  it("rejects an over-budget file naming count and budget", async () => {
+    // WHY: the boundary file is ~2 MB — comfortably under MAX_BYTES but over the
+    // WHY: budget. This is the exposure the widening must not move: admission
+    // WHY: refuses on lines long before the anchor space could matter.
+    const over =
+      Array.from({ length: SERVED_MAX_LINES + 100 }, (_, i) => `x${i}`).join("\n") + "\n";
+    await withTempFile("over.ts", over, async ({ cwd }) => {
+      let caught: unknown;
+      try {
+        await prepareFile("over.ts", cwd, {});
+      } catch (error) {
+        caught = error;
+      }
+      expect(caught).toBeInstanceOf(DomainError);
+      const err = caught as DomainError;
+      expect(err.code).toBe("E_LARGE_FILE");
+      const payload = err.payload as { limitKind: string; limit: number; lineCount: number };
+      expect(payload.limitKind).toBe("lines");
+      expect(payload.limit).toBe(SERVED_MAX_LINES);
+      // WHY: the trip-instant count exceeds the budget (chunk granularity decides
+      // WHY: the exact value, so the pin is the inequality, not the number).
+      expect(payload.lineCount).toBeGreaterThan(SERVED_MAX_LINES);
+    });
+  });
+
+  it("admits a file exactly at the budget", async () => {
+    // WHY: the boundary is exclusive — budget lines read cleanly, over-budget
+    // WHY: refuses. Same ~2 MB scale as the rejection above.
+    const at = Array.from({ length: SERVED_MAX_LINES }, (_, i) => `x${i}`).join("\n");
+    await withTempFile("at.ts", at, async ({ cwd }) => {
+      const prepared = await prepareFile("at.ts", cwd, {});
+      expect(prepared.kind).toBe("text");
+    });
+  });
+
+  it("renders distinct messages for the two limitKinds", () => {
+    // WHY: one shape, two ceilings — the copy must tell the served budget
+    // WHY: apart from the anchor-space ceiling.
+    const lines = new DomainError("E_LARGE_FILE", {
+      limitKind: "lines",
+      limit: SERVED_MAX_LINES,
+      lineCount: SERVED_MAX_LINES + 1,
+    });
+    const space = new DomainError("E_LARGE_FILE", HASH_SPACE_EXHAUSTED_PAYLOAD);
+    expect(lines.message).toContain(
+      `${SERVED_MAX_LINES + 1} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit`,
+    );
+    expect(space.message).toContain(`${USABLE_HASH_SPACE}-line limit`);
+    expect(lines.message).not.toBe(space.message);
   });
 });

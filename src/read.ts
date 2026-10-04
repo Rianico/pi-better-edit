@@ -1,8 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadTool } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
-import { MAX_READ_WINDOWS } from "./constants.js";
-import { MAX_HASH_LINES } from "./hashline/index.js";
+import { MAX_READ_WINDOWS, SERVED_MAX_LINES } from "./constants.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
@@ -16,9 +15,6 @@ import { fileSnap } from "./file-reader.js";
 import { snapshotHashFor, upsertSnapshotFor } from "./snapshot-store";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
-// WHY: the live ceiling the read seam enforces — capacity tests pin this
-// WHY: binding instead of the unreachable fourteen-million-line top.
-export const READ_MAX_LINES = MAX_HASH_LINES;
 
 const R_DESC = loadP("../prompts/read.md");
 const R_SNIPPET = loadP("../prompts/read-snippet.md");
@@ -84,7 +80,7 @@ export function regRead(pi: ExtensionAPI): void {
         offset: params.offset,
         limit: params.limit,
         windows: params.windows,
-        maxLines: READ_MAX_LINES,
+        maxLines: SERVED_MAX_LINES,
         store: await loadHashStore(),
         noPersist: true,
       });

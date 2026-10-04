@@ -7,9 +7,10 @@
 
 import { readNormFile } from "../file-reader.js";
 import { splitLines } from "../utils.js";
+import { SERVED_MAX_LINES } from "../constants.js";
 import type { LineEnding } from "../edit-diff.js";
 import type { HashStore } from "../hash-store.js";
-import { MAX_HASH_LINES, type LeaseSpanSource } from "../hashline/index.js";
+import type { LeaseSpanSource } from "../hashline/index.js";
 import {
   createSessionHandle,
   loadAnchorHomes,
@@ -47,7 +48,7 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
     await readNormFile(source.path, source.cwd, {
       signal: source.signal,
       accessMode: source.accessMode,
-      maxLines: MAX_HASH_LINES,
+      maxLines: SERVED_MAX_LINES,
       store: source.store,
       noPersist: source.noPersist,
     });
@@ -113,7 +114,7 @@ export async function loadForeignServedView(input: {
     input.path,
     input.cwd,
     {
-      maxLines: MAX_HASH_LINES,
+      maxLines: SERVED_MAX_LINES,
       store: input.store,
       noPersist: true,
     },
