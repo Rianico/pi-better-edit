@@ -84,8 +84,29 @@ export function isValidHashList(value: unknown): value is string[] {
 
 const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
-export const CANON_VERSION = 2;
-const CANON_RE = /[ \t\r\n]+/g;
+/**
+ * CANON_VERSION 3 (issue #22): the frozen 28-code-point whitespace class below replaces the v2
+ * ASCII-only class of ADR-0005. Snapshot keys carry the version (`${CANON_VERSION}:${checksum}`),
+ * so pre-v3 rows are inert cache misses rebuilt on the next read — no pre-v3 constant is retained.
+ */
+export const CANON_VERSION = 3;
+
+/**
+ * WHY: an explicit code-point list, never a Unicode property escape — \p{White_Space} and \p{Cf}
+ * drift with engine versions while a versioned canon must be a frozen function (issue #22).
+ * Frozen set, 6 + 3 + 11 + 5 + 3 = 28 code points: TAB, LF, VT, FF, CR, SP; NEL, NBSP, OGHAM
+ * SPACE; EN QUAD…HAIR SPACE (U+2000–U+200A); LINE/PARAGRAPH SEPARATOR, NARROW NBSP, MEDIUM
+ * MATHEMATICAL SPACE, IDEOGRAPHIC SPACE; LRM, RLM, ZWNBSP/BOM.
+ */
+const CANON_CODE_POINTS = [
+  0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x0085, 0x00a0, 0x1680, 0x2000, 0x2001, 0x2002,
+  0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f,
+  0x3000, 0x200e, 0x200f, 0xfeff,
+] as const;
+const CANON_RE = new RegExp(
+  `[${CANON_CODE_POINTS.map((cp) => `\\u${cp.toString(16).padStart(4, "0")}`).join("")}]+`,
+  "g",
+);
 
 export function canon(line: string): string {
   return line.replace(CANON_RE, "");

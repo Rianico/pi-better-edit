@@ -3,7 +3,7 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
-import { lineHashes, _lineHashesPure, CANON_VERSION } from "../../src/hashline";
+import { lineHashes, _lineHashesPure, CANON_VERSION, canon, canonDigest } from "../../src/hashline";
 import { initHasher } from "../../src/hashline/hasher";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { getSnapshot, upsertSnapshot } from "../../src/snapshot-store";
@@ -15,7 +15,11 @@ beforeAll(async () => {
   await initHasher();
 });
 
-describe("canon — ASCII whitespace stripping (ADR-0005)", () => {
+describe("canon — frozen v3 whitespace class (ADR-0005 superseded by issue #22)", () => {
+  it("reports canon version 3", () => {
+    expect(CANON_VERSION).toBe(3);
+  });
+
   it("hashes whitespace variants of a line identically", async () => {
     const base = await _lineHashesPure("func hello\n");
     const double = await _lineHashesPure("func  hello\n");
@@ -28,13 +32,28 @@ describe("canon — ASCII whitespace stripping (ADR-0005)", () => {
     expect(base[0]).toBe(tab[0]);
   });
 
-  it("keeps NBSP and Unicode whitespace significant", async () => {
+  it("normalizes v3 class code points anywhere in the line (issue #22)", async () => {
     const ascii = await _lineHashesPure("func hello\n");
-    const nbsp = await _lineHashesPure("func\u00A0hello\n");
-    const em = await _lineHashesPure("func\u2003hello\n");
-    expect(nbsp[0]).not.toBe(ascii[0]);
-    expect(em[0]).not.toBe(ascii[0]);
-    expect(nbsp[0]).not.toBe(em[0]);
+    const nbspMiddle = await _lineHashesPure("func\u00A0hello\n");
+    const emMiddle = await _lineHashesPure("func\u2003hello\n");
+    const nbspPadded = await _lineHashesPure("\u00A0func hello \u00A0\n");
+    const bomInside = await _lineHashesPure("func\uFEFF hello\n");
+    expect(nbspMiddle[0]).toBe(ascii[0]);
+    expect(emMiddle[0]).toBe(ascii[0]);
+    expect(nbspPadded[0]).toBe(ascii[0]);
+    expect(bomInside[0]).toBe(ascii[0]);
+    expect(canon("func\u00A0hello")).toBe(canon("func hello"));
+    expect(canonDigest("func\u00A0hello")).toBe(canonDigest("func\u2003hello"));
+    expect(canonDigest("func\u200Bhello")).not.toBe(canonDigest("func hello"));
+  });
+
+  it("keeps zero-width, joiner and soft-hyphen code points significant (issue #22)", async () => {
+    const ascii = await _lineHashesPure("func hello\n");
+    const significant = ["\u200B", "\u200C", "\u200D", "\u00AD", "\u2060", "\u180E"];
+    for (const cp of significant) {
+      const variant = await _lineHashesPure(`func${cp}hello\n`);
+      expect(variant[0]).not.toBe(ascii[0]);
+    }
   });
 
   it("hashes whitespace-only lines as blank lines", async () => {
