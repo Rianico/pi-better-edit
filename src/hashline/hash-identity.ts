@@ -86,8 +86,9 @@ const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
 /**
  * CANON_VERSION 3 (issue #22): the frozen 28-code-point whitespace class below replaces the v2
- * ASCII-only class of ADR-0005. Snapshot keys carry the version (`${CANON_VERSION}:${checksum}`),
- * so pre-v3 rows are inert cache misses rebuilt on the next read — no pre-v3 constant is retained.
+ * ASCII-only class of ADR-0005 — see ADR-0029 for the amendment and the migration notes. Snapshot
+ * keys carry the version (`${CANON_VERSION}:${checksum}`), so pre-v3 rows are inert cache misses
+ * rebuilt on the next read — no pre-v3 constant is retained.
  */
 export const CANON_VERSION = 3;
 
