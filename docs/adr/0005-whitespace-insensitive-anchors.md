@@ -4,7 +4,7 @@ Date: 2026-08-16
 
 ## Status
 
-accepted
+accepted; amended by [ADR-0029](0029-canon-v3-frozen-whitespace-class.md) (class clause: ASCII `[ \t\r\n]` → the frozen 28-code-point v3 class; the ASCII-strip decision itself stands)
 
 ## Context
 
