@@ -5,7 +5,7 @@ A hash-anchored file-editing extension for the pi-coding-agent: every line of a 
 ## Language
 
 **serve**:
-To deliver a line's `HASH│content` row into the model's context through tool output. Reading serves the rows it shows; a post-edit diff serves its rows; an error's fresh-anchor feedback serves its rows.
+To deliver a line's `HASH│content` row into the model's context through tool output. A default (`served`) read serves the rows it shows; a post-edit diff serves its rows; an error's fresh-anchor feedback serves its rows.
 _Avoid_: display, show, echo
 
 **served state**:
@@ -111,15 +111,15 @@ The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, cano
 _Avoid_: epoch snapshot, served hash map
 
 **read_skill**:
-To read a file's content as plain text — no hash prefixes, no served rows. The model's tool for loading skill content (SKILL.md or any file in its directory) to invoke and consume; `read` remains the hashed read for edit targets.
+To read a file's content as plain text — no hash prefixes, no served rows. The model's tool for loading skill content (SKILL.md or any file in its directory) to invoke and consume; `read` in its default `served` mode remains the hashed read for edit targets.
 _Avoid_: plain read, skill tool
 
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read_skill` is the only reference read.
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. Both `read_skill` and `read` with `mode: "verbatim"` are reference reads.
 _Avoid_: unmanaged read
 
 **tool-name-as-intent**:
-The principle that a tool's name encodes the model's intent — `read` (hashed, editable) vs `read_skill` (plain, consumable) — so the model always knows what it's getting.
+The principle that a tool's name encodes the model's intent — `read` (hashed, editable) vs `read_skill` (plain, consumable) — so the model always knows what it's getting. `read` carries one in-payload exception: `mode: "verbatim"` switches it to the plain, consumable contract, so the anchored default stays editing-safe.
 _Avoid_: —
 
 **payload contract**:

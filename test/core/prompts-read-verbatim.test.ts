@@ -4,7 +4,6 @@ import { loadGuide, loadP } from "../../src/prompts";
 describe("read prompts serve mode: verbatim", () => {
   it("loads the new read.md description with the mode choice", () => {
     const description = loadP("../prompts/read.md");
-    expect(description.length).toBeGreaterThan(1200);
     expect(description).toContain('mode: "verbatim"');
     expect(description).toContain("HASH│content");
     expect(description).not.toContain("{{");

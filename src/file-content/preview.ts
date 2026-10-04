@@ -75,7 +75,10 @@ function formatPaginationHint(
 // WHY: verbatim renders the identical admitted rows with no anchor prefix; the row set, budgets,
 // WHY: and hints are computed once, so only this formatter differs between the two modes.
 function fmtRows(hashes: string[], lines: string[], verbatim: boolean): string {
-  return verbatim ? lines.join("\n") : fmtRegion(hashes, lines);
+  if (!verbatim) return fmtRegion(hashes, lines);
+  const joined = lines.join("\n");
+  // WHY: a lone empty line renders as "" — indistinguishable from an empty result, so mark it.
+  return joined === "" && lines.length > 0 ? "[1 empty line]" : joined;
 }
 
 async function emptyFilePreview(
@@ -86,8 +89,8 @@ async function emptyFilePreview(
   hashSep: string,
   verbatim: boolean,
 ): Promise<{ text: string; served: ServedRow[] }> {
+  if (verbatim) return { text: "[File is empty.]", served: [] };
   if (startLine === 1) {
-    if (verbatim) return { text: "[File is empty.]", served: [] };
     const allHashes =
       precomputedHashes ?? (await (path ? lineHashes(text, path) : lineHashes(text)));
     const emptyLineHash = allHashes[0]!;
@@ -150,7 +153,10 @@ function buildOversizedPreview(params: {
     skippedTruncation.content === "" ? 0 : skippedTruncation.content.split("\n").length;
   const lastShownLine = shownRowCount > 0 ? startLine + shownRowCount - 1 : startLine - 1;
   const { lineLabel, verb, addresses } = oversizedWarning(oversized);
-  const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; content not shown because hashline anchors require full lines. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
+  const reason = verbatim
+    ? "content not shown; line exceeds the read byte budget"
+    : "content not shown because hashline anchors require full lines";
+  const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; ${reason}. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
   let preview = skippedTruncation.content;
   let nextOffset: number | undefined;
   if (shownRowCount > 0 && skippedTruncation.truncated) {
@@ -163,9 +169,10 @@ function buildOversizedPreview(params: {
     preview += `\n\n${warning}`;
   }
   const served: ServedRow[] = [];
-  for (let index = 0; index < shownRowCount; index++)
-    if (rowSizes[index]!.bytes <= maxBytes)
-      served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+  if (!verbatim)
+    for (let index = 0; index < shownRowCount; index++)
+      if (rowSizes[index]!.bytes <= maxBytes)
+        served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
   return {
     text: preview,
     truncation: skippedTruncation.truncated ? skippedTruncation : undefined,
@@ -182,6 +189,7 @@ function buildNormalPreview(params: {
   maxBytes: number;
   maxTruncLines: number;
   selectedHashes: string[];
+  verbatim: boolean;
   // WHY: an entry of an explicit `windows` request is a bounded ask, not a page: the caller named
   // WHY: exactly these lines, so a trailing "use offset=N to continue" would invent intent.
   hintRemainder?: boolean;
@@ -191,8 +199,16 @@ function buildNormalPreview(params: {
   truncation: ReturnType<typeof truncateHead>;
   served: ServedRow[];
 } {
-  const { formatted, startLine, endIdx, totalLines, maxBytes, maxTruncLines, selectedHashes } =
-    params;
+  const {
+    formatted,
+    startLine,
+    endIdx,
+    totalLines,
+    maxBytes,
+    maxTruncLines,
+    selectedHashes,
+    verbatim,
+  } = params;
   const truncation = truncateHead(formatted, { maxBytes, maxLines: maxTruncLines });
   let preview = truncation.content;
   let nextOffset: number | undefined;
@@ -208,8 +224,9 @@ function buildNormalPreview(params: {
     preview += `\n\n${formatPaginationHint(startLine, endIdx, totalLines, nextOffset)}`;
   }
   const served: ServedRow[] = [];
-  for (let index = 0; index < truncation.outputLines; index++)
-    served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+  if (!verbatim)
+    for (let index = 0; index < truncation.outputLines; index++)
+      served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
   return { preview, nextOffset, truncation, served };
 }
 
@@ -265,6 +282,7 @@ function buildWindowSection(params: {
     maxTruncLines,
     selectedHashes,
     hintRemainder: false,
+    verbatim,
   });
   return {
     text: normal.preview,
@@ -347,9 +365,11 @@ function buildWindowedPreview(params: {
     // WHY: a multi-window request is N discrete slices, not one stream, so the result carries no root
     // WHY: `nextOffset`: a scalar would invite `offset = nextOffset` and silently re-read a window the
     // WHY: caller never asked to continue. A truncated window says so in its own section text.
-    served: [...hashByPosition.entries()]
-      .sort((left, right) => left[0] - right[0])
-      .map(([position, hash]) => ({ position, hash })),
+    served: verbatim
+      ? []
+      : [...hashByPosition.entries()]
+          .sort((left, right) => left[0] - right[0])
+          .map(([position, hash]) => ({ position, hash })),
   };
 }
 
@@ -437,6 +457,7 @@ export async function fmtReadPreview(
     maxBytes,
     maxTruncLines,
     selectedHashes,
+    verbatim,
   });
   return {
     text: normal.preview,

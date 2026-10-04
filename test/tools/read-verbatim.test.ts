@@ -1,9 +1,15 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import { fmtReadPreview } from "../../src/read";
 import { loadHashStore } from "../../src/hash-store";
 import { servedHashEchoDenial } from "../../src/write-hook";
 import { resolveTarget } from "../../src/fs-write";
-import { setupIntegrationTest, useTestHome, withTempFile } from "../support/fixtures";
+import { addServedSpanObserver } from "../../src/served-spans";
+import {
+  setupIntegrationTest,
+  TEST_SESSION_ID,
+  useTestHome,
+  withTempFile,
+} from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -47,6 +53,22 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
     expect(verbatim.served).toEqual([]);
   });
 
+  it("renders [File is empty.] for an empty file even past the start (fix 4)", async () => {
+    const verbatim = await fmtReadPreview(
+      "",
+      { render: "verbatim", offset: 2 },
+      undefined,
+      home.testPath,
+    );
+    expect(verbatim.text).toBe("[File is empty.]");
+    expect(verbatim.text).not.toContain("Use edit to insert content");
+  });
+
+  it("marks a lone empty line so it is not confused with an empty result (fix 3)", async () => {
+    const verbatim = await fmtReadPreview("\n", { render: "verbatim" }, undefined, home.testPath);
+    expect(verbatim.text).toBe("[1 empty line]");
+  });
+
   it("does not sanitize literal anchor-shaped content", async () => {
     const verbatim = await fmtReadPreview(
       "Ab3│kept literally\n",
@@ -55,6 +77,55 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
       home.testPath,
     );
     expect(verbatim.text).toBe("Ab3│kept literally");
+  });
+
+  it("returns served: [] at the seam for a normal verbatim range (fix 2)", async () => {
+    const verbatim = await fmtReadPreview(
+      "alpha\nbeta\n",
+      { render: "verbatim" },
+      undefined,
+      home.testPath,
+    );
+    expect(verbatim.text).toBe("alpha\nbeta");
+    expect(verbatim.served).toEqual([]);
+  });
+
+  it("renders multiple verbatim windows plainly and returns served: [] (fix 6)", async () => {
+    const text = "a\nb\nc\nd\n";
+    const verbatim = await fmtReadPreview(
+      text,
+      {
+        render: "verbatim",
+        windows: [
+          { offset: 1, limit: 2 },
+          { offset: 4, limit: 1 },
+        ],
+      },
+      undefined,
+      home.testPath,
+    );
+    expect(verbatim.text).toContain("=== Lines 1-2 of 4 ===");
+    expect(verbatim.text).toContain("a\nb");
+    expect(verbatim.text).toContain("=== Lines 4-4 of 4 ===");
+    expect(verbatim.text.split("\n").some((line) => ANCHOR_ROW.test(line))).toBe(false);
+    expect(verbatim.served).toEqual([]);
+  });
+
+  it("uses a mode-neutral oversize clause under verbatim (fix 5)", async () => {
+    const text = `${"x".repeat(40)}\n${"y".repeat(40)}\n`;
+    const verbatim = await fmtReadPreview(
+      text,
+      { render: "verbatim" },
+      undefined,
+      home.testPath,
+      10,
+    );
+    expect(verbatim.text).toContain("content not shown; line exceeds the read byte budget");
+    expect(verbatim.text).not.toContain("hashline anchors require full lines");
+    expect(verbatim.served).toEqual([]);
+
+    const served = await fmtReadPreview(text, {}, undefined, home.testPath, 10);
+    expect(served.text).toContain("content not shown because hashline anchors require full lines");
   });
 });
 
@@ -123,6 +194,20 @@ describe("read tool — mode: verbatim", () => {
     });
   });
 
+  it("distinguishes a file that is exactly one empty line (fix 3)", async () => {
+    await withTempFile("oneblank.txt", "\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const result = await readTool.execute(
+        "r1",
+        { file: "oneblank.txt", mode: "verbatim" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0].text).toBe("[1 empty line]");
+    });
+  });
+
   it("keeps literal content that looks like an anchor", async () => {
     await withTempFile("literal.txt", "Ab3│kept literally\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
@@ -137,7 +222,32 @@ describe("read tool — mode: verbatim", () => {
     });
   });
 
-  it("writes no lease and no snapshot for the file", async () => {
+  it("renders verbatim windows plainly through the tool (fix 6)", async () => {
+    await withTempFile("windows.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const result = await readTool.execute(
+        "r1",
+        {
+          file: "windows.txt",
+          mode: "verbatim",
+          windows: [
+            { offset: 1, limit: 2 },
+            { offset: 4, limit: 1 },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const text = result.content[0].text as string;
+      expect(text).toContain("=== Lines 1-2 of 4 ===");
+      expect(text).toContain("=== Lines 4-4 of 4 ===");
+      expect(text.split("\n").some((line) => ANCHOR_ROW.test(line))).toBe(false);
+      expect(result.details.snapshotId).toBeUndefined();
+    });
+  });
+
+  it("writes no lease and no snapshot for a never-served file", async () => {
     await withTempFile("verbatim.txt", "alpha\nbeta\n", async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute(
@@ -160,6 +270,92 @@ describe("read tool — mode: verbatim", () => {
       expect(snapshots).toEqual([]);
     });
   });
+
+  it("touches no served mirror, epoch, drift clear, or span notification (fix 6)", async () => {
+    await withTempFile("state.txt", "alpha\nbeta\n", async ({ cwd, path }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const absolute = await resolveTarget(path);
+      const store = await loadHashStore();
+      const mirrorCount = () =>
+        (
+          store.db
+            .prepare("SELECT COUNT(*) AS n FROM served WHERE session_id = ? AND path = ?")
+            .get(TEST_SESSION_ID, absolute) as { n: number }
+        ).n;
+
+      const seen: unknown[] = [];
+      const off = addServedSpanObserver((notification) => seen.push(notification));
+      const sessionSpy = vi.spyOn(ctx.sessionManager, "getSessionId");
+      try {
+        await readTool.execute(
+          "r1",
+          { file: "state.txt", mode: "verbatim" },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(mirrorCount()).toBe(0);
+        expect(seen).toEqual([]);
+        expect(sessionSpy).not.toHaveBeenCalled();
+
+        await readTool.execute("r2", { file: "state.txt" }, undefined, undefined, ctx);
+        expect(mirrorCount()).toBeGreaterThan(0);
+        expect(seen.length).toBeGreaterThan(0);
+        expect(sessionSpy).toHaveBeenCalled();
+      } finally {
+        off();
+        sessionSpy.mockRestore();
+      }
+    });
+  });
+
+  it("leaves an already-served file's leases and snapshots byte-identical and keeps the anchor guard closed (fix 1)", async () => {
+    await withTempFile("reserved.txt", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const servedResult = await readTool.execute(
+        "r1",
+        { file: "reserved.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const servedText = servedResult.content[0].text as string;
+
+      const absolute = await resolveTarget(path);
+      const store = await loadHashStore();
+      const leaseRows = () =>
+        store.db
+          .prepare(
+            "SELECT anchor, retired_at FROM served_leases WHERE file_path = ? ORDER BY anchor",
+          )
+          .all(absolute);
+      const snapshotCount = () =>
+        (
+          store.db
+            .prepare("SELECT COUNT(*) AS n FROM file_snapshots WHERE path = ?")
+            .get(absolute) as { n: number }
+        ).n;
+
+      const leasesBefore = leaseRows();
+      const snapshotsBefore = snapshotCount();
+      expect(leasesBefore.length).toBeGreaterThan(0);
+      expect(snapshotsBefore).toBeGreaterThan(0);
+
+      const verbatimResult = await readTool.execute(
+        "r2",
+        { file: "reserved.txt", mode: "verbatim" },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      expect(verbatimResult.details.snapshotId).toBeUndefined();
+      expect(leaseRows()).toEqual(leasesBefore);
+      expect(snapshotCount()).toBe(snapshotsBefore);
+      const denial = await servedHashEchoDenial(null, path, servedText, cwd, TEST_SESSION_ID);
+      expect(denial).toContain("[E_SUSPICIOUS_TEXT]");
+    });
+  });
 });
 
 describe("read verbatim — served-row reproduction guard", () => {
@@ -174,7 +370,7 @@ describe("read verbatim — served-row reproduction guard", () => {
         ctx,
       );
       const verbatimText = result.content[0].text as string;
-      const denial = await servedHashEchoDenial(null, path, verbatimText, cwd, "fixture-session");
+      const denial = await servedHashEchoDenial(null, path, verbatimText, cwd, TEST_SESSION_ID);
       expect(denial).toBeUndefined();
     });
   });
@@ -184,7 +380,7 @@ describe("read verbatim — served-row reproduction guard", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute("r1", { file: "echo.txt" }, undefined, undefined, ctx);
       const servedText = result.content[0].text as string;
-      const denial = await servedHashEchoDenial(null, path, servedText, cwd, "fixture-session");
+      const denial = await servedHashEchoDenial(null, path, servedText, cwd, TEST_SESSION_ID);
       expect(denial).toContain("[E_SUSPICIOUS_TEXT]");
     });
   });
