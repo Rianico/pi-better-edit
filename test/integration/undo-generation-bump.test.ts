@@ -654,6 +654,150 @@ describe("generation bump refuses pre-v3 anchors", () => {
     });
   });
 
+  it("a lease naming only an uncommitted snapshot row is swept while the live lease is kept", async () => {
+    // WHY: the orphan predicate matches the grant lookup (`path = ? AND snapshot_hash = ?`
+    // WHY: `AND committed = 1 AND canon_version = ?`): a lease naming a committed = 0 row
+    // WHY: cannot grant, so the sweep drops it. Nothing in production writes committed = 0
+    // WHY: (every snapshot insert commits), so this is a hardening pin, not a live path.
+    await withTempFile("f.txt", PRE, async ({ cwd }) => {
+      const absF = join(cwd, "f.txt");
+      const ghostAbs = join(cwd, "ghost.txt");
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "f.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      const liveKey = `${CANON_VERSION}:${contentChecksum(PRE)}`;
+      // WHY: premise — a current-generation snapshot row for the ghost path exists but
+      // WHY: is uncommitted, so the grant lookup for the ghost lease misses.
+      store.db
+        .prepare(
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) " +
+            "VALUES (?,?,?,?,?,?)",
+        )
+        .run(ghostAbs, liveKey, 4, Date.now(), 0, CANON_VERSION);
+      const session = testSessionManager.getSessionId();
+      store.db
+        .prepare(
+          "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, " +
+            "served_snapshot_hash, served_line_number, updated_at, retired_at) " +
+            "VALUES (?,?,?,?,?,?,?,?,NULL)",
+        )
+        .run(session, ghostAbs, "unC0", 999, canonDigest("zzz"), liveKey, 1, Date.now());
+      const grantMiss = store.db
+        .prepare(
+          "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND snapshot_hash = ? " +
+            "AND committed = 1 AND canon_version = ?",
+        )
+        .get(ghostAbs, liveKey, CANON_VERSION) as { snapshot_id: number } | undefined;
+      expect(grantMiss).toBeUndefined();
+      ensureSnapshotTables(store.db);
+      const ghostLeft = (
+        store.db
+          .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE file_path = ?")
+          .get(ghostAbs) as { n: number }
+      ).n;
+      expect(ghostLeft).toBe(0);
+      // WHY: the legitimate current-generation lease survives the tightened predicate.
+      const legitKept = (
+        store.db
+          .prepare(
+            "SELECT COUNT(*) AS n FROM served_leases WHERE file_path = ? " +
+              "AND served_snapshot_hash = ? AND retired_at IS NULL",
+          )
+          .get(absF, liveKey) as { n: number }
+      ).n;
+      expect(legitKept).toBeGreaterThan(0);
+    });
+  });
+
+  it("the sweep joins a caller-owned transaction instead of nesting", async () => {
+    // WHY: `BEGIN IMMEDIATE` cannot nest — when the caller already holds the transaction
+    // WHY: the sweep runs on it (the `isTransaction` guard) instead of opening its own.
+    // WHY: The sweep's deletes are then the caller's to keep or roll back.
+    await withTempFile("t.txt", PRE, async ({ cwd }) => {
+      const absT = join(cwd, "t.txt");
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "t.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      plantV2File(store, absT, PRE);
+      const staleBefore = (
+        store.db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '${CANON_VERSION}:%'`,
+          )
+          .get() as { n: number }
+      ).n;
+      expect(staleBefore).toBeGreaterThan(0);
+      store.db.exec("BEGIN IMMEDIATE");
+      expect((store.db as unknown as { isTransaction?: boolean }).isTransaction).toBe(true);
+      // WHY: no nested-BEGIN throw — the guard takes the caller-transaction branch.
+      ensureSnapshotTables(store.db);
+      // WHY: the sweep's deletes are present inside the caller's transaction.
+      const staleInTxn = (
+        store.db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '${CANON_VERSION}:%'`,
+          )
+          .get() as { n: number }
+      ).n;
+      expect(staleInTxn).toBe(0);
+      store.db.exec("ROLLBACK");
+      // WHY: the caller owns atomicity — its ROLLBACK restores the swept rows.
+      const staleAfter = (
+        store.db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '${CANON_VERSION}:%'`,
+          )
+          .get() as { n: number }
+      ).n;
+      expect(staleAfter).toBe(staleBefore);
+      expect((store.db as unknown as { isTransaction?: boolean }).isTransaction).toBe(false);
+      // WHY: the rolled-back sweep heals on retry — no wedge left behind.
+      ensureSnapshotTables(store.db);
+      const staleHealed = (
+        store.db
+          .prepare(
+            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '${CANON_VERSION}:%'`,
+          )
+          .get() as { n: number }
+      ).n;
+      expect(staleHealed).toBe(0);
+    });
+  });
+
+  it("a rollback failure preserves the original sweep error", async () => {
+    // WHY: best-effort rollback — when ROLLBACK itself fails the original sweep failure
+    // WHY: stays authoritative: it is logged, never masked, and rethrown.
+    await withTempFile("b.txt", PRE, async ({ cwd }) => {
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const readTool = getTool("read");
+      await readTool.execute("r1", { path: "b.txt" }, undefined, undefined, ctx);
+      const store = await loadHashStore();
+      const origExec = store.db.exec.bind(store.db);
+      const logged: unknown[][] = [];
+      const consoleSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
+        logged.push(args);
+      });
+      const spy = vi.spyOn(store.db, "exec").mockImplementation((sql: string) => {
+        if (sql.includes("DELETE FROM file_snapshots"))
+          throw new Error("injected mid-sweep failure");
+        if (sql === "ROLLBACK") throw new Error("injected rollback failure");
+        origExec(sql);
+      });
+      try {
+        expect(() => ensureSnapshotTables(store.db)).toThrow(/injected mid-sweep failure/);
+      } finally {
+        spy.mockRestore();
+        consoleSpy.mockRestore();
+        origExec("ROLLBACK");
+      }
+      expect(logged.length).toBeGreaterThan(0);
+      expect(String(logged[0]![0])).toMatch(/failed to rollback sweep transaction/);
+      expect((store.db as unknown as { isTransaction?: boolean }).isTransaction).toBe(false);
+    });
+  });
+
   it("a mid-sweep failure rolls back instead of half-sweeping", async () => {
     // WHY: the four sweep deletes are one BEGIN IMMEDIATE unit — when the snapshot
     // WHY: delete fails, the already-executed non-current-lease delete rolls back with it.

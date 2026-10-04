@@ -224,8 +224,9 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
     // WHY: one provenance rule as of this sweep — a lease that names no surviving
     // WHY: snapshot for its own path is dangling (same-generation pre-column rows read
     // WHY: as canon 0 and are swept above: a one-time pairing-baseline reset). The grant
-    // WHY: lookup is path-scoped (`path = ? AND snapshot_hash = ?`), so a lease naming
-    // WHY: a hash that survives only in a foreign path's row goes with the orphans.
+    // WHY: lookup is path-scoped (`path = ? AND snapshot_hash = ? AND committed = 1`),
+    // WHY: so a lease naming a hash that survives only in a foreign path's row — or only
+    // WHY: in an uncommitted row — goes with the orphans.
     // WHY: Scoped to the sweep, not the whole open: the open-hook vacuum runs after and
     // WHY: may evict a snapshot pinned only by a retired-past-grace lease (the vacuum pin
     // WHY: ignores those), stranding its lease until the next open's sweep — fail-closed
@@ -233,7 +234,8 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
     if (hasLeases) {
       db.exec(
         "DELETE FROM served_leases WHERE NOT EXISTS (SELECT 1 FROM file_snapshots fs " +
-          "WHERE fs.path = served_leases.file_path AND fs.snapshot_hash = served_leases.served_snapshot_hash)",
+          "WHERE fs.path = served_leases.file_path AND fs.snapshot_hash = served_leases.served_snapshot_hash " +
+          "AND fs.committed = 1)",
       );
     }
   };
@@ -241,6 +243,11 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   // SAFETY: a boolean guard, and a missing field leaves `undefined` (treated as not-in-transaction).
   // SAFETY: `BEGIN IMMEDIATE` cannot nest, so a caller already inside a transaction runs the sweep
   // SAFETY: on that transaction instead of opening its own.
+  // SAFETY: runtime floor: `isTransaction` is `@since v24.0.0` while engines allow >=22.19.0 —
+  // SAFETY: on 22.x-23.x the read is `undefined`, so the sweep opens its own transaction, which is
+  // SAFETY: correct for every current call site (the same read already guards the vacuum-evict and
+  // SAFETY: dropServedState paths). Do NOT bump engines here: raising the floor is an operator
+  // SAFETY: decision, recorded in the CHANGELOG.
   const inSweepTransaction = (db as unknown as { isTransaction?: boolean }).isTransaction === true;
   if (inSweepTransaction) {
     sweepGenerations();
