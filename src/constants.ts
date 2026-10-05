@@ -7,11 +7,17 @@ export const MAX_BYTES = 100 * 1024 * 1024;
 // WHY: `walkLines` (src/file-content/line-walker.ts) visits every line and `walkPage`
 // WHY: (src/file-content/preview.ts) pushes one assigned anchor per visit, and that array is the
 // WHY: `fileHashes` the snapshot lineage write persists — so the served path is O(N) in anchors
-// WHY: regardless of window size. Measured ~32 B/line for distinct anchors at the live width plus array slots
-// WHY: (`node --expose-gc` probe: 200,000 distinct anchors hold ~6.1 MB), plus the fixed ~1.85 MB
-// WHY: allocator bitset (`BITSET_WORDS` over the 62^4 space) — 200,000 lines cost ~8-9 MB marginal
-// WHY: over the loaded text against the same ~15 MB target, generous for real source files and two
-// WHY: orders of magnitude below what the anchor space would admit (14.7 M lines ≈ 470 MB of anchors).
+// WHY: regardless of window size. The retained set is three structures, probe-measured
+// WHY: (`node --expose-gc scripts/measure-served-budget.mjs`): the walked anchor array (~6.1 MB
+// WHY: for 200,000 distinct anchors at the live width), the spelling memo over the SAME strings
+// WHY: (`HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES`, src/hashline/hash-identity.ts — shared
+// WHY: references, so no duplicate string bytes; its ~7.0 MB entry overhead at a full budget is the
+// WHY: largest single share), plus the fixed ~1.76 MB allocator bitset (`BITSET_WORDS` over the 62^4
+// WHY: space) — ~14.9 MB marginal worst case over the loaded text, against the ~15 MB target (200,000
+// WHY: lines x the ~77 B/line pre-paging per-line heap basis; the tree never recorded whether that
+// WHY: basis included the memo, so this component-wise derivation supersedes it). The budget holds
+// WHY: at the target for real source files and stays two orders of magnitude below what the anchor
+// WHY: space would admit (14.7 M lines ≈ 470 MB of anchors).
 // WHY: This is deliberately NOT derived from ALPHA/HASH_LEN/HASH_SPACE — deriving admission from the
 // WHY: anchor space was the defect (a width change must never move the memory budget).
 export const SERVED_MAX_LINES = 200_000;
@@ -24,8 +30,10 @@ export const MAX_READ_WINDOWS = 16;
 export const HASH_STORE_BUSY_TIMEOUT = 1000;
 // WHY: v9 renames the persisted anchor-generation column (`canon_version` → `anchor_generation`
 // WHY: on `file_snapshots` and `file_undo`, guarded rename preserving stamped values) — pre-generation
-// WHY: rows (0) are never current. Record-only marker; schema evolution itself is additive or
-// WHY: rename-preserving, never a drop.
+// WHY: rows (0) are never current. Mixed-version note: a concurrently open pre-rename process naming
+// WHY: `canon_version` breaks fail-closed, and the DROP fallback may leave both columns, inert
+// WHY: (see ADR-0031 §4 and `renameGenerationColumn`). Record-only marker; schema evolution itself
+// WHY: is additive or rename-preserving, never a drop.
 export const HASH_STORE_VERSION = 9;
 export const EDITS_MAX_ITEMS = 32;
 // WHY: the served-lease session TTL: an un-retired lease pins its snapshot for this long, and

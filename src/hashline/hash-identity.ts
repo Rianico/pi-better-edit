@@ -269,9 +269,9 @@ export function fileBaseIndex(canonText: string, pathSeed: number): number {
 // WHY: the hashCache bound is the served admission budget (SERVED_MAX_LINES),
 // WHY: not an arbitrary number: every product materialization is hard-capped at one
 // WHY: budget per call by the throwing lines clamp (src/file-content/loader.ts:91-100,
-// WHY: reached with maxLines: SERVED_MAX_LINES from src/read.ts:83,
+// WHY: reached with maxLines: SERVED_MAX_LINES from src/read.ts:116,
 // WHY: src/mutation-engine/edit-source.ts:51,117 and src/lifecycle-hooks/index.ts:153,161,
-// WHY: defaulted at src/file-content/index.ts:82,128), so the memo never clears inside an
+// WHY: defaulted at src/file-content/index.ts:96 (imported at :12)), so the memo never clears inside an
 // WHY: in-budget call and no product path can approach the cap — it sits ~40x below V8's
 // WHY: smallest per-Map cap (~2^23 entries on Node 24.0.0). An unbounded memo is unsafe
 // WHY: because it grows one entry per allocated anchor (~14.77M entries on the

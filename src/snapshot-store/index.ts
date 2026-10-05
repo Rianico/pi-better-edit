@@ -293,7 +293,9 @@ export function getSnapshot(
  */
 /** Whether a snapshot cache key belongs to the current anchor generation. Single owner: the middle component. */
 export function isCurrentAnchorGeneration(snapshotHash: string): boolean {
-  return snapshotHash.split(":")[1] === String(ANCHOR_GENERATION);
+  // WHY: named destructure — the middle component is the anchor axis; the canon leads, the checksum trails.
+  const [, generation] = snapshotHash.split(":");
+  return generation === String(ANCHOR_GENERATION);
 }
 export async function anchorsForSnapshotHash(
   path: string,
