@@ -243,11 +243,8 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   // SAFETY: a boolean guard, and a missing field leaves `undefined` (treated as not-in-transaction).
   // SAFETY: `BEGIN IMMEDIATE` cannot nest, so a caller already inside a transaction runs the sweep
   // SAFETY: on that transaction instead of opening its own.
-  // SAFETY: runtime floor: `isTransaction` is `@since v24.0.0` while engines allow >=22.19.0 —
-  // SAFETY: on 22.x-23.x the read is `undefined`, so the sweep opens its own transaction, which is
-  // SAFETY: correct for every current call site (the same read already guards the vacuum-evict and
-  // SAFETY: dropServedState paths). Do NOT bump engines here: raising the floor is an operator
-  // SAFETY: decision, recorded in the CHANGELOG.
+  // SAFETY: the runtime floor is engines.node >= 24, so the read is present on every supported
+  // SAFETY: runtime; the same read guards the vacuum-evict and dropServedState paths.
   const inSweepTransaction = (db as unknown as { isTransaction?: boolean }).isTransaction === true;
   if (inSweepTransaction) {
     sweepGenerations();

@@ -98,7 +98,7 @@ Zero configuration required. `pi` automatically activates the extension on start
 
 | Runtime Requirement | Supported Version |
 | --- | --- |
-| Node.js | &ge; 22.19.0 |
+| Node.js | &ge; 24.0.0 |
 | `pi-coding-agent` | &ge; 0.75.0 (peer dependency) |
 
 ### How It Works

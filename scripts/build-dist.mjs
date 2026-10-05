@@ -38,8 +38,8 @@ export const DEFAULT_OUTFILE = "dist/index.js";
  */
 export const EXTERNALS = ["diff", "file-type", "xxhash-wasm", "typebox", "@earendil-works/*"];
 
-/** `engines.node` is >=22.19.0; esbuild preserves the `node:` specifier prefixes. */
-const TARGET = "node22";
+/** The esbuild target tracks `engines.node`; esbuild preserves the `node:` specifier prefixes. */
+const TARGET = "node24";
 
 /** Thrown so enclosing `finally` blocks still reclaim their temp directories. */
 class ScriptFailure extends Error {}
