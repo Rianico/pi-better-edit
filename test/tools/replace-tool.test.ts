@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { join } from "path";
 import { readFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import { editToolSchema } from "../../src/edit";
@@ -8,7 +9,7 @@ import {
   useTestHome,
   testSessionManager,
 } from "../support/fixtures";
-const home = useTestHome();
+useTestHome();
 
 describe("editToolSchema", () => {
   it("has the object-root { file, edits } shape", () => {
@@ -35,12 +36,11 @@ describe("regEdit", () => {
   it("edits a single line via execute", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
-
       const result = await editTool.execute(
         "e1",
         {
@@ -60,7 +60,7 @@ describe("regEdit", () => {
   it("edits a range of lines via execute", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
@@ -85,7 +85,7 @@ describe("regEdit", () => {
   it("deletes a line via execute (empty content_lines)", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
@@ -110,7 +110,7 @@ describe("regEdit", () => {
   it("reports noop when content is unchanged", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
@@ -139,7 +139,7 @@ describe("regEdit", () => {
       await expect(
         editTool.execute(
           "e1",
-          { file: "sample.txt", edits: [{ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "x" }] },
+          { file: "sample.txt", edits: [{ anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "x" }] },
           undefined,
           undefined,
           { cwd, sessionManager: testSessionManager } as any,
@@ -151,7 +151,7 @@ describe("regEdit", () => {
   it("rejects deleting an entire non-empty file", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
@@ -175,7 +175,7 @@ describe("regEdit", () => {
   it("rejects unknown fields at top level via schema validation", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
@@ -202,7 +202,7 @@ describe("regEdit", () => {
   it("reports metrics with edits_attempted = 1", async () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
@@ -227,7 +227,7 @@ describe("regEdit", () => {
   it("preserves CRLF line endings", async () => {
     await withTempFile("crlf.txt", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", path);
       await readTool.execute("r1", { file: "crlf.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,

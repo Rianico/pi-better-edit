@@ -22,7 +22,7 @@ vi.mock("../../src/fs-write.js", async (importOriginal) => {
   };
 });
 
-const home = useTestHome();
+useTestHome();
 
 function localIO() {
   return {
@@ -62,7 +62,7 @@ describe("edit served-row gate with declaration", () => {
   it("refuses a verbatim row and a multi-row chain, accepts ambiguous content", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const before = await readFsFile(path, "utf-8");
       // verbatim single row
@@ -124,7 +124,7 @@ describe("edit served-row gate with declaration", () => {
   it("refusal carries the full message contract and sharpens on the 2nd identical refusal", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const payload = {
         file: "sample.txt",
@@ -161,7 +161,7 @@ describe("edit served-row gate with declaration", () => {
   it("failed commit leaves the refusal counter intact (#129)", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const before = await readFsFile(path, "utf-8");
       const refusal = {
@@ -206,7 +206,7 @@ describe("edit served-row gate with declaration", () => {
   it("honours a literal declaration byte-exact with a human line and a metric", async () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("one\ntwo\nthree\n", home.testPath);
+      const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const verbatim = `${hashes[1]}│two`;
       const result = await editTool.execute(

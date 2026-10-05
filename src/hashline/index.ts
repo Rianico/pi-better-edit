@@ -4,11 +4,19 @@ export {
   HASH_SEP,
   HASH_CLASS,
   HASH_SPACE,
+  USABLE_HASH_SPACE,
+  DIGIT_ANCHOR_RE,
   MAX_HASH_LINES,
   isValidHashList,
   CANON_VERSION,
+  ANCHOR_GENERATION,
   lineHashes,
+  fileHashesFor,
+  contentOnlyHashes,
   _lineHashesPure,
+  canonicalAnchorPath,
+  contentBaseIndex,
+  fileBaseIndex,
   initHasher,
   canon,
   canonDigest,
@@ -18,9 +26,8 @@ export {
   type AnchorWalk,
   type HashPrior,
   type HashOptions,
+  HASH_PROBE_STRIDE,
 } from "./hash-identity.js";
-
-export const HASH_PROBE_STRIDE = 3907;
 
 export { parseHashRef, parseText, type Anchor } from "./parse.js";
 

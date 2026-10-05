@@ -2,6 +2,27 @@
 
 ## [Unreleased]
 
+### Features
+
+* **hashline:** adopt 4-char anchors for tokenizer-stable references. `HASH_LEN` flips 3 to 4; every shape, regex and count word derives, so no other `src/` numeric change was needed and the stride stays `62^2 + 62 + 1 = 3907`. A 3-char token is now `E_MALFORMED_ANCHOR` with no compatibility path. The `E_LARGE_FILE` hash-space limit is scale-tested via a bounded uniqueness run plus a directly constructed error, and new-width coverage pins echo refusal, lease materialization, lineage anchors and resolve-seam rejection. (#49)
+* **hashline:** reserve all-digit anchor spellings from allocation — a served one would be indistinguishable from a line number, so the 10,000-strong digit subcube is pre-marked in the allocation bitset and never served; usable space is `62^4 − 10^4 = 14,766,336` (a 0.0677 % shrink, alphabet unchanged), the stride stays coprime with both spaces, and digit-shaped spellings keep the ordinary unserved-lease refusal with the line-number note. (#49)
+* **hashline:** derive anchors from (path, content) — allocation seeds xxh32 with the canonical absolute path, so byte-identical files at different paths serve disjoint anchor sets and an anchor served by another file is refused as foreign; content-only derivation remains available only through the explicit `contentOnlyHashes` seam, and `ANCHOR_GENERATION` starts at 1 so pre-change snapshots miss and recompute. (#49)
+* **read:** decouple the served admission budget from the anchor-space ceiling — `SERVED_MAX_LINES` (200,000 lines ≈ 14.9 MB marginal worst case over the loaded text: ~6.1 MB of retained walked anchors post-paging plus the ~7.0 MB spelling-memo entry overhead over the same strings plus the fixed ~1.76 MB allocator bitset, probe-measured via `node --expose-gc scripts/measure-served-budget.mjs`, against the ~15 MB target) replaces the `MAX_HASH_LINES` alias on every served-cap seam, so a width change can never move the memory budget; the streaming refusal reports an honest lower bound ("more than N") while the preloaded gate reports the exact count. (#49)
+* **hashstore:** refuse cross-generation anchors after the `ANCHOR_GENERATION` split — `file_undo` carries `anchor_generation` (legacy rows read as never-current; the pre-rename `canon_version` column is renamed in place, with a SAFETY note for the both-columns DROP fallback and the fail-closed concurrently-open pre-rename process), undo restores re-derive file-scoped anchors for stale rows instead of adopting them, and foreign-generation snapshot descriptors are rejected rather than written; the 3-part cache key (`CANON_VERSION:ANCHOR_GENERATION:checksum`) makes every existing `3:`-prefixed row unreachable (safe miss) and supersedes the 2-part shape ADR-0029 §1 describes; recorded as ADR-0031 with the accepted file-scope residual. (#49)
+* **hashstore:** gate leases and snapshot hits on the anchor generation — the lease source skips pre-bump leases, snapshot lookups treat unknown-generation rows as misses that delete, and an open-time sweep drops snapshot/lineage/lease rows whose generation is unknown or foreign (leases orphaned by the snapshot sweep go in the same open); the served mirror is TTL-pruned, never swept; `file_snapshots` carries `anchor_generation` so the next bump sweeps mechanically. (#49)
+
+### Bug Fixes
+
+* **hashstore:** harden the open-time generation sweep — the orphan-lease delete is path-scoped (a lease naming a hash that survives only in a foreign path's row is now dropped), the four sweep deletes commit as one `BEGIN IMMEDIATE` unit with rollback on error, and the lease-names-live-snapshot invariant is scoped to the sweep point (the open-hook vacuum can strand a retired-past-grace lease until the next open). (#49)
+* **hashstore:** close the sweep-hardening residuals — the orphan-lease delete now matches the grant's `committed = 1`, so a lease naming only an uncommitted row is swept with the other orphans while live leases are kept, and the caller-transaction guard plus the rollback-failure path are pinned by tests. Test scope: `test/integration/undo-generation-bump.test.ts` (3 new: uncommitted-lease sweep with live-lease control, caller-owned-transaction join with caller-rollback restore, rollback failure preserves the original error). Note: `engines.node` is now `>=24.0.0` and CI exercises 24 and 26, so the `isTransaction` guard is unconditional on every supported runtime. (#49)
+* **hashstore:** stop the undo failure replay from laundering pre-generation rows — `upsertUndo` stamps from the payload (`entry.anchorGeneration ?? ANCHOR_GENERATION`, forwarded by `saveUndo`) instead of hard-coding current, so a replayed pre-generation row still reads as generation 0 and the restore gates re-derive file-scoped anchors rather than adopting its foreign hashes. Test scope: `test/integration/undo-generation-bump.test.ts` (1 new: failed-write replay preserves generation 0 and the served restore equals the current derivation, reddened by mutant flip). (#49)
+
+* **hashline:** bound the anchor memo from the domain — `HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES` declared beside the WHY in `src/hashline/hash-identity.ts` (no product materialization hashes more than one served budget per call, so the memo stays fully effective in-budget while sitting ~40x below V8's smallest per-Map cap and the RangeError can no longer pre-empt `E_LARGE_FILE`); CI pins the exact floor `24.0.0`, the `isTransaction` SAFETY note names the experimental field, and a TARGET-coupling arch test pins the build target to `engines`. (#49)
+
+### Documentation
+
+* **read:** correct the served-budget magnitude note and harden the budget probe — the anchor-space comparison now names its axis (`~74x` in line count, `~32x` in bytes, not two orders of magnitude), and `scripts/measure-served-budget.mjs` asserts its width/alphabet literals against `src/hashline/alphabet.ts` and echoes the ~15 MB target from `SERVED_MAX_LINES`. Comment and probe only; no behaviour change. (#49)
+
 ## [2.7.0] - 2026-10-05
 
 ### Features
@@ -26,7 +47,31 @@
 ### Documentation
 
 * **readme:** cite external evidence for hash-anchored lines — token-bleed reduction (Lamberti 2026) and subword-tokenizer drift (TokDrift) — under the failure-modes table and the anchor-hash space explanation. (#41)
+* **readme:** state the 4-char anchor contract end to end — width words, worked `HASH│content` examples, the 62^4 space with the TokDrift citation, and ADR-0030 as the live width record. (#20)
+* **docs:** rewrite CONTEXT.md, the live specs, the hash-anchors article, the absorption plan, the benchmarks anchor statement and the archive width mentions to the 4-char contract. (#20)
+* **readme:** re-source token economics to Lamberti 2026 (22–58% repair-token cuts), removing the project-derived 40–60% claims. (#20)
 
+### Code Refactoring
+
+* **hashline:** make `HASH_LEN` the single owner of the anchor width — served-guard parse, domain-errors/payload-contract copy, resolve/parse reasons, and the probe stride all derive from it; behaviour and model-visible bytes unchanged at width 3, pinned by a new single-owner arch guard. (#20)
+
+### Tests
+
+* **hashline:** complete the 4-char fixture migration and re-pin capacity bindings. Half-migrated never-served fixtures move to live-width tokens with premise guards; the space-exhaustion payload and read-seam cap become exported constants pinned by binding tests; the edge script joins the width-consistency surface. No shipped logic changed. (#20)
+* **hashline:** make the all-digit reservation refutable — duplicate-heavy pure and delta samples carry in-regime pins so the zero-digit assertions cannot go vacuous, the production probe is pinned directly from reserved and top starts, and served anchors resolve for real through the leased seam. Both reservation-site mutants redden exactly their test, then revert. Test-only, `src/` behaviour unchanged. (#20)
+* **hashline:** correct the reservation WHY arithmetic — the subcube start is `52 × (62^3 + 62^2 + 62 + 1) = 12,596,220`, and the comment records the measured tops (distinct-line neighbourhood, shipped mixed sample) that keep the qualitative claim. Comment and ADR text only. (#20)
+* **hashline:** harden the anchor-width guard to refute numeric and cross-surface drift — leaf walker sees re-exports and dynamic imports (with positive control), exact-line allowlists, a numeric-shape arm on `src/hashline/**`, derived shape samples, and a width-consistency check over `src/**`, `prompts/**` and the package description; `prompts/read.md` presence assertions become width-consistent. Test-only, behaviour unchanged. (#20)
+* **hashline:** close the T1b guard gaps — one-arg numeric slice arm, space-form count words, derived foreign-width control, non-vacuous walk pins, dead allowlist entry removed, and dispatch refutation through the shared walk helper. Test-only, `HASH_LEN` stays 3. (#20)
+* **hashline:** restore measured width-3 evidence with revision scope instead of repainting it, drive fixture differentials from the fixture token with width-5 tripwires, comment-proof the capacity source pins, generalize the class-quantifier arm past `3|4`, and fix the ADR-0019 supersession link. Docs plus tests only; no shipped logic changed. (#20)
+* **hashline:** restore three revision-pinned archive quotes verbatim, record the width-3 digit rate beside its derived live figure, caveat token claims via ADR-0030, and pin the quantifier off-width filter with a live-width control. Docs plus tests only. (#20)
+* **benchmarks:** remove the in-repo benchmark suite and its wiring — `benchmarks/`, eval/compare scripts, package scripts, config entries and the README project-benchmark surfaces. The independent third-party benchmark keeps its own section. (#20)
+* **e2e:** re-home the deterministic edit battery out of the eval gate — the same 27 local scenarios run counted in `pnpm test` through the validated registry; the package/upstream comparison target is dropped with the benchmark suite. (#20)
+* **e2e:** restore per-scenario verdicts in the re-homed battery — outcome, rejection code and preserved content asserted from the recovered comparator table; both accept-where-reject and wrong-content mutants redden. (#20)
+* **readme:** drop the unbacked project-battery row and the stale scope comment — the battery cell now names the live `test/e2e` artifact. (#20)
+* **e2e:** pin noop byte-identity and fix the T4b review residuals — B11/B12 assert `finalContent` equals the captured pre-edit bytes instead of an inert substring, the battery row fills its fourth cell, and the scope comment drops its duplicated clause. (#20)
+
+* **hashline:** make the file-scope guarantees refutable — C1 asserts a measured intersection bound plus a deterministic same-position guard with a fixed colliding pair, a runtime shared spelling is shown resolving lease-scoped, C4 pins content-keyed verification against file-scoped allocation, and the tautological probe is deleted. Test-only plus a trailing-separator seed fix. (#20)
+* **hashstore:** cover pre-bump leases and poisoned snapshots — pre-bump lease sets plus mirrors refuse cold and after a fresh read (with a positive control that the file still edits), poisoned current-generation rows are not served and are swept, planted foreign-generation rows miss both lookups, and the C1 cap WHY states the zero regime with the companion carrying refutability. (#20)
 ## [2.6.0] - 2026-10-03
 
 ### Features

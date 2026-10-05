@@ -73,6 +73,7 @@ import {
   type NEdit,
 } from "../hashline/index.js";
 import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
+import { HASH_LEN } from "../hashline/alphabet.js";
 import { denseServeRows, type ResolvedRange } from "../hashline/served.js";
 import { resolveLeasedEdit } from "../hashline/lease-resolve.js";
 import type { FileSnapshotContext } from "../hashline/served-verification.js";
@@ -168,7 +169,6 @@ interface ApplyOneEditInput {
   hashes: string[];
   edit: HEdit;
   signal?: AbortSignal;
-  filePath: string;
   served: (string | null)[];
   blockedHashes?: ReadonlySet<string>;
   canonDigests?: (string | null)[];
@@ -228,7 +228,9 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
   let anchorResult: ReturnType<typeof applyEdit>;
   try {
     anchorResult = applyEdit(input.content, input.edit, input.signal, input.hashes, {
-      filePath: input.filePath,
+      // WHY: read/write agreement — the verify path is literally the same
+      // WHY: canonical absolute path the `hashesFor` call below uses (one field).
+      filePath: input.absolutePath,
       absolutePath: input.absolutePath,
       sessionKey: input.sessionKey,
       served: input.served,
@@ -268,8 +270,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
 
   if (!input.hashes || input.hashes.length === 0)
     throw new DomainError("E_STALE_ANCHOR", {
-      headline:
-        "missing previous hashes for stable anchoring. Re-read the full file and copy fresh 3-char anchors (before │), then retry.",
+      headline: `missing previous hashes for stable anchoring. Re-read the full file and copy fresh ${HASH_LEN}-char anchors (before │), then retry.`,
       cause: "never-served",
     });
   const removedHashes = collectRemovedHashes(input.edit, input.hashes);
@@ -887,7 +888,6 @@ async function runMutations(
       hashes: currentHashes,
       edit,
       signal: options?.signal,
-      filePath: path,
       served,
       blockedHashes: batchBlockedHashes,
       canonDigests: baseCanonDigests,

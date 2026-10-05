@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { applyEdit } from "../../src/hashline/apply";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 import type { HEdit, LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";
 import { verifyRebasedSpan } from "../../src/hashline/served-verification";
@@ -25,17 +25,17 @@ describe("mixed-snapshot interior under a same-anchor collision (#151)", () => {
   /**
    * The reproducer from #151 scoping note §1. Paged reads leave a served mirror whose interior
    * belongs to an older snapshot than its boundaries, and the externally rewritten interior line
-   * happens to hash to the same 3-char anchor — so the mirror hash tier (retired, #10) could not see
+   * happens to hash to the same 4-char anchor — so the mirror hash tier (retired, #10) could not see
    * the drift. Before #151 the canon tier was the only thing rejecting this span, which is why the
    * span must still reject with NO canon evidence at all: the interior check is a lease-identity
    * question, not a content question.
    */
   it("rejects the span with [E_STALE_RANGE] with no canon evidence supplied", () => {
     const servedLines = Array.from({ length: 10 }, (_, i) => `row ${i + 1}`);
-    const servedHashes = _lineHashesPure(servedLines.join("\n")); // S0 read of lines 1-10
+    const servedHashes = contentOnlyHashes(servedLines.join("\n")); // S0 read of lines 1-10
     const diskLines = [...servedLines];
     diskLines[4] = "row 5 rewritten externally";
-    const diskHashes = _lineHashesPure(diskLines.join("\n")); // S1 on disk
+    const diskHashes = contentOnlyHashes(diskLines.join("\n")); // S1 on disk
     // SAFETY: inject the collision. Without it the anchor rotates and the hash tier alone catches
     // SAFETY: the drift, so a stale-mirror test would pass for the wrong reason and prove nothing.
     diskHashes[4] = servedHashes[4]!;
@@ -104,7 +104,7 @@ describe("mixed-snapshot interior under a same-anchor collision (#151)", () => {
 
 describe("verifyRebasedSpan — diagnosis for the mirror and lease rows (#151 review)", () => {
   const servedLines = ["row 1", "row 2", "row 3"];
-  const hashes = _lineHashesPure(servedLines.join("\n"));
+  const hashes = contentOnlyHashes(servedLines.join("\n"));
   const snapshot = { fileHashes: hashes, fileLines: servedLines };
   const positions: Record<number, number> = { 1: 1, 2: 2, 3: 3 };
 

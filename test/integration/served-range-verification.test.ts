@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { readFile, writeFile } from "fs/promises";
 import { lineHashes } from "../../src/hashline";
 import {
@@ -9,7 +10,7 @@ import {
   extractHash,
 } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("served-state range verification for edit", () => {
   it("rejects with [E_STALE_RANGE] naming the first offending line and leaves the file unchanged", async () => {
@@ -75,8 +76,8 @@ describe("served-state range verification for edit", () => {
       expect(rejected).toBeDefined();
       expect(rejected!.message).toMatch(/E_STALE_RANGE/);
 
-      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
-      const currentHashes = await lineHashes("alpha\nBETA\ngamma\n", home.testPath);
+      const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
+      const currentHashes = await lineHashes("alpha\nBETA\ngamma\n", join(cwd, "sample.ts"));
       expect(servedLines).toEqual([
         `${currentHashes[0]}│alpha`,
         `${currentHashes[1]}│BETA`,
@@ -295,7 +296,7 @@ describe("served-state range verification for edit", () => {
       expect(rejected!.message).not.toContain("Retry with these anchors");
 
       const rangeRow = rejected!.message.split("\n").find((l) => l.includes("│BETA"))!;
-      const currentHashes = await lineHashes("alpha\nBETA\n", home.testPath);
+      const currentHashes = await lineHashes("alpha\nBETA\n", join(cwd, "sample.ts"));
       expect(rangeRow).toContain(currentHashes[1]!);
       const betaRefFromRange = rangeRow.split("│")[0]!;
 
@@ -317,7 +318,7 @@ describe("served-state range verification for edit", () => {
   it("fail-safes when the boundary hashes were never served (fresh session, no prior read)", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "sample.ts"));
 
       // No serve ever leased these anchors, so the boundary lookup is empty.
       await expect(

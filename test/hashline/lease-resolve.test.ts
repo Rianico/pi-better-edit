@@ -13,7 +13,7 @@ import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import { applyEdit } from "../../src/hashline/apply";
 import { DomainError } from "../../src/domain-errors.js";
 import { makeServedRejection, verifyRebasedSpan } from "../../src/hashline/served-verification";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 
 beforeAll(async () => {
@@ -101,46 +101,46 @@ describe("resolveLineIdentity — lease identity is authoritative", () => {
 
 describe("anchor position helpers", () => {
   it("uniqueAnchorLine rejects absent and ambiguous anchors", () => {
-    const hashes = ["aaa", "bbb", "aaa"];
-    expect(uniqueAnchorLine(hashes, "bbb")).toBe(2);
-    expect(uniqueAnchorLine(hashes, "aaa")).toBeUndefined();
+    const hashes = ["aaaa", "bbbb", "aaaa"];
+    expect(uniqueAnchorLine(hashes, "bbbb")).toBe(2);
+    expect(uniqueAnchorLine(hashes, "aaaa")).toBeUndefined();
     expect(uniqueAnchorLine(hashes, "zzz")).toBeUndefined();
   });
 
   it("uniqueServedPosition rejects absent and ambiguous anchors", () => {
-    const served = ["aaa", "bbb", "aaa"];
-    expect(uniqueServedPosition(served, "bbb")).toBe(2);
-    expect(uniqueServedPosition(served, "aaa")).toBeUndefined();
+    const served = ["aaaa", "bbbb", "aaaa"];
+    expect(uniqueServedPosition(served, "bbbb")).toBe(2);
+    expect(uniqueServedPosition(served, "aaaa")).toBeUndefined();
     expect(uniqueServedPosition(served, "zzz")).toBeUndefined();
   });
 
   it("uniqueItemPositions reports each bound of a span independently", () => {
-    expect(uniqueItemPositions(["aaa", "bbb", "aaa"], "bbb", "aaa")).toEqual([2, undefined]);
-    expect(uniqueItemPositions(["aaa", "bbb"], "aaa", "bbb")).toEqual([1, 2]);
-    expect(uniqueItemPositions([], "aaa", "bbb")).toEqual([undefined, undefined]);
+    expect(uniqueItemPositions(["aaaa", "bbbb", "aaaa"], "bbbb", "aaaa")).toEqual([2, undefined]);
+    expect(uniqueItemPositions(["aaaa", "bbbb"], "aaaa", "bbbb")).toEqual([1, 2]);
+    expect(uniqueItemPositions([], "aaaa", "bbbb")).toEqual([undefined, undefined]);
   });
 
   it("keeps the shared occurrence scan 1-based at the edges", () => {
-    expect(uniqueAnchorLine([], "aaa")).toBeUndefined();
-    expect(uniqueAnchorLine(["aaa"], "aaa")).toBe(1);
-    expect(uniqueAnchorLine(["aaa", "bbb"], "bbb")).toBe(2);
-    expect(uniqueServedPosition([], "aaa")).toBeUndefined();
-    expect(uniqueServedPosition(["aaa"], "aaa")).toBe(1);
-    expect(uniqueServedPosition([null, "aaa"], "aaa")).toBe(2);
+    expect(uniqueAnchorLine([], "aaaa")).toBeUndefined();
+    expect(uniqueAnchorLine(["aaaa"], "aaaa")).toBe(1);
+    expect(uniqueAnchorLine(["aaaa", "bbbb"], "bbbb")).toBe(2);
+    expect(uniqueServedPosition([], "aaaa")).toBeUndefined();
+    expect(uniqueServedPosition(["aaaa"], "aaaa")).toBe(1);
+    expect(uniqueServedPosition([null, "aaaa"], "aaaa")).toBe(2);
   });
 });
 
 describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
-  const edit: HEdit = resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" });
+  const edit: HEdit = resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" });
 
   it("rejects an unleased anchor with [E_UNKNOWN_ANCHOR] — content never satisfies a served anchor", () => {
-    const src = source({ leases: { AAA: lease({ lineId: 1 }) }, positions: { 1: 1 } });
+    const src = source({ leases: { AAAA: lease({ lineId: 1 }) }, positions: { 1: 1 } });
     let caught: Error | undefined;
     try {
       resolveLeasedEdit({
         edit,
-        snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"] },
-        served: ["AAA", "BBB"],
+        snapshot: { fileHashes: ["AAAA", "BBBB"], fileLines: ["a", "b"] },
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -155,7 +155,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
 
   it("carries no rows for an unleased boundary anchor", () => {
     const src = source({
-      leases: { AAA: lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 }) },
+      leases: { AAAA: lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 }) },
       positions: { 1: 1 },
       currentSnapshotHash: "C",
     });
@@ -164,10 +164,10 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
       resolveLeasedEdit({
         edit,
         snapshot: {
-          fileHashes: ["AAA", "m2", "m3", "m4", "BBB"],
+          fileHashes: ["AAAA", "m2", "m3", "m4", "BBBB"],
           fileLines: ["a", "b", "c", "d", "e"],
         },
-        served: ["AAA", "m2", "m3", "m4", "BBB"],
+        served: ["AAAA", "m2", "m3", "m4", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -184,8 +184,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     let caught: Error | undefined;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", text: "X" }),
-        snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"] },
+        edit: resEdit({ anchor_from: "ZZZZ", anchor_to: "YYYY", text: "X" }),
+        snapshot: { fileHashes: ["AAAA", "BBBB"], fileLines: ["a", "b"] },
         served: [],
         source: src,
       });
@@ -202,16 +202,16 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   it("applies an unread interior between two leased boundaries (ADR-0024)", () => {
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 3 }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
+        BBBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 3 }),
       },
       positions: { 1: 1, 2: 3 },
       currentSnapshotHash: "C",
     });
     const result = resolveLeasedEdit({
       edit,
-      snapshot: { fileHashes: ["AAA", "X", "BBB"], fileLines: ["a", "x", "b"] },
-      served: ["AAA", null, "BBB"],
+      snapshot: { fileHashes: ["AAAA", "X", "BBBB"], fileLines: ["a", "x", "b"] },
+      served: ["AAAA", null, "BBBB"],
       source: src,
     });
     expect(result.status).toBe("rebased");
@@ -219,24 +219,24 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   });
 
   it("takes the O(1) fast path on a uniform snapshot even when the content anchor is ambiguous", () => {
-    // Duplicate canon: `uniqueAnchorLine` cannot place "AAA", yet both leases were served from the
+    // Duplicate canon: `uniqueAnchorLine` cannot place "AAAA", yet both leases were served from the
     // snapshot on disk, so the spec predicate (S_from === C ∧ S_to === C ∧ S_from === S_to) holds.
     // The non-spec `=== content` clause used to route this off the fast path into a fail-closed
     // rebase rejection (spec §3.5). The interior line is leased too (#151): the fast path runs the
     // same whole-window identity gate, so an interior row the session holds no lease for fails closed.
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 }),
         m2: lease({ lineId: 2, servedSnapshotHash: "C", servedLineNumber: 2 }),
-        BBB: lease({ lineId: 3, servedSnapshotHash: "C", servedLineNumber: 3 }),
+        BBBB: lease({ lineId: 3, servedSnapshotHash: "C", servedLineNumber: 3 }),
       },
       positions: { 1: 1, 2: 2, 3: 3 },
       currentSnapshotHash: "C",
     });
     const result = resolveLeasedEdit({
       edit,
-      snapshot: { fileHashes: ["AAA", "AAA", "BBB"], fileLines: ["a", "a", "b"] },
-      served: ["AAA", "m2", "BBB"],
+      snapshot: { fileHashes: ["AAAA", "AAAA", "BBBB"], fileLines: ["a", "a", "b"] },
+      served: ["AAAA", "m2", "BBBB"],
       source: src,
     });
     expect(result.status).toBe("fast");
@@ -246,16 +246,16 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   it("takes the fast path when both leases come from the current snapshot", () => {
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "C" }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "C" }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "C" }),
+        BBBB: lease({ lineId: 2, servedSnapshotHash: "C" }),
       },
       positions: { 1: 1, 2: 2 },
       currentSnapshotHash: "C",
     });
     const result = resolveLeasedEdit({
       edit,
-      snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"] },
-      served: ["AAA", "BBB"],
+      snapshot: { fileHashes: ["AAAA", "BBBB"], fileLines: ["a", "b"] },
+      served: ["AAAA", "BBBB"],
       source: src,
     });
     // The lease path resolves the served coordinates itself — no content-resolution fallback.
@@ -266,16 +266,16 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   it("rebases a surviving lease after drift, applying at the rebased coordinate", () => {
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "S" }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "S" }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "S" }),
+        BBBB: lease({ lineId: 2, servedSnapshotHash: "S" }),
       },
       positions: { 1: 2, 2: 3 },
       currentSnapshotHash: "C",
     });
     const result = resolveLeasedEdit({
       edit,
-      snapshot: { fileHashes: ["ZZZ", "QQQ", "WWW"], fileLines: ["z", "q", "w"] },
-      served: ["AAA", "BBB", null],
+      snapshot: { fileHashes: ["ZZZZ", "QQQQ", "WWWW"], fileLines: ["z", "q", "w"] },
+      served: ["AAAA", "BBBB", null],
       source: src,
     });
     expect(result.status).toBe("rebased");
@@ -288,8 +288,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   it("rejects when a leased line is retired and still present by content (Probe E)", () => {
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "S", retiredAt: 5 }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "S" }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "S", retiredAt: 5 }),
+        BBBB: lease({ lineId: 2, servedSnapshotHash: "S" }),
       },
       positions: { 1: 1, 2: 2 },
       currentSnapshotHash: "C",
@@ -297,8 +297,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect(() =>
       resolveLeasedEdit({
         edit,
-        snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"] },
-        served: ["AAA", "BBB"],
+        snapshot: { fileHashes: ["AAAA", "BBBB"], fileLines: ["a", "b"] },
+        served: ["AAAA", "BBBB"],
         source: src,
       }),
     ).toThrow(/E_UNVERIFIED_RANGE/);
@@ -307,8 +307,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   it("rejects a retired lease absent from content with [E_UNVERIFIED_RANGE], never [E_STALE_ANCHOR]", () => {
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 5 }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 5 }),
+        BBBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 }),
       },
       positions: { 1: 1, 2: 2 },
       currentSnapshotHash: "C",
@@ -318,8 +318,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
       resolveLeasedEdit({
         edit,
         // The retired lease's anchor is gone from the content entirely (line deleted externally).
-        snapshot: { fileHashes: ["QQQ", "BBB"], fileLines: ["q", "b"] },
-        served: ["AAA", "BBB"],
+        snapshot: { fileHashes: ["QQQQ", "BBBB"], fileLines: ["q", "b"] },
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -341,8 +341,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     try {
       resolveLeasedEdit({
         edit,
-        snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"] },
-        served: ["AAA", "BBB"],
+        snapshot: { fileHashes: ["AAAA", "BBBB"], fileLines: ["a", "b"] },
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -357,8 +357,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   it("rejects a torn span whose rebased window grew (Probe J)", () => {
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
+        BBBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 }),
       },
       positions: { 1: 1, 2: 4 },
       currentSnapshotHash: "C",
@@ -366,8 +366,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect(() =>
       resolveLeasedEdit({
         edit,
-        snapshot: { fileHashes: ["AAA", "X", "Y", "BBB"], fileLines: ["a", "x", "y", "b"] },
-        served: ["AAA", "BBB"],
+        snapshot: { fileHashes: ["AAAA", "X", "Y", "BBBB"], fileLines: ["a", "x", "y", "b"] },
+        served: ["AAAA", "BBBB"],
         source: src,
       }),
     ).toThrow(/E_STALE_RANGE/);
@@ -376,8 +376,8 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
   it("rebuilds the served window from the lease when the mirror row is gone", () => {
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1 }),
+        BBBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 }),
       },
       positions: { 1: 1, 2: 2 },
       currentSnapshotHash: "C",
@@ -387,7 +387,7 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     expect(() =>
       resolveLeasedEdit({
         edit,
-        snapshot: { fileHashes: ["AAA", "BBB"], fileLines: ["a", "b"] },
+        snapshot: { fileHashes: ["AAAA", "BBBB"], fileLines: ["a", "b"] },
         served: [],
         source: src,
       }),
@@ -402,29 +402,29 @@ describe("resolveLeasedEdit — fast path, rebase, fail-closed", () => {
     // WHY: the other way round, so the identity gate runs over the whole window the heal names.
     const src = source({
       leases: {
-        AAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 3 }),
+        AAAA: lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 3 }),
         Q: lease({ lineId: 3, servedSnapshotHash: "S", servedLineNumber: 2 }),
-        BBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 1 }),
+        BBBB: lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 1 }),
       },
       positions: { 1: 3, 2: 1, 3: 2 },
       currentSnapshotHash: "S",
     });
     const result = resolveLeasedEdit({
       edit,
-      snapshot: { fileHashes: ["BBB", "Q", "AAA"], fileLines: ["b", "q", "a"] },
-      served: ["BBB", "Q", "AAA"],
+      snapshot: { fileHashes: ["BBBB", "Q", "AAAA"], fileLines: ["b", "q", "a"] },
+      served: ["BBBB", "Q", "AAAA"],
       source: src,
     });
     expect(result.status).toBe("fast");
     expect(result.resolved.hash_bounds[0].line).toBe(1);
     expect(result.resolved.hash_bounds[1].line).toBe(3);
-    expect(result.reversed).toEqual({ fromHash: "AAA", toHash: "BBB" });
+    expect(result.reversed).toEqual({ fromHash: "AAAA", toHash: "BBBB" });
   });
 });
 
 describe("applyEdit — lease resolution owns every served anchor", () => {
   const content = "alpha\nbeta\ngamma";
-  const hashes = _lineHashesPure(content);
+  const hashes = contentOnlyHashes(content);
   const served: (string | null)[] = [...hashes];
   const edit: HEdit = {
     hash_bounds: [{ hash: hashes[0]! }, { hash: hashes[1]! }],
@@ -482,7 +482,7 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
     // Spec §3.1.1 line 89 / §5.3: `retired_at` is set -> unverified fresh read, never E_STALE_ANCHOR,
     // even when the anchor string is gone from the content entirely.
     const staleContent = "alpha\nBETA";
-    const staleHashes = _lineHashesPure(staleContent);
+    const staleHashes = contentOnlyHashes(staleContent);
     const oldBeta = "OLD";
     const leases = new Map<string, LeaseIdentityView>([
       [staleHashes[0]!, lease({ lineId: 1, servedSnapshotHash: "C" })],
@@ -519,17 +519,17 @@ describe("applyEdit — lease resolution owns every served anchor", () => {
 });
 
 describe("verifyRebasedSpan — contiguity + identity gate", () => {
-  const hashes = _lineHashesPure("row 1\nrow 2\nrow 3\nrow 4");
+  const hashes = contentOnlyHashes("row 1\nrow 2\nrow 3\nrow 4");
   const fileLines = ["row 1", "row 2", "row 3", "row 4"];
 
   it("accepts a rigid remap of the whole served window", () => {
     const leases = new Map([
-      ["AAA", lease({ lineId: 1 })],
-      ["BBB", lease({ lineId: 2 })],
+      ["AAAA", lease({ lineId: 1 })],
+      ["BBBB", lease({ lineId: 2 })],
     ]);
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA", "BBB"],
+        served: ["AAAA", "BBBB"],
         servedStart: 1,
         servedEnd: 2,
         rebasedStart: 2,
@@ -543,12 +543,12 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
 
   it("rejects a window that grew by an interior insert", () => {
     const leases = new Map([
-      ["AAA", lease({ lineId: 1 })],
-      ["BBB", lease({ lineId: 2 })],
+      ["AAAA", lease({ lineId: 1 })],
+      ["BBBB", lease({ lineId: 2 })],
     ]);
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA", "BBB"],
+        served: ["AAAA", "BBBB"],
         servedStart: 1,
         servedEnd: 2,
         rebasedStart: 1,
@@ -563,7 +563,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
   it("reports E_STALE_RANGE for a never-served boundary row (a two-line window is all boundary)", () => {
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA", null],
+        served: ["AAAA", null],
         servedStart: 1,
         servedEnd: 2,
         rebasedStart: 1,
@@ -577,12 +577,12 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
 
   it("accepts an unread interior row between two leased boundaries (ADR-0024)", () => {
     const leases = new Map([
-      ["AAA", lease({ lineId: 1 })],
+      ["AAAA", lease({ lineId: 1 })],
       [hashes[2]!, lease({ lineId: 3 })],
     ]);
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA", null, hashes[2]!],
+        served: ["AAAA", null, hashes[2]!],
         servedStart: 1,
         servedEnd: 3,
         rebasedStart: 1,
@@ -616,7 +616,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
   it("reports E_STALE_RANGE when a served anchor has no lease", () => {
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA"],
+        served: ["AAAA"],
         servedStart: 1,
         servedEnd: 1,
         rebasedStart: 1,
@@ -631,7 +631,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
   it("rejects a retired interior lease or an identity that moved elsewhere", () => {
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA"],
+        served: ["AAAA"],
         servedStart: 1,
         servedEnd: 1,
         rebasedStart: 1,
@@ -643,7 +643,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
     ).toThrow(/E_STALE_RANGE/);
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA"],
+        served: ["AAAA"],
         servedStart: 1,
         servedEnd: 1,
         rebasedStart: 1,
@@ -657,7 +657,7 @@ describe("verifyRebasedSpan — contiguity + identity gate", () => {
 });
 
 describe("makeServedRejection — reject-and-serve serve block", () => {
-  const hashes = _lineHashesPure("alpha\nbeta\ngamma");
+  const hashes = contentOnlyHashes("alpha\nbeta\ngamma");
   const fileLines = ["alpha", "beta", "gamma"];
 
   it("serves the current range with fresh anchors and marks the offending line", () => {
@@ -685,7 +685,7 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
   });
 
   it("caps a large serve block with a pagination hint", () => {
-    const many = _lineHashesPure(Array.from({ length: 200 }, (_, i) => `l${i}`).join("\n"));
+    const many = contentOnlyHashes(Array.from({ length: 200 }, (_, i) => `l${i}`).join("\n"));
     const err = makeServedRejection({
       code: "E_STALE_RANGE",
       headline: "torn",
@@ -700,17 +700,17 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
 });
 
 describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reject-and-serve D1/D5/D6)", () => {
-  const editBoth = resEdit({ anchor_from: "AAA", anchor_to: "AAA", text: "X" });
+  const editBoth = resEdit({ anchor_from: "AAAA", anchor_to: "AAAA", text: "X" });
 
   it("emits [E_TARGET_LOST] with no rows and no retry hint when both bounds share one dead anchor", () => {
     const dead = lease({ lineId: 7, servedSnapshotHash: "S", servedLineNumber: 3, retiredAt: 9 });
-    const src = source({ leases: { AAA: dead }, positions: {}, currentSnapshotHash: "C" });
+    const src = source({ leases: { AAAA: dead }, positions: {}, currentSnapshotHash: "C" });
     let caught: unknown;
     try {
       resolveLeasedEdit({
         edit: editBoth,
-        snapshot: { fileHashes: ["QQQ", "WWW"], fileLines: ["q", "w"] },
-        served: ["AAA", "BBB"],
+        snapshot: { fileHashes: ["QQQQ", "WWWW"], fileLines: ["q", "w"] },
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -730,14 +730,14 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
 
   it("bans content placement: a retired bound re-added elsewhere still names the served coordinate", () => {
     const dead = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2, retiredAt: 4 });
-    const src = source({ leases: { BBB: dead }, positions: {}, currentSnapshotHash: "C" });
+    const src = source({ leases: { BBBB: dead }, positions: {}, currentSnapshotHash: "C" });
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "BBB", anchor_to: "BBB", text: "X" }),
+        edit: resEdit({ anchor_from: "BBBB", anchor_to: "BBBB", text: "X" }),
         // The retired text re-appears at line 4, but the payload must not place a window there.
-        snapshot: { fileHashes: ["A1", "A2", "A3", "BBB"], fileLines: ["a1", "a2", "a3", "beta"] },
-        served: ["A1", "BBB"],
+        snapshot: { fileHashes: ["A1", "A2", "A3", "BBBB"], fileLines: ["a1", "a2", "a3", "beta"] },
+        served: ["A1", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -755,16 +755,16 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     const dead = lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 6 });
     const live = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 });
     const src = source({
-      leases: { AAA: dead, BBB: live },
+      leases: { AAAA: dead, BBBB: live },
       positions: { 2: 2 },
       currentSnapshotHash: "C",
     });
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
-        snapshot: { fileHashes: ["QQQ", "BBB"], fileLines: ["q", "b"] },
-        served: ["AAA", "BBB"],
+        edit: resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" }),
+        snapshot: { fileHashes: ["QQQQ", "BBBB"], fileLines: ["q", "b"] },
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -785,16 +785,16 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     const dead = lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 6 });
     const moved = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 });
     const src = source({
-      leases: { AAA: dead, BBB: moved },
+      leases: { AAAA: dead, BBBB: moved },
       positions: { 2: 3 },
       currentSnapshotHash: "C",
     });
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
-        snapshot: { fileHashes: ["Q", "Q", "BBB"], fileLines: ["q", "q", "b"] },
-        served: ["AAA", "BBB"],
+        edit: resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" }),
+        snapshot: { fileHashes: ["Q", "Q", "BBBB"], fileLines: ["q", "q", "b"] },
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -811,16 +811,16 @@ describe("resolveLeasedEdit — target-lost range rule (spec stale-identity-reje
     const survivor = lease({ lineId: 10, servedSnapshotHash: "S", servedLineNumber: 10 });
     const dead = lease({ lineId: 11, servedSnapshotHash: "S", servedLineNumber: 11, retiredAt: 3 });
     const src = source({
-      leases: { AAA: survivor, BBB: dead },
+      leases: { AAAA: survivor, BBBB: dead },
       positions: { 10: 10 },
       currentSnapshotHash: "C",
     });
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
+        edit: resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" }),
         snapshot: { fileHashes: ["a", "b", "c", "d"], fileLines: ["a", "b", "c", "d"] },
-        served: ["AAA", "BBB"],
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {

@@ -63,7 +63,7 @@ describe("anchor validation order", () => {
         "e1",
         {
           file: "does-not-exist.ts",
-          edits: [{ anchor_from: "abcd", anchor_to: "abcd", text: "x" }],
+          edits: [{ anchor_from: "abc", anchor_to: "abc", text: "x" }],
         },
         undefined,
         undefined,

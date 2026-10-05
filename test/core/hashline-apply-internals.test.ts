@@ -11,6 +11,9 @@ describe("resAnchor (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "X\nY" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nX\nY\nd\ne");
   });
@@ -18,7 +21,13 @@ describe("resAnchor (via applyEdit)", () => {
   it("reports not_found for a hash that does not exist", () => {
     const content = "a\nb\nc\nd\ne";
     expect(() =>
-      applyEdit(content, resEdit({ anchor_from: "ZZZ", anchor_to: "ZZZ", text: "X" })),
+      applyEdit(
+        content,
+        resEdit({ anchor_from: "ZZZZ", anchor_to: "ZZZZ", text: "X" }),
+        undefined,
+        undefined,
+        { filePath: home.testPath },
+      ),
     ).toThrow(/E_UNKNOWN_ANCHOR/);
   });
 
@@ -44,6 +53,9 @@ describe("checkBoundaryDup (via applyEdit) — pure edit (no auto-fix)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "X\nd" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nX\nd\nd");
   });
@@ -54,6 +66,9 @@ describe("checkBoundaryDup (via applyEdit) — pure edit (no auto-fix)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "a\nX" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\na\nX\nd");
   });
@@ -64,6 +79,9 @@ describe("checkBoundaryDup (via applyEdit) — pure edit (no auto-fix)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "X\nY" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nX\nY\nd");
   });
@@ -74,6 +92,9 @@ describe("checkBoundaryDup (via applyEdit) — pure edit (no auto-fix)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nd");
   });
@@ -84,6 +105,9 @@ describe("checkBoundaryDup (via applyEdit) — pure edit (no auto-fix)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: `X\nd\n` }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nX\nd\n\nd");
   });
@@ -94,6 +118,9 @@ describe("checkBoundaryDup (via applyEdit) — pure edit (no auto-fix)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: `\na\nX` }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\n\na\nX\nd");
   });
@@ -104,6 +131,9 @@ describe("checkBoundaryDup (via applyEdit) — pure edit (no auto-fix)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "a\nd" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\na\nd\nd");
   });
@@ -116,6 +146,9 @@ describe("resToSpan (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "X\nY" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nX\nY\nd\ne");
   });
@@ -126,6 +159,9 @@ describe("resToSpan (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nd\ne");
   });
@@ -134,7 +170,13 @@ describe("resToSpan (via applyEdit)", () => {
     const content = "a\nb\nc";
     const hashes = await lineHashes(content, home.testPath);
     expect(() =>
-      applyEdit(content, resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "" })),
+      applyEdit(
+        content,
+        resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "" }),
+        undefined,
+        undefined,
+        { filePath: home.testPath },
+      ),
     ).toThrow(/E_EMPTY_RANGE/);
   });
 
@@ -144,6 +186,9 @@ describe("resToSpan (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[4]!, text: "" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nb");
   });
@@ -154,6 +199,9 @@ describe("resToSpan (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "b" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.noopEdit).toBeDefined();
   });
@@ -164,6 +212,9 @@ describe("resToSpan (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "X" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("X\nb\nc");
   });
@@ -174,6 +225,9 @@ describe("resToSpan (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "X" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nb\nX");
   });
@@ -184,6 +238,9 @@ describe("resToSpan (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("b\nc");
   });
@@ -194,6 +251,9 @@ describe("resToSpan (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[2]!, anchor_to: hashes[2]!, text: "" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nb");
   });
@@ -206,6 +266,9 @@ describe("assemble (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "A" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("A\nb\nc\nd\ne");
   });
@@ -222,6 +285,9 @@ describe("pure edit via applyEdit", () => {
         anchor_to: hashes[2]!,
         text: `new one\nnew two\nafter`,
       }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("before\nnew one\nnew two\nafter\nafter");
   });
@@ -236,6 +302,9 @@ describe("pure edit via applyEdit", () => {
         anchor_to: hashes[2]!,
         text: `before\nnew one\nnew two`,
       }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("before\nbefore\nnew one\nnew two\nafter");
   });
@@ -250,6 +319,9 @@ describe("pure edit via applyEdit", () => {
         anchor_to: hashes[3]!,
         text: `ctx2\ndup\ndup\nctx3`,
       }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("ctx1\nctx2\nctx2\ndup\ndup\nctx3\nctx3\nctx4");
   });
@@ -262,6 +334,9 @@ describe("boundary-dup pure edit (via applyEdit)", () => {
     const result = applyEdit(
       content,
       resEdit({ anchor_from: hashes[1]!, anchor_to: hashes[2]!, text: "X\nd" }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("a\nX\nd\nd");
     expect(result.warnings).toBeUndefined();
@@ -277,6 +352,9 @@ describe("boundary-dup pure edit (via applyEdit)", () => {
         anchor_to: hashes[2]!,
         text: "class A {\n  x = 1;\n\n  constructor() {}\n}",
       }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     // pure edit: the replacement is applied verbatim, not treated as noop via stripping
     expect(result.content).not.toBe(content);
@@ -293,6 +371,9 @@ describe("boundary-dup pure edit (via applyEdit)", () => {
         anchor_to: hashes[2]!,
         text: "bar();\nbaz();\nfoo();",
       }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("foo();\nbar();\nbaz();\nfoo();\n");
   });
@@ -307,6 +388,9 @@ describe("boundary-dup pure edit (via applyEdit)", () => {
         anchor_to: hashes[4]!,
         text: "if (b) {\n  yNew();\n}",
       }),
+      undefined,
+      undefined,
+      { filePath: home.testPath },
     );
     expect(result.content).toBe("if (a) {\n  x();\n}\nif (b) {\n  yNew();\n}\n}\n");
     expect(result.warnings).toBeUndefined();

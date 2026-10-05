@@ -66,7 +66,7 @@ describe.skipIf(isRoot || isWindows)("permission errors", () => {
             "e1",
             {
               file: filePath,
-              edits: [{ anchor_from: "abc", anchor_to: "abc", text: "new content" }],
+              edits: [{ anchor_from: "abcc", anchor_to: "abcc", text: "new content" }],
             },
             undefined,
             undefined,

@@ -14,10 +14,11 @@ const DRIFT_NOTICE_HEADING = "[USER] drift:";
  * identity: one reported entry for a hash shared by two distinct lines silenced both
  * (duplicate-hash collapse), and a lease rotation renamed the mirror anchor of an
  * already-reported line, spuriously re-noticing it. The session's reported-set keeps storing
- * strings (schema unchanged); this 3-char base-62 encoding of the position is the KEY VALUE.
- * Positions are bounded by `MAX_HASH_LINES` (= |ALPHA|^HASH_LEN, files larger cannot be
- * hashed), so the encoding is injective over every reachable position. An out-of-file
- * position (never shown, never marked) keys on "" — not a valid stored entry, always
+ * strings (schema unchanged); this base-62 encoding of the position at the configured width is the KEY VALUE.
+ * Positions are bounded by `SERVED_MAX_LINES` (the served admission budget), which
+ * already sits below the anchor-space ceiling, so the encoding is injective over
+ * every reachable position.
+ * An out-of-file position (never shown, never marked) keys on "" — not a valid stored entry, always
  * "not yet reported", matching the legacy behavior for unshown drift.
  */
 export function driftEpisodeKey(position: number): string {
@@ -187,7 +188,7 @@ function buildRotatedSurvivorCheck(
   }
   return (_servedHash, servedPos) => {
     // WHY: only the file-scoped canon digest the lease recorded at the served position counts. A
-    // WHY: hash->canon fallback is file-blind and a 3-char collision would silently suppress real
+    // WHY: hash->canon fallback is file-blind and an anchor collision would silently suppress real
     // WHY: drift (#149); the digest is derived, never persisted (#151).
     const c = digests[servedPos] ?? null;
     if (c === null) return false;

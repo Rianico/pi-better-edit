@@ -155,7 +155,7 @@ describe("edit tool — end-to-end", () => {
         ctx,
       );
       const emptyHash = getText(readResult).split("\n")[0]!.split("│")[0]!;
-      expect(emptyHash).toMatch(/^[A-Za-z0-9]{3}$/);
+      expect(emptyHash).toMatch(/^[A-Za-z0-9]{4}$/);
 
       await editTool.execute(
         "e1",

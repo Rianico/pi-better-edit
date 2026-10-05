@@ -239,7 +239,7 @@ describe("whitespace-insensitive anchors at the tool seam (ADR-0005)", () => {
         const diffLines = (edit1.details.diff as string).split("\n");
         const gammaRef = diffLines
           .find((l) => l.startsWith(" ") && l.includes("const gamma = 3;") && !l.startsWith("  "))!
-          .slice(1, 4);
+          .slice(1, 5);
 
         await writeFile(
           abs,

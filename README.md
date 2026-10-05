@@ -5,13 +5,12 @@
 <h1 align="center">pi-better-edit</h1>
 <p align="center">
   <strong>Production-grade, hash-anchored file editing for &pi;.<br>
-  Powered by Content-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.</strong>
+  Powered by (File, Content)-Addressed Line-Identity MVCC &mdash; no line numbers, no re-typing old code, no heuristic guessing, and zero silent miswrites.</strong>
 </p>
 
 <p align="center">
   <a href="#systematic-architecture"><img src="https://img.shields.io/badge/architecture-MVCC_v2-blue?style=flat" alt="MVCC v2"></a>
   <a href="#quick-start"><img src="https://img.shields.io/badge/quick_start-30s-brightgreen?style=flat" alt="quick start 30s"></a>
-  <a href="#reproducible-benchmarks"><img src="https://img.shields.io/badge/correctness-27%2F27-success?style=flat" alt="27/27 battery"></a>
   <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/v/pi-better-edit?color=crimson" alt="npm version"></a>
   <a href="https://www.npmjs.com/package/pi-better-edit"><img src="https://img.shields.io/npm/dm/pi-better-edit?color=blue" alt="npm downloads"></a>
   <a href="https://huggingface.co/spaces/alexshpunt/benchmark-explorer?card=harness%3Api-better-edit%40latest"><img src="https://img.shields.io/endpoint?url=https://huggingface.co/datasets/alexshpunt/explicit-edit-benchmark/resolve/main/badges/pi-better-edit.json&style=flat" alt="Explicit Edit Benchmark (1.7.0 arm)"></a>
@@ -25,16 +24,15 @@
   <a href="#systematic-architecture">Architecture</a> •
   <a href="#tools">Tools</a> •
   <a href="#error-and-warning-contract">Errors & Warnings</a> •
-  <a href="#comparison">Comparison</a> •
-  <a href="#reproducible-benchmarks">Benchmarks</a>
+  <a href="#comparison">Comparison</a>
 </p>
 
 ---
 
 > **What is `pi-better-edit`?**
-> A high-precision file editing extension for [`pi-coding-agent`](https://github.com/can1357/oh-my-pi) that replaces volatile line numbers and token-wasting code echoes with immutable, content-addressed 3-character line hashes (`szJ│code`).
+> A high-precision file editing extension for [`pi-coding-agent`](https://github.com/can1357/oh-my-pi) that replaces volatile line numbers and token-wasting code echoes with immutable 4-character line hashes addressed by (file, content) (`szJx│code`).
 >
-> **Core Philosophy:** Local compute is free; **the model's context window is the most precious resource**. By shifting verification, snapshotting, and alignment to the host, `pi-better-edit` slashes output tokens by 40–60%, auto-rebases external file drift (e.g., Prettier, Git), and eliminates silent miswrites without forcing full-file re-reads.
+> **Core Philosophy:** Local compute is free; **the model's context window is the most precious resource**. By shifting verification, snapshotting, and alignment to the host, `pi-better-edit` slashes output tokens — line-anchored feedback cut repair tokens by 22–58% in published paired experiments ([Lamberti 2026, arXiv:2607.12713](https://arxiv.org/abs/2607.12713)) — auto-rebases external file drift (e.g., Prettier, Git), and eliminates silent miswrites without forcing full-file re-reads.
 
 ---
 
@@ -46,7 +44,7 @@ File editing is the #1 point of failure for autonomous agents. Traditional tools
 
 | Fatal Trap in Traditional Tools | Why It Breaks Agents | How `pi-better-edit` Solves It |
 | --- | --- | --- |
-| **`str_replace` Token Bleed** | Must re-type 30+ lines of unchanged code just to change 1 line ($O(S+R)$), burning expensive output tokens (billed ~5–6× input). | **$O(R)$ Payloads**: Sends only two 3-char hashes (`anchor_from`, `anchor_to`) + replacement. Cuts output tokens by 40–60%. |
+| **`str_replace` Token Bleed** | Must re-type 30+ lines of unchanged code just to change 1 line ($O(S+R)$), burning expensive output tokens (billed ~5–6× input). | **$O(R)$ Payloads**: Sends only two 4-char hashes (`anchor_from`, `anchor_to`) + replacement. Cuts output tokens — 22–58% repair-token cuts in published paired experiments ([Lamberti 2026](https://arxiv.org/abs/2607.12713)). |
 | **Line-Number Coordinate Rot** | Inserting 1 line shifts all line numbers below it. Agents suffer off-by-one errors or must repeatedly re-read the file. | **Position-Independent Anchors**: Line hashes follow content, not line coordinates. Exterior shifts auto-rebase cleanly. |
 | **Silent Miswrites & Drift** | Duplicate lines match the wrong function; external formatters (Prettier) or git updates cause blind overwrites or fatal errors. | **Line-Identity MVCC**: Unique anchors via coprime probing; format-tolerant whitespace hashing; fail-closed reject-and-serve. |
 
@@ -59,8 +57,9 @@ File editing is the #1 point of failure for autonomous agents. Traditional tools
 
 ## Core Pillars
 
-### 1. 🪙 Token Economics (40–60% Context Savings)
-- **$O(R)$ Edit Payloads**: The model emits only `{ "anchor_from": "a1b", "anchor_to": "c3d", "text": "..." }`, never regurgitating existing code.
+### 1. 🪙 Token Economics
+Published paired experiments report 22–58% repair-token cuts for line-anchored feedback ([Lamberti 2026, arXiv:2607.12713](https://arxiv.org/abs/2607.12713)).
+- **$O(R)$ Edit Payloads**: The model emits only `{ "anchor_from": "a1bX", "anchor_to": "c3dX", "text": "..." }`, never regurgitating existing code.
 - **Self-Serving Diffs**: Every applied edit returns fresh anchors in the post-edit diff — zero re-read roundtrips to chain edits.
 - **Disjoint Multi-Window Reads**: Query up to 16 disjoint slices (`windows: [{offset, limit}, ...]`) in one turn instead of dumping 2,000 lines into context.
 - **Zero-Token Auto-Rebase**: Non-conflicting shifts resolve locally via $O(m \log m)$ Patience LIS alignment — 0 tokens, 0 retries.
@@ -74,7 +73,7 @@ File editing is the #1 point of failure for autonomous agents. Traditional tools
 
 ### 3. 🎯 Zero Silent Miswrites (Formal MVCC)
 - **Decoupled Line Identity**: Every line is tracked by an immutable, monotonic `line_id` in CAS snapshot storage, not ephemeral coordinates.
-- **Collision-Free Anchors**: Coprime bitset probing ensures duplicate lines in a file receive distinct, unambiguous 3-character hashes.
+- **Collision-Free Anchors**: Coprime bitset probing ensures duplicate lines in a file receive distinct, unambiguous 4-character hashes.
 - **No Heuristic Guessing (ADR-0016)**: Retires fuzzy matching. If an anchor cannot be unambiguously resolved via lease lineage, it fails closed safely.
 - **Persisted Undo**: `undo_last_edit` restores exact file content, BOM, line endings, and original anchors, persisting across session restarts.
 
@@ -99,18 +98,18 @@ Zero configuration required. `pi` automatically activates the extension on start
 
 | Runtime Requirement | Supported Version |
 | --- | --- |
-| Node.js | &ge; 22.19.0 |
+| Node.js | &ge; 24.0.0 |
 | `pi-coding-agent` | &ge; 0.75.0 (peer dependency) |
 
 ### How It Works
 
 #### 1. Read the file
-`read` returns each line prefixed by a stable 3-character hash anchor:
+`read` returns each line prefixed by a stable 4-character hash anchor:
 
 ```text
-ve7│function hello() {
-szJ│  console.log("world");
-kQm│}
+ve7x│function hello() {
+szJx│  console.log("world");
+kQmx│}
 ```
 
 #### 2. Apply an edit
@@ -238,8 +237,8 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
   "file": "src/example.ts",
   "edits": [
     {
-      "anchor_from": "a1b",
-      "anchor_to": "c3d",
+      "anchor_from": "a1bX",
+      "anchor_to": "c3dX",
       "text": "const status = 'ready';\n"
     }
   ],
@@ -254,7 +253,7 @@ exists because the payload's *presence* is the intent, and placement is an indep
 
 | Item key | Values | Meaning |
 | --- | --- | --- |
-| `anchor_from` / `anchor_to` | bare 3-char hash anchors | Inclusive target range — both boundary lines are touched. |
+| `anchor_from` / `anchor_to` | bare 4-char hash anchors | Inclusive target range — both boundary lines are touched. |
 | `at` (optional) | `"in-place"` \| `"before"` \| `"after"` | Placement relative to the resolved range. **Omitted means `"in-place"`.** `"before"`/`"after"` insert at the range boundary and require a single-line resolved target; the underscore spelling `"in_place"` is refused — the canonical spelling is `"in-place"`. |
 | `text` | string | By-value payload — bare file content (`\n` joins lines). **`""` deletes the range when placed in-place** (no `at`). With `"before"`/`"after"` an empty `text` does NOT delete: it writes nothing and the call narrates `[W_NOOP_INSERT]` as a no-op. |
 | `text_ref` | `{ anchor_from, anchor_to, file?, mode }` | By-reference payload — the bytes of a `served span` bounded by two anchors of the file it names. `mode` is **required** (never inferred): `"copy"` re-inserts the span and keeps the source; `"cut"` additionally retires it. `file` may name another served file — a **foreign-source copy** (never called "cross-file" here; that word named a dropped multi-file batching idea). Both modes apply to a foreign file, and a foreign `cut` commits insert and retirement as one correlated transaction. |
@@ -262,13 +261,13 @@ exists because the payload's *presence* is the intent, and placement is an indep
 Example items — every shipped shape, one each:
 
 ```json
-{ "anchor_from": "a1b", "anchor_to": "c3d", "text": "const status = 'ready';\n" }
-{ "anchor_from": "a1b", "anchor_to": "c3d", "text": "" }
-{ "anchor_from": "kQm", "anchor_to": "kQm", "at": "after", "text": "// Footer comment\n" }
-{ "anchor_from": "p9r", "anchor_to": "p9r", "at": "before", "text": "  return true;\n" }
-{ "anchor_from": "m2z", "anchor_to": "m2z", "text_ref": { "anchor_from": "d2x", "anchor_to": "d2x", "mode": "copy" } }
-{ "anchor_from": "m2z", "anchor_to": "m2z", "text_ref": { "anchor_from": "d2x", "anchor_to": "e5v", "mode": "cut" } }
-{ "anchor_from": "m2z", "anchor_to": "m2z", "text_ref": { "anchor_from": "g7t", "anchor_to": "h3s", "file": "src/helper.ts", "mode": "cut" } }
+{ "anchor_from": "a1bX", "anchor_to": "c3dX", "text": "const status = 'ready';\n" }
+{ "anchor_from": "a1bX", "anchor_to": "c3dX", "text": "" }
+{ "anchor_from": "kQmX", "anchor_to": "kQmX", "at": "after", "text": "// Footer comment\n" }
+{ "anchor_from": "p9rX", "anchor_to": "p9rX", "at": "before", "text": "  return true;\n" }
+{ "anchor_from": "m2zX", "anchor_to": "m2zX", "text_ref": { "anchor_from": "d2xX", "anchor_to": "d2xX", "mode": "copy" } }
+{ "anchor_from": "m2zX", "anchor_to": "m2zX", "text_ref": { "anchor_from": "d2xX", "anchor_to": "e5vX", "mode": "cut" } }
+{ "anchor_from": "m2zX", "anchor_to": "m2zX", "text_ref": { "anchor_from": "g7tX", "anchor_to": "h3sX", "file": "src/helper.ts", "mode": "cut" } }
 ```
 
 (in order: in-place replace; in-place delete; after-insert; before-insert; by-reference copy;
@@ -303,7 +302,7 @@ referenced span is retired — the current word is `cut`.
 | Error Code | Description | Remedy / Agent Action |
 | --- | --- | --- |
 | `[E_BAD_PAYLOAD]` | Payload fails schema validation (missing fields, wrong types). | Correct payload structure to match `{ file, edits }` schema. |
-| `[E_MALFORMED_ANCHOR]` | Anchor is not a bare 3-char string (e.g. includes `│` or diff prefixes). | Pass bare 3-char anchor (e.g. `"szJ"`) and retry. |
+| `[E_MALFORMED_ANCHOR]` | Anchor is not a bare 4-char string (e.g. includes `│` or diff prefixes). | Pass bare 4-char anchor (e.g. `"szJx"`) and retry. |
 | `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | Retry using the fresh rows provided in the rejection. |
 | `[E_UNKNOWN_ANCHOR]` | Anchor has no active lease in any file for this session. | Re-read the file to establish fresh anchor leases. |
 | `[E_FOREIGN_ANCHOR]` | Anchor is leased for a different file than the targeted one. | Ensure anchors match the target file path. |
@@ -321,7 +320,7 @@ referenced span is retired — the current word is `cut`.
 | `[E_UNDO_STALE]` | Target file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read file. |
 | `[E_UNDO_UNAVAILABLE]` | Undo state could not be persisted to SQLite store. | Edit was refused and file unchanged; retry edit. |
 | `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure; do not re-undo — the next run repairs the interrupted revert. |
-| `[E_LARGE_FILE]` | A served read or edit load exceeds the 238,328-line ceiling of 3-char base62 space; `mode: "verbatim"` reads are not capped. | Use `write` or non-hashline tools for very large files. |
+| `[E_LARGE_FILE]` | A served read or edit load exceeds the served admission budget (200,000 lines, `SERVED_MAX_LINES`) or the 14,766,336-line ceiling of allocatable 4-char anchors (62^4 minus the 10,000 reserved all-digit spellings); `mode: "verbatim"` reads are not capped. | Use `write` or non-hashline tools for very large files. |
 | `[E_UNKNOWN]` | Unexpected filesystem or invariant failure. | Check error message details. |
 
 ### Applied Warnings (`[W_*]`)
@@ -344,7 +343,7 @@ referenced span is retired — the current word is `cut`.
 
 | Feature | **pi-better-edit v2** | @oh-my-pi/hashline | Traditional `str_replace` |
 | --- | --- | --- | --- |
-| **Addressing Model** | 3-char content-addressed anchors | File tag + line numbers | Verbatim code strings |
+| **Addressing Model** | 4-char (file, content)-addressed anchors | File tag + line numbers | Verbatim code strings |
 | **Line Identity** | Immutable MVCC `line_id` | Coordinate line numbers | None (text matching) |
 | **Exterior Shift Tolerance** | **Auto-rebases** (0 tokens, 0 retries) | Model must recalculate line numbers | Fails if surrounding context shifts |
 | **Duplicate Line Safety** | **Collision-resolved** unique anchors | Ambiguous position-based indexing | Prone to matching wrong instance |
@@ -352,7 +351,7 @@ referenced span is retired — the current word is `cut`.
 | **Batch Support** | **Atomic** up to 32 items with delta shifts | Multi-section patch preflight | Sequential individual calls |
 | **Undo Persistence** | **Survives restarts** (CAS snapshot pinned) | None | None |
 | **Session Isolation** | Session-keyed leases (`served_leases`) | None | N/A |
-| **Deterministic Battery** | **27/27** pass rate | 10/10 library seam | N/A |
+| **Deterministic Battery** | 27 deterministic scenarios run by `pnpm test` (`test/e2e/tool-battery.test.ts`) | N/A | N/A |
 
 ### Edge Case Behavior
 
@@ -366,49 +365,8 @@ referenced span is retired — the current word is `cut`.
 
 ---
 
-## Reproducible Benchmarks
+## Independent Benchmark
 
-All claims are backed by deterministic verification batteries and reproducible benchmarks.
-
-### 1. Deterministic Tool Battery (27 Scenarios)
-
-The tool battery executes 27 complex edge-case scenarios (concurrent exterior inserts, duplicate function blocks, interior modifications, symmetric reorders, foreign-anchor isolation, BOM preservation, and batch interactions) without LLM sampling:
-
-| Test Suite | Result | Silent Data Loss |
-| --- | :---: | :---: |
-| **pi-better-edit v2** | **27/27** | **0** |
-
-Reproduce locally:
-```bash
-pnpm run eval
-```
-
-### 2. Practical Coding-Agent Benchmark
-
-Measures a realistic refactoring workflow in `pi` with model thinking enabled (`opencode-go/gpt-5.6-luna`), testing recovery from external drift:
-
-| Editing Tool | Tool Calls | Total Tokens | Token Savings vs Baseline | Correctness |
-| --- | :---: | :---: | :---: | :---: |
-| OMP Patch Wrapper | 6 | 28,467 | Baseline | &#x2705; |
-| **pi-better-edit v2** | **3 (fewest)** | **12,593** | **-55.8%** | &#x2705; |
-
-Reproduce locally:
-```bash
-pnpm run benchmark:practical
-```
-
-### 3. Theoretical Envelope Savings
-
-Measures raw payload serialization overhead across a pinned 12-edit corpus:
-- **Single edit**: -40.0% token overhead vs `str_replace`.
-- **Multi-item batch**: -42.7% token overhead vs `str_replace`.
-
-Reproduce locally:
-```bash
-pnpm run benchmark:tokens
-```
-
-### 4. Independent Benchmark: Explicit Edit Benchmark
 
 [**Explicit Edit Benchmark**](https://github.com/alexshpunt/explicit-edit-benchmark) is an independent, community-run dataset that scores harnesses and Pi editing extensions on the same 226 byte-exact edit tasks (replacements, insertions, deletions, moves, copies, unicode, large files). It is maintained by [alexshpunt](https://github.com/alexshpunt), not by this project, and every observation ships with its configuration.
 
@@ -430,7 +388,7 @@ pnpm run benchmark:tokens
 ## How Anchors Work
 
 1. **Whitespace Canonicalization**: Each line is stripped of a frozen 28-code-point whitespace class (ASCII plus Unicode spaces, NBSP, BOM, and directional marks — [ADR-0029](docs/adr/0029-canon-v3-frozen-whitespace-class.md)) before hashing. External formatting passes (`prettier`, `black`, `gofmt`, `rustfmt`) do not alter line hashes. Token-level edits (quotes, semicolons, variable names) rotate the hash, and so do the significant zero-width characters the class deliberately excludes (U+200B ZWSP, U+200C/D ZWNJ/ZWJ) — `oxfmt` normalizes ZWSP to a space, which rotates the anchor and fails closed rather than passing silently.
-2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 and mapped to 3-character base62 strings (`A-Za-z0-9`), providing $62^3 = 238,328$ unique anchors. Base62 strings occupy tokenizer-stable token regions across model families ([TokDrift, arXiv:2510.14972](https://arxiv.org/abs/2510.14972)).
+2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 seeded with the file's canonical path (`(canonical path, canonical line)` → `fileBaseIndex`) and mapped to 4-character base62 strings (`A-Za-z0-9`), providing $62^4 - 10^4 = 14,766,336$ allocatable anchors — the 10,000 all-digit spellings are reserved and never served, since a served one would be indistinguishable from a line number. Base62 strings occupy tokenizer-stable token regions across model families ([TokDrift, arXiv:2510.14972](https://arxiv.org/abs/2510.14972)). The live width record is [ADR-0030](docs/adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md).
 3. **Collision-Free Coprime Probing**: When duplicate lines occur in a file, collision resolution probes using a stride coprime to the hash space ($62^2 + 62 + 1 = 3,907$). Every line in a file receives a unique anchor.
 4. **SQLite WAL CAS Storage**: Line hashes and snapshots are persisted in `~/.config/pi-better-edit/hash-store.sqlite` (honoring `XDG_CONFIG_HOME`). Snapshot retention is governed by proportional LRU vacuuming under a 50MB budget.
 
@@ -461,8 +419,6 @@ pnpm run lint
 pnpm run format
 pnpm run typecheck
 
-# Run evaluation batteries
-pnpm run eval
 ```
 
 ---

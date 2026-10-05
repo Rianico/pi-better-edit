@@ -6,7 +6,7 @@
 ## Body
 
 ## Summary
-Hash-anchored `edit` (3-char `HASH│content`, content-derived with `[ \t\r\n]` stripped) rejected chained edits after an external insertion above the range with `[E_RANGE_STALE]`/`[E_RANGE_UNSERVED]` even though interior content was unchanged. Root cause: range verification verified the whole resolved range against **served state** but had staleness gaps for **orphaned serve** and **relocated line keeps its hash**. Fixed in `f94fb88` (healing via `canon` + `mapStableHashes`) and deepened into 5 seams (`cfc9ee8`..`f6fdd08`) to make the invariant load-bearing.
+Hash-anchored `edit` (4-char `HASH│content`, content-derived with `[ \t\r\n]` stripped) rejected chained edits after an external insertion above the range with `[E_RANGE_STALE]`/`[E_RANGE_UNSERVED]` even though interior content was unchanged. Root cause: range verification verified the whole resolved range against **served state** but had staleness gaps for **orphaned serve** and **relocated line keeps its hash**. Fixed in `f94fb88` (healing via `canon` + `mapStableHashes`) and deepened into 5 seams (`cfc9ee8`..`f6fdd08`) to make the invariant load-bearing.
 
 Spec: `docs/spec/served-state-range-verification.md` · Vocabulary: `CONTEXT.md` (`serve`, `served state`, `served span`, `range staleness`, `never-served`, `reject-and-serve`, `drift`, `orphaned serve`, `relocated line keeps its hash`, `payload contract`, `anchor philosophy`, `canon`).
 

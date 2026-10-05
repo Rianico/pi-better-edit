@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { initHasher } from "../../src/hashline/hasher";
 import { applyEdit, serializeLineList } from "../../src/hashline/apply";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
@@ -11,7 +11,7 @@ beforeAll(async () => {
 });
 
 const FILE = "a\nb\nX\nY\nc\n";
-const H = _lineHashesPure(FILE);
+const H = contentOnlyHashes(FILE);
 
 // WHY: the span-ref arm's internal-seam shape (ticket-02): the target names where the text lands,
 // WHY: `source` names the same-file line span to copy from, and `retire` distinguishes move from
@@ -45,27 +45,27 @@ function expectErrorCode(run: () => unknown, code: string): void {
 
 describe("applyEdit — span-ref copy (source survives)", () => {
   it("copies a multi-line source onto a replace target that lies before the source", () => {
-    const result = applyEdit(FILE, spanRefEdit([1, 1], [3, 4], false));
+    const result = applyEdit(FILE, spanRefEdit([1, 1], [3, 4], false), undefined, H);
     expect(result.content).toBe("X\nY\nb\nX\nY\nc\n");
   });
 
   it("copies a multi-line source onto a replace target that lies after the source", () => {
-    const result = applyEdit(FILE, spanRefEdit([5, 5], [3, 4], false));
+    const result = applyEdit(FILE, spanRefEdit([5, 5], [3, 4], false), undefined, H);
     expect(result.content).toBe("a\nb\nX\nY\nX\nY\n");
   });
 
   it("copies with an insertion placement (before) — a zero-width splice, source untouched", () => {
-    const result = applyEdit(FILE, spanRefEdit([2, 2], [3, 4], false, "before"));
+    const result = applyEdit(FILE, spanRefEdit([2, 2], [3, 4], false, "before"), undefined, H);
     expect(result.content).toBe("a\nX\nY\nb\nX\nY\nc\n");
   });
 
   it("copies with an insertion placement (after) adjacent to the source — source untouched", () => {
-    const result = applyEdit(FILE, spanRefEdit([4, 4], [3, 4], false, "after"));
+    const result = applyEdit(FILE, spanRefEdit([4, 4], [3, 4], false, "after"), undefined, H);
     expect(result.content).toBe("a\nb\nX\nY\nX\nY\nc\n");
   });
 
   it("a self-copy is the honest noop — bytes unchanged, noopEdit present", () => {
-    const result = applyEdit(FILE, spanRefEdit([2, 2], [2, 2], false));
+    const result = applyEdit(FILE, spanRefEdit([2, 2], [2, 2], false), undefined, H);
     expect(result.content).toBe(FILE);
     expect(result.noopEdit).toBeDefined();
   });
@@ -73,14 +73,14 @@ describe("applyEdit — span-ref copy (source survives)", () => {
 
 describe("applyEdit — span-ref move (source retired)", () => {
   it("moves onto a replace target before the source — no duplication, no residue", () => {
-    const result = applyEdit(FILE, spanRefEdit([1, 1], [3, 4], true));
+    const result = applyEdit(FILE, spanRefEdit([1, 1], [3, 4], true), undefined, H);
     expect(result.content).toBe("X\nY\nb\nc\n");
   });
 
   it("moves onto a replace target adjacent to (immediately after) the source", () => {
     // The result bytes coincide with a plain target deletion here, so the applied-not-noop status
     // and the retired source span (invariant 7's carrier) are what refute a half-implementation.
-    const result = applyEdit(FILE, spanRefEdit([5, 5], [3, 4], true));
+    const result = applyEdit(FILE, spanRefEdit([5, 5], [3, 4], true), undefined, H);
     expect(result.content).toBe("a\nb\nX\nY\n");
     expect(result.noopEdit).toBeUndefined();
     expect(result.sourceRange).toEqual({
@@ -93,35 +93,41 @@ describe("applyEdit — span-ref move (source retired)", () => {
   });
 
   it("moves onto an insertion target — the retired lines re-enter once, at the point", () => {
-    const result = applyEdit(FILE, spanRefEdit([1, 1], [3, 4], true, "after"));
+    const result = applyEdit(FILE, spanRefEdit([1, 1], [3, 4], true, "after"), undefined, H);
     expect(result.content).toBe("a\nX\nY\nb\nc\n");
   });
 
   it("a move from a multi-line source onto a single-line target retires the source", () => {
-    const result = applyEdit(FILE, spanRefEdit([5, 5], [1, 2], true));
+    const result = applyEdit(FILE, spanRefEdit([5, 5], [1, 2], true), undefined, H);
     expect(result.content).toBe("X\nY\na\nb\n");
   });
 
   it("the degenerate adjacent move is the honest noop — no crash, no write, no double-apply", () => {
     // Insert `X\nY` after line 2 while retiring exactly lines 3..4: the assembled bytes are the
     // pre-item bytes, so this must ride the noop path rather than splice twice.
-    const result = applyEdit(FILE, spanRefEdit([2, 2], [3, 4], true, "after"));
+    const result = applyEdit(FILE, spanRefEdit([2, 2], [3, 4], true, "after"), undefined, H);
     expect(result.content).toBe(FILE);
     expect(result.noopEdit).toBeDefined();
   });
 
   it("refuses a retired source that overlaps the target with E_BAD_PAYLOAD", () => {
-    expectErrorCode(() => applyEdit(FILE, spanRefEdit([3, 4], [4, 5], true)), "E_BAD_PAYLOAD");
-    expectErrorCode(() => applyEdit(FILE, spanRefEdit([3, 3], [3, 4], true)), "E_BAD_PAYLOAD");
+    expectErrorCode(
+      () => applyEdit(FILE, spanRefEdit([3, 4], [4, 5], true), undefined, H),
+      "E_BAD_PAYLOAD",
+    );
+    expectErrorCode(
+      () => applyEdit(FILE, spanRefEdit([3, 3], [3, 4], true), undefined, H),
+      "E_BAD_PAYLOAD",
+    );
     // WHY: (ticket-02b P1-B) the pinned predicate is placement-aware: an insertion point strictly
     // WHY: inside the retired lines overlaps it — `before` when s1 < T <= s2, `after` when
     // WHY: s1 <= T < s2. Both spellings refuse; today they wrote corrupt bytes.
     expectErrorCode(
-      () => applyEdit(FILE, spanRefEdit([3, 3], [3, 4], true, "after")),
+      () => applyEdit(FILE, spanRefEdit([3, 3], [3, 4], true, "after"), undefined, H),
       "E_BAD_PAYLOAD",
     );
     expectErrorCode(
-      () => applyEdit(FILE, spanRefEdit([4, 4], [3, 4], true, "before")),
+      () => applyEdit(FILE, spanRefEdit([4, 4], [3, 4], true, "before"), undefined, H),
       "E_BAD_PAYLOAD",
     );
   });
@@ -135,7 +141,7 @@ describe("applyEdit — span-ref move (source retired)", () => {
       ["after", 4],
       ["before", 5],
     ] as const) {
-      const result = applyEdit(FILE, spanRefEdit([line, line], [3, 4], true, at));
+      const result = applyEdit(FILE, spanRefEdit([line, line], [3, 4], true, at), undefined, H);
       expect(result.content).toBe(FILE);
       expect(result.noopEdit).toBeDefined();
     }
@@ -147,7 +153,7 @@ describe("applyEdit — span-ref move (source retired)", () => {
     // WHY: must NOT fire on the empty body. The bytes are pinned to `""` absolutely (not just
     // WHY: call-vs-call equality — two calls can agree on the wrong value), matching the parent's
     // WHY: honest noop.
-    const h = _lineHashesPure("");
+    const h = contentOnlyHashes("");
     for (const at of ["before", "after"] as const) {
       const move: HEdit = {
         content_lines: [],
@@ -171,7 +177,7 @@ describe("applyEdit — span-ref move (source retired)", () => {
       ["b\n\nb", "b\n\n"],
       ["c\n\nc", "c\n\n"],
     ] as const) {
-      const h = _lineHashesPure(content);
+      const h = contentOnlyHashes(content);
       const move: HEdit = {
         content_lines: [],
         hash_bounds: [{ hash: h[0]! }, { hash: h[0]! }],
@@ -187,7 +193,7 @@ describe("applyEdit — span-ref move (source retired)", () => {
   });
 
   it("a copy (no retire) may overlap the target — overlap only matters when retiring", () => {
-    const result = applyEdit(FILE, spanRefEdit([3, 4], [4, 5], false));
+    const result = applyEdit(FILE, spanRefEdit([3, 4], [4, 5], false), undefined, H);
     expect(result.content).toBe("a\nb\nY\nc\nc\n");
   });
 });
@@ -199,12 +205,12 @@ describe("applyEdit — span-ref resolution and evidence", () => {
       ...edit,
       source: { bounds: [{ hash: "QQQ" }, { hash: "QQQ" }], retire: true },
     } as HEdit;
-    expectErrorCode(() => applyEdit(FILE, withBadSource), "E_UNKNOWN_ANCHOR");
+    expectErrorCode(() => applyEdit(FILE, withBadSource, undefined, H), "E_UNKNOWN_ANCHOR");
   });
 
   it("a reversed SOURCE bound pair heals like any other span", () => {
     const edit = spanRefEdit([1, 1], [4, 3], true);
-    const result = applyEdit(FILE, edit);
+    const result = applyEdit(FILE, edit, undefined, H);
     expect(result.content).toBe("X\nY\nb\nc\n");
     expect(result.warnings?.some((w) => w.includes("W_REVERSED_ANCHORS"))).toBe(true);
   });
@@ -214,7 +220,7 @@ describe("applyEdit — span-ref resolution and evidence", () => {
     // WHY: from-to ascending — only the LEASE resolutions cross (spec §3.1.1). The source arm must
     // WHY: narrate its own heal: exactly one notice, and the move still applies on the healed span.
     const content = "alpha\nbeta\ngamma";
-    const h = _lineHashesPure(content);
+    const h = contentOnlyHashes(content);
     const lease = (lineId: number, servedLineNumber: number) => ({
       canonHash: "0",
       servedSnapshotHash: "S",
@@ -261,7 +267,7 @@ describe("applyEdit — span-ref resolution and evidence", () => {
     // WHY: an equal-text target: only the retirement mutates — one mutationSpan, added 0 / removed 1,
     // WHY: and the target range's zero delta is inherent (equal-width replacement), not patched.
     const file2 = "a\nb\nb\nc\n";
-    const h2 = _lineHashesPure(file2);
+    const h2 = contentOnlyHashes(file2);
     const edit: HEdit = {
       content_lines: [],
       hash_bounds: [{ hash: h2[2]! }, { hash: h2[2]! }],
@@ -281,11 +287,11 @@ describe("applyEdit — span-ref resolution and evidence", () => {
     // copying line 4 (plain "delta") must apply — both asserted in one test so the refusal cannot
     // come from the copy path being broken in general.
     const base = "alpha\nbeta\ngamma\ndelta";
-    const bh = _lineHashesPure(base);
+    const bh = contentOnlyHashes(base);
     const served = [...bh];
     const digests = ["alpha", "beta", "gamma", "delta"].map((line) => canonDigest(line));
     const file2 = `alpha\nbeta\n${bh[2]}${HASH_SEP}gamma\ndelta`;
-    const h2 = _lineHashesPure(file2);
+    const h2 = contentOnlyHashes(file2);
     const verification = { filePath: "f.txt", served, canonDigests: digests };
 
     const badEdit = {
@@ -397,7 +403,7 @@ describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte
     for (const mode of [undefined, "general", "literal"] as const) {
       for (const content of FENCE_FILES) {
         const lines = splitLines(content);
-        const h = _lineHashesPure(content);
+        const h = contentOnlyHashes(content);
         const verification = fenceVerification(h, lines, mode);
         for (let s1 = 1; s1 <= lines.length; s1++) {
           for (let s2 = s1; s2 <= lines.length; s2++) {
@@ -443,7 +449,7 @@ describe("applyEdit — two-path fence (span-ref ≡ hand-written, byte-for-byte
     for (const mode of [undefined, "general", "literal"] as const) {
       for (const content of FENCE_FILES) {
         const lines = splitLines(content);
-        const h = _lineHashesPure(content);
+        const h = contentOnlyHashes(content);
         const verification = fenceVerification(h, lines, mode);
         for (let s1 = 1; s1 <= lines.length; s1++) {
           for (let s2 = s1; s2 <= lines.length; s2++) {

@@ -14,7 +14,7 @@ import { loadHashStore, type HashStore } from "../../src/hash-store.js";
 import { readNormFile } from "../../src/file-reader.js";
 import type { NormalizedEditRequest, Placement } from "../../src/payload-contract.js";
 
-const home = useTestHome();
+useTestHome();
 
 beforeAll(async () => {
   await initHasher();
@@ -149,7 +149,7 @@ describe("MutationEngine — span-ref move", () => {
   it("moves a multi-line span: source retired, target replaced, metrics honest", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         { file: "sample.txt", edits: [spanRefItem([h[4]!, h[4]!], [h[0]!, h[1]!], true)] },
@@ -172,7 +172,7 @@ describe("MutationEngine — span-ref move", () => {
   it("the degenerate adjacent move rides the noop path — no write, no double-apply", async () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         { file: "sample.txt", edits: [spanRefItem([h[0]!, h[0]!], [h[1]!, h[2]!], true, "after")] },
@@ -197,7 +197,7 @@ describe("MutationEngine — span-ref move", () => {
   it("the empty file's touching move stays an honest noop — disk bytes unchanged", async () => {
     await withTempFile("empty.txt", "", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("", home.testPath);
+      const h = await lineHashes("", join(cwd, "empty.txt"));
       await readTool.execute("r1", { file: "empty.txt" }, undefined, undefined, ctx);
       await expect(readFile(`${cwd}/empty.txt`, "utf-8")).resolves.toBe("");
       for (const at of ["before", "after"] as const) {
@@ -221,7 +221,7 @@ describe("MutationEngine — span-ref move", () => {
   it("refuses a retired source that overlaps its own target — E_BAD_PAYLOAD, bytes unchanged", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         { file: "sample.txt", edits: [spanRefItem([h[1]!, h[2]!], [h[2]!, h[3]!], true)] },
@@ -248,7 +248,7 @@ describe("MutationEngine — span-ref move", () => {
     await withTempFile("sample.txt", "a\nb\nX\nY\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const input = "a\nb\nX\nY\nc\n";
-      const h = await lineHashes(input, home.testPath);
+      const h = await lineHashes(input, join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const move = async (at: Placement, line: number) => {
         const result = await execute(
@@ -281,7 +281,7 @@ describe("MutationEngine — span-ref move", () => {
     await withTempFile("sample.txt", "a\nb\nX\nY\nc", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const input = "a\nb\nX\nY\nc";
-      const h = await lineHashes(input, home.testPath);
+      const h = await lineHashes(input, join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const move = async (at: Placement, line: number) => {
         const result = await execute(
@@ -320,7 +320,7 @@ describe("MutationEngine — span-ref move", () => {
   it("a move onto an equal-text target: metrics honest, only the retirement mutates", async () => {
     await withTempFile("sample.txt", "a\nb\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nb\nc\n", home.testPath);
+      const h = await lineHashes("a\nb\nb\nc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         { file: "sample.txt", edits: [spanRefItem([h[2]!, h[2]!], [h[1]!, h[1]!], true)] },
@@ -339,7 +339,7 @@ describe("MutationEngine — span-ref move", () => {
   it("refuses an overlapping after-move: insertion point strictly inside the retired span", async () => {
     await withTempFile("sample.txt", "a\nb\nX\nY\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nX\nY\nc\n", home.testPath);
+      const h = await lineHashes("a\nb\nX\nY\nc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         { file: "sample.txt", edits: [spanRefItem([h[2]!, h[2]!], [h[2]!, h[3]!], true, "after")] },
@@ -356,7 +356,7 @@ describe("MutationEngine — span-ref move", () => {
   it("refuses an overlapping before-move: insertion point strictly inside the retired span", async () => {
     await withTempFile("sample.txt", "a\nb\nX\nY\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nX\nY\nc\n", home.testPath);
+      const h = await lineHashes("a\nb\nX\nY\nc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         {
@@ -376,10 +376,10 @@ describe("MutationEngine — span-ref move", () => {
   it("an unresolvable source anchor fails through the range-family rejection — bytes unchanged", async () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
-        { file: "sample.txt", edits: [spanRefItem([h[2]!, h[2]!], ["QQQ", "QQQ"], true)] },
+        { file: "sample.txt", edits: [spanRefItem([h[2]!, h[2]!], ["QQQQ", "QQQQ"], true)] },
         cwd,
         { sessionKey: TEST_SESSION_ID },
       );
@@ -395,7 +395,7 @@ describe("MutationEngine — span-ref copy", () => {
   it("copies a multi-line span: source survives, metrics count only the target removal", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         { file: "sample.txt", edits: [spanRefItem([h[4]!, h[4]!], [h[0]!, h[1]!], false)] },
@@ -416,7 +416,7 @@ describe("MutationEngine — span-ref copy", () => {
   it("copies with an insertion placement — added lines, zero removed", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         {
@@ -440,7 +440,7 @@ describe("MutationEngine — span-ref in batches", () => {
   it("a source span is a batch span: another item overlapping it aborts the batch", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       // edit[0] moves lines 2..3 away; edit[1] tries to rewrite line 3 — the SAME baseline line.
       const result = await execute(
@@ -461,7 +461,7 @@ describe("MutationEngine — span-ref in batches", () => {
   it("a copy's non-retired source is not a mutated span: another item may target it", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       // edit[0] copies lines 1..2 onto line 5; edit[1] rewrites line 2 — legal because the copy
       // retires nothing, and both splices resolved against the same pre-batch buffer.
@@ -486,7 +486,7 @@ describe("MutationEngine — span-ref in batches", () => {
   it("batch: an item's own target inside its own retired source refuses — bytes unchanged", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       // WHY: the pre-mutation gate skips same-index span pairs, deferring an item's own
       // WHY: target/source overlap to `applyEdit` — this asserts the deferral lands on a refusal
@@ -510,7 +510,7 @@ describe("MutationEngine — span-ref in batches", () => {
   it("batch gate: an unresolvable SOURCE anchor aborts before any mutation", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       // WHY: the pre-mutation gate resolves a retired source as its own baseline span; this pins
       // WHY: the source arm's failure path (the recorder + raw rethrow), which the single-item
@@ -518,7 +518,10 @@ describe("MutationEngine — span-ref in batches", () => {
       const result = await execute(
         {
           file: "sample.txt",
-          edits: [spanRefItem([h[3]!, h[3]!], ["QQQ", "QQQ"], true), handItem([h[0]!, h[0]!], "A")],
+          edits: [
+            spanRefItem([h[3]!, h[3]!], ["QQQQ", "QQQQ"], true),
+            handItem([h[0]!, h[0]!], "A"),
+          ],
         },
         cwd,
         { sessionKey: TEST_SESSION_ID },
@@ -535,7 +538,7 @@ describe("MutationEngine — span-ref in batches", () => {
   it("batch identity: a retired source does not blind a later item's anchors (invariant 6)", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         {
@@ -570,8 +573,8 @@ describe("MutationEngine — reference payloads at the engine seam (ticket-04 re
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       await readTool.execute("r2", { file: "other.txt" }, undefined, undefined, ctx);
-      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
-      const s = await lineHashes("x\ny\nz\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
+      const s = await lineHashes("x\ny\nz\n", join(cwd, "other.txt"));
       const result = await execute(
         {
           file: "sample.txt",
@@ -591,7 +594,7 @@ describe("MutationEngine — reference payloads at the engine seam (ticket-04 re
   it("refuses a nested span.mode that disagrees with the payload mode (keel F3)", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       for (const [spanMode, payloadMode] of [
         ["cut", "copy"],
@@ -620,8 +623,9 @@ describe("MutationEngine — reference payloads at the engine seam (ticket-04 re
   });
 
   it("reads one foreign file once per batch through the injected store (§10)", async () => {
-    const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
-    const s = await lineHashes("p\nq\nr\ns\nt\n", home.testPath);
+    let h!: string[];
+    let s!: string[];
+
     const copyItem = (from: number, to: number, onto: number) => ({
       target: { anchor_from: h[onto - 1]!, anchor_to: h[onto - 1]! },
       at: "after" as const,
@@ -641,6 +645,8 @@ describe("MutationEngine — reference payloads at the engine seam (ticket-04 re
     await withTempDir("spanref-foreign-onceread-", async (cwd) => {
       await writeFile(join(cwd, "target.txt"), "a\nb\nc\nd\ne\n", "utf-8");
       await writeFile(join(cwd, "source.txt"), "p\nq\nr\ns\nt\n", "utf-8");
+      h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "target.txt"));
+      s = await lineHashes("p\nq\nr\ns\nt\n", join(cwd, "source.txt"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
       await readTool.execute("r2", { file: "source.txt" }, undefined, undefined, ctx);
@@ -681,6 +687,9 @@ describe("MutationEngine — reference payloads at the engine seam (ticket-04 re
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "target.txt" }, undefined, undefined, ctx);
       await readTool.execute("r2", { file: "source.txt" }, undefined, undefined, ctx);
+      // WHY: anchors are directory-seeded — the sequential dir needs its own.
+      h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "target.txt"));
+      s = await lineHashes("p\nq\nr\ns\nt\n", join(cwd, "source.txt"));
       const first = await execute({ file: "target.txt", edits: [copyItem(1, 2, 5)] }, cwd, {
         sessionKey: TEST_SESSION_ID,
       });
@@ -704,7 +713,7 @@ describe("MutationEngine — reference payloads at the engine seam (ticket-04 re
     // refuse LOUD, naming the wire field `"text"`, and the file must stay byte-identical.
     await withTempFile("sample.txt", "a\nb\nc\nd\ne\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const h = await lineHashes("a\nb\nc\nd\ne\n", home.testPath);
+      const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         { file: "sample.txt", edits: [handItem([h[1]!, h[1]!], "")] },

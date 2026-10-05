@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { HASH_LEN } from "../../src/hashline/index.js";
 import { readFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 import { loadHashStore, type HashStore } from "../../src/hash-store";
@@ -77,6 +78,9 @@ describe("WAL lineage commit from the working buffer", () => {
       const first = extractHash(lines[0]!);
       const second = extractHash(lines[1]!);
       expect(second).not.toBe(first);
+      // WHY: the lineage anchors committed below must be live-width tokens —
+      // WHY: the `after` equality already pins their value, this pins the width.
+      expect(second).toHaveLength(HASH_LEN);
 
       const store = await loadHashStore();
       const before = lineageRows(store, path, content);

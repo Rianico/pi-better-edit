@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
@@ -18,7 +18,7 @@ function canonDigestsFor(content: string): (string | null)[] {
 describe("applyEdit — verification descriptor (issue #115)", () => {
   it("carries filePath + served in one descriptor and still refuses a served row", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
@@ -35,7 +35,7 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
 
   it("accepts a clean retry through the descriptor", () => {
     const content = "alpha\nbeta\ngamma\ndelta";
-    const hashes = _lineHashesPure(content);
+    const hashes = contentOnlyHashes(content);
     const served: (string | null)[] = [...hashes];
     const edit = {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }],
@@ -51,19 +51,19 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
 
   it("E_SUSPICIOUS_TEXT pinned: anchor-shaped repeat with differing content is accepted", () => {
     const content = "z\nq\nw";
-    const hashes = _lineHashesPure(content);
-    expect(hashes).not.toContain("AAA");
-    expect(hashes).not.toContain("BBB");
-    const served: (string | null)[] = ["AAA", "BBB", null];
+    const hashes = contentOnlyHashes(content);
+    expect(hashes).not.toContain("AAAA");
+    expect(hashes).not.toContain("BBBB");
+    const served: (string | null)[] = ["AAAA", "BBBB", null];
     const leases: Record<string, LeaseIdentityView> = {
-      AAA: {
+      AAAA: {
         lineId: 1,
         canonHash: canonDigest("z"),
         servedSnapshotHash: "S",
         servedLineNumber: 1,
         retiredAt: null,
       },
-      BBB: {
+      BBBB: {
         lineId: 2,
         canonHash: canonDigest("q"),
         servedSnapshotHash: "S",
@@ -77,8 +77,8 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
       rebasedLineOf: (lineId) => ({ 1: 2, 2: 3 })[lineId],
     };
     const edit = {
-      hash_bounds: [{ hash: "AAA" }, { hash: "BBB" }],
-      content_lines: ["plain", `AAA${HASH_SEP}BOOM`],
+      hash_bounds: [{ hash: "AAAA" }, { hash: "BBBB" }],
+      content_lines: ["plain", `AAAA${HASH_SEP}BOOM`],
     } as unknown as HEdit;
     const result = applyEdit(content, edit, undefined, hashes, {
       filePath: "a.txt",
@@ -86,22 +86,22 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
       canonDigests: [canonDigest("z"), canonDigest("q"), null],
       identity,
     });
-    expect(result.content).toBe("z\nplain\nAAA│BOOM");
+    expect(result.content).toBe("z\nplain\nAAAA│BOOM");
   });
 
   it("E_SUSPICIOUS_TEXT pinned: reproduced served row is refused", () => {
     const content = "z\nq\nw";
-    const hashes = _lineHashesPure(content);
-    const served: (string | null)[] = ["AAA", "BBB", null];
+    const hashes = contentOnlyHashes(content);
+    const served: (string | null)[] = ["AAAA", "BBBB", null];
     const leases: Record<string, LeaseIdentityView> = {
-      AAA: {
+      AAAA: {
         lineId: 1,
         canonHash: canonDigest("z"),
         servedSnapshotHash: "S",
         servedLineNumber: 1,
         retiredAt: null,
       },
-      BBB: {
+      BBBB: {
         lineId: 2,
         canonHash: canonDigest("q"),
         servedSnapshotHash: "S",
@@ -115,8 +115,8 @@ describe("applyEdit — verification descriptor (issue #115)", () => {
       rebasedLineOf: (lineId) => ({ 1: 2, 2: 3 })[lineId],
     };
     const edit = {
-      hash_bounds: [{ hash: "AAA" }, { hash: "BBB" }],
-      content_lines: [`AAA${HASH_SEP}z`, "plain"],
+      hash_bounds: [{ hash: "AAAA" }, { hash: "BBBB" }],
+      content_lines: [`AAAA${HASH_SEP}z`, "plain"],
     } as unknown as HEdit;
     expect(() =>
       applyEdit(content, edit, undefined, hashes, {

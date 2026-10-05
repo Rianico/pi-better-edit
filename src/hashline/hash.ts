@@ -1,4 +1,4 @@
-import { HASH_LEN, ALPHA, ALPHA_RE as _ALPHA_RE, HASH_RE } from "./alphabet.js";
+import { ALPHA_RE as _ALPHA_RE, HASH_RE } from "./alphabet.js";
 import { defaultHashIdentity as _defaultHI } from "./hash-identity.js";
 import type {
   HashSnapshotIO as _HSIO,
@@ -25,9 +25,12 @@ export function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
 
 export const HASH_SEP = "│";
 
-const HASH_SPACE = ALPHA.length ** HASH_LEN;
-const _MAX_HASH_LINES = HASH_SPACE;
-
+// WHY: single owner of the capacity figures lives in `hash-identity.ts` — this
+// WHY: facade re-exports them so the two cannot drift.
+export { HASH_SPACE, USABLE_HASH_SPACE, MAX_HASH_LINES } from "./hash-identity.js";
+// WHY: facade parity — tests importing the content-only helper from this facade
+// WHY: keep working; the implementation lives in `hash-identity.ts`.
+export { contentOnlyHashes, fileHashesFor } from "./hash-identity.js";
 export function isValidHashList(value: unknown): value is string[] {
   if (!Array.isArray(value)) return false;
   for (const hash of value) {
@@ -35,19 +38,15 @@ export function isValidHashList(value: unknown): value is string[] {
   }
   return true;
 }
-const _HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
-
-// SAFETY: one definition of the canon digest and version for the whole toolchain — `hash-identity.ts`
-// SAFETY: owns them; `canonDigest`/`CANON_VERSION` stay reachable through this facade (#151, #22).
-export { canonDigest, CANON_VERSION } from "./hash-identity.js";
-
-export function _lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
-  return _defaultHI.hashesForSync(content, blockedHashes);
-}
+// SAFETY: one definition of the canon digest and versions for the whole toolchain — `hash-identity.ts`
+// SAFETY: owns them; `canon`/`canonDigest`/`CANON_VERSION`/`ANCHOR_GENERATION` stay reachable through this facade (#151, #22, #20).
+// WHY: `canon` parity — lane tests import the content helper from this facade; the
+// WHY: implementation lives in `hash-identity.ts` (no local duplicate).
+export { canon, canonDigest, CANON_VERSION, ANCHOR_GENERATION } from "./hash-identity.js";
 
 async function _lineHashes(
   content: string,
-  path?: string,
+  path: string,
   previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
   io?: HashSnapshotIO,
   persist?: boolean,

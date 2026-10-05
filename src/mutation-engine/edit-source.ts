@@ -7,16 +7,17 @@
 
 import { readNormFile } from "../file-reader.js";
 import { splitLines } from "../utils.js";
+import { SERVED_MAX_LINES } from "../constants.js";
 import type { LineEnding } from "../edit-diff.js";
 import type { HashStore } from "../hash-store.js";
-import { MAX_HASH_LINES, type LeaseSpanSource } from "../hashline/index.js";
+import type { LeaseSpanSource } from "../hashline/index.js";
 import {
   createSessionHandle,
   loadAnchorHomes,
   loadLeases,
   type ServedLease,
 } from "../served-session/session.js";
-import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
+import { snapshotHashFor, positionsByIdentity, isCurrentAnchorGeneration } from "../snapshot-store";
 import { DomainError } from "../domain-errors.js";
 import { identityPositions } from "./batch-span-gate.js";
 
@@ -47,7 +48,7 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
     await readNormFile(source.path, source.cwd, {
       signal: source.signal,
       accessMode: source.accessMode,
-      maxLines: MAX_HASH_LINES,
+      maxLines: SERVED_MAX_LINES,
       store: source.store,
       noPersist: source.noPersist,
     });
@@ -113,7 +114,7 @@ export async function loadForeignServedView(input: {
     input.path,
     input.cwd,
     {
-      maxLines: MAX_HASH_LINES,
+      maxLines: SERVED_MAX_LINES,
       store: input.store,
       noPersist: true,
     },
@@ -161,6 +162,10 @@ export function leaseSpanSource(input: {
 }): LeaseSpanSource {
   const byAnchor = new Map<string, ServedLease>();
   for (const lease of loadLeases(input.store, input.sessionKey, input.absolutePath)) {
+    // WHY: generation-gated lease source — a pre-bump lease is never honoured, so a
+    // WHY: stale generation cannot resolve by line_id alone. The open-time sweep
+    // WHY: deletes these rows; this gate covers rows written between sweep and read.
+    if (!isCurrentAnchorGeneration(lease.served_snapshot_hash)) continue;
     byAnchor.set(lease.anchor, lease);
   }
   const positions = input.currentIds

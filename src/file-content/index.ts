@@ -9,8 +9,7 @@
  */
 
 import { constants } from "node:fs";
-import { AUTO_READ_MAX } from "../constants.js";
-import { MAX_HASH_LINES } from "../hashline/index.js";
+import { AUTO_READ_MAX, SERVED_MAX_LINES } from "../constants.js";
 import { resolveTarget } from "../fs-write.js";
 import { toCwd } from "../paths.js";
 import { valAccess } from "../validation.js";
@@ -87,12 +86,14 @@ export async function prepareFile(
   await valAccess(absolutePath, path, options?.accessMode ?? constants.R_OK);
   abortIf(signal);
   const verbatim = options?.render === "verbatim";
-  // WHY: the anchor-space line cap is an edit-domain limit (`MAX_HASH_LINES` is the served cap), so
-  // WHY: verbatim ignores a caller-supplied cap: a file too large to anchor is still a file worth
-  // WHY: reading. Only the 100MB `MAX_BYTES` guard in `loadFileKindAndText` bounds both modes, and it
-  // WHY: bounds BYTES READ: both modes page a file by walking its lines and hold no line array, so
-  // WHY: verbatim takes no cap and served takes the anchor-space one.
-  const maxLines = verbatim ? undefined : (options?.maxLines ?? MAX_HASH_LINES);
+  // WHY: the served admission budget (`SERVED_MAX_LINES`) is an edit-domain limit independent of the
+  // WHY: anchor-space ceiling (`MAX_HASH_LINES`), so verbatim ignores a caller-supplied cap: a file too
+  // WHY: large to anchor is still a file worth reading. Only the 100MB `MAX_BYTES` guard in
+  // WHY: `loadFileKindAndText` bounds both modes, and it bounds BYTES READ: both modes page a file by
+  // WHY: walking its lines, but served additionally retains one anchor per hashed line even for an
+  // WHY: unshown window (see `src/constants.ts`), so verbatim takes no cap and served takes the budget.
+  // WHY: The served default stays `SERVED_MAX_LINES`, not the anchor-space ceiling.
+  const maxLines = verbatim ? undefined : (options?.maxLines ?? SERVED_MAX_LINES);
   const file =
     options?.preloadedFile ??
     (await loadFileKindAndText(absolutePath, {

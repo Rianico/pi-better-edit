@@ -1,6 +1,6 @@
 # Hashline Edit
 
-A hash-anchored file-editing extension for the pi-coding-agent: every line of a file carries a stable, content-derived 3-char hash, and replace operations anchor on hashes, failing closed rather than relocating silently.
+A hash-anchored file-editing extension for the pi-coding-agent: every line of a file carries a stable 4-char hash derived from (canonical path, line content), and replace operations anchor on hashes, failing closed rather than relocating silently.
 
 ## Language
 
@@ -17,8 +17,7 @@ The separation of responsibilities: the tool owns verification of what the model
 _Avoid_: —
 
 **anchor philosophy**:
-The project's core contract: per-line anchors are content-derived with the frozen v3 whitespace class stripped, stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005, class amended by ADR-0029).
-_Avoid_: —
+The project's core contract: per-line anchors derive from the file's canonical path and the line's content (`canon`: the frozen v3 whitespace class stripped — 28 code points, ADR-0029 — amending ADR-0005's ASCII-only class), stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005, class amended by ADR-0029).
 
 **whitespace class**:
 The single frozen code-point set the canon strips from a line before hashing — `CANON_VERSION = 3`, 28 code points (C0 whitespace except U+001C–U+001F, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM), defined once in `src/hashline/hash-identity.ts` (ADR-0029). Zero-width and joiner characters (ZWSP/ZWNJ/ZWJ), SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the C1 controls (except NEL) are significant and survive the canon. The executable per-code-point record is `test/core/canon-v3-disposition.test.ts`; formatter churn against the class is re-measured by `scripts/canon-churn-audit.mjs`.
@@ -100,7 +99,7 @@ The file condition where a line's content survives an external write and, becaus
 _Avoid_: duplicate content (implies same hash, which perfect hashing prevents)
 
 **line identity**:
-A line's stable identity across the file's materialized versions: the immutable `line_id` allocated for its content, plus its ancestry in `line_lineage`. Identity follows content, not coordinate — an exterior insert or delete shifts line numbers without changing `line_id`, which is exactly what lets an edit rebase silently. Distinct from the 3-char `anchor`, which is a presentation token the model copies out of a served row.
+A line's stable identity across the file's materialized versions: the immutable `line_id` allocated for its content, plus its ancestry in `line_lineage`. Identity follows content, not coordinate — an exterior insert or delete shifts line numbers without changing `line_id`, which is exactly what lets an edit rebase silently. Distinct from the 4-char `anchor`, which is a presentation token the model copies out of a served row.
 _Avoid_: anchor identity, hash identity, epoch
 
 **lease** (served lease):
@@ -116,7 +115,7 @@ The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, cano
 _Avoid_: epoch snapshot, served hash map
 
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's 238,328-line anchor-space ceiling, so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read. Neither mode materializes a file's lines to take a page: a read walks the lines it shows and, when served, assigns each row's anchor in that same walk — so an unbounded read holds the lines it pages as its page, and the only other line array on a read is the snapshot store's lineage write, bounded by the anchor-space ceiling.
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's anchor-space ceiling (`MAX_HASH_LINES` in `src/hashline/hash-identity.ts`), so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read. Neither mode materializes a file's lines to take a page: a read walks the lines it shows and, when served, assigns each row's anchor in that same walk — so an unbounded read holds the lines it pages as its page, and the only other line array on a read is the snapshot store's lineage write, bounded by the anchor-space ceiling.
 _Avoid_: unmanaged read
 
 **mode-as-intent**:
@@ -136,7 +135,7 @@ A pair of boundary anchors (`anchor_from`, `anchor_to`) identifying the first an
 _Avoid_: hunk, region
 
 **separator**:
-The `│` character dividing a served row into `HASH│content`. The model copies only the 3 chars before it into `anchor_from`/`anchor_to` and never emits it — in `text`, in anchors, or anywhere in the call — except under a `literal declaration`, which asserts the bytes are content.
+The `│` character dividing a served row into `HASH│content`. The model copies only the 4 chars before it into `anchor_from`/`anchor_to` and never emits it — in `text`, in anchors, or anywhere in the call — except under a `literal declaration`, which asserts the bytes are content.
 _Avoid_: pipe, delimiter
 
 **file**:
@@ -152,7 +151,7 @@ The payload union built at the single admission boundary (`normReq`) from each v
 _Avoid_: DesiredText (retired name), hand-written / span reference / none (retired arm words), payload enum (it is a union, not a closed tag)
 
 **served hash echo**:
-A candidate line that begins with the exact served anchor and reproduces the served content that anchor was served with, at any position (position-agnostic, content-matched) — tool output mistaken for file content. One such row suffices. Detection is evidence-only — the tool never gates on the shape of a line. Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{3}│` strip.
+A candidate line that begins with the exact served anchor and reproduces the served content that anchor was served with, at any position (position-agnostic, content-matched) — tool output mistaken for file content. One such row suffices. Detection is evidence-only — the tool never gates on the shape of a line. Detected before dispatch/write, file stays byte-identical. Not a generic `^[A-Za-z0-9]{4}│` strip.
 _Avoid_: hash echo (without served qualification — targets the unqualified condition name), anchor echo; served-qualified identifier (findServedHashEcho) is canonical, surface-qualified one (findEditHashEcho) is not
 
 **literal declaration**:
@@ -192,11 +191,11 @@ The fallback verification mode when `epoch!=curId` (concurrent write detected) �
 _Avoid_: always-strict
 
 **canon** (canon_at_serve):
-The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without the `blocked hashes` whole-span signal (retired from verification with the mirror seam, #10; the set lives on as the hash-allocation guard). A canon is **file-scoped**: a 3-char anchor is unique only inside one file's allocation, so it travels with the anchor's lease and there is no process-wide hash→canon lookup (ADR-0022). Canon evidence is compared as a **canon digest** — `String(xxh32(canon(line)))`, exactly the value `line_lineage.canon_hash` / `served_leases.canon_hash` persist — so no canon text is stored: `served.canons` is written by no v7 code path and survives only as a legacy v6 storage shell (issue #151). An absent digest is absent evidence, so an evidence scan stays silent rather than refusing on the shape of a line.
+The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used to detect `S@3==S@3` whole-span where `hash==` still passes but `canon` differs → `E_STALE_RANGE`. Alone not enough without the `blocked hashes` whole-span signal (retired from verification with the mirror seam, #10; the set lives on as the hash-allocation guard). A canon is **file-scoped**: a 4-char anchor is unique only inside one file's allocation, so it travels with the anchor's lease and there is no process-wide hash→canon lookup (ADR-0022). Canon evidence is compared as a **canon digest** — `String(xxh32(canon(line)))`, exactly the value `line_lineage.canon_hash` / `served_leases.canon_hash` persist — so no canon text is stored: `served.canons` is written by no v7 code path and survives only as a legacy v6 storage shell (issue #151). An absent digest is absent evidence, so an evidence scan stays silent rather than refusing on the shape of a line.
 _Avoid_: content (byte-level, not canon)
 
 **E_LARGE_FILE**:
-Refusal that the file exceeds the hashline size contract — more than `maxLines` lines on the served read/edit load path (a `mode: "verbatim"` read is not capped; `limitKind: "lines"`, reporting the count when it is known), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 238,328-line ceiling for 3-char anchors, carrying no line count). Nothing was written; use `write` or a non-line-based approach for very large files.
+Refusal that the file exceeds the hashline size contract — more than 200,000 lines on the served read/edit load path (`limitKind: "lines"`, served admission budget `SERVED_MAX_LINES`: the paged walk still retains one anchor per hashed line even for an unshown window — `walkLines` visits every line, `walkPage` assigns one anchor per visit — at ~6.1 MB of walked anchors plus the ~7.0 MB spelling-memo entry overhead over the same strings (`HASH_CACHE_MAX_ENTRIES`) plus the fixed ~1.76 MB allocator bitset, so 200,000 lines cost ~14.9 MB marginal worst case over the loaded text against the ~15 MB target (probe: `node --expose-gc scripts/measure-served-budget.mjs`); reporting the count when it is known; a `mode: "verbatim"` read is not capped), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,766,336-line ceiling for allocatable 4-char anchors — 62^4 minus the 10,000 reserved all-digit spellings, carrying no line count; live width record [ADR-0030](docs/adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). The streaming gate reports a lower bound ("more than N lines") — its count is trip-instant, not a total; the preloaded gate counts the materialized text and reports the exact line count. Nothing was written; use `write` or a non-line-based approach for very large files.
 _Avoid_: E_TOO_BIG (unclaimed code)
 
 **E_UNKNOWN**:

@@ -38,20 +38,20 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     const dead = lease({ lineId: 1, servedSnapshotHash: "S", servedLineNumber: 1, retiredAt: 6 });
     const shifted = lease({ lineId: 2, servedSnapshotHash: "S", servedLineNumber: 2 });
     const src = source({
-      leases: { AAA: dead, BBB: shifted },
+      leases: { AAAA: dead, BBBB: shifted },
       positions: { 2: 3 },
       currentSnapshotHash: "C",
     });
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
+        edit: resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" }),
         snapshot: {
-          fileHashes: ["Q", "Q", "BBB"],
+          fileHashes: ["Q", "Q", "BBBB"],
           fileLines: ["q", "q", "b"],
           filePath: "a.py",
         },
-        served: ["AAA", "BBB"],
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -65,21 +65,21 @@ describe("anchor family precedence — one condition reaches exactly one code", 
   it("no row here but held elsewhere resolves to E_FOREIGN_ANCHOR with no rows", () => {
     const live = lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 });
     const src = source({
-      leases: { AAA: live },
+      leases: { AAAA: live },
       positions: { 1: 1 },
-      homes: { BBB: ["b.py"] },
+      homes: { BBBB: ["b.py"] },
       currentSnapshotHash: "C",
     });
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
+        edit: resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" }),
         snapshot: {
-          fileHashes: ["AAA", "BBB"],
+          fileHashes: ["AAAA", "BBBB"],
           fileLines: ["a", "b"],
           filePath: "a.py",
         },
-        served: ["AAA", "BBB"],
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -99,9 +99,9 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "ZZZ", anchor_to: "733", text: "X" }),
+        edit: resEdit({ anchor_from: "ZZZZ", anchor_to: "7333", text: "X" }),
         snapshot: {
-          fileHashes: ["AAA", "BBB"],
+          fileHashes: ["AAAA", "BBBB"],
           fileLines: ["a", "b"],
           filePath: "a.py",
         },
@@ -117,14 +117,14 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     expect(err.servedRows).toEqual([]);
     expect(err.servedBlock).toBe("");
     expect(err.message).toBe(
-      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchors "ZZZ", "733"; nothing was written.' +
-        ' Note: anchor "733" consists only of digits and resembles a line number.' +
-        ' Edit anchors are 3-character alphanumeric content hashes (e.g. "aB3") served by the read tool, not line numbers.',
+      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchors "ZZZZ", "7333"; nothing was written.' +
+        ' Note: anchor "7333" consists only of digits and resembles a line number.' +
+        ' Edit anchors are 4-character alphanumeric content hashes (e.g. "aB3x") served by the read tool, not line numbers.',
     );
   });
 
   it("bad syntax resolves to E_MALFORMED_ANCHOR", () => {
-    expect(() => resEdit({ anchor_from: "wUp│x", anchor_to: "BBB", text: "X" })).toThrow(
+    expect(() => resEdit({ anchor_from: "wUpX│x", anchor_to: "BBBB", text: "X" })).toThrow(
       /E_MALFORMED_ANCHOR/,
     );
   });
@@ -132,21 +132,21 @@ describe("anchor family precedence — one condition reaches exactly one code", 
   it("caps the home list at three plus the remainder", () => {
     const live = lease({ lineId: 1, servedSnapshotHash: "C", servedLineNumber: 1 });
     const src = source({
-      leases: { AAA: live },
+      leases: { AAAA: live },
       positions: { 1: 1 },
-      homes: { BBB: ["b.py", "c.py", "d.py", "e.py", "f.py"] },
+      homes: { BBBB: ["b.py", "c.py", "d.py", "e.py", "f.py"] },
       currentSnapshotHash: "C",
     });
     let caught: unknown;
     try {
       resolveLeasedEdit({
-        edit: resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" }),
+        edit: resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" }),
         snapshot: {
-          fileHashes: ["AAA", "BBB"],
+          fileHashes: ["AAAA", "BBBB"],
           fileLines: ["a", "b"],
           filePath: "a.py",
         },
-        served: ["AAA", "BBB"],
+        served: ["AAAA", "BBBB"],
         source: src,
       });
     } catch (error) {
@@ -158,9 +158,9 @@ describe("anchor family precedence — one condition reaches exactly one code", 
   });
 
   it("unknown and foreign carry no remedy and no cause", () => {
-    const unknown = new DomainError("E_UNKNOWN_ANCHOR", { path: "a.py", anchors: ["ZZZ"] });
+    const unknown = new DomainError("E_UNKNOWN_ANCHOR", { path: "a.py", anchors: ["ZZZZ"] });
     expect(unknown.message).toBe(
-      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchor "ZZZ"; nothing was written.',
+      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchor "ZZZZ"; nothing was written.',
     );
     expect(unknown.servedRows).toEqual([]);
     expect((unknown as { cause?: unknown }).cause).toBeUndefined();
@@ -168,10 +168,10 @@ describe("anchor family precedence — one condition reaches exactly one code", 
 
     const foreign = new DomainError("E_FOREIGN_ANCHOR", {
       path: "a.py",
-      anchors: ["wUp"],
+      anchors: ["wUpX"],
       homes: ["b.py"],
     });
-    expect(foreign.message).toContain('[MODEL] [E_FOREIGN_ANCHOR] the anchor "wUp"');
+    expect(foreign.message).toContain('[MODEL] [E_FOREIGN_ANCHOR] the anchor "wUpX"');
     expect(foreign.message).toContain("b.py");
     expect(foreign.servedRows).toEqual([]);
     expect((foreign as { cause?: unknown }).cause).toBeUndefined();

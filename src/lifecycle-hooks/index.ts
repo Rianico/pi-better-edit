@@ -44,8 +44,7 @@ import { valAccess as defaultValAccess } from "../validation.js";
 import { visLines as defaultVisLines } from "../utils.js";
 import { fmtReadPreview as defaultFmtReadPreview } from "../read.js";
 import { finalizeToolResult as defaultFinalizeToolResult } from "../edit-response.js";
-import { MAX_HASH_LINES } from "../hashline/index.js";
-import { AUTO_READ_MAX } from "../constants.js";
+import { AUTO_READ_MAX, SERVED_MAX_LINES } from "../constants.js";
 import type { LifecycleDeps, ToolContext, ToolResultEvent } from "./types.js";
 
 export type { ToolContext, ToolResultEvent, LifecycleDeps } from "./types.js";
@@ -151,7 +150,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       const resolvedPath = await deps.resolveTarget(deps.toCwd(writtenPath, ctx.cwd));
       await deps.valAccess(resolvedPath, writtenPath);
       const file = await deps.loadFileKindAndText(resolvedPath, {
-        maxLines: MAX_HASH_LINES,
+        maxLines: SERVED_MAX_LINES,
         displayPath: writtenPath,
       });
       if (file.kind !== "text") return undefined;
@@ -159,7 +158,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         writtenPath,
         ctx.cwd,
         {
-          maxLines: MAX_HASH_LINES,
+          maxLines: SERVED_MAX_LINES,
           preloadedFile: file,
         },
       );

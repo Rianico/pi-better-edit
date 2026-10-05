@@ -3,10 +3,17 @@ import { mkdtemp, rm } from "fs/promises";
 import { join } from "path";
 import { DatabaseSync } from "node:sqlite";
 
-import { lineHashes, _lineHashesPure, CANON_VERSION, canon, canonDigest } from "../../src/hashline";
+import {
+  lineHashes,
+  contentOnlyHashes,
+  _lineHashesPure,
+  CANON_VERSION,
+  canon,
+  canonDigest,
+} from "../../src/hashline";
 import { initHasher } from "../../src/hashline/hasher";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
-import { getSnapshot, upsertSnapshot } from "../../src/snapshot-store";
+import { getSnapshot, snapshotHashFor, upsertSnapshot } from "../../src/snapshot-store";
 import { contentChecksum } from "../../src/hashline/hasher";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";
@@ -21,15 +28,26 @@ describe("canon — frozen v3 whitespace class (ADR-0005 superseded by issue #22
   });
 
   it("hashes whitespace variants of a line identically", async () => {
-    const base = await _lineHashesPure("func hello\n");
-    const double = await _lineHashesPure("func  hello\n");
-    const leading = await _lineHashesPure("  func hello\n");
-    const trailing = await _lineHashesPure("func hello \n");
-    const tab = await _lineHashesPure("func\thello\n");
+    const base = await contentOnlyHashes("func hello\n");
+    const double = await contentOnlyHashes("func  hello\n");
+    const leading = await contentOnlyHashes("  func hello\n");
+    const trailing = await contentOnlyHashes("func hello \n");
+    const tab = await contentOnlyHashes("func\thello\n");
     expect(base[0]).toBe(double[0]);
     expect(base[0]).toBe(leading[0]);
     expect(base[0]).toBe(trailing[0]);
     expect(base[0]).toBe(tab[0]);
+  });
+
+  // WHY: frozen v3 (ADR-0029 amending ADR-0005, issue #22): NBSP/U+2003 normalize, so the
+  // WHY: v3 class treats them as ordinary whitespace — the pre-v3 `not.toBe` pins inverted here.
+  it("folds NBSP and Unicode whitespace per the frozen v3 class", async () => {
+    const ascii = await contentOnlyHashes("func hello\n");
+    const nbsp = await contentOnlyHashes("func\u00A0hello\n");
+    const em = await contentOnlyHashes("func\u2003hello\n");
+    expect(nbsp[0]).toBe(ascii[0]);
+    expect(em[0]).toBe(ascii[0]);
+    expect(nbsp[0]).toBe(em[0]);
   });
 
   it("normalizes v3 class code points anywhere in the line (issue #22)", async () => {
@@ -57,9 +75,9 @@ describe("canon — frozen v3 whitespace class (ADR-0005 superseded by issue #22
   });
 
   it("hashes whitespace-only lines as blank lines", async () => {
-    const blank = await _lineHashesPure("\n");
-    const spaces = await _lineHashesPure("   \n");
-    const tab = await _lineHashesPure("\t\n");
+    const blank = await contentOnlyHashes("\n");
+    const spaces = await contentOnlyHashes("   \n");
+    const tab = await contentOnlyHashes("\t\n");
     expect(spaces[0]).toBe(blank[0]);
     expect(tab[0]).toBe(blank[0]);
   });
@@ -67,8 +85,8 @@ describe("canon — frozen v3 whitespace class (ADR-0005 superseded by issue #22
 
 describe("stable mapping — whitespace-insensitive reuse (ADR-0005)", () => {
   it("reuses a hash across a whitespace-only edit", async () => {
-    const old = await _lineHashesPure("a\nfunc hello\nc\n");
-    const mapped = await lineHashes("a\nfunc  hello\nc\n", undefined, {
+    const old = await contentOnlyHashes("a\nfunc hello\nc\n");
+    const mapped = await lineHashes("a\nfunc  hello\nc\n", "/test/ws-reuse.ts", {
       content: "a\nfunc hello\nc\n",
       hashes: old,
       removedHashes: new Set([old[0]!]),
@@ -77,8 +95,8 @@ describe("stable mapping — whitespace-insensitive reuse (ADR-0005)", () => {
   });
 
   it("rotates when a token is added (brace merged onto the line)", async () => {
-    const old = await _lineHashesPure("a\nfunc hello()\n");
-    const mapped = await lineHashes("a\nfunc hello() {\n", undefined, {
+    const old = await contentOnlyHashes("a\nfunc hello()\n");
+    const mapped = await lineHashes("a\nfunc hello() {\n", "/test/ws-rotate.ts", {
       content: "a\nfunc hello()\n",
       hashes: old,
       removedHashes: new Set([old[0]!]),
@@ -100,7 +118,6 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
       await rm(tmp, { recursive: true, force: true });
     }
   }
-
   function sqlitePath(home: string): string {
     return join(home, ".config", "pi-better-edit", "hash-store.sqlite");
   }
@@ -109,10 +126,10 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const content = "func hello\nworld\n";
-      const hashes = ["aB3", "xY7"];
+      const hashes = ["aB33", "xY77"];
       upsertSnapshot(store, {
         path: "/p.ts",
-        snapshotHash: `${CANON_VERSION}:${contentChecksum(content)}`,
+        snapshotHash: snapshotHashFor(content),
         lineCount: splitLines(content).length,
         hashes,
         content,
@@ -142,18 +159,18 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
         .prepare(
           "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) VALUES (?, ?, ?, ?, ?)",
         )
-        .run(snapshotId, 1, 1, "legacy-canon", "ZZZ");
+        .run(snapshotId, 1, 1, "legacy-canon", "ZZZZ");
 
       expect(getSnapshot(store, "/old.ts", content)).toBeUndefined();
 
       upsertSnapshot(store, {
         path: "/old.ts",
-        snapshotHash: `${CANON_VERSION}:${rawChecksum}`,
+        snapshotHash: snapshotHashFor(content),
         lineCount: splitLines(content).length,
-        hashes: ["ABC"],
+        hashes: ["ABCC"],
         content,
       });
-      expect(getSnapshot(store, "/old.ts", content)).toEqual(["ABC"]);
+      expect(getSnapshot(store, "/old.ts", content)).toEqual(["ABCC"]);
       const db = new DatabaseSync(sqlitePath(home), {
         defensive: false,
       } as any);
@@ -161,7 +178,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
         .prepare("SELECT snapshot_hash FROM file_snapshots WHERE path = ? AND snapshot_hash LIKE ?")
         .get("/old.ts", `${CANON_VERSION}:%`) as { snapshot_hash: string } | undefined;
       db.close();
-      expect(row?.snapshot_hash).toBe(`${CANON_VERSION}:${rawChecksum}`);
+      expect(row?.snapshot_hash).toBe(snapshotHashFor(content));
     });
   });
 
@@ -171,9 +188,9 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
       const content = "func hello\n";
       upsertSnapshot(store, {
         path: "/p.ts",
-        snapshotHash: `${CANON_VERSION}:${contentChecksum(content)}`,
+        snapshotHash: snapshotHashFor(content),
         lineCount: splitLines(content).length,
-        hashes: ["ABC"],
+        hashes: ["ABCC"],
         content,
       });
       const db = new DatabaseSync(sqlitePath(home), {
@@ -183,7 +200,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
         .prepare("SELECT snapshot_hash FROM file_snapshots WHERE path = ?")
         .get("/p.ts") as { snapshot_hash: string } | undefined;
       db.close();
-      expect(row?.snapshot_hash).toBe(`${CANON_VERSION}:${contentChecksum(content)}`);
+      expect(row?.snapshot_hash).toBe(snapshotHashFor(content));
       expect(row?.snapshot_hash.startsWith(`${CANON_VERSION}:`)).toBe(true);
       expect(row?.snapshot_hash.endsWith(contentChecksum(content))).toBe(true);
     });

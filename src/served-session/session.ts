@@ -10,6 +10,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "../hashline/alphabet.js";
+import { ANCHOR_GENERATION } from "../hashline/hash.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import {
   loadHashStore,
@@ -208,8 +209,11 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     "SELECT anchor, canon_hash FROM served_leases WHERE session_id = ? AND file_path = ?",
   );
   const snapshotByHashStmt = db.prepare(
+    // WHY: provenance over key: a poisoned current-key row from a pre-bump writer is never
+    // WHY: a pairing source — the grant below binds lease line_ids from this row's lineage,
+    // WHY: gated on the anchor generation (never the canon version).
     "SELECT snapshot_id, snapshot_hash FROM file_snapshots " +
-      "WHERE path = ? AND snapshot_hash = ? AND committed = 1",
+      "WHERE path = ? AND snapshot_hash = ? AND committed = 1 AND anchor_generation = ?",
   );
   const leaseGetStmt = db.prepare(
     "SELECT session_id, file_path, anchor, line_id, canon_hash, served_snapshot_hash, " +
@@ -298,7 +302,8 @@ function buildStmts(db: DatabaseSync): ServedStmts {
         servedPruneOlderThanStmt.run(updatedBefore);
       });
     },
-    snapshotByHash: (...params) => snapshotByHashStmt.get(...params) as LeaseSnapshot | undefined,
+    snapshotByHash: (path: string, snapshotHash: string) =>
+      snapshotByHashStmt.get(path, snapshotHash, ANCHOR_GENERATION) as LeaseSnapshot | undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     lineageAnchorsOf: (...params) =>
       lineageAnchorsStmt.all(...params) as unknown as LeaseLineageRow[],
@@ -531,8 +536,8 @@ function dropServedState(store: HashStore, sessionKey: string, path: string): vo
     stmts.leaseDelete(sessionKey, path);
     stmts.metaDelete(sessionKey, path);
   };
-  // SAFETY: `isTransaction` is an internal `node:sqlite` field the public type omits; the read is
-  // SAFETY: a boolean guard, and a missing field leaves `undefined` (treated as not-in-transaction).
+  // SAFETY: `isTransaction` is an experimental `node:sqlite` field the read tolerates as absent
+  // SAFETY: (`undefined` reads as not-in-transaction); the read is a boolean guard.
   const inTransaction = (store.db as unknown as { isTransaction?: boolean }).isTransaction === true;
   if (inTransaction) drop();
   else withStore(drop);

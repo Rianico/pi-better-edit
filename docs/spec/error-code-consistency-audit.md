@@ -76,11 +76,11 @@ Minimal fix: copy the richer remedy into the barer sibling. Or scope the README 
 
 ### 2. `E_MALFORMED_ANCHOR` — heal verbs and missing remedy on bare paths
 
-Artifact promises full remedy. `README.md:184-185` promises `Nothing was written; pass the bare 3-char anchor and retry.` Code gives full remedy only sometimes. Example: `src/hashline/resolve.ts:351` `` `[MODEL] [E_MALFORMED_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 3-char anchor and retry.` ``. Same pattern at `:353,:355`. Bare paths lack it: `src/hashline/parse.ts:10` `` `[MODEL] [E_MALFORMED_ANCHOR] Invalid anchor. Expected a 3-char alphanumeric anchor (e.g. "aB3").` ``. Same shape at `:14`, `:34`. Past-tense variant: `src/hashline/resolve.ts:343` `` `[MODEL] [E_MALFORMED_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time` ``.
+Artifact promises full remedy. `README.md:184-185` promises `Nothing was written; pass the bare 4-char anchor and retry.` Code gives full remedy only sometimes. Example: `src/hashline/resolve.ts:351` `` `[MODEL] [E_MALFORMED_ANCHOR] stripped diff-preview marker from anchor_from/anchor_to "${trimmed}". Nothing was written; pass the bare 4-char anchor and retry.` ``. Same pattern at `:353,:355`. Bare paths lack it: `src/hashline/parse.ts:10` `` `[MODEL] [E_MALFORMED_ANCHOR] Invalid anchor. Expected a 4-char alphanumeric anchor (e.g. "aB3x").` ``. Same shape at `:14`, `:34`. Past-tense variant: `src/hashline/resolve.ts:343` `` `[MODEL] [E_MALFORMED_ANCHOR] extracted first hash "${hash}" from ${lines}-line block — use bare "${hash}" next time` ``.
 
 Code throws on healed input. Only `swapReversedRanges` should use healed `[USER]`. Past tense on a `throw` misstates write status. Multi-item calls add trailer at `pipeline.ts:648` and `:533`.
 
-Disagreement is over-promised README plus past-tense throw. Model action is unchanged. Every variant names the bare 3-char correction.
+Disagreement is over-promised README plus past-tense throw. Model action is unchanged. Every variant names the bare 4-char correction.
 
 Minimal fix: narrow the README sentence to covered paths. Reword `:343` to present-tense refusal plus retry verb. Severity: LOW.
 

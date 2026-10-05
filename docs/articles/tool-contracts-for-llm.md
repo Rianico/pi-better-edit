@@ -1,6 +1,6 @@
 # How to write good contracts and guidelines of a tool for LLM (Pi principles + best practices)
 
-Good LLM tool contracts share one shape across all primary sources: a precise name, a 3+ sentence description covering what/when/when-not/parameters/caveats, a strict flat JSON schema with examples, fail-loud actionable errors, and token-efficient outputs. Pi adds its own explicit mechanics: `description` + `promptSnippet` + `promptGuidelines` (each guideline must name its tool), TypeBox `parameters` with `StringEnum`, thrown errors (never returned) for `isError`, and mandatory output truncation at 50KB/2000 lines. This repo's hash-anchored edit tool is a strict-contract case study: content-derived anchors, fail-closed rejection, and reject-and-serve errors.
+Good LLM tool contracts share one shape across all primary sources: a precise name, a 3+ sentence description covering what/when/when-not/parameters/caveats, a strict flat JSON schema with examples, fail-loud actionable errors, and token-efficient outputs. Pi adds its own explicit mechanics: `description` + `promptSnippet` + `promptGuidelines` (each guideline must name its tool), TypeBox `parameters` with `StringEnum`, thrown errors (never returned) for `isError`, and mandatory output truncation at 50KB/2000 lines. This repo's hash-anchored edit tool is a strict-contract case study: file-seeded content-derived anchors, fail-closed rejection, and reject-and-serve errors.
 
 ## TL;DR checklist
 
@@ -61,7 +61,7 @@ Pi tool contract shape — `pi.registerTool({ name, label, description, promptSn
 
 ## Application to this repo's edit tool
 
-This repo's edit tool embodies strict-contract design — hash-anchored addressing (`HASH│content`), content-derived stable anchors, fail-closed rejection (never fuzzy-match/relocate), `reject-and-serve` (rejection carries fresh anchors so retry needs no re-read), pure edit (no silent dedup rewrite), `E_SERVED_ECHO` denial (never strip served hash echo anchors), tombstone/epoch staleness detection, and a controlled glossary (`serve`, `anchor`, `range` vs `served range`). Source: `CONTEXT.md` at repo root.
+This repo's edit tool embodies strict-contract design — hash-anchored addressing (`HASH│content`), (file, content)-derived stable anchors, fail-closed rejection (never fuzzy-match/relocate), `reject-and-serve` (rejection carries fresh anchors so retry needs no re-read), pure edit (no silent dedup rewrite), `E_SERVED_ECHO` denial (never strip served hash echo anchors), tombstone/epoch staleness detection, and a controlled glossary (`serve`, `anchor`, `range` vs `served range`). Source: `CONTEXT.md` at repo root.
 
 Already exemplary: hash anchors make addressing verifiable; fail-closed + reject-and-serve turns errors into retries; pure-edit (no dedup rewrite) preserves intent; glossary pins the model–tool boundary. Gaps to close per the sources above:
 

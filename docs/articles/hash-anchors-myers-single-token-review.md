@@ -33,7 +33,7 @@ This repo fits every load-bearing design principle in the article. It solves bot
 
 | Article principle | Dirac's choice | This repo | Fit |
 | --- | --- | --- | --- |
-| Anchor | ~1,700 single-token words, state-assigned | 3-char content-derived xxHash32, 62³ space, unique per file by construction | same property, different derivation |
+| Anchor | ~1,700 single-token words, state-assigned | 4-char xxHash32 over (canonical path, line content), 62⁴ space, unique per file by construction | same property, different derivation |
 | Delimiter | `§` | `│` (U+2502) | same principle |
 | Validator | string-match on full boundary lines | hash resolution + whole-span served-state verification, reject-and-serve | strictly stronger |
 | State Manager | task-scoped in-memory maps + "used" list | persistent SQLite: snapshots + session-keyed served rows + undo | same role, more durable |
@@ -47,11 +47,11 @@ This repo fits every load-bearing design principle in the article. It solves bot
 
 The article's key move is to sever the anchor from the line number entirely — "there is nothing in our requirements that forces the line numbers to be part of the anchor." Dirac achieves this by *state assignment*: a state manager hands lines labels from a fixed word vocabulary, and tracks the assignment. The article explicitly argues this is fine because "statelessness is not a prized attribute, particularly in AI agents that are already tracking a huge number of state variables."
 
-This repo achieves the same *observable* property by a different route: content-derived hashes. Each line is canonicalized (carriage returns stripped, trailing whitespace trimmed) and hashed with xxHash32, then mapped onto a 3-character string over `A-Za-z0-9` (62³ = 238,328 anchors). Because a hash is a pure function of line content — not of position — an edit at the top of the file never disturbs the anchor of a line deeper down whose content is unchanged. Position-independence is achieved without a state manager in the anchor-assignment path.
+This repo achieves the same *observable* property by a different route: path-and-content-derived hashes. Each line is canonicalized (all ASCII whitespace `[ \t\r\n]` stripped) and hashed with xxHash32 seeded by the file's canonical path, then mapped onto a 4-character string over `A-Za-z0-9` (62⁴ − 10⁴ = 14,766,336 allocatable anchors — the all-digit spellings are reserved and never served, since a served one would be indistinguishable from a line number). Because an anchor is a pure function of (file, content) — not of position — an edit at the top of the file never disturbs the anchor of a line deeper down whose content is unchanged. Position-independence is achieved without a state manager in the anchor-assignment path.
 
-Uniqueness is by construction. Collisions on the base hash are resolved from a bitset by probing with a stride coprime to the hash space (`src/hashline/hash.ts`), so two byte-identical lines (repeated `}`, repeated imports) never share an anchor, and consecutive collisions land on anchors that differ in all three characters. This buys two things Dirac has to bookkeep manually: there is no "used anchors" list, and there is no exhaustion problem — Dirac degrades from 1-token to 2-token anchors when its ~1,700 words run out; this repo simply has 238,328 anchors per file, which is also what sets the file-size cap.
+Uniqueness is by construction. Collisions on the base hash are resolved from a bitset by probing with a stride coprime to the hash space (`src/hashline/hash-identity.ts`), so two byte-identical lines (repeated `}`, repeated imports) never share an anchor, and consecutive collisions land on anchors that differ in the low three characters (the stride only increments the low three base-62 digits). This buys two things Dirac has to bookkeep manually: there is no "used anchors" list, and there is no exhaustion problem — Dirac degrades from 1-token to 2-token anchors when its ~1,700 words run out; this repo simply has 14,766,336 allocatable anchors per file, which sets the anchor-space ceiling; the served admission budget (`SERVED_MAX_LINES`, 200,000 lines) is separate and independent.
 
-The deeper consequence is that our anchors are **self-verifying**. The hash *is* a fingerprint of the line; validating an edit against a hash requires no separate lookup table to know whether the line changed — recompute the hash, compare. Dirac's word anchors carry no content information, which is precisely why its validator must fall back to string-matching the full boundary line.
+The deeper consequence is that our anchors are **self-verifying**. The hash *is* a fingerprint of the (file, line) pair; validating an edit against a hash requires no separate lookup table to know whether the line changed — recompute the hash, compare. Dirac's word anchors carry no content information, which is precisely why its validator must fall back to string-matching the full boundary line.
 
 Token cost is comparable: the article's read prefix is one word + one delimiter ≈ 2 tokens; ours is three mixed-case/digit chars + `│`, typically 1–2 tokens. The article's own 4–5-token complaint was about the line-number-plus-hash format; we dropped the line number just as Dirac did.
 
@@ -94,19 +94,19 @@ The one place the reconciler is *less* aligned: external manual edits. The artic
 
 ## 4. The two named problems, and our answers
 
-**Problem 1: 4–5 tokens of read overhead per line.** Solved the same way Dirac solved it: the line number is out of the anchor. The prefix is `3-char-hash│`, no number, no colon.
+**Problem 1: 4–5 tokens of read overhead per line.** Solved the same way Dirac solved it: the line number is out of the anchor. The prefix is `4-char-hash│`, no number, no colon.
 
-**Problem 2: line-number coupling invalidates the whole file on a top-of-file edit.** Solved: anchors are content-derived and position-independent, and the persistent snapshot store carries unchanged-line anchors across edits. An edit at line 5 leaves line 150's hash untouched, and the served state confirms the model still sees exactly what it was shown.
+**Problem 2: line-number coupling invalidates the whole file on a top-of-file edit.** Solved: anchors derive from (file, content) and are position-independent, and the persistent snapshot store carries unchanged-line anchors across edits. An edit at line 5 leaves line 150's hash untouched, and the served state confirms the model still sees exactly what it was shown.
 
 And the headline economics hold: edit output is `O(R)` — `{path, remove_from, remove_to, replacement_text}`, no repeated old code, so deletions are nearly free. In fact the repo is slightly more economical than Dirac on this axis: Dirac's tool call still carries the full boundary lines verbatim (the backend string-matches them), while here the model sends six characters of hashes.
 
 ---
 
-## 5. The principled divergence: content-derived, not state-assigned
+## 5. The principled divergence: file-seeded content-derived, not state-assigned
 
-The article's most deliberate decision is the most debatable one: it *abandons* content-derived statelessness ("statelessness is not a prized attribute") in favor of state-assigned word anchors. This repo keeps content-derived hashes as the base and adds a state layer on top — a hybrid:
+The article's most deliberate decision is the most debatable one: it *abandons* content-derived statelessness ("statelessness is not a prized attribute") in favor of state-assigned word anchors. This repo keeps file-seeded content-derived hashing as the base and adds a state layer on top — a hybrid:
 
-- The anchor mapping stays stateless: the hash of a line is a pure function of its content, so it is self-verifying and needs no state manager in the validation path.
+- The anchor mapping stays stateless: the hash of a line is a pure function of (file, content), so it is self-verifying and needs no state manager in the validation path.
 - The state layer (persisted snapshots, served rows, undo) is where stability, session continuity, and verification actually live — embracing the article's "stateful backend" thesis where it pays.
 
 This is a strict improvement in two specific ways. First, validation independence: Dirac's validator leans on the state manager's word assignments being correct, which is why it string-matches the boundary line instead of trusting the anchor; ours recomputes hashes from disk. Second, bookkeeping: uniqueness by construction removes the used-anchor list and the exhaustion/fallback ladder entirely.
@@ -119,17 +119,17 @@ The cost of the divergence is small and on the axis the article itself ranks low
 
 - **Whole-span validation.** Boundary-only checks become span checks; interior drift and never-served lines are hard errors, not silent overwrites.
 - **Reject-and-serve.** Failures hand back fresh anchors that count as serves, so the retry needs no read — the article's error loop implies one.
-- **No vocabulary asset, no exhaustion.** 238,328 anchors by construction vs ~1,700 words plus a fallback ladder.
+- **No vocabulary asset, no exhaustion.** 14,766,336 allocatable anchors by construction vs ~1,700 words plus a fallback ladder.
 - **Durable, partitioned state.** Snapshots survive restarts; served state is session-keyed so sub-agents, nested runs, and continued sessions verify against their own records (ADR-0002); undo persists with a drift guard.
 - **Reconciler guarantees Dirac doesn't state:** no-op edits never rotate anchors; re-inserted identical text keeps its hash; lines outside the range never borrow hashes from lines inside it.
 
 ## 7. Where the article has the edge
 
 - **Proactive external-edit reconciliation.** A file-update hook re-anchors immediately; we detect at next read/validate. Correctness is equal; latency differs by one roundtrip.
-- **Read-prefix token economy.** A single-token word is a guaranteed 1 token; a 3-char hash is *usually* 1–2. Marginal, and on the cheap axis.
+- **Read-prefix token economy.** A single-token word is a guaranteed 1 token; a 4-char hash sits in a tokenizer-stable region (ADR-0030; raw-BPE framing, gated families unmeasured). Still on the cheap axis next to the echo it replaces.
 
 ---
 
 ## 8. Conclusion
 
-The implementation fits the article's design principles — position-independent anchors, a minimal per-line read prefix, `O(R)` edit output, a stateful backend, and a reconciler that preserves anchors on unchanged lines and returns fresh ones in every response. On the two problems the article explicitly set out to solve, the repo solves both by design. On validation, it goes measurably beyond the article: the whole span the model claims to be editing is verified against the tool's own record of what it served, and failures are self-healing roundtrips. The one deliberate divergence — content-derived hashes where Dirac chose state-assigned words — trades a marginal token savings on the read prefix for self-verifying anchors and zero anchor-bookkeeping. It is a favorable trade, and consistent with the article's own argument that token efficiency is a compounding, industry-wide win.
+The implementation fits the article's design principles — position-independent anchors, a minimal per-line read prefix, `O(R)` edit output, a stateful backend, and a reconciler that preserves anchors on unchanged lines and returns fresh ones in every response. On the two problems the article explicitly set out to solve, the repo solves both by design. On validation, it goes measurably beyond the article: the whole span the model claims to be editing is verified against the tool's own record of what it served, and failures are self-healing roundtrips. The one deliberate divergence — file-seeded content-derived hashes where Dirac chose state-assigned words — trades a marginal token savings on the read prefix for self-verifying anchors and zero anchor-bookkeeping. It is a favorable trade, and consistent with the article's own argument that token efficiency is a compounding, industry-wide win.

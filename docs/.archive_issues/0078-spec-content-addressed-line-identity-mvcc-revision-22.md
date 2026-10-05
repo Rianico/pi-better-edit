@@ -333,7 +333,7 @@ For multi-edit batches (`edits: [e_0, e_1, \dots, e_N]`):
 
 ### 3.7 Decoupling `E_LARGE_FILE` (Fixing B8)
 
-`E_LARGE_FILE` ($> 238,328$ lines exceeding 3-char base62 space) is an anchor-space encoding constraint, not a line-identity concurrency defect. It is removed from the header "Fixes:" and scoped out as a separate tracking issue.
+`E_LARGE_FILE` ($> 14,776,336$ lines exceeding 4-char base62 space) is an anchor-space encoding constraint, not a line-identity concurrency defect. It is removed from the header "Fixes:" and scoped out as a separate tracking issue.
 
 ### 3.8 Verification Rigor (Fixing B9)
 

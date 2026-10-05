@@ -1,5 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { writeFile } from "fs/promises";
+import { join } from "path";
 import { lineHashes } from "../../src/hashline";
 import { compPreview, buildToolDef, reuseText, reuseMarkdown } from "../../src/edit";
 import register from "../../index";
@@ -14,12 +15,12 @@ import {
   testSessionManager,
 } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("compPreview", () => {
   it("returns a diff for strict hashline edits before execution", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -38,7 +39,7 @@ describe("compPreview", () => {
 
   it("returns a diff for a hash-anchored edit before execution", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -57,7 +58,7 @@ describe("compPreview", () => {
 
   it("still computes a preview diff for read-only files", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -75,7 +76,7 @@ describe("compPreview", () => {
 
   it("uses the shared text loader for preview instead of classifying then re-reading text", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -93,7 +94,7 @@ describe("compPreview", () => {
 
   it("does not let a delayed preview resurrect after a settled result", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -111,7 +112,7 @@ describe("compPreview", () => {
 
   it("preview rejects a bulk changes array", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
@@ -129,7 +130,7 @@ describe("compPreview", () => {
 
   it("preview still accepts flat-format requests", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(
@@ -151,7 +152,7 @@ describe("issue #165 — session-backed preview", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       const preview = await compPreview(
         {
@@ -168,7 +169,7 @@ describe("issue #165 — session-backed preview", () => {
 
   it("fails loudly at the boundary when no session backs the preview", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       const preview = await compPreview(
         {
@@ -214,7 +215,9 @@ describe("compPreview — served-state staleness surfacing", () => {
       );
       expect(preview).toHaveProperty("error");
       const errorText = (preview as { error: string }).error;
-      expect(errorText).toMatch(/\[E_STALE_RANGE\] line 2 in sample.ts/);
+      // WHY: read/write agreement made the verify path canonical — staleness
+      // WHY: diagnostics name the absolute file path.
+      expect(errorText).toContain(`[E_STALE_RANGE] line 2 in ${path}`);
       expect(errorText).toContain("Current range (fresh read):");
       expect(errorText).toContain("│BETA");
       expect(errorText).not.toContain("Retry with these anchors");
@@ -238,7 +241,7 @@ describe("compPreview — served-state staleness surfacing", () => {
         undefined,
         ctx,
       );
-      const hashes = await lineHashes("alpha\nbeta\ngamma\ndelta\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\ndelta\n", join(cwd, "sample.ts"));
 
       const preview = await compPreview(
         {
@@ -256,7 +259,7 @@ describe("compPreview — served-state staleness surfacing", () => {
   it("returns [E_STALE_ANCHOR] for never-served boundary anchors", async () => {
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "sample.ts"));
       const preview = await compPreview(
         {
           file: "sample.ts",
@@ -276,7 +279,7 @@ describe("compPreview — served-state staleness surfacing", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
 
       const preview = await compPreview(
         {
@@ -330,7 +333,7 @@ describe("renderCall preview", () => {
       register(pi);
       pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -358,7 +361,7 @@ describe("renderCall preview", () => {
       const tool = getTool("edit");
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
-      const hashes = await lineHashes("alpha\nbeta\ngamma\n", home.testPath);
+      const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "sample.ts"));
       await writeFile(path, "alpha\nBETA\ngamma\n", "utf-8");
 
       const harness = makeHarness(cwd);
@@ -383,7 +386,7 @@ describe("renderCall preview", () => {
       register(pi);
       pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -414,7 +417,7 @@ describe("renderCall preview", () => {
       register(pi);
       pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -455,7 +458,7 @@ describe("renderCall preview", () => {
       register(pi);
       pi.startSession({ sessionManager: testSessionManager });
       const tool = getTool("edit");
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
@@ -496,7 +499,7 @@ describe("renderCall preview", () => {
 describe("compPreview — noop", () => {
   it("returns a noop error when the edit produces identical content", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const preview = await compPreview(

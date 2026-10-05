@@ -13,7 +13,7 @@ describe("fmtReadPreview", () => {
 
   it("returns empty file marker for content with only newline", async () => {
     const result = await fmtReadPreview("\n", {}, undefined, home.testPath);
-    expect(result.text).toMatch(/^[A-Za-z0-9]{3}│$/);
+    expect(result.text).toMatch(/^[A-Za-z0-9]{4}│$/);
   });
 
   it("returns all lines when no offset or limit given", async () => {
@@ -114,7 +114,7 @@ describe("fmtReadPreview", () => {
       home.testPath,
       DEFAULT_MAX_BYTES,
     );
-    expect(result.text).not.toMatch(/[A-Za-z0-9]{3}│/);
+    expect(result.text).not.toMatch(/[A-Za-z0-9]{4}│/);
     expect(result.text).toContain("exceeds 50.0KB");
     expect(result.text).toContain("sed -n '1p'");
     expect(result.nextOffset).toBeUndefined();
@@ -144,14 +144,14 @@ describe("fmtReadPreview", () => {
   it("shows a line just under the default budget in full", async () => {
     const big = "U".repeat(51_000);
     const result = await fmtReadPreview(`${big}\n`, {}, undefined, home.testPath);
-    expect(result.text).toMatch(new RegExp(`^[A-Za-z0-9]{3}│U{51000}$`));
+    expect(result.text).toMatch(new RegExp(`^[A-Za-z0-9]{4}│U{51000}$`));
     expect(result.text).not.toContain("content not shown");
   });
 
   it("marks a line over the default budget with the bash fallback", async () => {
     const big = "T".repeat(210_000);
     const result = await fmtReadPreview(`${big}\n`, {}, undefined, home.testPath);
-    expect(result.text).not.toMatch(/[A-Za-z0-9]{3}│/);
+    expect(result.text).not.toMatch(/[A-Za-z0-9]{4}│/);
     expect(result.text).toContain("exceeds 50.0KB");
     expect(result.text).toContain("head -c 51200");
     expect(result.nextOffset).toBeUndefined();

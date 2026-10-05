@@ -1,6 +1,6 @@
 import { abortIf, rejectUnknownFields, clipLine } from "../utils.js";
 import { DomainError, formatWarning } from "../domain-errors.js";
-import { HASH_CLASS } from "./hash-identity.js";
+import { HASH_CLASS, HASH_LEN } from "./hash-identity.js";
 import { parseHashRef, parseText, type Anchor } from "./parse.js";
 import type { ServedRow } from "./served.js";
 import type { FileSnapshotContext } from "./served-verification.js";
@@ -33,7 +33,7 @@ export interface LeaseIdentityView {
  * authoritative `retired_at` writer is materialization, never resolution.
  */
 export interface LeaseSpanSource {
-  /** `CANON_VERSION:xxh64(content)` of the buffer being edited — the `C` of the fast-path predicate. */
+  /** `CANON_VERSION:ANCHOR_GENERATION:xxh64(content)` of the buffer being edited — the `C` of the fast-path predicate. */
   currentSnapshotHash: string;
   /** The session's lease for one anchor, if any (spec §3.1.1 step 1). */
   leaseFor(anchor: string): LeaseIdentityView | undefined;
@@ -253,7 +253,7 @@ function formatNotFound(
   // WHY: the body carries no code tag — the registry owns the `[MODEL] [E_*]`
   // WHY: header when the caller wraps this in a `DomainError`.
   out.push(
-    `${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
+    `${distinct.length} stale anchor${distinct.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}: ${refList}. Re-read the full file and copy the fresh ${HASH_LEN}-char anchors (the ${HASH_LEN} chars before │, e.g. "wUpX").`,
   );
   for (const m of distinct) {
     const ctx = m.context;
@@ -283,7 +283,7 @@ function formatAmbiguous(
   if (out.length > 0) out.push("");
   const distinctAmbiguous = [...new Map(ambiguous.map((m) => [m.ref.hash, m])).values()];
   out.push(
-    `${distinctAmbiguous.length} ambiguous anchor${distinctAmbiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp").`,
+    `${distinctAmbiguous.length} ambiguous anchor${distinctAmbiguous.length > 1 ? "s" : ""}${filePath ? ` in ${filePath}` : ""}. Re-read the full file and copy the fresh ${HASH_LEN}-char anchors (the ${HASH_LEN} chars before │, e.g. "wUpX").`,
   );
   for (const m of distinctAmbiguous) {
     const sample = (m.candidates ?? []).slice(0, 5);
@@ -348,14 +348,12 @@ function assertItem(edit: Record<string, unknown>): void {
 
   if ("anchor_from" in edit && typeof edit.anchor_from !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
-      message:
-        'Field "anchor_from" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.',
+      message: `Field "anchor_from" must be a bare ${HASH_LEN}-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
     });
   }
   if ("anchor_to" in edit && typeof edit.anchor_to !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
-      message:
-        'Field "anchor_to" must be a bare 3-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.',
+      message: `Field "anchor_to" must be a bare ${HASH_LEN}-char hash anchor copied from served output (before │). Nothing was written; fix the field and retry.`,
     });
   }
   if (!("text" in edit)) {
@@ -372,8 +370,7 @@ function assertItem(edit: Record<string, unknown>): void {
   }
   if (typeof edit.anchor_from !== "string" || typeof edit.anchor_to !== "string") {
     throw new DomainError("E_BAD_PAYLOAD", {
-      message:
-        'The edit requires "anchor_from" and "anchor_to" anchor strings (bare 3-char hashes from served output). Nothing was written.',
+      message: `The edit requires "anchor_from" and "anchor_to" anchor strings (bare ${HASH_LEN}-char hashes from served output). Nothing was written.`,
     });
   }
   // SAFETY: (ticket-04 item (iii)) this is the ONLY fail-closed check on the internal placement
@@ -402,20 +399,19 @@ function assertItem(edit: Record<string, unknown>): void {
       typeof (source as { retire?: unknown }).retire !== "boolean"
     ) {
       throw new DomainError("E_BAD_PAYLOAD", {
-        message:
-          'Field "text_ref" must be { anchor_from, anchor_to, mode: "copy" | "cut" }: two bare 3-char anchors bounding the same-file span — "cut" additionally retires it. Nothing was written.',
+        message: `Field "text_ref" must be { anchor_from, anchor_to, mode: "copy" | "cut" }: two bare ${HASH_LEN}-char anchors bounding the same-file span — "cut" additionally retires it. Nothing was written.`,
       });
     }
   }
 }
 
-// SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, linear row prefix — bounded, no user input, no ReDoS.
+// SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, linear row prefix — bounded, no user input, no ReDoS.
 const ANCHOR_ROW_RE = new RegExp(`^([+-]?)(${HASH_CLASS})│`);
 function firstHashFromBlock(block: string): string | undefined {
   for (const line of block.split("\n")) {
     const m = line.match(ANCHOR_ROW_RE);
     if (m) return m[2]!;
-    // SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char, linear search — no user-controlled pattern, no ReDoS.
+    // SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, bounded linear search — no user-controlled pattern, no ReDoS.
     const bare = line.match(new RegExp(HASH_CLASS));
     if (bare) return bare[0]!;
   }
@@ -442,11 +438,11 @@ export function resEdit(edit: HTEdit): HEdit {
     if (match) {
       let reason: string;
       if (match[1] === "+") {
-        reason = `anchor carries a diff-preview "+" marker ("${trimmed}"). Nothing was written; pass the bare 3-char anchor and retry.`;
+        reason = `anchor carries a diff-preview "+" marker ("${trimmed}"). Nothing was written; pass the bare ${HASH_LEN}-char anchor and retry.`;
       } else if (match[1] === "-") {
-        reason = `anchor carries a leading "-" marker ("${trimmed}"). Nothing was written; pass the bare 3-char anchor and retry.`;
+        reason = `anchor carries a leading "-" marker ("${trimmed}"). Nothing was written; pass the bare ${HASH_LEN}-char anchor and retry.`;
       } else {
-        reason = `anchor carries a "HASH│" prefix ("${trimmed}"). Nothing was written; copy only the 3 chars before │ and retry.`;
+        reason = `anchor carries a "HASH│" prefix ("${trimmed}"). Nothing was written; copy only the ${HASH_LEN} chars before │ and retry.`;
       }
       throw new DomainError("E_MALFORMED_ANCHOR", { rawAnchor: trimmed, reason });
     }

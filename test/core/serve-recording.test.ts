@@ -85,14 +85,14 @@ describe("recordDiff — persistence through served-state", () => {
       const store = await loadHashStore();
       const path = join(home, "f.txt");
       upsertServed(store, "s1", path, [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
       ]);
-      await createSessionHandle("s1", path).recordDiff([{ position: 1, hash: "BET" }], {
+      await createSessionHandle("s1", path).recordDiff([{ position: 1, hash: "BETT" }], {
         contentHash: NO_SNAPSHOT,
       });
-      expect(getServed(store, "s1", path)).toEqual(["aaa", "BET", "ccc"]);
+      expect(getServed(store, "s1", path)).toEqual(["aaaa", "BETT", "cccc"]);
     });
   });
 
@@ -101,21 +101,21 @@ describe("recordDiff — persistence through served-state", () => {
       const store = await loadHashStore();
       const path = join(home, "f.txt");
       upsertServed(store, "s1", path, [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
-        { position: 3, hash: "ddd" },
-        { position: 4, hash: "eee" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
+        { position: 3, hash: "dddd" },
+        { position: 4, hash: "eeee" },
       ]);
       await createSessionHandle("s1", path).recordDiff(
         [
-          { position: 0, hash: "aaa" },
-          { position: 1, hash: "BET" },
-          { position: 2, hash: "ccc" },
+          { position: 0, hash: "aaaa" },
+          { position: 1, hash: "BETT" },
+          { position: 2, hash: "cccc" },
         ],
         { contentHash: NO_SNAPSHOT, resultLineCount: 3, firstChangedLine: 2 },
       );
-      expect(getServed(store, "s1", path)).toEqual(["aaa", "BET", "ccc"]);
+      expect(getServed(store, "s1", path)).toEqual(["aaaa", "BETT", "cccc"]);
     });
   });
 
@@ -124,18 +124,18 @@ describe("recordDiff — persistence through served-state", () => {
       const store = await loadHashStore();
       const path = join(home, "f.txt");
       upsertServed(store, "s1", path, [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
       ]);
       await createSessionHandle("s1", path).recordDiff(
         [
-          { position: 0, hash: "AAA" },
-          { position: 1, hash: "BBB" },
+          { position: 0, hash: "AAAA" },
+          { position: 1, hash: "BBBB" },
         ],
         { contentHash: NO_SNAPSHOT, resultLineCount: 2 },
       );
-      expect(getServed(store, "s1", path)).toEqual(["AAA", "BBB"]);
+      expect(getServed(store, "s1", path)).toEqual(["AAAA", "BBBB"]);
     });
   });
 
@@ -144,21 +144,21 @@ describe("recordDiff — persistence through served-state", () => {
       const store = await loadHashStore();
       const path = join(home, "f.txt");
       upsertServed(store, "s1", path, [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
-        { position: 3, hash: "bbb" },
-        { position: 4, hash: "ddd" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
+        { position: 3, hash: "bbbb" },
+        { position: 4, hash: "dddd" },
       ]);
       await createSessionHandle("s1", path).recordDiff(
         [
-          { position: 0, hash: "bbb" },
-          { position: 1, hash: "ddd" },
-          { position: 2, hash: "eee" },
+          { position: 0, hash: "bbbb" },
+          { position: 1, hash: "dddd" },
+          { position: 2, hash: "eeee" },
         ],
         { contentHash: NO_SNAPSHOT, resultLineCount: 3 },
       );
-      expect(getServed(store, "s1", path)).toEqual(["bbb", "ddd", "eee"]);
+      expect(getServed(store, "s1", path)).toEqual(["bbbb", "dddd", "eeee"]);
     });
   });
 
@@ -182,24 +182,24 @@ describe("recordServeFeedback — truncation after an external shrink (issue #27
       const store = await loadHashStore();
       const path = join(home, "f.txt");
       upsertServed(store, "s1", path, [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
-        { position: 3, hash: "ddd" },
-        { position: 4, hash: "eee" },
-        { position: 5, hash: "fff" },
-        { position: 6, hash: "ggg" },
-        { position: 7, hash: "hhh" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
+        { position: 3, hash: "dddd" },
+        { position: 4, hash: "eeee" },
+        { position: 5, hash: "ffff" },
+        { position: 6, hash: "gggg" },
+        { position: 7, hash: "hhhh" },
       ]);
       await createSessionHandle("s1", path).recordServeFeedback(
         [
-          { position: 0, hash: "fff" },
-          { position: 1, hash: "ggg" },
+          { position: 0, hash: "ffff" },
+          { position: 1, hash: "gggg" },
         ],
         "live",
         2,
       );
-      expect(getServed(store, "s1", path)).toEqual(["fff", "ggg"]);
+      expect(getServed(store, "s1", path)).toEqual(["ffff", "gggg"]);
     });
   });
 
@@ -207,12 +207,12 @@ describe("recordServeFeedback — truncation after an external shrink (issue #27
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "f.txt");
-      upsertServed(store, "s1", path, [{ position: 0, hash: "aaa" }]);
+      upsertServed(store, "s1", path, [{ position: 0, hash: "aaaa" }]);
       await createSessionHandle("s1", path).recordServeFeedback(
-        [{ position: 1, hash: "bbb" }],
+        [{ position: 1, hash: "bbbb" }],
         "live",
       );
-      expect(getServed(store, "s1", path)).toEqual(["aaa", "bbb"]);
+      expect(getServed(store, "s1", path)).toEqual(["aaaa", "bbbb"]);
     });
   });
 });
@@ -223,34 +223,34 @@ describe("scanDrift — truncation after an external shrink (issue #27)", () => 
       const store = await loadHashStore();
       const path = join(home, "f.txt");
       upsertServed(store, "s1", path, [
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
-        { position: 3, hash: "ddd" },
-        { position: 4, hash: "eee" },
-        { position: 5, hash: "fff" },
-        { position: 6, hash: "ggg" },
-        { position: 7, hash: "hhh" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
+        { position: 3, hash: "dddd" },
+        { position: 4, hash: "eeee" },
+        { position: 5, hash: "ffff" },
+        { position: 6, hash: "gggg" },
+        { position: 7, hash: "hhhh" },
       ]);
       const served = getServed(store, "s1", path);
       await scanDrift({
         sessionKey: "s1",
         served,
-        resultHashes: ["xxx", "fff", "ggg"],
+        resultHashes: ["xxxx", "ffff", "gggg"],
         resultLines: ["X", "f", "g"],
         contentHash: snapshotHashFor("X\nf\ng"),
         range: {
           startLine: 1,
           endLine: 1,
-          startHash: "xxx",
-          endHash: "xxx",
+          startHash: "xxxx",
+          endHash: "xxxx",
           delta: 0,
         },
         path,
       });
       const after = getServed(store, "s1", path);
-      const fffPositions = after.map((h, i) => (h === "fff" ? i : -1)).filter((i) => i >= 0);
-      const gggPositions = after.map((h, i) => (h === "ggg" ? i : -1)).filter((i) => i >= 0);
+      const fffPositions = after.map((h, i) => (h === "ffff" ? i : -1)).filter((i) => i >= 0);
+      const gggPositions = after.map((h, i) => (h === "gggg" ? i : -1)).filter((i) => i >= 0);
       expect(fffPositions.length).toBeLessThanOrEqual(1);
       expect(gggPositions.length).toBeLessThanOrEqual(1);
     });
@@ -264,9 +264,9 @@ describe("write then edit — same-session drift-free (#70)", () => {
       const absPath = join(home, "w.txt");
       await writeFile(absPath, "a\nb\nc\n");
       upsertServed(store, "s1", absPath, [
-        { position: 0, hash: "zz0" },
-        { position: 1, hash: "zz1" },
-        { position: 5, hash: "zz5" },
+        { position: 0, hash: "zz00" },
+        { position: 1, hash: "zz11" },
+        { position: 5, hash: "zz55" },
       ]);
       const hooks = createLifecycleHooks({ sessionKeyFor: () => "s1" });
       await hooks.onWrite(
@@ -284,9 +284,9 @@ describe("write then edit — same-session drift-free (#70)", () => {
       );
       const served = getServed(store, "s1", absPath);
       expect(served).toHaveLength(3);
-      expect(served).not.toContain("zz0");
-      expect(served).not.toContain("zz1");
-      expect(served).not.toContain("zz5");
+      expect(served).not.toContain("zz00");
+      expect(served).not.toContain("zz11");
+      expect(served).not.toContain("zz55");
       const file = await execEdits(
         req({
           file: "w.txt",
@@ -314,23 +314,23 @@ describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
       const path = join(home, "f.txt");
       const handle = createSessionHandle("s1", path, store);
       await handle.record([
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
-        { position: 2, hash: "ccc" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
+        { position: 2, hash: "cccc" },
       ]);
-      addReported(store, "s1", path, ["bbb"]);
-      await handle.retire(["zzz"]);
+      addReported(store, "s1", path, ["bbbb"]);
+      await handle.retire(["zzzz"]);
       await handle.recordEpoch({
-        rows: [{ position: 1, hash: "BBB" }],
+        rows: [{ position: 1, hash: "BBBB" }],
         lineCount: 3,
-        fullReadHashes: ["aaa", "BBB", "ccc"],
+        fullReadHashes: ["aaaa", "BBBB", "cccc"],
         snapshotId: "snap-partial",
         isFullRead: false,
       });
-      expect(getServed(store, "s1", path)).toEqual(["aaa", "BBB", "ccc"]);
+      expect(getServed(store, "s1", path)).toEqual(["aaaa", "BBBB", "cccc"]);
       expect(await loadEpochId("s1", path)).toBeUndefined();
-      expect(getReported(store, "s1", path)).toEqual(new Set(["bbb"]));
-      expect([...(await loadBlockedHashes("s1", path))]).toContain("zzz");
+      expect(getReported(store, "s1", path)).toEqual(new Set(["bbbb"]));
+      expect([...(await loadBlockedHashes("s1", path))]).toContain("zzzz");
     });
   });
 
@@ -340,17 +340,17 @@ describe("recordEpoch — epoch lifecycle belongs to full reads (#69)", () => {
       const path = join(home, "f.txt");
       const handle = createSessionHandle("s1", path, store);
       await handle.record([
-        { position: 0, hash: "aaa" },
-        { position: 1, hash: "bbb" },
+        { position: 0, hash: "aaaa" },
+        { position: 1, hash: "bbbb" },
       ]);
-      await handle.retire(["zzz"]);
+      await handle.retire(["zzzz"]);
       await handle.recordEpoch({
         rows: [
-          { position: 0, hash: "aaa" },
-          { position: 1, hash: "bbb" },
+          { position: 0, hash: "aaaa" },
+          { position: 1, hash: "bbbb" },
         ],
         lineCount: 2,
-        fullReadHashes: ["aaa", "bbb"],
+        fullReadHashes: ["aaaa", "bbbb"],
         snapshotId: "snap-full",
         isFullRead: true,
       });
@@ -477,7 +477,7 @@ describe("sequential edits — an unevidenced rotation is reported, never suppre
         if (line === dup) dupPositions.push(index);
       });
       const rotated = dupPositions.slice(-3);
-      const fresh = ["q01", "q02", "q03"];
+      const fresh = ["q011", "q022", "q033"];
       rotated.forEach((position, i) => {
         expect(curHashes).not.toContain(fresh[i]!);
       });
@@ -605,7 +605,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
     });
   });
 
-  it("scopes canon evidence per file when two files share one 3-char anchor (#149, #151)", async () => {
+  it("scopes canon evidence per file when two files share one 4-char anchor (#149, #151)", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const pathA = join(home, "a.ts");
@@ -903,7 +903,7 @@ describe("write-nothing paths never retire active leases (issue #81 §3.2.4)", (
           file: "nothing.txt",
           edits: [
             { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
-            { anchor_from: "zzz", anchor_to: "zzz", text: "zzz" },
+            { anchor_from: "zzzz", anchor_to: "zzzz", text: "zzzz" },
           ],
         }),
         home,

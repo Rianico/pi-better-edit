@@ -81,12 +81,12 @@ describe("session_start lifecycle", () => {
       await writeFile(keep, "keep\n", "utf-8");
 
       const store = await loadHashStore();
-      upsertServed(store, "sessionA", keep, [{ position: 0, hash: "abc" }]);
+      upsertServed(store, "sessionA", keep, [{ position: 0, hash: "abcc" }]);
       upsertSnapshot(store, {
         path: keep,
         snapshotHash: snapshotHashFor("keep\n"),
         lineCount: 1,
-        hashes: ["abc"],
+        hashes: ["abcc"],
         content: "keep\n",
       });
 
@@ -95,8 +95,8 @@ describe("session_start lifecycle", () => {
       const sessionStart = handlers.get("session_start")!;
       await sessionStart({}, { cwd: dir, ui: { notify: vi.fn() } });
 
-      expect(getServed(store, "sessionA", keep)).toEqual(["abc"]);
-      expect(getSnapshot(store, keep, "keep\n")).toEqual(["abc"]);
+      expect(getServed(store, "sessionA", keep)).toEqual(["abcc"]);
+      expect(getSnapshot(store, keep, "keep\n")).toEqual(["abcc"]);
     });
   });
 });

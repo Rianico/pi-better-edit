@@ -24,4 +24,4 @@ Conventional commits & changelog: see CONTRIBUTING.md
 
 ### Runtime
 
-TypeScript: pnpm v12 + .nvmrc (24) + TS v7 (Go native) + Vite v8, verify via `pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage` (oxlint / oxfmt / tsc / vitest). Deps via `pnpm-lock.yaml` (frozen in CI); do not run npm against this repo.
+TypeScript: pnpm v12 + Node 24.0.0+ (`.nvmrc` 26) + TS v7 (Go native) + Vite v8, verify via `pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage` (oxlint / oxfmt / tsc / vitest). Deps via `pnpm-lock.yaml` (frozen in CI); do not run npm against this repo.

@@ -19,7 +19,7 @@ beforeAll(async () => {
 });
 
 function servedLineRe(): RegExp {
-  return /^[A-Za-z0-9]{3}│/m;
+  return /^[A-Za-z0-9]{4}│/m;
 }
 
 /**
@@ -94,8 +94,8 @@ function assertLivePayload(args: {
   }
 }
 
-async function currentHashes(disk: string): Promise<string[]> {
-  return lineHashes(disk, home.testPath);
+async function currentHashes(disk: string, filePath: string): Promise<string[]> {
+  return lineHashes(disk, filePath);
 }
 
 describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", () => {
@@ -144,8 +144,8 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       // Served coordinates 1-3 prove no shift; window is hardcoded, never searched.
       expect(msg).toContain("Current range (fresh read):");
       expect(msg).not.toContain("Retry with these anchors");
-      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
-      const diskHashes = await currentHashes(disk);
+      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
+      const diskHashes = await currentHashes(disk, path);
       expect(servedLines).toEqual([
         `${diskHashes[0]}│alpha`,
         `${diskHashes[1]}│BETA`,
@@ -184,7 +184,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       // the served coordinate (2), never the re-added line (4).
       expect(msg).not.toContain("Current range:");
       expect(msg).not.toMatch(servedLineRe());
-      expect(msg).toMatch(/line 2 in sample\.ts/);
+      expect(msg).toMatch(new RegExp(`line 2 in ${path}`));
       expect(msg).not.toMatch(/line 4/);
     });
   });
@@ -216,7 +216,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ndelta\n");
       expect(msg).not.toContain("Current range:");
       expect(msg).not.toMatch(servedLineRe());
-      expect(msg).toMatch(/line 3 in sample\.ts/);
+      expect(msg).toMatch(new RegExp(`line 3 in ${path}`));
     });
   });
 
@@ -254,9 +254,9 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).toContain("Current range (fresh read):");
       expect(msg).not.toContain("Retry with these anchors");
       expect((caught as { details?: { cause: string } }).details?.cause).not.toBe("never-served");
-      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines).toHaveLength(5);
-      const diskHashes = await currentHashes(drifted);
+      const diskHashes = await currentHashes(drifted, path);
       const diskLines = drifted.trimEnd().split("\n");
       expect(servedLines).toEqual([2, 3, 4, 5, 6].map((i) => `${diskHashes[i]}│${diskLines[i]}`));
     });
@@ -383,8 +383,8 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(overlap.message).toMatch(/\[E_BATCH_ABORT\]/);
       expect(overlap.message).toContain("Current range:");
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ngamma\n");
-      const diskHashes = await currentHashes("alpha\nbeta\ngamma\n");
-      const servedLines = overlap.message.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const diskHashes = await currentHashes("alpha\nbeta\ngamma\n", path);
+      const servedLines = overlap.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       // Later span beta-gamma (lines 2-3) is served; rows reproduce on-disk bytes.
       expect(servedLines).toEqual([`${diskHashes[1]}│beta`, `${diskHashes[2]}│gamma`]);
       // A later item naming a retired identity aborts with its own code plus the trailer.
@@ -439,7 +439,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
 
   it("negative control: a misplaced row fails the live-mapping check", async () => {
     const disk = "alpha\nBETA\ngamma\n";
-    const hashes = await currentHashes(disk);
+    const hashes = await currentHashes(disk, "/test/live-mapping.ts");
     const misplaced: ServedRow = { position: 0, hash: hashes[2]! };
     const planted = plantedError({
       code: "E_STALE_RANGE",
@@ -457,7 +457,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
 
   it("negative control: a retry hint on a stale-range payload fails the check", async () => {
     const disk = "alpha\nBETA\ngamma\n";
-    const hashes = await currentHashes(disk);
+    const hashes = await currentHashes(disk, "/test/live-mapping.ts");
     const planted = plantedError({
       code: "E_STALE_RANGE",
       message:
@@ -483,7 +483,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
 
   it("negative control: a target-lost payload carrying rows fails the check", async () => {
     const disk = "alpha\nbeta\ndelta\n";
-    const hashes = await currentHashes(disk);
+    const hashes = await currentHashes(disk, "/test/live-mapping.ts");
     const planted = plantedError({
       code: "E_TARGET_LOST",
       message: `[MODEL] [E_TARGET_LOST] line 3 gone.\nCurrent range:\n${hashes[2]}│delta`,
@@ -528,7 +528,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).not.toContain("No action is required");
       expect((caught as { details?: { cause: string } }).details?.cause).toBe("retirement");
       const disk = await readFile(path, "utf-8");
-      const diskHashes = await currentHashes(disk);
+      const diskHashes = await currentHashes(disk, path);
       assertLivePayload({
         error: caught,
         fileHashes: diskHashes,
@@ -537,7 +537,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
         expectedCode: "E_UNVERIFIED_RANGE",
       });
       // The fresh-read rows are leased through the normal seam: deciding from them writes.
-      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{3}│/.test(l));
+      const servedLines = msg.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines).toHaveLength(2);
       const retryFrom = servedLines[0]!.split("│")[0]!;
       const retryTo = servedLines[1]!.split("│")[0]!;
@@ -581,7 +581,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).not.toContain("Current range (fresh read):");
       expect(msg).not.toMatch(servedLineRe());
       expect((caught as { details?: { cause: string } }).details?.cause).toBe("retirement");
-      const diskHashes = await currentHashes(await readFile(path, "utf-8"));
+      const diskHashes = await currentHashes(await readFile(path, "utf-8"), path);
       assertLivePayload({
         error: caught,
         fileHashes: diskHashes,
@@ -620,9 +620,9 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).not.toContain("Current range (fresh read):");
       expect(msg).not.toMatch(servedLineRe());
       // The headline names the lease-derived served coordinate (3), never a content match.
-      expect(msg).toMatch(/line 3 in sample\.ts/);
+      expect(msg).toMatch(new RegExp(`line 3 in ${path}`));
       expect((caught as { details?: { cause: string } }).details?.cause).toBe("retirement");
-      const diskHashes = await currentHashes(await readFile(path, "utf-8"));
+      const diskHashes = await currentHashes(await readFile(path, "utf-8"), path);
       assertLivePayload({
         error: caught,
         fileHashes: diskHashes,
@@ -661,7 +661,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       expect(msg).not.toContain("Current range:");
       expect(msg).not.toContain("Current range (fresh read):");
       expect(msg).not.toMatch(servedLineRe());
-      const diskHashes = await currentHashes(await readFile(path, "utf-8"));
+      const diskHashes = await currentHashes(await readFile(path, "utf-8"), path);
       assertLivePayload({
         error: caught,
         fileHashes: diskHashes,
@@ -674,7 +674,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
 
   it("negative control: a retry hint on an unverified payload fails the check", async () => {
     const disk = "alpha\ngamma\n";
-    const hashes = await currentHashes(disk);
+    const hashes = await currentHashes(disk, "/test/live-mapping.ts");
     const planted = plantedError({
       code: "E_UNVERIFIED_RANGE",
       message:
@@ -700,7 +700,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
 
   it("negative control: a stale heading on an unverified payload fails the check", async () => {
     const disk = "alpha\ngamma\n";
-    const hashes = await currentHashes(disk);
+    const hashes = await currentHashes(disk, "/test/live-mapping.ts");
     const planted = plantedError({
       code: "E_UNVERIFIED_RANGE",
       message:
@@ -731,8 +731,8 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
       await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
-      const hs = await lineHashes("a\nb\nc\nd\n", `${home.testPath}/source.txt`);
-      const ht = await lineHashes("1\n2\n3\n", `${home.testPath}/target.txt`);
+      const hs = await lineHashes("a\nb\nc\nd\n", join(cwd, "source.txt"));
+      const ht = await lineHashes("1\n2\n3\n", join(cwd, "target.txt"));
       // Retire one served interior identity IN TOOL so the leased span is stale, then aim a
       // foreign copy at the stale span: the engine re-wraps the leased rejection for the
       // foreign file. The v1 recipe of edit.foreign-attribution.test.ts, witnessed here through
@@ -798,7 +798,7 @@ describe("rejection payload live-mapping rule (ADR-0018 decision 4, spec D5)", (
     // The survivor shifted, so the sound code is target-lost with no rows. A payload that
     // serves rows for the shifted window (the old disjunction's wrong-range write) must fail.
     const disk = "ZERO\nalpha\nbeta\n";
-    const hashes = await currentHashes(disk);
+    const hashes = await currentHashes(disk, "/test/live-mapping.ts");
     const planted = plantedError({
       code: "E_UNVERIFIED_RANGE",
       message:

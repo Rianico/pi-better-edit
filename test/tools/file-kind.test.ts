@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { readFile } from "node:fs/promises";
 import { lineHashes } from "../../src/hashline";
 import {
@@ -8,7 +9,7 @@ import {
   useTestHome,
 } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("file kind guards in tools", () => {
   // REMEDIATION P2-3 reverses this file's old witness: a lossy edit that re-encoded U+FFFD over
@@ -59,7 +60,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { file: "image.png", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
+          { file: "image.png", edits: [{ anchor_from: "AAAA", anchor_to: "BBBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -76,7 +77,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { file: "utf16.txt", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
+          { file: "utf16.txt", edits: [{ anchor_from: "AAAA", anchor_to: "BBBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -93,7 +94,7 @@ describe("file kind guards in tools", () => {
       await expect(
         editTool.execute(
           "e1",
-          { file: "mydir", edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "x" }] },
+          { file: "mydir", edits: [{ anchor_from: "AAAA", anchor_to: "BBBB", text: "x" }] },
           undefined,
           undefined,
           ctx,
@@ -105,7 +106,7 @@ describe("file kind guards in tools", () => {
   it("edit rejects empty file deletion", async () => {
     await withTempFile("empty.txt", "a\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("a\n", home.testPath);
+      const hashes = await lineHashes("a\n", join(cwd, "empty.txt"));
       await readTool.execute("r1", { file: "empty.txt" }, undefined, undefined, ctx);
 
       await expect(

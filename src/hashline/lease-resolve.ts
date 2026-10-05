@@ -231,7 +231,7 @@ export function resolveLeasedEdit(args: {
   // WHY: interior line whose lease is retired, unleased, or no longer living at its expected
   // WHY: coordinate rejects here exactly as it does on the dynamically rebased path. The fast path
   // WHY: used to lean on the mirror's anchor tier instead, which a same-anchor collision defeats:
-  // WHY: a 3-char anchor is a spelling, not an identity.
+  // WHY: an anchor is a spelling, not an identity.
   verifyRebasedSpan({
     served,
     servedStart,

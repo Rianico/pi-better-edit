@@ -67,12 +67,12 @@ describe("FileContent — deep seam", () => {
         join(cwd, "cache.txt"),
         contentChecksum(content),
         1,
-        ["ZZZ"],
+        ["ZZZZ"],
         content,
         {},
       );
       const res = await prepareFile("cache.txt", cwd, { store, noPersist: true });
-      expect(res.fileHashes).toEqual(["ZZZ"]);
+      expect(res.fileHashes).toEqual(["ZZZZ"]);
     });
   });
 });

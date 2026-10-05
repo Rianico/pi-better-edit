@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
-import { _lineHashesPure } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash";
 import { DomainError } from "../../src/domain-errors.js";
 import {
   makeServedRejection,
@@ -28,7 +28,7 @@ function snapshotFor(
 describe("task-109: one typed serve block, one builder, one snapshot descriptor", () => {
   it("ServedRejectionError carries a typed readonly servedBlock populated at construction", () => {
     const lines = ["alpha", "beta", "gamma"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
     const err = makeServedRejection({
       code: "E_STALE_RANGE",
@@ -49,7 +49,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
 
   it("AnchorMismatchError carries the same typed servedBlock from the stale-anchor builder", () => {
     const lines = ["alpha", "beta"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
     const err = makeStaleAnchorRejection({
       headline: "anchor is not present in the served leases for probe.ts; nothing was written.",
@@ -68,7 +68,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
 
   it("both builders share one formatting contract: prefix, serve block, served rows", () => {
     const lines = ["alpha", "beta", "gamma"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
     const stale = makeServedRejection({
       code: "E_STALE_RANGE",
@@ -101,8 +101,8 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
 
   it("FileSnapshotContext threads through fmtMismatchWithServes", () => {
     const lines = ["a", "b"];
-    const hashes = _lineHashesPure(lines.join("\n"));
-    const edit = resEdit({ anchor_from: "ZZZ", anchor_to: "YYY", text: "X" });
+    const hashes = contentOnlyHashes(lines.join("\n"));
+    const edit = resEdit({ anchor_from: "ZZZZ", anchor_to: "YYYY", text: "X" });
     const { mismatches } = valEdit(edit, snapshotFor(lines, hashes), undefined);
     const snapshot = snapshotFor(lines, hashes);
     const { message, servedRows } = fmtMismatchWithServes(mismatches, snapshot);
@@ -112,7 +112,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
 
   it("FileSnapshotContext threads through valEdit content resolution", () => {
     const lines = ["a", "b", "c"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
     const edit = resEdit({ anchor_from: hashes[0]!, anchor_to: hashes[2]!, text: "X" });
     const { resolved, mismatches } = valEdit(edit, snapshot, undefined);
@@ -123,11 +123,11 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
 
   it("FileSnapshotContext threads through verifyRebasedSpan and resolveLeasedEdit", () => {
     const lines = ["row 1", "row 2"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
     const leases = new Map<string, LeaseIdentityView>([
       [
-        "AAA",
+        "AAAA",
         {
           lineId: 1,
           canonHash: "0",
@@ -137,7 +137,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
         },
       ],
       [
-        "BBB",
+        "BBBB",
         {
           lineId: 2,
           canonHash: "0",
@@ -149,7 +149,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     ]);
     expect(() =>
       verifyRebasedSpan({
-        served: ["AAA", "BBB"],
+        served: ["AAAA", "BBBB"],
         servedStart: 1,
         servedEnd: 2,
         rebasedStart: 1,
@@ -163,7 +163,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
     const src: LeaseSpanSource = {
       currentSnapshotHash: "C",
       leaseFor: (anchor: string) =>
-        anchor === "AAA"
+        anchor === "AAAA"
           ? {
               lineId: 1,
               canonHash: "0",
@@ -179,7 +179,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
                 servedLineNumber: 2,
                 retiredAt: null,
               }
-            : anchor === "BBB"
+            : anchor === "BBBB"
               ? {
                   lineId: 3,
                   canonHash: "0",
@@ -194,13 +194,13 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
         lineId === 1 ? 1 : lineId === 2 ? 2 : lineId === 3 ? 3 : undefined,
     };
     const dupeLines = ["x", "y", "z"];
-    const dupeHashes = _lineHashesPure(dupeLines.join("\n"));
+    const dupeHashes = contentOnlyHashes(dupeLines.join("\n"));
     const dupeSnapshot = snapshotFor(dupeLines, dupeHashes);
-    const dupeEdit = resEdit({ anchor_from: "AAA", anchor_to: "BBB", text: "X" });
+    const dupeEdit = resEdit({ anchor_from: "AAAA", anchor_to: "BBBB", text: "X" });
     const resolved = resolveLeasedEdit({
       edit: dupeEdit,
       snapshot: dupeSnapshot,
-      served: ["AAA", "m", "BBB"],
+      served: ["AAAA", "m", "BBBB"],
       source: src,
     });
     expect(resolved.status).toBe("fast");
@@ -210,7 +210,7 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
 describe("range-family cause uniformity: explicit evidence, never a borrowed default (G3)", () => {
   it("makeStaleAnchorRejection pins the caller cause and invents none when omitted", () => {
     const lines = ["alpha", "beta"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
     const explicit = makeStaleAnchorRejection({
       headline: "anchor missing.",
@@ -251,7 +251,7 @@ describe("range-family cause uniformity: explicit evidence, never a borrowed def
 
   it("every production range rejection carries its explicit cause end to end", () => {
     const lines = ["alpha", "beta", "gamma"];
-    const hashes = _lineHashesPure(lines.join("\n"));
+    const hashes = contentOnlyHashes(lines.join("\n"));
     const snapshot = snapshotFor(lines, hashes);
     const stale = makeServedRejection({
       code: "E_STALE_RANGE",

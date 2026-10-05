@@ -7,26 +7,43 @@ beforeAll(async () => {
 });
 describe("genDiff", () => {
   it("adds hash hints for context and addition lines and pads deletion lines to align the '│' column", () => {
-    const result = genDiff("alpha\nbeta\ngamma", "alpha\nBETA\ngamma");
+    const result = genDiff(
+      "alpha\nbeta\ngamma",
+      "alpha\nBETA\ngamma",
+      2,
+      undefined,
+      undefined,
+      "/test/diff-preview.ts",
+    );
     const diff = result.diff;
-    expect(diff).toMatch(/^ [A-Za-z0-9]{3}│alpha$/m);
-    expect(diff).toMatch(/^\+[A-Za-z0-9]{3}│BETA$/m);
-    expect(diff).toMatch(/^- {3}│beta$/m);
-    expect(diff).toMatch(/^ [A-Za-z0-9]{3}│gamma$/m);
+    expect(diff).toMatch(/^ [A-Za-z0-9]{4}│alpha$/m);
+    expect(diff).toMatch(/^\+[A-Za-z0-9]{4}│BETA$/m);
+    expect(diff).toMatch(/^- {4}│beta$/m);
+    expect(diff).toMatch(/^ [A-Za-z0-9]{4}│gamma$/m);
   });
 
   it("carries the old hashes on deletion rows when oldContentHashes are provided", () => {
-    const { diff } = genDiff("alpha\nbeta\ngamma", "alpha\nBETA\ngamma", 1, undefined, [
-      "AAA",
-      "BBB",
-      "CCC",
-    ]);
+    const { diff } = genDiff(
+      "alpha\nbeta\ngamma",
+      "alpha\nBETA\ngamma",
+      1,
+      undefined,
+      ["AAA", "BBB", "CCC"],
+      "/test/diff-preview.ts",
+    );
     expect(diff).toMatch(/^-BBB│beta$/m);
-    expect(diff).toMatch(/^\+[A-Za-z0-9]{3}│BETA$/m);
+    expect(diff).toMatch(/^\+[A-Za-z0-9]{4}│BETA$/m);
   });
 
   it("tracks old line numbers across skipped context and multi-line deletions", () => {
-    const { diff } = genDiff("a\nb\nc\nd", "a\nd", 0, undefined, ["H1", "H2", "H3", "H4"]);
+    const { diff } = genDiff(
+      "a\nb\nc\nd",
+      "a\nd",
+      0,
+      undefined,
+      ["H1", "H2", "H3", "H4"],
+      "/test/diff-preview.ts",
+    );
     expect(diff).toContain("-H2│b");
     expect(diff).toContain("-H3│c");
   });
@@ -37,26 +54,26 @@ describe("genDiff", () => {
     );
     const after = ["function greet(name) {", "  return `Hello, ${name}`", "}"].join("\n");
 
-    const { diff } = genDiff(before, after);
+    const { diff } = genDiff(before, after, 2, undefined, undefined, "/test/diff-preview.ts");
 
     const lines = diff.split("\n");
 
     const colonColumns = lines.map((line) => line.indexOf("│"));
-    expect(colonColumns).toEqual(lines.map(() => 4));
+    expect(colonColumns).toEqual(lines.map(() => 5));
 
     expect(lines).toContainEqual(
-      expect.stringMatching(/^ [A-Za-z0-9]{3}│function greet\(name\) \{$/),
+      expect.stringMatching(/^ [A-Za-z0-9]{4}│function greet\(name\) \{$/),
     );
-    expect(lines).toContainEqual(expect.stringMatching(/^- {3}│ {2}console\.log\('old'\)$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^- {4}│ {2}console\.log\('old'\)$/));
     expect(lines).toContainEqual(
-      expect.stringMatching(/^\+[A-Za-z0-9]{3}│ {2}return `Hello, \$\{name\}`$/),
+      expect.stringMatching(/^\+[A-Za-z0-9]{4}│ {2}return `Hello, \$\{name\}`$/),
     );
-    expect(lines).toContainEqual(expect.stringMatching(/^ [A-Za-z0-9]{3}│\}$/));
-    expect(lines).toContainEqual(expect.stringMatching(/^- {3}│ {2}console\.log\('old'\)$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^ [A-Za-z0-9]{4}│\}$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^- {4}│ {2}console\.log\('old'\)$/));
     expect(lines).toContainEqual(
-      expect.stringMatching(/^\+[A-Za-z0-9]{3}│ {2}return `Hello, \$\{name\}`$/),
+      expect.stringMatching(/^\+[A-Za-z0-9]{4}│ {2}return `Hello, \$\{name\}`$/),
     );
-    expect(lines).toContainEqual(expect.stringMatching(/^ [A-Za-z0-9]{3}│\}$/));
+    expect(lines).toContainEqual(expect.stringMatching(/^ [A-Za-z0-9]{4}│\}$/));
   });
   it("truncates context between two distant changes", () => {
     const lines = [];
@@ -64,7 +81,7 @@ describe("genDiff", () => {
     const before = "BEFORE\n" + lines.join("\n") + "\nAFTER";
     const after = "BEFORE_CHANGED\n" + lines.join("\n") + "\nAFTER_CHANGED";
 
-    const { diff } = genDiff(before, after, 4);
+    const { diff } = genDiff(before, after, 4, undefined, undefined, "/test/diff-preview.ts");
     const diffLines = diff.split("\n");
 
     expect(diffLines.length).toBeLessThan(50);
@@ -116,7 +133,7 @@ describe("genDiff — property: column alignment", () => {
     "  const y = 2;",
   ];
 
-  it("keeps the │ separator at column 4 for every diff row across random content", () => {
+  it("keeps the │ separator at column 5 for every diff row across random content", () => {
     for (let iter = 0; iter < 200; iter++) {
       const rnd = mulberry32(iter * 2654435761 + 17);
       const oldContent = Array.from(
@@ -128,11 +145,18 @@ describe("genDiff — property: column alignment", () => {
         () => vocab[randInt(rnd, 0, vocab.length - 1)]!,
       ).join("\n");
 
-      const { diff } = genDiff(oldContent, newContent, randInt(rnd, 0, 4));
+      const { diff } = genDiff(
+        oldContent,
+        newContent,
+        randInt(rnd, 0, 4),
+        undefined,
+        undefined,
+        "/test/diff-preview.ts",
+      );
       for (const line of diff.split("\n")) {
         if (line.includes("│")) {
           expect(line.indexOf("│"), `column drift for iter ${iter}: ${JSON.stringify(line)}`).toBe(
-            4,
+            5,
           );
         }
       }
@@ -140,9 +164,16 @@ describe("genDiff — property: column alignment", () => {
   });
 
   it("keeps the │ separator aligned with single-line diffs too", () => {
-    const { diff } = genDiff("alpha\nbeta\ngamma", "alpha\nBETA\ngamma");
+    const { diff } = genDiff(
+      "alpha\nbeta\ngamma",
+      "alpha\nBETA\ngamma",
+      2,
+      undefined,
+      undefined,
+      "/test/diff-preview.ts",
+    );
     for (const line of diff.split("\n")) {
-      if (line.includes("│")) expect(line.indexOf("│")).toBe(4);
+      if (line.includes("│")) expect(line.indexOf("│")).toBe(5);
     }
   });
 });
@@ -153,7 +184,7 @@ describe("genDiff — applied removal cap (ADR-0024)", () => {
   const oldHashes = Array.from({ length: 20 }, (_, i) => `H${i + 1}`);
 
   it("renders head + exact-count marker + tail for a large deletion, keeping tail coordinates", () => {
-    const { diff } = genDiff(oldContent, "KEEP", 0, undefined, oldHashes);
+    const { diff } = genDiff(oldContent, "KEEP", 0, undefined, oldHashes, "/test/diff-preview.ts");
     const lines = diff.split("\n");
     expect(lines).toHaveLength(5);
     expect(lines[0]).toBe("-H1│line 1");
@@ -165,14 +196,14 @@ describe("genDiff — applied removal cap (ADR-0024)", () => {
 
   it("leaves a deletion at the cap uncapped", () => {
     const content = Array.from({ length: 6 }, (_, i) => `line ${i + 1}`).join("\n");
-    const { diff } = genDiff(content, "", 0);
+    const { diff } = genDiff(content, "", 0, undefined, undefined, "/test/diff-preview.ts");
     expect(diff.split("\n")).toHaveLength(6);
     expect(diff).not.toContain("lines deleted");
   });
 
   it("caps at one row past the threshold", () => {
     const content = Array.from({ length: 7 }, (_, i) => `line ${i + 1}`).join("\n");
-    const { diff } = genDiff(content, "", 0);
+    const { diff } = genDiff(content, "", 0, undefined, undefined, "/test/diff-preview.ts");
     const lines = diff.split("\n");
     expect(lines).toHaveLength(5);
     expect(lines[2]).toBe(" - ... [3 lines deleted] ...");

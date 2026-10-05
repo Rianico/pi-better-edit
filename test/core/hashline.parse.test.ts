@@ -3,56 +3,62 @@ import { parseText, parseHashRef } from "../../src/hashline";
 
 describe("parseHashRef", () => {
   it("parses a hash anchor without # prefix", () => {
-    const ref = parseHashRef("aB3");
-    expect(ref).toEqual({ hash: "aB3" });
+    const ref = parseHashRef("aB3x");
+    expect(ref).toEqual({ hash: "aB3x" });
+  });
+
+  it("rejects a 3-char anchor with E_MALFORMED_ANCHOR naming 4-char (no compat path)", () => {
+    expect(() => parseHashRef("aB3")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("aB3")).toThrow(/4-char/);
+    expect(() => parseHashRef("#aB3")).toThrow(/E_MALFORMED_ANCHOR/);
   });
 
   it("rejects trailing content after the anchor", () => {
-    expect(() => parseHashRef("aB3:const x = 1;")).toThrow(/Expected a 3-char alphanumeric anchor/);
+    expect(() => parseHashRef("aB3x:const x = 1;")).toThrow(
+      /Expected a 4-char alphanumeric anchor/,
+    );
   });
 
   it("rejects a full HASH│content line copied into anchor_from/anchor_to", () => {
-    expect(() => parseHashRef("aB3│const x = 1;")).toThrow(
-      /anchor_from and anchor_to must contain the 3-char hash only/,
+    expect(() => parseHashRef("aB3x│const x = 1;")).toThrow(
+      /anchor_from and anchor_to must contain the 4-char hash only/,
     );
   });
   it("rejects leading >>> markers (strict mode: no marker stripping)", () => {
-    expect(() => parseHashRef(">>> aB3")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef(">>> aB3x")).toThrow(/E_MALFORMED_ANCHOR/);
   });
 
   it("rejects + and - diff markers (strict mode: anchor only)", () => {
-    expect(() => parseHashRef("+aB3")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("-aB3")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("-#aB3")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("+aB3x")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("-aB3x")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("-#aB3x")).toThrow(/E_MALFORMED_ANCHOR/);
   });
 
   it("rejects - and _ anywhere in the anchor (not in the alphabet)", () => {
-    expect(() => parseHashRef("-qk")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("-_-")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("---")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("aB_")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("aB-")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("-qk9")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("-_--")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("----")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("aB_9")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("aB-9")).toThrow(/E_MALFORMED_ANCHOR/);
   });
-
   it("rejects + as a hash body character (not in alphabet)", () => {
-    expect(() => parseHashRef("+qk")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("#+qk")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("+qk9")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("#+qk9")).toThrow(/E_MALFORMED_ANCHOR/);
   });
-
   it("rejects malformed anchors with E_MALFORMED_ANCHOR", () => {
     expect(() => parseHashRef("invalid")).toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });
 
   it("rejects legacy LINE#HASH format", () => {
-    expect(() => parseHashRef("5aB3")).toThrow(/Use the hash alone/);
+    expect(() => parseHashRef("5aB3x")).toThrow(/Use the hash alone/);
   });
 
   it("rejects wrong-length anchors", () => {
     expect(() => parseHashRef("aB")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("aB3x")).toThrow(/E_MALFORMED_ANCHOR/);
-    expect(() => parseHashRef("#aB3x")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("aB3")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("aB3xy")).toThrow(/E_MALFORMED_ANCHOR/);
+    expect(() => parseHashRef("#aB3xy")).toThrow(/E_MALFORMED_ANCHOR/);
   });
-
   it("rejects anchors with invalid alphabet", () => {
     expect(() => parseHashRef("!@#")).toThrow(/\[E_MALFORMED_ANCHOR\]/);
   });

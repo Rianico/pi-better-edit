@@ -1,14 +1,15 @@
 import { describe, expect, it } from "vitest";
+import { join } from "node:path";
 import { lineHashes } from "../../src/hashline";
 import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("edit tool noop + warnings", () => {
   it("returns classification noop instead of throwing on identical content", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
@@ -28,7 +29,7 @@ describe("edit tool noop + warnings", () => {
   it("keeps trailing duplicate (pure edit), file has duplicate", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("aaa\nbbb\nccc\n", home.testPath);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
       await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       await editTool.execute(

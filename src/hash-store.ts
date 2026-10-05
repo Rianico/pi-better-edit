@@ -7,6 +7,7 @@ import { join, dirname } from "node:path";
 import { errCode } from "./utils.js";
 import { initHasher } from "./hashline/hasher.js";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
+import { ANCHOR_GENERATION } from "./hashline/hash-identity.js";
 
 function homeBase(): string {
   const envHome = process.env.HOME;
@@ -156,6 +157,33 @@ function addColumnIfMissing(
   }
 }
 
+function renameGenerationColumn(db: DatabaseSync, table: string): void {
+  const cols = tableColumns(db, table);
+  if (cols.has("anchor_generation")) return;
+  if (cols.has("canon_version")) {
+    try {
+      db.exec(`ALTER TABLE ${table} RENAME COLUMN canon_version TO anchor_generation`);
+      return;
+    } catch {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
+      db.exec(`UPDATE ${table} SET anchor_generation = canon_version`);
+      // SAFETY: the RENAME fallback tolerates a store that keeps both columns — the DROP
+      // SAFETY: fails on SQLite builds without DROP COLUMN support, and a both-columns store is
+      // SAFETY: inert: every v7 reader/writer names `anchor_generation` only, and the leftover
+      // SAFETY: `canon_version` values were already copied over by the UPDATE above, so the stale
+      // SAFETY: column is never read. A concurrently open pre-rename process whose prepared
+      // SAFETY: statement names `canon_version` breaks fail-closed on its next step (same failure
+      // SAFETY: class as the v6 `canons` guard below) — exposure is the unreleased intermediate
+      // SAFETY: build only; see ADR-0031 §4.
+      try {
+        db.exec(`ALTER TABLE ${table} DROP COLUMN canon_version`);
+      } catch {}
+      return;
+    }
+  }
+  db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
+}
+
 // WHY: snapshot-store reads and writes these tables through HashSnapshotIO, so the DDL lives
 // WHY: in the schema owner (spec §5.1) and both modules share one definition.
 export function ensureSnapshotTables(db: DatabaseSync): void {
@@ -192,6 +220,83 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
     "CREATE UNIQUE INDEX IF NOT EXISTS idx_lineage_snapshot_line_id " +
       "ON line_lineage (snapshot_id, line_id)",
   );
+  // WHY: versions the persisted snapshot anchor set — same idiom as file_undo:
+  // WHY: rows written before the column read as 0 (unknown/foreign), never current.
+  // WHY: `canon_version` (pre-rename builds) is renamed in place, preserving stamped values,
+  // WHY: so a pre-rename store opens and its generation-gated behavior is intact; DEFAULT 0 stays
+  // WHY: so an older-build row misses and re-derives.
+  renameGenerationColumn(db, "file_snapshots");
+  // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave
+  // WHY: unknown/foreign-generation snapshots, orphan lineage, or dangling leases
+  // WHY: behind. Current-generation rows survive untouched (same-version sessions
+  // WHY: keep their leases). The served mirror is TTL-owned, never swept: its
+  // WHY: snapshotId is a load-epoch string (`v2|<path>|<ino>|...`), not a
+  // WHY: file_snapshots id, so no generation predicate can judge it — TTL pruning
+  // WHY: at open owns it, and an absent mirror is recoverable only by a fresh serve.
+  // WHY: Runs wherever the schema is ensured, so every store open sweeps.
+  // WHY: The four deletes commit as one `BEGIN IMMEDIATE` unit with rollback on error
+  // WHY: (the vacuum-evict transaction idiom): a crash between the snapshot sweep and
+  // WHY: the orphan-lease delete can no longer strand leases that name no live snapshot
+  // WHY: until the next open.
+  // WHY: anchor-gated lease prefix — the middle component of the 3-part key
+  // WHY: (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`) is the anchor generation, so a
+  // WHY: canon-only change keeps leases while a generation change sweeps them; pre-rename `3:`
+  // WHY: 2-part rows carry no middle component and never match, so they sweep as unknown.
+  const anchorLike = `%:${ANCHOR_GENERATION}:%`;
+  // WHY: tables created later in the fresh-build path (served_leases) may not exist
+  // WHY: yet when this runs — the sweep touches only what is there.
+  const hasTable = (table: string): boolean => tableColumns(db, table).size > 0;
+  const hasLeases = hasTable("served_leases");
+  const sweepGenerations = (): void => {
+    if (hasLeases) {
+      db.exec(`DELETE FROM served_leases WHERE served_snapshot_hash NOT LIKE '${anchorLike}'`);
+    }
+    db.exec(`DELETE FROM file_snapshots WHERE anchor_generation != ${ANCHOR_GENERATION}`);
+    db.exec(
+      "DELETE FROM line_lineage WHERE snapshot_id NOT IN (SELECT snapshot_id FROM file_snapshots)",
+    );
+    // WHY: one provenance rule as of this sweep — a lease that names no surviving
+    // WHY: snapshot for its own path is dangling (same-generation pre-column rows read
+    // WHY: as generation 0 and are swept above: a one-time pairing-baseline reset). The grant
+    // WHY: lookup is path-scoped (`path = ? AND snapshot_hash = ? AND committed = 1`),
+    // WHY: so a lease naming a hash that survives only in a foreign path's row — or only
+    // WHY: in an uncommitted row — goes with the orphans.
+    // WHY: Scoped to the sweep, not the whole open: the open-hook vacuum runs after and
+    // WHY: may evict a snapshot pinned only by a retired-past-grace lease (the vacuum pin
+    // WHY: ignores those), stranding its lease until the next open's sweep — fail-closed
+    // WHY: (the generation-gated grant misses) and self-healing.
+    if (hasLeases) {
+      db.exec(
+        "DELETE FROM served_leases WHERE NOT EXISTS (SELECT 1 FROM file_snapshots fs " +
+          "WHERE fs.path = served_leases.file_path AND fs.snapshot_hash = served_leases.served_snapshot_hash " +
+          "AND fs.committed = 1)",
+      );
+    }
+  };
+  // SAFETY: `isTransaction` is an experimental `node:sqlite` field the read tolerates as absent
+  // SAFETY: (`undefined` reads as not-in-transaction); the read is a boolean guard.
+  // SAFETY: `BEGIN IMMEDIATE` cannot nest, so a caller already inside a transaction runs the sweep
+  // SAFETY: on that transaction instead of opening its own.
+  // SAFETY: the runtime floor is engines.node >= 24, so the read is present on every supported
+  // SAFETY: runtime; the same read guards the vacuum-evict and dropServedState paths.
+  const inSweepTransaction = (db as unknown as { isTransaction?: boolean }).isTransaction === true;
+  if (inSweepTransaction) {
+    sweepGenerations();
+  } else {
+    db.exec("BEGIN IMMEDIATE");
+    try {
+      sweepGenerations();
+      db.exec("COMMIT");
+    } catch (error) {
+      try {
+        db.exec("ROLLBACK");
+      } catch (rollbackError: unknown) {
+        // SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.
+        console.error("[hash-store] failed to rollback sweep transaction:", rollbackError);
+      }
+      throw error;
+    }
+  }
 }
 
 // WHY: file_undo is the single source of truth for undo history in v7; the DDL lives here
@@ -238,6 +343,10 @@ export function ensureFileUndoSchema(db: DatabaseSync): void {
   addColumnIfMissing(db, "file_undo", "snapshot_hash", "TEXT");
   addColumnIfMissing(db, "file_undo", "transaction_id", "TEXT");
   addColumnIfMissing(db, "file_undo", "raw_pre", "TEXT");
+  // WHY: versions the persisted anchor set — existing rows keep 0 (never current),
+  // WHY: so a pre-bump store is refused, not migrated, on first open after upgrade.
+  // WHY: `canon_version` (pre-rename builds) is renamed in place, preserving stamped values.
+  renameGenerationColumn(db, "file_undo");
   db.exec("CREATE INDEX IF NOT EXISTS idx_file_undo_transaction_id ON file_undo (transaction_id)");
   db.exec(CUT_INTENT_DDL);
   addColumnIfMissing(db, "cut_intent", "direction", "TEXT");

@@ -22,7 +22,7 @@ The model-facing payload is an object-root schema containing one fixed three-pos
 Positions inside `edit` are:
 
 1. `path`: a non-empty string, or `null` to invoke the existing unique anchor-based path resolution;
-2. `range`: a two-element array `[remove_from, remove_to]` of 3-character anchor strings, inclusive at both ends;
+2. `range`: a two-element array `[remove_from, remove_to]` of 4-character anchor strings, inclusive at both ends;
 3. `replacement_text`: the complete replacement text. An empty string deletes the range.
 
 The root object must contain only `edit`, and the tuple must have exactly three positions. Missing positions, extra positions, wrong JSON types, empty paths, malformed anchors, and ambiguous path resolution are rejected with the existing `[E_BAD_PAYLOAD]`/anchor error conventions.

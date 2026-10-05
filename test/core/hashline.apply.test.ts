@@ -14,7 +14,7 @@ describe("applyEdit — basic operations", () => {
       ],
       content_lines: ["BBB"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\nBBB\nccc");
     expect(result.firstChangedLine).toBe(2);
   });
@@ -28,7 +28,7 @@ describe("applyEdit — basic operations", () => {
       ],
       content_lines: ["BBB", "B2"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\nBBB\nB2\nccc");
   });
 
@@ -41,7 +41,7 @@ describe("applyEdit — basic operations", () => {
       ],
       content_lines: [],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\nccc");
   });
 
@@ -54,7 +54,7 @@ describe("applyEdit — basic operations", () => {
       ],
       content_lines: [""],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\n\nccc\n");
   });
 
@@ -67,7 +67,7 @@ describe("applyEdit — basic operations", () => {
       ],
       content_lines: [""],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\n\nddd\n");
   });
 
@@ -80,7 +80,7 @@ describe("applyEdit — basic operations", () => {
       ],
       content_lines: ["", ""],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).not.toBe("aaa\n");
     expect(result.content.split("\n").filter((line) => line === "").length).toBeGreaterThanOrEqual(
       2,
@@ -96,7 +96,7 @@ describe("applyEdit — basic operations", () => {
       ],
       content_lines: ["BBB", "CCC"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\nBBB\nCCC\nddd");
   });
 
@@ -109,7 +109,7 @@ describe("applyEdit — basic operations", () => {
       ],
       content_lines: [],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\nddd");
   });
 });
@@ -119,7 +119,7 @@ describe("applyEdit — noop detection", () => {
     const content = "aaa\nbbb\nccc";
     const tag = await makeTag(content, 2, home.testPath);
     const edit: HEdit = { hash_bounds: [tag, tag], content_lines: ["bbb"] };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.noopEdit).toBeDefined();
     expect(result.noopEdit!.loc).toBe(tag.hash);
   });
@@ -133,7 +133,7 @@ describe("applyEdit — noop detection", () => {
       ],
       content_lines: ["bbb", "ccc"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.noopEdit).toBeDefined();
   });
 
@@ -146,7 +146,9 @@ describe("applyEdit — noop detection", () => {
       ],
       content_lines: [],
     };
-    expect(() => applyEdit(content, edit)).toThrow(/\[E_EMPTY_RANGE\]/);
+    expect(() =>
+      applyEdit(content, edit, undefined, undefined, { filePath: home.testPath }),
+    ).toThrow(/\[E_EMPTY_RANGE\]/);
   });
 
   it("allows whole-file rewrite when the final content is non-empty", async () => {
@@ -159,7 +161,7 @@ describe("applyEdit — noop detection", () => {
       content_lines: ["ccc"],
     };
 
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
 
     expect(result.content).toBe("ccc");
   });
@@ -174,7 +176,7 @@ describe("applyEdit — noop detection", () => {
       content_lines: ["\n"],
     };
 
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
 
     expect(result.content).toBe("\n");
   });
@@ -191,7 +193,7 @@ describe("applyEdit — pure edit preserves boundary duplicates (no auto-fix)", 
       content_lines: ["before", "new one", "new two"],
     };
 
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
 
     expect(result.content).toBe("before\nbefore\nnew one\nnew two\nafter");
   });
@@ -206,7 +208,7 @@ describe("applyEdit — pure edit preserves boundary duplicates (no auto-fix)", 
       content_lines: ["new one", "new two", "after"],
     };
 
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
 
     expect(result.content).toBe("before\nnew one\nnew two\nafter\nafter");
   });
@@ -223,7 +225,7 @@ describe("applyEdit — lastChangedLine tracking", () => {
       content_lines: ["B1", "B2", "B3", "B4", "B5"],
     };
 
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
 
     expect(result.firstChangedLine).toBe(2);
     expect(result.lastChangedLine).toBe(6);
@@ -239,7 +241,7 @@ describe("applyEdit — lastChangedLine tracking", () => {
       content_lines: [],
     };
 
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
 
     expect(result.firstChangedLine).toBe(2);
     expect(result.lastChangedLine).toBe(2);
@@ -255,7 +257,7 @@ describe("applyEdit — lastChangedLine tracking", () => {
       content_lines: [],
     };
 
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
 
     expect(result.firstChangedLine).toBe(2);
     expect(result.lastChangedLine).toBe(2);
@@ -272,7 +274,7 @@ describe("applyEdit — edge cases (empty, single-line, no trailing newline)", (
       ],
       content_lines: ["world"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("world");
   });
 
@@ -285,7 +287,7 @@ describe("applyEdit — edge cases (empty, single-line, no trailing newline)", (
       ],
       content_lines: ["world"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("world\n");
   });
 
@@ -298,7 +300,7 @@ describe("applyEdit — edge cases (empty, single-line, no trailing newline)", (
       ],
       content_lines: ["hello"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("hello\n");
   });
 
@@ -311,7 +313,9 @@ describe("applyEdit — edge cases (empty, single-line, no trailing newline)", (
       ],
       content_lines: [],
     };
-    expect(() => applyEdit(content, edit)).toThrow(/\[E_EMPTY_RANGE\]/);
+    expect(() =>
+      applyEdit(content, edit, undefined, undefined, { filePath: home.testPath }),
+    ).toThrow(/\[E_EMPTY_RANGE\]/);
   });
 
   it("edits a line in a file with no trailing newline", async () => {
@@ -323,7 +327,7 @@ describe("applyEdit — edge cases (empty, single-line, no trailing newline)", (
       ],
       content_lines: ["BBB"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\nBBB\nccc");
   });
 
@@ -336,7 +340,7 @@ describe("applyEdit — edge cases (empty, single-line, no trailing newline)", (
       ],
       content_lines: ["bbb", "ccc"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\nbbb\nccc");
   });
 });
@@ -351,7 +355,7 @@ describe("applyEdit — trailing newline preservation", () => {
       ],
       content_lines: ["LINE1"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("LINE1\n</br>\n");
   });
 
@@ -364,7 +368,7 @@ describe("applyEdit — trailing newline preservation", () => {
       ],
       content_lines: ["<br/>"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("line1\n<br/>\n");
   });
 
@@ -377,7 +381,7 @@ describe("applyEdit — trailing newline preservation", () => {
       ],
       content_lines: ["B", "C"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("a\nB\nC\n");
   });
 
@@ -390,7 +394,7 @@ describe("applyEdit — trailing newline preservation", () => {
       ],
       content_lines: ["LINE1"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("LINE1\n</br>");
   });
 
@@ -403,7 +407,7 @@ describe("applyEdit — trailing newline preservation", () => {
       ],
       content_lines: ["B"],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("a\nB\nc\n");
   });
 });
@@ -512,7 +516,7 @@ describe("applyEdit — deletion and range matrix", () => {
         ],
         content_lines: c.contentLines,
       };
-      const result = applyEdit(c.content, edit);
+      const result = applyEdit(c.content, edit, undefined, undefined, { filePath: home.testPath });
       expect(result.content).toBe(c.expected);
     });
   }
@@ -528,7 +532,7 @@ describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
       ],
       content_lines: [],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("a\n\n");
   });
 
@@ -541,7 +545,7 @@ describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
       ],
       content_lines: [],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("\n");
   });
 
@@ -554,7 +558,7 @@ describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
       ],
       content_lines: [],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("a\n\n");
   });
 
@@ -567,7 +571,7 @@ describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
       ],
       content_lines: [],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("a\n\n\n");
   });
 
@@ -580,7 +584,7 @@ describe("applyEdit — EOF deletion preserves an empty preceding line", () => {
       ],
       content_lines: [],
     };
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("a\nb");
   });
 });
@@ -593,7 +597,7 @@ describe("applyEdit — trailing blank lines (no trailing-newline special case)"
       anchor_to: (await makeTag(content, 3, home.testPath)).hash,
       text: "def a():\n    return 1\n",
     });
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("def a():\n    return 1\n\ndef b():\n    pass\n");
   });
 
@@ -604,7 +608,7 @@ describe("applyEdit — trailing blank lines (no trailing-newline special case)"
       anchor_to: (await makeTag(content, 4, home.testPath)).hash,
       text: "def a():\n    return 1\n\n",
     });
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("def a():\n    return 1\n\n\ndef b():\n");
   });
 
@@ -615,7 +619,7 @@ describe("applyEdit — trailing blank lines (no trailing-newline special case)"
       anchor_to: (await makeTag(content, 3, home.testPath)).hash,
       text: "def a():\n    return 1",
     });
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("def a():\n    return 1\ndef b():\n");
   });
 
@@ -626,7 +630,7 @@ describe("applyEdit — trailing blank lines (no trailing-newline special case)"
       anchor_to: (await makeTag(content, 2, home.testPath)).hash,
       text: "X\n",
     });
-    const result = applyEdit(content, edit);
+    const result = applyEdit(content, edit, undefined, undefined, { filePath: home.testPath });
     expect(result.content).toBe("aaa\nX\n\nccc\n");
   });
 });

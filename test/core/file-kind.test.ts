@@ -113,7 +113,9 @@ describe("loadFileKindAndText — maxLines early bailout", () => {
       async ({ cwd }) => {
         const path = join(cwd, "many-lines.txt");
         await expect(loadFileKindAndText(path, { maxLines: 5 })).rejects.toThrow(
-          /\[E_LARGE_FILE\].*more than 5 lines/,
+          // WHY: the streaming counter reports a trip-instant count, not a total —
+          // WHY: the honest surface is "more than the limit", never a number.
+          /\[E_LARGE_FILE\].*more than 5 lines, exceeding the 5-line edit limit/,
         );
       },
     );

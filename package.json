@@ -1,7 +1,7 @@
 {
   "name": "pi-better-edit",
   "version": "2.7.0",
-  "description": "Hash-anchored read/edit/undo tools for pi-coding-agent. Every line gets a unique 3-char hash (A-Za-z0-9) that stays stable across edits; stale or ambiguous anchors are rejected, never fuzzy-matched. Undo persists across restarts.",
+  "description": "Hash-anchored read/edit/undo tools for pi-coding-agent. Every line gets a unique 4-char hash (A-Za-z0-9) that stays stable across edits; stale or ambiguous anchors are rejected, never fuzzy-matched. Undo persists across restarts.",
   "keywords": [
     "anchors",
     "coding-agent",
@@ -46,13 +46,7 @@
     "format:fix": "oxfmt .",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "node scripts/build-dist.mjs && pnpm run typecheck && pnpm run lint && pnpm test",
-    "eval": "RUN_EVAL=1 EVAL_TARGET=local vitest run test/eval/comparison-battery.test.ts",
-    "eval:heap": "RUN_EVAL=1 vitest run test/eval/line-walk-heap.test.ts",
-    "eval:compare": "node scripts/eval-compare.mjs",
-    "eval:hashline": "node benchmarks/hashline-compare.mjs",
     "canon:audit": "node scripts/canon-churn-audit.mjs",
-    "benchmark:tokens": "node benchmarks/token-economics.mjs",
-    "benchmark:practical": "node scripts/practical-token-benchmark.mjs",
     "test:runtime": "node scripts/runtime-edge-test.mjs",
     "build": "node scripts/build-dist.mjs",
     "verify:dist": "node scripts/verify-dist.mjs",
@@ -83,7 +77,6 @@
     "conventional-commits-filter": "^6.0.1",
     "conventional-commits-parser": "^7.1.2",
     "esbuild": "0.28.2",
-    "gpt-tokenizer": "4.0.0",
     "husky": "^9.1.7",
     "oxfmt": "^0.66.0",
     "oxlint": "^1.81.0",
@@ -110,12 +103,11 @@
     }
   },
   "engines": {
-    "node": ">=22.19.0"
+    "node": ">=24.0.0"
   },
   "packageManager": "pnpm@12.0.0",
   "knip": {
     "ignoreDependencies": [
-      "pi-hashline-edit-pro",
       "@oh-my-pi/hashline"
     ]
   },

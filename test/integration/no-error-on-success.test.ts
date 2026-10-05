@@ -29,7 +29,7 @@ async function servedHashes(ctx: unknown, readTool: any, name: string): Promise<
   const result = await readTool.execute("r1", { file: name }, undefined, undefined, ctx);
   return getText(result)
     .split("\n")
-    .filter((line) => /^[A-Za-z0-9]{3}│/.test(line))
+    .filter((line) => /^[A-Za-z0-9]{4}│/.test(line))
     .map(extractHash);
 }
 
@@ -105,12 +105,12 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await servedHashes(ctx, readTool, "sample.txt");
-      expect(hashes).not.toContain("ZZZ");
+      expect(hashes).not.toContain("ZZZZ");
       const result = await editTool.execute(
         "e1",
         {
           file: "sample.txt",
-          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "ZZZ│alpha" }],
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "ZZZZ│alpha" }],
         },
         undefined,
         undefined,
@@ -120,7 +120,7 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       expect(text).toContain("Successfully edited");
       expect(text).toContain("[MODEL] [W_NEVER_SERVED_SHAPE]");
       assertNoErrorOnSuccess({ text, warnings: result.details.warnings as string[] | undefined });
-      expect(await readFile(path, "utf-8")).toContain("ZZZ│alpha");
+      expect(await readFile(path, "utf-8")).toContain("ZZZZ│alpha");
     });
   });
 

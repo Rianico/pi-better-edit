@@ -1,4 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
+import { join } from "path";
 import { readFile } from "node:fs/promises";
 import {
   execute,
@@ -22,7 +23,7 @@ function req(input: unknown): NormalizedEditRequest {
   return normalized;
 }
 
-const home = useTestHome();
+useTestHome();
 
 beforeAll(async () => {
   await initHasher();
@@ -32,7 +33,7 @@ describe("MutationEngine — deep seam", () => {
   it("execute returns ok:true with diff and metrics for single edit", async () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("a\nb\nc\n", home.testPath);
+      const hashes = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const to = hashes[1]!;
@@ -57,7 +58,7 @@ describe("MutationEngine — deep seam", () => {
   it("preview does not persist and shares the same internal path as execute", async () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("a\nb\nc\n", home.testPath);
+      const hashes = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const result = await preview(
@@ -80,7 +81,7 @@ describe("MutationEngine — deep seam", () => {
   it("preview result.diff is the genDiff projection itself (#174 single projection)", async () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("a\nb\nc\n", home.testPath);
+      const hashes = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const result = await preview(
@@ -134,7 +135,7 @@ describe("MutationEngine — deep seam", () => {
   it("batch edits share one engine path and report batch metrics", async () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const hashes = await lineHashes("a\nb\nc\nd\n", home.testPath);
+      const hashes = await lineHashes("a\nb\nc\nd\n", join(cwd, "sample.txt"));
       await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const h0 = hashes[0]!;
       const h2 = hashes[2]!;

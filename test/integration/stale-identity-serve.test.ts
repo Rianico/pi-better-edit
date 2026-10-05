@@ -3,7 +3,7 @@ import { readFile, writeFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
 function servedRowRe(): RegExp {
-  return /^[A-Za-z0-9]{3}│/m;
+  return /^[A-Za-z0-9]{4}│/m;
 }
 
 describe("stale-identity target-lost rejection (spec stale-identity-reject-and-serve D1-D3/D5-D6)", () => {
@@ -39,7 +39,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
       expect(rejected.message).not.toContain("Current range:");
       expect(rejected.message).not.toContain("Retry with these anchors");
       expect(rejected.message).not.toMatch(servedRowRe());
-      expect(rejected.message).toMatch(/line 3 in sample\.ts/);
+      expect(rejected.message).toContain(`line 3 in ${path}`);
       expect(rejected.message).toMatch(/Read the file and re-target/);
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ndelta\n");
     });
@@ -167,7 +167,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
         .catch((e: unknown) => e)) as Error;
 
       expect(rejected.message).toMatch(/\[MODEL\] \[E_TARGET_LOST\]/);
-      expect(rejected.message).toMatch(/line 2 in sample\.ts/);
+      expect(rejected.message).toContain(`line 2 in ${path}`);
       expect(rejected.message).not.toMatch(/line 4/);
       expect(rejected.message).not.toMatch(servedRowRe());
       expect(rejected.message).not.toContain("Current range:");

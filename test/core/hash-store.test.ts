@@ -13,8 +13,8 @@ import {
 import { getSnapshot, upsertSnapshot, snapshotHashFor } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION } from "../../src/constants";
-import { CANON_VERSION } from "../../src/hashline";
-import { initHasher, contentChecksum } from "../../src/hashline/hasher";
+import { ANCHOR_GENERATION } from "../../src/hashline";
+import { initHasher } from "../../src/hashline/hasher";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";
 
@@ -90,8 +90,8 @@ describe("hash-store — migration from legacy hash-store.json", () => {
   it("imports valid legacy snapshot rows and renames the file to .bak (rows are old-canon, so they rebuild on next read)", async () => {
     await withTempHome(async (home) => {
       await writeLegacyStore(home, {
-        "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
-        "/also.ts": { content: "good\nmore\n", hashes: ["XYZ", "QWE"] },
+        "/valid.ts": { content: "ok\n", hashes: ["ABCC"] },
+        "/also.ts": { content: "good\nmore\n", hashes: ["XYZZ", "QWEE"] },
       });
 
       const store = await loadHashStore();
@@ -106,12 +106,12 @@ describe("hash-store — migration from legacy hash-store.json", () => {
   it("drops structurally invalid legacy entries, imports valid rows (old-canon, rebuilt on next read)", async () => {
     await withTempHome(async (home) => {
       await writeLegacyStore(home, {
-        "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
+        "/valid.ts": { content: "ok\n", hashes: ["ABCC"] },
         "/missing-hashes.ts": { content: "x\n" },
-        "/null-content.ts": { content: null, hashes: ["DEF"] },
+        "/null-content.ts": { content: null, hashes: ["DEFF"] },
         "/hashes-not-array.ts": { content: "y\n", hashes: "not-an-array" },
         "/hash-not-string.ts": { content: "z\n", hashes: [42] },
-        "/also-valid.ts": { content: "good\n", hashes: ["XYZ"] },
+        "/also-valid.ts": { content: "good\n", hashes: ["XYZZ"] },
       });
 
       const store = await loadHashStore();
@@ -132,8 +132,8 @@ describe("hash-store — migration from legacy hash-store.json", () => {
   it("skips legacy snapshots with duplicate hashes so they re-hash on next read", async () => {
     await withTempHome(async (home) => {
       await writeLegacyStore(home, {
-        "/dup.ts": { content: "a\nb\n", hashes: ["AAA", "AAA"] },
-        "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
+        "/dup.ts": { content: "a\nb\n", hashes: ["AAAA", "AAAA"] },
+        "/valid.ts": { content: "ok\n", hashes: ["ABCC"] },
       });
 
       const store = await loadHashStore();
@@ -147,7 +147,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
     await withTempHome(async (home) => {
       await writeLegacyStore(home, {
         "/bad.ts": { content: "x\n", hashes: ["ZZ", "ZZZZ"] },
-        "/valid.ts": { content: "ok\n", hashes: ["ABC"] },
+        "/valid.ts": { content: "ok\n", hashes: ["ABCC"] },
       });
 
       const store = await loadHashStore();
@@ -178,7 +178,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
   it("migrates only once even if legacy file reappears", async () => {
     await withTempHome(async (home) => {
       await writeLegacyStore(home, {
-        "/one.ts": { content: "1\n", hashes: ["AAA"] },
+        "/one.ts": { content: "1\n", hashes: ["AAAA"] },
       });
       const first = await loadHashStore();
       expect(getSnapshot(first, "/one.ts", "1\n")).toBeUndefined();
@@ -188,7 +188,7 @@ describe("hash-store — migration from legacy hash-store.json", () => {
         legacyPath(home),
         JSON.stringify({
           version: 1,
-          snapshots: { "/two.ts": { content: "2\n", hashes: ["BBB"] } },
+          snapshots: { "/two.ts": { content: "2\n", hashes: ["BBBB"] } },
         }),
         "utf-8",
       );
@@ -204,7 +204,7 @@ describe("hash-store — concurrency (issue #10)", () => {
   it("preserves snapshots written by a separately-opened connection", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      await put(store, "/a.ts", "alpha\n", ["AAB"]);
+      await put(store, "/a.ts", "alpha\n", ["AABB"]);
 
       const second = new DatabaseSync(sqlitePath(home), {
         defensive: false,
@@ -213,13 +213,14 @@ describe("hash-store — concurrency (issue #10)", () => {
       second.exec("BEGIN IMMEDIATE");
       second
         .prepare(
-          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed) VALUES (?, ?, ?, ?, 1)",
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) VALUES (?, ?, ?, ?, 1, ?)",
         )
         .run(
           "/b.ts",
-          `${CANON_VERSION}:${contentChecksum("beta\n")}`,
+          snapshotHashFor("beta\n"),
           splitLines("beta\n").length,
           Date.now(),
+          ANCHOR_GENERATION,
         );
       const snapshotId = (
         second.prepare("SELECT snapshot_id FROM file_snapshots WHERE path = ?").get("/b.ts") as {
@@ -230,30 +231,30 @@ describe("hash-store — concurrency (issue #10)", () => {
         .prepare(
           "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) VALUES (?, ?, ?, ?, ?)",
         )
-        .run(snapshotId, 1, 1, "canon-beta", "BBC");
+        .run(snapshotId, 1, 1, "canon-beta", "BBCC");
       second.prepare("INSERT INTO line_id_counters (path, next_id) VALUES (?, ?)").run("/b.ts", 2);
       second.exec("COMMIT");
       second.close();
       shutdownHashStore();
       const reloaded = await loadHashStore();
-      expect(getSnapshot(reloaded, "/a.ts", "alpha\n")).toEqual(["AAB"]);
-      expect(getSnapshot(reloaded, "/b.ts", "beta\n")).toEqual(["BBC"]);
+      expect(getSnapshot(reloaded, "/a.ts", "alpha\n")).toEqual(["AABB"]);
+      expect(getSnapshot(reloaded, "/b.ts", "beta\n")).toEqual(["BBCC"]);
     });
   });
 
   it("a fresh reopen sees snapshots written by a prior session", async () => {
     await withTempHome(async () => {
       const a = await loadHashStore();
-      await put(a, "/first.ts", "one\n", ["111"]);
+      await put(a, "/first.ts", "one\n", ["1111"]);
       shutdownHashStore();
 
       const b = await loadHashStore();
-      await put(b, "/second.ts", "two\n", ["222"]);
+      await put(b, "/second.ts", "two\n", ["2222"]);
       shutdownHashStore();
 
       const c = await loadHashStore();
-      expect(getSnapshot(c, "/first.ts", "one\n")).toEqual(["111"]);
-      expect(getSnapshot(c, "/second.ts", "two\n")).toEqual(["222"]);
+      expect(getSnapshot(c, "/first.ts", "one\n")).toEqual(["1111"]);
+      expect(getSnapshot(c, "/second.ts", "two\n")).toEqual(["2222"]);
     });
   });
 });
@@ -267,7 +268,7 @@ describe("hash-store — incremental writes (issue #8)", () => {
       await put(store, "/big.ts", bigContent, bigHashes);
       const before = getSnapshot(store, "/big.ts", bigContent);
 
-      await put(store, "/other.ts", "y\n", ["YYZ"]);
+      await put(store, "/other.ts", "y\n", ["YYZZ"]);
 
       expect(getSnapshot(store, "/big.ts", bigContent)).toEqual(before);
     });
@@ -278,7 +279,7 @@ describe("hash-store — WAL checkpoint on shutdown", () => {
   it("truncates the WAL file after shutdownHashStore", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      await put(store, "/p.ts", "x\n", ["XYZ"]);
+      await put(store, "/p.ts", "x\n", ["XYZZ"]);
 
       const walPath = sqlitePath(home) + "-wal";
       expect(existsSync(walPath)).toBe(true);
@@ -303,10 +304,10 @@ describe("hash-store — corrupt database recovery", () => {
         path: "/x.ts",
         snapshotHash: snapshotHashFor("a\n"),
         lineCount: 1,
-        hashes: ["AAA"],
+        hashes: ["AAAA"],
         content: "a\n",
       });
-      expect(getSnapshot(store, "/x.ts", "a\n")).toEqual(["AAA"]);
+      expect(getSnapshot(store, "/x.ts", "a\n")).toEqual(["AAAA"]);
     });
   });
 
@@ -330,10 +331,10 @@ describe("hash-store — corrupt database recovery", () => {
         path: "/p.ts",
         snapshotHash: snapshotHashFor("b\n"),
         lineCount: 1,
-        hashes: ["BBB"],
+        hashes: ["BBBB"],
         content: "b\n",
       });
-      expect(getSnapshot(store, "/p.ts", "b\n")).toEqual(["BBB"]);
+      expect(getSnapshot(store, "/p.ts", "b\n")).toEqual(["BBBB"]);
       const entries = await readdir(configHome(home));
       expect(entries.some((name) => name.includes(".corrupt-"))).toBe(false);
     });
@@ -344,7 +345,7 @@ describe("hash-store — schema versioning", () => {
   it("writes the current version on first open", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      await put(store, "/p.ts", "x\n", ["XYZ"]);
+      await put(store, "/p.ts", "x\n", ["XYZZ"]);
       shutdownHashStore();
 
       const db = new DatabaseSync(sqlitePath(home), {
@@ -362,23 +363,23 @@ describe("hash-store — schema versioning", () => {
   it("keeps snapshots when the stored version matches", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      await put(store, "/p.ts", "x\n", ["XYZ"]);
+      await put(store, "/p.ts", "x\n", ["XYZZ"]);
       shutdownHashStore();
 
       const reloaded = await loadHashStore();
-      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZ"]);
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZZ"]);
     });
   });
 
   it("never drops v7 tables or compat shells when the stored version differs", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      await put(store, "/p.ts", "x\n", ["XYZ"]);
+      await put(store, "/p.ts", "x\n", ["XYZZ"]);
       upsertUndo(store, "/u.ts", {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["UVW"],
+        hashes: ["UVWW"],
         resultContent: "new",
       });
       shutdownHashStore();
@@ -390,7 +391,7 @@ describe("hash-store — schema versioning", () => {
       db.close();
 
       const reloaded = await loadHashStore();
-      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZ"]);
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZZ"]);
       expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
 
       const check = new DatabaseSync(sqlitePath(home), {
@@ -425,7 +426,7 @@ describe("hash-store — schema versioning", () => {
   it("keeps snapshots from a pre-versioning database and writes the version", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      await put(store, "/p.ts", "x\n", ["XYZ"]);
+      await put(store, "/p.ts", "x\n", ["XYZZ"]);
       shutdownHashStore();
 
       const db = new DatabaseSync(sqlitePath(home), {
@@ -435,7 +436,7 @@ describe("hash-store — schema versioning", () => {
       db.close();
 
       const reloaded = await loadHashStore();
-      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZ"]);
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZZ"]);
 
       const check = new DatabaseSync(sqlitePath(home), {
         defensive: false,
@@ -445,6 +446,78 @@ describe("hash-store — schema versioning", () => {
         | undefined;
       check.close();
       expect(row?.value).toBe(String(HASH_STORE_VERSION));
+    });
+  });
+});
+
+describe("hash-store — anchor_generation rename (issue #20)", () => {
+  it("renames a pre-rename canon_version column in place, keeps generation-gated behavior, and is idempotent", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/live.ts", "x\n", ["XYZZ"]);
+      shutdownHashStore();
+      // WHY: simulates the pre-rename merged build — old column name, old 2-part key, stamped 3.
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      db.exec("ALTER TABLE file_snapshots RENAME COLUMN anchor_generation TO canon_version");
+      db.exec("ALTER TABLE file_undo RENAME COLUMN anchor_generation TO canon_version");
+      db.prepare(
+        "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) VALUES (?,?,?,?,1,?)",
+      ).run("/old.ts", "3:deadbeef", 1, Date.now(), 3);
+      const sid = (
+        db.prepare("SELECT snapshot_id FROM file_snapshots WHERE path = ?").get("/old.ts") as {
+          snapshot_id: number;
+        }
+      ).snapshot_id;
+      db.prepare(
+        "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) VALUES (?,?,?,?,?)",
+      ).run(sid, 1, 1, "canon-old", "ZZZZ");
+      db.prepare(
+        "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, served_snapshot_hash, served_line_number, updated_at, retired_at) VALUES (?,?,?,?,?,?,?,?,NULL)",
+      ).run("s1", "/old.ts", "ZZZZ", 1, "canon-old", "3:deadbeef", 1, Date.now());
+      db.prepare(
+        "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, updated_at, canon_version) VALUES (?,?,?,?,?,?,?,?,?)",
+      ).run("/old.ts", "old", "", "\n", '["UVWW"]', "new", "3:deadbeef", Date.now(), 3);
+      db.close();
+      // WHY: the pre-rename store still opens — the guarded rename preserves stamped values.
+      const reopened = await loadHashStore();
+      const snapCols = (
+        reopened.db.prepare("PRAGMA table_info(file_snapshots)").all() as { name: string }[]
+      ).map((row) => row.name);
+      const undoCols = (
+        reopened.db.prepare("PRAGMA table_info(file_undo)").all() as { name: string }[]
+      ).map((row) => row.name);
+      expect(snapCols).toContain("anchor_generation");
+      expect(snapCols).not.toContain("canon_version");
+      expect(undoCols).toContain("anchor_generation");
+      expect(undoCols).not.toContain("canon_version");
+      // WHY: generation-gated behavior intact — the live row hits, pre-rename rows miss/sweep.
+      expect(getSnapshot(reopened, "/live.ts", "x\n")).toEqual(["XYZZ"]);
+      expect(getSnapshot(reopened, "/old.ts", "old")).toBeUndefined();
+      expect(getUndoEntry(reopened, "/old.ts")).toMatchObject({
+        content: "old",
+        anchorGeneration: 3,
+      });
+      expect(
+        (
+          reopened.db
+            .prepare("SELECT COUNT(*) AS n FROM file_snapshots WHERE path = ?")
+            .get("/old.ts") as { n: number }
+        ).n,
+      ).toBe(0);
+      expect(
+        (
+          reopened.db
+            .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE file_path = ?")
+            .get("/old.ts") as { n: number }
+        ).n,
+      ).toBe(0);
+      // WHY: idempotent across re-opens — the live row survives every later sweep.
+      shutdownHashStore();
+      const again = await loadHashStore();
+      expect(getSnapshot(again, "/live.ts", "x\n")).toEqual(["XYZZ"]);
+      shutdownHashStore();
+      const third = await loadHashStore();
+      expect(getSnapshot(third, "/live.ts", "x\n")).toEqual(["XYZZ"]);
     });
   });
 });
@@ -506,6 +579,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
             "line_count",
             "created_at",
             "committed",
+            "anchor_generation",
           ]),
         );
         expect(columnNames(db, "line_id_counters")).toEqual(
@@ -539,6 +613,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
             "hashes",
             "result_content",
             "snapshot_hash",
+            "anchor_generation",
             "updated_at",
           ]),
         );
@@ -625,7 +700,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
     db.prepare(
       "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, " +
         "served_snapshot_hash, served_line_number, updated_at, retired_at) " +
-        "VALUES ('s1', '/a.ts', 'abc', 42, 'canon42', 'v1:aaaa', 1, 111, NULL)",
+        "VALUES ('s1', '/a.ts', 'abcc', 42, 'canon42', 'v1:aaaa', 1, 111, NULL)",
     ).run();
     db.prepare(
       "INSERT INTO served_session_meta (session_id, file_path, reported, updated_at) " +
@@ -633,7 +708,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
     ).run();
     db.prepare(
       "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, updated_at) " +
-        "VALUES ('/a.ts', 'old', '', '\n', '[\"abc\"]', 'new', 'v1:aaaa', 111)",
+        "VALUES ('/a.ts', 'old', '', '\n', '[\"abcc\"]', 'new', 'v1:aaaa', 111)",
     ).run();
   }
 
@@ -700,7 +775,15 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       ).run();
       db.close();
 
-      expect(survivors).toEqual(seeded);
+      // WHY: generation discipline — unknown-generation snapshot/lineage/lease state is
+      // WHY: swept at open (it can never verify), while undo, counters, and session
+      // WHY: metadata survive untouched.
+      expect(survivors).toEqual({
+        ...seeded,
+        file_snapshots: [],
+        line_lineage: [],
+        served_leases: [],
+      });
       expect(counter.next_id).toBe(42);
       expect(version.value).toBe(String(HASH_STORE_VERSION));
     });
@@ -729,7 +812,15 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       for (const table of V7_TABLES) {
         expect(tables.filter((name) => name === table)).toEqual([table]);
       }
-      expect(survivors).toEqual(seeded);
+      // WHY: the open-time sweep is idempotent — the first open removes the
+      // WHY: unknown-generation anchor state, later opens find nothing to delete,
+      // WHY: and non-anchor state is untouched throughout.
+      expect(survivors).toEqual({
+        ...seeded,
+        file_snapshots: [],
+        line_lineage: [],
+        served_leases: [],
+      });
     });
   });
 
@@ -769,12 +860,12 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
   it("adds missing legacy served columns without wiping snapshots or undo", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      await put(store, "/p.ts", "x\n", ["XYZ"]);
+      await put(store, "/p.ts", "x\n", ["XYZZ"]);
       upsertUndo(store, "/u.ts", {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["UVW"],
+        hashes: ["UVWW"],
         resultContent: "new",
       });
       shutdownHashStore();
@@ -793,7 +884,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
       db.close();
 
       const reloaded = await loadHashStore();
-      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZ"]);
+      expect(getSnapshot(reloaded, "/p.ts", "x\n")).toEqual(["XYZZ"]);
       expect(getUndoEntry(reloaded, "/u.ts")).toMatchObject({ content: "old" });
       shutdownHashStore();
 
@@ -844,7 +935,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
         content: "old",
         bom: "",
         ending: "\n",
-        hashes: ["UVW"],
+        hashes: ["UVWW"],
         resultContent: "new",
       });
       shutdownHashStore();

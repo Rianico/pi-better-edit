@@ -9,7 +9,7 @@ import {
   extractHash,
 } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("drift notices for changed served territory outside the edit range", () => {
   it("appends a drift notice with the current drifted content; the notice rows verify cleanly in a follow-up edit", async () => {
@@ -43,7 +43,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       expect(driftNotice).toContain("drift:");
       const driftRow = driftNotice
         .split("\n")
-        .find((l: string) => /^[A-Za-z0-9]{3}│DELTA$/.test(l));
+        .find((l: string) => /^[A-Za-z0-9]{4}│DELTA$/.test(l));
       expect(driftRow).toBeDefined();
 
       const deltaRef = extractHash(driftRow!);
@@ -91,7 +91,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       expect(resultText).not.toContain("drift:");
       const driftNotice = (result as any).details?.driftNotice ?? "";
       expect(driftNotice).toContain("drift:");
-      const currentHashes = await lineHashes("alpha\nbeta\ngamma\nDELTA\n", home.testPath);
+      const currentHashes = await lineHashes("alpha\nbeta\ngamma\nDELTA\n", path);
       expect(driftNotice).toContain(`${currentHashes[3]}│DELTA`);
     });
   });
@@ -142,7 +142,7 @@ describe("drift notices for changed served territory outside the edit range", ()
       expect(secondText).not.toContain("already reported");
       expect(secondDrift).not.toContain("│DELTA2");
       expect(
-        secondDrift.split("\n").filter((l: string) => /^[A-Za-z0-9]{3}│/.test(l)),
+        secondDrift.split("\n").filter((l: string) => /^[A-Za-z0-9]{4}│/.test(l)),
       ).toHaveLength(0);
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ngamma\nDELTA2\n");
     });
@@ -289,9 +289,9 @@ describe("drift notices for changed served territory outside the edit range", ()
         expect(resultText).not.toContain("drift:");
         const notice = ((result as any).details?.driftNotice ?? "").split("drift:")[1] ?? "";
         expect(notice).toContain("2 line(s)");
-        expect(notice.match(/^[A-Za-z0-9]{3}│R$/gm)).toHaveLength(1);
-        expect(notice).toMatch(/^[A-Za-z0-9]{3}│l1$/m);
-        expect(notice).toMatch(/^[A-Za-z0-9]{3}│l5$/m);
+        expect(notice.match(/^[A-Za-z0-9]{4}│R$/gm)).toHaveLength(1);
+        expect(notice).toMatch(/^[A-Za-z0-9]{4}│l1$/m);
+        expect(notice).toMatch(/^[A-Za-z0-9]{4}│l5$/m);
         expect(notice).not.toMatch(/│l[23]/);
         expect(await readFile(path, "utf-8")).toBe("l0\nl1\nR\nl5\nl6\nl7\nl8\nl9\n");
       },
@@ -365,13 +365,13 @@ describe("drift notices for changed served territory outside the edit range", ()
       const driftNotice = (result as any).details?.driftNotice ?? "";
       expect(driftNotice).toContain("drift:");
 
-      const betaRow = driftNotice.split("\n").find((l: string) => /^[A-Za-z0-9]{3}│beta$/.test(l));
+      const betaRow = driftNotice.split("\n").find((l: string) => /^[A-Za-z0-9]{4}│beta$/.test(l));
       const gammaRow = driftNotice
         .split("\n")
-        .find((l: string) => /^[A-Za-z0-9]{3}│GAMMA$/.test(l));
+        .find((l: string) => /^[A-Za-z0-9]{4}│GAMMA$/.test(l));
       const deltaRow = driftNotice
         .split("\n")
-        .find((l: string) => /^[A-Za-z0-9]{3}│delta$/.test(l));
+        .find((l: string) => /^[A-Za-z0-9]{4}│delta$/.test(l));
       expect(betaRow).toBeDefined();
       expect(gammaRow).toBeDefined();
       expect(deltaRow).toBeDefined();

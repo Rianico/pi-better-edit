@@ -22,7 +22,7 @@ import { visLines, splitLines, errCode } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError } from "./domain-errors.js";
-import { changedRange, lineHashes } from "./hashline/index.js";
+import { ANCHOR_GENERATION, changedRange, lineHashes } from "./hashline/index.js";
 import { denseServeRows, type ServedRow } from "./hashline/served.js";
 export interface UndoEntry {
   content: string;
@@ -48,6 +48,8 @@ export interface UndoEntry {
    * construction. Absent/NULL on ordinary single-file rows: the canonical fold is restored.
    */
   rawPre?: string | null;
+  /** The anchor generation the stored hashes were derived under (0 = pre-generation). */
+  anchorGeneration?: number | null;
 }
 
 export async function saveUndo(
@@ -69,6 +71,9 @@ export async function saveUndo(
       snapshotHash: entry.snapshotHash ?? snapshotHashFor(entry.content),
       transactionId: entry.transactionId ?? null,
       rawPre: entry.rawPre ?? null,
+      // WHY: ADR-0031 §4 — forward the payload generation so the store stamp (upsertUndo)
+      // WHY: can preserve it on replay; absent (ordinary edit) defaults to ANCHOR_GENERATION there.
+      anchorGeneration: entry.anchorGeneration ?? ANCHOR_GENERATION,
     });
   } catch (error) {
     // SAFETY: typed error handling — persist failure returns { persisted: false } and caller throws E_UNDO_UNAVAILABLE; logging preserves cause, not silent undefined, downstream handles rejection.
@@ -106,6 +111,7 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
       resultContent: record.resultContent,
       snapshotHash: record.snapshotHash ?? null,
       transactionId: record.transactionId ?? null,
+      anchorGeneration: record.anchorGeneration ?? 0,
     };
   } catch (error) {
     // SAFETY: best-effort undo load — failures return undefined (no history) and caller reports "No undo history"; stale or corrupt store is recoverable on next edit, not silent undefined without log.
@@ -136,6 +142,8 @@ interface UndoMember {
   resultContent: string;
   snapshotHash: string | null;
   rawPre: string | null;
+  /** The anchor generation the stored hashes were derived under (0 = pre-generation). */
+  anchorGeneration: number;
 }
 
 function toMember(row: UndoRecord & { path: string }, displayPath: string): UndoMember | undefined {
@@ -151,6 +159,7 @@ function toMember(row: UndoRecord & { path: string }, displayPath: string): Undo
     resultContent: row.resultContent,
     snapshotHash: row.snapshotHash ?? null,
     rawPre: row.rawPre ?? null,
+    anchorGeneration: row.anchorGeneration ?? 0,
   };
 }
 
@@ -282,17 +291,28 @@ async function undoCorrelatedTransaction(
       for (const { member, raw } of currents) {
         const { text: currentStripped } = stripBOM(raw);
         const currentNormalized = toLF(currentStripped);
-        const restoredContentHash = member.snapshotHash ?? snapshotHashFor(member.content);
+        // WHY: a pre-generation row's stored key/anchors are a foreign anchor generation — adopt them
+        // WHY: never. Fresh key + re-derivation keep the restore on the current anchors.
+        const storedIsCurrentGeneration = member.anchorGeneration === ANCHOR_GENERATION;
+        const restoredContentHash = storedIsCurrentGeneration
+          ? (member.snapshotHash ?? snapshotHashFor(member.content))
+          : snapshotHashFor(member.content);
         const restoredLineCount = splitLines(member.content).length;
-        let restoredHashes = member.hashes;
+        let restoredHashes: string[];
         try {
           restoredHashes =
             (await anchorsForSnapshotHash(member.absolutePath, restoredContentHash)) ??
-            member.hashes;
+            (storedIsCurrentGeneration
+              ? member.hashes
+              : await lineHashes(member.content, member.absolutePath));
         } catch (error) {
           // SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo
-          // SAFETY: falls back to the stored hashes; the file restore and diff stay valid.
+          // SAFETY: falls back to the stored current-generation hashes (or a fresh
+          // SAFETY: file-scoped derivation for a legacy row); the file restore and diff stay valid.
           console.error("Failed to load anchors for undo restore:", error);
+          restoredHashes = storedIsCurrentGeneration
+            ? member.hashes
+            : await lineHashes(member.content, member.absolutePath);
         }
         const currentHashes = await lineHashes(currentNormalized, member.absolutePath);
         const remainingUndoCounts = new Map<string, number>();
@@ -629,21 +649,33 @@ export function regEditUndo(pi: ExtensionAPI): void {
         const sessionKeyForUndo = sessionKeyFor(
           ctx as unknown as { sessionManager?: { getSessionId(): string } },
         );
-        const restoredContentHash = undo.snapshotHash ?? snapshotHashFor(undo.content);
+        // WHY: a pre-generation row's stored key/anchors are a foreign anchor generation — adopt them
+        // WHY: never. Fresh key + re-derivation keep the restore on the current anchors.
+        const storedIsCurrentGeneration = (undo.anchorGeneration ?? 0) === ANCHOR_GENERATION;
+        const restoredContentHash = storedIsCurrentGeneration
+          ? (undo.snapshotHash ?? snapshotHashFor(undo.content))
+          : snapshotHashFor(undo.content);
         const restoredLineCount = splitLines(undo.content).length;
         // WHY: the pinned snapshot is the authority for the restored rows (spec §3.1.4 step 4:
         // WHY: presentation anchors are never re-derived). The retired ADR-0013 blocked-hashes path used
         // WHY: to mint fresh anchors for lines the edit had displaced — anchors absent from the
         // WHY: adopted lineage, so no `served_leases` row could ever reference them and the model
         // WHY: was forced into a `read` before it could edit again (Probe §7.2.9).
-        let restoredHashes = undo.hashes;
+        let restoredHashes: string[];
         try {
           restoredHashes =
-            (await anchorsForSnapshotHash(mutationTargetPath, restoredContentHash)) ?? undo.hashes;
+            (await anchorsForSnapshotHash(mutationTargetPath, restoredContentHash)) ??
+            (storedIsCurrentGeneration
+              ? undo.hashes
+              : await lineHashes(undo.content, mutationTargetPath));
         } catch (error) {
-          // SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the
-          // SAFETY: undo falls back to the stored hashes; the file restore and diff stay valid.
+          // SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo
+          // SAFETY: falls back to the stored current-generation hashes (or a fresh
+          // SAFETY: file-scoped derivation for a legacy row); the file restore and diff stay valid.
           console.error("Failed to load anchors for undo restore:", error);
+          restoredHashes = storedIsCurrentGeneration
+            ? undo.hashes
+            : await lineHashes(undo.content, mutationTargetPath);
         }
         const currentHashes = await lineHashes(currentNormalized, mutationTargetPath);
         // WHY: #173 — the summary counts come from the source line multisets, never from the

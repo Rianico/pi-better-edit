@@ -8,6 +8,7 @@ import {
 import { MAX_READ_WINDOWS } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
 import {
+  contentOnlyHashes,
   lineHashes,
   fmtRegion,
   HASH_SEP,
@@ -482,7 +483,7 @@ export async function fmtReadPreview(
         ? (known ?? [])
         : (plan?.cached ??
           page.assigned ??
-          (await (path ? lineHashes(text, path) : lineHashes(text))));
+          (await (path ? lineHashes(text, path) : contentOnlyHashes(text))));
     return { ranges: page.ranges, hashes };
   };
   if (totalLines === 0) {

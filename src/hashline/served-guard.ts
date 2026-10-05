@@ -10,6 +10,7 @@
  * silent — the tool never gates on the shape of a line.
  */
 
+import { HASH_LEN, HASH_RE } from "./alphabet.js";
 import { HASH_SEP, canonDigest } from "./hash-identity.js";
 import { DomainError, formatWarning } from "../domain-errors.js";
 
@@ -44,19 +45,17 @@ interface ServedAnchorHit {
   candidateDigest: string;
 }
 
-/** Single owner of the anchor-shape parse: optional diff-marker strip, length, separator, class. */
-const ANCHOR_SHAPE_RE = /^[A-Za-z0-9]{3}$/;
-
+/** Anchor-shape parse derived from `HASH_LEN`/`HASH_RE`: optional diff-marker strip, then the shared width, separator, and class. */
 function anchorShapeFromLine(line: string): { anchor: string; tail: string } | undefined {
   let text = line;
   if (text.length > 0 && (text[0] === "+" || text[0] === "-" || text[0] === " ")) {
     text = text.slice(1);
   }
-  if (text.length < 4) return undefined;
-  if (text[3] !== HASH_SEP) return undefined;
-  const anchor = text.slice(0, 3);
-  if (!ANCHOR_SHAPE_RE.test(anchor)) return undefined;
-  return { anchor, tail: text.slice(4) };
+  if (text.length < HASH_LEN + 1) return undefined;
+  if (text[HASH_LEN] !== HASH_SEP) return undefined;
+  const anchor = text.slice(0, HASH_LEN);
+  if (!HASH_RE.test(anchor)) return undefined;
+  return { anchor, tail: text.slice(HASH_LEN + 1) };
 }
 
 /**
@@ -237,7 +236,7 @@ export interface NeverServedAnchorShape {
  * refusal gate and the served prefix mismatch tier.
  *
  * A candidate reports here when it opens with an anchor-shaped prefix
- * (3 alphanumerics plus the separator, after one optional leading diff marker)
+ * (the live anchor width of alphanumerics plus the separator, after one optional leading diff marker)
  * whose anchor was never served for this session and file. Shape-only by design:
  * the hint never blocks and never rewrites, so evidence gating does not apply.
  * Served anchors are excluded (the gate and the mismatch tier own them).

@@ -15,7 +15,7 @@ const REFORMATTED =
 function extractPlusHashes(diff: string): string[] {
   const out: string[] = [];
   for (const line of diff.split("\n")) {
-    const m = line.match(/^\+([A-Za-z0-9]{3})│/);
+    const m = line.match(/^\+([A-Za-z0-9]{4})│/);
     if (m) out.push(m[1]!);
   }
   return out;

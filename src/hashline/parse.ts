@@ -9,14 +9,14 @@ function diagPayload(ref: string): { rawAnchor: string; reason: string } {
   if (!trimmed.length) {
     return {
       rawAnchor: trimmed,
-      reason: 'Expected a 3-char alphanumeric anchor (e.g. "aB3")',
+      reason: `Expected a ${ANCHOR_LEN}-char alphanumeric anchor (e.g. "aB3x")`,
     };
   }
 
   if (/^\d+/.test(trimmed)) {
     return {
       rawAnchor: trimmed,
-      reason: 'Use the hash alone (e.g. "aB3") — no line numbers or trailing content',
+      reason: 'Use the hash alone (e.g. "aB3x") — no line numbers or trailing content',
     };
   }
 
@@ -24,17 +24,17 @@ function diagPayload(ref: string): { rawAnchor: string; reason: string } {
     const lines = trimmed.split("\n");
     const first = lines[0] ?? "";
     const last = lines.at(-1) ?? "";
-    // SAFETY: HASH_CLASS is trusted constant [A-Za-z0-9]{3}, bounded 3-char linear search — no user-controlled pattern, no ReDoS.
+    // SAFETY: HASH_CLASS is derived from the trusted alphabet at the configured width, bounded linear search — no user-controlled pattern, no ReDoS.
     const hashRe = new RegExp(HASH_CLASS);
     const firstMatch = first.match(hashRe);
     const lastMatch = last.match(hashRe);
-    const firstHash = firstMatch?.[0] ?? "wUp";
-    const lastHash = lastMatch?.[0] ?? "AU6";
+    const firstHash = firstMatch?.[0] ?? "wUpX";
+    const lastHash = lastMatch?.[0] ?? "AU6y";
     const preview = first.slice(0, 60);
     return {
       rawAnchor: `${lines.length}-line block starting "${preview}…"`,
       reason:
-        `anchor_from must be a single bare 3-char hash (e.g. "wUp"), not a block with HASH│. ` +
+        `anchor_from must be a single bare ${ANCHOR_LEN}-char hash (e.g. "wUpX"), not a block with HASH│. ` +
         `Received ${lines.length} lines starting "${preview}…" — use only the first hash "${firstHash}" as anchor_from and "${lastHash}" as anchor_to, ` +
         `and put the new content (without HASH│) in text. Nothing was written.`,
     };
@@ -42,14 +42,13 @@ function diagPayload(ref: string): { rawAnchor: string; reason: string } {
   if (trimmed.includes("│")) {
     return {
       rawAnchor: trimmed,
-      reason:
-        'anchor_from and anchor_to must contain the 3-char hash only — remove everything from "│" onward. Nothing was written.',
+      reason: `anchor_from and anchor_to must contain the ${ANCHOR_LEN}-char hash only — remove everything from "│" onward. Nothing was written.`,
     };
   }
 
   return {
     rawAnchor: trimmed,
-    reason: 'Expected a 3-char alphanumeric anchor (e.g. "aB3")',
+    reason: `Expected a ${ANCHOR_LEN}-char alphanumeric anchor (e.g. "aB3x")`,
   };
 }
 

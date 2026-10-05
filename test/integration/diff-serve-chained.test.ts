@@ -85,8 +85,8 @@ describe("diff rows serve chained edits", () => {
       expect(delivered).toBeDefined();
 
       const diffLines = diff.split("\n");
-      const l1Ref = diffLines.find((l) => l.startsWith(" ") && l.includes("│l1"))!.slice(1, 4);
-      const xRef = diffLines.find((l) => l.startsWith("+") && l.includes("│X"))!.slice(1, 4);
+      const l1Ref = diffLines.find((l) => l.startsWith(" ") && l.includes("│l1"))!.slice(1, 5);
+      const xRef = diffLines.find((l) => l.startsWith("+") && l.includes("│X"))!.slice(1, 5);
 
       const chained = await editTool.execute(
         "e2",
@@ -128,8 +128,8 @@ describe("diff rows serve chained edits", () => {
       const diff = editResult.details.diff as string;
 
       const diffLines = diff.split("\n");
-      const l1Ref = diffLines.find((l) => l.startsWith(" ") && l.includes("│l1"))!.slice(1, 4);
-      const xRef = diffLines.find((l) => l.startsWith("+") && l.includes("│X"))!.slice(1, 4);
+      const l1Ref = diffLines.find((l) => l.startsWith(" ") && l.includes("│l1"))!.slice(1, 5);
+      const xRef = diffLines.find((l) => l.startsWith("+") && l.includes("│X"))!.slice(1, 5);
 
       // Pipeline now records dense serves inside the mutation seam, so
       // the diff rows are valid anchors even without invoking the

@@ -21,8 +21,8 @@ One mutation tool (`edit`) with one compact payload contract, expressed as an ob
 
 - `path`: a non-empty string, or `null` to invoke the existing unique anchor-based path resolution. It is the **only** file target for the call — every item in `edits` applies to this file.
 - `edits`: a non-empty array of fixed three-position tuples `[remove_from, remove_to, replacement_text]`, applied in order:
-  1. `remove_from` — first line of the range to remove (inclusive), a bare 3-char HASH anchor;
-  2. `remove_to` — last line of the range to remove (inclusive), a bare 3-char HASH anchor;
+  1. `remove_from` — first line of the range to remove (inclusive), a bare 4-char HASH anchor;
+  2. `remove_to` — last line of the range to remove (inclusive), a bare 4-char HASH anchor;
   3. `replacement_text` — the complete replacement text; an empty string deletes the range.
 
 Arity is expressed by `edits.length`: a length-1 array is the single-edit case; longer arrays are batched edits to one file, applied atomically (preflight all items, write once, roll back on failure).

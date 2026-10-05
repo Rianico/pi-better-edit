@@ -4,6 +4,8 @@ Status: proposed — patches [`content-addressed-line-identity-mvcc.md`](content
 Evidence: the 2026-09-15 triage session against the installed revision `bd3a8f2`; the defect was re-confirmed on `ba7c8d2` (current `main`) — see Revision check (full log path in the companion handoff).
 Companion: [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md) (triage of all 7 session failures + 11 findings).
 
+> [!note] Anchor literals below are recorded **width-3** examples from that triage session; anchors widened to **4 characters** in [ADR-0030](../adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the transcript; no example asserts the live width.
+
 ## Problem Statement
 
 When a lease is **retired or its `line_id` has no coordinate in `line_lineage(C)`**, the `stale` decision correctly fails closed with `[E_STALE_RANGE]` — but the *reject-and-serve* payload that travels with it is built from the lease's **historical** position, not from anything that identifies the model's target:
@@ -166,7 +168,7 @@ Observed on `bd3a8f2` (the defect): the hint-window edit was accepted, the tool 
 
 | Location | Current | Problem |
 | :--- | :--- | :--- |
-| `src/hashline/resolve.ts:202` | `"[E_STALE_ANCHOR] N stale anchors … Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp")."` | counts the same anchor twice when `anchor_from === anchor_to`, and advises a re-read where `lease-resolve.ts` promises no read is needed for the same code (`Call read() to get fresh anchors.` was removed on `ba7c8d2`; the divergence remains) |
+| `src/hashline/resolve.ts:256` | `"[E_STALE_ANCHOR] N stale anchors … Re-read the full file and copy the fresh 3-char anchors (the 3 chars before │, e.g. "wUp")."` (quoted output of a width-3 revision; the live message names 4-char anchors) | counts the same anchor twice when `anchor_from === anchor_to`, and advises a re-read where `lease-resolve.ts` promises no read is needed for the same code (`Call read() to get fresh anchors.` was removed on `ba7c8d2`; the divergence remains) |
 | `src/hashline/lease-resolve.ts:110-114` | `"anchor(s) … not present in the served leases … Retry with these anchors (no read needed)."` | plural label from a 2-element array; same anchor listed twice |
 | `src/mutation-engine/pipeline.ts:505` | batch abort appends `Current on-disk range for edit[i] (unchanged — nothing was written):` after a rejection that already printed `Current range:` | duplicate served block costs tokens and reads as two different windows (re-confirmed on `ba7c8d2`) |
 | `README.md:196` | *"`[E_STALE_RANGE]` … the current range is served as fresh `HASH│content` rows; retry with those rows (no `read` needed)"* | must be split three ways: in-place retirement (current range + retry), torn/inserted span (current range + retry), and target-lost (prose only, **no rows**, read) |
