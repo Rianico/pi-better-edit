@@ -1,4 +1,4 @@
-# ADR-0027 — Flat wire item contract for the edit tool
+# ADR-0032 — Flat wire item contract for the edit tool
 
 Date: 2026-10-02
 
@@ -8,8 +8,9 @@ accepted — required by ticket-06 v2 (`edit-op` lane). Records the SHIPPED cont
 at base `9c9da08`; supersedes the payload **shape** decisions of ADR-0015; continues
 ADR-0007's hoisted-root/arity semantics unchanged; ADR-0021 d4 supersedes §D6's
 payload-shape phrasing in part (the code alone selects the remedy; row presence
-is a payload detail). Ordering note: `docs/adr/0027` did not exist while `0028`
-did; ticket-06 lands 0027 here, so the gap cannot later read as a lost file.
+is a payload detail). Ordering note: this record was authored as `0027` to fill the gap
+before `0028`, but ADR-0027 (prebuilt bundle) reached the trunk first and already
+held `0027`, so this record moved to `0032` rather than share a number.
 
 ## Context
 
