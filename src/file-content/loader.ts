@@ -8,8 +8,9 @@ import { detectEnding, toLF, stripBOM } from "../edit-diff.js";
 import { abortIf } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { valKind, valAccess } from "../validation.js";
-import { visLines } from "../utils.js";
+import { visibleLineTotal, walkLines } from "./line-walker.js";
 import { loadHashStore, type HashStore } from "../hash-store.js";
+import type { AnchorWalk } from "../hashline/hash-identity.js";
 import { snapshotIOFor } from "../snapshot-store";
 import type { NormFile, NormText } from "./types.js";
 
@@ -98,7 +99,10 @@ export async function decodeNormText(
   const normalized = toLF(rawContent);
 
   if (options?.maxLines !== undefined) {
-    const lineCount = visLines(normalized).length;
+    // WHY: the count is the NORMALIZED text's, because `toLF` turns a lone `\r` into a line break: a
+    // WHY: count taken before it under-reads a CR-only file, which would then pass this cap and die in
+    // WHY: the anchor space instead. One walk settles it without holding a line.
+    const lineCount = visibleLineTotal(normalized, walkLines(normalized).total);
     if (lineCount > options.maxLines) {
       throw new DomainError("E_LARGE_FILE", {
         path,
@@ -135,4 +139,24 @@ export async function readNormFile(
     retireLeases: true,
   });
   return { ...norm, fileHashes };
+}
+
+/**
+ * The served read's anchor plan: the walk assigns each line's anchor while the preview keeps the page.
+ *
+ * WHY: `readNormFile` finishes the whole anchor array before the caller knows which lines to show, so
+ * WHY: the read path takes the assignment instead and runs it inside its own walk. `readNormFile` stays
+ * WHY: for the callers that need the finished array (the edit pipeline) and pays a split for it.
+ */
+export async function anchorWalkFor(
+  normalized: string,
+  absolutePath: string,
+  options?: ReadNormOptions,
+): Promise<AnchorWalk> {
+  const hashStore = options?.store ?? (await loadHashStore());
+  return defaultHashIdentity.anchorsForWalk(normalized, {
+    path: absolutePath,
+    persist: options?.noPersist !== true,
+    snapshotIO: snapshotIOFor(hashStore),
+  });
 }

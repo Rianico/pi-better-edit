@@ -12,9 +12,14 @@
 
 * **read:** one row budget and a hashless verbatim path. The read row cap now derives from pi's `DEFAULT_MAX_BYTES` (50KB); the dead 200KB `MAX_READ_LINE_BYTES` default that only tests exercised is gone. `mode: "verbatim"` no longer applies the 238,328-line anchor-space cap or allocates line hashes: a file too large to anchor is still a readable, pageable file through the same `offset`/`limit`/`windows` machinery, the same 50KB per-line withhold, and the same silence on served state. The `served` path stays byte-identical and keeps the cap and its refusal message. (#44)
 
+### Performance Improvements
+
+* **read:** page a file instead of materializing it. A read walks the lines it needs — the page, and on the served path every row's anchor in that same walk — instead of building one heap string per line for the whole text (`split("\n")` costs ~50 B per line: 47.2 MB of heap for a 29.9 MB, one-million-line file). Verbatim pages the same bytes as before and builds no line array to slice a page out of — though an unbounded verbatim read still holds the lines it shows, since its page is the whole file — and a served read still holds one line array, in the snapshot store's own lineage write, bounded by the anchor-space ceiling. One refusal moves closer to the load: a file whose line count only crosses the cap after CR normalization now refuses there with the counted message, instead of passing the cap and dying inside the anchor space (that was #43's own regression, fixed before release). Otherwise served is byte-identical: same anchors, same order, same pages, hints and refusals, and the same 238,328-line cap. (#47)
+
 ### Code Refactoring
 
 * **read:** remove the `read_skill` tool; `read` with `mode: "verbatim"` is the reference read. (#44)
+* **read:** reshape the anchor seam the served read walks through. `AnchorWalk` (the new `src/hashline/index.ts` export) is assignment-only: it carries `assign` or `cached` and no persist hook, because the read path passes `noPersist` and the authoritative snapshot write is `upsertSnapshotFor`. The whole-content `hashesFor`/`readNormFile` seam is unchanged for the edit pipeline. (#47)
 
 ### Documentation
 

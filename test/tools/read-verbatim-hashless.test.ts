@@ -48,10 +48,10 @@ describe("verbatim hashless seam", () => {
     });
   });
 
-  it("still hashes through readNormFile on the served path", async () => {
+  it("still assigns anchors through the walk seam on the served path", async () => {
     await withTempFile("plain.txt", "alpha\nbeta\n", async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
-      const spy = vi.spyOn(defaultHashIdentity, "hashesFor");
+      const spy = vi.spyOn(defaultHashIdentity, "anchorsForWalk");
       const result = await readTool.execute("s1", { file: "plain.txt" }, undefined, undefined, ctx);
       expect(result.content[0]!.text).toContain("│alpha");
       expect(spy).toHaveBeenCalled();

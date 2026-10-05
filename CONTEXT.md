@@ -116,7 +116,7 @@ The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, cano
 _Avoid_: epoch snapshot, served hash map
 
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's 238,328-line anchor-space ceiling, so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read — the preview still materializes the whole line array before slicing a page (an accepted tradeoff).
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's 238,328-line anchor-space ceiling, so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read. Neither mode materializes a file's lines to take a page: a read walks the lines it shows and, when served, assigns each row's anchor in that same walk — so an unbounded read holds the lines it pages as its page, and the only other line array on a read is the snapshot store's lineage write, bounded by the anchor-space ceiling.
 _Avoid_: unmanaged read
 
 **mode-as-intent**:
