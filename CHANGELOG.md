@@ -19,6 +19,10 @@
 
 * **hashline:** bound the anchor memo from the domain — `HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES` declared beside the WHY in `src/hashline/hash-identity.ts` (no product materialization hashes more than one served budget per call, so the memo stays fully effective in-budget while sitting ~40x below V8's smallest per-Map cap and the RangeError can no longer pre-empt `E_LARGE_FILE`); CI pins the exact floor `24.0.0`, the `isTransaction` SAFETY note names the experimental field, and a TARGET-coupling arch test pins the build target to `engines`. (#20)
 
+### Documentation
+
+* **read:** correct the served-budget magnitude note and harden the budget probe — the anchor-space comparison now names its axis (`~74x` in line count, `~32x` in bytes, not two orders of magnitude), and `scripts/measure-served-budget.mjs` asserts its width/alphabet literals against `src/hashline/alphabet.ts` and echoes the ~15 MB target from `SERVED_MAX_LINES`. Comment and probe only; no behaviour change. (#20)
+
 ## [2.7.0] - 2026-10-05
 
 ### Features

@@ -16,8 +16,8 @@ export const MAX_BYTES = 100 * 1024 * 1024;
 // WHY: space) — ~14.9 MB marginal worst case over the loaded text, against the ~15 MB target (200,000
 // WHY: lines x the ~77 B/line pre-paging per-line heap basis; the tree never recorded whether that
 // WHY: basis included the memo, so this component-wise derivation supersedes it). The budget holds
-// WHY: at the target for real source files and stays two orders of magnitude below what the anchor
-// WHY: space would admit (14.7 M lines ≈ 470 MB of anchors).
+// WHY: at the target for real source files and stays ~74x below the anchor space (14.7 M lines
+// WHY: ≈ 470 MB of anchors) — nearly two orders of magnitude in line count, ~32x in bytes.
 // WHY: This is deliberately NOT derived from ALPHA/HASH_LEN/HASH_SPACE — deriving admission from the
 // WHY: anchor space was the defect (a width change must never move the memory budget).
 export const SERVED_MAX_LINES = 200_000;
