@@ -3,6 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { saveUndo, getUndo, clearUndo } from "../../src/edit-undo";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { upsertUndo, getUndoEntry, deleteUndo } from "../../src/undo-store";
+import { ANCHOR_GENERATION } from "../../src/hashline";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import * as hashStoreModule from "../../src/hash-store";
 import { hashStorePath } from "../../src/paths";
@@ -185,7 +186,7 @@ describe("undo-store — raw entries", () => {
       transactionId: null,
       rawPre: null,
       // P1: every upsert stamps the current anchor generation.
-      canonVersion: 3,
+      anchorGeneration: ANCHOR_GENERATION,
     });
   });
 

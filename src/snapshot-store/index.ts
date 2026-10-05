@@ -4,6 +4,7 @@ import { contentChecksum } from "../hashline/hasher.js";
 import {
   isValidHashList,
   CANON_VERSION,
+  ANCHOR_GENERATION,
   canonDigest,
   setDefaultHashSnapshotIO,
   type HashSnapshotIO,
@@ -50,8 +51,8 @@ interface SnapshotRef {
   snapshot_id: number;
   line_count: number;
   // WHY: provenance is recorded, not inferred from the key prefix — a 0/foreign
-  // WHY: generation is a miss even under a current-generation key (poisoned store).
-  canon_version: number;
+  // WHY: anchor generation is a miss even under a current-generation key (poisoned store).
+  anchor_generation: number;
 }
 
 export interface SnapshotStmts {
@@ -92,14 +93,14 @@ export function snapshotStmts(db: DatabaseSync): SnapshotStmts {
 
 function buildStmts(db: DatabaseSync): SnapshotStmts {
   const findStmt = db.prepare(
-    "SELECT snapshot_id, line_count, canon_version FROM file_snapshots " +
+    "SELECT snapshot_id, line_count, anchor_generation FROM file_snapshots " +
       "WHERE path = ? AND snapshot_hash = ? AND committed = 1",
   );
   const lineageStmt = db.prepare(
     "SELECT anchor FROM line_lineage WHERE snapshot_id = ? ORDER BY line_number ASC",
   );
   const latestSnapshotStmt = db.prepare(
-    "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND committed = 1 AND canon_version = ? " +
+    "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND committed = 1 AND anchor_generation = ? " +
       "ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
   );
   const lineageIdentitiesStmt = db.prepare(
@@ -138,7 +139,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
   // WHY: a local allocation. `DO NOTHING` + no returned row is the conflict signal the caller
   // WHY: rolls back on, so the concurrent writer's canonical snapshot is adopted instead.
   const insertSnapshotStmt = db.prepare(
-    "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) " +
+    "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) " +
       "VALUES (?, ?, ?, ?, 1, ?) " +
       "ON CONFLICT(path, snapshot_hash) DO NOTHING " +
       "RETURNING snapshot_id",
@@ -152,7 +153,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly `anchor`.
     lineageAnchors: (...params) => lineageStmt.all(...params) as unknown as { anchor: string }[],
     latestSnapshot: (path: string) =>
-      latestSnapshotStmt.get(path, CANON_VERSION) as { snapshot_id: number } | undefined,
+      latestSnapshotStmt.get(path, ANCHOR_GENERATION) as { snapshot_id: number } | undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
     lineageIdentities: (...params) =>
       lineageIdentitiesStmt.all(...params) as unknown as {
@@ -181,7 +182,7 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
         snapshotHash,
         lineCount,
         createdAt,
-        CANON_VERSION,
+        ANCHOR_GENERATION,
       ) as { snapshot_id: number } | undefined;
       return row?.snapshot_id;
     },
@@ -223,11 +224,11 @@ export function positionsByIdentity(
 ): Map<number, number> {
   const stmts = snapshotStmts(store.db);
   const row = stmts.findSnapshot(path, cacheKey(contentChecksum(content)));
-  // WHY: single-owner generation gate — findSnapshot returns the row regardless of
-  // WHY: provenance, so this reader applies the same canon_version miss as getSnapshot:
+  // WHY: single-owner anchor-generation gate — findSnapshot returns the row regardless of
+  // WHY: provenance, so this reader applies the same anchor_generation miss as getSnapshot:
   // WHY: a poisoned current-key row is never a pairing source. The miss falls through
   // WHY: to the generation-gated latestSnapshot below.
-  if (row && row.canon_version === CANON_VERSION) {
+  if (row && row.anchor_generation === ANCHOR_GENERATION) {
     const map = new Map<number, number>();
     for (const entry of stmts.lineageIdentities(row.snapshot_id)) {
       map.set(entry.line_id, entry.line_number);
@@ -247,7 +248,7 @@ export function positionsByIdentity(
 }
 
 function cacheKey(checksum: string): string {
-  return `${CANON_VERSION}:${checksum}`;
+  return `${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`;
 }
 
 export function getSnapshot(
@@ -261,8 +262,8 @@ export function getSnapshot(
   if (!row) return undefined;
   // WHY: provenance over key prefix — a current-generation key can still name a
   // WHY: poisoned row (written before the column existed). Unknown/foreign
-  // WHY: generation is a miss that deletes, like any corrupt row.
-  if (row.canon_version !== CANON_VERSION) {
+  // WHY: anchor generation is a miss that deletes, like any corrupt row.
+  if (row.anchor_generation !== ANCHOR_GENERATION) {
     if (deleteCorrupt) {
       withBusyRetry(() => {
         snapshotStmts(store.db).deleteSnapshot(row.snapshot_id);
@@ -290,20 +291,20 @@ export function getSnapshot(
  * verbatim when it adopts the pinned snapshot (spec §3.1.4 step 4: anchors are never re-derived),
  * so the restored rows are exactly the rows the adopted `line_id`s were leased for.
  */
-/** Whether a snapshot cache key belongs to the current anchor generation. Single owner. */
+/** Whether a snapshot cache key belongs to the current anchor generation. Single owner: the middle component. */
 export function isCurrentAnchorGeneration(snapshotHash: string): boolean {
-  return snapshotHash.startsWith(`${CANON_VERSION}:`);
+  return snapshotHash.split(":")[1] === String(ANCHOR_GENERATION);
 }
 export async function anchorsForSnapshotHash(
   path: string,
   snapshotHash: string,
 ): Promise<string[] | undefined> {
   // WHY: a foreign-generation descriptor is never resolved — its anchors were
-  // WHY: derived under another canon version and must not be leased or edited.
+  // WHY: derived under another anchor generation and must not be leased or edited.
   if (!isCurrentAnchorGeneration(snapshotHash)) return undefined;
   const store = await loadHashStore();
   const row = snapshotStmts(store.db).findSnapshot(path, snapshotHash);
-  if (!row || row.canon_version !== CANON_VERSION) return undefined;
+  if (!row || row.anchor_generation !== ANCHOR_GENERATION) return undefined;
   const anchors = snapshotStmts(store.db)
     .lineageAnchors(row.snapshot_id)
     .map((entry) => entry.anchor);
@@ -317,7 +318,7 @@ export async function anchorsForSnapshotHash(
  */
 export interface SnapshotDescriptor {
   path: string;
-  /** The `file_snapshots.snapshot_hash` cache key — `CANON_VERSION:xxh64(content)` (spec §3.1.4). */
+  /** The `file_snapshots.snapshot_hash` cache key — `CANON_VERSION:ANCHOR_GENERATION:xxh64(content)` (spec §3.1.4). */
   snapshotHash: string;
   lineCount: number;
   hashes: string[];
@@ -383,7 +384,7 @@ export async function adoptPinnedSnapshotFor(
   options?: SnapshotAdoptOptions,
 ): Promise<void> {
   // WHY: a foreign-generation descriptor must never write lineage — its anchors
-  // WHY: were derived under another canon version. Fail closed (programmer error),
+  // WHY: were derived under another anchor generation. Fail closed (programmer error),
   // WHY: never adopt verbatim.
   if (!isCurrentAnchorGeneration(descriptor.snapshotHash)) {
     throw new DomainError("E_BAD_PAYLOAD", {
@@ -555,7 +556,7 @@ function materializeSnapshot(
       // WHY: key is deleted, not adopted; the fresh insert below re-derives
       // WHY: file-scoped anchors. Without this, every read would re-adopt and
       // WHY: re-stamp the poison forever.
-      if (existing && existing.canon_version !== CANON_VERSION) {
+      if (existing && existing.anchor_generation !== ANCHOR_GENERATION) {
         stmts.deleteLineage(existing.snapshot_id);
         stmts.deleteSnapshot(existing.snapshot_id);
         existing = undefined;

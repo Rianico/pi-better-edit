@@ -1,4 +1,4 @@
-# ADR-0029 — Widen anchors from 3 to 4 characters for tokenizer-stable references
+# ADR-0030 — Widen anchors from 3 to 4 characters for tokenizer-stable references
 
 Date: 2026-10-04
 

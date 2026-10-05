@@ -7,7 +7,7 @@ import { join, dirname } from "node:path";
 import { errCode } from "./utils.js";
 import { initHasher } from "./hashline/hasher.js";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
-import { CANON_VERSION } from "./hashline/hash-identity.js";
+import { ANCHOR_GENERATION } from "./hashline/hash-identity.js";
 
 function homeBase(): string {
   const envHome = process.env.HOME;
@@ -157,6 +157,25 @@ function addColumnIfMissing(
   }
 }
 
+function renameGenerationColumn(db: DatabaseSync, table: string): void {
+  const cols = tableColumns(db, table);
+  if (cols.has("anchor_generation")) return;
+  if (cols.has("canon_version")) {
+    try {
+      db.exec(`ALTER TABLE ${table} RENAME COLUMN canon_version TO anchor_generation`);
+      return;
+    } catch {
+      db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
+      db.exec(`UPDATE ${table} SET anchor_generation = canon_version`);
+      try {
+        db.exec(`ALTER TABLE ${table} DROP COLUMN canon_version`);
+      } catch {}
+      return;
+    }
+  }
+  db.exec(`ALTER TABLE ${table} ADD COLUMN anchor_generation INTEGER NOT NULL DEFAULT 0`);
+}
+
 // WHY: snapshot-store reads and writes these tables through HashSnapshotIO, so the DDL lives
 // WHY: in the schema owner (spec §5.1) and both modules share one definition.
 export function ensureSnapshotTables(db: DatabaseSync): void {
@@ -195,7 +214,10 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   );
   // WHY: versions the persisted snapshot anchor set — same idiom as file_undo:
   // WHY: rows written before the column read as 0 (unknown/foreign), never current.
-  addColumnIfMissing(db, "file_snapshots", "canon_version", "INTEGER NOT NULL DEFAULT 0");
+  // WHY: `canon_version` (pre-rename builds) is renamed in place, preserving stamped values,
+  // WHY: so a pre-rename store opens and its generation-gated behavior is intact; DEFAULT 0 stays
+  // WHY: so an older-build row misses and re-derives.
+  renameGenerationColumn(db, "file_snapshots");
   // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave
   // WHY: unknown/foreign-generation snapshots, orphan lineage, or dangling leases
   // WHY: behind. Current-generation rows survive untouched (same-version sessions
@@ -208,22 +230,26 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   // WHY: (the vacuum-evict transaction idiom): a crash between the snapshot sweep and
   // WHY: the orphan-lease delete can no longer strand leases that name no live snapshot
   // WHY: until the next open.
-  const currentPrefix = `${CANON_VERSION}:%`;
+  // WHY: anchor-gated lease prefix — the middle component of the 3-part key
+  // WHY: (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`) is the anchor generation, so a
+  // WHY: canon-only change keeps leases while a generation change sweeps them; pre-rename `3:`
+  // WHY: 2-part rows carry no middle component and never match, so they sweep as unknown.
+  const anchorLike = `%:${ANCHOR_GENERATION}:%`;
   // WHY: tables created later in the fresh-build path (served_leases) may not exist
   // WHY: yet when this runs — the sweep touches only what is there.
   const hasTable = (table: string): boolean => tableColumns(db, table).size > 0;
   const hasLeases = hasTable("served_leases");
   const sweepGenerations = (): void => {
     if (hasLeases) {
-      db.exec(`DELETE FROM served_leases WHERE served_snapshot_hash NOT LIKE '${currentPrefix}'`);
+      db.exec(`DELETE FROM served_leases WHERE served_snapshot_hash NOT LIKE '${anchorLike}'`);
     }
-    db.exec(`DELETE FROM file_snapshots WHERE canon_version != ${CANON_VERSION}`);
+    db.exec(`DELETE FROM file_snapshots WHERE anchor_generation != ${ANCHOR_GENERATION}`);
     db.exec(
       "DELETE FROM line_lineage WHERE snapshot_id NOT IN (SELECT snapshot_id FROM file_snapshots)",
     );
     // WHY: one provenance rule as of this sweep — a lease that names no surviving
     // WHY: snapshot for its own path is dangling (same-generation pre-column rows read
-    // WHY: as canon 0 and are swept above: a one-time pairing-baseline reset). The grant
+    // WHY: as generation 0 and are swept above: a one-time pairing-baseline reset). The grant
     // WHY: lookup is path-scoped (`path = ? AND snapshot_hash = ? AND committed = 1`),
     // WHY: so a lease naming a hash that survives only in a foreign path's row — or only
     // WHY: in an uncommitted row — goes with the orphans.
@@ -311,7 +337,8 @@ export function ensureFileUndoSchema(db: DatabaseSync): void {
   addColumnIfMissing(db, "file_undo", "raw_pre", "TEXT");
   // WHY: versions the persisted anchor set — existing rows keep 0 (never current),
   // WHY: so a pre-bump store is refused, not migrated, on first open after upgrade.
-  addColumnIfMissing(db, "file_undo", "canon_version", "INTEGER NOT NULL DEFAULT 0");
+  // WHY: `canon_version` (pre-rename builds) is renamed in place, preserving stamped values.
+  renameGenerationColumn(db, "file_undo");
   db.exec("CREATE INDEX IF NOT EXISTS idx_file_undo_transaction_id ON file_undo (transaction_id)");
   db.exec(CUT_INTENT_DDL);
   addColumnIfMissing(db, "cut_intent", "direction", "TEXT");

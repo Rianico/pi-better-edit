@@ -1,20 +1,19 @@
 export const AUTO_READ_MAX = 2000;
 export const SNIFF_BYTES = 8192;
 export const MAX_BYTES = 100 * 1024 * 1024;
-// WHY: the served admission budget — the most lines any read/edit/serve seam will
-// WHY: materialize for one file. Memory target ~15 MB marginal over the loaded text:
-// WHY: at the measured ~77 B/line retained structural cost (split array + anchors;
-// WHY: the source text itself is additional) 200,000 lines cost ~15 MB — a
-// WHY: source-like budget-max file is ~27 MB resident today. Generous for real source
-// WHY: files and two orders of magnitude below what the anchor space would admit
-// WHY: (14.7 M lines ≈ 1.1 GB). This is deliberately NOT derived from
-// WHY: ALPHA/HASH_LEN/HASH_SPACE — deriving admission from the anchor space was the
-// WHY: defect (a width change must never move the memory budget).
-// WHY: Lane #43 halves the structural cost to ~36 B/line (~19 MB resident for the
-// WHY: same file); when the per-line cost changes, re-derive this budget from the
-// WHY: new cost and the same target.
-// WHY (merge provisional, S3 open): main #47 pages instead of materializing, which
-// WHY: changes the memory argument behind this number — name/justification undecided.
+// WHY: the served admission budget — the most lines any served read/edit/serve seam will
+// WHY: materialize for one file. Post-paging (#47) the page walk retains only its page, but the
+// WHY: anchor assignment still retains one entry per hashed line even when only a window is walked:
+// WHY: `walkLines` (src/file-content/line-walker.ts) visits every line and `walkPage`
+// WHY: (src/file-content/preview.ts) pushes one assigned anchor per visit, and that array is the
+// WHY: `fileHashes` the snapshot lineage write persists — so the served path is O(N) in anchors
+// WHY: regardless of window size. Measured ~32 B/line for distinct anchors at the live width plus array slots
+// WHY: (`node --expose-gc` probe: 200,000 distinct anchors hold ~6.1 MB), plus the fixed ~1.85 MB
+// WHY: allocator bitset (`BITSET_WORDS` over the 62^4 space) — 200,000 lines cost ~8-9 MB marginal
+// WHY: over the loaded text against the same ~15 MB target, generous for real source files and two
+// WHY: orders of magnitude below what the anchor space would admit (14.7 M lines ≈ 470 MB of anchors).
+// WHY: This is deliberately NOT derived from ALPHA/HASH_LEN/HASH_SPACE — deriving admission from the
+// WHY: anchor space was the defect (a width change must never move the memory budget).
 export const SERVED_MAX_LINES = 200_000;
 
 // WHY: a multi-window read is still ONE tool result, so the window count is bounded — otherwise
@@ -23,10 +22,11 @@ export const SERVED_MAX_LINES = 200_000;
 export const MAX_READ_WINDOWS = 16;
 
 export const HASH_STORE_BUSY_TIMEOUT = 1000;
-// WHY: v8 versions the persisted undo anchor generation — pre-v3 rows must never be
-// WHY: adopted as current. Record-only marker; schema evolution itself is additive
-// WHY: (`addColumnIfMissing`), never a drop.
-export const HASH_STORE_VERSION = 8;
+// WHY: v9 renames the persisted anchor-generation column (`canon_version` → `anchor_generation`
+// WHY: on `file_snapshots` and `file_undo`, guarded rename preserving stamped values) — pre-generation
+// WHY: rows (0) are never current. Record-only marker; schema evolution itself is additive or
+// WHY: rename-preserving, never a drop.
+export const HASH_STORE_VERSION = 9;
 export const EDITS_MAX_ITEMS = 32;
 // WHY: the served-lease session TTL: an un-retired lease pins its snapshot for this long, and
 // WHY: the LRU vacuum's active-pin cutoff (spec §3.6.1) is measured with the same window.

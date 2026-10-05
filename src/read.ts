@@ -2,6 +2,7 @@ import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadTool, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MAX_READ_WINDOWS, SERVED_MAX_LINES } from "./constants.js";
+import { HASH_LEN } from "./hashline/alphabet.js";
 import { loadHashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
@@ -90,8 +91,7 @@ export function regRead(pi: ExtensionAPI): void {
       ),
       mode: Type.Optional(
         Type.Union([Type.Literal("served"), Type.Literal("verbatim")], {
-          description:
-            'Render mode: "served" (default) returns each line as a 3-char anchor plus content; "verbatim" returns plain text with no anchor prefix.',
+          description: `Render mode: "served" (default) returns each line as a ${HASH_LEN}-char anchor plus content; "verbatim" returns plain text with no anchor prefix.`,
         }),
       ),
     }),
@@ -110,9 +110,9 @@ export function regRead(pi: ExtensionAPI): void {
         offset: params.offset,
         limit: params.limit,
         windows: params.windows,
-        // WHY (merge provisional, S3 open): the served cap stays `SERVED_MAX_LINES` (lane #20)
-        // WHY: while verbatim skips the store (main #44) — the budget name/justification post-paging
-        // WHY: is undecided; see the merge commit.
+        // WHY: the served cap stays `SERVED_MAX_LINES` (independent of the anchor space): the paged
+        // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
+        // WHY: survives paging — while verbatim skips the cap and the store (no anchors to bound).
         maxLines: SERVED_MAX_LINES,
         store: mode === "served" ? await loadHashStore() : undefined,
         noPersist: true,

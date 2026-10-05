@@ -38,11 +38,11 @@ export function isValidHashList(value: unknown): value is string[] {
   }
   return true;
 }
-// SAFETY: one definition of the canon digest and version for the whole toolchain — `hash-identity.ts`
-// SAFETY: owns them; `canon`/`canonDigest`/`CANON_VERSION` stay reachable through this facade (#151, #22).
+// SAFETY: one definition of the canon digest and versions for the whole toolchain — `hash-identity.ts`
+// SAFETY: owns them; `canon`/`canonDigest`/`CANON_VERSION`/`ANCHOR_GENERATION` stay reachable through this facade (#151, #22, #20).
 // WHY: `canon` parity — lane tests import the content helper from this facade; the
 // WHY: implementation lives in `hash-identity.ts` (no local duplicate).
-export { canon, canonDigest, CANON_VERSION } from "./hash-identity.js";
+export { canon, canonDigest, CANON_VERSION, ANCHOR_GENERATION } from "./hash-identity.js";
 
 async function _lineHashes(
   content: string,

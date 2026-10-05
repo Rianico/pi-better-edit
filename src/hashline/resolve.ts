@@ -33,7 +33,7 @@ export interface LeaseIdentityView {
  * authoritative `retired_at` writer is materialization, never resolution.
  */
 export interface LeaseSpanSource {
-  /** `CANON_VERSION:xxh64(content)` of the buffer being edited — the `C` of the fast-path predicate. */
+  /** `CANON_VERSION:ANCHOR_GENERATION:xxh64(content)` of the buffer being edited — the `C` of the fast-path predicate. */
   currentSnapshotHash: string;
   /** The session's lease for one anchor, if any (spec §3.1.1 step 1). */
   leaseFor(anchor: string): LeaseIdentityView | undefined;

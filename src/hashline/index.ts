@@ -9,6 +9,7 @@ export {
   MAX_HASH_LINES,
   isValidHashList,
   CANON_VERSION,
+  ANCHOR_GENERATION,
   lineHashes,
   fileHashesFor,
   contentOnlyHashes,

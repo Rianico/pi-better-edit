@@ -22,7 +22,7 @@ import { visLines, splitLines, errCode } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError } from "./domain-errors.js";
-import { CANON_VERSION, changedRange, lineHashes } from "./hashline/index.js";
+import { ANCHOR_GENERATION, changedRange, lineHashes } from "./hashline/index.js";
 import { denseServeRows, type ServedRow } from "./hashline/served.js";
 export interface UndoEntry {
   content: string;
@@ -48,8 +48,8 @@ export interface UndoEntry {
    * construction. Absent/NULL on ordinary single-file rows: the canonical fold is restored.
    */
   rawPre?: string | null;
-  /** The anchor generation the stored hashes were derived under (0 = pre-v3). */
-  canonVersion?: number | null;
+  /** The anchor generation the stored hashes were derived under (0 = pre-generation). */
+  anchorGeneration?: number | null;
 }
 
 export async function saveUndo(
@@ -108,7 +108,7 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
       resultContent: record.resultContent,
       snapshotHash: record.snapshotHash ?? null,
       transactionId: record.transactionId ?? null,
-      canonVersion: record.canonVersion ?? 0,
+      anchorGeneration: record.anchorGeneration ?? 0,
     };
   } catch (error) {
     // SAFETY: best-effort undo load — failures return undefined (no history) and caller reports "No undo history"; stale or corrupt store is recoverable on next edit, not silent undefined without log.
@@ -139,8 +139,8 @@ interface UndoMember {
   resultContent: string;
   snapshotHash: string | null;
   rawPre: string | null;
-  /** The anchor generation the stored hashes were derived under (0 = pre-v3). */
-  canonVersion: number;
+  /** The anchor generation the stored hashes were derived under (0 = pre-generation). */
+  anchorGeneration: number;
 }
 
 function toMember(row: UndoRecord & { path: string }, displayPath: string): UndoMember | undefined {
@@ -156,7 +156,7 @@ function toMember(row: UndoRecord & { path: string }, displayPath: string): Undo
     resultContent: row.resultContent,
     snapshotHash: row.snapshotHash ?? null,
     rawPre: row.rawPre ?? null,
-    canonVersion: row.canonVersion ?? 0,
+    anchorGeneration: row.anchorGeneration ?? 0,
   };
 }
 
@@ -288,9 +288,9 @@ async function undoCorrelatedTransaction(
       for (const { member, raw } of currents) {
         const { text: currentStripped } = stripBOM(raw);
         const currentNormalized = toLF(currentStripped);
-        // WHY: a pre-v3 row's stored key/anchors are a foreign generation — adopt them
+        // WHY: a pre-generation row's stored key/anchors are a foreign anchor generation — adopt them
         // WHY: never. Fresh key + re-derivation keep the restore on the current anchors.
-        const storedIsCurrentGeneration = member.canonVersion === CANON_VERSION;
+        const storedIsCurrentGeneration = member.anchorGeneration === ANCHOR_GENERATION;
         const restoredContentHash = storedIsCurrentGeneration
           ? (member.snapshotHash ?? snapshotHashFor(member.content))
           : snapshotHashFor(member.content);
@@ -646,9 +646,9 @@ export function regEditUndo(pi: ExtensionAPI): void {
         const sessionKeyForUndo = sessionKeyFor(
           ctx as unknown as { sessionManager?: { getSessionId(): string } },
         );
-        // WHY: a pre-v3 row's stored key/anchors are a foreign generation — adopt them
+        // WHY: a pre-generation row's stored key/anchors are a foreign anchor generation — adopt them
         // WHY: never. Fresh key + re-derivation keep the restore on the current anchors.
-        const storedIsCurrentGeneration = (undo.canonVersion ?? 0) === CANON_VERSION;
+        const storedIsCurrentGeneration = (undo.anchorGeneration ?? 0) === ANCHOR_GENERATION;
         const restoredContentHash = storedIsCurrentGeneration
           ? (undo.snapshotHash ?? snapshotHashFor(undo.content))
           : snapshotHashFor(undo.content);

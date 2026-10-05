@@ -155,15 +155,25 @@ export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 /**
  * CANON_VERSION 3 (issue #22): the frozen 28-code-point whitespace class below replaces the v2
  * ASCII-only class of ADR-0005 — see ADR-0029 for the amendment and the migration notes. Snapshot
- * keys carry the version (`${CANON_VERSION}:${checksum}`), so pre-v3 rows are inert cache misses
- * rebuilt on the next read — no pre-v3 constant is retained.
- *
- * WHY (merge provisional, S2 open): the same version 3 also keys the lane's file-scoped anchor
- * WHY: generation (allocation seeds xxh32 with the canonical path, so pre-change snapshots miss
- * WHY: and recompute). Merged 3 conflates the whitespace-class contract with the generation
- * WHY: contract under one persisted key — see the merge commit; value unchanged by this merge.
+ * keys carry the version as their first component (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`),
+ * so pre-v3 rows are inert cache misses rebuilt on the next read — no pre-v3 constant is retained.
  */
 export const CANON_VERSION = 3;
+
+/**
+ * ANCHOR_GENERATION 1 (issue #20, ADR-0031): the file-scoped anchor-derivation generation.
+ * It covers exactly: (1) the width (`HASH_LEN`, `ALPHA`, `HASH_SPACE`/`USABLE_HASH_SPACE`);
+ * (2) the (path, content) seeding (`fileBaseIndex` seeds xxh32 with the canonical absolute path,
+ * `contentBaseIndex` is the explicit content-only fallback); (3) the all-digit reservation
+ * (`DIGIT_CHARS`/`RESERVED_HASH_SPELLINGS`/`RESERVED_BITS` pre-marked in allocation); (4) the probe
+ * stride (`HASH_PROBE_STRIDE`, coprime with both spaces). Bump it whenever any of those change.
+ *
+ * WHY: single owner of the anchor-generation literal — anchor-bearing artifacts (the undo/snapshot
+ * generation gate and the open-time sweep) read this axis only, never `CANON_VERSION`; the snapshot
+ * cache key carries both (`${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`), so a canon-only change
+ * misses the cache without invalidating anchor state while a generation change invalidates both.
+ */
+export const ANCHOR_GENERATION = 1;
 
 /**
  * WHY: an explicit code-point list, never a Unicode property escape — \p{White_Space} and \p{Cf}
@@ -372,8 +382,7 @@ export class HashIdentity {
     }
     return (line: string): string => {
       const c = getCanon(canonCache, line);
-      const baseIdx =
-        pathSeed === undefined ? contentBaseIndex(c) : fileBaseIndex(c, pathSeed);
+      const baseIdx = pathSeed === undefined ? contentBaseIndex(c) : fileBaseIndex(c, pathSeed);
       return this.assignHash(used, baseIdx, hint);
     };
   }
@@ -596,10 +605,7 @@ export class HashIdentity {
     // WHY: (merge) the walk seeds from the file when known — a content-only walk would serve anchors
     // WHY: the file-scoped edit pipeline refuses as foreign, so both halves must derive identically.
     return {
-      assign: this.newLineAssigner(
-        options?.blockedHashes,
-        xxh32(canonicalAnchorPath(path)),
-      ),
+      assign: this.newLineAssigner(options?.blockedHashes, xxh32(canonicalAnchorPath(path))),
     };
   }
 
@@ -715,8 +721,7 @@ export function contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<s
   return defaultHashIdentity.contentOnlyHashes(content, blockedHashes);
 }
 
-// WHY (merge): main #47's walk-identity tests import the pure content-only surface by this name;
-// WHY: it is `contentOnlyHashes` under the merged file-scoped world (no store, no path, no persist).
+// WHY: main #47's walk-identity tests import the pure content-only surface by this name;
 export function _lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
   return contentOnlyHashes(content, blockedHashes);
 }
@@ -737,8 +742,7 @@ export async function lineHashes(
   persist?: boolean,
   blockedHashes?: ReadonlySet<string>,
 ): Promise<string[]> {
-  // WHY (merge): main's served preview falls back to a pathless call when it holds no path —
-  // WHY: with no file there is no store identity, so derivation is content-only (never persisted).
+  // WHY: main's served preview falls back to a pathless call when it holds no path —
   if (path === undefined) return contentOnlyHashes(content, blockedHashes);
   return defaultHashIdentity.hashesFor(content, {
     path,

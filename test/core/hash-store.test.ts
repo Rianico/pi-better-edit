@@ -13,8 +13,8 @@ import {
 import { getSnapshot, upsertSnapshot, snapshotHashFor } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION } from "../../src/constants";
-import { CANON_VERSION } from "../../src/hashline";
-import { initHasher, contentChecksum } from "../../src/hashline/hasher";
+import { ANCHOR_GENERATION } from "../../src/hashline";
+import { initHasher } from "../../src/hashline/hasher";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";
 
@@ -213,14 +213,14 @@ describe("hash-store — concurrency (issue #10)", () => {
       second.exec("BEGIN IMMEDIATE");
       second
         .prepare(
-          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) VALUES (?, ?, ?, ?, 1, ?)",
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) VALUES (?, ?, ?, ?, 1, ?)",
         )
         .run(
           "/b.ts",
-          `${CANON_VERSION}:${contentChecksum("beta\n")}`,
+          snapshotHashFor("beta\n"),
           splitLines("beta\n").length,
           Date.now(),
-          CANON_VERSION,
+          ANCHOR_GENERATION,
         );
       const snapshotId = (
         second.prepare("SELECT snapshot_id FROM file_snapshots WHERE path = ?").get("/b.ts") as {
@@ -450,6 +450,78 @@ describe("hash-store — schema versioning", () => {
   });
 });
 
+describe("hash-store — anchor_generation rename (issue #20)", () => {
+  it("renames a pre-rename canon_version column in place, keeps generation-gated behavior, and is idempotent", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/live.ts", "x\n", ["XYZZ"]);
+      shutdownHashStore();
+      // WHY: simulates the pre-rename merged build — old column name, old 2-part key, stamped 3.
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      db.exec("ALTER TABLE file_snapshots RENAME COLUMN anchor_generation TO canon_version");
+      db.exec("ALTER TABLE file_undo RENAME COLUMN anchor_generation TO canon_version");
+      db.prepare(
+        "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) VALUES (?,?,?,?,1,?)",
+      ).run("/old.ts", "3:deadbeef", 1, Date.now(), 3);
+      const sid = (
+        db.prepare("SELECT snapshot_id FROM file_snapshots WHERE path = ?").get("/old.ts") as {
+          snapshot_id: number;
+        }
+      ).snapshot_id;
+      db.prepare(
+        "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) VALUES (?,?,?,?,?)",
+      ).run(sid, 1, 1, "canon-old", "ZZZZ");
+      db.prepare(
+        "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, served_snapshot_hash, served_line_number, updated_at, retired_at) VALUES (?,?,?,?,?,?,?,?,NULL)",
+      ).run("s1", "/old.ts", "ZZZZ", 1, "canon-old", "3:deadbeef", 1, Date.now());
+      db.prepare(
+        "INSERT INTO file_undo (path, content, bom, ending, hashes, result_content, snapshot_hash, updated_at, canon_version) VALUES (?,?,?,?,?,?,?,?,?)",
+      ).run("/old.ts", "old", "", "\n", '["UVWW"]', "new", "3:deadbeef", Date.now(), 3);
+      db.close();
+      // WHY: the pre-rename store still opens — the guarded rename preserves stamped values.
+      const reopened = await loadHashStore();
+      const snapCols = (
+        reopened.db.prepare("PRAGMA table_info(file_snapshots)").all() as { name: string }[]
+      ).map((row) => row.name);
+      const undoCols = (
+        reopened.db.prepare("PRAGMA table_info(file_undo)").all() as { name: string }[]
+      ).map((row) => row.name);
+      expect(snapCols).toContain("anchor_generation");
+      expect(snapCols).not.toContain("canon_version");
+      expect(undoCols).toContain("anchor_generation");
+      expect(undoCols).not.toContain("canon_version");
+      // WHY: generation-gated behavior intact — the live row hits, pre-rename rows miss/sweep.
+      expect(getSnapshot(reopened, "/live.ts", "x\n")).toEqual(["XYZZ"]);
+      expect(getSnapshot(reopened, "/old.ts", "old")).toBeUndefined();
+      expect(getUndoEntry(reopened, "/old.ts")).toMatchObject({
+        content: "old",
+        anchorGeneration: 3,
+      });
+      expect(
+        (
+          reopened.db
+            .prepare("SELECT COUNT(*) AS n FROM file_snapshots WHERE path = ?")
+            .get("/old.ts") as { n: number }
+        ).n,
+      ).toBe(0);
+      expect(
+        (
+          reopened.db
+            .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE file_path = ?")
+            .get("/old.ts") as { n: number }
+        ).n,
+      ).toBe(0);
+      // WHY: idempotent across re-opens — the live row survives every later sweep.
+      shutdownHashStore();
+      const again = await loadHashStore();
+      expect(getSnapshot(again, "/live.ts", "x\n")).toEqual(["XYZZ"]);
+      shutdownHashStore();
+      const third = await loadHashStore();
+      expect(getSnapshot(third, "/live.ts", "x\n")).toEqual(["XYZZ"]);
+    });
+  });
+});
+
 describe("hash-store — v7 CAS schema (issue #79)", () => {
   const V7_TABLES = [
     "file_snapshots",
@@ -507,6 +579,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
             "line_count",
             "created_at",
             "committed",
+            "anchor_generation",
           ]),
         );
         expect(columnNames(db, "line_id_counters")).toEqual(
@@ -540,6 +613,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
             "hashes",
             "result_content",
             "snapshot_hash",
+            "anchor_generation",
             "updated_at",
           ]),
         );

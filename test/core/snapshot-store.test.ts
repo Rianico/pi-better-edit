@@ -13,7 +13,7 @@ import {
 } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { initHasher, contentChecksum, xxh32 } from "../../src/hashline/hasher";
-import { CANON_VERSION, canon, contentOnlyHashes, lineHashes } from "../../src/hashline";
+import { canon, contentOnlyHashes, lineHashes } from "../../src/hashline";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";
 
@@ -108,13 +108,13 @@ function canonHashOf(line: string): string {
 }
 
 function standardizedHash(content: string): string {
-  return `${CANON_VERSION}:${contentChecksum(content)}`;
+  return snapshotHashFor(content);
 }
 
 describe("snapshot-store — normalized CAS snapshot get / upsert", () => {
   it("misses a version-2 snapshot key after the file-scoped derivation bump", async () => {
-    // WHY: C7 — CANON_VERSION 3 changes every anchor, so a pre-change snapshot
-    // WHY: planted under the old key must miss (and recompute) rather than hit.
+    // WHY: C7 — the file-scoped derivation bump (ANCHOR_GENERATION 1) changes every anchor,
+    // WHY: so a pre-change snapshot planted under the old key must miss (and recompute) rather than hit.
     await withTempHome(async () => {
       const store = await loadHashStore();
       const content = "hello\nworld\n";

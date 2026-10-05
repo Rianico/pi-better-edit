@@ -9,8 +9,9 @@ import {
   shutdownHashStore,
   type HashStore,
 } from "../../src/hash-store.js";
-import { upsertUndo } from "../../src/undo-store.js";
+import { getUndoEntry, upsertUndo } from "../../src/undo-store.js";
 import {
+  ANCHOR_GENERATION,
   CANON_VERSION,
   canonDigest,
   contentOnlyHashes,
@@ -25,6 +26,8 @@ import {
   adoptPinnedSnapshotFor,
   anchorsForSnapshotHash,
   getSnapshot,
+  isCurrentAnchorGeneration,
+  snapshotHashFor,
   vacuumSnapshots,
 } from "../../src/snapshot-store";
 import {
@@ -60,7 +63,7 @@ async function plantLegacyRow(absPath: string): Promise<void> {
     snapshotHash: null,
   });
   store.db.exec(
-    "UPDATE file_undo SET canon_version = 0 WHERE path = '" + absPath.replace(/'/g, "''") + "'",
+    "UPDATE file_undo SET anchor_generation = 0 WHERE path = '" + absPath.replace(/'/g, "''") + "'",
   );
 }
 
@@ -103,14 +106,14 @@ function plantV2File(store: HashStore, absPath: string, content: string): string
   return v2;
 }
 
-/** Snapshot row as the pre-fix build wrote it: current-generation key, no generation stamped. */
+/** Snapshot row as the pre-fix build wrote it: current-shaped 3-part key, no generation stamped (DEFAULT 0). */
 function plantPoisonSnapshot(store: HashStore, absPath: string, content: string): void {
   const hashes = contentOnlyHashes(content);
   store.db
     .prepare(
       "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed) VALUES (?,?,?,?,1)",
     )
-    .run(absPath, `3:${contentChecksum(content)}`, hashes.length, Date.now());
+    .run(absPath, snapshotHashFor(content), hashes.length, Date.now());
   const sid = store.db
     .prepare(
       "SELECT snapshot_id FROM file_snapshots WHERE path = ? ORDER BY snapshot_id DESC LIMIT 1",
@@ -163,10 +166,10 @@ describe("generation bump refuses pre-v3 anchors", () => {
       expect(await readFile(absB, "utf-8")).toBe(PRE);
 
       const aRows = rows(
-        getText(await readTool.execute("r1", { path: "a.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
       );
       const bRows = rows(
-        getText(await readTool.execute("r2", { path: "b.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r2", { file: "b.txt" }, undefined, undefined, ctx)),
       );
       const expectedA = await fileHashesFor(absA, PRE);
       const expectedB = await fileHashesFor(absB, PRE);
@@ -212,7 +215,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
       const served = rows(
-        getText(await readTool.execute("r1", { path: "p.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r1", { file: "p.txt" }, undefined, undefined, ctx)),
       );
       // WHY: the rejected pin left no lineage — the read serves the current
       // WHY: file-scoped derivation.
@@ -249,7 +252,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       await expect(submit(v2A[1]!)).rejects.toThrow(/E_FOREIGN_ANCHOR/);
       expect(await readFile(absB, "utf-8")).toBe(PRE);
       const servedB = rows(
-        getText(await readTool.execute("r2", { path: "b.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r2", { file: "b.txt" }, undefined, undefined, ctx)),
       ).map((r) => r.hash);
       expect(servedB).toEqual(await fileHashesFor(absB, PRE));
       // WHY: still FOREIGN after the fresh read — the re-serve retires nothing
@@ -285,12 +288,12 @@ describe("generation bump refuses pre-v3 anchors", () => {
       plantPoisonSnapshot(store, absA, PRE);
       plantPoisonSnapshot(store, absB, PRE);
       expect(getSnapshot(store, absA, PRE)).toBeUndefined();
-      expect(await anchorsForSnapshotHash(absA, `3:${contentChecksum(PRE)}`)).toBeUndefined();
+      expect(await anchorsForSnapshotHash(absA, snapshotHashFor(PRE))).toBeUndefined();
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
       const editTool = getTool("edit");
       const servedA = rows(
-        getText(await readTool.execute("r1", { path: "a.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
       ).map((r) => r.hash);
       const expectedA = await fileHashesFor(absA, PRE);
       expect(servedA).toEqual(expectedA);
@@ -323,8 +326,8 @@ describe("generation bump refuses pre-v3 anchors", () => {
   });
 
   it("planted foreign-generation snapshot rows miss the lookups", async () => {
-    // WHY: the `"2:…"` and unknown-generation `"3:…"` misses, at the row level —
-    // WHY: prefix and provenance both refuse, so neither a released-v7 state nor
+    // WHY: the `"2:…"` 2-part and unknown-generation 3-part misses, at the row level —
+    // WHY: middle-component and provenance both refuse, so neither a released-v7 state nor
     // WHY: a poisoned row can be resolved or adopted through these seams.
     await withTempFile("m.txt", PRE, async ({ cwd }) => {
       const absM = join(cwd, "m.txt");
@@ -347,7 +350,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const readTool = getTool("read");
       const editTool = getTool("edit");
       const served = rows(
-        getText(await readTool.execute("r1", { path: "r.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r1", { file: "r.txt" }, undefined, undefined, ctx)),
       );
       const store = await loadHashStore();
       const mirrorBefore = store.db
@@ -385,7 +388,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
       const served = rows(
-        getText(await readTool.execute("r1", { path: "g.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r1", { file: "g.txt" }, undefined, undefined, ctx)),
       );
       const payload = served.map((r) => `${r.hash}│${r.text}`).join("\n") + "\n";
       const io = {
@@ -434,8 +437,8 @@ describe("generation bump refuses pre-v3 anchors", () => {
 
   it("the open-time sweep leaves no lease naming a missing snapshot", async () => {
     // WHY: P2 invariant — one provenance rule as of the sweep point. A mixture of
-    // WHY: pre-column (canon 0, current key), foreign-generation (canon 0/2, old key)
-    // WHY: and live (canon 3) rows goes through the sweep in place and through a
+    // WHY: pre-column (generation 0, current key), foreign-generation (generation 0/2, old key)
+    // WHY: and live (generation 1) rows goes through the sweep in place and through a
     // WHY: real reopen; afterwards no lease dangles and no un-retired lease is
     // WHY: lineage-less, while the live read's leases survive. Scoped to the sweep,
     // WHY: not the whole open: the open-hook vacuum runs after and may evict a snapshot
@@ -444,20 +447,20 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const absI = join(cwd, "i.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "i.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "i.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const liveBefore = (
         store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }
       ).n;
       expect(liveBefore).toBeGreaterThan(0);
       // WHY: same-generation pre-column shape — a current key with no generation
-      // WHY: stamped (DEFAULT 0), plus leases a 3:-prefix gate alone would keep.
+      // WHY: stamped (DEFAULT 0), plus leases an anchor-generation gate alone would keep.
       // WHY: poison content shares no lines with PRE/POST: content-only anchors
       // WHY: derive from line text, so a shared line would reuse the spelling and
       // WHY: collide on the lease primary key.
       const OTHER = "ddd\neee\nfff\n";
       plantPoisonSnapshot(store, absI, OTHER);
-      const poisonKey = `3:${contentChecksum(OTHER)}`;
+      const poisonKey = snapshotHashFor(OTHER);
       const poisonAnchors = contentOnlyHashes(OTHER);
       const session = testSessionManager.getSessionId();
       const insPoisonLease = store.db.prepare(
@@ -477,11 +480,11 @@ describe("generation bump refuses pre-v3 anchors", () => {
         );
       }
       // WHY: foreign-generation shape — old key, DEFAULT-0 generation, plus an
-      // WHY: explicit canon_version 2 row for the 0/2/3 mixture.
+      // WHY: explicit anchor_generation 2 row for the 0/2/1 mixture.
       plantV2File(store, absI, PRE);
       store.db
         .prepare(
-          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) VALUES (?,?,?,?,1,2)",
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) VALUES (?,?,?,?,1,2)",
         )
         .run(absI, `2:${contentChecksum(OTHER)}`, 3, Date.now());
       const checkInvariant = (db: HashStore["db"]): void => {
@@ -507,7 +510,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       ensureSnapshotTables(store.db);
       checkInvariant(store.db);
       // WHY: the live read's leases name the surviving current-generation snapshot.
-      const liveKey = `${CANON_VERSION}:${contentChecksum(PRE)}`;
+      const liveKey = snapshotHashFor(PRE);
       const liveSurvivors = (
         store.db
           .prepare(
@@ -535,9 +538,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const absH = join(cwd, "h.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "h.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "h.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
-      const liveKey = `${CANON_VERSION}:${contentChecksum(PRE)}`;
+      const liveKey = snapshotHashFor(PRE);
       const liveLeases = (
         store.db
           .prepare("SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash = ?")
@@ -569,9 +572,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const grantMiss = store.db
         .prepare(
           "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND snapshot_hash = ? " +
-            "AND committed = 1 AND canon_version = ?",
+            "AND committed = 1 AND anchor_generation = ?",
         )
-        .get(absH, liveKey, CANON_VERSION) as { snapshot_id: number } | undefined;
+        .get(absH, liveKey, ANCHOR_GENERATION) as { snapshot_id: number } | undefined;
       expect(grantMiss).toBeUndefined();
       const stranded = (
         store.db
@@ -609,9 +612,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const ghostAbs = join(cwd, "ghost.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "f.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "f.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
-      const liveKey = `${CANON_VERSION}:${contentChecksum(PRE)}`;
+      const liveKey = snapshotHashFor(PRE);
       const ghostRows = (
         store.db
           .prepare("SELECT COUNT(*) AS n FROM file_snapshots WHERE path = ?")
@@ -630,9 +633,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const grantMiss = store.db
         .prepare(
           "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND snapshot_hash = ? " +
-            "AND committed = 1 AND canon_version = ?",
+            "AND committed = 1 AND anchor_generation = ?",
         )
-        .get(ghostAbs, liveKey, CANON_VERSION) as { snapshot_id: number } | undefined;
+        .get(ghostAbs, liveKey, ANCHOR_GENERATION) as { snapshot_id: number } | undefined;
       expect(grantMiss).toBeUndefined();
       ensureSnapshotTables(store.db);
       const foreignLeft = (
@@ -656,7 +659,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
 
   it("a lease naming only an uncommitted snapshot row is swept while the live lease is kept", async () => {
     // WHY: the orphan predicate matches the grant lookup (`path = ? AND snapshot_hash = ?`
-    // WHY: `AND committed = 1 AND canon_version = ?`): a lease naming a committed = 0 row
+    // WHY: `AND committed = 1 AND anchor_generation = ?`): a lease naming a committed = 0 row
     // WHY: cannot grant, so the sweep drops it. Nothing in production writes committed = 0
     // WHY: (every snapshot insert commits), so this is a hardening pin, not a live path.
     await withTempFile("f.txt", PRE, async ({ cwd }) => {
@@ -664,17 +667,17 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const ghostAbs = join(cwd, "ghost.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "f.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "f.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
-      const liveKey = `${CANON_VERSION}:${contentChecksum(PRE)}`;
+      const liveKey = snapshotHashFor(PRE);
       // WHY: premise — a current-generation snapshot row for the ghost path exists but
       // WHY: is uncommitted, so the grant lookup for the ghost lease misses.
       store.db
         .prepare(
-          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, canon_version) " +
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) " +
             "VALUES (?,?,?,?,?,?)",
         )
-        .run(ghostAbs, liveKey, 4, Date.now(), 0, CANON_VERSION);
+        .run(ghostAbs, liveKey, 4, Date.now(), 0, ANCHOR_GENERATION);
       const session = testSessionManager.getSessionId();
       store.db
         .prepare(
@@ -686,9 +689,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const grantMiss = store.db
         .prepare(
           "SELECT snapshot_id FROM file_snapshots WHERE path = ? AND snapshot_hash = ? " +
-            "AND committed = 1 AND canon_version = ?",
+            "AND committed = 1 AND anchor_generation = ?",
         )
-        .get(ghostAbs, liveKey, CANON_VERSION) as { snapshot_id: number } | undefined;
+        .get(ghostAbs, liveKey, ANCHOR_GENERATION) as { snapshot_id: number } | undefined;
       expect(grantMiss).toBeUndefined();
       ensureSnapshotTables(store.db);
       const ghostLeft = (
@@ -718,13 +721,13 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const absT = join(cwd, "t.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "t.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "t.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
       plantV2File(store, absT, PRE);
       const staleBefore = (
         store.db
           .prepare(
-            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '${CANON_VERSION}:%'`,
+            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '%:${ANCHOR_GENERATION}:%'`,
           )
           .get() as { n: number }
       ).n;
@@ -737,7 +740,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const staleInTxn = (
         store.db
           .prepare(
-            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '${CANON_VERSION}:%'`,
+            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '%:${ANCHOR_GENERATION}:%'`,
           )
           .get() as { n: number }
       ).n;
@@ -747,7 +750,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const staleAfter = (
         store.db
           .prepare(
-            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '${CANON_VERSION}:%'`,
+            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '%:${ANCHOR_GENERATION}:%'`,
           )
           .get() as { n: number }
       ).n;
@@ -758,7 +761,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const staleHealed = (
         store.db
           .prepare(
-            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '${CANON_VERSION}:%'`,
+            `SELECT COUNT(*) AS n FROM served_leases WHERE served_snapshot_hash NOT LIKE '%:${ANCHOR_GENERATION}:%'`,
           )
           .get() as { n: number }
       ).n;
@@ -772,7 +775,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
     await withTempFile("b.txt", PRE, async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "b.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "b.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const origExec = store.db.exec.bind(store.db);
       const logged: unknown[][] = [];
@@ -805,7 +808,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const absS = join(cwd, "s.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "s.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "s.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
       plantV2File(store, absS, PRE);
       const leasesBefore = (
@@ -854,7 +857,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
     await withTempFile("q.txt", PRE, async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "q.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "q.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
       ensureSnapshotTables(store.db);
       const leasesFirst = (
@@ -901,7 +904,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
     await withTempFile("w.txt", PRE, async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: "w.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "w.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const leasesBefore = (
         store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }
@@ -925,6 +928,60 @@ describe("generation bump refuses pre-v3 anchors", () => {
       expect(
         (reopened.db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }).n,
       ).toBe(snapsBefore);
+    });
+  });
+
+  it("a canon-only change keeps anchor state while a generation change invalidates it", async () => {
+    // WHY: the axis split (ADR-0031) — the key carries both axes (`CANON:GENERATION:checksum`)
+    // WHY: but the generation gate reads the anchor axis only. A canon-only drift keeps its row
+    // WHY: through the sweep and its key current; a generation drift loses both. Falsifier: a gate
+    // WHY: reading `CANON_VERSION` would sweep the canon-drift row and keep mislabeled state.
+    await withTempFile("k.txt", PRE, async ({ cwd }) => {
+      const absK = join(cwd, "k.txt");
+      const store = await loadHashStore();
+      const cs = contentChecksum(PRE);
+      const canonDriftKey = `999:${ANCHOR_GENERATION}:${cs}`;
+      const genDriftKey = `${CANON_VERSION}:999:${cs}`;
+      store.db
+        .prepare(
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) " +
+            "VALUES (?,?,?,?,1,?)",
+        )
+        .run(absK, canonDriftKey, 4, Date.now(), ANCHOR_GENERATION);
+      store.db
+        .prepare(
+          "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) " +
+            "VALUES (?,?,?,?,1,?)",
+        )
+        .run(absK, genDriftKey, 4, Date.now(), 999);
+      // WHY: key-level — the middle component decides, so a canon-only change stays current.
+      expect(isCurrentAnchorGeneration(canonDriftKey)).toBe(true);
+      expect(isCurrentAnchorGeneration(genDriftKey)).toBe(false);
+      expect(isCurrentAnchorGeneration(`2:${cs}`)).toBe(false);
+      expect(isCurrentAnchorGeneration(snapshotHashFor(PRE))).toBe(true);
+      // WHY: sweep-level — the canon-drift row survives, the generation-drift row goes.
+      ensureSnapshotTables(store.db);
+      const left = store.db
+        .prepare("SELECT snapshot_hash AS h FROM file_snapshots WHERE path = ?")
+        .all(absK) as { h: string }[];
+      expect(left.map((row) => row.h)).toEqual([canonDriftKey]);
+    });
+  });
+
+  it("undo rows stamp the anchor generation, not the canon version", async () => {
+    // WHY: the undo half of the axis split — `upsertUndo` stamps `ANCHOR_GENERATION`, and the
+    // WHY: restore gate compares against it, so a canon-only change never invalidates undo state.
+    await withTempFile("u.txt", POST, async ({ cwd }) => {
+      const absU = join(cwd, "u.txt");
+      const store = await loadHashStore();
+      upsertUndo(store, absU, {
+        content: PRE,
+        bom: "",
+        ending: "\n",
+        hashes: contentOnlyHashes(PRE),
+        resultContent: POST,
+      });
+      expect(getUndoEntry(store, absU)?.anchorGeneration).toBe(ANCHOR_GENERATION);
     });
   });
 });
