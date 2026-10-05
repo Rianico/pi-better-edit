@@ -4,7 +4,7 @@ Status: proposed — patches [`content-addressed-line-identity-mvcc.md`](content
 Evidence: the 2026-09-15 triage session against the installed revision `bd3a8f2`; the defect was re-confirmed on `ba7c8d2` (current `main`) — see Revision check (full log path in the companion handoff).
 Companion: [`mvcc-session-failure-handoff.md`](mvcc-session-failure-handoff.md) (triage of all 7 session failures + 11 findings).
 
-> [!note] Anchor literals below are recorded **width-3** examples from that triage session; anchors widened to **4 characters** in [ADR-0029](../adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the transcript; no example asserts the live width.
+> [!note] Anchor literals below are recorded **width-3** examples from that triage session; anchors widened to **4 characters** in [ADR-0030](../adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the transcript; no example asserts the live width.
 
 ## Problem Statement
 

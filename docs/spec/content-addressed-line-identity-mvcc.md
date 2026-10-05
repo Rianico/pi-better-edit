@@ -10,7 +10,7 @@ Supersedes: ADR-0008 (heuristic canon healing / `tryHealOrphanedSpan`), ADR-0013
 
 Fixes: Upstream P0 (§2), Downstream #61 (silent miswrite on duplicate canons), Downstream #62 (anchor reshuffle). Anchor space exhaustion (`E_LARGE_FILE`) is decoupled and tracked in its own dedicated issue (§8).
 
-> [!note] Anchor literals below are recorded **width-3** examples: §2 was reproduced on `pi-better-edit` 1.7.0 @ `9c2538d`, and the normative fixtures are unchanged from that revision. Anchors widened to **4 characters** in [ADR-0029](../adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the measurements; no example asserts the live width.
+> [!note] Anchor literals below are recorded **width-3** examples: §2 was reproduced on `pi-better-edit` 1.7.0 @ `9c2538d`, and the normative fixtures are unchanged from that revision. Anchors widened to **4 characters** in [ADR-0030](../adr/0030-widen-anchors-to-4-characters-for-tokenizer-stable-references.md) (`62^4 = 14,776,336`). The spellings are kept for fidelity to the measurements; no example asserts the live width.
 
 ---
 
