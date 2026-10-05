@@ -67,6 +67,15 @@ Done when: the full pipeline passes, or every failure is reported with command p
 
 Done when: the branch holds only verified atomic commits.
 
+## APoSD design bar (Ousterhout — A Philosophy of Software Design)
+
+Naming APoSD activates this contract on interface and structure decisions. Use when defining or changing a module boundary, interface, or comment.
+- **Deep modules over shallow ones:** a new abstraction must earn its interface — simple signature, significant hidden complexity. If the interface costs more to learn than the code it hides, inline it.
+- **Pull complexity downward:** the harder case belongs in the callee, never pushed onto every caller. Count callers before adding a parameter or error mode.
+- **Define errors out of existence:** prefer designs where invalid states are unrepresentable over checking them at every call site.
+- **Strategic over tactical:** working code is not done — leave the structure simpler than you found it; each shortcut taxes every later change.
+- **Comments describe the non-obvious:** intent, invariants, and why-not alternatives at the interface; never restate what the code says. Done when: a fresh reader can use the module from its interface and comments alone.
+
 ## 6. Report
 
 This section owns the canonical response contract. Every other agent points here and restates none of it.
