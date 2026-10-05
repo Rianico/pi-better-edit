@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.7.0] - 2026-10-05
+
 ### Features
 
 * **canon:** **breaking** — the anchor whitespace class bumps to version 3: a frozen 28-code-point set (C0 whitespace except the U+001C–U+001F separators, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM) replaces the v2 ASCII-only strip; ZWSP/ZWNJ/ZWJ, SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the other C1 controls stay significant (ADR-0029, issue #22). Upgrading rotates anchors on lines containing newly-normalized code points exactly once: old `2:`-prefixed snapshot rows become unreachable and are reclaimed by the LRU vacuum, `file_undo` pins written under v2 keep resolving their own lineage (undo serves the stored v2 anchors verbatim — never re-derived), and live v2 leases may emit one bounded false drift signal before short-lived served state clears. (#45)
