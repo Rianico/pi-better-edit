@@ -201,7 +201,10 @@ export function upsertUndo(store: HashStore, path: string, entry: UndoRecord): v
     entry.snapshotHash ?? null,
     entry.transactionId ?? null,
     entry.rawPre ?? null,
-    ANCHOR_GENERATION,
+    // WHY: ADR-0031 §4 (refuse, do not launder) — the stamp comes from the payload, never
+    // WHY: hard-coded: a replay of a pre-generation row preserves its generation so the
+    // WHY: restore gate re-derives, while a fresh write (absent generation) defaults current.
+    entry.anchorGeneration ?? ANCHOR_GENERATION,
     Date.now(),
   );
 }

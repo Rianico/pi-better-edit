@@ -9,7 +9,8 @@ import {
   shutdownHashStore,
   type HashStore,
 } from "../../src/hash-store.js";
-import { getUndoEntry, upsertUndo } from "../../src/undo-store.js";
+import { getUndoEntry, readUndo, upsertUndo } from "../../src/undo-store.js";
+import { saveUndo } from "../../src/edit-undo.js";
 import {
   ANCHOR_GENERATION,
   CANON_VERSION,
@@ -982,6 +983,41 @@ describe("generation bump refuses pre-v3 anchors", () => {
         resultContent: POST,
       });
       expect(getUndoEntry(store, absU)?.anchorGeneration).toBe(ANCHOR_GENERATION);
+    });
+  });
+
+  it("a failed write replays the pre-generation row without laundering its generation", async () => {
+    // WHY: ADR-0031 §4 — saveUndo's failure replay writes the previous row back verbatim;
+    // WHY: the stamp must come from the payload so a pre-generation row still reads as
+    // WHY: generation 0 afterwards and the restore gate re-derives instead of adopting the
+    // WHY: foreign anchors. Falsifier: a hard-coded ANCHOR_GENERATION stamp in upsertUndo
+    // WHY: re-stamps the replayed row as current and both assertions redden.
+    await withTempFile("r.txt", POST, async ({ cwd }) => {
+      const absR = join(cwd, "r.txt");
+      await plantLegacyRow(absR);
+      const legacyHashes = contentOnlyHashes(PRE);
+      const handle = await saveUndo(absR, {
+        content: POST,
+        bom: "",
+        originalEnding: "\n",
+        hashes: await fileHashesFor(absR, POST),
+        resultContent: `${POST}x\n`,
+      });
+      expect(handle.persisted).toBe(true);
+      await handle.restore();
+      const replayed = await readUndo(absR);
+      expect(replayed?.anchorGeneration).toBe(0);
+      expect(replayed?.hashes).toEqual(legacyHashes);
+      const { getTool, ctx } = setupIntegrationTest(cwd);
+      const undo = getTool("undo_last_edit");
+      const readTool = getTool("read");
+      await undo.execute("u1", { path: "r.txt" }, undefined, undefined, ctx);
+      expect(await readFile(absR, "utf-8")).toBe(PRE);
+      const served = rows(
+        getText(await readTool.execute("r1", { file: "r.txt" }, undefined, undefined, ctx)),
+      ).map((r) => r.hash);
+      expect(served).toEqual(await fileHashesFor(absR, PRE));
+      expect(served).not.toEqual(legacyHashes);
     });
   });
 });

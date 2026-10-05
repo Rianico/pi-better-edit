@@ -71,6 +71,9 @@ export async function saveUndo(
       snapshotHash: entry.snapshotHash ?? snapshotHashFor(entry.content),
       transactionId: entry.transactionId ?? null,
       rawPre: entry.rawPre ?? null,
+      // WHY: ADR-0031 §4 — forward the payload generation so the store stamp (upsertUndo)
+      // WHY: can preserve it on replay; absent (ordinary edit) defaults to ANCHOR_GENERATION there.
+      anchorGeneration: entry.anchorGeneration ?? ANCHOR_GENERATION,
     });
   } catch (error) {
     // SAFETY: typed error handling — persist failure returns { persisted: false } and caller throws E_UNDO_UNAVAILABLE; logging preserves cause, not silent undefined, downstream handles rejection.
