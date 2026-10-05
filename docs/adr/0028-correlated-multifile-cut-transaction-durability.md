@@ -205,7 +205,7 @@ itself is not on disk in this repository, so this section — not the note — i
   oversight. A `scripts/` runner is OPTIONAL and NOT a deliverable.
 - **Frozen strings, pinned by literal.** `"in-place"`, `"before"`,
   `"after"`, `"anchor_from"`, `"anchor_to"`, the `E_*`/`W_*` codes (21/7
-  at `9c9da08`; anchored commands in ADR-0027). Line numbers and hashes
+  at `9c9da08`; anchored commands in ADR-0032). Line numbers and hashes
   drift; strings do not. (Relays corrected: the `f2d88e…` hash was true only
   at `e74875f` -- cite any hash with commit + command; `resolve.ts:331` is
   not a wire string.)
