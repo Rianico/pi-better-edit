@@ -28,6 +28,7 @@
 
 * **hashline:** make `HASH_LEN` the single owner of the anchor width — served-guard parse, domain-errors/payload-contract copy, resolve/parse reasons, and the probe stride all derive from it; behaviour and model-visible bytes unchanged at width 3, pinned by a new single-owner arch guard. (#20)
 
+* **hashline:** bound the anchor memo from the domain — `HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES` declared beside the WHY in `src/hashline/hash-identity.ts` (no product materialization hashes more than one served budget per call, so the memo stays fully effective in-budget while sitting ~40x below V8's smallest per-Map cap and the RangeError can no longer pre-empt `E_LARGE_FILE`); CI pins the exact floor `24.0.0`, the `isTransaction` SAFETY note names the experimental field, and a TARGET-coupling arch test pins the build target to `engines`. (#20)
 ### Tests
 
 * **hashline:** complete the 4-char fixture migration and re-pin capacity bindings. Half-migrated never-served fixtures move to live-width tokens with premise guards; the space-exhaustion payload and read-seam cap become exported constants pinned by binding tests; the edge script joins the width-consistency surface. No shipped logic changed. (#20)

@@ -1,6 +1,7 @@
 import { isAbsolute, resolve } from "node:path";
 import { splitLines } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
+import { SERVED_MAX_LINES } from "../constants.js";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
 import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
 
@@ -208,6 +209,18 @@ export function fileBaseIndex(canonText: string, pathSeed: number): number {
   return (xxh32(canonText, pathSeed) >>> 0) % HASH_SPACE;
 }
 // SAFETY: large-class — HashIdentity owns hash allocation, canon cache, and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
+// WHY: the hashCache bound is the served admission budget (SERVED_MAX_LINES),
+// WHY: not an arbitrary number: no product materialization hashes more than one
+// WHY: budget of lines per call, so the memo stays fully effective in-budget while
+// WHY: sitting ~40x below V8's smallest per-Map cap (~2^23 entries on Node 24.0.0).
+// WHY: An unbounded memo is unsafe because it grows one entry per allocated anchor —
+// WHY: ~14.77M entries on the allocator-exhaustion path at HASH_LEN=4 (and ~916M
+// WHY: allocatable at HASH_LEN=5), so the RangeError pre-empts E_LARGE_FILE on a
+// WHY: small-cap runtime. Eviction is clear-on-full (amortized O(1), no per-line
+// WHY: iterator — FIFO via keys().next() measured ~1400x slower, /tmp/bench-evict.mjs)
+// WHY: and behaviour-preserving: idxToHash is a pure function of idx, so a dropped
+// WHY: spelling recomputes identically.
+export const HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES;
 export class HashIdentity {
   private hashCache = new Map<number, string>();
   private snapshotIO?: HashSnapshotIO;
@@ -236,6 +249,9 @@ export class HashIdentity {
     let hash = this.hashCache.get(idx);
     if (hash === undefined) {
       hash = this.idxToHash(idx);
+      if (this.hashCache.size >= HASH_CACHE_MAX_ENTRIES) {
+        this.hashCache.clear();
+      }
       this.hashCache.set(idx, hash);
     }
     return hash;

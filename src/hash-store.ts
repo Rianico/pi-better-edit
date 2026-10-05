@@ -239,8 +239,8 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
       );
     }
   };
-  // SAFETY: `isTransaction` is an internal `node:sqlite` field the public type omits; the read is
-  // SAFETY: a boolean guard, and a missing field leaves `undefined` (treated as not-in-transaction).
+  // SAFETY: `isTransaction` is an experimental `node:sqlite` field the read tolerates as absent
+  // SAFETY: (`undefined` reads as not-in-transaction); the read is a boolean guard.
   // SAFETY: `BEGIN IMMEDIATE` cannot nest, so a caller already inside a transaction runs the sweep
   // SAFETY: on that transaction instead of opening its own.
   // SAFETY: the runtime floor is engines.node >= 24, so the read is present on every supported
