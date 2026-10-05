@@ -210,16 +210,25 @@ export function fileBaseIndex(canonText: string, pathSeed: number): number {
 }
 // SAFETY: large-class — HashIdentity owns hash allocation, canon cache, and snapshot IO as a cohesive single-owner state; splitting would scatter the stable-hash invariant.
 // WHY: the hashCache bound is the served admission budget (SERVED_MAX_LINES),
-// WHY: not an arbitrary number: no product materialization hashes more than one
-// WHY: budget of lines per call, so the memo stays fully effective in-budget while
-// WHY: sitting ~40x below V8's smallest per-Map cap (~2^23 entries on Node 24.0.0).
-// WHY: An unbounded memo is unsafe because it grows one entry per allocated anchor —
-// WHY: ~14.77M entries on the allocator-exhaustion path at HASH_LEN=4 (and ~916M
-// WHY: allocatable at HASH_LEN=5), so the RangeError pre-empts E_LARGE_FILE on a
-// WHY: small-cap runtime. Eviction is clear-on-full (amortized O(1), no per-line
-// WHY: iterator — FIFO via keys().next() measured ~1400x slower, /tmp/bench-evict.mjs)
-// WHY: and behaviour-preserving: idxToHash is a pure function of idx, so a dropped
-// WHY: spelling recomputes identically.
+// WHY: not an arbitrary number: every product materialization is hard-capped at one
+// WHY: budget per call by the throwing lines clamp (src/file-content/loader.ts:91-100,
+// WHY: reached with maxLines: SERVED_MAX_LINES from src/read.ts:83,
+// WHY: src/mutation-engine/edit-source.ts:51,117 and src/lifecycle-hooks/index.ts:153,161,
+// WHY: defaulted at src/file-content/index.ts:82,128), so the memo never clears inside an
+// WHY: in-budget call and no product path can approach the cap — it sits ~40x below V8's
+// WHY: smallest per-Map cap (~2^23 entries on Node 24.0.0). An unbounded memo is unsafe
+// WHY: because it grows one entry per allocated anchor (~14.77M entries on the
+// WHY: allocator-exhaustion path at HASH_LEN=4, ~916M allocatable at HASH_LEN=5), so the
+// WHY: RangeError pre-empts E_LARGE_FILE on a small-cap runtime once the memo alone passes
+// WHY: that ceiling. The pure-API exhaustion path is therefore RangeError-free only for
+// WHY: inputs with at most ~2^23 distinct line contents: the sibling per-call maps
+// WHY: (canonCache, and the pairing index built by buildNewByContent) stay bounded by the
+// WHY: input rather than by this bound, so no claim is made above that ceiling.
+// WHY: buildNewByContent is deliberately not cleared — it is per-call structural state for
+// WHY: survivor pairing, not a recomputable memo. Eviction is clear-on-full (amortized O(1),
+// WHY: no per-line iterator — FIFO via keys().next() measured ~1400x slower,
+// WHY: scripts/bench-evict.mjs) and behaviour-preserving: idxToHash is a pure function of
+// WHY: idx, so a dropped spelling recomputes identically.
 export const HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES;
 export class HashIdentity {
   private hashCache = new Map<number, string>();

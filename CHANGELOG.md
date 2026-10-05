@@ -17,6 +17,8 @@
 * **hashstore:** harden the open-time generation sweep — the orphan-lease delete is path-scoped (a lease naming a hash that survives only in a foreign path's row is now dropped), the four sweep deletes commit as one `BEGIN IMMEDIATE` unit with rollback on error, and the lease-names-live-snapshot invariant is scoped to the sweep point (the open-hook vacuum can strand a retired-past-grace lease until the next open). (#20)
 * **hashstore:** close the sweep-hardening residuals — the orphan-lease delete now matches the grant's `committed = 1`, so a lease naming only an uncommitted row is swept with the other orphans while live leases are kept, and the caller-transaction guard plus the rollback-failure path are pinned by tests. Test scope: `test/integration/undo-generation-bump.test.ts` (3 new: uncommitted-lease sweep with live-lease control, caller-owned-transaction join with caller-rollback restore, rollback failure preserves the original error). Note: `engines.node` is now `>=24.0.0` and CI exercises 24 and 26, so the `isTransaction` guard is unconditional on every supported runtime. (#20)
 
+* **hashline:** bound the anchor memo from the domain — `HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES` declared beside the WHY in `src/hashline/hash-identity.ts` (no product materialization hashes more than one served budget per call, so the memo stays fully effective in-budget while sitting ~40x below V8's smallest per-Map cap and the RangeError can no longer pre-empt `E_LARGE_FILE`); CI pins the exact floor `24.0.0`, the `isTransaction` SAFETY note names the experimental field, and a TARGET-coupling arch test pins the build target to `engines`. (#20)
+
 ### Documentation
 
 * **readme:** cite external evidence for hash-anchored lines — token-bleed reduction (Lamberti 2026) and subword-tokenizer drift (TokDrift) — under the failure-modes table and the anchor-hash space explanation. (#41)
@@ -28,7 +30,6 @@
 
 * **hashline:** make `HASH_LEN` the single owner of the anchor width — served-guard parse, domain-errors/payload-contract copy, resolve/parse reasons, and the probe stride all derive from it; behaviour and model-visible bytes unchanged at width 3, pinned by a new single-owner arch guard. (#20)
 
-* **hashline:** bound the anchor memo from the domain — `HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES` declared beside the WHY in `src/hashline/hash-identity.ts` (no product materialization hashes more than one served budget per call, so the memo stays fully effective in-budget while sitting ~40x below V8's smallest per-Map cap and the RangeError can no longer pre-empt `E_LARGE_FILE`); CI pins the exact floor `24.0.0`, the `isTransaction` SAFETY note names the experimental field, and a TARGET-coupling arch test pins the build target to `engines`. (#20)
 ### Tests
 
 * **hashline:** complete the 4-char fixture migration and re-pin capacity bindings. Half-migrated never-served fixtures move to live-width tokens with premise guards; the space-exhaustion payload and read-seam cap become exported constants pinned by binding tests; the edge script joins the width-consistency surface. No shipped logic changed. (#20)

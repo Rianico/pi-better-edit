@@ -535,8 +535,8 @@ function dropServedState(store: HashStore, sessionKey: string, path: string): vo
     stmts.leaseDelete(sessionKey, path);
     stmts.metaDelete(sessionKey, path);
   };
-  // SAFETY: `isTransaction` is an internal `node:sqlite` field the public type omits; the read is
-  // SAFETY: a boolean guard, and a missing field leaves `undefined` (treated as not-in-transaction).
+  // SAFETY: `isTransaction` is an experimental `node:sqlite` field the read tolerates as absent
+  // SAFETY: (`undefined` reads as not-in-transaction); the read is a boolean guard.
   const inTransaction = (store.db as unknown as { isTransaction?: boolean }).isTransaction === true;
   if (inTransaction) drop();
   else withStore(drop);
