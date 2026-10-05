@@ -70,7 +70,7 @@ describe("read tool — snapshot failure", () => {
       try {
         const result = await readTool.execute(
           "r1",
-          { path: "sample.ts" },
+          { file: "sample.ts" },
           undefined,
           undefined,
           ctx,

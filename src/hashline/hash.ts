@@ -38,18 +38,11 @@ export function isValidHashList(value: unknown): value is string[] {
   }
   return true;
 }
-// SAFETY: one definition of the canon digest for the whole toolchain — `hash-identity.ts` owns it
-// SAFETY: beside the canonical `canon`, and consumers reach it through either facade (#151).
-export { canonDigest } from "./hash-identity.js";
-
-// WHY: single owner lives in `hash-identity.ts` — this facade re-exports it so
-// WHY: the snapshot cache key cannot drift between facades.
-export { CANON_VERSION } from "./hash-identity.js";
-const CANON_RE = /[ \t\r\n]+/g;
-
-export function canon(line: string): string {
-  return line.replace(CANON_RE, "");
-}
+// SAFETY: one definition of the canon digest and version for the whole toolchain — `hash-identity.ts`
+// SAFETY: owns them; `canon`/`canonDigest`/`CANON_VERSION` stay reachable through this facade (#151, #22).
+// WHY: `canon` parity — lane tests import the content helper from this facade; the
+// WHY: implementation lives in `hash-identity.ts` (no local duplicate).
+export { canon, canonDigest, CANON_VERSION } from "./hash-identity.js";
 
 async function _lineHashes(
   content: string,

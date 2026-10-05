@@ -7,7 +7,7 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
     const file = "function foo() {\n  const x = 1;\n  return x;\n}\n";
     await withTempFile("sample.ts", file, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const read1 = await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      const read1 = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
       const line2Hash = extractHash(lines1.find((l) => l.includes("│  const x = 1;"))!);
       const line3Hash = extractHash(lines1.find((l) => l.includes("│  return x;"))!);
@@ -37,7 +37,7 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
     const file = "before();\nif (ok) {\n  run();\n}\nafter();\n";
     await withTempFile("logic.ts", file, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const read1 = await readTool.execute("r1", { path: "logic.ts" }, undefined, undefined, ctx);
+      const read1 = await readTool.execute("r1", { file: "logic.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
       const line2Hash = extractHash(lines1.find((l) => l.includes("│if (ok)"))!);
       const line3Hash = extractHash(lines1.find((l) => l.includes("│  run();"))!);
@@ -66,7 +66,7 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
     const file = "a\nb\n";
     await withTempFile("mini.txt", file, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const read1 = await readTool.execute("r1", { path: "mini.txt" }, undefined, undefined, ctx);
+      const read1 = await readTool.execute("r1", { file: "mini.txt" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
       const aHash = extractHash(lines1.find((l) => l.includes("│a"))!);
       await editTool.execute(
@@ -85,7 +85,7 @@ describe("boundary duplication — pure edit (no auto-fix)", () => {
     const file = "function a() {\n  const x = 1;\n}\n}\nafter();\n";
     await withTempFile("nested.ts", file, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const read1 = await readTool.execute("r1", { path: "nested.ts" }, undefined, undefined, ctx);
+      const read1 = await readTool.execute("r1", { file: "nested.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
       const bodyHash = extractHash(lines1.find((l) => l.includes("│  const x = 1;"))!);
       await editTool.execute(

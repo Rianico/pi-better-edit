@@ -34,7 +34,7 @@ describe("MutationEngine — deep seam", () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const to = hashes[1]!;
       const result = await execute(
@@ -59,7 +59,7 @@ describe("MutationEngine — deep seam", () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const result = await preview(
         req({
@@ -82,7 +82,7 @@ describe("MutationEngine — deep seam", () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const from = hashes[0]!;
       const result = await preview(
         req({
@@ -115,7 +115,7 @@ describe("MutationEngine — deep seam", () => {
   it("execute returns ok:false with code for anchor mismatch", async () => {
     await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await execute(
         req({
           file: "sample.txt",
@@ -136,7 +136,7 @@ describe("MutationEngine — deep seam", () => {
     await withTempFile("sample.txt", "a\nb\nc\nd\n", async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("a\nb\nc\nd\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const h0 = hashes[0]!;
       const h2 = hashes[2]!;
       const h3 = hashes[3]!;

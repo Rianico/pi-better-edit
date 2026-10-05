@@ -9,7 +9,7 @@ const ATOMICITY_TRAILER =
   "The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.";
 
 async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<string[]> {
-  const result = await readTool.execute("r1", { path }, undefined, undefined, ctx);
+  const result = await readTool.execute("r1", { file: path }, undefined, undefined, ctx);
   return getText(result)
     .split("\n")
     .filter((line) => /^[A-Za-z0-9]{4}│/.test(line))

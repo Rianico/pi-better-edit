@@ -107,7 +107,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
 
       const r1 = await readTool.execute(
         "r1",
-        { path: "undo-anchor-121.txt" },
+        { file: "undo-anchor-121.txt" },
         undefined,
         undefined,
         ctx,
@@ -152,7 +152,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
 
       const r1 = await readTool.execute(
         "r1",
-        { path: "undo-restore-121.txt" },
+        { file: "undo-restore-121.txt" },
         undefined,
         undefined,
         ctx,

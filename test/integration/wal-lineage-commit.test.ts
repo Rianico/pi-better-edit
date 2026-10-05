@@ -73,7 +73,7 @@ describe("WAL lineage commit from the working buffer", () => {
 
     await withTempFile("dup.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const readRes = await readTool.execute("r1", { path: "dup.txt" }, undefined, undefined, ctx);
+      const readRes = await readTool.execute("r1", { file: "dup.txt" }, undefined, undefined, ctx);
       const lines = getText(readRes).split("\n");
       const first = extractHash(lines[0]!);
       const second = extractHash(lines[1]!);
@@ -122,7 +122,7 @@ describe("WAL lineage commit from the working buffer", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { path: "insert.txt" },
+        { file: "insert.txt" },
         undefined,
         undefined,
         ctx,
@@ -155,7 +155,7 @@ describe("WAL lineage commit from the working buffer", () => {
     const original = "alpha\nbravo\ncharlie\n";
     await withTempFile("revert.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const r1 = await readTool.execute("r1", { path: "revert.txt" }, undefined, undefined, ctx);
+      const r1 = await readTool.execute("r1", { file: "revert.txt" }, undefined, undefined, ctx);
       const bravo = extractHash(getText(r1).split("\n")[1]!);
 
       const store = await loadHashStore();
@@ -174,7 +174,7 @@ describe("WAL lineage commit from the working buffer", () => {
       const snapshotsAfterForward = snapshotCount(store, path);
       const bravoUpper = extractHash(
         getText(
-          await readTool.execute("r2", { path: "revert.txt" }, undefined, undefined, ctx),
+          await readTool.execute("r2", { file: "revert.txt" }, undefined, undefined, ctx),
         ).split("\n")[1]!,
       );
 

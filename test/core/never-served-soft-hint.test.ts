@@ -152,7 +152,7 @@ describe("edit tool never-served success plus hint", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       expect(hashes).not.toContain("ZZZZ");
       const submitted = `ZZZZ${HASH_SEP}alpha`;
       const result = await editTool.execute(
@@ -183,7 +183,7 @@ describe("edit tool never-served success plus hint", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\nfour\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\nfour\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       expect(hashes).not.toContain("ZZZZ");
       expect(hashes).not.toContain("QQQQ");
       const first = `ZZZZ${HASH_SEP}alpha`;
@@ -232,7 +232,7 @@ describe("write path carries no never-served hint", () => {
       } as any;
       const { getTool } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: fileName }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: fileName }, undefined, undefined, ctx);
       const submitted = `ZZZZ${HASH_SEP}alpha`;
       const written = `${submitted}\ntwo\n`;
       await writeFile(filePath, written, "utf-8");
@@ -282,7 +282,7 @@ describe("noop edit carries no never-served hint", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await editTool.execute(
         "e1",
         {

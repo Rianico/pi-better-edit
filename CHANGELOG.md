@@ -4,7 +4,6 @@
 
 ### Features
 
-* **tools:** remove the deprecated `file_path` payload alias, with no compatibility window. `read`, `read_skill` and `undo_last_edit` no longer rewrite it to `path` -- their `prepareArguments` seam existed only for that rewrite and is gone -- and the `write` hooks no longer read it. A `file_path` payload is now an unknown field on every surface and is refused; `edit` was already strict. (#40)
 * **hashline:** adopt 4-char anchors for tokenizer-stable references. `HASH_LEN` flips 3 to 4; every shape, regex and count word derives, so no other `src/` numeric change was needed and the stride stays `62^2 + 62 + 1 = 3907`. A 3-char token is now `E_MALFORMED_ANCHOR` with no compatibility path. The `E_LARGE_FILE` hash-space limit is scale-tested via a bounded uniqueness run plus a directly constructed error, and new-width coverage pins echo refusal, lease materialization, lineage anchors and resolve-seam rejection. (#20)
 * **hashline:** reserve all-digit anchor spellings from allocation — a served one would be indistinguishable from a line number, so the 10,000-strong digit subcube is pre-marked in the allocation bitset and never served; usable space is `62^4 − 10^4 = 14,766,336` (a 0.0677 % shrink, alphabet unchanged), the stride stays coprime with both spaces, and digit-shaped spellings keep the ordinary unserved-lease refusal with the line-number note. (#20)
 * **hashline:** derive anchors from (path, content) — allocation seeds xxh32 with the canonical absolute path, so byte-identical files at different paths serve disjoint anchor sets and an anchor served by another file is refused as foreign; content-only derivation remains available only through the explicit `contentOnlyHashes` seam, and `CANON_VERSION` bumps to 3 so pre-change snapshots miss and recompute. (#20)
@@ -18,6 +17,27 @@
 * **hashstore:** close the sweep-hardening residuals — the orphan-lease delete now matches the grant's `committed = 1`, so a lease naming only an uncommitted row is swept with the other orphans while live leases are kept, and the caller-transaction guard plus the rollback-failure path are pinned by tests. Test scope: `test/integration/undo-generation-bump.test.ts` (3 new: uncommitted-lease sweep with live-lease control, caller-owned-transaction join with caller-rollback restore, rollback failure preserves the original error). Note: `engines.node` is now `>=24.0.0` and CI exercises 24 and 26, so the `isTransaction` guard is unconditional on every supported runtime. (#20)
 
 * **hashline:** bound the anchor memo from the domain — `HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES` declared beside the WHY in `src/hashline/hash-identity.ts` (no product materialization hashes more than one served budget per call, so the memo stays fully effective in-budget while sitting ~40x below V8's smallest per-Map cap and the RangeError can no longer pre-empt `E_LARGE_FILE`); CI pins the exact floor `24.0.0`, the `isTransaction` SAFETY note names the experimental field, and a TARGET-coupling arch test pins the build target to `engines`. (#20)
+
+## [2.7.0] - 2026-10-05
+
+### Features
+
+* **canon:** **breaking** — the anchor whitespace class bumps to version 3: a frozen 28-code-point set (C0 whitespace except the U+001C–U+001F separators, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM) replaces the v2 ASCII-only strip; ZWSP/ZWNJ/ZWJ, SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the other C1 controls stay significant (ADR-0029, issue #22). Upgrading rotates anchors on lines containing newly-normalized code points exactly once: old `2:`-prefixed snapshot rows become unreachable and are reclaimed by the LRU vacuum, `file_undo` pins written under v2 keep resolving their own lineage (undo serves the stored v2 anchors verbatim — never re-derived), and live v2 leases may emit one bounded false drift signal before short-lived served state clears. (#45)
+* **read:** add `mode: "verbatim"` for plain, anchor-free file text that writes no served state; the default `"served"` render is byte-identical to before. (#44)
+* **tools:** remove the deprecated `file_path` payload alias, with no compatibility window. `read` no longer rewrites it to `file`, and `undo_last_edit` no longer rewrites it to `path` -- their `prepareArguments` seam existed only for that rewrite and is gone -- and the `write` hooks no longer read it. A `file_path` payload is now an unknown field on every surface and is refused; `edit` was already strict. (#40)
+
+### Bug Fixes
+
+* **read:** one row budget and a hashless verbatim path. The read row cap now derives from pi's `DEFAULT_MAX_BYTES` (50KB); the dead 200KB `MAX_READ_LINE_BYTES` default that only tests exercised is gone. `mode: "verbatim"` no longer applies the 238,328-line anchor-space cap or allocates line hashes: a file too large to anchor is still a readable, pageable file through the same `offset`/`limit`/`windows` machinery, the same 50KB per-line withhold, and the same silence on served state. The `served` path stays byte-identical and keeps the cap and its refusal message. (#44)
+
+### Performance Improvements
+
+* **read:** page a file instead of materializing it. A read walks the lines it needs — the page, and on the served path every row's anchor in that same walk — instead of building one heap string per line for the whole text (`split("\n")` costs ~50 B per line: 47.2 MB of heap for a 29.9 MB, one-million-line file). Verbatim pages the same bytes as before and builds no line array to slice a page out of — though an unbounded verbatim read still holds the lines it shows, since its page is the whole file — and a served read still holds one line array, in the snapshot store's own lineage write, bounded by the anchor-space ceiling. One refusal moves closer to the load: a file whose line count only crosses the cap after CR normalization now refuses there with the counted message, instead of passing the cap and dying inside the anchor space (that was #43's own regression, fixed before release). Otherwise served is byte-identical: same anchors, same order, same pages, hints and refusals, and the same 238,328-line cap. (#47)
+
+### Code Refactoring
+
+* **read:** remove the `read_skill` tool; `read` with `mode: "verbatim"` is the reference read. (#44)
+* **read:** reshape the anchor seam the served read walks through. `AnchorWalk` (the new `src/hashline/index.ts` export) is assignment-only: it carries `assign` or `cached` and no persist hook, because the read path passes `noPersist` and the authoritative snapshot write is `upsertSnapshotFor`. The whole-content `hashesFor`/`readNormFile` seam is unchanged for the edit pipeline. (#47)
 
 ### Documentation
 

@@ -18,7 +18,7 @@ async function undoAfterEdit(
 ): Promise<void> {
   await withTempFile(file, original, async ({ cwd, path }) => {
     const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
-    const r1 = await readTool.execute("r1", { path: file }, undefined, undefined, ctx);
+    const r1 = await readTool.execute("r1", { file: file }, undefined, undefined, ctx);
     await editTool.execute(
       "e1",
       { file: file, edits: edits(getText(r1).split("\n")) },

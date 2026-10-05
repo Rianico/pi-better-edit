@@ -44,7 +44,7 @@ async function hashRefs(
   ctx: ToolResultCtx,
   needles: string[],
 ): Promise<Record<string, string>> {
-  const read = await readTool.execute("r1", { path }, undefined, undefined, ctx);
+  const read = await readTool.execute("r1", { file: path }, undefined, undefined, ctx);
   const lines = getText(read).split("\n");
   const out: Record<string, string> = {};
   for (const needle of needles) {

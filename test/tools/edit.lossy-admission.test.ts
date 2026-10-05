@@ -50,7 +50,7 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
     await withTempDir("lossy-target-", async (cwd) => {
       await writeFile(join(cwd, "lossy.txt"), LOSSY_BYTES);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "lossy.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "lossy.txt" }, undefined, undefined, ctx);
       const h = await lineHashes(LOSSY_DECODED, join(cwd, "lossy.txt"));
       const result = await execute(
         admit({
@@ -74,8 +74,8 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       await writeFile(join(cwd, "lossy.txt"), LOSSY_BYTES);
       await writeFile(join(cwd, "target.txt"), TARGET_BEFORE, "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "lossy.txt" }, undefined, undefined, ctx);
-      await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "lossy.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
       const hs = await lineHashes(LOSSY_DECODED, join(cwd, "lossy.txt"));
       const ht = await lineHashes(TARGET_BEFORE, join(cwd, "target.txt"));
       const result = await execute(
@@ -110,7 +110,7 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       // apart from a corrupt one, and a heuristic admission guard would refuse it — wrongly.
       await writeFile(join(cwd, "rep.txt"), "x\n\uFFFD\ny\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "rep.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "rep.txt" }, undefined, undefined, ctx);
       const h = await lineHashes("x\n\uFFFD\ny\n", join(cwd, "rep.txt"));
       const result = await execute(
         admit({
@@ -146,7 +146,7 @@ describe("lossy-admission: non-round-tripping bytes are refused before any mutat
       ]);
       await writeFile(join(cwd, "bomrep.txt"), bytes);
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "bomrep.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "bomrep.txt" }, undefined, undefined, ctx);
       const decoded = "alpha\n\uFFFD\nbeta\n";
       const h = await lineHashes(decoded, join(cwd, "bomrep.txt"));
       const result = await execute(

@@ -66,7 +66,7 @@ Published paired experiments report 22–58% repair-token cuts for line-anchored
 - **Atomic Multi-Item Batches**: Apply up to 32 same-file edits in one tool call; overlapping spans abort atomically before touching disk.
 
 ### 2. 🛡️ Resistance to External Writes (Drift & Concurrency)
-- **Auto-Formatter Immunity**: Strips ASCII whitespace before hashing. Prettier, Black, and ESLint format-on-save passes never rotate anchors.
+- **Auto-Formatter Immunity**: Strips a frozen 28-code-point whitespace class ([ADR-0029](docs/adr/0029-canon-v3-frozen-whitespace-class.md)) before hashing, so Prettier, Black, gofmt, and rustfmt format-on-save passes do not rotate anchors. Not total immunity: measured formatter churn includes rewriting U+200B ZWSP to a space, which rotates the affected anchor and fails closed.
 - **Exterior Shift Auto-Rebase**: External edits, git checkouts, or background processes outside the edit span rebase seamlessly without agent intervention.
 - **Fail-Closed Reject-and-Serve**: Contested interior spans fail closed without disk corruption and immediately return fresh on-disk rows in the error (`[E_STALE_RANGE]`, `[E_UNVERIFIED_RANGE]`) — recovering in **exactly 1 turn**.
 - **Session-Keyed Leases**: Leases are isolated per session (`served_leases`), preventing cross-agent race conditions or state pollution.
@@ -170,7 +170,8 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 ┌────────────────────────────────────────▼─────────────────────────────────────────┐
 │                                SESSION TIER                                      │
 │  src/served-session/session.ts                                                   │
-│  - Leases: Granted on read, diff, rejection fresh-reads, and undo                │
+│  - Leases: Granted on every serve path: read, diff, write auto-read, truncated   │
+│    serves, fresh-read rejections, undo (see §1)                                  │
 │  - Immutability: Leases are strictly READ-ONLY during edit resolution            │
 │  - Re-Serve Upsert: Atomic upsert updates leases when presentation changes       │
 └────────────────────────────────────────┬─────────────────────────────────────────┘
@@ -195,7 +196,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 ### 1. Immutable Line Identity & Leases
 - Every line has an immutable surrogate key (`line_id`) allocated from a monotonic counter (`line_id_counters`).
-- When lines are delivered to an agent via `read`, diffs, or fresh-read rejections, a session-scoped lease (`served_leases`) binds `(session_id, file_path, anchor) -> line_id`.
+- When lines are delivered to an agent on any serve path — a default (`served`) `read`, diffs, the `write` auto-read hook, truncated serves, fresh-read rejections, or `undo_last_edit` — a session-scoped lease (`served_leases`) binds `(session_id, file_path, anchor) -> line_id`.
 - During an `edit`, lease lookups are strictly **read-only**. An edit cannot re-stamp or guess a lease.
 
 ### 2. Multi-Version Snapshot Lineage
@@ -225,10 +226,9 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 
 | Tool | Parameters | Description |
 | --- | --- | --- |
-| `read` | `file`, `offset` (1-based), `limit`, `windows` (optional) | Returns file content formatted as `HASH│content`. Lines &gt;200KB are replaced with a marker hint. `windows: [{offset, limit}, …]` reads up to 16 disjoint ranges in one turn: each renders under `=== Lines A-B of N ===` and every shown line is leased, so anchors from all of them work in one `edit`. |
-| `read_skill` | `file` | Reads file content as plain text without hash prefixes or lease recording (ideal for prompts, docs, and skills). |
+| `read` | `file`, `offset` (1-based), `limit`, `windows` (optional), `mode` (optional) | Returns file content formatted as `HASH│content` by default. `mode: "verbatim"` returns plain text with no hash prefixes and records no leases; the default `"served"` leases every shown line. Lines &gt;50KB are replaced with a marker hint. `windows: [{offset, limit}, …]` reads up to 16 disjoint ranges in one turn: each renders under `=== Lines A-B of N ===` and, in the default `"served"` mode, every shown line is leased, so anchors from all of them work in one `edit`. |
 | `edit` | `file`, `edits`, `mode` (optional) | Applies single or batched edits atomically. Each item bounds an inclusive `anchor_from`/`anchor_to` range, places its payload with optional `at`, and carries exactly one payload — `text` or `text_ref`. `mode: "literal"` declares verbatim text. |
-| `undo_last_edit` | `file` | Restores the previous file state, BOM, line endings, and original anchors. Persists across restarts. |
+| `undo_last_edit` | `path` | Restores the previous file state, BOM, line endings, and original anchors. Persists across restarts. |
 
 ### Payload Contract
 
@@ -320,7 +320,7 @@ referenced span is retired — the current word is `cut`.
 | `[E_UNDO_STALE]` | Target file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read file. |
 | `[E_UNDO_UNAVAILABLE]` | Undo state could not be persisted to SQLite store. | Edit was refused and file unchanged; retry edit. |
 | `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure; do not re-undo — the next run repairs the interrupted revert. |
-| `[E_LARGE_FILE]` | File exceeds the served admission budget (200,000 lines, `SERVED_MAX_LINES`) or the 14,766,336-line ceiling of allocatable 4-char anchors (62^4 minus the 10,000 reserved all-digit spellings). | Use `write` or non-hashline tools for very large files. |
+| `[E_LARGE_FILE]` | A served read or edit load exceeds the served admission budget (200,000 lines, `SERVED_MAX_LINES`) or the 14,766,336-line ceiling of allocatable 4-char anchors (62^4 minus the 10,000 reserved all-digit spellings); `mode: "verbatim"` reads are not capped. | Use `write` or non-hashline tools for very large files. |
 | `[E_UNKNOWN]` | Unexpected filesystem or invariant failure. | Check error message details. |
 
 ### Applied Warnings (`[W_*]`)
@@ -387,7 +387,7 @@ referenced span is retired — the current word is `cut`.
 
 ## How Anchors Work
 
-1. **Whitespace Canonicalization**: Each line is stripped of ASCII whitespace (`[ \t\r\n]`) before hashing. External formatting passes (`prettier`, `black`, `eslint --fix`) do not alter line hashes. Token-level edits (quotes, semicolons, variable names) rotate the hash.
+1. **Whitespace Canonicalization**: Each line is stripped of a frozen 28-code-point whitespace class (ASCII plus Unicode spaces, NBSP, BOM, and directional marks — [ADR-0029](docs/adr/0029-canon-v3-frozen-whitespace-class.md)) before hashing. External formatting passes (`prettier`, `black`, `gofmt`, `rustfmt`) do not alter line hashes. Token-level edits (quotes, semicolons, variable names) rotate the hash, and so do the significant zero-width characters the class deliberately excludes (U+200B ZWSP, U+200C/D ZWNJ/ZWJ) — `oxfmt` normalizes ZWSP to a space, which rotates the anchor and fails closed rather than passing silently.
 2. **xxHash32 & Base62 Space**: Canonical lines are hashed using xxHash32 seeded with the file's canonical path (`(canonical path, canonical line)` → `fileBaseIndex`) and mapped to 4-character base62 strings (`A-Za-z0-9`), providing $62^4 - 10^4 = 14,766,336$ allocatable anchors — the 10,000 all-digit spellings are reserved and never served, since a served one would be indistinguishable from a line number. Base62 strings occupy tokenizer-stable token regions across model families ([TokDrift, arXiv:2510.14972](https://arxiv.org/abs/2510.14972)). The live width record is [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md).
 3. **Collision-Free Coprime Probing**: When duplicate lines occur in a file, collision resolution probes using a stride coprime to the hash space ($62^2 + 62 + 1 = 3,907$). Every line in a file receives a unique anchor.
 4. **SQLite WAL CAS Storage**: Line hashes and snapshots are persisted in `~/.config/pi-better-edit/hash-store.sqlite` (honoring `XDG_CONFIG_HOME`). Snapshot retention is governed by proportional LRU vacuuming under a 50MB budget.

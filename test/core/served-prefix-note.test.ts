@@ -221,7 +221,7 @@ describe("edit result content carries the note", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const ambiguous = `${hashes[1]}${HASH_SEP}CHANGED`;
       const result = await editTool.execute(
         "e1",
@@ -249,7 +249,7 @@ describe("edit result content carries the note", () => {
     await withTempFile("sample.txt", "one\ntwo\nthree\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { path: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const result = await editTool.execute(
         "e1",
         {
@@ -282,7 +282,7 @@ describe("write result content carries the note", () => {
       } as any;
       const { getTool } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: fileName }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: fileName }, undefined, undefined, ctx);
       const hashes = await lineHashes("one\ntwo\n", filePath);
       const ambiguous = `${hashes[0]}${HASH_SEP}CHANGED`;
       const written = `${ambiguous}\ntwo\n`;
@@ -326,7 +326,7 @@ describe("write result content carries the note", () => {
       } as any;
       const { getTool } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { path: fileName }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: fileName }, undefined, undefined, ctx);
       const written = "fresh\nlines\n";
       await writeFile(filePath, written, "utf-8");
       const hooks = createLifecycleHooks();

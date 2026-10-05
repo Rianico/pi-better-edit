@@ -73,6 +73,28 @@ export interface HashOptions {
   retireLeases?: boolean;
 }
 
+/**
+ * The anchor assignment a walk can carry, for a caller that visits every line anyway.
+ *
+ * WHY: `hashesFor` returns a finished array, which forces it to split the text to produce one. The
+ * WHY: served read walks its lines to select a page, so it takes the assignment step instead and drives
+ * WHY: it from that walk — one pass over the text for both.
+ *
+ * A plan is single-use: `assign` carries the bit set of every anchor it has handed out, so replaying one
+ * over a second walk keeps assigning from a space the first walk already spent. Ask for a fresh plan
+ * instead. Nothing persists through it — the read path passes `noPersist`, and the authoritative
+ * snapshot and lease write is `upsertSnapshotFor`, after the page is rendered.
+ */
+export interface AnchorWalk {
+  /**
+   * Assigns the next line's anchor, in walk order. Absent when `cached` carries the anchors already:
+   * the store holds this content, so the caller still walks, it just skips the assignment.
+   */
+  assign?: (line: string) => string;
+  /** The anchors this content already has in the store, in line order. */
+  cached?: string[];
+}
+
 export const ANCHOR_LEN = HASH_LEN;
 export const HASH_SEP = "│";
 export const HASH_SPACE = ALPHA.length ** HASH_LEN;
@@ -130,10 +152,35 @@ export function isValidHashList(value: unknown): value is string[] {
 // WHY: true because 3,907 is prime and does not divide 62^4 = 2^4 × 31^4).
 export const HASH_PROBE_STRIDE = ALPHA.length ** 2 + ALPHA.length + 1;
 
-// WHY: bumped to 3 for file-scoped derivation — the snapshot cache key
-// WHY: `${CANON_VERSION}:${checksum}` then misses every pre-change snapshot.
+/**
+ * CANON_VERSION 3 (issue #22): the frozen 28-code-point whitespace class below replaces the v2
+ * ASCII-only class of ADR-0005 — see ADR-0029 for the amendment and the migration notes. Snapshot
+ * keys carry the version (`${CANON_VERSION}:${checksum}`), so pre-v3 rows are inert cache misses
+ * rebuilt on the next read — no pre-v3 constant is retained.
+ *
+ * WHY (merge provisional, S2 open): the same version 3 also keys the lane's file-scoped anchor
+ * WHY: generation (allocation seeds xxh32 with the canonical path, so pre-change snapshots miss
+ * WHY: and recompute). Merged 3 conflates the whitespace-class contract with the generation
+ * WHY: contract under one persisted key — see the merge commit; value unchanged by this merge.
+ */
 export const CANON_VERSION = 3;
-const CANON_RE = /[ \t\r\n]+/g;
+
+/**
+ * WHY: an explicit code-point list, never a Unicode property escape — \p{White_Space} and \p{Cf}
+ * drift with engine versions while a versioned canon must be a frozen function (issue #22).
+ * Frozen set, 6 + 3 + 11 + 5 + 3 = 28 code points: TAB, LF, VT, FF, CR, SP; NEL, NBSP, OGHAM
+ * SPACE; EN QUAD…HAIR SPACE (U+2000–U+200A); LINE/PARAGRAPH SEPARATOR, NARROW NBSP, MEDIUM
+ * MATHEMATICAL SPACE, IDEOGRAPHIC SPACE; LRM, RLM, ZWNBSP/BOM.
+ */
+const CANON_CODE_POINTS = [
+  0x0009, 0x000a, 0x000b, 0x000c, 0x000d, 0x0020, 0x0085, 0x00a0, 0x1680, 0x2000, 0x2001, 0x2002,
+  0x2003, 0x2004, 0x2005, 0x2006, 0x2007, 0x2008, 0x2009, 0x200a, 0x2028, 0x2029, 0x202f, 0x205f,
+  0x3000, 0x200e, 0x200f, 0xfeff,
+] as const;
+const CANON_RE = new RegExp(
+  `[${CANON_CODE_POINTS.map((cp) => `\\u${cp.toString(16).padStart(4, "0")}`).join("")}]+`,
+  "g",
+);
 
 export function canon(line: string): string {
   return line.replace(CANON_RE, "");
@@ -300,8 +347,20 @@ export class HashIdentity {
   // WHY: content-only derivation — never a file's served rows. File materialization
   // WHY: goes through `fileScopedHashes`/the `hashesFor` path branch instead.
   contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<string>): string[] {
-    const lines = splitLines(content);
-    const hashes = new Array<string>(lines.length);
+    return this.lineHashesPure(content, blockedHashes);
+  }
+
+  /**
+   * WHY: the per-line step of `lineHashesPure`, split out so the served read can run it inside its
+   * WHY: own walk over the text instead of calling back for a whole-content array.
+   * WHY: (merge) the walk carries the file's path seed when the caller knows the file, so the
+   * WHY: served read's anchors agree with `hashesFor`'s file-scoped ones; pathless callers stay
+   * WHY: content-only (`contentBaseIndex`, the single owner beside `fileBaseIndex`).
+   */
+  private newLineAssigner(
+    blockedHashes?: ReadonlySet<string>,
+    pathSeed?: number,
+  ): (line: string) => string {
     const used = new Uint32Array(BITSET_WORDS);
     // WHY: the digit subcube is pre-marked so neither the fast path nor the
     // WHY: probe in `assignHash` can ever return a reserved index.
@@ -311,12 +370,18 @@ export class HashIdentity {
     if (blockedHashes) {
       for (const h of blockedHashes) this.markHashUsed(h, used, hint);
     }
-    for (let i = 0; i < lines.length; i++) {
-      const c = getCanon(canonCache, lines[i]!);
-      const baseIdx = contentBaseIndex(c);
-      const h = this.assignHash(used, baseIdx, hint);
-      hashes[i] = h;
-    }
+    return (line: string): string => {
+      const c = getCanon(canonCache, line);
+      const baseIdx =
+        pathSeed === undefined ? contentBaseIndex(c) : fileBaseIndex(c, pathSeed);
+      return this.assignHash(used, baseIdx, hint);
+    };
+  }
+
+  private lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
+    const assign = this.newLineAssigner(blockedHashes);
+    const hashes: string[] = [];
+    for (const line of splitLines(content)) hashes.push(assign(line));
     return hashes;
   }
   private fileScopedHashes(
@@ -497,6 +562,47 @@ export class HashIdentity {
     return newHashes;
   }
 
+  /**
+   * The anchor assignment for a content whose lines the caller is about to walk themselves.
+   *
+   * WHY: the served read walks the text once — assigning an anchor AND keeping the page — which a
+   * WHY: `hashesFor` call cannot drive because it must finish the whole array first. Everything else is
+   * WHY: `hashesFor`'s behaviour: the same snapshot cache and the same `blockedHashes` handling.
+   *
+   * `prior` (the stable remap) needs the old AND new line arrays, and pathless hashing has no store
+   * to hand a walk to, so both stay whole-content calls here.
+   */
+  async anchorsForWalk(content: string, options?: HashOptions): Promise<AnchorWalk> {
+    await initHasher();
+    const path = options?.path;
+    const persist = options?.persist ?? true;
+    const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
+    if (!path || options?.prior) {
+      return { cached: await this.hashesFor(content, options) };
+    }
+
+    let cached: string[] | undefined;
+    if (snapshotIO) {
+      try {
+        cached = await snapshotIO.get(path, content, persist);
+      } catch (error) {
+        // SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
+        console.error("Failed to read hash store snapshot:", error);
+      }
+    }
+    if (cached) return { cached };
+    // WHY: the plan assigns one line at a time and writes nothing: the read path persists its snapshot
+    // WHY: and leases through `upsertSnapshotFor`, once the page has been rendered.
+    // WHY: (merge) the walk seeds from the file when known — a content-only walk would serve anchors
+    // WHY: the file-scoped edit pipeline refuses as foreign, so both halves must derive identically.
+    return {
+      assign: this.newLineAssigner(
+        options?.blockedHashes,
+        xxh32(canonicalAnchorPath(path)),
+      ),
+    };
+  }
+
   async hashesFor(content: string, options?: HashOptions): Promise<string[]> {
     await initHasher();
     const path = options?.path ?? "";
@@ -609,6 +715,12 @@ export function contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<s
   return defaultHashIdentity.contentOnlyHashes(content, blockedHashes);
 }
 
+// WHY (merge): main #47's walk-identity tests import the pure content-only surface by this name;
+// WHY: it is `contentOnlyHashes` under the merged file-scoped world (no store, no path, no persist).
+export function _lineHashesPure(content: string, blockedHashes?: ReadonlySet<string>): string[] {
+  return contentOnlyHashes(content, blockedHashes);
+}
+
 export function fileHashesFor(
   path: string,
   content: string,
@@ -619,12 +731,15 @@ export function fileHashesFor(
 
 export async function lineHashes(
   content: string,
-  path: string,
+  path?: string,
   previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
   io?: HashSnapshotIO,
   persist?: boolean,
   blockedHashes?: ReadonlySet<string>,
 ): Promise<string[]> {
+  // WHY (merge): main's served preview falls back to a pathless call when it holds no path —
+  // WHY: with no file there is no store identity, so derivation is content-only (never persisted).
+  if (path === undefined) return contentOnlyHashes(content, blockedHashes);
   return defaultHashIdentity.hashesFor(content, {
     path,
     prior: previous,

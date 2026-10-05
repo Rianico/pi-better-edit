@@ -132,27 +132,28 @@ describe("fmtReadPreview", () => {
     expect(result.text).toContain("[Showing lines 1-3 of 6. Use offset=4 to continue.]");
   });
 
-  it("shows a 60KB line in full by default", async () => {
+  it("withholds a 60KB line under the one default row budget (pi's 50KB)", async () => {
     const big = "V".repeat(60_000);
     const result = await fmtReadPreview(`${big}\nb\n`, {}, undefined, home.testPath);
-    expect(result.text).toMatch(new RegExp(`^[A-Za-z0-9]{4}│V{60000}\n[A-Za-z0-9]{4}│b$`));
-    expect(result.text).not.toContain("content not shown");
+    expect(result.text).toContain("│b");
+    expect(result.text).not.toContain("│V");
+    expect(result.text).toContain("[Line 1 is");
+    expect(result.text).toContain("exceeds 50.0KB");
   });
 
-  it("shows a line just under 200KB in full by default", async () => {
-    const big = "U".repeat(204_700);
+  it("shows a line just under the default budget in full", async () => {
+    const big = "U".repeat(51_000);
     const result = await fmtReadPreview(`${big}\n`, {}, undefined, home.testPath);
-    expect(result.text).toMatch(new RegExp(`^[A-Za-z0-9]{4}│U{204700}$`));
+    expect(result.text).toMatch(new RegExp(`^[A-Za-z0-9]{4}│U{51000}$`));
     expect(result.text).not.toContain("content not shown");
   });
 
-  it("marks lines over 200KB by default", async () => {
+  it("marks a line over the default budget with the bash fallback", async () => {
     const big = "T".repeat(210_000);
     const result = await fmtReadPreview(`${big}\n`, {}, undefined, home.testPath);
     expect(result.text).not.toMatch(/[A-Za-z0-9]{4}│/);
-    expect(result.text).toContain("exceeds 200.0KB");
-    expect(result.text).toContain("sed -n '1p'");
-    expect(result.text).toContain("head -c 204800");
+    expect(result.text).toContain("exceeds 50.0KB");
+    expect(result.text).toContain("head -c 51200");
     expect(result.nextOffset).toBeUndefined();
   });
 });

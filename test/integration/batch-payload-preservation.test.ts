@@ -57,7 +57,7 @@ async function servedAnchors(
   readTool: any,
   name: string,
 ): Promise<{ alpha: string; beta: string; delta: string }> {
-  const result = await readTool.execute("r1", { path: name }, undefined, undefined, ctx);
+  const result = await readTool.execute("r1", { file: name }, undefined, undefined, ctx);
   const lines = getText(result).split("\n");
   const pick = (content: string): string =>
     extractHash(lines.find((line) => line.includes(`│${content}`))!);

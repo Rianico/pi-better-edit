@@ -5,7 +5,7 @@ A hash-anchored file-editing extension for the pi-coding-agent: every line of a 
 ## Language
 
 **serve**:
-To deliver a line's `HASH│content` row into the model's context through tool output. Reading serves the rows it shows; a post-edit diff serves its rows; an error's fresh-anchor feedback serves its rows.
+To deliver a line's `HASH│content` row into the model's context through tool output. A default (`served`) read serves the rows it shows; a post-edit diff serves its rows; an error's fresh-anchor feedback serves its rows.
 _Avoid_: display, show, echo
 
 **served state**:
@@ -17,7 +17,11 @@ The separation of responsibilities: the tool owns verification of what the model
 _Avoid_: —
 
 **anchor philosophy**:
-The project's core contract: per-line anchors derive from the file's canonical path and the line's content (`canon`: ASCII whitespace (`[ \t\r\n]`) stripped), stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005).
+The project's core contract: per-line anchors derive from the file's canonical path and the line's content (`canon`: the frozen v3 whitespace class stripped — 28 code points, ADR-0029 — amending ADR-0005's ASCII-only class), stable for unchanged lines and across whitespace-only formatting, and position-independent; an anchor that cannot be resolved is rejected, never fuzzy-matched or silently relocated. Byte-level detection of non-whitespace changes is unchanged — token-level edits still rotate the anchor (ADR-0005, class amended by ADR-0029).
+
+**whitespace class**:
+The single frozen code-point set the canon strips from a line before hashing — `CANON_VERSION = 3`, 28 code points (C0 whitespace except U+001C–U+001F, SP, NEL, NBSP, OGHAM SPACE, U+2000–U+200A, U+2028/U+2029, U+202F, U+205F, U+3000, LRM, RLM, BOM), defined once in `src/hashline/hash-identity.ts` (ADR-0029). Zero-width and joiner characters (ZWSP/ZWNJ/ZWJ), SOFT HYPHEN, WORD JOINER, MONGOLIAN VOWEL SEPARATOR and the C1 controls (except NEL) are significant and survive the canon. The executable per-code-point record is `test/core/canon-v3-disposition.test.ts`; formatter churn against the class is re-measured by `scripts/canon-churn-audit.mjs`.
+_Avoid_: whitespace set, trim set (use canon)
 
 **anchor staleness**:
 An anchor (one line, `anchor_from` or `anchor_to`) that no longer resolves against the current file because the line's content changed since it was served (`hash`/`canon` miss). Reported as `[E_STALE_ANCHOR]` with the current rows served; the model retries with those rows (no `read` needed).
@@ -110,16 +114,12 @@ _Avoid_: the `blocked hashes` term below (the hash-allocation guard, not a lease
 The per-snapshot table `line_lineage(snapshot_id, line_number) -> (line_id, canon_hash, anchor)`, written inside `BEGIN IMMEDIATE` for every materialized version held in `file_snapshots`. It is the sole coordinate authority: an edit looks its leased `line_id` up here and either rebases to the new coordinate or fails closed. A batch's commit writes it directly from the in-memory working buffer — surviving lines keep the `line_id` they already carry and only lines the batch created take fresh ids from `line_id_counters` — so re-pairing `S_latest` against the new content (`pairSnapshots`) stays a read-path mechanism, used where there is content to align and no working buffer to consult.
 _Avoid_: epoch snapshot, served hash map
 
-**read_skill**:
-To read a file's content as plain text — no hash prefixes, no served rows. The model's tool for loading skill content (SKILL.md or any file in its directory) to invoke and consume; `read` remains the hashed read for edit targets.
-_Avoid_: plain read, skill tool
-
 **reference read**:
-A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read_skill` is the only reference read.
+A read that serves no hashes and records no served state — the model consumes the content rather than editing it. `read` with `mode: "verbatim"` is the reference read; it loads skill content (SKILL.md or any file in its directory), config values, and docs. It is not subject to the served path's 238,328-line anchor-space ceiling, so a file too large to anchor is still readable verbatim; both modes share the 100MB size guard, which bounds bytes read. Neither mode materializes a file's lines to take a page: a read walks the lines it shows and, when served, assigns each row's anchor in that same walk — so an unbounded read holds the lines it pages as its page, and the only other line array on a read is the snapshot store's lineage write, bounded by the anchor-space ceiling.
 _Avoid_: unmanaged read
 
-**tool-name-as-intent**:
-The principle that a tool's name encodes the model's intent — `read` (hashed, editable) vs `read_skill` (plain, consumable) — so the model always knows what it's getting.
+**mode-as-intent**:
+The principle that the payload's `mode` field, not the tool name, selects the model's read contract — `served` (the editing-safe default: hashed, editable) vs `verbatim` (plain, consumable) — so the model always knows what it's getting.
 _Avoid_: —
 
 **payload contract**:
@@ -195,7 +195,7 @@ The whitespace-stripped form `line.replace(/[ \t\r\n]+/g,"")` (`ADR-0005`), used
 _Avoid_: content (byte-level, not canon)
 
 **E_LARGE_FILE**:
-Refusal that the file exceeds the hashline size contract — more than 200,000 lines on the read/edit load path (`limitKind: "lines"`, served admission budget `SERVED_MAX_LINES`), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,766,336-line ceiling for allocatable 4-char anchors — 62^4 minus the 10,000 reserved all-digit spellings, carrying no line count; live width record [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). The streaming gate reports a lower bound ("more than N lines") — its count is trip-instant, not a total; the preloaded gate counts the materialized text and reports the exact line count. Nothing was written; use `write` or a non-line-based approach for very large files.
+Refusal that the file exceeds the hashline size contract — more than 200,000 lines on the served read/edit load path (`limitKind: "lines"`, served admission budget `SERVED_MAX_LINES`, reporting the count when it is known; a `mode: "verbatim"` read is not capped), or hash-anchor space exhausted during allocation (`limitKind: "hash-space"`, the 14,766,336-line ceiling for allocatable 4-char anchors — 62^4 minus the 10,000 reserved all-digit spellings, carrying no line count; live width record [ADR-0029](docs/adr/0029-widen-anchors-to-4-characters-for-tokenizer-stable-references.md)). The streaming gate reports a lower bound ("more than N lines") — its count is trip-instant, not a total; the preloaded gate counts the materialized text and reports the exact line count. Nothing was written; use `write` or a non-line-based approach for very large files.
 _Avoid_: E_TOO_BIG (unclaimed code)
 
 **E_UNKNOWN**:

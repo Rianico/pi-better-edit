@@ -8,12 +8,13 @@ import { detectEnding, toLF, stripBOM } from "../edit-diff.js";
 import { abortIf } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { valKind, valAccess } from "../validation.js";
-import { visLines } from "../utils.js";
+import { visibleLineTotal, walkLines } from "./line-walker.js";
 import { loadHashStore, type HashStore } from "../hash-store.js";
+import type { AnchorWalk } from "../hashline/hash-identity.js";
 import { snapshotIOFor } from "../snapshot-store";
-import type { NormFile } from "./types.js";
+import type { NormFile, NormText } from "./types.js";
 
-export type { NormFile } from "./types.js";
+export type { NormFile, NormText } from "./types.js";
 
 export type SnapInfo = {
   snapshotId: string;
@@ -53,20 +54,29 @@ export async function fileSnap(
   };
 }
 
-export interface ReadNormOptions {
+export interface DecodeNormOptions {
   signal?: AbortSignal;
   accessMode?: number;
   preloadedFile?: LFile;
+  /** The anchor-space line cap; omit to load without one (a caller that serves no anchors). */
   maxLines?: number;
+}
+
+export interface ReadNormOptions extends DecodeNormOptions {
   store?: HashStore;
   noPersist?: boolean;
 }
 
-export async function readNormFile(
+/**
+ * The decode/normalize half of the load path, shared by the served and verbatim seams: kind
+ * admission, BOM strip, CRLF→LF, and the invalid-UTF-8 disclosure. `maxLines` is the anchor-space
+ * cap — an edit-domain limit — so a caller that serves no anchors omits it and gets an uncapped read.
+ */
+export async function decodeNormText(
   path: string,
   cwd: string,
-  options?: ReadNormOptions,
-): Promise<NormFile> {
+  options?: DecodeNormOptions,
+): Promise<NormText> {
   const absolutePath = toCwd(path, cwd);
   const resolvedPath = await resolveTarget(absolutePath);
   const signal = options?.signal;
@@ -89,7 +99,10 @@ export async function readNormFile(
   const normalized = toLF(rawContent);
 
   if (options?.maxLines !== undefined) {
-    const lineCount = visLines(normalized).length;
+    // WHY: the count is the NORMALIZED text's, because `toLF` turns a lone `\r` into a line break: a
+    // WHY: count taken before it under-reads a CR-only file, which would then pass this cap and die in
+    // WHY: the anchor space instead. One walk settles it without holding a line.
+    const lineCount = visibleLineTotal(normalized, walkLines(normalized).total);
     if (lineCount > options.maxLines) {
       throw new DomainError("E_LARGE_FILE", {
         path,
@@ -100,9 +113,24 @@ export async function readNormFile(
     }
   }
 
+  return {
+    absolutePath: resolvedPath,
+    normalized,
+    bom,
+    originalEnding,
+    hadUtf8DecodeErrors: file.hadUtf8DecodeErrors === true,
+  };
+}
+
+export async function readNormFile(
+  path: string,
+  cwd: string,
+  options?: ReadNormOptions,
+): Promise<NormFile> {
+  const norm = await decodeNormText(path, cwd, options);
   const hashStore = options?.store ?? (await loadHashStore());
-  const fileHashes = await defaultHashIdentity.hashesFor(normalized, {
-    path: resolvedPath,
+  const fileHashes = await defaultHashIdentity.hashesFor(norm.normalized, {
+    path: norm.absolutePath,
     persist: options?.noPersist !== true,
     snapshotIO: snapshotIOFor(hashStore),
     // WHY: this is the read-path materialization of the file's committed bytes (spec §3.1.3 / §3.1.3.3):
@@ -110,12 +138,25 @@ export async function readNormFile(
     // WHY: the load path allowed to retire leases. In-memory working-buffer hashing stays non-authoritative.
     retireLeases: true,
   });
-  return {
-    absolutePath: resolvedPath,
-    normalized,
-    bom,
-    originalEnding,
-    fileHashes,
-    hadUtf8DecodeErrors: file.hadUtf8DecodeErrors === true,
-  };
+  return { ...norm, fileHashes };
+}
+
+/**
+ * The served read's anchor plan: the walk assigns each line's anchor while the preview keeps the page.
+ *
+ * WHY: `readNormFile` finishes the whole anchor array before the caller knows which lines to show, so
+ * WHY: the read path takes the assignment instead and runs it inside its own walk. `readNormFile` stays
+ * WHY: for the callers that need the finished array (the edit pipeline) and pays a split for it.
+ */
+export async function anchorWalkFor(
+  normalized: string,
+  absolutePath: string,
+  options?: ReadNormOptions,
+): Promise<AnchorWalk> {
+  const hashStore = options?.store ?? (await loadHashStore());
+  return defaultHashIdentity.anchorsForWalk(normalized, {
+    path: absolutePath,
+    persist: options?.noPersist !== true,
+    snapshotIO: snapshotIOFor(hashStore),
+  });
 }

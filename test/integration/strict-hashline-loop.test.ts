@@ -8,7 +8,7 @@ describe("strict hashline tool loop", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -44,7 +44,7 @@ describe("strict hashline tool loop", () => {
 
       const secondRead = await readTool.execute(
         "r2",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -74,7 +74,7 @@ describe("strict hashline tool loop", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { path: "empty.ts" },
+        { file: "empty.ts" },
         undefined,
         undefined,
         ctx,
@@ -106,7 +106,7 @@ describe("CRLF line ending preservation", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { path: "crlf.ts" },
+        { file: "crlf.ts" },
         undefined,
         undefined,
         ctx,
@@ -136,7 +136,7 @@ describe("CRLF line ending preservation", () => {
     await withTempFile("lf.ts", "alpha\nbeta\ngamma\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute("r1", { path: "lf.ts" }, undefined, undefined, ctx);
+      const readResult = await readTool.execute("r1", { file: "lf.ts" }, undefined, undefined, ctx);
       const betaRef = readResult.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│beta"))!
@@ -168,7 +168,7 @@ describe("UTF-8 BOM handling", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { path: "bom.ts" },
+        { file: "bom.ts" },
         undefined,
         undefined,
         ctx,

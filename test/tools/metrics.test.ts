@@ -10,7 +10,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
     await withTempFile("sample.ts", "alpha\nbeta\ngamma\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -31,7 +31,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -52,7 +52,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
     await withTempFile("sample.ts", "one\ntwo\nthree\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("one\ntwo\nthree\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -72,7 +72,7 @@ describe("details.metrics surface (Phase 2 C — host-only observability)", () =
     await withTempFile("sample.ts", "alpha\nbeta\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",

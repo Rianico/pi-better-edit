@@ -9,7 +9,7 @@ describe("snapshotId surface (details-only after W2)", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -41,7 +41,7 @@ describe("snapshotId surface (details-only after W2)", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -69,7 +69,7 @@ describe("snapshotId surface (details-only after W2)", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { path: "sample.ts" },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,

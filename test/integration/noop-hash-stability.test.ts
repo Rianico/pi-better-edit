@@ -12,7 +12,7 @@ describe("noop edit hash stability", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const r1 = getText(
-        await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx),
+        await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx),
       );
       const hashBefore = hashOf(r1, "bbb");
 
@@ -29,7 +29,7 @@ describe("noop edit hash stability", () => {
       expect(getText(result)).toContain("No changes made");
 
       const r2 = getText(
-        await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx),
+        await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx),
       );
       expect(hashOf(r2, "bbb")).toBe(hashBefore);
     });
@@ -40,7 +40,7 @@ describe("noop edit hash stability", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const r1 = getText(
-        await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx),
+        await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx),
       );
       const hashBefore = hashOf(r1, "bbb");
 
@@ -58,7 +58,7 @@ describe("noop edit hash stability", () => {
       }
 
       const r2 = getText(
-        await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx),
+        await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx),
       );
       expect(hashOf(r2, "bbb")).toBe(hashBefore);
     });
@@ -69,7 +69,7 @@ describe("noop edit hash stability", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const r1 = getText(
-        await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx),
+        await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx),
       );
       const bbbHash = hashOf(r1, "bbb");
       const dddHash = hashOf(r1, "ddd");
@@ -93,7 +93,7 @@ describe("noop edit hash stability", () => {
       expect(getText(result)).toContain("Successfully edited");
 
       const r2 = getText(
-        await readTool.execute("r2", { path: "sample.ts" }, undefined, undefined, ctx),
+        await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx),
       );
       expect(hashOf(r2, "bbb")).toBe(bbbHash);
       expect(hashOf(r2, "DDD")).not.toBe(dddHash);
@@ -105,7 +105,7 @@ describe("noop edit hash stability", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const r1 = getText(
-        await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx),
+        await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx),
       );
       const hashBefore = hashOf(r1, "bbb");
 

@@ -64,8 +64,8 @@ function dumpStoreState(db: DatabaseSync): Record<string, string[]> {
 
 async function serveBoth(cwd: string) {
   const { ctx, readTool } = setupIntegrationTest(cwd);
-  await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
-  await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+  await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
   return ctx;
 }
 
@@ -155,8 +155,8 @@ describe("foreign-source cut mutates both files as one transaction (ticket-04b Â
       await seed(cwd);
       await writeFile(join(cwd, "target.txt"), "1\n2\n3\n4\n5\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { path: "source.txt" }, undefined, undefined, ctx);
-      await readTool.execute("r2", { path: "target.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "source.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r2", { file: "target.txt" }, undefined, undefined, ctx);
       const hs = await lineHashes(SOURCE_BEFORE, join(cwd, "source.txt"));
       const ht = await lineHashes("1\n2\n3\n4\n5\n", join(cwd, "target.txt"));
       const result = await execute(

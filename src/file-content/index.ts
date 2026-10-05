@@ -9,7 +9,6 @@
  */
 
 import { constants } from "node:fs";
-import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import { AUTO_READ_MAX, SERVED_MAX_LINES } from "../constants.js";
 import { resolveTarget } from "../fs-write.js";
 import { toCwd } from "../paths.js";
@@ -17,7 +16,7 @@ import { valAccess } from "../validation.js";
 import { abortIf } from "../utils.js";
 import { visLines } from "../utils.js";
 import { loadFileKindAndText, type FileStats, type LFile } from "./detection.js";
-import { readNormFile, fileSnap } from "./loader.js";
+import { anchorWalkFor, decodeNormText, fileSnap } from "./loader.js";
 import { fmtReadPreview, type ReadWindow } from "./preview.js";
 import type { ServedRow } from "../hashline/served.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
@@ -26,7 +25,9 @@ export type { FileStats, LFile, LoadFileOptions } from "./detection.js";
 export { loadFileKindAndText } from "./detection.js";
 export {
   readNormFile,
+  decodeNormText,
   fileSnap,
+  type NormText,
   type NormFile,
   type SnapInfo,
   type ReadNormOptions,
@@ -40,6 +41,12 @@ export interface PrepareResult {
   absolutePath: string;
   bom: string;
   fileHashes: string[];
+  /**
+   * The counts the read's count-only walk produced, in both line stacks: `visLines(normalized).length`
+   * for the read's own line count, and `splitLines(normalized).length` for the snapshot's. WHY: a caller
+   * that split the text again for them would rebuild the line array this path exists to avoid.
+   */
+  lineTotals: { visible: number; split: number };
   hadUtf8DecodeErrors: boolean;
   preview: string;
   served: ServedRow[];
@@ -57,10 +64,12 @@ export interface PrepareOptions {
   offset?: number;
   limit?: number;
   windows?: ReadWindow[];
+  /** The anchor-space line cap for served reads; ignored when `render` is `"verbatim"`. */
   maxLines?: number;
   accessMode?: number;
   maxLineBytes?: number;
   maxTruncLines?: number;
+  render?: "served" | "verbatim";
   store?: import("../hash-store.js").HashStore;
   noPersist?: boolean;
   preloadedFile?: LFile;
@@ -76,10 +85,19 @@ export async function prepareFile(
   abortIf(signal);
   await valAccess(absolutePath, path, options?.accessMode ?? constants.R_OK);
   abortIf(signal);
+  const verbatim = options?.render === "verbatim";
+  // WHY: the anchor-space line cap is an edit-domain limit (`MAX_HASH_LINES` is the served cap), so
+  // WHY: verbatim ignores a caller-supplied cap: a file too large to anchor is still a file worth
+  // WHY: reading. Only the 100MB `MAX_BYTES` guard in `loadFileKindAndText` bounds both modes, and it
+  // WHY: bounds BYTES READ: both modes page a file by walking its lines and hold no line array, so
+  // WHY: verbatim takes no cap and served takes the lane's served budget one.
+  // WHY (merge provisional, S3 open): the served default stays `SERVED_MAX_LINES` (lane #20), not
+  // WHY: the anchor-space ceiling — name/justification post-paging undecided; see the merge commit.
+  const maxLines = verbatim ? undefined : (options?.maxLines ?? SERVED_MAX_LINES);
   const file =
     options?.preloadedFile ??
     (await loadFileKindAndText(absolutePath, {
-      maxLines: options?.maxLines ?? SERVED_MAX_LINES,
+      maxLines,
       displayPath: path,
     }));
   if (file.kind !== "text") {
@@ -91,6 +109,7 @@ export async function prepareFile(
         absolutePath: resolved,
         bom: "",
         fileHashes: [],
+        lineTotals: { visible: 0, split: 0 },
         hadUtf8DecodeErrors: false,
         preview: "",
         served: [],
@@ -104,6 +123,7 @@ export async function prepareFile(
         absolutePath: resolved,
         bom: "",
         fileHashes: [],
+        lineTotals: { visible: 0, split: 0 },
         hadUtf8DecodeErrors: false,
         preview: "",
         served: [],
@@ -116,27 +136,43 @@ export async function prepareFile(
       absolutePath: resolved,
       bom: "",
       fileHashes: [],
+      lineTotals: { visible: 0, split: 0 },
       hadUtf8DecodeErrors: false,
       preview: "",
       served: [],
     };
   }
 
-  const norm = await readNormFile(path, cwd, {
+  // WHY: the ONE seam where verbatim diverges from served. Both modes decode/normalize through
+  // WHY: `decodeNormText`; only served then reaches the anchor store, because anchors and the
+  // WHY: anchor-space line cap are edit-domain concerns.
+  const norm = await decodeNormText(path, cwd, {
     signal,
     accessMode: options?.accessMode,
-    maxLines: options?.maxLines ?? SERVED_MAX_LINES,
-    store: options?.store,
-    noPersist: options?.noPersist,
+    ...(maxLines === undefined ? {} : { maxLines }),
     preloadedFile: file,
   });
+  // WHY: served hands the preview a walk plan instead of a finished anchor array: the anchors are
+  // WHY: assigned inside the same walk that keeps the page, so the page costs one pass and the anchors
+  // WHY: ride along in it. Verbatim passes none at all — no store, no snapshot, no hash of a line.
+  const anchors = verbatim
+    ? []
+    : await anchorWalkFor(norm.normalized, norm.absolutePath, {
+        store: options?.store,
+        noPersist: options?.noPersist,
+      });
 
   const preview = await fmtReadPreview(
     norm.normalized,
-    { offset: options?.offset, limit: options?.limit, windows: options?.windows },
-    norm.fileHashes,
+    {
+      offset: options?.offset,
+      limit: options?.limit,
+      windows: options?.windows,
+      render: options?.render,
+    },
+    anchors,
     norm.absolutePath,
-    options?.maxLineBytes ?? DEFAULT_MAX_BYTES,
+    options?.maxLineBytes,
     options?.maxTruncLines ?? AUTO_READ_MAX,
   );
 
@@ -152,7 +188,8 @@ export async function prepareFile(
     normalized: norm.normalized,
     absolutePath: norm.absolutePath,
     bom: norm.bom,
-    fileHashes: norm.fileHashes,
+    fileHashes: preview.hashes,
+    lineTotals: preview.lineTotals,
     ...(file.stats ? { stats: file.stats } : {}),
     hadUtf8DecodeErrors: norm.hadUtf8DecodeErrors,
     preview: previewText,

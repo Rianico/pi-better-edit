@@ -39,7 +39,7 @@ describe.skipIf(isRoot || isWindows)("permission errors", () => {
         const readTool = getTool("read");
 
         await expect(
-          readTool.execute("r1", { path: filePath }, undefined, undefined, {
+          readTool.execute("r1", { file: filePath }, undefined, undefined, {
             cwd: tempDir,
             sessionManager: testSessionManager,
           } as any),

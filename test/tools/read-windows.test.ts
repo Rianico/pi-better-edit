@@ -216,7 +216,7 @@ describe("read tool — windows", () => {
       const readResult = await readTool.execute(
         "r1",
         {
-          path: "windows.ts",
+          file: "windows.ts",
           windows: [
             { offset: 1, limit: 2 },
             { offset: 11, limit: 2 },
@@ -251,7 +251,7 @@ describe("read tool — windows", () => {
       const readResult = await readTool.execute(
         "r1",
         {
-          path: "overlap.ts",
+          file: "overlap.ts",
           windows: [
             { offset: 1, limit: 3 },
             { offset: 2, limit: 3 },
@@ -290,7 +290,7 @@ describe("read tool — windows", () => {
       await session.markDriftReported(["abcc"]);
       await readTool.execute(
         "r1",
-        { path: "empty-windows.ts", windows: [] },
+        { file: "empty-windows.ts", windows: [] },
         undefined,
         undefined,
         ctx,
@@ -301,7 +301,7 @@ describe("read tool — windows", () => {
       await session.markDriftReported(["abcc"]);
       await readTool.execute(
         "r2",
-        { path: "empty-windows.ts", offset: 1, limit: 2 },
+        { file: "empty-windows.ts", offset: 1, limit: 2 },
         undefined,
         undefined,
         ctx,
@@ -315,7 +315,7 @@ describe("read tool — windows", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { path: "plain.ts", offset: 2, limit: 2 },
+        { file: "plain.ts", offset: 2, limit: 2 },
         undefined,
         undefined,
         ctx,

@@ -16,7 +16,7 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       await expect(
         editTool.execute(
@@ -37,7 +37,7 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -60,7 +60,7 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -83,7 +83,7 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const before = await readFile(path, "utf-8");
       await expect(
         editTool.execute(
@@ -112,7 +112,7 @@ describe("regEdit", () => {
       // WHY: width-5 tripwire — pins the fixture token itself row-shaped, so
       // WHY: this fixture reddens (not just its differential) if a flip strands it.
       expect(HASH_RE.test("Zz99")).toBe(true);
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const result = await editTool.execute(
         "e1",
         {
@@ -170,7 +170,7 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const marker = `+${hashes[1]!}│BBB`;
       const result = await editTool.execute(
         "e1",
@@ -192,7 +192,7 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -216,7 +216,7 @@ describe("regEdit", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       await expect(
         editTool.execute(
@@ -241,7 +241,7 @@ describe("regEdit — robustness", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const fileReader = await import("../../src/file-reader");
       const spy = vi.spyOn(fileReader, "fileSnap").mockRejectedValue(new Error("stat failed"));
       try {
@@ -269,7 +269,7 @@ describe("regEdit — robustness", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const fileReader = await import("../../src/file-reader");
       const spy = vi.spyOn(fileReader, "fileSnap").mockRejectedValue(new Error("stat failed"));
       try {
@@ -295,7 +295,7 @@ describe("regEdit — robustness", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const hashStore = await import("../../src/snapshot-store");
       const spy = vi.spyOn(hashStore, "upsertSnapshot").mockImplementation(() => {
         throw new Error("store down");
@@ -324,7 +324,7 @@ describe("regEdit — robustness", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const hashStore = await import("../../src/snapshot-store");
       const spy = vi
         .spyOn(hashStore, "upsertSnapshotFor")
@@ -358,7 +358,7 @@ describe("regEdit — robustness", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const undoStore = await import("../../src/undo-store");
       const spy = vi.spyOn(undoStore, "writeUndo").mockImplementation(() => {
         throw new Error("store down");

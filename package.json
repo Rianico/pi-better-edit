@@ -1,6 +1,6 @@
 {
   "name": "pi-better-edit",
-  "version": "2.6.0",
+  "version": "2.7.0",
   "description": "Hash-anchored read/edit/undo tools for pi-coding-agent. Every line gets a unique 4-char hash (A-Za-z0-9) that stays stable across edits; stale or ambiguous anchors are rejected, never fuzzy-matched. Undo persists across restarts.",
   "keywords": [
     "anchors",
@@ -46,6 +46,7 @@
     "format:fix": "oxfmt .",
     "typecheck": "tsc --noEmit",
     "prepublishOnly": "node scripts/build-dist.mjs && pnpm run typecheck && pnpm run lint && pnpm test",
+    "canon:audit": "node scripts/canon-churn-audit.mjs",
     "test:runtime": "node scripts/runtime-edge-test.mjs",
     "build": "node scripts/build-dist.mjs",
     "verify:dist": "node scripts/verify-dist.mjs",

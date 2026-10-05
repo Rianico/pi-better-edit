@@ -21,7 +21,7 @@ describe("extension registration", () => {
 
     register(pi);
 
-    expect(toolNames.sort()).toEqual(["edit", "read", "read_skill", "undo_last_edit"]);
+    expect(toolNames.sort()).toEqual(["edit", "read", "undo_last_edit"]);
     expect(commandNames).toEqual(["pi-better-edit"]);
 
     // WHY: (#165) two session_start listeners: regEdit captures the session for the preview pane,
@@ -40,11 +40,5 @@ describe("tool prompt file references", () => {
     const source = readFileSync(new URL("../../src/edit.ts", import.meta.url), "utf-8");
     expect(source).toContain("payload-contract");
     expect(source).toContain("EDIT_DESCRIPTION");
-  });
-
-  it("read-skill.ts loads the read-skill prompts", () => {
-    const source = readFileSync(new URL("../../src/read-skill.ts", import.meta.url), "utf-8");
-    expect(source).toContain("../prompts/read-skill.md");
-    expect(source).toContain("../prompts/read-skill-snippet.md");
   });
 });

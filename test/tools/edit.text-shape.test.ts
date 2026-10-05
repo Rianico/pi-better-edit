@@ -10,7 +10,7 @@ describe("edit tool text shape (token budget)", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -33,7 +33,7 @@ describe("edit tool text shape (token budget)", () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",
@@ -54,7 +54,7 @@ describe("edit tool text shape (token budget)", () => {
     await withTempFile("sample.ts", "only\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("only\n", join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       await expect(
         editTool.execute(
@@ -76,7 +76,7 @@ describe("edit tool text shape (token budget)", () => {
     await withTempFile("sample.ts", `before\n${longLine}\nafter\n`, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes(`before\n${longLine}\nafter\n`, join(cwd, "sample.ts"));
-      await readTool.execute("r1", { path: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
 
       const result = await editTool.execute(
         "e1",

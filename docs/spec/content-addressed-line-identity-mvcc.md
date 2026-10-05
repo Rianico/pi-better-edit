@@ -701,6 +701,7 @@ Leased-anchor resolution lives in `src/hashline/lease-resolve.ts` (`resolveLease
   3. `recordEcho` (rejection echo rows)
   4. `recordTruncated` (drift notices)
   5. `undo_last_edit` (file reverts — unlocking §7.2.9: adopts pinned canonical snapshot via cache lookup, zero counter allocations, and upserts restored leases)
+  - Carve-out: `read` with `mode: "verbatim"` is a reference read — it grants no leases and writes no served state, so `recordEpoch` is not on its path; the universal-lease rule above applies to the default `"served"` read only.
 - **Stage 1 Test Modernization**:
   - Modernize `test/tools/served-session.test.ts` (lines 27, 85) to assert `served_leases` upsert and `retired_at` lifecycle instead of legacy mirror nulling on duplicate hashes.
   - Modernize `test/core/served-store.test.ts` (update raw SQL queries targeting deprecated `served` table to `served_leases` / `served_session_meta`).
