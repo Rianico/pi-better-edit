@@ -13,7 +13,7 @@ import {
 } from "../../src/hashline";
 import { initHasher } from "../../src/hashline/hasher";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
-import { getSnapshot, upsertSnapshot } from "../../src/snapshot-store";
+import { getSnapshot, snapshotHashFor, upsertSnapshot } from "../../src/snapshot-store";
 import { contentChecksum } from "../../src/hashline/hasher";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";
@@ -39,15 +39,15 @@ describe("canon — frozen v3 whitespace class (ADR-0005 superseded by issue #22
     expect(base[0]).toBe(tab[0]);
   });
 
-  // WHY (merge note): stale under the frozen v3 class — NBSP/U+2003 now normalize, so the
-  // WHY: `not.toBe` pins below fail at runtime. Kept for the S4 report; lane follow-up owns it.
-  it("keeps NBSP and Unicode whitespace significant", async () => {
+  // WHY: frozen v3 (ADR-0029 amending ADR-0005, issue #22): NBSP/U+2003 normalize, so the
+  // WHY: v3 class treats them as ordinary whitespace — the pre-v3 `not.toBe` pins inverted here.
+  it("folds NBSP and Unicode whitespace per the frozen v3 class", async () => {
     const ascii = await contentOnlyHashes("func hello\n");
     const nbsp = await contentOnlyHashes("func\u00A0hello\n");
     const em = await contentOnlyHashes("func\u2003hello\n");
-    expect(nbsp[0]).not.toBe(ascii[0]);
-    expect(em[0]).not.toBe(ascii[0]);
-    expect(nbsp[0]).not.toBe(em[0]);
+    expect(nbsp[0]).toBe(ascii[0]);
+    expect(em[0]).toBe(ascii[0]);
+    expect(nbsp[0]).toBe(em[0]);
   });
 
   it("normalizes v3 class code points anywhere in the line (issue #22)", async () => {
@@ -118,7 +118,6 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
       await rm(tmp, { recursive: true, force: true });
     }
   }
-
   function sqlitePath(home: string): string {
     return join(home, ".config", "pi-better-edit", "hash-store.sqlite");
   }
@@ -130,7 +129,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
       const hashes = ["aB33", "xY77"];
       upsertSnapshot(store, {
         path: "/p.ts",
-        snapshotHash: `${CANON_VERSION}:${contentChecksum(content)}`,
+        snapshotHash: snapshotHashFor(content),
         lineCount: splitLines(content).length,
         hashes,
         content,
@@ -166,7 +165,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
 
       upsertSnapshot(store, {
         path: "/old.ts",
-        snapshotHash: `${CANON_VERSION}:${rawChecksum}`,
+        snapshotHash: snapshotHashFor(content),
         lineCount: splitLines(content).length,
         hashes: ["ABCC"],
         content,
@@ -179,7 +178,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
         .prepare("SELECT snapshot_hash FROM file_snapshots WHERE path = ? AND snapshot_hash LIKE ?")
         .get("/old.ts", `${CANON_VERSION}:%`) as { snapshot_hash: string } | undefined;
       db.close();
-      expect(row?.snapshot_hash).toBe(`${CANON_VERSION}:${rawChecksum}`);
+      expect(row?.snapshot_hash).toBe(snapshotHashFor(content));
     });
   });
 
@@ -189,7 +188,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
       const content = "func hello\n";
       upsertSnapshot(store, {
         path: "/p.ts",
-        snapshotHash: `${CANON_VERSION}:${contentChecksum(content)}`,
+        snapshotHash: snapshotHashFor(content),
         lineCount: splitLines(content).length,
         hashes: ["ABCC"],
         content,
@@ -201,7 +200,7 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
         .prepare("SELECT snapshot_hash FROM file_snapshots WHERE path = ?")
         .get("/p.ts") as { snapshot_hash: string } | undefined;
       db.close();
-      expect(row?.snapshot_hash).toBe(`${CANON_VERSION}:${contentChecksum(content)}`);
+      expect(row?.snapshot_hash).toBe(snapshotHashFor(content));
       expect(row?.snapshot_hash.startsWith(`${CANON_VERSION}:`)).toBe(true);
       expect(row?.snapshot_hash.endsWith(contentChecksum(content))).toBe(true);
     });

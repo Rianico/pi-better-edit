@@ -15,15 +15,15 @@ import {
 
 const home = useTestHome();
 
-const ANCHOR_ROW = /^[A-Za-z0-9]{3}│/;
+const ANCHOR_ROW = /^[A-Za-z0-9]{4}│/;
 
 describe("fmtReadPreview — mode: verbatim rendering", () => {
   it("served keeps the anchor prefix while verbatim drops it", async () => {
     const text = "alpha\nbeta\n";
     const served = await fmtReadPreview(text, {}, undefined, home.testPath);
     const verbatim = await fmtReadPreview(text, { render: "verbatim" }, undefined, home.testPath);
-    expect(served.text).toMatch(/^[A-Za-z0-9]{3}│alpha$/m);
-    expect(served.text).toMatch(/^[A-Za-z0-9]{3}│beta$/m);
+    expect(served.text).toMatch(/^[A-Za-z0-9]{4}│alpha$/m);
+    expect(served.text).toMatch(/^[A-Za-z0-9]{4}│beta$/m);
     expect(verbatim.text).toBe("alpha\nbeta");
   });
 
@@ -158,8 +158,8 @@ describe("read tool — served (default) mode", () => {
         ctx,
       );
       const text = result.content[0].text as string;
-      expect(text).toMatch(/^[A-Za-z0-9]{3}│alpha$/m);
-      expect(text).toMatch(/^[A-Za-z0-9]{3}│beta$/m);
+      expect(text).toMatch(/^[A-Za-z0-9]{4}│alpha$/m);
+      expect(text).toMatch(/^[A-Za-z0-9]{4}│beta$/m);
       expect(result.details.snapshotId).toBeTruthy();
     });
   });

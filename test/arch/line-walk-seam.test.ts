@@ -125,7 +125,7 @@ describe("the served page never materializes the line array", () => {
         return result.content[0]?.text ?? "";
       };
       await expect(run({ limit: 2 })).resolves.toMatch(
-        /^\w{3}│alpha\n\w{3}│beta\n\n\[Showing lines 1-2 of 4\. Use offset=3 to continue\.\]$/,
+        /^\w{4}│alpha\n\w{4}│beta\n\n\[Showing lines 1-2 of 4\. Use offset=3 to continue\.\]$/,
       );
       await expect(
         run({
@@ -135,7 +135,7 @@ describe("the served page never materializes the line array", () => {
           ],
         }),
       ).resolves.toMatch(
-        /^=== Lines 2-2 of 4 ===\n\w{3}│beta\n\n=== Lines 4-4 of 4 ===\n\w{3}│delta$/,
+        /^=== Lines 2-2 of 4 ===\n\w{4}│beta\n\n=== Lines 4-4 of 4 ===\n\w{4}│delta$/,
       );
       await expect(run({ offset: 9, limit: 1 })).resolves.toContain(
         "Offset 9 is beyond end of file (4 lines total)",
@@ -158,7 +158,7 @@ describe("the served page never materializes the line array", () => {
       const { readTool, ctx } = setupReadTest(cwd);
       const result = await readTool.execute("s1", { file: "empty.txt" }, undefined, undefined, ctx);
       expect(result.content[0]?.text).toMatch(
-        /^\w{3}│\n\[File is empty\. Use edit to insert content\.\]$/,
+        /^\w{4}│\n\[File is empty\. Use edit to insert content\.\]$/,
       );
       expect(splitCalls.length).toBe(callsFromSnapshotStore().length);
     });

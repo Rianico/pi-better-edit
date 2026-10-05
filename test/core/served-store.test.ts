@@ -26,9 +26,8 @@ import {
 } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION, SERVED_TTL_MS } from "../../src/constants";
-import { initHasher, contentChecksum } from "../../src/hashline/hasher";
+import { initHasher } from "../../src/hashline/hasher";
 import { lineHashes } from "../../src/hashline/index.js";
-import { CANON_VERSION } from "../../src/hashline/hash.js";
 import { getWritableTempRoot } from "../support/fixtures";
 
 let tmpHome: string;
@@ -926,10 +925,7 @@ describe("served_leases — universal lease granting (issue #81)", () => {
       expect(leases.map((lease) => lease.served_line_number)).toEqual([1, 2, 3]);
       expect(leases.map((lease) => lease.retired_at)).toEqual([null, null, null]);
       expect(new Set(leases.map((lease) => lease.line_id)).size).toBe(3);
-      expect(leases[0]!.served_snapshot_hash).toBe(
-        `${CANON_VERSION}:${contentChecksum(LEASE_CONTENT)}`,
-      );
-
+      expect(leases[0]!.served_snapshot_hash).toBe(snapshotHashFor(LEASE_CONTENT));
       const lineage = store.db
         .prepare(
           "SELECT ll.line_id, ll.canon_hash FROM line_lineage ll " +
@@ -982,7 +978,7 @@ describe("served_leases — universal lease granting (issue #81)", () => {
                 "JOIN file_snapshots fs ON fs.snapshot_id = ll.snapshot_id " +
                 "WHERE fs.path = ? AND fs.snapshot_hash = ?",
             )
-            .all(LEASE_PATH, `${CANON_VERSION}:${contentChecksum(original)}`) as {
+            .all(LEASE_PATH, snapshotHashFor(original)) as {
             line_id: number;
           }[]
         ).map((row) => row.line_id),

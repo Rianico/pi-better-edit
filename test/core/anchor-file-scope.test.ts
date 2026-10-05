@@ -116,7 +116,7 @@ describe("anchor file scope", () => {
         getText(
           await readTool.execute(
             "r1",
-            { path: name, offset: line, limit: 10 },
+            { file: name, offset: line, limit: 10 },
             undefined,
             undefined,
             fresh,
@@ -162,10 +162,10 @@ describe("anchor file scope", () => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const ctx = ctxFor(cwd, "c2");
       const aRows = rows(
-        getText(await readTool.execute("r1", { path: "a.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
       );
       const bRows = rows(
-        getText(await readTool.execute("r2", { path: "a.txt.b.txt" }, undefined, undefined, ctx)),
+        getText(await readTool.execute("r2", { file: "a.txt.b.txt" }, undefined, undefined, ctx)),
       );
       // WHY: explicit precondition — this fixture really is in the disjoint regime.
       const inter = new Set(aRows.map((r) => r.hash));
@@ -206,7 +206,7 @@ describe("anchor file scope", () => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const s1 = ctxFor(cwd, "c3-first");
       const before = rows(
-        getText(await readTool.execute("r1", { path: "c3.txt" }, undefined, undefined, s1)),
+        getText(await readTool.execute("r1", { file: "c3.txt" }, undefined, undefined, s1)),
       );
       await editTool.execute(
         "e1",
@@ -219,13 +219,13 @@ describe("anchor file scope", () => {
         s1,
       );
       const after = rows(
-        getText(await readTool.execute("r2", { path: "c3.txt" }, undefined, undefined, s1)),
+        getText(await readTool.execute("r2", { file: "c3.txt" }, undefined, undefined, s1)),
       );
       // WHY: line three's bytes never changed, so its anchor survives the edit.
       expect(after[2]!.hash).toBe(before[2]!.hash);
       const s2 = ctxFor(cwd, "c3-fresh");
       const fresh = rows(
-        getText(await readTool.execute("r3", { path: "c3.txt" }, undefined, undefined, s2)),
+        getText(await readTool.execute("r3", { file: "c3.txt" }, undefined, undefined, s2)),
       );
       // WHY: derivation is a pure function of (path, content) — a fresh session
       // WHY: agrees exactly on the same bytes.

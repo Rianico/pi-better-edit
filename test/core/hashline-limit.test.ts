@@ -204,12 +204,13 @@ describe("read tool line cap", () => {
     });
   });
 
-  it("refuses a CR-only file above the cap with the line cap's refusal, not the anchor space's", async () => {
+  it("refuses a CR-only file above the served budget with the line cap's refusal, not the anchor space's", async () => {
     // WHY: `toLF` rewrites a lone `\r` into a line break, so the count that decides this cap has to be
-    // WHY: the NORMALIZED text's. Counting the raw bytes lets a 238,329-line CR-only file through the
-    // WHY: cap and into the anchor space, which then refuses the same read with the same error code and
-    // WHY: a different reason — after allocating every anchor it was going to refuse.
-    const content = "x\r".repeat(MAX_HASH_LINES + 1);
+    // WHY: the NORMALIZED text's. Counting the raw bytes lets a 200,001-line CR-only file through the
+    // WHY: streaming counter (no LF in the raw bytes) into the loader's own check, which names the
+    // WHY: exact normalized count against the served budget — never the anchor space, which would
+    // WHY: refuse the same read with the same error code and a different reason.
+    const content = "x\r".repeat(SERVED_MAX_LINES + 1);
     await withTempFile("cr-only.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const error = await readTool
@@ -219,13 +220,16 @@ describe("read tool line cap", () => {
           (thrown: unknown) => thrown as Error,
         );
       expect(error?.message).toBe(
-        `[MODEL] [E_LARGE_FILE] cr-only.ts has ${MAX_HASH_LINES + 1} lines, exceeding the ${MAX_HASH_LINES}-line edit limit. ` +
+        `[MODEL] [E_LARGE_FILE] cr-only.ts has ${SERVED_MAX_LINES + 1} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit. ` +
           "Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.",
       );
     });
-  }, 300_000);
-  it("reads a file at the limit without hashing errors", async () => {
-    const content = Array.from({ length: MAX_HASH_LINES }, (_, i) => `x${i}`).join("\n");
+  });
+  it("reads a file at the served budget without hashing errors", async () => {
+    // WHY: the read seam's binding cap is the served budget, not the anchor-space ceiling — a
+    // WHY: 14.7M-line fixture is scale-infeasible (and trips MAX_BYTES first), so the boundary run
+    // WHY: sits exactly at SERVED_MAX_LINES through the real tool path.
+    const content = Array.from({ length: SERVED_MAX_LINES }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
@@ -233,7 +237,7 @@ describe("read tool line cap", () => {
       expect(text).toContain("│x0");
       expect(text).toContain("[Showing lines 1-");
     });
-  }, 300_000);
+  }, 60_000);
 
   it("rejects an over-budget file without stating a false total", async () => {
     // WHY: the boundary file is ~2 MB — comfortably under MAX_BYTES but over the
@@ -317,8 +321,11 @@ describe("read tool line cap", () => {
     expect(lines.message).not.toBe(space.message);
   });
 
-  it("verbatim pages a file above the anchor-space cap; served still refuses it (one seam)", async () => {
-    const content = Array.from({ length: MAX_HASH_LINES + 1 }, () => "x").join("\n");
+  it("verbatim pages a file above the served budget; served still refuses it (one seam)", async () => {
+    // WHY: the seam's binding cap is the served budget — verbatim skips it (no anchors to bound)
+    // WHY: while served refuses on lines. The 14.7M-line anchor-space fixture is scale-infeasible,
+    // WHY: so both halves run at SERVED_MAX_LINES + 1 through the real tool path.
+    const content = Array.from({ length: SERVED_MAX_LINES + 1 }, () => "x").join("\n");
     await withTempFile("huge-verbatim.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const verbatim = await readTool.execute(
@@ -330,17 +337,17 @@ describe("read tool line cap", () => {
       );
       const text = verbatim.content?.[0]?.text ?? "";
       expect(text).toBe(
-        `x\nx\nx\n\n[Showing lines 1-3 of ${MAX_HASH_LINES + 1}. Use offset=4 to continue.]`,
+        `x\nx\nx\n\n[Showing lines 1-3 of ${SERVED_MAX_LINES + 1}. Use offset=4 to continue.]`,
       );
       expect(verbatim.details?.snapshotId).toBeUndefined();
 
       await expect(
         readTool.execute("s1", { file: "huge-verbatim.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow(
-        new RegExp(`\\[E_LARGE_FILE\\].*exceeding the ${MAX_HASH_LINES}-line edit limit`),
+        new RegExp(`\\[E_LARGE_FILE\\].*exceeding the ${SERVED_MAX_LINES}-line edit limit`),
       );
     });
-  }, 300_000);
+  });
 });
 
 describe("read tool row budget", () => {

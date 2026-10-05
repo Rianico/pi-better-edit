@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { walkLines } from "../../src/file-content/line-walker.js";
 import { loadHashStore } from "../../src/hash-store.js";
-import { _lineHashesPure, defaultHashIdentity } from "../../src/hashline/index.js";
+import { _lineHashesPure, defaultHashIdentity, fileHashesFor } from "../../src/hashline/index.js";
 import { snapshotIOFor } from "../../src/snapshot-store";
 import { splitLines } from "../../src/utils.js";
 import {
@@ -14,12 +14,11 @@ import {
 
 useTestHome();
 
-// WHY: an oracle that shares no code with the walk — anchors recorded by the implementation that
-// WHY: predates it, in docs/.archive_issues/0136-fix-edit-target-lost-rejections-must-not-serve-or-lease-the.md:70,
-// WHY: which carries all five in order (0166-bug-gendiff-silently-truncates-small-middle-gaps-no-marker-l.md:46
-// WHY: corroborates only two of them: Wot and Rzv).
-const RECORDED = ["Wot", "rKa", "BkM", "Rzv", "EaX"] as const;
-
+// WHY: the served contract pins the file-scoped assignment at a fixed path — derivation is a pure
+// WHY: function of (path, content), so these five width-4 anchors for PATH below are stable across
+// WHY: runs and across stores. They were captured from the file-seeded derivation (the pre-walk
+// WHY: 3-char `Wot…EaX` oracle belonged to the content-only world and cannot survive file scoping).
+const RECORDED = ["KHW1", "YD16", "vlIB", "DYgm", "jEaJ"] as const;
 // WHY: the anchors are the served contract — an edit resolves the file through them — so the walk that
 // WHY: now assigns them has to produce the array the whole-content call produces, element for element.
 // WHY: This file repeats every ninth line: identical lines canon to one hash, so the assignment has to
@@ -39,13 +38,13 @@ describe("the anchors a served read hands out", () => {
     const source = "a\nb\nc\nd\ne\n";
     const plan = await defaultHashIdentity.anchorsForWalk(source, { path: PATH, persist: false });
     expect(plan.cached ?? walkAssigned(source, plan.assign!)).toEqual([...RECORDED]);
-    expect(_lineHashesPure(source)).toEqual([...RECORDED]);
+    expect(fileHashesFor(PATH, source)).toEqual([...RECORDED]);
   });
 });
 
 describe("the walk assigns the anchors the whole-content assignment produces", () => {
   it("agrees line for line, in order and in length, on a file that collides", async () => {
-    const oracle = _lineHashesPure(COLLIDING);
+    const oracle = fileHashesFor(PATH, COLLIDING);
     // 4000 lines of nine distinct canons: identical canons land on one slot, so an anchor array this
     // long and this distinct can only come out of probing for the next free slot 3991 times.
     expect(new Set(splitLines(COLLIDING)).size).toBe(9);
@@ -67,7 +66,7 @@ describe("the walk assigns the anchors the whole-content assignment produces", (
       persist: false,
       blockedHashes: blocked,
     });
-    expect(walkAssigned(COLLIDING, plan.assign!)).toEqual(_lineHashesPure(COLLIDING, blocked));
+    expect(walkAssigned(COLLIDING, plan.assign!)).toEqual(fileHashesFor(PATH, COLLIDING, blocked));
   });
 
   it("hands over the store's anchors and no assignment when the snapshot is already held", async () => {
@@ -86,7 +85,7 @@ describe("the walk assigns the anchors the whole-content assignment produces", (
   });
 
   it("serves a page whose anchors are the whole-content assignment's, row for row", async () => {
-    await withTempFile("collide.ts", COLLIDING, async ({ cwd }) => {
+    await withTempFile("collide.ts", COLLIDING, async ({ cwd, path }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const result = await readTool.execute(
         "r1",
@@ -97,9 +96,14 @@ describe("the walk assigns the anchors the whole-content assignment produces", (
       );
       const rows = getText(result)
         .split("\n")
-        .filter((row) => /^[A-Za-z0-9]{3}│/.test(row));
+        .filter((row) => /^[A-Za-z0-9]{4}│/.test(row));
       expect(rows).toHaveLength(12);
-      expect(rows.map((row) => row.slice(0, 3))).toEqual(_lineHashesPure(COLLIDING).slice(1, 13));
+      // WHY: the served page is seeded from the file's own absolute path, so the whole-content
+      // WHY: oracle is derived for that same path — never the content-only spelling, which the
+      // WHY: file-scoped edit pipeline would refuse as foreign.
+      expect(rows.map((row) => row.slice(0, 4))).toEqual(
+        fileHashesFor(path, COLLIDING).slice(1, 13),
+      );
     });
   });
 });
