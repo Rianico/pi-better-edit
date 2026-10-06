@@ -75,7 +75,8 @@ describe("prompts/read.md (model-facing contract)", () => {
   });
 
   it("documents file-kind handling", () => {
-    expect(readPrompt).toMatch(/Images/);
+    // WHY: image support removed — read is plain-text only, so Images must not reappear here.
+    expect(readPrompt).not.toMatch(/Images/);
     expect(readPrompt).toMatch(/Binary/);
     expect(readPrompt).toMatch(/directory/);
   });
