@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-06
+
 ### Features
 * **bash-view:** intercept pure file views in `bash` results and replace them with anchored slice previews — `cat`/`head`/`tail`/`sed -n` single-file views (incl. `cd`-prefixed `&&` chains and sanctioned `cat | head/tail` pipelines) are classified by AST span kinds (`silent` | `view` | `unsafe`, undetermined is `unsafe`) via `unbash`, slice-computed by exact interval arithmetic, and swapped wholesale for the canonical disk re-read with leases on exactly the served lines; every other shape (search, mutations, multi-file, `;`/`||`, flags like `cat -A`, `cd -`, truncation, errors) passes through byte-unmodified. Recorded as ADR-0033 with glossary (`pure view`, `slice view`, `silent segment`, `span kind`, `view replacement`, `interval algebra`) for issue #28. Test scope: `test/tools/bash-classifier.test.ts` (span matrix, algebra, R4 guards) + `test/tools/bash-view-lifecycle.test.ts` (replacement, slice leases, session isolation). (#54)
 * **read:** drop image support and state the plain-text-only contract — image files are no longer delegated to the builtin reader and fail with `E_UNSUPPORTED_FILE` like other non-text kinds; the description leads with plain text, keeps the batched `windows` example with the `served`-mode anchor qualifier, and retains the UTF-8 BOM/encoding notes pending multi-encoding support. (#52)
