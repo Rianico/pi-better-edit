@@ -23,6 +23,10 @@
 
 * **read:** correct the served-budget magnitude note and harden the budget probe — the anchor-space comparison now names its axis (`~74x` in line count, `~32x` in bytes, not two orders of magnitude), and `scripts/measure-served-budget.mjs` asserts its width/alphabet literals against `src/hashline/alphabet.ts` and echoes the ~15 MB target from `SERVED_MAX_LINES`. Comment and probe only; no behaviour change. (#49)
 
+### Miscellaneous Chores
+
+* **scaffold:** refresh git and CI scaffolding contracts to the current generation (#51)
+
 ## [2.7.0] - 2026-10-05
 
 ### Features
