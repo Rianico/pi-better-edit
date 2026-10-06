@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.8.0] - 2026-10-06
+
 ### Features
 * **read:** drop image support and state the plain-text-only contract — image files are no longer delegated to the builtin reader and fail with `E_UNSUPPORTED_FILE` like other non-text kinds; the description leads with plain text, keeps the batched `windows` example with the `served`-mode anchor qualifier, and retains the UTF-8 BOM/encoding notes pending multi-encoding support. (#52)
 
