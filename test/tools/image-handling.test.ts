@@ -9,8 +9,8 @@ const minimalPng = Buffer.from(
   "base64",
 );
 
-describe("read tool image delegation", () => {
-  it("delegates a PNG read to the built-in read tool and returns an image attachment", async () => {
+describe("read tool image rejection", () => {
+  it("rejects a PNG read with E_UNSUPPORTED_FILE (plain text only)", async () => {
     await withTempFile("test.png", "", async ({ cwd }) => {
       const path = join(cwd, "test.png");
       await writeFile(path, minimalPng);
@@ -19,18 +19,16 @@ describe("read tool image delegation", () => {
       register(pi);
       const readTool = getTool("read");
 
-      const result = await readTool.execute("r1", { file: "test.png" }, undefined, undefined, {
-        cwd,
-        sessionManager: testSessionManager,
-      } as any);
-
-      expect(result.content).toBeDefined();
-      expect(result.content.length).toBeGreaterThan(0);
-      expect(result.content.some((entry: { type: string }) => entry.type === "image")).toBe(true);
+      await expect(
+        readTool.execute("r1", { file: "test.png" }, undefined, undefined, {
+          cwd,
+          sessionManager: testSessionManager,
+        } as any),
+      ).rejects.toThrow(/Path is an image file/);
     });
   });
 
-  it("delegates an image read even when the filename contains spaces", async () => {
+  it("rejects an image read even when the filename contains spaces", async () => {
     await withTempFile("test.png", "", async ({ cwd }) => {
       const fileName = "Screenshot 2026-06-22 at 15.02.44.png";
       const path = join(cwd, fileName);
@@ -40,13 +38,12 @@ describe("read tool image delegation", () => {
       register(pi);
       const readTool = getTool("read");
 
-      const result = await readTool.execute("r1", { file: fileName }, undefined, undefined, {
-        cwd,
-        sessionManager: testSessionManager,
-      } as any);
-
-      expect(result.content).toBeDefined();
-      expect(result.content.some((entry: { type: string }) => entry.type === "image")).toBe(true);
+      await expect(
+        readTool.execute("r1", { file: fileName }, undefined, undefined, {
+          cwd,
+          sessionManager: testSessionManager,
+        } as any),
+      ).rejects.toThrow(/Path is an image file/);
     });
   });
 });

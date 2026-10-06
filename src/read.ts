@@ -1,5 +1,5 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
-import { createReadTool, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
+import { createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import { MAX_READ_WINDOWS, SERVED_MAX_LINES } from "./constants.js";
 import { HASH_LEN } from "./hashline/alphabet.js";
@@ -85,7 +85,7 @@ export function regRead(pi: ExtensionAPI): void {
           {
             maxItems: MAX_READ_WINDOWS,
             description:
-              "Optional array of disjoint line windows to read in a single turn; in the default `served` mode every window's rows are served, so anchors from all of them are usable in one edit",
+              "Batch several ranges in one `read` call; in the default `served` mode every window's rows are served, so anchors from all of them work in a single `edit`",
           },
         ),
       ),
@@ -119,22 +119,6 @@ export function regRead(pi: ExtensionAPI): void {
         render: mode,
       });
 
-      if (prepared.kind === "image") {
-        const builtinRead = createReadTool(ctx.cwd);
-        // SAFETY: pi-coding-agent's createReadTool returns untyped execute; cast narrows to typed signature validated by runtime params. The builtin read names the file `path`, so forward our `file` under its name.
-        const executeBuiltinRead = builtinRead.execute as unknown as (
-          toolCallId: string,
-          input: typeof params,
-          abortSignal: typeof signal,
-          onUpdate: typeof _onUpdate,
-          context: typeof ctx,
-        ) => ReturnType<typeof builtinRead.execute>;
-        // WHY: an image has no line address space, so `windows` is meaningless here; the delegated
-        // WHY: builtin read ignores fields it does not read and returns the image itself.
-        // SAFETY: spread keeps offset/limit/windows; `path` fills the builtin's filename slot (ours is `file`). Cast through unknown: the shapes agree at runtime, only the key name differs.
-        const builtinInput = { ...params, path: rawPath } as unknown as typeof params;
-        return executeBuiltinRead(_toolCallId, builtinInput, signal, _onUpdate, ctx);
-      }
       if (prepared.kind !== "text") {
         if (prepared.kind === "directory") {
           throw new DomainError("E_UNSUPPORTED_FILE", { path: rawPath, kind: "directory" });

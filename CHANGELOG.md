@@ -3,6 +3,7 @@
 ## [Unreleased]
 
 ### Features
+* **read:** drop image support and state the plain-text-only contract — image files are no longer delegated to the builtin reader and fail with `E_UNSUPPORTED_FILE` like other non-text kinds; the description leads with plain text, keeps the batched `windows` example with the `served`-mode anchor qualifier, and retains the UTF-8 BOM/encoding notes pending multi-encoding support. (#52)
 
 * **hashline:** adopt 4-char anchors for tokenizer-stable references. `HASH_LEN` flips 3 to 4; every shape, regex and count word derives, so no other `src/` numeric change was needed and the stride stays `62^2 + 62 + 1 = 3907`. A 3-char token is now `E_MALFORMED_ANCHOR` with no compatibility path. The `E_LARGE_FILE` hash-space limit is scale-tested via a bounded uniqueness run plus a directly constructed error, and new-width coverage pins echo refusal, lease materialization, lineage anchors and resolve-seam rejection. (#49)
 * **hashline:** reserve all-digit anchor spellings from allocation — a served one would be indistinguishable from a line number, so the 10,000-strong digit subcube is pre-marked in the allocation bitset and never served; usable space is `62^4 − 10^4 = 14,766,336` (a 0.0677 % shrink, alphabet unchanged), the stride stays coprime with both spaces, and digit-shaped spellings keep the ordinary unserved-lease refusal with the line-number note. (#49)
