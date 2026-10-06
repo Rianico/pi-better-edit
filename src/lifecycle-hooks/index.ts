@@ -44,7 +44,7 @@ import { valAccess as defaultValAccess } from "../validation.js";
 import { visLines as defaultVisLines } from "../utils.js";
 import { fmtReadPreview as defaultFmtReadPreview } from "../read.js";
 import { finalizeToolResult as defaultFinalizeToolResult } from "../edit-response.js";
-import { AUTO_READ_MAX, SERVED_MAX_LINES } from "../constants.js";
+import { AUTO_READ_MAX, MAX_READ_WINDOWS, SERVED_MAX_LINES } from "../constants.js";
 import type { LifecycleDeps, ToolContext, ToolResultEvent } from "./types.js";
 
 export type { ToolContext, ToolResultEvent, LifecycleDeps } from "./types.js";
@@ -96,6 +96,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     event: ToolResultEvent,
     ctx: ToolContext,
   ) => Promise<{ content: Array<{ type: string; text: string }> } | undefined>;
+  onBash: (
+    event: ToolResultEvent,
+    ctx: ToolContext,
+  ) => Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined>;
 } {
   const deps: LifecycleDeps = { ...defaultDeps(), ...overrides };
 
@@ -366,6 +370,95 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return { content };
   }
 
+  /**
+   * WHY dynamic import: `bash-classifier` statically pulls `unbash`, which must
+   * WHY: never join the extension entry graph — entry import cost is budgeted
+   * WHY: (`measure-import --max-ratio 0.75`) and `unbash` ships unbundled
+   * WHY: (`EXTERNALS` in `scripts/build-dist.mjs`), so the classifier (and its
+   * WHY: parser) loads lazily on the first bash result only.
+   */
+  async function handleBash(
+    event: ToolResultEvent,
+    ctx: ToolContext,
+  ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {
+    if (event.toolName !== "bash") return undefined;
+    if (event.isError) return undefined;
+    const rawInput = event.input as Record<string, unknown> | undefined;
+    const command = rawInput?.command;
+    if (typeof command !== "string" || command.trim() === "") return undefined;
+    // WHY: `ToolResultEvent.details` is typed as `EditDetails`, but the pi runtime
+    // WHY: delivers `BashToolDetails` (`truncation`, `fullOutputPath`) for bash —
+    // WHY: read it structurally. A truncated stdout means the model did NOT see
+    // WHY: the whole file, so replacing it with anchored lines would invent
+    // WHY: viewed lines: fail closed.
+    const bashDetails = event.details as unknown as { truncation?: unknown } | undefined;
+    if (bashDetails && typeof bashDetails === "object" && bashDetails.truncation != null) {
+      return undefined;
+    }
+    try {
+      const { classifyBashCommand, applySliceOps } = await import("../bash-classifier.js");
+      const classification = classifyBashCommand(command);
+      if (classification.kind !== "pureView") return undefined;
+      const { filePath, baseDir, ops } = classification.view;
+      // WHY: the last literal `cd` re-bases relative resolution; an absolute
+      // WHY: view target ignores it (`toCwd` returns absolutes unchanged).
+      const effCwd = baseDir === undefined ? ctx.cwd : deps.toCwd(baseDir, ctx.cwd);
+      const resolvedPath = await deps.resolveTarget(deps.toCwd(filePath, effCwd));
+      await deps.valAccess(resolvedPath, filePath);
+      const file = await deps.loadFileKindAndText(resolvedPath, {
+        maxLines: SERVED_MAX_LINES,
+        displayPath: filePath,
+      });
+      if (file.kind !== "text") return undefined;
+      const { normalized, fileHashes, absolutePath } = await deps.readNormFile(filePath, effCwd, {
+        maxLines: SERVED_MAX_LINES,
+        preloadedFile: file,
+      });
+      // WHY: intervals fold over the re-read line count, so an empty selection
+      // WHY: (e.g. `head -n 0`, out-of-range `sed` addresses) serves nothing and
+      // WHY: passes through — zero leases, zero output change (ADR-0033 D3).
+      const intervals = applySliceOps(ops, deps.visLines(normalized).length);
+      if (intervals.length === 0 || intervals.length > MAX_READ_WINDOWS) return undefined;
+      const preview = await deps.fmtReadPreview(
+        normalized,
+        { windows: intervals.map((iv) => ({ offset: iv.lo, limit: iv.hi - iv.lo + 1 })) },
+        fileHashes,
+        absolutePath,
+        DEFAULT_MAX_BYTES,
+        AUTO_READ_MAX,
+      );
+      if (preview.served.length === 0) return undefined;
+      const sessionKey = deps.sessionKeyFor(ctx);
+      // WHY: plain mode (no `resultLineCount`/`firstChangedLine`): truncated mode
+      // WHY: belongs to diffs and would corrupt the mirror. The grant leases
+      // WHY: exactly the served rows against the re-read snapshot (ADR-0033 D4).
+      await recordServesBestEffort({
+        sessionKey,
+        path: absolutePath,
+        servedRows: preview.served,
+        contentHash: snapshotHashFor(normalized),
+      });
+      // WHY: `servedRowsToSpans` compresses the served window rows into honest
+      // WHY: per-run spans — a slice view notifies its slice, never whole-file.
+      notifyServedSpans({
+        filePath: absolutePath,
+        spans: servedRowsToSpans(preview.served),
+        source: "auto-read",
+      });
+      // WHY: FULL replacement (not append): the raw stdout is unanchored bytes the
+      // WHY: model already paid for once — swapping it for the anchored slice is
+      // WHY: the zero-bloat interception point (ADR-0033 D4).
+      return {
+        content: [{ type: "text", text: `--- Bash view (hashline anchors) ---\n${preview.text}` }],
+      };
+    } catch (error) {
+      // SAFETY: every failure returns undefined so the original bash output reaches
+      // SAFETY: the model untouched — interception must never break a view.
+      console.error("Bash view interception failed:", error);
+      return undefined;
+    }
+  }
+
   async function handleToolResult(
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -377,6 +470,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     if (event.toolName === "edit" || event.toolName === "undo_last_edit") {
       return handleEdit(event, ctx);
     }
+    if (event.toolName === "bash") {
+      return handleBash(event, ctx);
+    }
     return undefined;
   }
 
@@ -385,6 +481,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     onToolResult: handleToolResult,
     onWrite: handleWrite,
     onEdit: handleEdit,
+    onBash: handleBash,
   };
 }
 

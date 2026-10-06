@@ -36,7 +36,14 @@ export const DEFAULT_OUTFILE = "dist/index.js";
  * copy builds a second module graph (measured upstream at 720 ms of 838 ms). The three
  * runtime dependencies stay unbundled so a user install gets them from the registry.
  */
-export const EXTERNALS = ["diff", "file-type", "xxhash-wasm", "typebox", "@earendil-works/*"];
+export const EXTERNALS = [
+  "diff",
+  "file-type",
+  "unbash",
+  "xxhash-wasm",
+  "typebox",
+  "@earendil-works/*",
+];
 
 /** The esbuild target tracks `engines.node`; esbuild preserves the `node:` specifier prefixes. */
 const TARGET = "node24";

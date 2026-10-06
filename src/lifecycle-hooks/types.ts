@@ -29,7 +29,11 @@ export type LifecycleDeps = {
   readNormFile: (displayPath: string, cwd: string, opts?: ReadNormOptions) => Promise<NormFile>;
   fmtReadPreview: (
     normalized: string,
-    opts: Record<string, never>,
+    opts: {
+      offset?: number;
+      limit?: number;
+      windows?: Array<{ offset: number; limit: number }>;
+    },
     fileHashes: string[],
     absolutePath: string,
     maxBytes: number,
