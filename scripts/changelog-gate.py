@@ -16,6 +16,7 @@ Usage:
   uv run scripts/changelog-gate.py ledger [--changelog CHANGELOG.md]
   uv run scripts/changelog-gate.py ledger --pr 123
   uv run scripts/changelog-gate.py ledger --pr 123 --waiver "reason"
+  uv run scripts/changelog-gate.py ledger --pr 123 --landing squash
 """
 
 from __future__ import annotations
@@ -64,6 +65,7 @@ class Finding:
     check: str
     detail: str
     fixable: bool = True
+    hint: str | None = None
 
 
 def run_git(cmd: list[str]) -> str:
@@ -216,6 +218,7 @@ def check_ledger(
     pr: str | None = None,
     baseline_path: Path = DEFAULT_BASELINE,
     update_baseline: bool = False,
+    landing: str | None = None,
 ) -> list[Finding]:
     if not changelog.exists():
         return [Finding("ledger", f"{changelog} is missing", fixable=False)]
@@ -254,9 +257,17 @@ def check_ledger(
         if ref is None:
             if identity in baseline:
                 continue
-            findings.append(Finding("provenance", f"entry carries no (#N): {identity!r}"))
+            findings.append(
+                Finding(
+                    "provenance",
+                    f"entry carries no (#N): {identity!r}",
+                    hint="Stamp (#N) into the entry, or run pr-land (pr.py auto-attributes after PR creation).",
+                )
+            )
         elif pr is not None and ref == pr:
             continue
+        elif landing == "squash":
+            continue  # squash lands as one commit the ledger cannot resolve; shape checked below
         elif not pr and ref not in landings:
             findings.append(
                 Finding(
@@ -270,7 +281,15 @@ def check_ledger(
         pr_entries = [entry for entry in entries if attributed_pr(entry) == pr]
         if not pr_entries:
             findings.append(Finding("landing", f"#{pr} carries no entries in {UNRELEASED_HEADING}"))
-
+    # Declared squash landing without a PR number: the squash commit is unresolvable
+    # from the ledger, so reachability is skipped above and only shape is checked.
+    elif landing == "squash" and not entries:
+        findings.append(
+            Finding(
+                "landing",
+                f"{UNRELEASED_HEADING} carries no entries (landing=squash declares a PR with nothing to land)",
+            )
+        )
     return findings
 
 
@@ -286,7 +305,11 @@ def main(argv: list[str] | None = None) -> int:
     _ = parser.add_argument("--changelog", default="CHANGELOG.md", help="path to CHANGELOG.md")
     _ = parser.add_argument("--base", default=None, help="ignored for compatibility")
     _ = parser.add_argument("--pr", default=None, help="this PR's number, for PR-boundary check")
-    _ = parser.add_argument("--landing", default=None, help="ignored for compatibility")
+    _ = parser.add_argument(
+        "--landing",
+        default=None,
+        help="declared landing strategy (squash|merge); validated, and selects the ledger rule when --pr is absent",
+    )
     _ = parser.add_argument(
         "--baseline", default=str(DEFAULT_BASELINE), help="recorded unattributed identities"
     )
@@ -305,6 +328,9 @@ def main(argv: list[str] | None = None) -> int:
     baseline_arg = cast("str", getattr(ns, "baseline", str(DEFAULT_BASELINE)))
     update_baseline_arg = cast("bool", getattr(ns, "update_baseline", False))
     waiver_arg = cast("str | None", getattr(ns, "waiver", None))
+    landing_arg = cast("str | None", getattr(ns, "landing", None))
+    if landing_arg is not None and landing_arg not in ("squash", "merge"):
+        parser.error("--landing must be squash or merge")
 
     if check_name == "ticket":
         print("ticket: pass")
@@ -315,6 +341,7 @@ def main(argv: list[str] | None = None) -> int:
         pr_arg,
         Path(baseline_arg),
         update_baseline_arg,
+        landing_arg,
     )
 
     waiver_clean = waiver_arg.strip() if waiver_arg is not None else None
@@ -330,6 +357,8 @@ def main(argv: list[str] | None = None) -> int:
         print(f"[waived] [{finding.check}] {finding.detail}", file=sys.stderr)
     for finding in blocking:
         print(f"[{finding.check}] {finding.detail}", file=sys.stderr)
+        if finding.hint:
+            print(f"  → {finding.hint}", file=sys.stderr)
     if waiver_clean:
         print(f"waiver recorded: {waiver_clean}", file=sys.stderr)
     if not blocking:
