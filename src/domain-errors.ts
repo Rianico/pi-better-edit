@@ -227,10 +227,6 @@ export interface CodeSpec<P> {
   remedy?: string;
 }
 
-// WHY: the reject-and-serve retry affordance, owned here so every row-carrying
-// WHY: rejection renders it identically.
-const RETRY_HINT = "Retry with these anchors (no read needed).";
-
 /** SAFETY: exact heading for an unverified fresh-read serve — machine-checkable. */
 export const FRESH_READ_HEADING = "Current range (fresh read):";
 
@@ -247,118 +243,65 @@ export const TARGET_LOST_RECOVERY =
 // WHY: stating it.
 function suspiciousTail(count: number): string {
   if (count < 2) return "";
-  return (
-    ` Identical refusal submitted ${count}× — the bytes still reproduce a served row.` +
-    ` Omit the copied anchors from \`text\` and retry with the same anchors, or declare intent with mode: "literal".`
-  );
+  return ` Identical refusal submitted ${count} times — the bytes still reproduce a served row.`;
 }
 
 function suspiciousFormat(payload: ErrorPayloadMap["E_SUSPICIOUS_TEXT"]): string {
-  const submitted = `(submission ${payload.count}×)`;
-  if (payload.target === "write") {
-    return (
-      `Refused write to ${payload.path}: line ${payload.line} begins with ` +
-      `the exact ${payload.hash}│ anchor served for this session, path, and line ${payload.servedLine}. ` +
-      `HASH│ anchors are tool output, not file content. ` +
-      `Retry with file content only (remove the entire copied anchor chain), or declare intent with mode: "literal". ` +
-      `Re-read the file for fresh anchors if needed. Nothing was written. ${submitted}` +
-      suspiciousTail(payload.count)
-    );
-  }
   return (
-    `Refused edit to ${payload.path}: replacement line ${payload.line} begins with ` +
-    `the exact ${payload.hash}│ anchor served for this session, path, and line ${payload.servedLine}. ` +
-    `HASH│ anchors are tool output, not file content. ` +
-    `Omit the copied anchors from \`text\` and retry with the same anchors, or declare intent with mode: "literal". ` +
-    `Re-read the file for fresh anchors if needed. Nothing was written. ${submitted}` +
+    `Write/Edit to ${payload.path} rejected: line ${payload.line} starts with the served anchor ` +
+    `${payload.hash}│ for line ${payload.servedLine}. (submission ${payload.count} times)` +
     suspiciousTail(payload.count)
   );
 }
 
 function unsupportedFormat(payload: ErrorPayloadMap["E_UNSUPPORTED_FILE"]): string {
   if (payload.kind === "directory") {
-    return (
-      `Path is a directory: ${payload.path}. Pass the text file inside it ` +
-      `(a file, never a directory) in "file" and retry.`
-    );
+    return `Path is a directory: ${payload.path}.`;
   }
   if (payload.kind === "image") {
-    return (
-      `Path is an image file: ${payload.path}. Hashline edit only supports text files; ` +
-      `choose a text file and retry.`
-    );
+    return `Path is an image file: ${payload.path}.`;
   }
-  return (
-    `Path is a binary file: ${payload.path} (${payload.description ?? "binary"}). ` +
-    `Hashline edit only supports text files; choose a text file and retry.`
-  );
+  return `Path is a binary file: ${payload.path} (${payload.description ?? "binary"}).`;
 }
 
 function accessFormat(payload: ErrorPayloadMap["E_ACCESS"]): string {
   if (payload.kind === "symlink-loop") {
-    return (
-      `Too many symbolic links while resolving: ${payload.path}. ` +
-      `Retry with the real file location.`
-    );
+    return `Too many symbolic links while resolving: ${payload.path}.`;
   }
   if (payload.kind === "unreachable") {
-    return (
-      `Cannot access file: ${payload.path}. Verify the "file" value exists and is reachable, ` +
-      `then retry.`
-    );
+    return `Cannot access file: ${payload.path}.`;
   }
   const label = payload.access === "write" ? "not writable" : "not readable";
-  return `File is ${label}: ${payload.path}. Fix permissions or choose a writable file and retry.`;
+  return `File is ${label}: ${payload.path}.`;
 }
 
 function largeFileFormat(payload: ErrorPayloadMap["E_LARGE_FILE"]): string {
   if (payload.limitKind === "hash-space") {
     return (
       `Cannot allocate a unique hash anchor: the file exceeds the ${payload.limit}-line limit ` +
-      `for ${HASH_LEN}-char hashline anchors. For very large files use write or a non-line-based approach.`
+      `for ${HASH_LEN}-char hashline anchors.`
     );
   }
   const observed =
     payload.lineCount === undefined ? `more than ${payload.limit}` : `${payload.lineCount}`;
   const where = payload.path ?? "the file";
-  return (
-    `${where} has ${observed} lines, exceeding the ${payload.limit}-line edit limit. ` +
-    `Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.`
-  );
+  return `${where} has ${observed} lines, exceeding the ${payload.limit}-line edit limit.`;
 }
 
 function staleAnchorFormat(payload: ErrorPayloadMap["E_STALE_ANCHOR"]): string {
   if (!payload.servedBlock) return payload.headline;
-  return `${payload.headline}\nCurrent range:\n${payload.servedBlock}\n${RETRY_HINT}`;
-}
-
-// WHY: an all-digit anchor is shape evidence pinned to the anchor string itself
-// WHY: (ADR-0021 decision 4) — not a guess about path versus session — so the note
-// WHY: states the shape fact in declarative terms. No imperative, no remedy field.
-const NUMERIC_ANCHOR_RE = /^\d+$/;
-
-function numericAnchorNote(anchors: string[]): string {
-  const numeric = anchors.filter((anchor) => NUMERIC_ANCHOR_RE.test(anchor));
-  if (numeric.length === 0) return "";
-  const quoted = numeric.map((anchor) => `"${anchor}"`).join(", ");
-  const noun = numeric.length === 1 ? `anchor ${quoted}` : `anchors ${quoted}`;
-  const verb = numeric.length === 1 ? "consists" : "consist";
-  const resemblance = numeric.length === 1 ? "resembles a line number" : "resemble line numbers";
-  return (
-    ` Note: ${noun} ${verb} only of digits and ${resemblance}. ` +
-    `Edit anchors are ${HASH_LEN}-character alphanumeric content hashes (e.g. "aB3x") served by the read tool, not line numbers.`
-  );
+  return `${payload.headline}\nCurrent range:\n${payload.servedBlock}`;
 }
 
 function unknownAnchorFormat(payload: ErrorPayloadMap["E_UNKNOWN_ANCHOR"]): string {
   const anchors = payload.anchors;
   if (anchors.length === 1) {
-    return `${payload.path} has not served the anchor "${anchors[0]}"; nothing was written.${numericAnchorNote(anchors)}`;
+    return `${payload.path} has not served the anchor "${anchors[0]}".`;
   }
   if (anchors.length === 0) {
-    return `${payload.path} has not served an anchor; nothing was written.`;
+    return `${payload.path} has not served an anchor.`;
   }
-  return `${payload.path} has not served the anchors ${anchors.map((a) => `"${a}"`).join(", ")}; nothing was written.${numericAnchorNote(anchors)}`;
+  return `${payload.path} has not served the anchors ${anchors.map((a) => `"${a}"`).join(", ")}.`;
 }
 
 function foreignHomesDisplay(homes: string[]): string {
@@ -372,23 +315,24 @@ function foreignAnchorFormat(payload: ErrorPayloadMap["E_FOREIGN_ANCHOR"]): stri
     anchors.length === 1
       ? `the anchor "${anchors[0]}"`
       : `the anchors ${anchors.map((a) => `"${a}"`).join(", ")}`;
-  const verb = anchors.length === 1 ? "is" : "are";
+  const verb = anchors.length === 1 ? "was" : "were";
   const homes = foreignHomesDisplay(payload.homes);
   if (homes.length === 0) {
-    return `${noun} ${verb} inconsistent with ${payload.path}; nothing was written.`;
+    return `${noun} ${verb} not served for ${payload.path}.`;
   }
-  return `${noun} ${verb} inconsistent with ${payload.path}; served for ${homes}; nothing was written.`;
+  return `${noun} ${verb} served for ${homes}, not for ${payload.path}.`;
 }
 
 export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[K]> } = {
   E_BAD_PAYLOAD: {
     audience: "MODEL",
-    format: ({ message }) => message,
+    format: ({ message }) => `The edit payload is not valid: ${message}`,
+    // WHY remedy: validation rejected the payload before any resolution, so the field fix is the only next action. See ADR-0021.
+    remedy: "Fix the payload fields and retry.",
   },
   E_EMPTY_RANGE: {
     audience: "MODEL",
-    format: () =>
-      "Cannot empty a non-empty file via edit. Use `write` if you need to clear the file.",
+    format: () => "Cannot empty a non-empty file via edit.",
     // WHY remedy: the resolved edit empties a non-empty file and the payload carries no fields, so the clear belongs to write. See ADR-0021.
     remedy: "Use write to clear the file.",
   },
@@ -427,7 +371,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_TARGET_LOST: {
     audience: "MODEL",
     format: ({ servedLine, path }) =>
-      `line ${servedLine}${path ? ` in ${path}` : ""} no longer resolves to the line identity it was served with.\n${TARGET_LOST_RECOVERY}`,
+      `line ${servedLine}${path ? ` in ${path}` : ""} no longer resolves to the line identity it was served with.`,
     // WHY remedy: the leased identity is gone with no surviving window to serve — `servedLine` names the dead line, so recovery is a read. See ADR-0021.
     remedy: "Read the file and re-target.",
   },
@@ -450,7 +394,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   },
   E_MALFORMED_ANCHOR: {
     audience: "MODEL",
-    format: ({ rawAnchor, reason }) => `Invalid anchor "${rawAnchor}": ${reason}`,
+    format: ({ rawAnchor, reason }) => `The anchor "${rawAnchor}" is not valid: ${reason}.`,
     // WHY remedy: the parse rejected the token before any resolution — `rawAnchor` and `reason` name the shape failure. See ADR-0021.
     remedy: `Pass the bare ${HASH_LEN}-char anchor and retry.`,
   },
@@ -472,28 +416,30 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
       laterEnd,
       path,
       servedBlock,
-    }) =>
-      `edit[${laterIndex}] (${path}) failed: overlapping spans — edit[${earlierIndex}] targets lines ${earlierStart}-${earlierEnd} ` +
-      `and edit[${laterIndex}] targets lines ${laterStart}-${laterEnd} of the same call. ` +
-      `Spans in one edits[] call must be disjoint.\n` +
-      `The whole edit call was rejected and NOTHING was written — the file is unchanged and earlier items in the call were NOT applied.` +
-      (servedBlock ? ` Current range:\n${servedBlock}` : " Call read() to get fresh anchors.") +
-      `\nMerge the overlapping ranges into a single edit (or split them into separate edit calls), then resubmit.`,
+    }) => {
+      const overlapStart = Math.max(earlierStart, laterStart);
+      const overlapEnd = Math.min(earlierEnd, laterEnd);
+      return (
+        `Overlapping spans in ${path}. Rejected. The file is unchanged.\n` +
+        `- edit[${earlierIndex}]: lines ${earlierStart}-${earlierEnd}\n` +
+        `- edit[${laterIndex}]: lines ${laterStart}-${laterEnd} ` +
+        `(overlaps edit[${earlierIndex}]: lines ${overlapStart}-${overlapEnd})\n` +
+        (servedBlock ? `Current range:\n${servedBlock}` : `No current range is served.`)
+      );
+    },
     // WHY remedy: the resolved coordinates prove the two spans overlap — `earlierStart`/`earlierEnd` and `laterStart`/`laterEnd` pin the pair. See ADR-0021.
     remedy: "Merge the overlapping ranges into a single edit, or split them into separate calls.",
   },
   E_NOOP_LOOP: {
     audience: "MODEL",
-    // WHY: the reject arm states the refusal that actually happened — it IS the
-    // WHY: rejection, so "resend will reject" misdescribed it.
-    // WHY: the batch arm names no item — `batchAbortFor` already prefixes
-    // WHY: `edit[i] (path) failed:`, so a `${ref}:` here would name it twice.
-    format: ({ ref, removeFrom, removeTo, count, batch, servedBlock }) =>
+    // WHY: both arms state the refusal that happened; neither names an item because a wrapped
+    // WHY: call already prefixes `edit[i] (path) failed:`.
+    format: ({ removeFrom, removeTo, count, batch, servedBlock }) =>
       batch
-        ? `identical edit (${removeFrom} → ${removeTo}) submitted ${count}×, no changes each time. ` +
-          `Range already contains this text; rejecting the batch. Current range:\n${servedBlock}`
-        : `identical edit ${ref} (${removeFrom} → ${removeTo}) submitted ${count}×, no changes each time. ` +
-          `Range already contains this text; rejecting. Current range:\n${servedBlock}`,
+        ? `Identical edit (${removeFrom} → ${removeTo}) submitted ${count} times without change. ` +
+          `The range already has this text. Rejecting the batch. Current range:\n${servedBlock}`
+        : `Identical edit (${removeFrom} → ${removeTo}) submitted ${count} times without change. ` +
+          `The range already has this text. Rejected. Current range:\n${servedBlock}`,
   },
   E_UNSUPPORTED_FILE: {
     audience: "MODEL",
@@ -504,29 +450,28 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
   E_ACCESS: {
     audience: "MODEL",
     format: accessFormat,
+    // WHY remedy: detection classified the target by path — `kind` (denied, symlink-loop or unreachable) proves the access failure. See ADR-0021.
+    remedy: "Fix the path or permissions and retry.",
   },
   E_NOT_FOUND: {
     audience: "MODEL",
-    format: ({ path }) =>
-      `File not found: ${path}. Check the "file" value (a text file, never a directory); ` +
-      `use ls on the parent directory and retry with the corrected file.`,
+    format: ({ path }) => `File not found: ${path}.`,
     // WHY remedy: the filesystem answered ENOENT — `path` names a file that does not exist to edit. See ADR-0021.
-    remedy: "Use ls on the parent directory and retry with the corrected file.",
+    remedy: "Check the parent directory and retry with the corrected file.",
   },
   E_UNDO_STALE: {
     audience: "MODEL",
     format: ({ path, reason }) =>
       reason === "deleted"
-        ? `cannot undo on ${path}: file no longer exists.`
-        : `cannot undo on ${path}: file modified after edit — undo would overwrite changes.`,
+        ? `Cannot undo on ${path}: file no longer exists.`
+        : `Cannot undo on ${path}: file modified after edit — undo would overwrite changes.`,
   },
   E_UNDO_UNAVAILABLE: {
     audience: "MODEL",
     format: ({ path }) =>
-      `Cannot persist undo history to the hash store; the edit was NOT applied and ${path} is unchanged. ` +
-      `Retry the edit, or use write if the store cannot be recovered.`,
+      `Cannot persist undo history to the hash store. The edit was not applied. ${path} is unchanged.`,
     // WHY remedy: the hash store persist failed with the edit unapplied and the file unchanged, so retrying the edit is safe. See ADR-0021.
-    remedy: "Retry the edit.",
+    remedy: "Retry the edit. If the store cannot be recovered, use write.",
   },
   E_LOSSY_TEXT: {
     audience: "MODEL",
@@ -535,9 +480,8 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     // WHY: destruction — the refusal happens before any mutation, and the cause is OBSERVED (the
     // WHY: decode/encode comparison), never assumed.
     format: ({ path }) =>
-      `Cannot edit ${path}: its bytes do not round-trip a UTF-8 decode — invalid sequences were ` +
-      `replaced by U+FFFD on read, so a line-addressed rewrite would destroy the original bytes. ` +
-      `Nothing was written.`,
+      `Cannot edit ${path}: its bytes do not round-trip UTF-8. ` +
+      `A line-addressed rewrite would destroy the original bytes.`,
     // WHY remedy: the failed round-trip pins exactly one safe action — re-encode with a byte-level tool before retrying. See ADR-0021 d4.
     remedy: "Re-encode the file as valid UTF-8 with a byte-level tool, then retry.",
   },
@@ -549,21 +493,20 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     format: ({ path }) =>
       `Undo of the cut transaction was interrupted: ${path} could not be restored while other ` +
       `files of the transaction already were. No undo history was cleared; the files stay in the ` +
-      `half-reverted state the durable repair record describes. Do not re-undo — the next run ` +
-      `repairs the interrupted revert.`,
+      `half-reverted state the durable repair record describes.`,
     // WHY remedy: a re-undo would fight the pending repair — let the repair complete after the file access failure is fixed. See ADR-0021 d4.
-    remedy: "Fix the file access failure, then let the next run repair the interrupted revert.",
+    remedy: "Fix the file access failure. The next run repairs the interrupted revert.",
   },
   E_UNKNOWN: {
     audience: "MODEL",
     format: ({ errorName, message }) =>
-      `unexpected ${errorName}: ${message.split("\n")[0]!.slice(0, 300)}`,
+      `Unknown ${errorName}: ${message.split("\n")[0]!.slice(0, 300)}.`,
   },
   E_LARGE_FILE: {
     audience: "MODEL",
     format: largeFileFormat,
     // WHY remedy: the named limit was exceeded — `limitKind` (lines: `lineCount` only from the preloaded gate — or hash-space) and `limit` pin the capacity. See ADR-0021.
-    remedy: "Use write or a non-line-based approach for very large files.",
+    remedy: "Split the file or use a non-line-based approach for very large files.",
   },
 };
 
