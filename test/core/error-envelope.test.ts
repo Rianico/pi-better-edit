@@ -43,7 +43,7 @@ describe("error envelope — one assembler/reader for the forwarded rejection fi
     expect(failure.ok).toBe(false);
     if (!failure.ok) {
       expect(failure.code).toBe("E_UNKNOWN");
-      expect(failure.message).toBe("[MODEL] [E_UNKNOWN] unexpected Error: read failed");
+      expect(failure.message).toBe("[MODEL] [E_UNKNOWN] Unknown Error: read failed.");
       expect(failure.cause).toBeUndefined();
       expect(failure.details).toBeUndefined();
     }

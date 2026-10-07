@@ -130,8 +130,8 @@ describe("edit noop-loop guard in multi-item calls", () => {
         .execute("e3", payload, undefined, undefined, ctx)
         .catch((error: unknown) => error)) as Error & { code?: string };
       expect(rejection.message).toContain("[MODEL] [E_NOOP_LOOP]");
-      expect(rejection.message).toContain("edit[0] (sample.ts)");
-      expect(rejection.message).toContain("rejecting.");
+      expect(rejection.message).toContain("submitted 3 times without change");
+      expect(rejection.message).toContain("Rejected.");
       expect(rejection.message).not.toContain("rejecting the batch");
       expect(rejection.message).not.toContain("failed:");
       expect(rejection.message).not.toContain(ATOMICITY_TRAILER);

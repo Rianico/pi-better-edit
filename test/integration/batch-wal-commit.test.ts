@@ -184,8 +184,8 @@ describe("multi-edit batch WAL commit", () => {
       // Rebased to the leased identity the spans nest (3-3 inside 2-4); the shift is what makes them
       // overlap, and no edit of the batch may reach the file.
       const rejection = await editPromise.catch((error: unknown) => error as Error);
-      expect(rejection.message).toContain("targets lines 3-3");
-      expect(rejection.message).toContain("targets lines 2-4");
+      expect(rejection.message).toContain("- edit[0]: lines 3-3");
+      expect(rejection.message).toContain("- edit[1]: lines 2-4 (overlaps edit[0]: lines 3-3)");
       expect(await readFile(path, "utf-8")).toBe(shifted);
       // No item reached the persist stage: no undo entry was written and no snapshot of a mutated
       // batch result was materialized.
@@ -232,8 +232,8 @@ describe("multi-edit batch WAL commit", () => {
 
       const rejection = await editPromise.catch((error: unknown) => error as Error);
       expect(rejection.message).toContain("[E_BATCH_ABORT]");
-      expect(rejection.message).toContain("targets lines 3-3");
-      expect(rejection.message).not.toContain("targets lines 1-1");
+      expect(rejection.message).toContain("- edit[0]: lines 3-3");
+      expect(rejection.message).not.toContain("lines 1-1");
       expect(await readFile(path, "utf-8")).toBe(shifted);
 
       // Control: the same anchor, applied on its own, lands on the leased occurrence — the duplicate

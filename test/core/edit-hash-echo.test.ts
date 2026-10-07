@@ -225,13 +225,13 @@ describe("applyEdit — E_SUSPICIOUS_TEXT gate", () => {
     } catch (e) {
       const msg = (e as Error).message;
       expect(msg).toMatch(/\[MODEL\] \[E_SUSPICIOUS_TEXT\]/);
-      expect(msg).toContain("replacement line 2");
+      expect(msg).toContain("line 2 starts with the served anchor");
       expect(msg).toContain(hashes[2]!);
       expect(msg).toContain("line 3");
-      expect(msg).toContain("tool output, not file content");
-      expect(msg).toContain("Nothing was written");
-      expect(msg).toContain('mode: "literal"');
-      expect(msg).toContain("Re-read");
+      expect(msg).not.toContain("tool output, not file content");
+      expect(msg).not.toContain("Nothing was written");
+      expect(msg).not.toContain('mode: "literal"');
+      expect(msg).not.toContain("Re-read");
       expect(msg).not.toContain(`${hashes[2]}${HASH_SEP}three`);
     }
   });

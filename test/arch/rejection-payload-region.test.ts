@@ -80,7 +80,7 @@ function assertLivePayload(args: {
     expect(err.message).not.toContain("No action is required");
   } else {
     expect(err.message).toContain("Current range:");
-    expect(err.message).toContain("Retry with these anchors");
+    expect(err.message).not.toContain("Retry with these anchors");
   }
   for (const row of rows) {
     expect(row.hash).toBe(args.fileHashes[row.position]);

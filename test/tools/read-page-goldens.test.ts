@@ -200,8 +200,7 @@ describe("the served read's refusals", () => {
           (thrown: unknown) => thrown as Error,
         );
       expect(error?.message).toBe(
-        `[MODEL] [E_LARGE_FILE] huge.ts has ${SERVED_MAX_LINES + 1} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit. ` +
-          "Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.",
+        `[MODEL] [E_LARGE_FILE] huge.ts has ${SERVED_MAX_LINES + 1} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit.`,
       );
     });
   });
@@ -220,8 +219,7 @@ describe("the served read's refusals", () => {
           (thrown: unknown) => thrown as Error,
         );
       expect(error?.message).toBe(
-        `[MODEL] [E_LARGE_FILE] huge.ts has more than ${SERVED_MAX_LINES} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit. ` +
-          "Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.",
+        `[MODEL] [E_LARGE_FILE] huge.ts has more than ${SERVED_MAX_LINES} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit.`,
       );
     });
   });

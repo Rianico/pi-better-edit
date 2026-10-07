@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import { ERROR_REGISTRY } from "../../src/domain-errors.js";
 
 function servedRowRe(): RegExp {
   return /^[A-Za-z0-9]{4}│/m;
@@ -40,7 +41,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
       expect(rejected.message).not.toContain("Retry with these anchors");
       expect(rejected.message).not.toMatch(servedRowRe());
       expect(rejected.message).toContain(`line 3 in ${path}`);
-      expect(rejected.message).toMatch(/Read the file and re-target/);
+      expect(ERROR_REGISTRY.E_TARGET_LOST.remedy).toBe("Read the file and re-target.");
       expect(await readFile(path, "utf-8")).toBe("alpha\nbeta\ndelta\n");
     });
   });

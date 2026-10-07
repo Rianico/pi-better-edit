@@ -70,9 +70,9 @@ function stripCanonical(text: string): string {
   out = out.replace(/served[\s\-_]*hash[\s\-_]*echo/gi, "");
   // Allow the mandated literal-declaration human line, which names the served
   // condition with a hyphen (`served-echo`) and no hash (#125 escape audit);
-  // the tier task codes it as `[W_LITERAL_BYPASS]` without changing the wording,
-  // and the registry owns the header so the source holds only the wording.
-  out = out.split("served-echo check bypassed by literal declaration").join("");
+  // the tier task codes it as `[W_LITERAL_BYPASS]`; the served wording is capitalized
+  // ("Served-echo …") and the registry owns the header, so the strip is case-insensitive.
+  out = out.replace(/served-echo check bypassed by literal declaration/gi, "");
   return out;
 }
 

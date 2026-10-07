@@ -90,13 +90,12 @@ describe("task-109: one typed serve block, one builder, one snapshot descriptor"
       expect(err.message).toMatch(/^\[MODEL\] \[E_[A-Z_]+\]/);
       expect(err.servedRows).toHaveLength(3);
     }
-    // WHY: the range-family code serves a fresh read with no mandate; the stale-anchor code keeps the
-    // WHY: retry hint (issue #149 made the two payload shapes deliberately different).
+    // WHY: both row-carrying codes serve the fresh range with no retry mandate — the retry hint
+    // WHY: left every format with the #56 redline (ADR-0034; the remedy field owns the action).
     expect(stale.message).toContain("Current range (fresh read):");
     expect(stale.message).not.toContain("Retry with these anchors");
     expect(anchor.message).toContain("Current range:");
-    expect(anchor.message).toContain("Retry with these anchors");
-    expect(stale.servedBlock).toBe(anchor.servedBlock);
+    expect(anchor.message).not.toContain("Retry with these anchors");
   });
 
   it("FileSnapshotContext threads through fmtMismatchWithServes", () => {
