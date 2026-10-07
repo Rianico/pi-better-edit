@@ -232,7 +232,16 @@ function parseSourceStage(shape: StageShape): SourceStage | undefined {
 }
 
 /** Downstream pipe stages: selectors with no file operand (stdin only). */
-function parseFilterStage(stage: StageShape): SliceOp[] | undefined {
+/**
+ * Downstream pipe stages: selectors with no file operand (stdin only). The `rtk`
+ * unwrap applies here too (ADR-0033 D8 as amended): the field issues
+ * `rtk`-prefixed filters (`... | rtk tail -n 4`), and the D9 stdout gate keeps
+ * the transparency claim honest per call. Single unwrap, view commands only —
+ * `rtk` around anything else stays `unsafe` via the unchanged rules below.
+ */
+function parseFilterStage(shape: StageShape): SliceOp[] | undefined {
+  const stage = unwrapViewWrapper(shape);
+  if (!stage) return undefined;
   if (stage.name === "head" || stage.name === "tail") {
     const selection = parseCountSelector(stage.name, stage.args);
     if (!selection || selection.file !== undefined) return undefined;
@@ -284,12 +293,13 @@ function parseSilent(stage: StageShape): SilentSeg | undefined {
 }
 
 /**
- * `rtk` transparent wrapper (ADR-0033 D8): prefix position, view commands only.
+ * `rtk` transparent wrapper (ADR-0033 D8): unwraps to the inner view command in
+ * source and pipe-filter positions, view commands only, single unwrap only.
  * `rtk` provably proxies the view class byte-identically today, but reputation is
  * not the safety story — the stdout-verification gate (D9) re-checks every
  * replacement against the observed bytes, so a future filtering `rtk` subcommand
- * fails closed instead of mis-serving. `rtk` anywhere else (mid-pipe, wrapping a
- * non-view, carrying its own flags) stays `unsafe`.
+ * fails closed instead of mis-serving. `rtk` anywhere else (wrapping a non-view,
+ * carrying its own flags, around silent commands) stays `unsafe`.
  */
 function unwrapViewWrapper(stage: StageShape): StageShape | undefined {
   if (stage.name !== "rtk") return stage;

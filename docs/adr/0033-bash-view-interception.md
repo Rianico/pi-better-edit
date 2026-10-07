@@ -103,8 +103,10 @@ slice-accurate serve needs no new serve infrastructure.
    `;`/`||` chains (the 814-call compound ceiling stays pass-through).
 8. **Transparent wrapper (amendment 2026-10-07).** A leading `rtk` around a view
    command (`rtk cat f`, `rtk head -n 3 f`, …) unwraps to the inner view shape in
-   source positions only (bare, `&&` segments, pipeline stage zero — never
-   filter stages, never silent commands, single unwrap only). `rtk` provably
+   source positions (bare, `&&` segments, pipeline stage zero) and around pipe
+   filters (`... | rtk tail -n 4` — the field prefixes every stage). Single unwrap
+   only, view commands only, never around silent commands; anything else stays
+   `unsafe`.
    proxies the view class byte-identically today, but reputation is not the
    safety story: D9 re-checks every replacement, so a future filtering `rtk`
    subcommand fails closed. Production evidence: the field model issues

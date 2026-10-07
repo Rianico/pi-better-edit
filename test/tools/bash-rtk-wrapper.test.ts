@@ -29,6 +29,21 @@ describe("rtk transparent wrapper (ADR-0033 D8)", () => {
       ops: [{ kind: "last", n: 2 }],
     });
     expect(viewOf("cd /x && rtk cat f.txt")).toEqual({ filePath: "f.txt", baseDir: "/x", ops: [] });
+    expect(viewOf("cat f | rtk head -5")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "first", n: 5 }],
+    });
+    expect(viewOf("rtk cat f | rtk tail -2")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "last", n: 2 }],
+    });
+    expect(viewOf("rtk cat f | rtk sed -n '3,7p' | rtk head -n2")).toEqual({
+      filePath: "f",
+      ops: [
+        { kind: "range", from: 3, to: 7 },
+        { kind: "first", n: 2 },
+      ],
+    });
   });
 
   it("keeps rtk unsafe everywhere else", () => {
@@ -40,7 +55,9 @@ describe("rtk transparent wrapper (ADR-0033 D8)", () => {
     expect(reasonOf("rtk cat")).toBe("unsupported-command:rtk");
     expect(reasonOf("rtk cat -A f")).toBe("unsupported-command:rtk");
     expect(reasonOf("rtk rtk cat f")).toBe("unsupported-command:rtk");
-    expect(reasonOf("cat f | rtk head -5")).toBe("unsupported-pipeline");
+    expect(reasonOf("rtk ls | head -5")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | rtk grep x")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | rtk")).toBe("unsupported-pipeline");
     expect(reasonOf("rtk cat a b")).toBe("unsupported-command:rtk");
   });
 });
