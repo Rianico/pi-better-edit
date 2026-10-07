@@ -303,7 +303,7 @@ referenced span is retired — the current word is `cut`.
 | --- | --- | --- |
 | `[E_BAD_PAYLOAD]` | Payload fails schema validation (missing fields, wrong types). | Fix the payload fields and retry. |
 | `[E_MALFORMED_ANCHOR]` | Anchor is not valid — not a bare 4-char anchor (e.g. carries `│`, a diff prefix, or a row suffix). | Pass the bare 4-char anchor (e.g. `"szJx"`) and retry. |
-| `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | Retry with the served rows; no read is needed. |
+| `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | The latest known status is in this rejection. Retry as it directs. |
 | `[E_UNKNOWN_ANCHOR]` | The path has not served the anchor in this session. | Re-read the file to establish fresh anchor leases. |
 | `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not for the targeted one. | Ensure anchors match the target file path. |
 | `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a **boundary** line was never served (an unread interior between leased boundaries applies, [ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)). | Current range served as a fresh read; decide next edit from fresh rows. |

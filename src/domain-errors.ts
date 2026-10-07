@@ -340,7 +340,7 @@ export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[
     audience: "MODEL",
     format: staleAnchorFormat,
     // WHY remedy: a row was served for this path and its line identity is retired, so the served window pins the retry. See ADR-0021.
-    remedy: "Retry with the served rows; no read is needed.",
+    remedy: "The latest known status is in this rejection. Retry as it directs.",
   },
   E_UNKNOWN_ANCHOR: {
     audience: "MODEL",

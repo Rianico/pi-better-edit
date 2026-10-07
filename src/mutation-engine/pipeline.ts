@@ -486,7 +486,7 @@ const NEVER_SERVED_FOREIGN_CODES: ReadonlySet<DomainErrorCode> = new Set([
 ]);
 
 // WHY: (item (ii)) these codes HOLD a lease — retirement or drift must surface with the code that
-// WHY: means it, never rewritten as E_STALE_ANCHOR with its "no read is needed" remedy.
+// WHY: means it, never rewritten as E_STALE_ANCHOR with its "The latest known status is in this rejection. Retry as it directs." remedy.
 const LEASED_FOREIGN_PASSTHROUGH_CODES: ReadonlySet<DomainErrorCode> = new Set([
   "E_UNVERIFIED_RANGE",
   "E_STALE_RANGE",
@@ -549,7 +549,7 @@ function foreignRejection(error: unknown, refFile: string): DomainError {
 // WHY: rows belong to the FOREIGN file and were never leased by this call, so they are dropped and
 // WHY: the headline names `refFile` — the model re-reads the foreign file itself. The code is
 // WHY: preserved verbatim (§0's exact-code pins): retirement or drift must still surface under the
-// WHY: code that means it, never rewritten as `E_STALE_ANCHOR` with its "no read is needed" remedy.
+// WHY: code that means it, never rewritten as `E_STALE_ANCHOR` with its "The latest known status is in this rejection. Retry as it directs." remedy.
 function foreignLeasedWrap(error: DomainError, refFile: string): DomainError {
   const headline =
     `the foreign-source reference to ${refFile} no longer resolves against that file's served ` +
