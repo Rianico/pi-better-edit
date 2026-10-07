@@ -225,3 +225,35 @@ _Avoid_: machine diff (a projection, not the table)
 **projection**:
 The single shared rendered diff — preview, applied, and human display render the same text with different context params — derived from the source of truth under a stated collapse contract. Informational only: hidden spans come in two kinds, each with a unified counted marker whose count equals its hidden span — untouched-span (middle gap; ` ... [N lines untouched] ...`, both cursors advance so following anchors stay at their true positions; hidden rows are addressable only through the leases the carrying serve grants) and deleted-span (removed run; ` - ... [N lines deleted] ...`, the count drives the old-side cursor); added spans are never hidden (the collapse invariant). The model path never consumes projection text as coordinate input.
 _Avoid_: view (unqualified — name the audience), second diff (there is only one rendering), middle-gap marker (think spans, not gaps)
+
+**pure view**:
+A bash chain whose whole stdout is provably exactly one file's viewed lines: one `view` span (single-file `cat`/`head`/`tail`/`sed -n` numeric print, or a sanctioned `cat |` line-filter pipeline) with every other `&&` segment `silent` (ADR-0033). Only a pure view is eligible for view replacement.
+_Avoid_: safe command (safety is per-span-kind, never whole-command)
+
+**slice view**:
+A pure view naming a strict sub-range of the file (`head`/`tail` counts, `sed -n` print addresses, pipeline compositions). Served slice-accurately: exactly the computed intervals are previewed and leased, never the whole file (ADR-0033 D3).
+_Avoid_: partial read (a read concept; this is a bash classification)
+
+**pass-through (bash view)**:
+A bash result the hook returns byte-unmodified: not a pure view, or a view with any `unsafe` segment, or any guard failure (error, truncation, non-text). The fail-closed default — worst case is the status quo.
+_Avoid_: skip (says nothing about what the model receives)
+
+**silent segment**:
+An `&&`-chain segment provably emitting no stdout on success and not touching the viewed file. v1 set: `cd <literal-path>` (never `-`), `true`, `:` — closed by corpus census (ADR-0033), extensible only by audit.
+_Avoid_: harmless command (harmlessness is unproven; silence is proven)
+
+**span kind**:
+The per-segment classification `silent` | `view` | `unsafe`. Unknown is `unsafe` — the kind system fails closed by default, so a new command shape is pass-through until audited, never intercepted until proven.
+_Avoid_: risk level (this is a proof obligation, not a score)
+
+**view replacement**:
+The full-content swap of a pure view's tool result for the anchored slice preview under the frozen header `--- Bash view (hashline anchors) ---`: zero duplication (unlike the write path's append), leases bound to the canonical disk re-read, never to bash stdout (ADR-0033 D4).
+_Avoid_: auto-read (the write-path append; this is a swap, not an addition)
+
+**interval algebra**:
+The exact line-set composition for pipeline slices: surviving source lines as ordered disjoint 1-indexed intervals over `[1..L]`, each filter stage (`head`/`tail` counts, `sed -n` addresses) mapping intervals to intervals by pure arithmetic — no content consulted, nothing estimated (ADR-0033 D2).
+_Avoid_: range math (intervals are sets; ranges are model-facing spans)
+
+**transparent wrapper**:
+A command prefix (`rtk`) that forwards a view command's bytes unchanged. Accepted in source positions only and unwrapped to the inner view shape — but never trusted: the stdout-verification gate (D9) re-checks every replacement against the observed bytes, so transparency is proven per call, not assumed per tool (ADR-0033 D8).
+_Avoid_: silent segment (silence is proven no-output; transparency is proven byte-identity)

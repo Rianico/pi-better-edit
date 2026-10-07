@@ -33,10 +33,19 @@ export const DEFAULT_OUTFILE = "dist/index.js";
 
 /**
  * Host-provided packages stay external: pi aliases them to its own copies, and a vendored
- * copy builds a second module graph (measured upstream at 720 ms of 838 ms). The three
- * runtime dependencies stay unbundled so a user install gets them from the registry.
+ * copy builds a second module graph (measured upstream at 720 ms of 838 ms). The four
+ * runtime dependencies (`diff`, `file-type`, `unbash`, `xxhash-wasm`) stay unbundled
+ * so a user install gets them from the registry (`typebox` and `@earendil-works/*`
+ * are host-provided peer surfaces, likewise external).
  */
-export const EXTERNALS = ["diff", "file-type", "xxhash-wasm", "typebox", "@earendil-works/*"];
+export const EXTERNALS = [
+  "diff",
+  "file-type",
+  "unbash",
+  "xxhash-wasm",
+  "typebox",
+  "@earendil-works/*",
+];
 
 /** The esbuild target tracks `engines.node`; esbuild preserves the `node:` specifier prefixes. */
 const TARGET = "node24";

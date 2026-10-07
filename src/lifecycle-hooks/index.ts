@@ -44,7 +44,7 @@ import { valAccess as defaultValAccess } from "../validation.js";
 import { visLines as defaultVisLines } from "../utils.js";
 import { fmtReadPreview as defaultFmtReadPreview } from "../read.js";
 import { finalizeToolResult as defaultFinalizeToolResult } from "../edit-response.js";
-import { AUTO_READ_MAX, SERVED_MAX_LINES } from "../constants.js";
+import { AUTO_READ_MAX, MAX_READ_WINDOWS, SERVED_MAX_LINES } from "../constants.js";
 import type { LifecycleDeps, ToolContext, ToolResultEvent } from "./types.js";
 
 export type { ToolContext, ToolResultEvent, LifecycleDeps } from "./types.js";
@@ -96,6 +96,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     event: ToolResultEvent,
     ctx: ToolContext,
   ) => Promise<{ content: Array<{ type: string; text: string }> } | undefined>;
+  onBash: (
+    event: ToolResultEvent,
+    ctx: ToolContext,
+  ) => Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined>;
 } {
   const deps: LifecycleDeps = { ...defaultDeps(), ...overrides };
 
@@ -366,6 +370,142 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     return { content };
   }
 
+  /**
+  /**
+   * WHY deferred module load: `bash-classifier` statically pulls `unbash`, which must
+   * WHY: never join the extension entry graph — entry import cost is budgeted
+   * WHY: (`measure-import --max-ratio 0.75`). The handler therefore reaches the
+   * WHY: classifier only through a dynamic `import()` on the first bash result.
+   * WHY:
+   * WHY: Load-shape record (ADR-0033): esbuild bundles the relative specifier into
+   * WHY: the entry and hoists the external `unbash` import to a top-level static
+   * WHY: import in the shipped artifact, so the artifact is NOT lazy — only the
+   * WHY: source entry is. Measured cost is negligible (`unbash` 52 KB parser,
+  * WHY: no transitive deps, cold import ~0.01-0.03 ms), and a resolve/eval failure
+  * WHY: of the lazily imported classifier still fails closed via the catch below,
+  * WHY: which passes the original output through untouched (in the shipped artifact
+  * WHY: the hoisted top-level import is instead fatal at entry — same class as the
+  * WHY: other entry imports).
+   */
+  async function handleBash(
+    event: ToolResultEvent,
+    ctx: ToolContext,
+  ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {
+    if (event.toolName !== "bash") return undefined;
+    if (event.isError) return undefined;
+    const rawInput = event.input as Record<string, unknown> | undefined;
+    const command = rawInput?.command;
+    if (typeof command !== "string" || command.trim() === "") return undefined;
+    // WHY: `ToolResultEvent.details` is typed as `EditDetails`, but the pi runtime
+    // WHY: delivers `BashToolDetails` (`truncation`, `fullOutputPath`) for bash —
+    // WHY: read it structurally. A truncated stdout means the model did NOT see
+    // WHY: the whole file, so replacing it with anchored lines would invent
+    // WHY: viewed lines: fail closed.
+    const bashDetails = event.details as unknown as { truncation?: unknown } | undefined;
+    if (bashDetails && typeof bashDetails === "object" && bashDetails.truncation != null) {
+      return undefined;
+    }
+    try {
+      const { classifyBashCommand, applySliceOps } = await import("../bash-classifier.js");
+      const classification = classifyBashCommand(command);
+      if (classification.kind !== "pureView") {
+        // WHY: (ADR-0033 observability) a systematic regression (parser drift, a
+        // WHY: filtering wrapper, a new view shape) is otherwise indistinguishable
+        // WHY: from "no views issued". Log the internal reason behind the existing
+        // WHY: debug seam — stderr only, never model-visible text (D6 holds).
+        const debugValue = process.env.PI_HASHLINE_DEBUG;
+        if (debugValue === "1" || debugValue === "true") {
+          console.error(`[bash-view] pass-through (${classification.reason})`);
+        }
+        return undefined;
+      }
+      const { filePath, baseDir, ops } = classification.view;
+      // WHY: the single pre-view literal `cd` re-bases relative resolution; an absolute
+      // WHY: view target ignores it (`toCwd` returns absolutes unchanged). Multi-`cd`
+      // WHY: and post-view-`cd` chains never reach here — the classifier fails them
+      // WHY: closed to pass-through (ADR-0033 D1).
+      const effCwd = baseDir === undefined ? ctx.cwd : deps.toCwd(baseDir, ctx.cwd);
+      const resolvedPath = await deps.resolveTarget(deps.toCwd(filePath, effCwd));
+      await deps.valAccess(resolvedPath, filePath);
+      const file = await deps.loadFileKindAndText(resolvedPath, {
+        maxLines: SERVED_MAX_LINES,
+        displayPath: filePath,
+      });
+      if (file.kind !== "text") return undefined;
+      const { normalized, fileHashes, absolutePath } = await deps.readNormFile(filePath, effCwd, {
+        maxLines: SERVED_MAX_LINES,
+        preloadedFile: file,
+      });
+      // WHY: intervals fold over the re-read line count, so an empty selection
+      // WHY: (e.g. `head -n 0`, out-of-range `sed` addresses) serves nothing and
+      // WHY: passes through — zero leases, zero output change (ADR-0033 D3).
+      const intervals = applySliceOps(ops, deps.visLines(normalized).length);
+      if (intervals.length === 0 || intervals.length > MAX_READ_WINDOWS) return undefined;
+      // WHY: [ADR-0033 D9] the observed stdout must byte-match the re-read slice —
+      // WHY: this is what makes transparent wrappers (e.g. `rtk`) safe by
+      // WHY: construction instead of by reputation. A filtering wrapper, a
+      // WHY: numbering wrapper, TOCTOU drift between exec and re-read, or any
+      // WHY: encoding skew (CRLF, BOM, undecodable bytes) fails closed to
+      // WHY: pass-through. Exactly one text block is required — anything else
+      // WHY: (multi-block, non-text) cannot be attributed to the view.
+      // WHY: Trailing-newline-only leniency: `joined` vs `joined + "\n"`.
+      const stdoutBlock = Array.isArray(event.content) ? event.content : undefined;
+      const stdoutText =
+        stdoutBlock?.length === 1 && stdoutBlock[0]?.type === "text"
+          ? stdoutBlock[0].text
+          : undefined;
+      if (typeof stdoutText !== "string") return undefined;
+      const allLines = deps.visLines(normalized);
+      const sliceLines: string[] = [];
+      for (const iv of intervals) sliceLines.push(...allLines.slice(iv.lo - 1, iv.hi));
+      const joinedSlice = sliceLines.join("\n");
+      if (stdoutText !== joinedSlice && stdoutText !== `${joinedSlice}\n`) return undefined;
+      const preview = await deps.fmtReadPreview(
+        normalized,
+        { windows: intervals.map((iv) => ({ offset: iv.lo, limit: iv.hi - iv.lo + 1 })) },
+        fileHashes,
+        absolutePath,
+        DEFAULT_MAX_BYTES,
+        AUTO_READ_MAX,
+      );
+      // WHY: (ADR-0033 D3) anchors add bytes per row, so a view whose raw stdout
+      // WHY: fits the bash byte budget can still exceed the preview budget — the
+      // WHY: shortened preview would then silently drop lines while the header
+      // WHY: claims the full range. A truncated preview is never slice-accurate:
+      // WHY: pass through with the original output untouched.
+      if (preview.truncation !== undefined) return undefined;
+      if (preview.served.length === 0) return undefined;
+      const sessionKey = deps.sessionKeyFor(ctx);
+      // WHY: plain mode (no `resultLineCount`/`firstChangedLine`): truncated mode
+      // WHY: belongs to diffs and would corrupt the mirror. The grant leases
+      // WHY: exactly the served rows against the re-read snapshot (ADR-0033 D4).
+      await recordServesBestEffort({
+        sessionKey,
+        path: absolutePath,
+        servedRows: preview.served,
+        contentHash: snapshotHashFor(normalized),
+      });
+      // WHY: `servedRowsToSpans` compresses the served window rows into honest
+      // WHY: per-run spans — a slice view notifies its slice, never whole-file.
+      notifyServedSpans({
+        filePath: absolutePath,
+        spans: servedRowsToSpans(preview.served),
+        source: "auto-read",
+      });
+      // WHY: FULL replacement (not append): the raw stdout is unanchored bytes the
+      // WHY: model already paid for once — swapping it for the anchored slice is
+      // WHY: the zero-bloat interception point (ADR-0033 D4).
+      return {
+        content: [{ type: "text", text: `--- Bash view (hashline anchors) ---\n${preview.text}` }],
+      };
+    } catch (error) {
+      // SAFETY: every failure returns undefined so the original bash output reaches
+      // SAFETY: the model untouched — interception must never break a view.
+      console.error("Bash view interception failed:", error);
+      return undefined;
+    }
+  }
+
   async function handleToolResult(
     event: ToolResultEvent,
     ctx: ToolContext,
@@ -377,6 +517,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     if (event.toolName === "edit" || event.toolName === "undo_last_edit") {
       return handleEdit(event, ctx);
     }
+    if (event.toolName === "bash") {
+      return handleBash(event, ctx);
+    }
     return undefined;
   }
 
@@ -385,6 +528,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     onToolResult: handleToolResult,
     onWrite: handleWrite,
     onEdit: handleEdit,
+    onBash: handleBash,
   };
 }
 

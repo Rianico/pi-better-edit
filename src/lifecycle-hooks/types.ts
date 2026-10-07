@@ -3,6 +3,7 @@ import type { EditDetails } from "../edit-response.js";
 import type { NormFile, ReadNormOptions } from "../file-reader.js";
 import type { LFile, LoadFileOptions } from "../file-kind.js";
 import type { Hasher } from "../hashline/hasher.js";
+import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 
 export type ToolResultEvent = {
   toolName: string;
@@ -29,12 +30,16 @@ export type LifecycleDeps = {
   readNormFile: (displayPath: string, cwd: string, opts?: ReadNormOptions) => Promise<NormFile>;
   fmtReadPreview: (
     normalized: string,
-    opts: Record<string, never>,
+    opts: {
+      offset?: number;
+      limit?: number;
+      windows?: Array<{ offset: number; limit: number }>;
+    },
     fileHashes: string[],
     absolutePath: string,
     maxBytes: number,
     maxLines: number,
-  ) => Promise<{ text: string; served: ServedRow[] }>;
+  ) => Promise<{ text: string; truncation?: TruncationResult; served: ServedRow[] }>;
   recordDiffServes: (input: {
     sessionKey: string;
     path: string;
