@@ -120,8 +120,8 @@ kQmx│}
   "file": "src/main.ts",
   "edits": [
     {
-      "anchor_from": "szJ",
-      "anchor_to": "szJ",
+      "anchor_from": "szJx",
+      "anchor_to": "szJx",
       "text": "  console.log('hi');\n"
     }
   ]
@@ -132,9 +132,9 @@ kQmx│}
 The tool applies the edit and returns a unified diff showing fresh anchors for subsequent edits—eliminating the need for follow-up `read` calls:
 
 ```text
-- szJ │   console.log("world");
-+ a3m │   console.log('hi');
-  kQm │ }
+- szJx│   console.log("world");
++ a3mX│   console.log('hi');
+  kQmx│ }
 ```
 
 #### 4. Batch multiple edits atomically
@@ -144,8 +144,8 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
 {
   "file": "src/main.ts",
   "edits": [
-    { "anchor_from": "a1b", "anchor_to": "a1b", "text": "// Header comment\n" },
-    { "anchor_from": "c3d", "anchor_to": "c3d", "text": "  return true;\n" }
+    { "anchor_from": "a1bX", "anchor_to": "a1bX", "text": "// Header comment\n" },
+    { "anchor_from": "c3dX", "anchor_to": "c3dX", "text": "  return true;\n" }
   ]
 }
 ```
@@ -301,39 +301,39 @@ referenced span is retired — the current word is `cut`.
 
 | Error Code | Description | Remedy / Agent Action |
 | --- | --- | --- |
-| `[E_BAD_PAYLOAD]` | Payload fails schema validation (missing fields, wrong types). | Correct payload structure to match `{ file, edits }` schema. |
-| `[E_MALFORMED_ANCHOR]` | Anchor is not a bare 4-char string (e.g. includes `│` or diff prefixes). | Pass bare 4-char anchor (e.g. `"szJx"`) and retry. |
-| `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | Retry using the fresh rows provided in the rejection. |
-| `[E_UNKNOWN_ANCHOR]` | Anchor has no active lease in any file for this session. | Re-read the file to establish fresh anchor leases. |
-| `[E_FOREIGN_ANCHOR]` | Anchor is leased for a different file than the targeted one. | Ensure anchors match the target file path. |
+| `[E_BAD_PAYLOAD]` | Payload fails schema validation (missing fields, wrong types). | Fix the payload fields and retry. |
+| `[E_MALFORMED_ANCHOR]` | Anchor is not valid — not a bare 4-char anchor (e.g. carries `│`, a diff prefix, or a row suffix). | Pass the bare 4-char anchor (e.g. `"szJx"`) and retry. |
+| `[E_STALE_ANCHOR]` | Anchor no longer resolves to its leased identity in the file. | Retry with the served rows; no read is needed. |
+| `[E_UNKNOWN_ANCHOR]` | The path has not served the anchor in this session. | Re-read the file to establish fresh anchor leases. |
+| `[E_FOREIGN_ANCHOR]` | Anchor was served for a different file, not for the targeted one. | Ensure anchors match the target file path. |
 | `[E_STALE_RANGE]` | A line in the edit range changed on disk, or a **boundary** line was never served (an unread interior between leased boundaries applies, [ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)). | Current range served as a fresh read; decide next edit from fresh rows. |
 | `[E_UNVERIFIED_RANGE]` | One boundary lease retired while surviving bound is live and unshifted. | Named window served as fresh read; decide next edit from fresh rows. |
-| `[E_TARGET_LOST]` | Target line identity deleted or reordered without a stable anchor bound. | Range cannot be served; re-read file and re-target. |
-| `[E_SUSPICIOUS_TEXT]` | Replacement text contains a line matching a served `HASH│` anchor. | Strip copied tool output anchors or pass `mode: "literal"`. |
-| `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping or nested spans. | Merge overlapping spans into a single item or split into separate calls. |
-| `[E_NOOP_LOOP]` | Identical edit producing no changes submitted 3 consecutive times. | Inspect current range; range already contains target content. |
-| `[E_EMPTY_RANGE]` | Edit would result in an empty non-empty file. | Use `write` to truncate or delete file contents. |
-| `[E_NOT_FOUND]` | Target file does not exist on disk. | Verify path using `ls` and retry with corrected path. |
-| `[E_ACCESS]` | Target file is unreadable, unwritable, or in a symlink loop. | Correct permissions or resolve symlink loop. |
-| `[E_UNSUPPORTED_FILE]` | Target path is a directory, binary file, image, or UTF-16/32 text. | Hashline editing only targets UTF-8 text files. |
-| `[E_LOSSY_TEXT]` | File bytes do not round-trip a UTF-8 decode (invalid sequences became U+FFFD on read); edit refused before any write. | Re-encode the file as valid UTF-8 with a byte-level tool, then retry. |
-| `[E_UNDO_STALE]` | Target file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read file. |
-| `[E_UNDO_UNAVAILABLE]` | Undo state could not be persisted to SQLite store. | Edit was refused and file unchanged; retry edit. |
-| `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure; do not re-undo — the next run repairs the interrupted revert. |
-| `[E_LARGE_FILE]` | A served read or edit load exceeds the served admission budget (200,000 lines, `SERVED_MAX_LINES`) or the 14,766,336-line ceiling of allocatable 4-char anchors (62^4 minus the 10,000 reserved all-digit spellings); `mode: "verbatim"` reads are not capped. | Use `write` or non-hashline tools for very large files. |
-| `[E_UNKNOWN]` | Unexpected filesystem or invariant failure. | Check error message details. |
+| `[E_TARGET_LOST]` | Target line identity deleted or reordered without a stable anchor bound. | Read the file and re-target. |
+| `[E_SUSPICIOUS_TEXT]` | Replacement line starts with a served `HASH│` anchor. | Omit the copied anchors or declare `mode: "literal"`. |
+| `[E_BATCH_ABORT]` | Two or more items in the batch target overlapping spans. | Merge the overlapping ranges into a single edit, or split them into separate calls. |
+| `[E_NOOP_LOOP]` | Identical edit submitted 3 consecutive times without change; the range already has this text. | Inspect the current range; the range already contains the target content. |
+| `[E_EMPTY_RANGE]` | Edit would result in an empty non-empty file. | Use `write` to clear the file. |
+| `[E_NOT_FOUND]` | Target file does not exist on disk. | Check the parent directory and retry with the corrected file. |
+| `[E_ACCESS]` | Target file is unreadable, unwritable, or in a symlink loop. | Fix the path or permissions and retry. |
+| `[E_UNSUPPORTED_FILE]` | Target path is a directory, binary file, image, or UTF-16/32 text. | Choose a text file and retry. |
+| `[E_LOSSY_TEXT]` | File bytes do not round-trip a UTF-8 decode; a line-addressed rewrite would destroy the original bytes. | Re-encode the file as valid UTF-8 with a byte-level tool, then retry. |
+| `[E_UNDO_STALE]` | Cannot undo on the target path: the file was modified or deleted after the last edit. | Undo refused to prevent data loss; re-read the file. |
+| `[E_UNDO_UNAVAILABLE]` | Cannot persist undo history to the hash store. The edit was not applied. The file is unchanged. | Retry the edit. If the store cannot be recovered, use `write`. |
+| `[E_UNDO_REVERT_FAILED]` | A correlated cut-undo revert was interrupted mid-transaction and could not be completed; no undo history was cleared. | Fix the file access failure. The next run repairs the interrupted revert. |
+| `[E_LARGE_FILE]` | A served read or edit load exceeds the served admission budget (200,000 lines, `SERVED_MAX_LINES`) or the 14,766,336-line ceiling of allocatable 4-char anchors; `mode: "verbatim"` reads are not capped. | Split the file or use a non-line-based approach for very large files. |
+| `[E_UNKNOWN]` | Unknown filesystem or invariant failure (first message line reported). | Check the error message details. |
 
 ### Applied Warnings (`[W_*]`)
 
 | Warning Code | Audience | Description |
 | --- | --- | --- |
-| `[W_NEVER_SERVED_SHAPE]` | `[MODEL]` | Replacement line starts with an anchor-shaped token never served. Applied verbatim. |
-| `[W_SERVED_PREFIX_MISMATCH]` | `[MODEL]` | Replacement line starts with a served anchor but content differs. Applied verbatim. |
-| `[W_REVERSED_ANCHORS]` | `[USER]` | `anchor_from` and `anchor_to` were provided in reverse order. Swapped and applied cleanly. |
-| `[W_UNICODE_LITERAL]` | `[USER]` | Literal `\uDDDD` sequence detected in replacement. Applied verbatim. |
-| `[W_LITERAL_BYPASS]` | `[USER]` | Served hash echo check bypassed via explicit `mode: "literal"`. |
-| `[W_NOOP]` | `[USER]` | Edit produced no file changes; warning emitted on 2nd occurrence. |
-| `[W_NOOP_INSERT]` | `[MODEL]` | An `at: "before"/"after"` item with `text: ""` writes nothing; the file stayed byte-identical. |
+| `[W_NEVER_SERVED_SHAPE]` | `[MODEL]` | Replacement line starts with an anchor-shaped token never served for this session and file. Applied verbatim. |
+| `[W_SERVED_PREFIX_MISMATCH]` | `[MODEL]` | Replacement line starts with a served anchor but the content differs. Applied verbatim. |
+| `[W_REVERSED_ANCHORS]` | `[USER]` | The anchors were reversed (`anchor_from` after `anchor_to`). Applied with the range swapped. |
+| `[W_UNICODE_LITERAL]` | `[USER]` | Replacement line contains a literal `\uDDDD` sequence. Applied verbatim. |
+| `[W_LITERAL_BYPASS]` | `[USER]` | Served-echo check bypassed by literal declaration. |
+| `[W_NOOP]` | `[USER]` | Identical edit did not change the range; the range already has this text. A resend rejects. |
+| `[W_NOOP_INSERT]` | `[MODEL]` | An empty insertion with `"before"/"after"` and `text: ""` writes nothing. Provide text or drop the item. |
 
 ---
 
