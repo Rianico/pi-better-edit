@@ -544,12 +544,12 @@ export interface WarningPayloadMap {
 function neverServedShapeFormat(payload: WarningPayloadMap["W_NEVER_SERVED_SHAPE"]): string {
   if (payload.count === 1) {
     return (
-      "1 replacement line opens with an anchor-shaped token " +
+      "1 replacement line starts with an anchor-shaped token " +
       "never served for this session and file. Applied verbatim."
     );
   }
   return (
-    `${payload.count} replacement lines open with anchor-shaped tokens ` +
+    `${payload.count} replacement lines start with anchor-shaped tokens ` +
     "never served for this session and file. Applied verbatim."
   );
 }
@@ -558,7 +558,7 @@ function servedPrefixMismatchFormat(
   payload: WarningPayloadMap["W_SERVED_PREFIX_MISMATCH"],
 ): string {
   return (
-    `Line ${payload.k} begins with the exact ${payload.anchor}│ anchor ` +
+    `Line ${payload.k} starts with the exact ${payload.anchor}│ anchor ` +
     `served for this session and file for line ${payload.servedLine}, ` +
     "but its content differs from what was served. Applied verbatim."
   );
@@ -567,13 +567,13 @@ function servedPrefixMismatchFormat(
 function noopWarnFormat(payload: WarningPayloadMap["W_NOOP"]): string {
   if (payload.batch) {
     return (
-      `Notice: ${payload.ref} — identical edit no-op'd twice; ` +
-      "range already has this text. Resend will reject the batch."
+      `Identical edit (${payload.ref}) did not change the range. ` +
+      "The range already has this text. A resend rejects the batch."
     );
   }
   return (
-    `Notice: identical edit (${payload.removeFrom} → ${payload.removeTo} ${payload.ref}) ` +
-    "no-op'd twice; range already has this text. Resend will reject."
+    `Identical edit (${payload.ref}) did not change the range. ` +
+    "The range already has this text. A resend rejects."
   );
 }
 
@@ -591,16 +591,16 @@ export const WARNING_REGISTRY: {
   W_REVERSED_ANCHORS: {
     audience: "USER",
     format: ({ fromHash, toHash }) =>
-      `anchor_from/anchor_to were reversed (${fromHash} after ${toHash}); ` +
-      "healed and applied with the range swapped.",
+      `The anchors were reversed (${fromHash} after ${toHash}). Applied with the range swapped.`,
   },
   W_UNICODE_LITERAL: {
     audience: "USER",
-    format: ({ line }) => `Literal \\uDDDD detected on replacement line ${line}; applied verbatim.`,
+    format: ({ line }) =>
+      `Replacement line ${line} contains a literal \\uDDDD sequence. Applied verbatim.`,
   },
   W_LITERAL_BYPASS: {
     audience: "USER",
-    format: () => "served-echo check bypassed by literal declaration.",
+    format: () => "Served-echo check bypassed by literal declaration.",
   },
   W_NOOP: {
     audience: "USER",
@@ -612,8 +612,8 @@ export const WARNING_REGISTRY: {
   W_NOOP_INSERT: {
     audience: "MODEL",
     format: ({ ref, removeFrom, removeTo }) =>
-      `empty insertion ${ref} (${removeFrom} → ${removeTo}): "before"/"after" with text "" writes ` +
-      "nothing and the file stayed byte-identical. Provide text or drop the empty item.",
+      `Empty insertion ${ref} (${removeFrom} → ${removeTo}) with "before"/"after" and text "" writes ` +
+      "nothing. Provide text or drop the item.",
   },
 };
 
