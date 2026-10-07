@@ -138,11 +138,13 @@ slice-accurate serve needs no new serve infrastructure.
   artifact — so the artifact is NOT lazy, only the source entry is (verified in a
   fresh `build-dist` output). Measured cost is negligible (`unbash` 52 KB parser, no
   transitive deps, cold import ~0.01–0.03 ms, one parse ~0.09 ms), and a resolve/eval
-  failure still fails closed to pass-through (`measure-import --max-ratio 0.75`).
+  failure of the lazily imported classifier still fails closed to pass-through. In the
+  shipped artifact the hoisted top-level `unbash` import is instead fatal at entry
+  (same class as the other entry imports), bounded by `verify-dist`'s specifier check
+  (`measure-import --max-ratio 0.75` still guards the source entry).
 - `LifecycleDeps.fmtReadPreview` opts widen from `Record<string, never>` to the
   real `{ offset?; limit?; windows?: Array<{ offset: number; limit: number }> }`
   (1-indexed, mirroring `ReadWindow`).
-- Witnesses: `test/tools/bash-classifier.test.ts` (span matrix, algebra cases,
 - Witnesses: `test/tools/bash-classifier.test.ts` (span matrix, algebra cases,
   all four R4 guards, corpus spot shapes, `post-view-cd`/`multi-cd` rejections) +
   `test/tools/bash-view-lifecycle.test.ts`

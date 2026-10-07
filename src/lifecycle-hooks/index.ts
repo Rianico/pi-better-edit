@@ -381,9 +381,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
    * WHY: the entry and hoists the external `unbash` import to a top-level static
    * WHY: import in the shipped artifact, so the artifact is NOT lazy — only the
    * WHY: source entry is. Measured cost is negligible (`unbash` 52 KB parser,
-   * WHY: no transitive deps, cold import ~0.01-0.03 ms), and a resolve/eval failure
-   * WHY: still fails closed via the catch below, which passes the original output
-   * WHY: through untouched.
+  * WHY: no transitive deps, cold import ~0.01-0.03 ms), and a resolve/eval failure
+  * WHY: of the lazily imported classifier still fails closed via the catch below,
+  * WHY: which passes the original output through untouched (in the shipped artifact
+  * WHY: the hoisted top-level import is instead fatal at entry — same class as the
+  * WHY: other entry imports).
    */
   async function handleBash(
     event: ToolResultEvent,
