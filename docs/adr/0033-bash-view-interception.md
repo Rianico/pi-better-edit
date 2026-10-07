@@ -60,8 +60,14 @@ slice-accurate serve needs no new serve infrastructure.
    is provable. Any `unsafe` (including `;`, `||`, `|&`, backgrounding,
    subshells, assignments, redirections, heredocs, substitutions, expansions,
    globs) fails closed to pass-through. Per-segment byte-splicing is rejected as
-   unsound (shared stdout is unattributable). `cd` resolves the view target
-   against the last literal `cd` (fallback `ctx.cwd`).
+   unsound (shared stdout is unattributable). A single `cd` placed before the view
+   re-bases relative resolution (fallback `ctx.cwd` when no `cd` is present): bash
+   applies that `cd` to the session directory and then resolves the view target
+   against the result, which is exactly what the hook replays. Anything else fails
+   closed — a `cd` after the view ran too late to affect it (`cat f && cd sub`
+   viewed `./f`, not `sub/f`), and chained `cd`s compose (`cd a && cd b` lands in
+   `a/b`, not `b`), so applying one of them out of order would lease a path never
+   viewed (`post-view-cd` / `multi-cd` pass-through reasons).
 2. **Slice-view algebra.** One literal source file; stages are `cat` source or
    file-direct `head`/`tail`/`sed -n`, followed by pure line-window filters
    (`head -n`/`tail -n` incl. bare `-N` and GNU `+N`/`-N` line forms;
@@ -87,7 +93,7 @@ slice-accurate serve needs no new serve infrastructure.
    exactly the served rows — unserved lines stay unleased (least privilege by
    construction, verified against `grantLeasesInTransaction`'s per-row lookup).
 5. **The four adversarial guards (R4, mandatory).** `cat` takes zero flags
-   (only `-u` tolerable; `-A`/`-n`/`-v`/etc. fail closed). `cd` rejects `-`
+   (any leading-`-` operand, `-u` included, fails closed — as do `-A`/`-n`/`-v`/etc.).
    (prints `$OLDPWD`, breaks purity). `head`/`tail` accept bare `-N` and `-n N`
    (line mode only); `-f`/`-F`/`-c`/`-z` fail closed. `sed -n` script must
    match `^\d+(,\d+)?p$` exactly (locks out `w`/`e`/`r`/`s`/`;`/`{}`/`/`).
@@ -107,7 +113,7 @@ slice-accurate serve needs no new serve infrastructure.
    filters (`... | rtk tail -n 4` — the field prefixes every stage). Single unwrap
    only, view commands only, never around silent commands; anything else stays
    `unsafe`.
-   proxies the view class byte-identically today, but reputation is not the
+   `rtk` provably proxies the view class byte-identically today, but reputation is not the
    safety story: D9 re-checks every replacement, so a future filtering `rtk`
    subcommand fails closed. Production evidence: the field model issues
    `rtk`-prefixed views in the majority of turns; without this rule the feature
@@ -125,16 +131,25 @@ slice-accurate serve needs no new serve infrastructure.
 - New pure module `src/bash-classifier.ts` (span kinds, interval algebra, all
   D2/D5 rules); `unbash@5.0.0` becomes a runtime dependency (pinned exact) and
   joins `EXTERNALS` in `scripts/build-dist.mjs` (runtime deps stay unbundled
-  per that file's contract); `lifecycle-hooks` reaches it only through a
-  dynamic `import()` inside the bash handler so entry import cost is unchanged
-  (`measure-import --max-ratio 0.75`).
+  per that file's contract); `lifecycle-hooks` reaches the classifier only through a
+  dynamic `import()` inside the bash handler so the source entry pays no parser cost
+  up front. Load-shape record: esbuild bundles the relative specifier into the entry
+  and hoists the external `unbash` import to a top-level static import in the shipped
+  artifact — so the artifact is NOT lazy, only the source entry is (verified in a
+  fresh `build-dist` output). Measured cost is negligible (`unbash` 52 KB parser, no
+  transitive deps, cold import ~0.01–0.03 ms, one parse ~0.09 ms), and a resolve/eval
+  failure still fails closed to pass-through (`measure-import --max-ratio 0.75`).
 - `LifecycleDeps.fmtReadPreview` opts widen from `Record<string, never>` to the
   real `{ offset?; limit?; windows?: Array<{ offset: number; limit: number }> }`
   (1-indexed, mirroring `ReadWindow`).
 - Witnesses: `test/tools/bash-classifier.test.ts` (span matrix, algebra cases,
-  all four R4 guards, corpus spot shapes) + `test/tools/bash-view-lifecycle.test.ts`
+- Witnesses: `test/tools/bash-classifier.test.ts` (span matrix, algebra cases,
+  all four R4 guards, corpus spot shapes, `post-view-cd`/`multi-cd` rejections) +
+  `test/tools/bash-view-lifecycle.test.ts`
   (replace-on-pure-view incl. `cd` chain and `cat|head|tail`; pass-through on
-  `cat -A`, `cd -`, `grep`, `sed -i`, multi-file, truncation, error).
+  `cat -A`, `cd -`, `grep`, `sed -i`, multi-file, truncation, error; preview-budget
+  truncation and `cd`-order witnesses) + `test/tools/bash-rtk-wrapper.test.ts`
+  (single-unwrap discipline: view commands only, never around silent commands).
 - Glossary: `pure view`, `slice view`, `pass-through (bash view)`, `silent
   segment`, `span kind`, `view replacement`, `interval algebra` (CONTEXT.md).
 - CHANGELOG `[Unreleased]` entry on merge.

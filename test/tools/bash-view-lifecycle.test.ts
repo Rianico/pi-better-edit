@@ -173,18 +173,104 @@ describe("bash view lifecycle", () => {
     });
   });
 
-  it("resolves cd-prefixed chains against the last literal cd", async () => {
+  it("resolves a single pre-view cd and fails closed on post-view/multi-cd chains", async () => {
     await withTempDir("bash-view-", async (dir) => {
       await mkdir(join(dir, "sub"), { recursive: true });
-      await writeFile(join(dir, "sub", "f.txt"), numberedLines(5), "utf-8");
+      const content = numberedLines(5);
+      await writeFile(join(dir, "sub", "f.txt"), content, "utf-8");
+      // WHY: byte-identical decoy — with the old last-`cd`-wins rule this chain
+      // WHY: leased `sub/f.txt` while bash printed `./f.txt`, and the D9 byte gate
+      // WHY: passed precisely because the decoy matches. Pass-through plus no
+      // WHY: lease proves the wrong-file grant is gone (ADR-0033 D1).
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-cd" } };
+
+      const result = await bashResult(handler!, "cd sub && cat f.txt", ctx, content);
+      expect(result).toBeDefined();
+      expect(rowsOf(result!.content[0]!.text)).toHaveLength(5);
+
+      // WHY: `cat f.txt && cd sub` viewed `./f.txt` — the `cd` ran too late to
+      // WHY: affect it — so pass-through even though `sub/f.txt` is identical.
+      const postCtx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-cd-post" } };
+      expect(await bashResult(handler!, "cat f.txt && cd sub", postCtx, content)).toBeUndefined();
+      // WHY: and no lease was granted for the unviewed path — its valid anchor
+      // WHY: stays unknown in a session that never served it (fresh session, so
+      // WHY: the single-`cd` replacement above cannot mask a leaked grant).
+      const subHashes = await lineHashes(content, join(dir, "sub", "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "sub/f.txt",
+            edits: [{ anchor_from: subHashes[0]!, anchor_to: subHashes[0]!, text: "LINE1" }],
+          },
+          undefined,
+          undefined,
+          postCtx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+
+      // WHY: chained `cd`s compose (`cd a && cd b` lands in `a/b`, not `b`), so a
+      // WHY: single out-of-order re-base would resolve the wrong directory.
+      expect(await bashResult(handler!, "cd a && cd b && cat f.txt", ctx, content)).toBeUndefined();
+      expect(
+        await bashResult(handler!, "cd sub && cd .. && cat f.txt", ctx, content),
+      ).toBeUndefined();
+    });
+  });
+
+  it("passes through when the anchored preview exceeds its byte budget (D3)", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      // WHY (ADR-0033 D3): anchors add ~7 B/row, so a view whose raw stdout fits
+      // WHY: the bash byte budget can still exceed the preview budget — swapping in
+      // WHY: the shortened preview would silently drop lines under a header that
+      // WHY: claims the full range. Strictly slice-accurate or pass-through.
+      const width = 40;
+      const lines = 1200;
+      const big = `${Array.from({ length: lines }, (_, i) => `line${i + 1}`.padEnd(width, ".")).join("\n")}\n`;
+      expect(Buffer.byteLength(big, "utf8")).toBeLessThan(51200);
+      await writeFile(join(dir, "big.txt"), big, "utf-8");
       const { pi, handlers } = makeFakePi();
       register(pi);
       const handler = handlers.get("tool_result");
-      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-cd" } };
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-trunc" } };
+      // WHY: stdout byte-matches the re-read slice (D9 passes) — only the preview
+      // WHY: budget forces pass-through, so the model keeps the complete original.
+      expect(await bashResult(handler!, "cat big.txt", ctx, big)).toBeUndefined();
+    });
+  });
 
-      const result = await bashResult(handler!, "cd sub && cat f.txt", ctx, numberedLines(5));
-      expect(result).toBeDefined();
-      expect(rowsOf(result!.content[0]!.text)).toHaveLength(5);
+  it("logs the internal pass-through reason behind PI_HASHLINE_DEBUG", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-debug" } };
+      const previous = process.env.PI_HASHLINE_DEBUG;
+      const logged: string[] = [];
+      const originalError = console.error;
+      console.error = (...args: unknown[]) => {
+        logged.push(args.map(String).join(" "));
+      };
+      try {
+        process.env.PI_HASHLINE_DEBUG = "1";
+        // WHY: observability must never become model-visible — the handler still
+        // WHY: returns undefined (original output untouched); the reason goes to
+        // WHY: stderr only (ADR-0033 D6 holds).
+        expect(await bashResult(handler!, "cat -A f.txt", ctx, "<<raw stdout>>")).toBeUndefined();
+      } finally {
+        console.error = originalError;
+        if (previous === undefined) delete process.env.PI_HASHLINE_DEBUG;
+        else process.env.PI_HASHLINE_DEBUG = previous;
+      }
+      expect(
+        logged.some((line) => line.includes("[bash-view] pass-through (unsupported-command:cat)")),
+      ).toBe(true);
     });
   });
 

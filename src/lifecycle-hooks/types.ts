@@ -3,6 +3,7 @@ import type { EditDetails } from "../edit-response.js";
 import type { NormFile, ReadNormOptions } from "../file-reader.js";
 import type { LFile, LoadFileOptions } from "../file-kind.js";
 import type { Hasher } from "../hashline/hasher.js";
+import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 
 export type ToolResultEvent = {
   toolName: string;
@@ -38,7 +39,7 @@ export type LifecycleDeps = {
     absolutePath: string,
     maxBytes: number,
     maxLines: number,
-  ) => Promise<{ text: string; served: ServedRow[] }>;
+  ) => Promise<{ text: string; truncation?: TruncationResult; served: ServedRow[] }>;
   recordDiffServes: (input: {
     sessionKey: string;
     path: string;

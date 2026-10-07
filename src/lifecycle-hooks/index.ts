@@ -371,11 +371,19 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   }
 
   /**
-   * WHY dynamic import: `bash-classifier` statically pulls `unbash`, which must
+  /**
+   * WHY deferred module load: `bash-classifier` statically pulls `unbash`, which must
    * WHY: never join the extension entry graph — entry import cost is budgeted
-   * WHY: (`measure-import --max-ratio 0.75`) and `unbash` ships unbundled
-   * WHY: (`EXTERNALS` in `scripts/build-dist.mjs`), so the classifier (and its
-   * WHY: parser) loads lazily on the first bash result only.
+   * WHY: (`measure-import --max-ratio 0.75`). The handler therefore reaches the
+   * WHY: classifier only through a dynamic `import()` on the first bash result.
+   * WHY:
+   * WHY: Load-shape record (ADR-0033): esbuild bundles the relative specifier into
+   * WHY: the entry and hoists the external `unbash` import to a top-level static
+   * WHY: import in the shipped artifact, so the artifact is NOT lazy — only the
+   * WHY: source entry is. Measured cost is negligible (`unbash` 52 KB parser,
+   * WHY: no transitive deps, cold import ~0.01-0.03 ms), and a resolve/eval failure
+   * WHY: still fails closed via the catch below, which passes the original output
+   * WHY: through untouched.
    */
   async function handleBash(
     event: ToolResultEvent,
@@ -398,10 +406,22 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     try {
       const { classifyBashCommand, applySliceOps } = await import("../bash-classifier.js");
       const classification = classifyBashCommand(command);
-      if (classification.kind !== "pureView") return undefined;
+      if (classification.kind !== "pureView") {
+        // WHY: (ADR-0033 observability) a systematic regression (parser drift, a
+        // WHY: filtering wrapper, a new view shape) is otherwise indistinguishable
+        // WHY: from "no views issued". Log the internal reason behind the existing
+        // WHY: debug seam — stderr only, never model-visible text (D6 holds).
+        const debugValue = process.env.PI_HASHLINE_DEBUG;
+        if (debugValue === "1" || debugValue === "true") {
+          console.error(`[bash-view] pass-through (${classification.reason})`);
+        }
+        return undefined;
+      }
       const { filePath, baseDir, ops } = classification.view;
-      // WHY: the last literal `cd` re-bases relative resolution; an absolute
-      // WHY: view target ignores it (`toCwd` returns absolutes unchanged).
+      // WHY: the single pre-view literal `cd` re-bases relative resolution; an absolute
+      // WHY: view target ignores it (`toCwd` returns absolutes unchanged). Multi-`cd`
+      // WHY: and post-view-`cd` chains never reach here — the classifier fails them
+      // WHY: closed to pass-through (ADR-0033 D1).
       const effCwd = baseDir === undefined ? ctx.cwd : deps.toCwd(baseDir, ctx.cwd);
       const resolvedPath = await deps.resolveTarget(deps.toCwd(filePath, effCwd));
       await deps.valAccess(resolvedPath, filePath);
@@ -446,6 +466,12 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         DEFAULT_MAX_BYTES,
         AUTO_READ_MAX,
       );
+      // WHY: (ADR-0033 D3) anchors add bytes per row, so a view whose raw stdout
+      // WHY: fits the bash byte budget can still exceed the preview budget — the
+      // WHY: shortened preview would then silently drop lines while the header
+      // WHY: claims the full range. A truncated preview is never slice-accurate:
+      // WHY: pass through with the original output untouched.
+      if (preview.truncation !== undefined) return undefined;
       if (preview.served.length === 0) return undefined;
       const sessionKey = deps.sessionKeyFor(ctx);
       // WHY: plain mode (no `resultLineCount`/`firstChangedLine`): truncated mode

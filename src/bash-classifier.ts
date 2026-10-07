@@ -41,7 +41,10 @@ export interface LineInterval {
 export interface BashView {
   /** File path exactly as written (relative or absolute). */
   filePath: string;
-  /** Last literal `cd` target in the chain, if any (resolution base). */
+  /** Single pre-view literal `cd` target, if any (resolution base). Multi-`cd` and
+   * post-view-`cd` chains fail closed to pass-through (`multi-cd` / `post-view-cd`)
+   * because bash resolves each `cd` against the directory in effect at that point —
+   * applying only one of them out of order would lease a path never viewed. */
   baseDir?: string;
   /** Slice ops in stream order, folded by `applySliceOps` over the line count. */
   ops: SliceOp[];
@@ -363,7 +366,8 @@ function classifySegment(node: Command | Pipeline): Segment {
 /**
  * Span-kind chain rule (ADR-0033 D1): `&&`-only top level, exactly one `view`,
  * all others `silent`, undetermined is `unsafe`. Returns the view with its
- * resolution base (last literal `cd`, if any).
+ * resolution base (the single pre-view literal `cd`, if any; multi-`cd` and
+ * post-view-`cd` chains are `passThrough`).
  */
 export function classifyBashCommand(command: string): BashClass {
   if (command.trim() === "") return { kind: "passThrough", reason: "empty" };
@@ -411,7 +415,17 @@ export function classifyBashCommand(command: string): BashClass {
       return { kind: "passThrough", reason: classified.reason };
     }
     if (classified.kind === "silent") {
-      if (classified.cdDir !== undefined) baseDir = classified.cdDir;
+      if (classified.cdDir !== undefined) {
+        // WHY: bash resolves each `cd` against the directory in effect at that
+        // WHY: point, so only a single pre-view `cd` applied to `ctx.cwd` is sound.
+        // WHY: A `cd` after the view ran too late to affect it (`cat f && cd sub`
+        // WHY: viewed `./f`, not `sub/f`), and chained `cd`s compose (`cd a && cd b`
+        // WHY: lands in `a/b`, not `b`) — both fail closed to pass-through rather
+        // WHY: than lease a path the model never saw (ADR-0033 D1).
+        if (view !== undefined) return { kind: "passThrough", reason: "post-view-cd" };
+        if (baseDir !== undefined) return { kind: "passThrough", reason: "multi-cd" };
+        baseDir = classified.cdDir;
+      }
       continue;
     }
     if (view !== undefined) {

@@ -58,14 +58,26 @@ describe("bash-classifier span matrix", () => {
     });
   });
 
-  it("accepts cd/true/colon chains with last-cd-wins resolution", () => {
+  it("accepts single pre-view cd and non-cd silent segments", () => {
     expect(viewOf("cd /ws && cat f.txt")).toEqual({ filePath: "f.txt", baseDir: "/ws", ops: [] });
     expect(viewOf("true && cat f")).toEqual({ filePath: "f", ops: [] });
     expect(viewOf("cat f && true")).toEqual({ filePath: "f", ops: [] });
+    expect(viewOf("cd sub && : && cat f")).toEqual({ filePath: "f", baseDir: "sub", ops: [] });
     expect(viewOf(": && head -5 f")).toEqual({
       filePath: "f",
       ops: [{ kind: "first", n: 5 }],
     });
+  });
+
+  it("fails closed on post-view and multi-cd chains (D1 order-soundness)", () => {
+    // WHY: bash resolves each `cd` against the directory in effect at that point:
+    // WHY: `cat f && cd sub` viewed `./f` (the `cd` ran too late), and
+    // WHY: `cd a && cd b && cat f` viewed `a/b/f` (chained `cd`s compose) — so a
+    // WHY: single out-of-order `baseDir` would lease a path never viewed.
+    expect(reasonOf("cat f.txt && cd sub")).toBe("post-view-cd");
+    expect(reasonOf("cd a && cd b && cat f")).toBe("multi-cd");
+    expect(reasonOf("cd sub && cd .. && cat f")).toBe("multi-cd");
+    expect(reasonOf("cat f && cd sub && cat g")).toBe("post-view-cd");
   });
 
   it("accepts sanctioned single-pipe filters", () => {
