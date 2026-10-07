@@ -419,6 +419,25 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: passes through — zero leases, zero output change (ADR-0033 D3).
       const intervals = applySliceOps(ops, deps.visLines(normalized).length);
       if (intervals.length === 0 || intervals.length > MAX_READ_WINDOWS) return undefined;
+      // WHY: [ADR-0033 D9] the observed stdout must byte-match the re-read slice —
+      // WHY: this is what makes transparent wrappers (e.g. `rtk`) safe by
+      // WHY: construction instead of by reputation. A filtering wrapper, a
+      // WHY: numbering wrapper, TOCTOU drift between exec and re-read, or any
+      // WHY: encoding skew (CRLF, BOM, undecodable bytes) fails closed to
+      // WHY: pass-through. Exactly one text block is required — anything else
+      // WHY: (multi-block, non-text) cannot be attributed to the view.
+      // WHY: Trailing-newline-only leniency: `joined` vs `joined + "\n"`.
+      const stdoutBlock = Array.isArray(event.content) ? event.content : undefined;
+      const stdoutText =
+        stdoutBlock?.length === 1 && stdoutBlock[0]?.type === "text"
+          ? stdoutBlock[0].text
+          : undefined;
+      if (typeof stdoutText !== "string") return undefined;
+      const allLines = deps.visLines(normalized);
+      const sliceLines: string[] = [];
+      for (const iv of intervals) sliceLines.push(...allLines.slice(iv.lo - 1, iv.hi));
+      const joinedSlice = sliceLines.join("\n");
+      if (stdoutText !== joinedSlice && stdoutText !== `${joinedSlice}\n`) return undefined;
       const preview = await deps.fmtReadPreview(
         normalized,
         { windows: intervals.map((iv) => ({ offset: iv.lo, limit: iv.hi - iv.lo + 1 })) },

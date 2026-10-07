@@ -55,6 +55,7 @@ async function bashResult(
   handler: (...args: unknown[]) => unknown,
   command: string,
   ctx: { cwd: string; sessionManager: { getSessionId(): string } },
+  stdout: string,
   extra?: Record<string, unknown>,
 ) {
   return (await handler!(
@@ -62,7 +63,7 @@ async function bashResult(
       toolName: "bash",
       isError: false,
       input: { command },
-      content: [{ type: "text", text: "<<raw stdout>>" }],
+      content: [{ type: "text", text: stdout }],
       ...extra,
     },
     ctx,
@@ -80,7 +81,7 @@ describe("bash view lifecycle", () => {
       expect(handler).toBeDefined();
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-a" } };
 
-      const result = await bashResult(handler!, "cat f.txt", ctx);
+      const result = await bashResult(handler!, "cat f.txt", ctx, numberedLines(30));
       expect(result).toBeDefined();
       expect(result!.content).toHaveLength(1);
       const text = result!.content[0]!.text;
@@ -118,7 +119,13 @@ describe("bash view lifecycle", () => {
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-slice" } };
 
-      const result = await bashResult(handler!, "cat f.txt | head -n 20 | tail -5", ctx);
+      const sliceStdout = `${Array.from({ length: 5 }, (_, i) => `line${i + 16}`).join("\n")}\n`;
+      const result = await bashResult(
+        handler!,
+        "cat f.txt | head -n 20 | tail -5",
+        ctx,
+        sliceStdout,
+      );
       expect(result).toBeDefined();
       const rows = rowsOf(result!.content[0]!.text);
       expect(rows).toHaveLength(5);
@@ -175,7 +182,7 @@ describe("bash view lifecycle", () => {
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-cd" } };
 
-      const result = await bashResult(handler!, "cd sub && cat f.txt", ctx);
+      const result = await bashResult(handler!, "cd sub && cat f.txt", ctx, numberedLines(5));
       expect(result).toBeDefined();
       expect(rowsOf(result!.content[0]!.text)).toHaveLength(5);
     });
@@ -202,7 +209,7 @@ describe("bash view lifecycle", () => {
         "cat nope.txt",
         "cat",
       ]) {
-        expect(await bashResult(handler!, command, ctx)).toBeUndefined();
+        expect(await bashResult(handler!, command, ctx, "<<raw stdout>>")).toBeUndefined();
       }
       expect(
         await handler!(
@@ -216,7 +223,7 @@ describe("bash view lifecycle", () => {
         ),
       ).toBeUndefined();
       expect(
-        await bashResult(handler!, "cat f.txt", ctx, {
+        await bashResult(handler!, "cat f.txt", ctx, numberedLines(5), {
           details: { truncation: { truncated: true } },
         }),
       ).toBeUndefined();
@@ -233,7 +240,7 @@ describe("bash view lifecycle", () => {
       const ctxA = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-A" } };
       const ctxB = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-B" } };
 
-      const result = await bashResult(handler!, "cat f.txt", ctxA);
+      const result = await bashResult(handler!, "cat f.txt", ctxA, numberedLines(5));
       const anchor = anchorFor(rowsOf(result!.content[0]!.text), "line3");
       await expect(
         editTool.execute(
@@ -244,6 +251,95 @@ describe("bash view lifecycle", () => {
           ctxB,
         ),
       ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("replaces rtk-wrapped views when stdout matches the slice", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-rtk" } };
+
+      const result = await bashResult(handler!, "rtk cat f.txt", ctx, numberedLines(5));
+      expect(result).toBeDefined();
+      const rows = rowsOf(result!.content[0]!.text);
+      expect(rows).toHaveLength(5);
+      const followUp = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line4"),
+              anchor_to: anchorFor(rows, "line4"),
+              text: "LINE4",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(followUp.isError).toBeFalsy();
+    });
+  });
+
+  it("fails closed when stdout does not match the re-read slice", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-tamper" } };
+
+      // WHY: a filtering wrapper (or drift between exec and re-read) must grant
+      // WHY: no leases — the true anchor stays unleased and fails closed.
+      expect(await bashResult(handler!, "cat f.txt", ctx, "<<filtered>>\n")).toBeUndefined();
+      expect(
+        await bashResult(handler!, "rtk cat f.txt", ctx, `${numberedLines(5)}extra-trailer\n`),
+      ).toBeUndefined();
+      const allHashes = await lineHashes(numberedLines(5), join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e1",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[1]!, anchor_to: allHashes[1]!, text: "LINE2" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("fails closed on multi-block stdout", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-multi" } };
+
+      expect(
+        await handler!(
+          {
+            toolName: "bash",
+            isError: false,
+            input: { command: "cat f.txt" },
+            content: [
+              { type: "text", text: numberedLines(5) },
+              { type: "text", text: "second block" },
+            ],
+          },
+          ctx,
+        ),
+      ).toBeUndefined();
     });
   });
 });

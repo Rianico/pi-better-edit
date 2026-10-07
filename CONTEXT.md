@@ -253,3 +253,7 @@ _Avoid_: auto-read (the write-path append; this is a swap, not an addition)
 **interval algebra**:
 The exact line-set composition for pipeline slices: surviving source lines as ordered disjoint 1-indexed intervals over `[1..L]`, each filter stage (`head`/`tail` counts, `sed -n` addresses) mapping intervals to intervals by pure arithmetic — no content consulted, nothing estimated (ADR-0033 D2).
 _Avoid_: range math (intervals are sets; ranges are model-facing spans)
+
+**transparent wrapper**:
+A command prefix (`rtk`) that forwards a view command's bytes unchanged. Accepted in source positions only and unwrapped to the inner view shape — but never trusted: the stdout-verification gate (D9) re-checks every replacement against the observed bytes, so transparency is proven per call, not assumed per tool (ADR-0033 D8).
+_Avoid_: silent segment (silence is proven no-output; transparency is proven byte-identity)

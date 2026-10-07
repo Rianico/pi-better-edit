@@ -208,7 +208,12 @@ interface SourceStage {
 }
 
 /** Stages that consume the source file: `cat FILE`, or a file-direct filter. */
-function parseSourceStage(stage: StageShape): SourceStage | undefined {
+function parseSourceStage(shape: StageShape): SourceStage | undefined {
+  // WHY: the `rtk` unwrap lives here (and only here) so every source position —
+  // WHY: bare commands, `&&` segments, pipeline stage zero — accepts it uniformly,
+  // WHY: while filter stages (`parseFilterStage`) and silent commands never do.
+  const stage = unwrapViewWrapper(shape);
+  if (!stage) return undefined;
   if (stage.name === "cat") {
     if (stage.args.length !== 1 || stage.args[0].startsWith("-")) return undefined;
     return { filePath: stage.args[0], ops: [] };
@@ -276,6 +281,21 @@ function parseSilent(stage: StageShape): SilentSeg | undefined {
     return { kind: "silent" };
   }
   return undefined;
+}
+
+/**
+ * `rtk` transparent wrapper (ADR-0033 D8): prefix position, view commands only.
+ * `rtk` provably proxies the view class byte-identically today, but reputation is
+ * not the safety story — the stdout-verification gate (D9) re-checks every
+ * replacement against the observed bytes, so a future filtering `rtk` subcommand
+ * fails closed instead of mis-serving. `rtk` anywhere else (mid-pipe, wrapping a
+ * non-view, carrying its own flags) stays `unsafe`.
+ */
+function unwrapViewWrapper(stage: StageShape): StageShape | undefined {
+  if (stage.name !== "rtk") return stage;
+  const [inner, ...rest] = stage.args;
+  if (inner === undefined) return undefined;
+  return { name: inner, args: rest };
 }
 
 function parseViewSegment(node: Command | Pipeline): ViewSeg | undefined {

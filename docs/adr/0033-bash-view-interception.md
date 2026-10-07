@@ -101,6 +101,22 @@ slice-accurate serve needs no new serve infrastructure.
    `(SessionKey, Path) -> SnapshotHash`; parallel calls subsume batching);
    search output (match metadata, not content); Issue #53 mutations;
    `;`/`||` chains (the 814-call compound ceiling stays pass-through).
+8. **Transparent wrapper (amendment 2026-10-07).** A leading `rtk` around a view
+   command (`rtk cat f`, `rtk head -n 3 f`, …) unwraps to the inner view shape in
+   source positions only (bare, `&&` segments, pipeline stage zero — never
+   filter stages, never silent commands, single unwrap only). `rtk` provably
+   proxies the view class byte-identically today, but reputation is not the
+   safety story: D9 re-checks every replacement, so a future filtering `rtk`
+   subcommand fails closed. Production evidence: the field model issues
+   `rtk`-prefixed views in the majority of turns; without this rule the feature
+   is silent for exactly the population it was built for.
+9. **Stdout verification (amendment 2026-10-07).** Before serving, the observed
+   stdout (exactly one text block) must byte-match the re-read slice —
+   `joined` or `joined + "\n"`, trailing-newline leniency only. This converts
+   wrapper transparency from an assumption into a check: filtering/numbering
+   wrappers, TOCTOU drift between exec and re-read, and encoding skew (CRLF,
+   BOM, undecodable bytes) all fail closed to pass-through. It also backstops
+   the truncation guard on runtimes that report truncation elsewhere.
 
 ## Consequences
 
