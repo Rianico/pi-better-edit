@@ -250,7 +250,8 @@ function suspiciousFormat(payload: ErrorPayloadMap["E_SUSPICIOUS_TEXT"]): string
   return (
     `Write/Edit to ${payload.path} rejected: line ${payload.line} starts with the served anchor ` +
     `${payload.hash}│ for line ${payload.servedLine}. (submission ${payload.count} times)` +
-    suspiciousTail(payload.count)
+    suspiciousTail(payload.count) +
+    ' Lines declared with mode: "literal" are written verbatim.'
   );
 }
 
