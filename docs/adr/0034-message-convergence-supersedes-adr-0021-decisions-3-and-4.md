@@ -4,7 +4,7 @@ Date: 2026-10-07
 
 ## Status
 
-accepted — supersedes [ADR-0021](0021-unified-error-and-warning-contract.md) decisions 3 and 4 in the four scoped claims below, and nothing else. No old ADR text is rewritten in this task: the reciprocal `Superceded by` line on ADR-0021 is deliberately deferred, so this record is the only place the supersession is declared (ADR-0019 keeps accepted prose as history).
+accepted — supersedes [ADR-0021](0021-unified-error-and-warning-contract.md) decisions 3 and 4 in the four scoped claims below, and nothing else. No old ADR text was rewritten when this record was created (#58): the reciprocal line on ADR-0021 was deferred then and has since landed there as `Amended by [ADR-0034]`, so both records now declare the supersession (ADR-0019 keeps accepted prose as history).
 
 Supersedes [ADR-0021 — Unified error and warning contract: the accepted record](0021-unified-error-and-warning-contract.md), decisions 3 and 4 (scoped).
 
