@@ -29,7 +29,16 @@ export interface ServedSpanNotification {
   filePath: string;
   /** Ascending, non-overlapping, non-adjacent runs; empty means nothing was served. */
   spans: ServedSpan[];
+  /** Which producer served these rows. */
   source: "read" | "reject-and-serve" | "auto-read" | "diff";
+  /**
+   * Verbatim raw text of the file at serve time, without anchor prefixes.
+   * Producers that hold the bytes (read, auto-read) attach it so an observer can
+   * hash caller evidence in memory; producers with no text at hand (diff
+   * previews, reject-and-serve) omit it and the observer falls back to disk
+   * evidence. Never the anchored preview: hashes are computed over verbatim lines.
+   */
+  content?: string;
 }
 
 export type ServedSpanObserver = (notification: ServedSpanNotification) => void;
