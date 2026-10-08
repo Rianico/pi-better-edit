@@ -13,7 +13,7 @@ import {
   LENS_SCHEMA_ID,
 } from "../../../src/integrations/pi-lens/config.js";
 
-const BRIDGE_KEY = Symbol.for("pi-lens:read-bridge");
+const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");
 const SETTLED_CHOICES = [
   "Auto (Project)",
   "Auto (Global)",
@@ -85,8 +85,8 @@ function readJson(path: string): unknown {
 
 function installBridge(): void {
   (globalThis as Record<symbol, unknown>)[BRIDGE_KEY] = {
-    version: 1,
-    recordRead: (): void => undefined,
+    version: 2,
+    record: (): void => undefined,
   };
 }
 
@@ -142,7 +142,7 @@ describe("registerLensCommand", () => {
     expect(notifications).toHaveLength(1);
     const text = notifications[0] ?? "";
     expect(text).toContain("effective: auto");
-    expect(text).toContain("read bridge detected: no");
+    expect(text).toContain("io bridge detected: no");
     expect(text).toContain(`project (${LENS_CONFIG_REL}): unset`);
     expect(text).toContain(`global (~/${LENS_CONFIG_REL}): unset`);
     expect(text).toContain(`env ${LENS_BRIDGE_ENV_VAR}: unset`);
@@ -159,7 +159,7 @@ describe("registerLensCommand", () => {
     expect(selectCalls).toEqual([]);
     const next = notifications[0] ?? "";
     expect(next).toContain("effective: on");
-    expect(next).toContain("read bridge detected: yes");
+    expect(next).toContain("io bridge detected: yes");
     expect(next).toContain(`global (~/${LENS_CONFIG_REL}): off`);
     expect(next).toContain(`env ${LENS_BRIDGE_ENV_VAR}: on`);
   });

@@ -7,7 +7,7 @@ import {
   servedRowsToSpans,
   type ServedSpan,
   type ServedSpanNotification,
-} from "../../../src/served-spans.js";
+} from "../../src/served-spans.js";
 
 const row = (position: number): { position: number; hash: string } => ({ position, hash: "abc" });
 

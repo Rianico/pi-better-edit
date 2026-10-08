@@ -3,6 +3,7 @@ import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 
 const INTEGRATION_DIR = join("src", "integrations", "pi-lens");
+const ENTRY = "index.ts";
 
 function walkSources(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {
@@ -13,13 +14,28 @@ function walkSources(dir: string, out: string[] = []): string[] {
   return out;
 }
 
+function sourceFilesOutsideIntegration(): string[] {
+  return walkSources("src").filter((file) => !file.startsWith(`${INTEGRATION_DIR}/`));
+}
+
 describe("lens bridge boundary", () => {
   it("keeps every pi-lens reference inside src/integrations/pi-lens", () => {
-    const offenders = walkSources("src")
-      .filter((file) => !file.startsWith(`${INTEGRATION_DIR}/`))
-      .filter((file) => readFileSync(file, "utf-8").includes("pi-lens"));
+    const offenders = sourceFilesOutsideIntegration().filter((file) =>
+      readFileSync(file, "utf-8").includes("pi-lens"),
+    );
 
     expect(offenders).toEqual([]);
+  });
+
+  it("lets only the extension entry point wire the integration dir", () => {
+    const importers = sourceFilesOutsideIntegration().filter((file) =>
+      /from "[^"]*integrations\/pi-lens/.test(readFileSync(file, "utf-8")),
+    );
+
+    expect(importers).toEqual([]);
+    expect(readFileSync(ENTRY, "utf-8")).toContain(
+      'from "./src/integrations/pi-lens/io-bridge-adapter.js"',
+    );
   });
 
   it("keeps the served-span seam domain-neutral", () => {
@@ -37,22 +53,31 @@ describe("lens bridge boundary", () => {
     }
   });
 
-  it("wires the command and the adapter from the extension entry point", () => {
-    const entry = readFileSync("index.ts", "utf-8");
+  it("wires the command and the unified adapter from the extension entry point", () => {
+    const entry = readFileSync(ENTRY, "utf-8");
 
     expect(entry).toContain('from "./src/integrations/pi-lens/command.js"');
-    expect(entry).toContain('from "./src/integrations/pi-lens/read-bridge-adapter.js"');
+    expect(entry).toContain('from "./src/integrations/pi-lens/io-bridge-adapter.js"');
     expect(entry).toContain("registerLensCommand(pi)");
-    expect(entry).toContain("attachReadBridgeAdapter()");
-    expect(entry).toContain("attachMutationBridgeAdapter()");
+    expect(entry).toContain("attachIOBridgeAdapter()");
+    expect(entry).not.toContain("attachReadBridgeAdapter");
+    expect(entry).not.toContain("attachMutationBridgeAdapter");
   });
 
-  it("keeps the integration surface to the four settled modules", () => {
+  it("keeps the integration surface to the four settled v2 modules", () => {
     expect(walkSources(INTEGRATION_DIR).sort()).toEqual([
       join(INTEGRATION_DIR, "command.ts"),
       join(INTEGRATION_DIR, "config.ts"),
-      join(INTEGRATION_DIR, "mutation-bridge-adapter.ts"),
-      join(INTEGRATION_DIR, "read-bridge-adapter.ts"),
+      join(INTEGRATION_DIR, "io-bridge-adapter.ts"),
+      join(INTEGRATION_DIR, "io-bridge.ts"),
     ]);
+  });
+
+  it("probes the v2 mount from the command status surface, never the retired v1 keys", () => {
+    const command = readFileSync(join(INTEGRATION_DIR, "command.ts"), "utf-8");
+
+    expect(command).toContain('"pi-lens:io-bridge"');
+    expect(command).not.toContain('"pi-lens:read-bridge"');
+    expect(command).not.toContain('"pi-lens:mutation-bridge"');
   });
 });

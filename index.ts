@@ -5,8 +5,7 @@ import { regRead } from "./src/read.js";
 import { registerWriteHook } from "./src/write-hook.js";
 import { createLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 import { registerLensCommand } from "./src/integrations/pi-lens/command.js";
-import { attachMutationBridgeAdapter } from "./src/integrations/pi-lens/mutation-bridge-adapter.js";
-import { attachReadBridgeAdapter } from "./src/integrations/pi-lens/read-bridge-adapter.js";
+import { attachIOBridgeAdapter } from "./src/integrations/pi-lens/io-bridge-adapter.js";
 
 export { createLifecycleHooks, registerLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 
@@ -17,12 +16,9 @@ export default function (pi: ExtensionAPI): void {
   regEditUndo(pi);
   registerWriteHook(pi);
   registerLensCommand(pi);
-  // WHY: the adapter subscribes before any tool can serve a row, so the first read or edit of the
-  // WHY: session is already mirrored whenever a bridge is present.
-  attachReadBridgeAdapter();
-  // WHY: the same subscription ordering rule as the read mirror — the mutation sink is wired
-  // WHY: before any tool can land a write, so the first edit of the session is already mirrored.
-  attachMutationBridgeAdapter();
+  // WHY: the adapter subscribes both seams before any tool can serve or mutate a file, so the first
+  // WHY: read, edit or write of the session is already mirrored whenever a bridge is present.
+  attachIOBridgeAdapter();
 
   const hooks = createLifecycleHooks();
 

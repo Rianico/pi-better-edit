@@ -221,6 +221,9 @@ export function regRead(pi: ExtensionAPI): void {
         filePath: prepared.absolutePath,
         spans: servedRowsToSpans(prepared.served),
         source: "read",
+        // WHY: the verbatim normalized bytes let the mirror hash caller evidence in memory instead
+        // WHY: of re-reading the file; the anchored preview is never the source of a line hash.
+        content: prepared.normalized,
       });
       return {
         content: [{ type: "text", text: prepared.preview }],

@@ -21,7 +21,7 @@ import {
 } from "./config.js";
 
 const COMMAND_NAME = "pi-better-edit";
-const READ_BRIDGE_SYMBOL_KEY = "pi-lens:read-bridge";
+const IO_BRIDGE_SYMBOL_KEY = "pi-lens:io-bridge";
 
 const USAGE = [
   `${COMMAND_NAME} — configure the pi-lens bridge`,
@@ -58,10 +58,10 @@ const LENS_PICKER_CHOICES: readonly LensPickerChoice[] = [
   { label: "Status", kind: "status" },
 ];
 
-/** SAFETY: presence-only probe — the read bridge is mounted on globalThis by the extension that
+/** SAFETY: presence-only probe — the io bridge is mounted on globalThis by the extension that
  * owns it, and this command reports whether that mount point exists without ever calling into it. */
-function isReadBridgeMounted(): boolean {
-  const key: symbol = Symbol.for(READ_BRIDGE_SYMBOL_KEY);
+function isIOBridgeMounted(): boolean {
+  const key: symbol = Symbol.for(IO_BRIDGE_SYMBOL_KEY);
   return key in globalThis;
 }
 
@@ -91,7 +91,7 @@ function statusText(cwd: string): string {
   return [
     `${COMMAND_NAME} lens bridge`,
     `  effective: ${resolveEffectiveLensMode(cwd)}`,
-    `  read bridge detected: ${isReadBridgeMounted() ? "yes" : "no"}`,
+    `  io bridge detected: ${isIOBridgeMounted() ? "yes" : "no"}`,
     `  project (${LENS_CONFIG_REL}): ${config.project ?? "unset"}`,
     `  global (~/${LENS_CONFIG_REL}): ${config.global ?? "unset"}`,
     `  env ${LENS_BRIDGE_ENV_VAR}: ${envValue}`,

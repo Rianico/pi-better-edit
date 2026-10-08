@@ -70,11 +70,10 @@ function defaultDeps(): LifecycleDeps {
 /**
  * The changed line span of one mutated file, or an empty list meaning "whole file".
  *
- * WHY empty means whole file: the mutation-bridge adapter treats an empty list as whole-file
- * authorship, omits the range fields, and the bridge resolves an omitted range the same way — so an
- * unnamed span stays honest instead of inventing a line. WHY the validation: a non-integer, a zero,
- * or an inverted pair would be refused downstream (`isValidRange`, `clients/mutation-bridge.ts`) or
- * would name lines the file never had.
+ * WHY empty means whole file: the io-bridge adapter maps an empty list to a whole-file write, and
+ * the bridge resolves a whole-file write the same way — so an unnamed span stays honest instead of
+ * inventing a line. WHY the validation: a non-integer, a zero, or an inverted pair would be refused
+ * downstream (`isValidRange` in the v2 contract) or would name lines the file never had.
  */
 function toChangedRanges(first: number | undefined, last: number | undefined): ServedSpan[] {
   if (first === undefined || last === undefined) return [];
@@ -236,17 +235,21 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         resultLineCount,
         firstChangedLine: 1,
       });
+      // WHY: the bytes are on disk and the auto-read re-served the whole file, so the honest shape
+      // WHY: is whole-file authorship: an empty range list means the whole file changed, which keeps
+      // WHY: this hot path free of any line counting.
+      notifyMutatedFile({ filePath: absolutePath, kind: "write", ranges: [], sourceTool: "write" });
       // WHY: an auto-read re-serves the whole file, so one full-file span is the honest shape here;
-      // WHY: a zero-line result sends empty spans, which notifies nobody.
+      // WHY: a zero-line result sends empty spans, which notifies nobody. The mutation is notified
+      // WHY: first, so a mirror that reads the file observes the bytes now on disk.
       notifyServedSpans({
         filePath: absolutePath,
         spans: resultLineCount > 0 ? [{ startLine: 1, lineCount: resultLineCount }] : [],
         source: "auto-read",
+        // WHY: the auto-read holds the verbatim bytes, so the mirror hashes caller evidence in
+        // WHY: memory; the anchored preview is never the source of a line hash.
+        content: normalized,
       });
-      // WHY: the bytes are on disk and the auto-read re-served the whole file, so the honest shape
-      // WHY: is whole-file authorship: an empty range list makes the adapter omit the range fields
-      // WHY: entirely, which keeps this hot path free of any line counting.
-      notifyMutatedFile({ filePath: absolutePath, kind: "write", ranges: [], sourceTool: "write" });
       // WHY: the clear side of the tally: this runs only after the write's bytes are on disk
       // WHY: (the auto-read above re-served this session's rows), never on the pre-write
       // WHY: verification, which must keep the count for a resubmission.
@@ -314,14 +317,6 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           firstChangedLine: entry.firstChangedLine,
           lastChangedLine: entry.lastChangedLine,
         });
-        notifyServedSpans({
-          filePath: resolvedPath,
-          spans:
-            entry.resultLineCount !== undefined && entry.resultLineCount > 0
-              ? [{ startLine: 1, lineCount: entry.resultLineCount }]
-              : servedRowsToSpans(entry.servedRows),
-          source: "diff",
-        });
         // WHY: a served diff means the bytes changed on disk, and the committed span is this
         // WHY: file's changed range. A `reject-and-serve` payload never reaches here (it carries an
         // WHY: error, not a diff), so a read-only refusal can never be reported as a mutation.
@@ -330,6 +325,17 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           kind: "edit",
           ranges: toChangedRanges(entry.firstChangedLine, entry.lastChangedLine),
           sourceTool: event.toolName === "undo_last_edit" ? "undo_last_edit" : "edit",
+        });
+        // WHY: the mutation is notified before the rows it produced, so a mirror that reads the file
+        // WHY: observes the post-edit bytes. A diff holds no verbatim text, so the read is text-less
+        // WHY: and falls back to disk evidence.
+        notifyServedSpans({
+          filePath: resolvedPath,
+          spans:
+            entry.resultLineCount !== undefined && entry.resultLineCount > 0
+              ? [{ startLine: 1, lineCount: entry.resultLineCount }]
+              : servedRowsToSpans(entry.servedRows),
+          source: "diff",
         });
       }
     } else if (servedRows && servedRows.length > 0) {
@@ -349,14 +355,6 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           firstChangedLine: details.firstChangedLine,
           lastChangedLine: details.lastChangedLine,
         });
-        notifyServedSpans({
-          filePath: resolvedPath,
-          spans:
-            details.resultLineCount !== undefined && details.resultLineCount > 0
-              ? [{ startLine: 1, lineCount: details.resultLineCount }]
-              : servedRowsToSpans(servedRows),
-          source: "diff",
-        });
         // WHY: same contract as the servedByPath branch: the undo or edit landed on disk, and the
         // WHY: details' first/last changed lines bound the changed span (empty when unnamed).
         notifyMutatedFile({
@@ -364,6 +362,16 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           kind: "edit",
           ranges: toChangedRanges(details.firstChangedLine, details.lastChangedLine),
           sourceTool: event.toolName === "undo_last_edit" ? "undo_last_edit" : "edit",
+        });
+        // WHY: mutation first, then the rows it produced, so a mirror that reads the file observes
+        // WHY: the post-edit bytes; a diff holds no verbatim text and falls back to disk evidence.
+        notifyServedSpans({
+          filePath: resolvedPath,
+          spans:
+            details.resultLineCount !== undefined && details.resultLineCount > 0
+              ? [{ startLine: 1, lineCount: details.resultLineCount }]
+              : servedRowsToSpans(servedRows),
+          source: "diff",
         });
       }
     }
@@ -486,11 +494,14 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         contentHash: snapshotHashFor(normalized),
       });
       // WHY: `servedRowsToSpans` compresses the served window rows into honest
-      // WHY: per-run spans — a slice view notifies its slice, never whole-file.
+      // WHY: per-run spans — a slice view notifies its slice, never whole-file. The bash
+      // WHY: view already re-read the file, so the mirror gets those bytes rather than
+      // WHY: re-reading the slice itself.
       notifyServedSpans({
         filePath: absolutePath,
         spans: servedRowsToSpans(preview.served),
         source: "auto-read",
+        content: normalized,
       });
       // WHY: FULL replacement (not append): the raw stdout is unanchored bytes the
       // WHY: model already paid for once — swapping it for the anchored slice is

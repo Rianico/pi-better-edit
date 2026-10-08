@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it } from "vitest";
 import type { ServedRow } from "../../../src/domain-errors.js";
 import { createEditTool } from "../../../src/edit-tool.js";
 import { LENS_BRIDGE_ENV_VAR } from "../../../src/integrations/pi-lens/config.js";
-import { attachReadBridgeAdapter } from "../../../src/integrations/pi-lens/read-bridge-adapter.js";
+import { attachIOBridgeAdapter } from "../../../src/integrations/pi-lens/io-bridge-adapter.js";
 import {
   addServedSpanObserver,
   clearServedSpanObserversForTests,
@@ -23,7 +23,7 @@ import {
 
 useTestHome();
 
-const BRIDGE_KEY = Symbol.for("pi-lens:read-bridge");
+const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");
 const CONSUMER = "pi-better-edit";
 const notifications: ServedSpanNotification[] = [];
 const calls: Array<Record<string, unknown>> = [];
@@ -34,9 +34,10 @@ type Harness = ReturnType<typeof setupIntegrationTest>;
 
 function installBridge(): void {
   (globalThis as Record<symbol, unknown>)[BRIDGE_KEY] = {
-    version: 1,
-    recordRead: (entry: unknown): void => {
+    version: 2,
+    record: (entry: unknown): unknown => {
       calls.push(entry as Record<string, unknown>);
+      return { read: { accepted: true }, mutate: { accepted: true } };
     },
   };
 }
@@ -62,8 +63,8 @@ async function withLensHarness(
 ): Promise<void> {
   await withTempDir(prefix, async (dir) => {
     const harness = setupIntegrationTest(dir);
-    // SAFETY: the registry is module-global and `register` already attached the shipped adapter, so
-    // SAFETY: clearing first keeps exactly one adapter under test with an injected cwd.
+    // SAFETY: the registries are module-global and `register` already attached the shipped adapter,
+    // SAFETY: so clearing first keeps exactly one adapter under test with an injected cwd.
     clearServedSpanObserversForTests();
     notifications.length = 0;
     calls.length = 0;
@@ -71,7 +72,7 @@ async function withLensHarness(
     previousBridge = captureBridge();
     installBridge();
     process.env[LENS_BRIDGE_ENV_VAR] = "on";
-    const detach = attachReadBridgeAdapter({ getCwd: () => dir });
+    const detach = attachIOBridgeAdapter({ getCwd: () => dir });
     try {
       await run(harness, dir);
     } finally {
@@ -133,7 +134,7 @@ describe("reject-and-serve mirror", () => {
     });
   });
 
-  it("mirrors a live rejection's own rows to the bridge", async () => {
+  it("mirrors a live rejection's own rows as one disk-evidence read call", async () => {
     await withLensHarness("pbe-lens-reject-", async (harness, dir) => {
       const edits = await seedDriftRejection(harness, dir);
       notifications.length = 0;
@@ -154,14 +155,16 @@ describe("reject-and-serve mirror", () => {
       const spans = servedRowsToSpans(servedRows);
       expect(spans.length).toBeGreaterThan(0);
       expect(notifications).toEqual([{ filePath: path, spans, source: "reject-and-serve" }]);
-      expect(calls).toEqual(
-        spans.map((span) => ({
+      expect(calls).toEqual([
+        {
           filePath: path,
-          requestedOffset: span.startLine,
-          requestedLimit: span.lineCount,
           consumer: CONSUMER,
-        })),
-      );
+          read: {
+            ranges: spans.map((span) => [span.startLine, span.startLine + span.lineCount - 1]),
+            evidence: "disk",
+          },
+        },
+      ]);
     });
   });
 
