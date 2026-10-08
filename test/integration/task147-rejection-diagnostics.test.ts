@@ -111,7 +111,7 @@ describe("task-147 rejection diagnostics", () => {
     if (rejectSingle.action === "reject") {
       expect(rejectSingle.error.message).toContain("[MODEL]");
       expect(rejectSingle.error.message).toContain("[E_NOOP_LOOP]");
-      expect(rejectSingle.error.message).toContain("rejecting.");
+      expect(rejectSingle.error.message).toContain("Rejected.");
       expect(rejectSingle.error.message).not.toContain("rejecting the batch");
     }
     clearNoopLoop(base.sessionKey, `${base.absolutePath}-batch`);
@@ -122,7 +122,7 @@ describe("task-147 rejection diagnostics", () => {
     expect(rejectBatch.action).toBe("reject");
     if (rejectBatch.action === "reject") {
       expect(rejectBatch.error.message).toContain("[MODEL]");
-      expect(rejectBatch.error.message).toContain("rejecting the batch");
+      expect(rejectBatch.error.message).toContain("Rejecting the batch.");
     }
   });
 

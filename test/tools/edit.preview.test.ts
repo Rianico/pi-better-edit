@@ -656,13 +656,13 @@ describe("renderResult", () => {
       content: [
         {
           type: "text",
-          text: "Successfully edited in sample.ts.\n\nWarnings:\n[USER] [W_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (aB3 after cD4); healed and applied with the range swapped.",
+          text: "Successfully edited in sample.ts.\n\nWarnings:\n[USER] [W_REVERSED_ANCHORS] The anchors were reversed (aB3 after cD4). Applied with the range swapped.",
         },
       ],
       details: {
         diff: "+aB3│BBB",
         warnings: [
-          "[USER] [W_REVERSED_ANCHORS] anchor_from/anchor_to were reversed (aB3 after cD4); healed and applied with the range swapped.",
+          "[USER] [W_REVERSED_ANCHORS] The anchors were reversed (aB3 after cD4). Applied with the range swapped.",
         ],
         metrics: {
           classification: "applied",

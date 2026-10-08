@@ -27,7 +27,7 @@ describe("resEdit", () => {
 
   it("throws on malformed anchor_from/anchor_to", () => {
     const edit: HTEdit = { anchor_from: "not-valid", anchor_to: "not-valid", text: "x" };
-    expect(() => resEdit(edit)).toThrow(/Invalid anchor/);
+    expect(() => resEdit(edit)).toThrow(/The anchor "not-valid" is not valid/);
   });
 
   it("rejects a 3-char anchor at the resolve seam with no compatibility path", () => {

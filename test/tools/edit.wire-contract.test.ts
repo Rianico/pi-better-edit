@@ -273,9 +273,10 @@ describe("Edit wire contract — behavior", () => {
       // WHY: clause and its payload (ref, both anchors, the observation and the remedy) instead.
       const text = result.toolResult.content[0]!.text;
       expect(text).toContain("[W_NOOP_INSERT]");
-      expect(text).toContain(`empty insertion edit[0] (sample.txt) (${h[1]} → ${h[1]}):`);
-      expect(text).toContain('text "" writes nothing and the file stayed byte-identical');
-      expect(text).toContain("Provide text or drop the empty item");
+      expect(text).toContain(
+        `Empty insertion edit[0] (sample.txt) (${h[1]} → ${h[1]}) with "before"/"after" and text "" writes nothing.`,
+      );
+      expect(text).toContain("Provide text or drop the item");
     });
   });
 
@@ -292,9 +293,10 @@ describe("Edit wire contract — behavior", () => {
       expect(result.metrics.classification).toBe("noop");
       const text = result.toolResult.content[0]!.text;
       expect(text).toContain("[W_NOOP_INSERT]");
-      expect(text).toContain(`empty insertion edit[0] (sample.txt) (${h[1]} → ${h[1]}):`);
-      expect(text).toContain('text "" writes nothing and the file stayed byte-identical');
-      expect(text).toContain("Provide text or drop the empty item");
+      expect(text).toContain(
+        `Empty insertion edit[0] (sample.txt) (${h[1]} → ${h[1]}) with "before"/"after" and text "" writes nothing.`,
+      );
+      expect(text).toContain("Provide text or drop the item");
     });
   });
 
@@ -445,7 +447,7 @@ describe("Edit wire contract — behavior", () => {
       expect(result.code).toBe("E_FOREIGN_ANCHOR");
       // WHY: the rendered message must distinguish this branch from `E_UNKNOWN_ANCHOR`: the
       // WHY: anchors are inconsistent WITH the named file and the refusal names their homes.
-      expect(result.message).toContain("inconsistent with source.txt");
+      expect(result.message).toContain("not for source.txt");
       expect(result.message).toContain("served for");
       await expect(readFile(join(cwd, "target.txt"), "utf-8")).resolves.toBe("1\n2\n3\n");
       await expect(readFile(join(cwd, "source.txt"), "utf-8")).resolves.toBe("x\ny\nz\n");

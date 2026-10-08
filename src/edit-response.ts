@@ -402,7 +402,7 @@ export function batchAbortFor(args: { error: Error; index: number; path: string 
 }
 /**
  * Wraps MULTIPLE rejected items of a multi-item call for the model. Sibling of `batchAbortFor`:
- * one aggregated rejection naming every failing item (`edit[1] …; edit[3] …`) so a single
+ * one aggregated rejection with one bullet per failing item (`- edit[1]: …`) so a single
  * resubmission can fix them all instead of burning one turn per failure. The batch is still
  * all-or-nothing — the atomicity trailer is identical — and each item keeps its own diagnostic
  * (and code) inline, so the model can act on every failure without a re-read.
@@ -422,11 +422,12 @@ export function batchAbortForMany(args: {
   path: string;
 }): Error {
   const { failures, path } = args;
-  const parts = failures.map(
-    ({ error, index }) => `edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}`,
+  const bullets = failures.map(
+    ({ error, index }) => `- edit[${index}]: ${stripModelPrefix(error.message)}`,
   );
   const wrapped = new Error(
-    `[MODEL] ${parts.join("; ")}\n` +
+    `[MODEL] ${failures.length} edits in ${path} failed. The whole edit call was rejected and the file is unchanged.\n` +
+      `${bullets.join("\n")}\n` +
       `${BATCH_ATOMICITY_TRAILER} Fix the failing edits (and any later edits that depend on them), then resubmit.`,
   );
   const envelopes = failures.map((f) => readEnvelope(f.error) ?? {});

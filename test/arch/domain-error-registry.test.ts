@@ -293,6 +293,7 @@ describe("domain error registry: closed contract, not a list", () => {
   it("E_UNKNOWN renders only the first message line", () => {
     const error = new DomainError("E_UNKNOWN", { errorName: "Error", message: "one\ntwo" });
     expect(error.message).not.toContain("two");
+    expect(error.message).toBe("[MODEL] [E_UNKNOWN] Unknown Error: one.");
   });
 
   it("covers every format variant branch", () => {
@@ -314,7 +315,7 @@ describe("domain error registry: closed contract, not a list", () => {
       path: "p",
       servedBlock: "",
     });
-    expect(noRows.message).toContain("Call read()");
+    expect(noRows.message).toContain("No current range is served.");
     const batchLoop = new DomainError("E_NOOP_LOOP", {
       ref: "r",
       removeFrom: "a",
@@ -324,7 +325,7 @@ describe("domain error registry: closed contract, not a list", () => {
       servedRows: [],
       servedBlock: "s",
     });
-    expect(batchLoop.message).toContain("rejecting the batch");
+    expect(batchLoop.message).toContain("Rejecting the batch.");
     const writeEcho = new DomainError("E_SUSPICIOUS_TEXT", {
       target: "write",
       path: "p",
@@ -333,8 +334,8 @@ describe("domain error registry: closed contract, not a list", () => {
       servedLine: 1,
       count: 2,
     });
-    expect(writeEcho.message).toContain("Refused write");
-    expect(writeEcho.message).toContain("Identical refusal submitted 2×");
+    expect(writeEcho.message).toContain("Write/Edit to p rejected");
+    expect(writeEcho.message).toContain("Identical refusal submitted 2 times");
     const loop = new DomainError("E_ACCESS", { path: "p", kind: "symlink-loop" });
     expect(loop.message).toContain("symbolic links");
     const far = new DomainError("E_ACCESS", { path: "p", kind: "unreachable" });

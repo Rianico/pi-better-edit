@@ -134,7 +134,7 @@ describe("applyEdit — recovery scenarios", () => {
 
   it("rejects malformed hash_bounds", () => {
     const edit = { anchor_from: "not-valid", anchor_to: "not-valid", text: "x" };
-    expect(() => resEdit(edit)).toThrow(/Invalid anchor/);
+    expect(() => resEdit(edit)).toThrow(/The anchor "not-valid" is not valid/);
   });
 
   it("writes bare hash prefix bytes in content_lines through byte-exact", async () => {

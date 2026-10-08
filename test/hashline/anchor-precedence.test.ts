@@ -117,9 +117,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
     expect(err.servedRows).toEqual([]);
     expect(err.servedBlock).toBe("");
     expect(err.message).toBe(
-      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchors "ZZZZ", "7333"; nothing was written.' +
-        ' Note: anchor "7333" consists only of digits and resembles a line number.' +
-        ' Edit anchors are 4-character alphanumeric content hashes (e.g. "aB3x") served by the read tool, not line numbers.',
+      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchors "ZZZZ", "7333".',
     );
   });
 
@@ -160,7 +158,7 @@ describe("anchor family precedence — one condition reaches exactly one code", 
   it("unknown and foreign carry no remedy and no cause", () => {
     const unknown = new DomainError("E_UNKNOWN_ANCHOR", { path: "a.py", anchors: ["ZZZZ"] });
     expect(unknown.message).toBe(
-      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchor "ZZZZ"; nothing was written.',
+      '[MODEL] [E_UNKNOWN_ANCHOR] a.py has not served the anchor "ZZZZ".',
     );
     expect(unknown.servedRows).toEqual([]);
     expect((unknown as { cause?: unknown }).cause).toBeUndefined();

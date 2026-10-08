@@ -135,9 +135,11 @@ describe("write served hash guard", () => {
 
       expect(result).toMatchObject({ block: true });
       expect((result as { reason?: string }).reason).toContain("[E_SUSPICIOUS_TEXT]");
-      expect((result as { reason?: string }).reason).toContain("tool output, not file content");
-      expect((result as { reason?: string }).reason).toContain("Nothing was written");
-      expect((result as { reason?: string }).reason).toContain('mode: "literal"');
+      expect((result as { reason?: string }).reason).not.toContain("tool output, not file content");
+      expect((result as { reason?: string }).reason).not.toContain("Nothing was written");
+      expect((result as { reason?: string }).reason).toContain(
+        'Lines declared with mode: "literal" are written verbatim.',
+      );
       expect(await readFile(path)).toEqual(beforeBytes);
 
       const cleanResult = await listener(
@@ -226,12 +228,12 @@ describe("write served hash guard", () => {
       const previewText = await servedPreviewForFile(path, cwd, "sess");
       const reason = await servedHashEchoDenial(io, path, previewText, cwd, "sess");
       expect(reason).toContain("[MODEL] [E_SUSPICIOUS_TEXT]");
-      expect(reason).toContain("line 1 begins with");
-      expect(reason).toContain("served for this session, path, and line 1");
-      expect(reason).toContain("tool output, not file content");
-      expect(reason).toContain("Nothing was written");
-      expect(reason).toContain('mode: "literal"');
-      expect(reason).toContain("Re-read");
+      expect(reason).toContain("line 1 starts with");
+      expect(reason).toContain("for line 1");
+      expect(reason).not.toContain("tool output, not file content");
+      expect(reason).not.toContain("Nothing was written");
+      expect(reason).toContain('Lines declared with mode: "literal" are written verbatim.');
+      expect(reason).not.toContain("Re-read");
       // the guard message must not become a paste source
       const firstRow = previewText.split("\n")[0]!;
       expect(reason).not.toContain(firstRow);

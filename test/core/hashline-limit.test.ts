@@ -220,8 +220,7 @@ describe("read tool line cap", () => {
           (thrown: unknown) => thrown as Error,
         );
       expect(error?.message).toBe(
-        `[MODEL] [E_LARGE_FILE] cr-only.ts has ${SERVED_MAX_LINES + 1} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit. ` +
-          "Hashline editing targets source-sized files; for very large files use write or a non-line-based approach.",
+        `[MODEL] [E_LARGE_FILE] cr-only.ts has ${SERVED_MAX_LINES + 1} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit.`,
       );
     });
   });

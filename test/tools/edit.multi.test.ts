@@ -168,7 +168,7 @@ describe("edit multi-item tool", () => {
           undefined,
           ctx,
         ),
-      ).rejects.toThrow(/\[E_BATCH_ABORT\] edit\[1\] \(sample\.ts\) failed/);
+      ).rejects.toThrow(/\[E_BATCH_ABORT\] Overlapping spans in sample\.ts/);
 
       expect(await readFile(path, "utf-8")).toBe("aaa\nbbb\nccc\n");
     });
@@ -475,11 +475,11 @@ describe("edit multi-item batch error aggregation", () => {
         .catch((error: unknown) => error)) as Error;
 
       // Both invalid items are named in ONE rejection — no fix-one-resubmit-and-fail-again turn.
-      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
-      expect(rejection.message).toContain("edit[3] (sample.ts) failed");
+      expect(rejection.message).toContain("- edit[1]: ");
+      expect(rejection.message).toContain("- edit[3]: ");
       expect(rejection.message).toContain("[E_UNKNOWN_ANCHOR]");
-      expect(rejection.message).not.toContain("edit[0] (sample.ts) failed");
-      expect(rejection.message).not.toContain("edit[2] (sample.ts) failed");
+      expect(rejection.message).not.toContain("- edit[0]: ");
+      expect(rejection.message).not.toContain("- edit[2]: ");
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
       // Uniform code is preserved on the envelope so the failure keeps its typed route.
       expect((rejection as { code?: unknown }).code).toBe("E_UNKNOWN_ANCHOR");
@@ -542,8 +542,8 @@ describe("edit multi-item batch error aggregation", () => {
         )
         .catch((error: unknown) => error)) as Error;
 
-      expect(rejection.message).toContain("edit[1] (sample.ts) failed");
-      expect(rejection.message).toContain("edit[2] (sample.ts) failed");
+      expect(rejection.message).toContain("- edit[1]: ");
+      expect(rejection.message).toContain("- edit[2]: ");
       expect((rejection.message.match(/\[E_MALFORMED_ANCHOR\]/g) ?? []).length).toBe(2);
       expect(rejection.message).toContain(ATOMICITY_TRAILER);
       expect((rejection as { code?: unknown }).code).toBe("E_MALFORMED_ANCHOR");
@@ -584,8 +584,8 @@ describe("edit multi-item batch error aggregation", () => {
           servedBlock?: unknown;
         };
 
-        expect(rejection.message).toContain("edit[1] (sample.ts) failed");
-        expect(rejection.message).toContain("edit[2] (sample.ts) failed");
+        expect(rejection.message).toContain("- edit[1]: ");
+        expect(rejection.message).toContain("- edit[2]: ");
         expect(rejection.message).toContain(ATOMICITY_TRAILER);
         // First failure's code routes the envelope; every item keeps its own code inline.
         expect(rejection.code).toBe("E_UNVERIFIED_RANGE");

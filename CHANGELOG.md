@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Code Refactoring
+* **errors:** revise all `E_*`/`W_*` refusal texts to concise single-fact STE100 sentences with structured bullets for batch failures and overlaps, and teach `mode: "literal"` on the refusal surface — no behavior change. (#61)
+
 ## [2.9.0] - 2026-10-08
 
 ### Features

@@ -8,6 +8,7 @@ import { servedHashEchoDenial } from "../../src/write-hook.js";
 import { resolveTarget } from "../../src/fs-write.js";
 import { toCwd } from "../../src/paths.js";
 import { readFile as readFsFile } from "node:fs/promises";
+import { ERROR_REGISTRY } from "../../src/domain-errors.js";
 
 const writeAtomicGate = vi.hoisted(() => ({ fail: false }));
 
@@ -134,13 +135,13 @@ describe("edit served-row gate with declaration", () => {
         .execute("e1", payload, undefined, undefined, ctx)
         .catch((e: unknown) => e as Error);
       expect(first.message).toContain("[MODEL] [E_SUSPICIOUS_TEXT]");
-      expect(first.message).toContain("replacement line 1");
+      expect(first.message).toContain("line 1 starts with the served anchor");
       expect(first.message).toContain(hashes[1]!);
       expect(first.message).toContain("line 2");
-      expect(first.message).toContain("tool output, not file content");
-      expect(first.message).toContain("Nothing was written");
-      expect(first.message).toContain('mode: "literal"');
-      expect(first.message).toContain("Re-read");
+      expect(first.message).not.toContain("tool output, not file content");
+      expect(first.message).not.toContain("Nothing was written");
+      expect(ERROR_REGISTRY.E_SUSPICIOUS_TEXT.remedy).toContain('mode: "literal"');
+      expect(first.message).not.toContain("Re-read");
       expect(first.message).not.toContain(`${hashes[1]}│two`);
       expect(first.message).toContain("submission 1");
       const before = await readFsFile(path, "utf-8");
@@ -247,8 +248,8 @@ describe("write served-row gate with declaration", () => {
       const verbatim = `${hashes[0]}│one\n${hashes[1]}│two\n`;
       const refused = await servedHashEchoDenial(io, path, verbatim, cwd, "sess-w");
       expect(refused).toMatch(/E_SUSPICIOUS_TEXT/);
-      expect(refused).toContain("Nothing was written");
-      expect(refused).toContain('mode: "literal"');
+      expect(refused).not.toContain("Nothing was written");
+      expect(ERROR_REGISTRY.E_SUSPICIOUS_TEXT.remedy).toContain('mode: "literal"');
       const ambiguous = await servedHashEchoDenial(
         io,
         path,
@@ -316,7 +317,7 @@ describe("write literal audit via tool_result", () => {
         { cwd, sessionManager: { getSessionId: () => "sess-audit" } },
       );
       expect(out?.content?.map((c: any) => c.text).join("\n")).toContain(
-        "served-echo check bypassed by literal declaration",
+        "Served-echo check bypassed by literal declaration",
       );
       expect(JSON.stringify(out?.details)).toContain("literalDeclarations");
     } finally {

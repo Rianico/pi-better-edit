@@ -35,7 +35,7 @@ describe("edit tool noop-loop guard", () => {
       expect(second.details.classification).toBe("noop");
       expect(getText(second)).toContain("No changes made");
       expect(getText(second)).toContain("[USER] [W_NOOP]");
-      expect(getText(second)).toContain("no-op'd twice");
+      expect(getText(second)).toContain("did not change the range");
 
       const err = (await editTool
         .execute("e3", payload, undefined, undefined, ctx)
@@ -43,7 +43,7 @@ describe("edit tool noop-loop guard", () => {
       expect(err).toBeInstanceOf(Error);
       expect(err.message).toContain("[MODEL]");
       expect(err.message).toContain("[E_NOOP_LOOP]");
-      expect(err.message).toContain("submitted 3×");
+      expect(err.message).toContain("submitted 3 times");
       expect(err.message).toContain(`│${NOOP_LINE_1}`);
     });
   });
@@ -187,7 +187,7 @@ describe("edit tool noop-loop guard", () => {
       );
       expect(legacyResend.details.classification).toBe("noop");
       expect(getText(legacyResend)).toContain("[USER] [W_NOOP]");
-      expect(getText(legacyResend)).toContain("no-op'd twice");
+      expect(getText(legacyResend)).toContain("did not change the range");
 
       const err = (await editTool
         .execute(
@@ -202,7 +202,7 @@ describe("edit tool noop-loop guard", () => {
         )
         .catch((e: unknown) => e)) as Error;
       expect(err.message).toContain("[E_NOOP_LOOP]");
-      expect(err.message).toContain("submitted 3×");
+      expect(err.message).toContain("submitted 3 times");
     });
   });
 

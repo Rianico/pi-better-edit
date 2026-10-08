@@ -141,7 +141,7 @@ describe("applyEdit never-served data (structured, no string channel)", () => {
     expect(hint).not.toContain("No action is required");
     const single = buildNeverServedEditHint({ count: 1 });
     expect(single).toContain("[MODEL] [W_NEVER_SERVED_SHAPE]");
-    expect(single).toContain("1 replacement line opens");
+    expect(single).toContain("1 replacement line starts with");
     expect(single).toContain(ANCHOR_PREFIX_REMEDY);
     expect(single).not.toContain("No action is required");
   });
