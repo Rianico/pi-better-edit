@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+### Code Refactoring
+* **errors:** revise all `E_*`/`W_*` refusal texts to concise single-fact STE100 sentences with structured bullets for batch failures and overlaps, and teach `mode: "literal"` on the refusal surface — no behavior change. (#61)
 ### Features
 * **bash-view:** intercept pure file views in `bash` results and replace them with anchored slice previews — `cat`/`head`/`tail`/`sed -n` single-file views (incl. single pre-view `cd`-prefixed `&&` chains, sanctioned `cat | head/tail` pipelines, and a leading `rtk` transparent wrapper in source positions) are classified by AST span kinds (`silent` | `view` | `unsafe`, undetermined is `unsafe`) via `unbash`, slice-computed by exact interval arithmetic, verified byte-for-byte against the observed stdout (trailing-newline leniency only; filtering wrappers, drift, and encoding skew fail closed), and swapped wholesale for the canonical disk re-read with leases on exactly the served lines; every other shape (search, mutations, multi-file, `;`/`||`, flags like `cat -A`, `cd -`, post-view or multi-`cd` chains, truncation, errors) passes through byte-unmodified. Recorded as ADR-0033 with glossary (`pure view`, `slice view`, `silent segment`, `span kind`, `view replacement`, `interval algebra`, `transparent wrapper`) for issue #28. Test scope: `test/tools/bash-classifier.test.ts` (span matrix, algebra, R4 guards) + `test/tools/bash-rtk-wrapper.test.ts` + `test/tools/bash-view-lifecycle.test.ts` (replacement, slice leases, verification gate, session isolation). (#54)
 ## [2.8.0] - 2026-10-06
