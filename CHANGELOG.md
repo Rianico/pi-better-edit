@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.10.0] - 2026-10-09
+
 ### Features
 * **pi-lens:** retire the frozen v1 bridges and mirror through the unified v2 File I/O Lifecycle Bridge — a single `io-bridge` adapter records served spans (caller content sliced per single-range span, disk evidence only when the notification carried no bytes) and file mutations (whole-file authorship as `write`) via structural `Symbol.for("pi-lens:io-bridge")` detection with no pi-lens import; mutated-file notifications precede served-span notifications so facet-split records reflect post-mutation state; the integration stays optional (only the entry point wires it, removal recipe in README) with the boundary test pinning the v2 surface. (#66)
 
@@ -12,6 +14,7 @@
 
 * **bash-view:** normalize CRLF line endings and strip BOM from observed `bash` stdout before the D9 byte-equality gate, and admit semicolon-chained deterministic silent prefixes (literal-operand `cd`, `pwd`, `true`, `:`) before a terminal view — fail-closed on all other output preserved. (#68)
 * **edit:** read explicit `null`/`undefined` in `text`/`text_ref`/`at`/`mode` as absent at admission, and name the field to drop in the doubly-specified refusal — XOR contract stands, no structural schema change. (#74)
+
 ## [2.9.0] - 2026-10-08
 
 ### Features
