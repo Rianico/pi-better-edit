@@ -10,7 +10,7 @@
 
 ### Bug Fixes
 
-* **bash-view:** normalize CRLF line endings and strip BOM from observed `bash` stdout before the D9 byte-equality gate, and admit `;`-chained deterministic silent prefixes (`cd <literal>`, `pwd`, `true`, `:`) before a terminal view — fail-closed on all other output preserved. (#68)
+* **bash-view:** normalize CRLF line endings and strip BOM from observed `bash` stdout before the D9 byte-equality gate, and admit semicolon-chained deterministic silent prefixes (literal-operand `cd`, `pwd`, `true`, `:`) before a terminal view — fail-closed on all other output preserved. (#68)
 ## [2.9.0] - 2026-10-08
 
 ### Features
