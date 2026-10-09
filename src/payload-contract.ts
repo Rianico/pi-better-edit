@@ -150,7 +150,7 @@ export const editItemSchema = Type.Object(
     // WHY: (ticket-67, CORRECTION-1) no oneOf/anyOf union here by trade-off: available today, but it would foreclose a future strict constrained-decoding opt-in; admission-time XOR already enforces the rule.
     additionalProperties: false,
     description:
-      'Exactly one payload per item: supply "text" or "text_ref", never both (a null value reads as absent).',
+      'Exactly one payload per item: supply "text" or "text_ref", never both (a null in an optional field reads as absent; every anchor and "text_ref.mode" are required).',
   },
 );
 
@@ -179,11 +179,11 @@ const EDIT_PAYLOAD_HINT =
   '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
   '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
   'served rows are refused) or "literal" (declared literal content).';
-export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one top-level file per call). For text files seen via \`read\`/diff. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors — copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)), never \`│\` or content. Exactly one payload per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\` — a served span's bytes (\`mode\` \`"copy"\`|\`"cut"\`; \`file\`=another served file, where \`cut\` retires the span there too); \`at\`: "in-place" (default), "before", "after". A null \`text\`/\`text_ref\`/\`at\`/\`mode\` reads as absent. \`[MODEL]\` in \`content\` is your retry instruction.`;
+export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one top-level file per call). For text files seen via \`read\`/diff. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors — copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)), never \`│\` or content. Exactly one payload per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\` — a served span's bytes (\`mode\` \`"copy"\`|\`"cut"\`; \`file\`=another served file, where \`cut\` retires the span there too); \`at\`: "in-place" (default), "before", "after". A null optional field reads as absent. \`[MODEL]\` in \`content\` is your retry instruction.`;
 export const EDIT_SNIPPET = `Edit a file range via \`edit\`: \`{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}\` — anchors are bare ${HASH_LEN}-char hashes copied from served \`HASH│content\` (never copy \`│\`), one payload per item: \`text\` is bare content (\`""\` deletes) or \`text_ref\` writes a served span (\`"copy"\` keeps the source, \`"cut"\` also retires it — in this file or in the \`file\` it names). \`at\`: "in-place" (default), "before", "after". Chain from diff anchors with no re-read.`;
 export const EDIT_GUIDELINES: string[] = [
   `edit: \`anchor\` vs \`HASH│content\` — an \`anchor\` is a bare ${HASH_LEN}-char hash (e.g. "wUpX"); a \`HASH│content\` line (e.g. \`wUpX│    pass\`) is a served row; the \`│\` is a separator — copy only the ${HASH_LEN} chars before it into \`anchor_from\`/\`anchor_to\`.`,
-  `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`; both payloads or neither is refused (a null \`text\`/\`text_ref\`/\`at\`/\`mode\` reads as absent).`,
+  `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`; both payloads or neither is refused (a null in an optional field — \`text\`, \`text_ref\`, \`at\`, the top-level \`mode\`, \`text_ref.file\` — reads as absent; a null in a required one — \`file\`, \`edits\`, any anchor, or \`text_ref.mode\` — is refused).`,
   "edit: `anchor_from`/`anchor_to` bound the inclusive range — in-place replaces both boundary lines, while `before`/`after` insert at the boundary instead; out-of-band writes (bash, scripts, formatters) bypass serve recording, so when an anchor no longer matches, re-read the file and copy fresh anchors.",
   'edit: `text` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused; `text` is verbatim, so include the indentation you want.',
   'edit: place the payload with `at` — "in-place" (default) rewrites it, "before"/"after" insert at its boundary and require a single-line resolved target; `text: ""` with "before"/"after" writes nothing (noop).',
@@ -292,18 +292,36 @@ const AT_SPELLINGS = ["in-place", "before", "after"] as const satisfies readonly
 // WHY: was refused as carrying both. `null`/`undefined` in the four optional slots (`text`,
 // WHY: `text_ref`, `at`, root `mode`) reads as ABSENT wherever presence is decided — one
 // WHY: predicate, so the gate, the validators and the normalizers cannot disagree.
+// WHY: (ticket-75) the nested reference's optional `file` is the same slot one level down: a
+// WHY: harness that must spell an omitted optional property emits `"file": null`, and reading it
+// WHY: as present refused a call no retry could satisfy — the #67 class, one object deeper.
 function isAbsentValue(value: unknown): value is null | undefined {
   return value === null || value === undefined;
+}
+
+// WHY: (ticket-75) ONE fold site for the declaration and for the stored item: the item's optional
+// WHY: slots and the nested optional `file` fold together, so `analyzeItem` validates exactly the
+// WHY: shape `analyzeRequest` stores and nothing downstream can see an absent value as present.
+function foldAbsentSlots(item: Record<string, unknown>): Record<string, unknown> {
+  const folded: Record<string, unknown> = { ...item };
+  for (const key of ["text", "text_ref", "at"] as const) {
+    if (isAbsentValue(folded[key])) delete folded[key];
+  }
+  if (isRec(folded.text_ref)) {
+    const reference: Record<string, unknown> = { ...folded.text_ref };
+    if (isAbsentValue(reference.file)) delete reference.file;
+    folded.text_ref = reference;
+  }
+  return folded;
 }
 function analyzeItem(value: unknown, index: number): string | undefined {
   if (!isRec(value)) {
     return `edit[${index}] must be an object: ${ITEM_SHAPE}.`;
   }
+  // WHY: (ticket-75) `value` arrives already folded by `foldAbsentSlots`: an absent optional slot
+  // WHY: is gone, nested `text_ref.file` included, so this key set IS the declaration the gate
+  // WHY: reads and no second fold site can disagree with the one that stored the item.
   const keys = new Set(Object.keys(value));
-  // WHY: (ticket-67) an explicit null/undefined in an optional slot is absence, not a payload.
-  for (const key of ["text", "text_ref", "at"] as const) {
-    if (keys.has(key) && isAbsentValue((value as Record<string, unknown>)[key])) keys.delete(key);
-  }
   const hasText = keys.has("text");
   const hasRef = keys.has("text_ref");
   if (!isLegalItemKeySet(keys)) {
@@ -329,7 +347,7 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   }
   const { anchor_from, anchor_to, at, text, text_ref } = value;
   if (typeof anchor_from !== "string" || typeof anchor_to !== "string") {
-    return `edit[${index}] "anchor_from"/"anchor_to" must be bare ${HASH_LEN}-char hash anchor strings copied from served output (before │).`;
+    return `edit[${index}] "anchor_from"/"anchor_to" must be bare ${HASH_LEN}-char hash anchor strings copied from served output (before │): both anchors are required, so null is not a value here.`;
   }
   if (!isAbsentValue(at)) {
     if (at === "in_place") {
@@ -359,11 +377,11 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   }
   const { mode } = text_ref;
   if (mode !== "copy" && mode !== "cut") {
-    return `edit[${index}] "text_ref" "mode" must be "copy" or "cut".`;
+    return `edit[${index}] "text_ref" "mode" must be "copy" or "cut": "mode" is required, so null is not a value here.`;
   }
   const refFile = text_ref.file;
   if ("file" in text_ref && typeof refFile !== "string") {
-    return `edit[${index}] "text_ref" "file" must be a string naming the served file to read from.`;
+    return `edit[${index}] "text_ref" "file" must be a string naming the served file to read from — omit "file" to reference this file.`;
   }
   // WHY: (§9.2) an empty "file" was admitted and only failed deep in the loader as
   // WHY: `[E_UNSUPPORTED_FILE] Path is a directory: .` — the field-level refusal belongs here.
@@ -371,7 +389,7 @@ function analyzeItem(value: unknown, index: number): string | undefined {
     return `edit[${index}] "text_ref" "file" must name a served file to read from — an empty string is not a path (omit "file" to reference this file).`;
   }
   if (typeof text_ref.anchor_from !== "string" || typeof text_ref.anchor_to !== "string") {
-    return `edit[${index}] "text_ref" "anchor_from"/"anchor_to" must be bare ${HASH_LEN}-char hash anchor strings copied from the served output of the file they name.`;
+    return `edit[${index}] "text_ref" "anchor_from"/"anchor_to" must be bare ${HASH_LEN}-char hash anchor strings copied from the served output of the file they name: both anchors are required, so null is not a value here.`;
   }
   return undefined;
 }
@@ -440,19 +458,15 @@ function analyzeRequest(input: unknown): Admission {
   const failures: string[] = [];
   const edited: EditItem[] = [];
   for (let index = 0; index < items.length; index++) {
-    const refusal = analyzeItem(items[index], index);
+    // WHY: (ticket-75) fold BEFORE validation, so the item the gate reads is the item stored.
+    const raw = items[index];
+    const item = isRec(raw) ? foldAbsentSlots(raw) : raw;
+    const refusal = analyzeItem(item, index);
     if (refusal !== undefined) {
       failures.push(refusal);
       continue;
     }
-    // WHY: (ticket-67) fold explicit null/undefined in the optional slots to absent HERE, once,
-    // WHY: so the normalized shape below and every entry point agree with the gate above.
-    const item = { ...(items[index] as Record<string, unknown>) } as EditItem;
-    const record = item as unknown as Record<string, unknown>;
-    for (const key of ["text", "text_ref", "at"] as const) {
-      if (isAbsentValue(record[key])) delete record[key];
-    }
-    edited.push(item);
+    edited.push(item as unknown as EditItem);
   }
   if (failures.length > 0) {
     return { ok: false, message: `${failures.join(" ")} ${describeReceived(input)}` };

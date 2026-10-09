@@ -232,3 +232,13 @@ describe("anchor file binding (#145)", () => {
     expect(readPrompt).toContain("file-scoped");
   });
 });
+
+describe("EDIT_DESCRIPTION null rule (ticket-75)", () => {
+  it("scopes the absent rule to optional fields, the nested reference file included", () => {
+    // WHY: (ticket-75) the always-loaded surface stated the rule for the item's four fields only,
+    // WHY: while `text_ref.file` refused an explicit null — a model-facing surface that over-claims
+    // WHY: is the #67 class of defect, so the claim itself is pinned as served.
+    expect(EDIT_DESCRIPTION).toContain("null optional field");
+    expect(EDIT_DESCRIPTION).toContain("reads as absent");
+  });
+});
