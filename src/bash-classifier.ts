@@ -283,10 +283,26 @@ interface ViewSeg {
 
 type Segment = SilentSeg | ViewSeg | { kind: "unsafe"; reason: string };
 
-/** `cd <literal>` (never `-`), `true`, `:` — the corpus-closed silent set (R3). */
-function parseSilent(stage: StageShape): SilentSeg | undefined {
+/**
+ * `cd <literal>` (never a `-`-leading operand), `true`, `:` — the corpus-closed
+ * silent set (R3). A `-`-leading operand is an option, not a directory: bash
+ * consumes `cd --`/`cd -P`/`cd -L` and, with no operand left, cds to `$HOME`, so
+ * taking the flag as the target would resolve a path the model never viewed.
+ *
+ * WHY `prefixPosition`: every statement before the terminal view of a `;` chain
+ * must be silent, and the field writes that prefix `pwd` as often as `cd`.
+ * `pwd` prints the working directory, so it is admitted *only* there: the
+ * position proves the sequencing is deterministic, and D9 still byte-checks
+ * stdout, which carries the directory line and therefore never matches the
+ * slice — the lease is refused at serve time. Outside a prefix position (an
+ * `&&` chain) the set stays exactly the three commands above.
+ */
+function parseSilent(stage: StageShape, prefixPosition = false): SilentSeg | undefined {
+  if (prefixPosition && stage.name === "pwd" && stage.args.length === 0) {
+    return { kind: "silent" };
+  }
   if (stage.name === "cd") {
-    if (stage.args.length !== 1 || stage.args[0] === "-") return undefined;
+    if (stage.args.length !== 1 || stage.args[0].startsWith("-")) return undefined;
     return { kind: "silent", cdDir: stage.args[0] };
   }
   if ((stage.name === "true" || stage.name === ":") && stage.args.length === 0) {
@@ -348,11 +364,11 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | undefined {
   return { kind: "view", filePath, ops };
 }
 
-function classifySegment(node: Command | Pipeline): Segment {
+function classifySegment(node: Command | Pipeline, prefixPosition = false): Segment {
   if (node.type === "Command") {
     const stage = stageShape(node);
     if (!stage) return { kind: "unsafe", reason: "non-literal-command" };
-    const silent = parseSilent(stage);
+    const silent = parseSilent(stage, prefixPosition);
     if (silent) return silent;
     const source = parseSourceStage(stage);
     if (source) return { kind: "view", filePath: source.filePath, ops: source.ops };
@@ -364,10 +380,36 @@ function classifySegment(node: Command | Pipeline): Segment {
 }
 
 /**
- * Span-kind chain rule (ADR-0033 D1): `&&`-only top level, exactly one `view`,
- * all others `silent`, undetermined is `unsafe`. Returns the view with its
- * resolution base (the single pre-view literal `cd`, if any; multi-`cd` and
- * post-view-`cd` chains are `passThrough`).
+ * [ADR-0033 D1, amended] A `;`-separated statement chain is admitted only when
+ * every boundary between adjacent statements is an unconditional `;`.
+ *
+ * WHY the separator text decides: `unbash` reports a `;` and a newline as the
+ * same statement boundary, so the parse alone cannot tell the sanctioned
+ * `cd dir; cat file` shape from a newline-separated script. Only the `;` form is
+ * the deterministic prefix shape this decision authorises; the newline form
+ * stays pass-through rather than riding in on the same parse shape.
+ */
+function isSemicolonStatementChain(command: string, statements: readonly Statement[]): boolean {
+  if (statements.length < 2) return false;
+  for (let index = 1; index < statements.length; index++) {
+    const previous = statements[index - 1];
+    const statement = statements[index];
+    if (previous === undefined || statement === undefined) return false;
+    if (!/^\s*;\s*$/.test(command.slice(previous.end, statement.pos))) return false;
+  }
+  return true;
+}
+
+/**
+ * Span-kind chain rule (ADR-0033 D1, amended): `&&`-only within a statement,
+ * exactly one `view`, all others `silent`, undetermined is `unsafe`. Returns the
+ * view with its resolution base (the single pre-view literal `cd`, if any;
+ * multi-`cd` and post-view-`cd` chains are `passThrough`).
+ *
+ * A `;`-separated statement chain is admitted under the same rule with one
+ * addition: every statement before the terminal one must itself be a silent
+ * prefix, so the view is the last statement and the sequencing before it is
+ * deterministic (see `isSemicolonStatementChain`).
  */
 export function classifyBashCommand(command: string): BashClass {
   if (command.trim() === "") return { kind: "passThrough", reason: "empty" };
@@ -381,36 +423,47 @@ export function classifyBashCommand(command: string): BashClass {
   if (parsed.errors !== undefined && parsed.errors.length > 0) {
     return { kind: "passThrough", reason: "parse-error" };
   }
-  if (parsed.commands.length !== 1) {
+  const statements = parsed.commands as Statement[];
+  // WHY: a `;` chain is admitted only through the semicolon gate; every other
+  // WHY: multi-statement script — newline-separated included — is the compound
+  // WHY: ceiling and stays pass-through (ADR-0033 D1 as amended).
+  if (statements.length !== 1 && !isSemicolonStatementChain(command, statements)) {
     return { kind: "passThrough", reason: "multi-statement" };
   }
-  const statement = parsed.commands[0] as Statement;
-  if (statement.type !== "Statement" || statement.background) {
-    return { kind: "passThrough", reason: "background" };
-  }
-  const top = statement.command;
-  let segments: Array<Command | Pipeline>;
-  if (top.type === "AndOr") {
-    const chain = top as AndOr;
-    if (chain.operators.some((op) => op !== "&&")) {
-      return { kind: "passThrough", reason: "non-and-chain" };
+  const segments: Array<{ node: Command | Pipeline; prefixPosition: boolean }> = [];
+  for (let index = 0; index < statements.length; index++) {
+    const statement = statements[index] as Statement;
+    if (statement.type !== "Statement" || statement.background) {
+      return { kind: "passThrough", reason: "background" };
     }
-    segments = chain.commands as Array<Command | Pipeline>;
-  } else if (top.type === "Command" || top.type === "Pipeline") {
-    segments = [top];
-  } else {
-    return { kind: "passThrough", reason: "compound-top" };
+    // WHY: anything before the terminal statement is a prefix position — a view
+    // WHY: there makes the script a compound chain, not a view (checked below).
+    const prefixPosition = index < statements.length - 1;
+    const top = statement.command;
+    if (top.type === "AndOr") {
+      const chain = top as AndOr;
+      if (chain.operators.some((op) => op !== "&&")) {
+        return { kind: "passThrough", reason: "non-and-chain" };
+      }
+      for (const node of chain.commands as Array<Command | Pipeline>) {
+        segments.push({ node, prefixPosition });
+      }
+    } else if (top.type === "Command" || top.type === "Pipeline") {
+      segments.push({ node: top, prefixPosition });
+    } else {
+      return { kind: "passThrough", reason: "compound-top" };
+    }
   }
   if (segments.length > BASH_VIEW_MAX_CHAIN_SEGMENTS) {
     return { kind: "passThrough", reason: "chain-too-long" };
   }
   let view: ViewSeg | undefined;
   let baseDir: string | undefined;
-  for (const segment of segments) {
-    if (segment.type !== "Command" && segment.type !== "Pipeline") {
+  for (const { node, prefixPosition } of segments) {
+    if (node.type !== "Command" && node.type !== "Pipeline") {
       return { kind: "passThrough", reason: "compound-segment" };
     }
-    const classified = classifySegment(segment);
+    const classified = classifySegment(node, prefixPosition);
     if (classified.kind === "unsafe") {
       return { kind: "passThrough", reason: classified.reason };
     }
@@ -428,6 +481,10 @@ export function classifyBashCommand(command: string): BashClass {
       }
       continue;
     }
+    // WHY: only the terminal statement may carry the view (ADR-0033 D1 as
+    // WHY: amended) — a view in a prefix statement means the script is a
+    // WHY: compound chain the model did not ask about, so it fails closed.
+    if (prefixPosition) return { kind: "passThrough", reason: "multi-statement" };
     if (view !== undefined) {
       return { kind: "passThrough", reason: "multi-view" };
     }

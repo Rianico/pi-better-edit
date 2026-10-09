@@ -69,6 +69,25 @@ describe("bash-classifier span matrix", () => {
     });
   });
 
+  it("accepts `;`-chained silent prefixes before the view", () => {
+    expect(viewOf("cd dir; cat file")).toEqual({ filePath: "file", baseDir: "dir", ops: [] });
+    expect(viewOf("cd /ws; cat f.txt")).toEqual({ filePath: "f.txt", baseDir: "/ws", ops: [] });
+    expect(viewOf("pwd; cat file")).toEqual({ filePath: "file", ops: [] });
+    expect(viewOf("cd dir; pwd; cat file")).toEqual({ filePath: "file", baseDir: "dir", ops: [] });
+    expect(viewOf("true; :; cat f")).toEqual({ filePath: "f", ops: [] });
+    expect(viewOf("cd var/log; tail -20 app.log")).toEqual({
+      filePath: "app.log",
+      baseDir: "var/log",
+      ops: [{ kind: "last", n: 20 }],
+    });
+    expect(viewOf("cd sub; cat f | head -3")).toEqual({
+      filePath: "f",
+      baseDir: "sub",
+      ops: [{ kind: "first", n: 3 }],
+    });
+    expect(viewOf("cd sub; cat f && true")).toEqual({ filePath: "f", baseDir: "sub", ops: [] });
+  });
+
   it("fails closed on post-view and multi-cd chains (D1 order-soundness)", () => {
     // WHY: bash resolves each `cd` against the directory in effect at that point:
     // WHY: `cat f && cd sub` viewed `./f` (the `cd` ran too late), and
@@ -129,9 +148,40 @@ describe("bash-classifier fail-closed matrix", () => {
     expect(reasonOf("cat f && echo done")).toBe("unsupported-command:echo");
     expect(reasonOf("cd /x && grep -r foo . && cat f")).toBe("unsupported-command:grep");
     expect(reasonOf("cd -")).toBe("unsupported-command:cd");
+    expect(reasonOf("cd -- && cat f")).toBe("unsupported-command:cd");
+    expect(reasonOf("cd -P && cat f")).toBe("unsupported-command:cd");
     expect(reasonOf("cd")).toBe("unsupported-command:cd");
     expect(reasonOf("cd /x && cd - && cat f")).toBe("unsupported-command:cd");
     expect(reasonOf("cat a && cat b")).toBe("multi-view");
+  });
+
+  it("fails closed on non-silent or non-deterministic `;` chains", () => {
+    // WHY: only a strictly silent prefix is admitted; a view, an unknown
+    // WHY: command, a background job, or a non-literal `cd` in prefix position
+    // WHY: is not the deterministic shape this decision authorises.
+    expect(reasonOf("cat f; cat g")).toBe("multi-statement");
+    expect(reasonOf("cat f; cd sub")).toBe("multi-statement");
+    expect(reasonOf("echo hi; cat f")).toBe("unsupported-command:echo");
+    expect(reasonOf("cd a; cd b; cat f")).toBe("multi-cd");
+    expect(reasonOf("cd $D; cat f")).toBe("non-literal-command");
+    // WHY: `cd --`/`cd -P` consume the word as an option and cd to `$HOME`,
+    // WHY: so it must never become a `baseDir` (ADR-0033 D1 order-soundness).
+    expect(reasonOf("cd --; cat f")).toBe("unsupported-command:cd");
+    expect(reasonOf("cd -P; cat f")).toBe("unsupported-command:cd");
+    expect(reasonOf("cd d; cat f &")).toBe("background");
+    expect(reasonOf("cd d; grep x f")).toBe("unsupported-command:grep");
+    // WHY: `unbash` reports `;` and a newline as the same statement boundary, so
+    // WHY: the separator text is what keeps a newline script out of the gate.
+    expect(reasonOf("cd d\ncat f")).toBe("multi-statement");
+    expect(reasonOf("cd d & cat f")).toBe("multi-statement");
+  });
+
+  it("keeps the silent set closed outside prefix position", () => {
+    // WHY: `pwd` is admitted only as a `;`-chain prefix — a bare `pwd` or an
+    // WHY: `&&` chain keeps exactly the R3 silent set.
+    expect(reasonOf("pwd")).toBe("unsupported-command:pwd");
+    expect(reasonOf("pwd && cat f")).toBe("unsupported-command:pwd");
+    expect(reasonOf("cd d && pwd && cat f")).toBe("unsupported-command:pwd");
   });
 
   it("passes through flag hazards (R4)", () => {
@@ -195,6 +245,8 @@ describe("bash-classifier fail-closed matrix", () => {
     expect(reasonOf(deepPipe)).toBe("unsupported-pipeline");
     const longChain = `${"true && ".repeat(BASH_VIEW_MAX_CHAIN_SEGMENTS)}cat f`;
     expect(reasonOf(longChain)).toBe("chain-too-long");
+    const longStatementChain = `${`true; `.repeat(BASH_VIEW_MAX_CHAIN_SEGMENTS)}cat f`;
+    expect(reasonOf(longStatementChain)).toBe("chain-too-long");
   });
 });
 
