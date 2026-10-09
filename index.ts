@@ -3,6 +3,8 @@ import { regEdit } from "./src/edit.js";
 import { regEditUndo } from "./src/edit-undo.js";
 import { regRead } from "./src/read.js";
 import { registerWriteHook } from "./src/write-hook.js";
+
+import { registerSearchHook } from "./src/search-hook.js";
 import { createLifecycleHooks } from "./src/lifecycle-hooks/index.js";
 import { registerLensCommand } from "./src/integrations/pi-lens/command.js";
 import { attachIOBridgeAdapter } from "./src/integrations/pi-lens/io-bridge-adapter.js";
@@ -15,6 +17,8 @@ export default function (pi: ExtensionAPI): void {
   regEdit(pi);
   regEditUndo(pi);
   registerWriteHook(pi);
+
+  registerSearchHook(pi);
   registerLensCommand(pi);
   // WHY: the adapter subscribes both seams before any tool can serve or mutate a file, so the first
   // WHY: read, edit or write of the session is already mirrored whenever a bridge is present.

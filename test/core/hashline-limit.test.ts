@@ -136,7 +136,12 @@ describe("hashline limits", () => {
       expect(SERVED_MAX_LINES).toBe(200_000);
       expect(SERVED_MAX_LINES).not.toBe(MAX_HASH_LINES);
       const seam = readFileSync("src/read.ts", "utf-8");
-      expect(/maxLines:\s*SERVED_MAX_LINES/.test(seam)).toBe(true);
+      // WHY: the budget is CALL-WIDE (spec §4.2) — the read OPENS at `SERVED_MAX_LINES` and hands each
+      // WHY: served file only what the earlier files left, so the binding is pinned in two hops: the
+      // WHY: initializer (the value derives from the constant, never from the anchor space) and the
+      // WHY: per-file seam that spends it.
+      expect(/let remainingServedLines = SERVED_MAX_LINES;/.test(seam)).toBe(true);
+      expect(/maxLines:\s*remainingServedLines/.test(seam)).toBe(true);
       const budgetSrc = stripComments(readFileSync("src/constants.ts", "utf-8"));
       // WHY: the declaration is the literal itself — a re-export or a derived
       // WHY: expression reddens here even while the value assert stays green.
@@ -191,7 +196,7 @@ describe("read tool line cap", () => {
       const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│x0");
-      expect(text).toContain("[Showing lines 1-");
+      expect(text).toContain("[big.ts lines 1-");
     });
   });
   it("rejects oversized files with E_LARGE_FILE before hashing", async () => {
@@ -234,7 +239,7 @@ describe("read tool line cap", () => {
       const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│x0");
-      expect(text).toContain("[Showing lines 1-");
+      expect(text).toContain("[big.ts lines 1-");
     });
   }, 60_000);
 
@@ -336,7 +341,7 @@ describe("read tool line cap", () => {
       );
       const text = verbatim.content?.[0]?.text ?? "";
       expect(text).toBe(
-        `x\nx\nx\n\n[Showing lines 1-3 of ${SERVED_MAX_LINES + 1}. Use offset=4 to continue.]`,
+        `[huge-verbatim.ts (verbatim, ${SERVED_MAX_LINES + 1} lines, no anchors)]\nx\nx\nx\n\n[huge-verbatim.ts lines 1-3 of ${SERVED_MAX_LINES + 1}. Use windows: [{ offset: 4, limit: 3 }] to continue.]`,
       );
       expect(verbatim.details?.snapshotId).toBeUndefined();
 

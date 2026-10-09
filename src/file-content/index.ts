@@ -15,7 +15,13 @@ import { toCwd } from "../paths.js";
 import { valAccess } from "../validation.js";
 import { abortIf } from "../utils.js";
 import { visLines } from "../utils.js";
-import { loadFileKindAndText, type FileStats, type LFile } from "./detection.js";
+import {
+  loadFileKindAndText,
+  scanControlChars,
+  type ControlCharReport,
+  type FileStats,
+  type LFile,
+} from "./detection.js";
 import { anchorWalkFor, decodeNormText, fileSnap } from "./loader.js";
 import { fmtReadPreview, type ReadWindow } from "./preview.js";
 import type { ServedRow } from "../hashline/served.js";
@@ -169,6 +175,9 @@ export async function prepareFile(
       ...(options?.limit !== undefined ? { limit: options.limit } : {}),
       ...(options?.windows !== undefined ? { windows: options.windows } : {}),
       ...(options?.render !== undefined ? { render: options.render } : {}),
+      // WHY: the caller's own path, not `absolutePath`: the header/footer name the file the caller
+      // WHY: named, while anchors stay scoped to the absolute path the walk seeded them with.
+      displayPath: path,
     },
     anchors,
     norm.absolutePath,
@@ -179,9 +188,17 @@ export async function prepareFile(
   // WHY: (04b-rem P3-4 ruling) the old tail promised "editing rewrites the file as UTF-8" — the
   // WHY: admission round-trip guard (E_LOSSY_TEXT) refuses such an edit instead, so the read
   // WHY: disclosure now states what the tool actually does with these bytes.
-  const previewText = norm.hadUtf8DecodeErrors
-    ? `${preview.text}\n\n[Non-UTF-8 bytes shown as U+FFFD; edit refuses this file — its bytes do not round-trip UTF-8.]`
-    : preview.text;
+  // WHY: I2 (spec §6) — the bytes stay verbatim; the notices only name what the rows carry. A
+  // WHY: non-printable control character is disclosed, never escaped into a `\xNN` form.
+  const notices = [
+    ...(norm.hadUtf8DecodeErrors
+      ? [
+          "[Non-UTF-8 bytes shown as U+FFFD; edit refuses this file — its bytes do not round-trip UTF-8.]",
+        ]
+      : []),
+    ...controlCharNotices(scanControlChars(preview.text)),
+  ];
+  const previewText = [preview.text, ...notices].join("\n\n");
 
   return {
     kind: "text",
@@ -197,6 +214,19 @@ export async function prepareFile(
     ...(preview.truncation ? { truncation: preview.truncation } : {}),
     ...(preview.nextOffset !== undefined ? { nextOffset: preview.nextOffset } : {}),
   };
+}
+
+/**
+ * The I2 byte-view notice for invisible control characters (spec §6). None when the emitted rows are
+ * clean — the common case — so the verbatim contract stays byte-identical for ordinary text.
+ */
+function controlCharNotices(report: ControlCharReport): string[] {
+  if (report.count === 0) return [];
+  const named = report.codes.slice(0, 3).join(", ") + (report.codes.length > 3 ? ", …" : "");
+  const noun = report.count === 1 ? "character" : "characters";
+  return [
+    `[${report.count} non-printable control ${noun} present: ${named}; shown verbatim — escaped byte forms are not emitted by default.]`,
+  ];
 }
 
 export async function snapIdFor(absolutePath: string): Promise<string | undefined> {

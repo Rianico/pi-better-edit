@@ -44,7 +44,9 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
       undefined,
       home.testPath,
     );
-    expect(verbatim.text).toBe("b\nc\n\n[Showing lines 2-3 of 4. Use offset=4 to continue.]");
+    expect(verbatim.text).toBe(
+      "b\nc\n\n[lines 2-3 of 4. Use windows: [{ offset: 4, limit: 2 }] to continue.]",
+    );
   });
 
   it("sizes verbatim rows without the anchor prefix they never emit (fix 5)", async () => {
@@ -191,7 +193,7 @@ describe("read tool — mode: verbatim", () => {
         ctx,
       );
       const text = result.content[0].text as string;
-      expect(text).toBe("alpha\nbeta");
+      expect(text).toBe("[verbatim.txt (verbatim, 2 lines, no anchors)]\nalpha\nbeta");
       expect(text.split("\n").some((line) => ANCHOR_ROW.test(line))).toBe(false);
       expect(result.details.snapshotId).toBeUndefined();
     });
@@ -207,7 +209,9 @@ describe("read tool — mode: verbatim", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toBe("[File is empty.]");
+      expect(result.content[0].text).toBe(
+        "[empty.txt (verbatim, 0 lines, no anchors)]\n[File is empty.]",
+      );
     });
   });
 
@@ -221,7 +225,9 @@ describe("read tool — mode: verbatim", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toBe("[1 empty line]");
+      expect(result.content[0].text).toBe(
+        "[oneblank.txt (verbatim, 1 lines, no anchors)]\n[1 empty line]",
+      );
     });
   });
 
@@ -235,7 +241,9 @@ describe("read tool — mode: verbatim", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0].text).toBe("Ab3│kept literally");
+      expect(result.content[0].text).toBe(
+        "[literal.txt (verbatim, 1 lines, no anchors)]\nAb3│kept literally",
+      );
     });
   });
 

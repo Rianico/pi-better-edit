@@ -29,6 +29,11 @@ export type EditDetails = {
   contentHash?: string;
   warnings?: string[];
   driftNotice?: string;
+  /**
+   * WHY: I4 (spec §5) — the applied summary line the model-visible text leads with, ahead of the
+   * WHY: anchored diff. `diff` stays the bare collapsed projection for TUI presentation clients.
+   */
+  summary?: string;
 };
 type TResult = {
   content: Array<{ type: "text"; text: string }>;
@@ -120,13 +125,28 @@ export function buildMetrics(args: {
 
 export interface FinalizeInput {
   diff: string;
+  summary?: string;
   warnings?: string[];
   driftNotice?: string;
 }
 
+/**
+ * The one composition of the model-visible post-edit text: the summary line, a blank line, then the
+ * collapsed anchored diff (#174) and the warnings block. See docs/spec/search-and-read-evolution.md
+ * §5 (I4).
+ */
+function modelText(summary: string, diff: string, warnings: string[] | undefined): string {
+  return `${summary}\n\n${diff}${warnBlock(warnings)}`;
+}
+
+/**
+ * The hook seam's renderer. A details payload carrying the applied summary leads with it (I4); a
+ * synthesized payload without one keeps the bare diff + warnings text, unchanged.
+ */
 export function finalizeResult(input: FinalizeInput): string {
-  const base = input.diff + warnBlock(input.warnings);
-  return base;
+  const body = input.diff + warnBlock(input.warnings);
+  if (input.summary === undefined || input.summary === "" || input.diff === "") return body;
+  return modelText(input.summary, input.diff, input.warnings);
 }
 
 export function finalizeToolResult(details: EditDetails): {
@@ -135,6 +155,7 @@ export function finalizeToolResult(details: EditDetails): {
 } {
   const text = finalizeResult({
     diff: details.diff,
+    ...(details.summary !== undefined ? { summary: details.summary } : {}),
     ...(details.warnings !== undefined ? { warnings: details.warnings } : {}),
     ...(details.driftNotice !== undefined ? { driftNotice: details.driftNotice } : {}),
   });
@@ -194,18 +215,16 @@ export function buildChanged(input: SuccessInput): TResult {
   const diffResult = genDiff(originalNormalized, result, 1, resultHashes, originalHashes);
   const addedLines = editMeta.addedLines;
   const removedLines = editMeta.removedLines;
-  const warningsBlock = warnBlock(warnings);
   const successPrefix = `Successfully edited in ${path}.`;
   const lineSummary =
     addedLines > 0 || removedLines > 0
       ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
       : "";
+  const summary = `${successPrefix}${lineSummary}`;
   const text =
     resultLines.length === 0
       ? "File is empty. Use edit to insert content."
-      : warningsBlock
-        ? `${successPrefix}${lineSummary}${warningsBlock}`
-        : `${successPrefix}${lineSummary}`;
+      : modelText(summary, diffResult.diff, warnings);
 
   const metrics = buildMetrics({
     classification: "applied",
@@ -231,6 +250,7 @@ export function buildChanged(input: SuccessInput): TResult {
     details: {
       path,
       diff: diffResult.diff,
+      ...(resultLines.length > 0 ? { summary } : {}),
       ...(firstChangedLine !== undefined ? { firstChangedLine } : {}),
       ...(lastChangedLine !== undefined ? { lastChangedLine } : {}),
       resultLineCount: resultLines.length,
@@ -347,12 +367,15 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
       ? ` Added ${addedLines} line(s), removed ${removedLines} line(s).`
       : "";
   const summary = `Successfully edited ${appliedFiles.length} file(s) — ${appliedTotal} of ${totalEdits} edit(s) applied${noopTotal > 0 ? ` (${noopTotal} noop)` : ""}.${lineSummary}`;
-  const text = `${summary}${warnBlock(warnings)}`;
+  // WHY: I4 (spec §5) — the model-visible text leads with the summary line, a blank line, then the
+  // WHY: collapsed anchored diff; `details.diff` stays the bare projection for TUI presentation.
+  const text = modelText(summary, diff, warnings);
 
   return {
     content: [{ type: "text", text }],
     details: {
       diff,
+      summary,
       metrics: buildMetrics({
         classification: "applied",
         editsAttempted: totalEdits,

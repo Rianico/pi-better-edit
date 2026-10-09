@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFile } from "fs/promises";
-import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import {
+  withTempFile,
+  setupIntegrationTest,
+  getText,
+  extractHash,
+  anchorRows,
+} from "../support/fixtures";
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { loadLeases, sessionKeyFor, type ServedLease } from "../../src/served-session/session";
@@ -83,7 +89,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
 
       const store = await loadHashStore();
       const mirrorBefore = mirrorHashes(store, sessionKeyFor(ctx), path);
@@ -132,7 +138,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
 
       const store = await loadHashStore();
       const mirrorBefore = mirrorHashes(store, sessionKeyFor(ctx), path);
@@ -179,7 +185,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
       await editTool.execute(
         "e1",
         {
@@ -251,7 +257,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
       await editTool.execute(
         "e1",
         {
@@ -302,7 +308,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
       await editTool.execute(
         "e1",
         {
@@ -350,7 +356,7 @@ describe("CAND-3 unified post-write commit transaction", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
       await editTool.execute(
         "e1",
         {

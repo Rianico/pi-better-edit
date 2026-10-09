@@ -3,6 +3,8 @@ import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { lineHashes } from "../../src/hashline";
+
+import { SEARCH_MAX_MATCHES } from "../../src/constants";
 import { useTestHome, withTempDir } from "../support/fixtures";
 
 useTestHome();
@@ -10,6 +12,7 @@ useTestHome();
 function makeFakePi() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
   const tools = new Map<string, unknown>();
+  const handlersAll = new Map<string, Array<(...args: unknown[]) => unknown>>();
   return {
     pi: {
       registerTool(tool: any) {
@@ -18,6 +21,9 @@ function makeFakePi() {
       registerCommand() {},
       on(event: string, handler: (...args: unknown[]) => unknown) {
         handlers.set(event, handler);
+        const registered = handlersAll.get(event) ?? [];
+        registered.push(handler);
+        handlersAll.set(event, registered);
       },
       getActiveTools() {
         return [];
@@ -25,6 +31,7 @@ function makeFakePi() {
       setActiveTools() {},
     } as any,
     handlers,
+    handlersAll,
     getTool(name: string) {
       return tools.get(name) as {
         execute: (
@@ -285,7 +292,7 @@ describe("bash view lifecycle", () => {
       for (const command of [
         "cat -A f.txt",
         "cd -",
-        "grep -n line f.txt",
+        "grep -c line f.txt",
         "sed -i 's/a/b/' f.txt",
         "cat f.txt f.txt",
         "echo hi && cat f.txt",
@@ -593,6 +600,355 @@ describe("bash view lifecycle", () => {
           missCtx,
         ),
       ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+});
+
+describe("bash search interception (I1a #73)", () => {
+  it("injects -n at tool_call and serves anchored, leased rows end to end", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, handlersAll, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-e2e" } };
+
+      // WHY: the full path — the `tool_call` hook rewrites the model's unnumbered command, and the
+      // WHY: `tool_result` side re-parses that mutated text (no cross-hook state) to decide the lease.
+      const call = { toolName: "bash", input: { command: "grep 'line3' f.txt" } };
+      for (const handler of handlersAll.get("tool_call") ?? []) await handler(call, ctx);
+      expect(call.input.command).toBe("grep -n 'line3' f.txt");
+
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        call.input.command,
+        ctx,
+        "3:line3\n",
+      );
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      expect(text.startsWith("--- Bash search (hashline anchors) ---\n")).toBe(true);
+      expect(text).toContain("[f.txt (1 match)]");
+      const rows = rowsOf(text);
+      expect(rows).toHaveLength(1);
+      expect(rows[0]!.endsWith("│line3")).toBe(true);
+
+      const followUp = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line3"),
+              anchor_to: anchorFor(rows, "line3"),
+              text: "LINE3",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(followUp.isError).toBeFalsy();
+    });
+  });
+
+  it("serves a sparse match set and leases only the matched lines", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-sparse" } };
+
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        "grep -n line f.txt",
+        ctx,
+        "2:line2\n4:line4\n",
+      );
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      expect(text).toContain("[f.txt (2 matches)]");
+      const rows = rowsOf(text);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.endsWith("│line2")).toBe(true);
+      expect(rows[1]!.endsWith("│line4")).toBe(true);
+
+      // WHY: line3 was never served — its (valid) anchor carries no lease and fails closed.
+      const allHashes = await lineHashes(numberedLines(5), join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[2]!, anchor_to: allHashes[2]!, text: "L3" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line4"),
+              anchor_to: anchorFor(rows, "line4"),
+              text: "LINE4",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("serves exactly the match cap and passes through one row over it", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      const stdoutFor = (n: number) =>
+        `${Array.from({ length: n }, (_, i) => `${i + 1}:line${i + 1}`).join("\n")}\n`;
+
+      const capped = `${numberedLines(50)}`;
+      await writeFile(join(dir, "capped.txt"), capped, "utf-8");
+      await writeFile(join(dir, "over.txt"), numberedLines(51), "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const atCap = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-cap" } };
+      const overCap = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-over" } };
+
+      const boundary = await bashResult(
+        handlers.get("tool_result")!,
+        "grep -n line capped.txt",
+        atCap,
+        stdoutFor(SEARCH_MAX_MATCHES),
+      );
+      expect(boundary).toBeDefined();
+      expect(boundary!.content[0]!.text).toContain(`[capped.txt (${SEARCH_MAX_MATCHES} matches)]`);
+
+      // WHY: the cap is all-or-nothing — raw passthrough with no truncation and no partial leases.
+      expect(
+        await bashResult(
+          handlers.get("tool_result")!,
+          "grep -n line over.txt",
+          overCap,
+          stdoutFor(SEARCH_MAX_MATCHES + 1),
+        ),
+      ).toBeUndefined();
+      const overHashes = await lineHashes(numberedLines(51), join(dir, "over.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "over.txt",
+            edits: [{ anchor_from: overHashes[0]!, anchor_to: overHashes[0]!, text: "L1" }],
+          },
+          undefined,
+          undefined,
+          overCap,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("fails closed on unparsable geometry, a forged witness, and an out-of-range line", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-gates" } };
+
+      // WHY: `grep -c` prints a bare count and rg `<n> matches` prints nothing parseable — any row
+      // WHY: that is not `LINE:content` means this stdout is not the admitted geometry.
+      expect(
+        await bashResult(handlers.get("tool_result")!, "grep -n line f.txt", ctx, "3\n"),
+      ).toBeUndefined();
+      // WHY: forged witness — stdout claims line3 but disk says `line3`→`forged`. D9 refuses.
+      expect(
+        await bashResult(handlers.get("tool_result")!, "grep -n line f.txt", ctx, "3:forged\n"),
+      ).toBeUndefined();
+      // WHY: line 99 does not exist on disk — the anchored row would name no line.
+      expect(
+        await bashResult(handlers.get("tool_result")!, "grep -n line f.txt", ctx, "99:line99\n"),
+      ).toBeUndefined();
+      // WHY: exit 1 (no matches) leaves stdout empty; the raw output must survive untouched.
+      expect(
+        await bashResult(handlers.get("tool_result")!, "grep -n zzz f.txt", ctx, ""),
+      ).toBeUndefined();
+      // WHY: a directory operand is a structural deny (spec §3.2) the pure classifier cannot see, so
+      // WHY: the lifecycle layer re-checks the file kind after resolution and fails closed.
+      await mkdir(join(dir, "sub"), { recursive: true });
+      expect(
+        await bashResult(handlers.get("tool_result")!, "grep -n line sub", ctx, "1:x\n"),
+      ).toBeUndefined();
+
+      const allHashes = await lineHashes(numberedLines(5), join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[2]!, anchor_to: allHashes[2]!, text: "L3" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("keeps rg on the same gates and leaves denied commands byte-identical at tool_call", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, handlersAll } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-rg" } };
+      const calls = handlersAll.get("tool_call") ?? [];
+
+      // WHY: denied flags must reach bash byte-identical — only the `-n` injection may mutate.
+      for (const command of [
+        "grep -c line f.txt",
+        "rg --json line f.txt",
+        "cat f.txt",
+        "grep line f.txt | head -2",
+      ]) {
+        const call = { toolName: "bash", input: { command } };
+        for (const handler of calls) await handler(call, ctx);
+        expect(call.input.command).toBe(command);
+      }
+
+      const call = { toolName: "bash", input: { command: "rg line3 f.txt" } };
+      for (const handler of calls) await handler(call, ctx);
+      expect(call.input.command).toBe("rg --line-number line3 f.txt");
+
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        call.input.command,
+        ctx,
+        "3:line3\n",
+      );
+      expect(result).toBeDefined();
+      expect(result!.content[0]!.text).toContain("[f.txt (1 match)]");
+      expect(rowsOf(result!.content[0]!.text)).toHaveLength(1);
+    });
+  });
+  it("passes every denied flag through the hook byte-identically with the output untouched", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, handlersAll } = makeFakePi();
+      register(pi);
+      const calls = handlersAll.get("tool_call") ?? [];
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-deny" } };
+      const raw = "3:line3\n";
+
+      // WHY: one row per denied flag — the injection hook must leave the command byte-identical (so
+      // WHY: native grep/rg semantics are preserved) and the `tool_result` side must return undefined
+      // WHY: (so the raw stdout reaches the model untouched).
+      const denied = [
+        "grep -c pat f.txt",
+        "grep --count pat f.txt",
+        "grep -v pat f.txt",
+        "grep --invert-match pat f.txt",
+        "grep -o pat f.txt",
+        "grep --only-matching pat f.txt",
+        "grep -A 2 pat f.txt",
+        "grep -B 2 pat f.txt",
+        "grep -C 2 pat f.txt",
+        "grep -l pat f.txt",
+        "grep -L pat f.txt",
+        "grep --color=never pat f.txt",
+        "grep -m 3 pat f.txt",
+        "grep --max-count 3 pat f.txt",
+        "grep -q pat f.txt",
+        "grep -s pat f.txt",
+        "grep -w pat f.txt",
+        "grep -x pat f.txt",
+        "grep -b pat f.txt",
+        "grep -H pat f.txt",
+        "grep -h pat f.txt",
+        "grep -r pat .",
+        "grep -R pat .",
+        "grep -P pat f.txt",
+        "grep -e pat f.txt",
+        "grep -f pats f.txt",
+        "grep -in pat f.txt",
+        "grep -n5 pat f.txt",
+        "grep --line-number=x pat f.txt",
+        "rg --column pat f.txt",
+        "rg --heading pat f.txt",
+        "rg --no-heading pat f.txt",
+        "rg -N pat f.txt",
+        "rg --no-line-number pat f.txt",
+        "rg --json pat f.txt",
+        "rg --stats pat f.txt",
+        "rg --files",
+        "rg -r x pat f.txt",
+        "rg --replace x pat f.txt",
+        "rg -0 pat f.txt",
+        "rg --null pat f.txt",
+        "rg --vimgrep pat f.txt",
+        "rg -uu pat f.txt",
+        "rg -t ts pat f.txt",
+        "rg -j 4 pat f.txt",
+        "rg --hidden pat f.txt",
+        "grep pat f.txt | head -2",
+        "grep pat f.txt > out.txt",
+        "grep pat f.txt && cat f.txt",
+        "grep pat f.txt || cat f.txt",
+        "grep pat f.txt &",
+        "grep pat a.txt f.txt",
+        "grep pat",
+        "grep pat *.ts",
+        "cat f.txt | grep pat",
+      ];
+      for (const command of denied) {
+        const call = { toolName: "bash", input: { command } };
+        for (const handler of calls) await handler(call, ctx);
+        expect(call.input.command).toBe(command);
+        expect(await bashResult(handlers.get("tool_result")!, command, ctx, raw)).toBeUndefined();
+      }
+    });
+  });
+  it("normalizes CRLF and BOM in the search witness exactly as D9 does for a view", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      // WHY: grep prints the disk bytes, so a CRLF file yields `3:line3\r` and a BOM file yields a
+      // WHY: leading U+FEFF on row 1, while `readNormFile`/`visLines` (and the anchors served here)
+      // WHY: describe LF/no-BOM text. `toLF(stripBOM(...))` is the tranche-1 D9 normalization, so the
+      // WHY: search witness stays consistent with the view seam on the files bash actually printed.
+      await writeFile(join(dir, "crlf.txt"), "line1\r\nline2\r\nline3\r\n", "utf-8");
+      await writeFile(join(dir, "bom.txt"), "\uFEFFline1\nline2\n", "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-norm" } };
+
+      const crlf = await bashResult(
+        handlers.get("tool_result")!,
+        "grep -n line crlf.txt",
+        ctx,
+        "3:line3\r\n",
+      );
+      expect(crlf).toBeDefined();
+      expect(crlf!.content[0]!.text).toContain("[crlf.txt (1 match)]");
+      expect(rowsOf(crlf!.content[0]!.text)[0]!.endsWith("│line3")).toBe(true);
+
+      const bom = await bashResult(
+        handlers.get("tool_result")!,
+        "grep -n line bom.txt",
+        ctx,
+        "\uFEFF1:line1\n",
+      );
+      expect(bom).toBeDefined();
+      expect(bom!.content[0]!.text).toContain("[bom.txt (1 match)]");
+      expect(rowsOf(bom!.content[0]!.text)[0]!.endsWith("│line1")).toBe(true);
     });
   });
 });

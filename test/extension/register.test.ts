@@ -25,10 +25,13 @@ describe("extension registration", () => {
     expect(commandNames).toEqual(["pi-better-edit"]);
 
     // WHY: (#165) two session_start listeners: regEdit captures the session for the preview pane,
-    // WHY: the lifecycle hook handles session resets.
+    // WHY: the lifecycle hook handles session resets. Two tool_call listeners: the pre-write served
+    // WHY: hash echo guard and the search line-number injection (spec §3.1); they filter by tool name
+    // WHY: independently, so order is not load-bearing.
     expect(eventNames.sort()).toEqual([
       "session_start",
       "session_start",
+      "tool_call",
       "tool_call",
       "tool_result",
     ]);

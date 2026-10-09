@@ -50,8 +50,29 @@ export interface BashView {
   ops: SliceOp[];
 }
 
+/**
+ * One admitted single-file search: `grep`/`rg` over an allowlisted flag set (spec §3.2).
+ * The pattern and file are the operands exactly as written (unquoted by the parser) so the
+ * lifecycle layer resolves the same path bash did, and the `-n` injection is a pure splice.
+ */
+export interface BashSearch {
+  program: SearchProgram;
+  /** Match pattern exactly as written; may begin with `-` only after a `--` separator. */
+  pattern: string;
+  /** The single file operand exactly as written (relative or absolute). */
+  filePath: string;
+  /** True when the model already asked for line numbers (`-n` / `--line-number`). */
+  lineNumbered: boolean;
+  /** Resolution base for a single pre-view literal `cd` — the view rule verbatim (ADR-0033 D1). */
+  baseDir?: string;
+}
+
+/** The only two intercepted search programs (spec §3.2). */
+export type SearchProgram = "grep" | "rg";
+
 export type BashClass =
   | { kind: "pureView"; view: BashView }
+  | { kind: "pureSearch"; search: BashSearch }
   | { kind: "passThrough"; reason: string };
 
 /** `sed -n` numeric print only — locks out `w`/`e`/`r`/`s`/`;`/`{}`/`/` (R4). */
@@ -62,6 +83,26 @@ const BARE_COUNT = /^-(\d+)$/;
 const ATTACHED_COUNT = /^-n(\+?-?\d+)$/;
 /** Unquoted glob metachars — unbash exposes globs as plain words (ADR-0033 D5). */
 const UNQUOTED_GLOB = /[*?[]/;
+
+/** The only two intercepted search programs (spec §3.2). */
+const SEARCH_PROGRAMS: ReadonlySet<string> = new Set(["grep", "rg"]);
+
+/** The ONLY flags a search may carry (spec §3.2). Everything else — output-altering
+ * (`-c -v -o -A -B -C -l -L --color -m -q -s -w -x -b -H -h`), rg's display shapes
+ * (`--column --heading --json --stats --files -r -0 --vimgrep -N`), and every other short
+ * or long form — fails closed to raw bash by absence from this set. */
+const SEARCH_ALLOWED_FLAGS: ReadonlySet<string> = new Set([
+  "-n",
+  "--line-number",
+  "-i",
+  "--ignore-case",
+  "-F",
+  "--fixed-strings",
+  "-E",
+  "--extended-regexp",
+]);
+/** The two spellings that already request line numbers, so injection is skipped. */
+const SEARCH_LINE_NUMBER_FLAGS: ReadonlySet<string> = new Set(["-n", "--line-number"]);
 
 /**
  * The statically-known value of a word, or `undefined` when the word can mean
@@ -234,6 +275,44 @@ function parseSourceStage(shape: StageShape): SourceStage | undefined {
   return undefined;
 }
 
+/**
+ * `grep`/`rg` single-file search selector (spec §3.2). Strict default-deny: only the
+ * allowlisted flags above survive, they must precede the operands, and the shape must be exactly
+ * `PROGRAM [flags] [--] PATTERN FILE`. Flags after the pattern, bundled short flags (`-in`),
+ * `=` long forms, `-e`/`-f`, a `-`-leading pattern with no `--`, zero operands (stdin) and
+ * two-or-more operands (filename prefixes break the `^\d+:` geometry) all fail closed, as do
+ * globs, tildes and expansions — those never reach here because `stageShape`/`literalValue`
+ * reject them first. Directory operands are deliberately NOT detected here: this module is pure
+ * and zero-fs, so the lifecycle layer re-checks the resolved file kind.
+ */
+function parseSearchStage(stage: StageShape): BashSearch | undefined {
+  if (!SEARCH_PROGRAMS.has(stage.name)) return undefined;
+  const operands: string[] = [];
+  let lineNumbered = false;
+  let separatorSeen = false;
+  for (const arg of stage.args) {
+    if (!separatorSeen && arg === "--") {
+      separatorSeen = true;
+      continue;
+    }
+    if (!separatorSeen && arg.startsWith("-")) {
+      // WHY: GNU grep/rg permit post-operand options, but the tranche-1 selector contract
+      // WHY: ("flags must precede the file") is the conservative reading and a mid-command
+      // WHY: flag is not the benchmark shape — deny rather than guess.
+      if (operands.length > 0) return undefined;
+      if (!SEARCH_ALLOWED_FLAGS.has(arg)) return undefined;
+      if (SEARCH_LINE_NUMBER_FLAGS.has(arg)) lineNumbered = true;
+      continue;
+    }
+    operands.push(arg);
+  }
+  // WHY: exactly two operands — the pattern and the one file. `grep pat` searches stdin, and
+  // WHY: `grep pat a b` prints `file:` prefixes, so both fail closed to raw bash.
+  if (operands.length !== 2) return undefined;
+  const [pattern, filePath] = operands;
+  return { program: stage.name as SearchProgram, pattern, filePath, lineNumbered };
+}
+
 /** Downstream pipe stages: selectors with no file operand (stdin only). */
 /**
  * Downstream pipe stages: selectors with no file operand (stdin only). The `rtk`
@@ -281,7 +360,12 @@ interface ViewSeg {
   ops: SliceOp[];
 }
 
-type Segment = SilentSeg | ViewSeg | { kind: "unsafe"; reason: string };
+interface SearchSeg {
+  kind: "search";
+  search: BashSearch;
+}
+
+type Segment = SilentSeg | ViewSeg | SearchSeg | { kind: "unsafe"; reason: string };
 
 /**
  * `cd <literal>` (never a `-`-leading operand), `true`, `:` — the corpus-closed
@@ -372,6 +456,8 @@ function classifySegment(node: Command | Pipeline, prefixPosition = false): Segm
     if (silent) return silent;
     const source = parseSourceStage(stage);
     if (source) return { kind: "view", filePath: source.filePath, ops: source.ops };
+    const search = parseSearchStage(stage);
+    if (search) return { kind: "search", search };
     return { kind: "unsafe", reason: `unsupported-command:${stage.name}` };
   }
   const view = parseViewSegment(node);
@@ -412,6 +498,16 @@ function isSemicolonStatementChain(command: string, statements: readonly Stateme
  * deterministic (see `isSemicolonStatementChain`).
  */
 export function classifyBashCommand(command: string): BashClass {
+  return classifyBash(command, {});
+}
+
+/**
+ * WHY the internal `located` out-parameter: the line-number injection must splice at the search
+ * program token's source offset, and that offset is only known while the chain walk is running.
+ * Classifying here and locating again in the rewriter would duplicate the whole `;`/`&&`/silent
+ * chain gate, so the terminal search records its offset in the caller's box instead.
+ */
+function classifyBash(command: string, located: { searchNameEnd?: number }): BashClass {
   if (command.trim() === "") return { kind: "passThrough", reason: "empty" };
   let script;
   try {
@@ -424,6 +520,9 @@ export function classifyBashCommand(command: string): BashClass {
     return { kind: "passThrough", reason: "parse-error" };
   }
   const statements = parsed.commands as Statement[];
+  // D1/D9, amended 2026-10-09 (commit 7b78278): See ADR-0033. This site
+  // WHY: implements D1's `;`-chain gate at the statement-chain check; D9's
+  // WHY: symmetric stdout normalization lives in lifecycle-hooks.
   // WHY: a `;` chain is admitted only through the semicolon gate; every other
   // WHY: multi-statement script — newline-separated included — is the compound
   // WHY: ceiling and stays pass-through (ADR-0033 D1 as amended).
@@ -458,6 +557,7 @@ export function classifyBashCommand(command: string): BashClass {
     return { kind: "passThrough", reason: "chain-too-long" };
   }
   let view: ViewSeg | undefined;
+  let searchSeg: BashSearch | undefined;
   let baseDir: string | undefined;
   for (const { node, prefixPosition } of segments) {
     if (node.type !== "Command" && node.type !== "Pipeline") {
@@ -481,14 +581,32 @@ export function classifyBashCommand(command: string): BashClass {
       }
       continue;
     }
+    if (classified.kind === "search") {
+      // WHY: the search obeys the view's chain rule verbatim (ADR-0033 D1 as amended): only the
+      // WHY: terminal statement may carry it, and one view-or-search per command — a prefix
+      // WHY: `grep` would be a compound chain the model did not ask about, so it fails closed.
+      if (prefixPosition) return { kind: "passThrough", reason: "multi-statement" };
+      if (view !== undefined || searchSeg !== undefined) {
+        return { kind: "passThrough", reason: "multi-view" };
+      }
+      searchSeg = classified.search;
+      located.searchNameEnd = node.type === "Command" ? node.name?.end : undefined;
+      continue;
+    }
     // WHY: only the terminal statement may carry the view (ADR-0033 D1 as
     // WHY: amended) — a view in a prefix statement means the script is a
     // WHY: compound chain the model did not ask about, so it fails closed.
     if (prefixPosition) return { kind: "passThrough", reason: "multi-statement" };
-    if (view !== undefined) {
+    if (view !== undefined || searchSeg !== undefined) {
       return { kind: "passThrough", reason: "multi-view" };
     }
     view = classified;
+  }
+  if (searchSeg) {
+    return {
+      kind: "pureSearch",
+      search: baseDir === undefined ? searchSeg : { ...searchSeg, baseDir },
+    };
   }
   if (!view) return { kind: "passThrough", reason: "no-view" };
   return {
@@ -580,4 +698,23 @@ export function applySliceOps(ops: readonly SliceOp[], lineCount: number): LineI
     if (intervals.length === 0) break;
   }
   return intervals;
+}
+
+/**
+ * [spec §3.3] The pure `tool_call` rewrite: inject the line-number flag immediately after the
+ * search program name — before any `--` separator, so `grep -- -pat f` becomes
+ * `grep -n -- -pat f` — and return the command byte-identically unchanged for everything the
+ * allowlist does not admit (a denied flag, a pipeline, a non-search command, or an already
+ * numbered search). Zero filesystem access: the rewrite is decided from the AST alone, and the
+ * `tool_result` side re-parses the mutated command instead of sharing state with this hook.
+ */
+export function withSearchLineNumbers(command: string): string {
+  const located: { searchNameEnd?: number } = {};
+  const classification = classifyBash(command, located);
+  if (classification.kind !== "pureSearch") return command;
+  if (classification.search.lineNumbered) return command;
+  const nameEnd = located.searchNameEnd;
+  if (nameEnd === undefined) return command;
+  const flag = classification.search.program === "rg" ? "--line-number" : "-n";
+  return `${command.slice(0, nameEnd)} ${flag}${command.slice(nameEnd)}`;
 }

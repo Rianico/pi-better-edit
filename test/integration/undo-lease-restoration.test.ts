@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
-import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import {
+  withTempFile,
+  setupIntegrationTest,
+  getText,
+  extractHash,
+  anchorRows,
+} from "../support/fixtures";
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { loadLeases, sessionKeyFor, type ServedLease } from "../../src/served-session/session";
@@ -45,7 +51,7 @@ describe("undo_last_edit adopts the pinned canonical snapshot", () => {
         undefined,
         ctx,
       );
-      const line2Hash = extractHash(getText(r1).split("\n")[1]!);
+      const line2Hash = extractHash(anchorRows(getText(r1))[1]!);
 
       await editTool.execute(
         "e1",

@@ -339,16 +339,20 @@ export interface SnapshotDescriptor {
   lineIds?: readonly (number | null)[];
 }
 
+function planFor(options?: HashSnapshotUpsertOptions): MaterializePlan {
+  return {
+    retireLeases: options?.retireLeases === true,
+    ...(options?.leases !== undefined ? { leases: options.leases } : {}),
+    ...(options?.servedMirror !== undefined ? { servedMirror: options.servedMirror } : {}),
+  };
+}
+
 export function upsertSnapshot(
   store: HashStore,
   descriptor: SnapshotDescriptor,
   options?: HashSnapshotUpsertOptions,
 ): void {
-  materializeSnapshot(store, descriptor, {
-    retireLeases: options?.retireLeases === true,
-    ...(options?.leases !== undefined ? { leases: options.leases } : {}),
-    ...(options?.servedMirror !== undefined ? { servedMirror: options.servedMirror } : {}),
-  });
+  materializeSnapshot(store, descriptor, planFor(options));
 }
 
 /**
@@ -394,11 +398,7 @@ export async function adoptPinnedSnapshotFor(
     });
   }
   const store = await loadHashStore();
-  materializeSnapshot(store, descriptor, {
-    retireLeases: options?.retireLeases === true,
-    ...(options?.leases !== undefined ? { leases: options.leases } : {}),
-    ...(options?.servedMirror !== undefined ? { servedMirror: options.servedMirror } : {}),
-  });
+  materializeSnapshot(store, descriptor, planFor(options));
 }
 
 interface InheritedIdentities {
@@ -531,11 +531,15 @@ export function reportVacuumSoftOverflow(db: DatabaseSync, result: VacuumResult)
  * caller-owned vacuum can protect the in-flight row. `undefined` is unreachable at the outermost
  * call: a conflict re-enters with `isConflictRetry` and throws if it cannot adopt a canonical row.
  */
-function materializeSnapshot(
+/**
+ * The materialization body: commits (or adopts) the canonical snapshot for `(path, snapshotHash)` on
+ * the caller's OPEN `BEGIN IMMEDIATE` and returns its id, or `undefined` when a concurrent writer
+ * committed the same `(path, snapshot_hash)` first — the caller owns the rollback and the retry.
+ */
+function materializeSnapshotInTxn(
   store: HashStore,
   descriptor: SnapshotDescriptor,
   plan: MaterializePlan,
-  isConflictRetry = false,
 ): number | undefined {
   const { path, snapshotHash, lineCount, hashes, content } = descriptor;
   const { retireLeases, leases, servedMirror } = plan;
@@ -543,89 +547,95 @@ function materializeSnapshot(
   // WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4 step
   // WHY: 4): the default is `false` so in-memory working-buffer snapshots — and any content that has
   // WHY: not reached disk yet — can never retire the leases a session still validly holds.
-  const snapshotId = withBusyRetry(() => {
+  const stmts = snapshotStmts(store.db);
+  // WHY: the pre-allocation snapshot cache guard (spec §3.2.4 step 2): a committed row for
+  // WHY: `(path, snapshot_hash)` already pins canonical `line_id`s. Adopting it here means a
+  // WHY: cyclical edit (`bar` -> `foo` -> `bar`) or an undo revert allocates ZERO counter ids and
+  // WHY: never reaches the UNIQUE (path, snapshot_hash) insert, so it cannot rewrite canonical
+  // WHY: lineage or waste surrogate ids. Retirement still runs: the adopted snapshot may predate
+  // WHY: leases the current content no longer covers.
+  let existing = stmts.findSnapshot(path, snapshotHash);
+  // WHY: provenance over key prefix — a poisoned row under a current-generation
+  // WHY: key is deleted, not adopted; the fresh insert below re-derives
+  // WHY: file-scoped anchors. Without this, every read would re-adopt and
+  // WHY: re-stamp the poison forever.
+  if (existing && existing.anchor_generation !== ANCHOR_GENERATION) {
+    stmts.deleteLineage(existing.snapshot_id);
+    stmts.deleteSnapshot(existing.snapshot_id);
+    existing = undefined;
+  }
+  if (existing) {
+    if (retireLeases) {
+      retireAbsentLeases(store.db, path, existing.snapshot_id, Date.now());
+    }
+    grantMaterializedLeases(store.db, leases, path, snapshotHash);
+    recordMaterializedMirror(store.db, servedMirror, path);
+    return existing.snapshot_id;
+  }
+  // WHY: survivors keep their exact `line_id`s (spec §3.2.4 step 1). The edit commit path hands
+  // WHY: in the working buffer's map, so its identities are taken verbatim (0% diffing); the
+  // WHY: read path has no working buffer, so there the engine pairs against S_latest. Either way
+  // WHY: only the lines left unidentified (the batch's inserted lines) take fresh ids.
+  const inherited = descriptor.lineIds
+    ? workingBufferIdentities(descriptor.lineIds, lines.length)
+    : pairAgainstLatest(store, path, lines).inherited;
+  let freshIds = 0;
+  for (let lineNumber = 1; lineNumber <= hashes.length; lineNumber++) {
+    if (!inherited.has(lineNumber)) freshIds++;
+  }
+  const startId = freshIds > 0 ? stmts.allocateLineIds(path, freshIds) : 0;
+  const insertedId = stmts.insertSnapshot(path, snapshotHash, lineCount, Date.now());
+  if (insertedId === undefined) {
+    // WHY: a concurrent writer committed `(path, snapshot_hash)` first (spec §3.2.4 step 3): the
+    // WHY: whole transaction — counter block included — is discarded and the canonical snapshot
+    // WHY: adopted, so no locally allocated id survives and no unique index is violated.
+    return undefined;
+  }
+  let nextFreshId = startId;
+  for (let i = 0; i < hashes.length; i++) {
+    const lineNumber = i + 1;
+    const lineId = inherited.get(lineNumber) ?? nextFreshId++;
+    stmts.insertLineage(insertedId, lineNumber, lineId, canonDigest(lines[i] ?? ""), hashes[i]!);
+  }
+  // WHY: `retireLeases` is `true` only for an authoritative materialization (spec §3.1.3): leases
+  // WHY: whose line_id is absent from the snapshot just committed are retired here, inside the same
+  // WHY: transaction, so the edit/resolve path stays strictly read-only.
+  if (retireLeases) {
+    retireAbsentLeases(store.db, path, insertedId, Date.now());
+  }
+  // WHY: the lease grant is step 5 of the materialization transaction (spec §3.1.2): the
+  // WHY: served leases commit with the snapshot and lineage, so a failure here rolls the
+  // WHY: lineage back instead of leaving committed identity without leases for content
+  // WHY: already served (read window, edit diff) or already on disk (undo restore).
+  grantMaterializedLeases(store.db, leases, path, snapshotHash);
+  // WHY: CAND-3: the served mirror is step 6 of the same transaction — the lease grant above
+  // WHY: and the mirror rows commit or roll back as one unit, so a torn store state
+  // WHY: (lease-without-mirror, mirror-without-lease) is structurally unreachable.
+  recordMaterializedMirror(store.db, servedMirror, path);
+  return insertedId;
+}
+/**
+ * Commits (or adopts) the canonical snapshot for `(path, snapshotHash)` in its own
+ * `BEGIN IMMEDIATE` and returns its id so the caller-owned vacuum can protect the in-flight row.
+ * `undefined` is unreachable at the outermost call: a conflict re-enters with `isConflictRetry` and
+ * throws if it cannot adopt a canonical row.
+ */
+function materializeSnapshot(
+  store: HashStore,
+  descriptor: SnapshotDescriptor,
+  plan: MaterializePlan,
+  isConflictRetry = false,
+): number | undefined {
+  let snapshotId = withBusyRetry(() => {
     store.db.exec("BEGIN IMMEDIATE");
     try {
-      const stmts = snapshotStmts(store.db);
-      // WHY: the pre-allocation snapshot cache guard (spec §3.2.4 step 2): a committed row for
-      // WHY: `(path, snapshot_hash)` already pins canonical `line_id`s. Adopting it here means a
-      // WHY: cyclical edit (`bar` -> `foo` -> `bar`) or an undo revert allocates ZERO counter ids and
-      // WHY: never reaches the UNIQUE (path, snapshot_hash) insert, so it cannot rewrite canonical
-      // WHY: lineage or waste surrogate ids. Retirement still runs: the adopted snapshot may predate
-      // WHY: leases the current content no longer covers.
-      let existing = stmts.findSnapshot(path, snapshotHash);
-      // WHY: provenance over key prefix — a poisoned row under a current-generation
-      // WHY: key is deleted, not adopted; the fresh insert below re-derives
-      // WHY: file-scoped anchors. Without this, every read would re-adopt and
-      // WHY: re-stamp the poison forever.
-      if (existing && existing.anchor_generation !== ANCHOR_GENERATION) {
-        stmts.deleteLineage(existing.snapshot_id);
-        stmts.deleteSnapshot(existing.snapshot_id);
-        existing = undefined;
-      }
-      if (existing) {
-        if (retireLeases) {
-          retireAbsentLeases(store.db, path, existing.snapshot_id, Date.now());
-        }
-        grantMaterializedLeases(store.db, leases, path, snapshotHash);
-        recordMaterializedMirror(store.db, servedMirror, path);
-        store.db.exec("COMMIT");
-        return existing.snapshot_id;
-      }
-      // WHY: survivors keep their exact `line_id`s (spec §3.2.4 step 1). The edit commit path hands
-      // WHY: in the working buffer's map, so its identities are taken verbatim (0% diffing); the
-      // WHY: read path has no working buffer, so there the engine pairs against S_latest. Either way
-      // WHY: only the lines left unidentified (the batch's inserted lines) take fresh ids.
-      const inherited = descriptor.lineIds
-        ? workingBufferIdentities(descriptor.lineIds, lines.length)
-        : pairAgainstLatest(store, path, lines).inherited;
-      let freshIds = 0;
-      for (let lineNumber = 1; lineNumber <= hashes.length; lineNumber++) {
-        if (!inherited.has(lineNumber)) freshIds++;
-      }
-      const startId = freshIds > 0 ? stmts.allocateLineIds(path, freshIds) : 0;
-      const insertedId = stmts.insertSnapshot(path, snapshotHash, lineCount, Date.now());
-      if (insertedId === undefined) {
-        // WHY: a concurrent writer committed `(path, snapshot_hash)` first (spec §3.2.4 step 3): the
-        // WHY: whole transaction — counter block included — is discarded and the canonical snapshot
-        // WHY: adopted, so no locally allocated id survives and no unique index is violated.
+      const id = materializeSnapshotInTxn(store, descriptor, plan);
+      if (id === undefined) {
         store.db.exec("ROLLBACK");
-        if (isConflictRetry) {
-          throw new Error(
-            `Unresolvable snapshot conflict for ${path} (${snapshotHash}): canonical row missing after conflict.`,
-          );
-        }
-        return materializeSnapshot(store, descriptor, plan, true);
+        return undefined;
       }
-      let nextFreshId = startId;
-      for (let i = 0; i < hashes.length; i++) {
-        const lineNumber = i + 1;
-        const lineId = inherited.get(lineNumber) ?? nextFreshId++;
-        stmts.insertLineage(
-          insertedId,
-          lineNumber,
-          lineId,
-          canonDigest(lines[i] ?? ""),
-          hashes[i]!,
-        );
-      }
-      // WHY: `retireLeases` is `true` only for an authoritative materialization (spec §3.1.3): leases
-      // WHY: whose line_id is absent from the snapshot just committed are retired here, inside the same
-      // WHY: transaction, so the edit/resolve path stays strictly read-only.
-      if (retireLeases) {
-        retireAbsentLeases(store.db, path, insertedId, Date.now());
-      }
-      // WHY: the lease grant is step 5 of the materialization transaction (spec §3.1.2): the
-      // WHY: served leases commit with the snapshot and lineage, so a failure here rolls the
-      // WHY: lineage back instead of leaving committed identity without leases for content
-      // WHY: already served (read window, edit diff) or already on disk (undo restore).
-      grantMaterializedLeases(store.db, leases, path, snapshotHash);
-      // WHY: CAND-3: the served mirror is step 6 of the same transaction — the lease grant above
-      // WHY: and the mirror rows commit or roll back as one unit, so a torn store state
-      // WHY: (lease-without-mirror, mirror-without-lease) is structurally unreachable.
-      recordMaterializedMirror(store.db, servedMirror, path);
       store.db.exec("COMMIT");
-      return insertedId;
+      return id;
     } catch (error) {
       try {
         store.db.exec("ROLLBACK");
@@ -636,6 +646,16 @@ function materializeSnapshot(
       throw error;
     }
   });
+  if (snapshotId === undefined) {
+    // WHY: a concurrent writer committed the canonical row between our ROLLBACK and now (spec §3.2.4
+    // WHY: step 3) — one re-entry adopts it; a second miss is a store invariant violation.
+    if (isConflictRetry) {
+      throw new Error(
+        `Unresolvable snapshot conflict for ${descriptor.path} (${descriptor.snapshotHash}): canonical row missing after conflict.`,
+      );
+    }
+    snapshotId = materializeSnapshot(store, descriptor, plan, true);
+  }
   // WHY: a fresh commit is exactly when a path's retention window can overflow, so the vacuum runs
   // WHY: after the transaction (never inside it — it owns `BEGIN IMMEDIATE`). The retry recursion
   // WHY: above skips this so one materialization vacuums once, and a vacuum failure can never fail
@@ -656,6 +676,87 @@ function materializeSnapshot(
     }
   }
   return snapshotId;
+}
+
+/**
+ * One file's materialization ask in a multi-file batch: the descriptor to commit and the options that
+ * grant its served leases inside the same transaction.
+ */
+export interface SnapshotEnrollment {
+  descriptor: SnapshotDescriptor;
+  options?: HashSnapshotUpsertOptions;
+}
+
+/**
+ * Enrolls several files' materializations in ONE `BEGIN IMMEDIATE`: every descriptor's snapshot +
+ * lineage + retirement + lease grant commits or rolls back as a unit, so a multi-file read can never
+ * lease anchors for one file while losing another file's snapshot.
+ *
+ * A conflict on any descriptor rolls the whole batch back and re-enters once, which then adopts the
+ * canonical rows the concurrent writer committed (see `materializeSnapshotInTxn`).
+ */
+function materializeBatch(
+  store: HashStore,
+  descriptors: readonly SnapshotDescriptor[],
+  plans: readonly MaterializePlan[],
+  isConflictRetry = false,
+): number[] {
+  const snapshotIds = withBusyRetry(() => {
+    store.db.exec("BEGIN IMMEDIATE");
+    try {
+      const committed: number[] = [];
+      for (const [index, descriptor] of descriptors.entries()) {
+        const id = materializeSnapshotInTxn(store, descriptor, plans[index]!);
+        if (id === undefined) {
+          store.db.exec("ROLLBACK");
+          return undefined;
+        }
+        committed.push(id);
+      }
+      store.db.exec("COMMIT");
+      return committed;
+    } catch (error) {
+      try {
+        store.db.exec("ROLLBACK");
+      } catch (rollbackError: unknown) {
+        // SAFETY: best-effort rollback — the original failure is authoritative.
+        console.error("[snapshot-store] failed to rollback batch transaction:", rollbackError);
+      }
+      throw error;
+    }
+  });
+  if (snapshotIds === undefined) {
+    if (isConflictRetry) {
+      throw new Error(
+        `Unresolvable snapshot conflict for ${descriptors.map((entry) => entry.path).join(", ")}: canonical row missing after conflict.`,
+      );
+    }
+    return materializeBatch(store, descriptors, plans, true);
+  }
+  try {
+    const vacuumResult = vacuumSnapshots(store.db, { protectSnapshotIds: snapshotIds });
+    reportVacuumSoftOverflow(store.db, vacuumResult);
+  } catch (error) {
+    // SAFETY: best-effort retention — the batch is committed and the tool result is valid; a missed
+    // SAFETY: pass only defers eviction to the next materialization or store open.
+    console.error("[snapshot-store] vacuum failed:", error);
+  }
+  return snapshotIds;
+}
+
+export function upsertSnapshots(store: HashStore, entries: readonly SnapshotEnrollment[]): void {
+  materializeBatch(
+    store,
+    entries.map((entry) => entry.descriptor),
+    entries.map((entry) => planFor(entry.options)),
+  );
+}
+
+/** Enrolls every entry's snapshot, lineage, retirement and lease grant in ONE transaction. */
+export async function upsertSnapshotsFor(entries: readonly SnapshotEnrollment[]): Promise<void> {
+  if (entries.length === 0) return;
+  const store = await loadHashStore();
+  upsertSnapshots(store, entries);
 }
 
 export function snapshotIOFor(store: HashStore): HashSnapshotIO {

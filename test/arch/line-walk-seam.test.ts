@@ -75,7 +75,7 @@ describe("the verbatim page never materializes the line array", () => {
         return result.content[0]?.text ?? "";
       };
       await expect(run({ limit: 2 })).resolves.toBe(
-        "alpha\nbeta\n\n[Showing lines 1-2 of 4. Use offset=3 to continue.]",
+        "[plain.txt (verbatim, 4 lines, no anchors)]\nalpha\nbeta\n\n[plain.txt lines 1-2 of 4. Use windows: [{ offset: 3, limit: 2 }] to continue.]",
       );
       await expect(
         run({
@@ -84,7 +84,9 @@ describe("the verbatim page never materializes the line array", () => {
             { offset: 4, limit: 1 },
           ],
         }),
-      ).resolves.toBe("=== Lines 2-2 of 4 ===\nbeta\n\n=== Lines 4-4 of 4 ===\ndelta");
+      ).resolves.toBe(
+        "[plain.txt (verbatim, 4 lines, no anchors)]\n=== Lines 2-2 of 4 ===\nbeta\n\n=== Lines 4-4 of 4 ===\ndelta",
+      );
       await expect(run({ offset: 9, limit: 1 })).resolves.toContain(
         "Offset 9 is beyond end of file (4 lines total)",
       );
@@ -103,7 +105,9 @@ describe("the verbatim page never materializes the line array", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0]?.text).toBe("[File is empty.]");
+      expect(result.content[0]?.text).toBe(
+        "[empty.txt (verbatim, 0 lines, no anchors)]\n[File is empty.]",
+      );
       expect(splitCalls).toEqual([]);
     });
   });
@@ -125,7 +129,7 @@ describe("the served page never materializes the line array", () => {
         return result.content[0]?.text ?? "";
       };
       await expect(run({ limit: 2 })).resolves.toMatch(
-        /^\w{4}│alpha\n\w{4}│beta\n\n\[Showing lines 1-2 of 4\. Use offset=3 to continue\.\]$/,
+        /^\[plain\.txt \(4 lines total\)\]\n\w{4}│alpha\n\w{4}│beta\n\n\[plain\.txt lines 1-2 of 4\. Use windows: \[\{ offset: 3, limit: 2 \}\] to continue\.\]$/,
       );
       await expect(
         run({
@@ -135,7 +139,7 @@ describe("the served page never materializes the line array", () => {
           ],
         }),
       ).resolves.toMatch(
-        /^=== Lines 2-2 of 4 ===\n\w{4}│beta\n\n=== Lines 4-4 of 4 ===\n\w{4}│delta$/,
+        /^\[plain\.txt \(4 lines total\)\]\n=== Lines 2-2 of 4 ===\n\w{4}│beta\n\n=== Lines 4-4 of 4 ===\n\w{4}│delta$/,
       );
       await expect(run({ offset: 9, limit: 1 })).resolves.toContain(
         "Offset 9 is beyond end of file (4 lines total)",
@@ -158,7 +162,7 @@ describe("the served page never materializes the line array", () => {
       const { readTool, ctx } = setupReadTest(cwd);
       const result = await readTool.execute("s1", { file: "empty.txt" }, undefined, undefined, ctx);
       expect(result.content[0]?.text).toMatch(
-        /^\w{4}│\n\[File is empty\. Use edit to insert content\.\]$/,
+        /^\[empty\.txt \(0 lines total\)\]\n\w{4}│\n\[File is empty\. Use edit to insert content\.\]$/,
       );
       expect(splitCalls.length).toBe(callsFromSnapshotStore().length);
     });

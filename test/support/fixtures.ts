@@ -231,9 +231,17 @@ export function setupReadTest(cwd: string) {
 export function getText(result: { content: Array<{ text?: string }> }): string {
   return result.content[0]?.text ?? "";
 }
-
 export function extractHash(line: string): string {
   return line.split("│")[0]!;
+}
+
+/**
+ * The served rows of a read result: every `HASH│content` line, with the per-file header (spec §4.4)
+ * and any inline warning left out. WHY: a test that read `split("\n")[N]` or counted its length was
+ * addressing rows, and the header is chrome, not a row.
+ */
+export function anchorRows(text: string): string[] {
+  return text.split("\n").filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
 }
 
 export function expectedEditContent(

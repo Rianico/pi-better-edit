@@ -100,7 +100,11 @@ describe("served-rows tool_result handler", () => {
       expect(result).toBeDefined();
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content).toHaveLength(1);
-      expect(content[0]!.text).toBe(editResult.details.diff);
+      // Re-pointed for I4 (spec §5): the model-visible text is the summary line, a blank line, then
+      // the anchored diff — and the handler reproduces exactly the tool's own content text.
+      expect(content[0]!.text).toMatch(/^Successfully edited [^\n]*\n\n/);
+      expect(content[0]!.text).toMatch(/^[ +-][A-Za-z0-9]{4}│/m);
+      expect(content[0]!.text).toBe(editResult.content[0]!.text);
 
       const servedAfter = getServed(store, "test-session", filePath);
       expect(servedAfter).toEqual(overlay(editResult.details.servedRows, servedBefore));

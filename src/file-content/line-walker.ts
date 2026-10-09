@@ -91,3 +91,28 @@ export function walkLines(
 export function visibleLineTotal(text: string, total: number): number {
   return text === "" ? 0 : total;
 }
+
+/**
+ * Merges overlapping or contiguous ranges into disjoint, ascending ranges.
+ *
+ * WHY: a multi-window request is several asks over one line space, and asks can overlap or abut
+ * (a shared line, `1-3` next to `4-6`). Retention is the walk's only per-range cost, so a caller
+ * that merged first walks the union once and re-slices it per requested window afterwards.
+ * Empty ranges carry nothing and are dropped; a negative start reads like 0 (see `LineRange`).
+ */
+export function mergeRanges(ranges: readonly LineRange[]): LineRange[] {
+  const sorted = ranges
+    .filter((range) => range.end > range.start)
+    .map((range) => ({ start: Math.max(0, range.start), end: range.end }))
+    .sort((left, right) => left.start - right.start || left.end - right.end);
+  const merged: LineRange[] = [];
+  for (const range of sorted) {
+    const last = merged[merged.length - 1];
+    if (last && range.start <= last.end) {
+      if (range.end > last.end) last.end = range.end;
+      continue;
+    }
+    merged.push({ start: range.start, end: range.end });
+  }
+  return merged;
+}

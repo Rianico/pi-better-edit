@@ -9,7 +9,7 @@ import {
   clearServedRefusals,
 } from "../hashline/index.js";
 import { splitLines } from "../utils.js";
-import { denseServeRows } from "../hashline/served.js";
+import { denseServeRows, fmtServedRows, type ServedRow } from "../hashline/served.js";
 import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served-spans.js";
 import { notifyMutatedFile } from "../mutated-files.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
@@ -45,7 +45,13 @@ import { valAccess as defaultValAccess } from "../validation.js";
 import { visLines as defaultVisLines } from "../utils.js";
 import { fmtReadPreview as defaultFmtReadPreview } from "../read.js";
 import { finalizeToolResult as defaultFinalizeToolResult } from "../edit-response.js";
-import { AUTO_READ_MAX, MAX_READ_WINDOWS, SERVED_MAX_LINES } from "../constants.js";
+import {
+  AUTO_READ_MAX,
+  MAX_READ_WINDOWS,
+  SEARCH_MAX_MATCHES,
+  SERVED_MAX_LINES,
+} from "../constants.js";
+import type { BashSearch } from "../bash-classifier.js";
 import type { LifecycleDeps, ToolContext, ToolResultEvent } from "./types.js";
 
 export type { ToolContext, ToolResultEvent, LifecycleDeps } from "./types.js";
@@ -66,6 +72,30 @@ function defaultDeps(): LifecycleDeps {
     finalizeToolResult: defaultFinalizeToolResult,
     visLines: defaultVisLines,
   };
+}
+
+/** `grep -n`/`rg --line-number` stdout row: a 1-indexed line number, a colon, the matched text. */
+const SEARCH_STDOUT_LINE = /^(\d+):([\s\S]*)$/;
+
+/**
+ * Parse the `LINE:content` rows of a line-numbered single-file search. Fails closed (`undefined`)
+ * unless every row is a match row, so a filename prefix, a context header, a match count or any
+ * other `grep`/`rg` shape is never mistaken for the admitted geometry. The only empty line
+ * tolerated is the trailing newline every search emits.
+ */
+function parseSearchStdout(observed: string): Array<{ line: number; content: string }> | undefined {
+  const lines = observed.split("\n");
+  if (lines.length > 0 && lines[lines.length - 1] === "") lines.pop();
+  if (lines.length === 0) return undefined;
+  const matches: Array<{ line: number; content: string }> = [];
+  for (const text of lines) {
+    const parsed = SEARCH_STDOUT_LINE.exec(text);
+    if (!parsed) return undefined;
+    const line = Number(parsed[1]);
+    if (!Number.isSafeInteger(line) || line < 1) return undefined;
+    matches.push({ line, content: parsed[2] });
+  }
+  return matches;
 }
 
 /**
@@ -434,6 +464,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     try {
       const { classifyBashCommand, applySliceOps } = await import("../bash-classifier.js");
       const classification = classifyBashCommand(command);
+      if (classification.kind === "pureSearch") {
+        return await handleBashSearch(event, ctx, classification.search);
+      }
       if (classification.kind !== "pureView") {
         // WHY: (ADR-0033 observability) a systematic regression (parser drift, a
         // WHY: filtering wrapper, a new view shape) is otherwise indistinguishable
@@ -490,6 +523,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       const sliceLines: string[] = [];
       for (const iv of intervals) sliceLines.push(...allLines.slice(iv.lo - 1, iv.hi));
       const joinedSlice = sliceLines.join("\n");
+      // D1/D9, amended 2026-10-09 (commit 7b78278): See ADR-0033. This site
+      // WHY: implements D9's symmetric CRLF/BOM normalization here; D1's
+      // WHY: `;`-chain gate lives in the classifier.
       const observedText = toLF(stripBOM(stdoutText).text);
       if (observedText !== joinedSlice && observedText !== `${joinedSlice}\n`) return undefined;
       const preview = await deps.fmtReadPreview(
@@ -539,6 +575,89 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       console.error("Bash view interception failed:", error);
       return undefined;
     }
+  }
+
+  /**
+   * [spec §3.4] The `tool_result` half of search interception: parse the `LINE:content` stdout of an
+   * already-rewritten search, verify every match against the disk bytes (D9), then swap the raw
+   * match list for anchored rows and synchronously enroll their leases.
+   *
+   * WHY the stdout is normalized rather than rejected: `grep` emits the disk bytes, so a CRLF file
+   * yields `5:line5\r` while `readNormFile` — and the anchors served here — describe LF/no-BOM text.
+   * `toLF(stripBOM(...))` is exactly the D9 normalization `handleBash` applies to a view, which
+   * keeps both seams consistent on the files the model inspects through bash.
+   *
+   * Every gate fails closed to `undefined` (raw bash output untouched): a non-zero exit or zero
+   * matches, an unparsable row, more than `SEARCH_MAX_MATCHES` rows, a byte mismatch on any line, or
+   * a line the hash array does not cover. Truncating or partially leasing would serve anchors for
+   * lines the model never saw.
+   */
+  async function handleBashSearch(
+    event: ToolResultEvent,
+    ctx: ToolContext,
+    search: BashSearch,
+  ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
+    // WHY: exactly one text block, the same attribution rule the view path applies — a search whose
+    // WHY: stdout is split or non-text cannot be proven to be this command's output.
+    const stdoutBlock = Array.isArray(event.content) ? event.content : undefined;
+    const stdoutText =
+      stdoutBlock?.length === 1 && stdoutBlock[0]?.type === "text"
+        ? stdoutBlock[0].text
+        : undefined;
+    if (typeof stdoutText !== "string") return undefined;
+    const matches = parseSearchStdout(toLF(stripBOM(stdoutText).text));
+    if (matches === undefined || matches.length === 0) return undefined;
+    if (matches.length > SEARCH_MAX_MATCHES) return undefined;
+    // WHY: the single pre-search literal `cd` re-bases relative resolution under the same rule as a
+    // WHY: view (ADR-0033 D1); multi-`cd` and post-search-`cd` chains never reach here.
+    const effCwd = search.baseDir === undefined ? ctx.cwd : deps.toCwd(search.baseDir, ctx.cwd);
+    const resolvedPath = await deps.resolveTarget(deps.toCwd(search.filePath, effCwd));
+    await deps.valAccess(resolvedPath, search.filePath);
+    // WHY: the pure classifier cannot see the filesystem, so the single-operand target is re-checked
+    // WHY: here: a directory (or anything not decodable text) fails closed instead of being anchored.
+    const file = await deps.loadFileKindAndText(resolvedPath, {
+      maxLines: SERVED_MAX_LINES,
+      displayPath: search.filePath,
+    });
+    if (file.kind !== "text") return undefined;
+    const { normalized, fileHashes, absolutePath } = await deps.readNormFile(
+      search.filePath,
+      effCwd,
+      {
+        maxLines: SERVED_MAX_LINES,
+        preloadedFile: file,
+      },
+    );
+    const diskLines = deps.visLines(normalized);
+    const servedRows: ServedRow[] = [];
+    for (const { line, content } of matches) {
+      // WHY: [ADR-0033 D9] byte equality per matched line — the witness that the anchored row is the
+      // WHY: line bash printed. A stale/forged/stdout-only line fails closed with no lease.
+      if (diskLines[line - 1] !== content) return undefined;
+      const hash = fileHashes[line - 1];
+      if (hash === undefined) return undefined;
+      servedRows.push({ position: line - 1, hash });
+    }
+    const sessionKey = deps.sessionKeyFor(ctx);
+    await recordServesBestEffort({
+      sessionKey,
+      path: absolutePath,
+      servedRows,
+      contentHash: snapshotHashFor(normalized),
+    });
+    notifyServedSpans({
+      filePath: absolutePath,
+      spans: servedRowsToSpans(servedRows),
+      source: "auto-read",
+      content: normalized,
+    });
+    // WHY: the header is frozen (spec §3.4): the same `--- Bash search (hashline anchors) ---` literal
+    // WHY: names the interception seam, and the bracketed count uses the singular for one match.
+    const count = servedRows.length;
+    const header = `--- Bash search (hashline anchors) ---\n[${search.filePath} (${count} ${count === 1 ? "match" : "matches"})]`;
+    return {
+      content: [{ type: "text", text: `${header}\n${fmtServedRows(servedRows, diskLines)}` }],
+    };
   }
 
   async function handleToolResult(

@@ -49,6 +49,31 @@ describe("file kind guards in tools", () => {
     });
   });
 
+  it("discloses non-printable control characters verbatim instead of escaping them (I2)", async () => {
+    const bytes = Buffer.from("alpha\n\u0007beta\u001b\ncharlie\n", "utf-8");
+    await withTempBytes("controls.txt", bytes, async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+
+      const readResult = await readTool.execute(
+        "r1",
+        { file: "controls.txt" },
+        undefined,
+        undefined,
+        ctx,
+      );
+      const text = readResult.content[0].text as string;
+
+      // The bytes stay verbatim: the raw controls are emitted, never an escaped form.
+      expect(text).toContain("\u0007beta\u001b");
+      expect(text).not.toContain("\\x07");
+      expect(text).not.toContain("\\u001b");
+
+      // The notice names the invisible characters the rows carry.
+      expect(text).toContain("2 non-printable control characters present: U+0007, U+001B");
+      expect(text).toContain("shown verbatim");
+    });
+  });
+
   it("edit rejects binary files with descriptive error", async () => {
     const bytes = new Uint8Array([
       0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d, 0x49, 0x48, 0x44,
