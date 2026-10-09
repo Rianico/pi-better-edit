@@ -14,6 +14,7 @@ import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served
 import { notifyMutatedFile } from "../mutated-files.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
+import { stripBOM, toLF } from "../edit-diff.js";
 import {
   createSessionHandle,
   sessionKeyFor as defaultSessionKeyFor,
@@ -409,6 +410,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     // WHY: read it structurally. A truncated stdout means the model did NOT see
     // WHY: the whole file, so replacing it with anchored lines would invent
     // WHY: viewed lines: fail closed.
+    // SAFETY: the runtime hands bash a `BashToolDetails`, while the event type
+    // SAFETY: declares `EditDetails` for every tool. The assertion only widens the
+    // SAFETY: read to an optional `truncation`; the guard below re-checks the shape
+    // SAFETY: structurally before either field is touched.
+
     const bashDetails = event.details as unknown as { truncation?: unknown } | undefined;
     if (bashDetails && typeof bashDetails === "object" && bashDetails.truncation != null) {
       return undefined;
@@ -453,9 +459,14 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: this is what makes transparent wrappers (e.g. `rtk`) safe by
       // WHY: construction instead of by reputation. A filtering wrapper, a
       // WHY: numbering wrapper, TOCTOU drift between exec and re-read, or any
-      // WHY: encoding skew (CRLF, BOM, undecodable bytes) fails closed to
-      // WHY: pass-through. Exactly one text block is required — anything else
-      // WHY: (multi-block, non-text) cannot be attributed to the view.
+      // WHY: skew the re-read does not normalize (undecodable bytes, a reordered
+      // WHY: row, an edited line) still fails closed to pass-through. Line-ending
+      // WHY: and BOM skew is normalized instead of rejected: `cat` emits the disk
+      // WHY: bytes while `readNormFile` — and therefore the anchors below —
+      // WHY: describes the LF/no-BOM text, so comparing raw stdout would drop
+      // WHY: anchors on exactly the CRLF and BOM files the model views via bash.
+      // WHY: Exactly one text block is required — anything else (multi-block,
+      // WHY: non-text) cannot be attributed to the view.
       // WHY: Trailing-newline-only leniency: `joined` vs `joined + "\n"`.
       const stdoutBlock = Array.isArray(event.content) ? event.content : undefined;
       const stdoutText =
@@ -467,7 +478,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       const sliceLines: string[] = [];
       for (const iv of intervals) sliceLines.push(...allLines.slice(iv.lo - 1, iv.hi));
       const joinedSlice = sliceLines.join("\n");
-      if (stdoutText !== joinedSlice && stdoutText !== `${joinedSlice}\n`) return undefined;
+      const observedText = toLF(stripBOM(stdoutText).text);
+      if (observedText !== joinedSlice && observedText !== `${joinedSlice}\n`) return undefined;
       const preview = await deps.fmtReadPreview(
         normalized,
         { windows: intervals.map((iv) => ({ offset: iv.lo, limit: iv.hi - iv.lo + 1 })) },

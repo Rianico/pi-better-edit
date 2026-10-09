@@ -428,4 +428,171 @@ describe("bash view lifecycle", () => {
       ).toBeUndefined();
     });
   });
+
+  it("anchors a CRLF file viewed through bash (line-ending normalization)", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      // WHY: `cat` emits the disk bytes (CRLF) while `readNormFile` — and the
+      // WHY: anchors below — describe the LF text, so the stdout comparison must
+      // WHY: normalize line endings instead of failing closed on exactly the
+      // WHY: files the model views through bash.
+      const crlf = numberedLines(5).replace(/\n/g, "\r\n");
+      await writeFile(join(dir, "f.txt"), crlf, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-crlf" } };
+
+      const result = await bashResult(handler!, "cat f.txt", ctx, crlf);
+      expect(result).toBeDefined();
+      const rows = rowsOf(result!.content[0]!.text);
+      expect(rows).toHaveLength(5);
+
+      const followUp = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line2"),
+              anchor_to: anchorFor(rows, "line2"),
+              text: "LINE2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(followUp.isError).toBeFalsy();
+    });
+  });
+
+  it("anchors a BOM file viewed through bash (BOM normalization)", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      // WHY: a leading BOM is stripped by `readNormFile`, so a BOM file has to
+      // WHY: compare equal to its own stdout after the same strip — otherwise
+      // WHY: the anchors describe text the byte gate refuses to serve.
+      const withBom = `\uFEFF${numberedLines(5)}`;
+      await writeFile(join(dir, "f.txt"), withBom, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-bom" } };
+
+      const result = await bashResult(handler!, "cat f.txt", ctx, withBom);
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      const rows = rowsOf(text);
+      expect(rows).toHaveLength(5);
+      // WHY: rows come from the normalized (BOM-free) text — the same anchors
+      // WHY: the read path serves for the same file.
+      expect(text).not.toContain("\uFEFF");
+
+      const followUp = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line3"),
+              anchor_to: anchorFor(rows, "line3"),
+              text: "LINE3",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(followUp.isError).toBeFalsy();
+    });
+  });
+
+  it("still fails closed when a CRLF/BOM view differs beyond its encoding", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      // WHY: normalization covers line endings and a BOM only. An added row, a
+      // WHY: changed row, or undecodable bytes must still fail closed, so the
+      // WHY: gate stays a byte check and not a fuzzy match (ADR-0033 D9).
+      const crlf = numberedLines(5).replace(/\n/g, "\r\n");
+      await writeFile(join(dir, "crlf.txt"), crlf, "utf-8");
+      await writeFile(join(dir, "bom.txt"), `\uFEFF${numberedLines(5)}`, "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const ctx = {
+        cwd: dir,
+        sessionManager: { getSessionId: () => "bash-view-encoding-strict" },
+      };
+
+      expect(await bashResult(handler!, "cat crlf.txt", ctx, `${crlf}extra\r\n`)).toBeUndefined();
+      expect(
+        await bashResult(handler!, "cat bom.txt", ctx, `\uFEFF${numberedLines(5)}extra\n`),
+      ).toBeUndefined();
+      expect(
+        await bashResult(handler!, "cat crlf.txt", ctx, numberedLines(5).replace("line3", "LINE3")),
+      ).toBeUndefined();
+    });
+  });
+
+  it("anchors a `;`-chained silent prefix view and gates `pwd` prefixes on stdout", async () => {
+    await withTempDir("bash-view-", async (dir) => {
+      await mkdir(join(dir, "sub"), { recursive: true });
+      const content = numberedLines(5);
+      await writeFile(join(dir, "sub", "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-semicolon" } };
+
+      // WHY: `cd sub; cat f.txt` is the benchmark spelling of the pre-view `cd`
+      // WHY: that `&&` already supports — the terminal statement carries the view.
+      const result = await bashResult(handler!, "cd sub; cat f.txt", ctx, content);
+      expect(result).toBeDefined();
+      expect(rowsOf(result!.content[0]!.text)).toHaveLength(5);
+
+      // WHY: `pwd` is admitted as a prefix, but it prints the working directory,
+      // WHY: so D9 refuses the lease: the admitted shape can never mis-serve.
+      const pwdCtx = {
+        cwd: dir,
+        sessionManager: { getSessionId: () => "bash-view-semicolon-pwd" },
+      };
+      expect(
+        await bashResult(handler!, "pwd; cat sub/f.txt", pwdCtx, `${dir}\n${content}`),
+      ).toBeUndefined();
+
+      // WHY: a prefix `cd` that fails at runtime must lease nothing. bash viewed
+      // WHY: `./f.txt` (the `cd` failed and `;` does not short-circuit), the
+      // WHY: classifier resolves `missing/f.txt`, and the byte-identical decoy
+      // WHY: proves no wrong-file grant slipped through the D9 byte gate.
+      const decoy = numberedLines(5);
+      await writeFile(join(dir, "f.txt"), decoy, "utf-8");
+      const missCtx = {
+        cwd: dir,
+        sessionManager: { getSessionId: () => "bash-view-semicolon-miss" },
+      };
+      expect(await bashResult(handler!, "cd missing; cat f.txt", missCtx, decoy)).toBeUndefined();
+      const decoyHashes = await lineHashes(decoy, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e9",
+          {
+            file: "f.txt",
+            edits: [
+              {
+                anchor_from: decoyHashes[0]!,
+                anchor_to: decoyHashes[0]!,
+                text: "LINE1",
+              },
+            ],
+          },
+          undefined,
+          undefined,
+          missCtx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
 });

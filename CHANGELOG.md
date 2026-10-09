@@ -8,6 +8,9 @@
 ### Code Refactoring
 * **errors:** revise all `E_*`/`W_*` refusal texts to concise single-fact STE100 sentences with structured bullets for batch failures and overlaps, and teach `mode: "literal"` on the refusal surface — no behavior change. (#61)
 
+### Bug Fixes
+
+* **bash-view:** normalize CRLF line endings and strip BOM from observed `bash` stdout before the D9 byte-equality gate, and admit semicolon-chained deterministic silent prefixes (literal-operand `cd`, `pwd`, `true`, `:`) before a terminal view — fail-closed on all other output preserved. (#68)
 ## [2.9.0] - 2026-10-08
 
 ### Features
