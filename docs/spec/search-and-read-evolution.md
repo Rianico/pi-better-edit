@@ -70,7 +70,7 @@ Model issues: { command: "grep 'function' src/app.ts" }
   - Output-altering: `-c/--count`, `-v/--invert-match`, `-o/--only-matching`, `-A/-B/-C` (context), `-l/-L` (file list), `--color`, `-m/--max-count`, `-q/-s` (silent), `-w/-x` (word/line match), `-b` (byte offset), `-H/-h/--with-filename/--no-filename`.
   - `rg`-specific: `--column`, `--heading/--no-heading`, `-N/--no-line-number`, `--json`, `--stats`, `--files`, `-r/--replace`, `-0/--null`, `--vimgrep`.
   - Structural: Pipelines (`|`), redirections (`>`), subshells, compounds (`&&`, `||`), background jobs (`&`).
-  - Target operands: Must have exactly **one file operand**. No recursive directory flags (`-r`, `-R`), globs (`*`), tildes (`~`), or directories.
+  - Target operands: Must have exactly **one file operand**. No recursive directory flags (`-r`, `-R`), globs (`*`), tildes (`~`), or directories. (Note: Because the rewriter in `tool_call` is pure and performs no filesystem I/O, a directory operand is rewritten with `-n` then refused fail-closed at `tool_result` with byte-identical raw output and zero leases).
 
 ### 3.3 Flag Injection Rules (`tool_call` Hook)
 - The rewrite function in `bash-classifier.ts` must be a pure, unit-tested function with zero filesystem dependencies.
