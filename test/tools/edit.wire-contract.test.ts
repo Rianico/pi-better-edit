@@ -92,6 +92,8 @@ describe("Edit wire contract — admission (finite key-set gate)", () => {
         },
       ]),
       'carries both "text" and "text_ref"',
+      'Keep "text" and delete "text_ref"',
+      'keep "text_ref" and delete "text"',
     );
   });
 
@@ -977,6 +979,86 @@ describe("Edit wire contract — resolved-path aliasing of the same file (§9.4)
       await expect(readFile(`${cwd}/sample.txt`, "utf-8")).resolves.toBe("c\nd\na\nb\n");
       expect(result.raw.removedHashes.has(h[0]!)).toBe(true);
       expect(result.raw.removedHashes.has(h[1]!)).toBe(true);
+    });
+  });
+});
+
+// WHY: (ticket-67) strict structured-output harnesses spell "absent" as an explicit null
+// WHY: (every property required). The four optional slots (`text`, `text_ref`, `at`, root
+// WHY: `mode`) read null/undefined as absent at admission — one predicate, so the gate, the
+// WHY: validators and the normalizers cannot disagree. The XOR contract stands: two genuine
+// WHY: payloads are still refused, and a null on both sides is still no payload.
+describe("Edit wire contract — null reads as absent (ticket-67)", () => {
+  it('admits { text: "T", text_ref: null } as a literal and normalizes to the text', () => {
+    const admitted = admit(
+      req([{ anchor_from: "a1B", anchor_to: "c2D", text: "T", text_ref: null }]),
+    );
+    expect(admitted.edits).toHaveLength(1);
+    expect(admitted.edits[0]).toMatchObject({
+      target: { anchor_from: "a1B", anchor_to: "c2D" },
+      at: "in-place",
+      payload: { kind: "literal", text: "T" },
+    });
+  });
+
+  it("admits { text: null, text_ref: { … } } as a reference", () => {
+    const admitted = admit(
+      req([
+        {
+          anchor_from: "a1B",
+          anchor_to: "c2D",
+          text: null,
+          text_ref: { anchor_from: "x", anchor_to: "y", mode: "copy" },
+        },
+      ]),
+    );
+    expect(admitted.edits).toHaveLength(1);
+    expect(admitted.edits[0]!.payload).toMatchObject({ kind: "reference", mode: "copy" });
+  });
+
+  it('admits { text: "T", text_ref: undefined } as a literal', () => {
+    const admitted = admit(
+      req([{ anchor_from: "a1B", anchor_to: "c2D", text: "T", text_ref: undefined }]),
+    );
+    expect(admitted.edits[0]!.payload).toMatchObject({ kind: "literal", text: "T" });
+  });
+
+  it('admits { text: "T", at: null } with the default placement', () => {
+    const admitted = admit(req([{ anchor_from: "a1B", anchor_to: "c2D", text: "T", at: null }]));
+    expect(admitted.edits[0]).toMatchObject({
+      at: "in-place",
+      payload: { kind: "literal", text: "T" },
+    });
+  });
+
+  it("admits a root mode: null as absent with no mode key on the normalized request", () => {
+    const admitted = admit({
+      file: "sample.txt",
+      mode: null,
+      edits: [{ anchor_from: "a1B", anchor_to: "c2D", text: "T" }],
+    });
+    expect("mode" in admitted).toBe(false);
+    expect(admitted.edits[0]!.payload).toMatchObject({ kind: "literal", text: "T" });
+  });
+
+  it("still refuses { text: null } alone as carrying no payload", () => {
+    expectBadPayload(
+      req([{ anchor_from: "a1B", anchor_to: "c2D", text: null }]),
+      "carries no payload",
+    );
+  });
+
+  it("a text edit carrying text_ref: null performs the write", async () => {
+    await withTempFile("sample.txt", "a\nb\nc\n", async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const h = await lineHashes("a\nb\nc\n", join(cwd, "sample.txt"));
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
+      const raw = req([{ anchor_from: h[1]!, anchor_to: h[1]!, text: "B", text_ref: null }]);
+      const result = await execute(admit(raw), cwd, { sessionKey: TEST_SESSION_ID });
+      expect(isMutationSuccess(result)).toBe(true);
+      if (!isMutationSuccess(result)) return;
+      expect(result.result).toBe("a\nB\nc\n");
+      await expect(readFile(`${cwd}/sample.txt`, "utf-8")).resolves.toBe("a\nB\nc\n");
     });
   });
 });
