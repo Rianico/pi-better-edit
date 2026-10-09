@@ -22,7 +22,7 @@ This specification unifies search and read into a cohesive, deterministic, line-
 
 ## 2. P3.1 ADR-0033 Documentation Amendment
 
-Before merging, `docs/adr/0033-bash-view-anchoring.md` will be amended to eliminate documentation drift:
+Before merging, `docs/adr/0033-bash-view-interception.md` will be amended to eliminate documentation drift:
 - **Status Header**: Record amendment notice referencing commit `7b78278`.
 - **Decision 1 (D1)**: Record semicolon-separated silent prefix chains (`isSemicolonStatementChain` with literal `;` separation and pre-view literal `cd <dir>;` re-basing).
 - **Decision 9 (D9)**: Replace CRLF/BOM fail-closed wording with symmetric normalization (`toLF(stripBOM(stdoutText))` compared against `joinedSlice`).
@@ -168,7 +168,7 @@ export const ReadParamsSchema = Type.Object({
 - `content[0].text` returns: `<summary_line>\n\n<anchored_diff_text>`.
 - `details.diff` remains intact for UI presentation clients.
 - Newly modified lines are already admitted synchronously in `servedRows` before returning to the model, ensuring zero-round-trip subsequent edits.
-- Enforces the #174 collapse invariant (`SERVED_ROWS_CAP`, deleted-span counting) to prevent token bloat.
+- Enforces the #174 collapse invariant (`DIFF_REMOVED_CAP`, `DIFF_REMOVED_EDGE`, deleted-span counting) to prevent token bloat.
 
 ---
 
