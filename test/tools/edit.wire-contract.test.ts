@@ -1062,3 +1062,82 @@ describe("Edit wire contract — null reads as absent (ticket-67)", () => {
     });
   });
 });
+
+// WHY: (ticket-75) the #67 fold stopped at the item's own slots: `text_ref.file` is optional one
+// WHY: level down, and a strict structured-output harness spells an omitted optional property as an
+// WHY: explicit null, so the refusal named a rule the harness could not obey. The fold reaches it
+// WHY: now, while the REQUIRED nested slots (`mode`, both anchors) keep refusing — this block pins
+// WHY: both halves of that distinction, so neither can drift into the other silently.
+describe("Edit wire contract — nested text_ref nulls (ticket-75)", () => {
+  it("admits text_ref.file: null as absent and drops the key rather than carrying null", () => {
+    const admitted = admit(
+      req([
+        {
+          anchor_from: "a1B",
+          anchor_to: "c2D",
+          text_ref: { anchor_from: "x", anchor_to: "y", mode: "copy", file: null },
+        },
+      ]),
+    );
+    expect(admitted.edits).toHaveLength(1);
+    const payload = admitted.edits[0]!.payload;
+    if (payload.kind !== "reference") throw new Error("expected a reference payload");
+    expect(payload).toMatchObject({ kind: "reference", mode: "copy" });
+    // The fold deletes the key: a null left on the span would be read as a file named "null".
+    expect(payload.span).not.toHaveProperty("file");
+  });
+
+  it("admits text_ref.file: undefined as absent", () => {
+    const admitted = admit(
+      req([
+        {
+          anchor_from: "a1B",
+          anchor_to: "c2D",
+          text_ref: { anchor_from: "x", anchor_to: "y", mode: "copy", file: undefined },
+        },
+      ]),
+    );
+    const payload = admitted.edits[0]!.payload;
+    if (payload.kind !== "reference") throw new Error("expected a reference payload");
+    expect(payload.span).not.toHaveProperty("file");
+  });
+
+  it("still refuses text_ref.mode: null — a required slot has no absent form", () => {
+    expectBadPayload(
+      req([
+        {
+          anchor_from: "a1B",
+          anchor_to: "c2D",
+          text_ref: { anchor_from: "x", anchor_to: "y", mode: null },
+        },
+      ]),
+      '"mode" is required, so null is not a value here',
+    );
+  });
+
+  it("still refuses a null text_ref anchor", () => {
+    expectBadPayload(
+      req([
+        {
+          anchor_from: "a1B",
+          anchor_to: "c2D",
+          text_ref: { anchor_from: null, anchor_to: "y", mode: "copy" },
+        },
+      ]),
+      "both anchors are required, so null is not a value here",
+    );
+  });
+
+  it("refuses a wrong-typed text_ref.file and names the escape hatch", () => {
+    expectBadPayload(
+      req([
+        {
+          anchor_from: "a1B",
+          anchor_to: "c2D",
+          text_ref: { anchor_from: "x", anchor_to: "y", mode: "copy", file: 42 },
+        },
+      ]),
+      'omit "file" to reference this file',
+    );
+  });
+});
