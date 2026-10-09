@@ -3,7 +3,7 @@
 ## [Unreleased]
 
 ### Bug Fixes
-* **edit:** read a null in the nested `text_ref.file` as absent and name the fields that are genuinely required, so a harness using strict structured output is no longer refused for a call it has no way to spell differently.
+* **edit:** read a null in the nested `text_ref.file` as absent and name the fields that are genuinely required, so a harness using strict structured output is no longer refused for a call it has no way to spell differently. (#77)
 
 ## [2.10.0] - 2026-10-09
 
