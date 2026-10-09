@@ -146,7 +146,12 @@ export const editItemSchema = Type.Object(
     ),
     text_ref: Type.Optional(textRefSchema),
   },
-  { additionalProperties: false },
+  {
+    // WHY: (ticket-67, CORRECTION-1) no oneOf/anyOf union here by trade-off: available today, but it would foreclose a future strict constrained-decoding opt-in; admission-time XOR already enforces the rule.
+    additionalProperties: false,
+    description:
+      'Exactly one payload per item: supply "text" or "text_ref", never both (a null value reads as absent).',
+  },
 );
 
 export const editToolSchema = Type.Object(
@@ -174,11 +179,11 @@ const EDIT_PAYLOAD_HINT =
   '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
   '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
   'served rows are refused) or "literal" (declared literal content).';
-export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one top-level file per call). For text files seen via \`read\`/diff. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors — copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)), never \`│\` or content. Exactly one payload per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\` — a served span's bytes (\`mode\` \`"copy"\`|\`"cut"\`; \`file\`=another served file, where \`cut\` retires the span there too); \`at\`: "in-place" (default), "before", "after". \`[MODEL]\` in \`content\` is your retry instruction.`;
+export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one top-level file per call). For text files seen via \`read\`/diff. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors — copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)), never \`│\` or content. Exactly one payload per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\` — a served span's bytes (\`mode\` \`"copy"\`|\`"cut"\`; \`file\`=another served file, where \`cut\` retires the span there too); \`at\`: "in-place" (default), "before", "after". A null \`text\`/\`text_ref\`/\`at\`/\`mode\` reads as absent. \`[MODEL]\` in \`content\` is your retry instruction.`;
 export const EDIT_SNIPPET = `Edit a file range via \`edit\`: \`{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}\` — anchors are bare ${HASH_LEN}-char hashes copied from served \`HASH│content\` (never copy \`│\`), one payload per item: \`text\` is bare content (\`""\` deletes) or \`text_ref\` writes a served span (\`"copy"\` keeps the source, \`"cut"\` also retires it — in this file or in the \`file\` it names). \`at\`: "in-place" (default), "before", "after". Chain from diff anchors with no re-read.`;
 export const EDIT_GUIDELINES: string[] = [
   `edit: \`anchor\` vs \`HASH│content\` — an \`anchor\` is a bare ${HASH_LEN}-char hash (e.g. "wUpX"); a \`HASH│content\` line (e.g. \`wUpX│    pass\`) is a served row; the \`│\` is a separator — copy only the ${HASH_LEN} chars before it into \`anchor_from\`/\`anchor_to\`.`,
-  `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`; both payloads or neither is refused.`,
+  `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`; both payloads or neither is refused (a null \`text\`/\`text_ref\`/\`at\`/\`mode\` reads as absent).`,
   "edit: `anchor_from`/`anchor_to` bound the inclusive range — in-place replaces both boundary lines, while `before`/`after` insert at the boundary instead; out-of-band writes (bash, scripts, formatters) bypass serve recording, so when an anchor no longer matches, re-read the file and copy fresh anchors.",
   'edit: `text` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused; `text` is verbatim, so include the indentation you want.',
   'edit: place the payload with `at` — "in-place" (default) rewrites it, "before"/"after" insert at its boundary and require a single-line resolved target; `text: ""` with "before"/"after" writes nothing (noop).',
@@ -282,16 +287,31 @@ function isLegalItemKeySet(keys: Set<string>): boolean {
 // WHY: bound to the union (§9.12): a list element outside `Placement` fails `pnpm run typecheck`.
 const AT_SPELLINGS = ["in-place", "before", "after"] as const satisfies readonly Placement[];
 
+// WHY: (ticket-67) strict structured-output harnesses spell "absent" as an explicit `null`
+// WHY: (every property required). Key existence alone then lies: `{ text: "…", text_ref: null }`
+// WHY: was refused as carrying both. `null`/`undefined` in the four optional slots (`text`,
+// WHY: `text_ref`, `at`, root `mode`) reads as ABSENT wherever presence is decided — one
+// WHY: predicate, so the gate, the validators and the normalizers cannot disagree.
+function isAbsentValue(value: unknown): value is null | undefined {
+  return value === null || value === undefined;
+}
 function analyzeItem(value: unknown, index: number): string | undefined {
   if (!isRec(value)) {
     return `edit[${index}] must be an object: ${ITEM_SHAPE}.`;
   }
   const keys = new Set(Object.keys(value));
+  // WHY: (ticket-67) an explicit null/undefined in an optional slot is absence, not a payload.
+  for (const key of ["text", "text_ref", "at"] as const) {
+    if (keys.has(key) && isAbsentValue((value as Record<string, unknown>)[key])) keys.delete(key);
+  }
   const hasText = keys.has("text");
   const hasRef = keys.has("text_ref");
   if (!isLegalItemKeySet(keys)) {
     if (hasText && hasRef) {
-      return `edit[${index}] carries both "text" and "text_ref": exactly one payload per item (${ITEM_SHAPE}).`;
+      return (
+        `edit[${index}] carries both "text" and "text_ref": exactly one payload per item (${ITEM_SHAPE}). ` +
+        `Keep "text" and delete "text_ref" when the content is yours; keep "text_ref" and delete "text" to copy a served span.`
+      );
     }
     // WHY: (§9.3) an illegal key set is often also MISSING a required key; the unsupported-field
     // WHY: list alone renders blank there, so the refusal must name the missing keys too.
@@ -311,7 +331,7 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   if (typeof anchor_from !== "string" || typeof anchor_to !== "string") {
     return `edit[${index}] "anchor_from"/"anchor_to" must be bare ${HASH_LEN}-char hash anchor strings copied from served output (before │).`;
   }
-  if (at !== undefined) {
+  if (!isAbsentValue(at)) {
     if (at === "in_place") {
       return `edit[${index}] "at" was "in_place" — the canonical spelling is "in-place": "at" must be "in-place", "before" or "after".`;
     }
@@ -387,7 +407,7 @@ function analyzeRequest(input: unknown): Admission {
     };
   }
   let mode: EditMode | undefined;
-  if ("mode" in rec) {
+  if ("mode" in rec && !isAbsentValue(rec.mode)) {
     if (rec.mode !== "general" && rec.mode !== "literal") {
       return {
         ok: false,
@@ -425,7 +445,13 @@ function analyzeRequest(input: unknown): Admission {
       failures.push(refusal);
       continue;
     }
-    const item = items[index] as EditItem;
+    // WHY: (ticket-67) fold explicit null/undefined in the optional slots to absent HERE, once,
+    // WHY: so the normalized shape below and every entry point agree with the gate above.
+    const item = { ...(items[index] as Record<string, unknown>) } as EditItem;
+    const record = item as unknown as Record<string, unknown>;
+    for (const key of ["text", "text_ref", "at"] as const) {
+      if (isAbsentValue(record[key])) delete record[key];
+    }
     edited.push(item);
   }
   if (failures.length > 0) {

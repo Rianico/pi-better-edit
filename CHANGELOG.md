@@ -11,6 +11,7 @@
 ### Bug Fixes
 
 * **bash-view:** normalize CRLF line endings and strip BOM from observed `bash` stdout before the D9 byte-equality gate, and admit semicolon-chained deterministic silent prefixes (literal-operand `cd`, `pwd`, `true`, `:`) before a terminal view — fail-closed on all other output preserved. (#68)
+* **edit:** read explicit `null`/`undefined` in `text`/`text_ref`/`at`/`mode` as absent at admission, and name the field to drop in the doubly-specified refusal — XOR contract stands, no structural schema change. (#67)
 ## [2.9.0] - 2026-10-08
 
 ### Features
