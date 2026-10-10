@@ -12,6 +12,10 @@ is a payload detail). Ordering note: this record was authored as `0027` to fill 
 before `0028`, but ADR-0027 (prebuilt bundle) reached the trunk first and already
 held `0027`, so this record moved to `0032` rather than share a number.
 
+Amended by [ADR-0036 — Optional wire fields are declared nullable](0036-optional-wire-fields-declared-nullable.md)
+(the five optional properties now admit `null` as a legal spelling of absent; the flat item, the
+XOR, and every required field are unchanged)
+
 ## Context
 
 The pre-04 contract text (including the superseded `ticket-06-decision-record.md`,

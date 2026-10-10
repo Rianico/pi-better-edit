@@ -2,7 +2,12 @@ import { describe, expect, it, beforeAll } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execute, isMutationSuccess, isMutationFailure } from "../../src/mutation-engine/index.js";
-import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
+import {
+  normReq,
+  assertReq,
+  editToolSchema,
+  type NormalizedEditRequest,
+} from "../../src/payload-contract.js";
 import { DomainError } from "../../src/domain-errors.js";
 import { toLF } from "../../src/edit-diff.js";
 import {
@@ -100,7 +105,7 @@ describe("Edit wire contract — admission (finite key-set gate)", () => {
   it("refuses an item with neither text nor text_ref", () => {
     expectBadPayload(
       req([{ anchor_from: "a1B", anchor_to: "c2D" }]),
-      "carries no payload: exactly one payload per item",
+      'carries no payload (neither "text" nor "text_ref" fields)',
     );
   });
 
@@ -1044,7 +1049,7 @@ describe("Edit wire contract — null reads as absent (ticket-67)", () => {
   it("still refuses { text: null } alone as carrying no payload", () => {
     expectBadPayload(
       req([{ anchor_from: "a1B", anchor_to: "c2D", text: null }]),
-      "carries no payload",
+      'carries no payload (neither "text" nor "text_ref" fields)',
     );
   });
 
@@ -1139,5 +1144,69 @@ describe("Edit wire contract — nested text_ref nulls (ticket-75)", () => {
       ]),
       'omit "file" to reference this file',
     );
+  });
+});
+
+// WHY: (binary-selection-remediation Option C, ADR-0036) the served schema must agree with
+// WHY: admission: every optional slot admits `null` (which `foldAbsentSlots` reads as absent) and
+// WHY: every required slot refuses it. The predicate mirrors pi's `schemaAllowsNull`
+// WHY: (`@earendil-works/pi-ai` `api/constrained-sampling.js`): null is spelled as its own
+// WHY: `type`, or as a variant inside `anyOf`/`enum`/`const`. FALSIFIABILITY: before this change
+// WHY: every optional property was a bare `Type.Optional(...)`, so `schemaAllowsNull` returned
+// WHY: false and the positive loop below failed on its first entry (`edits[].text`).
+type NullProbe = { type?: unknown; const?: unknown; enum?: unknown; anyOf?: unknown };
+
+function schemaAllowsNull(schema: unknown): boolean {
+  if (typeof schema !== "object" || schema === null || Array.isArray(schema)) return false;
+  const s = schema as NullProbe;
+  if (s.type === "null") return true;
+  if (Array.isArray(s.type) && s.type.includes("null")) return true;
+  if (s.const === null) return true;
+  if (Array.isArray(s.enum) && s.enum.includes(null)) return true;
+  return Array.isArray(s.anyOf) && s.anyOf.some((variant) => schemaAllowsNull(variant));
+}
+
+describe("Edit wire contract — served schema declares optional null (ADR-0036)", () => {
+  type Node = { properties?: Record<string, Node>; items?: Node; anyOf?: Node[] };
+  const root = editToolSchema as unknown as Node;
+  const item = root.properties!.edits!.items!;
+  const itemProps = item.properties!;
+  const refProps = itemProps.text_ref!.anyOf![0]!.properties!;
+
+  it("admits null in each of the five optional fields", () => {
+    const optional: Record<string, unknown> = {
+      "edits[].text": itemProps.text,
+      "edits[].text_ref": itemProps.text_ref,
+      "edits[].at": itemProps.at,
+      mode: root.properties!.mode,
+      "edits[].text_ref.file": refProps.file,
+    };
+    for (const [name, property] of Object.entries(optional)) {
+      expect(schemaAllowsNull(property), `${name} must admit null`).toBe(true);
+    }
+  });
+
+  it("refuses null in every required field", () => {
+    const required: Record<string, unknown> = {
+      file: root.properties!.file,
+      edits: root.properties!.edits,
+      "edits[].anchor_from": itemProps.anchor_from,
+      "edits[].anchor_to": itemProps.anchor_to,
+      "edits[].text_ref.anchor_from": refProps.anchor_from,
+      "edits[].text_ref.anchor_to": refProps.anchor_to,
+      "edits[].text_ref.mode": refProps.mode,
+    };
+    for (const [name, property] of Object.entries(required)) {
+      expect(schemaAllowsNull(property), `${name} must refuse null`).toBe(false);
+    }
+  });
+
+  it("serialises a widened scalar field as anyOf with a null variant", () => {
+    expect(itemProps.text).toEqual({
+      anyOf: [
+        { type: "string", description: 'Bare file content for the range; use "" to delete' },
+        { type: "null" },
+      ],
+    });
   });
 });
