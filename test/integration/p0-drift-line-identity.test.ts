@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
-import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import {
+  withTempFile,
+  setupIntegrationTest,
+  getText,
+  extractHash,
+  anchorRows,
+} from "../support/fixtures";
 
 const SMALL_CPP = `int f1(int x) {
 \tif (x > 0) {
@@ -37,7 +43,7 @@ describe("p0-drift-line-identity probes", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const line2Hash = extractHash(lines[1]!); // f1 guard (psM)
 
       await writeFile(path, F2_ONLY, "utf-8");
@@ -69,7 +75,7 @@ describe("p0-drift-line-identity probes", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const line2Hash = extractHash(lines[1]!); // f1 guard (psM)
 
       await writeFile(path, F2_ONLY, "utf-8");
@@ -101,7 +107,7 @@ describe("p0-drift-line-identity probes", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const line9Hash = extractHash(lines[8]!); // f2 guard (AKU)
 
       await writeFile(path, F2_ONLY, "utf-8");
@@ -134,7 +140,7 @@ describe("p0-drift-line-identity probes", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const line9Hash = extractHash(lines[8]!); // f2 guard (line 9)
 
       const header = "// 1\n// 2\n// 3\n// 4\n// 5\n// 6\n// 7\n";
@@ -170,7 +176,7 @@ describe("p0-drift-line-identity probes", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const line9Hash = extractHash(lines[8]!); // f2 guard (line 9)
 
       // External edit: modify line 5 of f1 (\treturn -x; -> \treturn 0;)
@@ -200,7 +206,7 @@ describe("p0-drift-line-identity probes", () => {
     await withTempFile("dup.txt", fixture, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute("r1", { file: "dup.txt" }, undefined, undefined, ctx);
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const line3Hash = extractHash(lines[2]!); // ccc | a
 
       // External insert d before line 3 -> a\nb\nd\na\n
@@ -235,7 +241,7 @@ describe("p0-drift-line-identity probes", () => {
         undefined,
         ctx,
       );
-      const readLines = getText(readRes).split("\n");
+      const readLines = anchorRows(getText(readRes));
       const line10Hash = extractHash(readLines[9]!); // line 10
       const line50Hash = extractHash(readLines[49]!); // line 50
 
@@ -278,7 +284,7 @@ describe("p0-drift-line-identity probes", () => {
         undefined,
         ctx,
       );
-      const readLines = getText(readRes).split("\n");
+      const readLines = anchorRows(getText(readRes));
       const line10Hash = extractHash(readLines[0]!);
       const line20Hash = extractHash(readLines[10]!);
 
@@ -327,7 +333,7 @@ function alpha() {
     await withTempFile("swap.js", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute("r1", { file: "swap.js" }, undefined, undefined, ctx);
-      const readLines = getText(readRes).split("\n");
+      const readLines = anchorRows(getText(readRes));
       const alphaStartHash = extractHash(readLines[0]!);
       const alphaEndHash = extractHash(readLines[2]!);
 
@@ -370,7 +376,7 @@ function alpha() {
         undefined,
         ctx,
       );
-      const line25000Hash = extractHash(getText(readRes).split("\n")[0]!);
+      const line25000Hash = extractHash(anchorRows(getText(readRes))[0]!);
 
       // Exterior insert 5 lines at line 0 (top)
       const drifted = "top1\ntop2\ntop3\ntop4\ntop5\n" + fileContent;
@@ -409,7 +415,7 @@ function alpha() {
         undefined,
         ctx,
       );
-      const readLines = getText(readRes).split("\n");
+      const readLines = anchorRows(getText(readRes));
       const line10Hash = extractHash(readLines[9]!); // base_10
       const line15Hash = extractHash(readLines[14]!); // base_15
 
@@ -461,7 +467,7 @@ function alpha() {
         undefined,
         ctx,
       );
-      const line1500Hash = extractHash(getText(readRes).split("\n")[0]!);
+      const line1500Hash = extractHash(anchorRows(getText(readRes))[0]!);
 
       // Exterior insert 5 lines at top
       const header = "// 1\n// 2\n// 3\n// 4\n// 5\n";
@@ -496,7 +502,7 @@ function alpha() {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       // 1. Initial read serves anchors for lines 1..3
       const r1 = await readTool.execute("r1", { file: "reserve.txt" }, undefined, undefined, ctx);
-      const lines1 = getText(r1).split("\n");
+      const lines1 = anchorRows(getText(r1));
       const _bravoHash1 = extractHash(lines1[1]!);
 
       // 2. Drift: insert two lines at top, shifting bravo from line 2 to line 4
@@ -504,7 +510,7 @@ function alpha() {
 
       // 3. Re-read: authoritative re-serve assigns fresh presentation/lease
       const r2 = await readTool.execute("r2", { file: "reserve.txt" }, undefined, undefined, ctx);
-      const lines2 = getText(r2).split("\n");
+      const lines2 = anchorRows(getText(r2));
       const bravoHash2 = extractHash(lines2[3]!); // line 4 in 1-based index is lines2[3]
 
       // 4. Subsequent edit targeting the re-served anchor succeeds cleanly
@@ -533,7 +539,7 @@ function alpha() {
     await withTempFile("recover.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute("r1", { file: "recover.txt" }, undefined, undefined, ctx);
-      const row2Hash = extractHash(getText(r1).split("\n")[1]!);
+      const row2Hash = extractHash(anchorRows(getText(r1))[1]!);
 
       // Apply first edit
       await editTool.execute(
@@ -552,7 +558,7 @@ function alpha() {
 
       // Re-read file to observe disk state and fresh anchors
       const r2 = await readTool.execute("r2", { file: "recover.txt" }, undefined, undefined, ctx);
-      const lines2 = getText(r2).split("\n");
+      const lines2 = anchorRows(getText(r2));
       const row2HashAfter = extractHash(lines2[1]!);
 
       // Second edit on top of recovered state succeeds
@@ -580,7 +586,7 @@ function alpha() {
       const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
       // 1. Initial read
       const r1 = await readTool.execute("r1", { file: "undo_flow.txt" }, undefined, undefined, ctx);
-      const line2Hash = extractHash(getText(r1).split("\n")[1]!);
+      const line2Hash = extractHash(anchorRows(getText(r1))[1]!);
 
       // 2. Perform edit
       await editTool.execute(

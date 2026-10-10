@@ -71,7 +71,10 @@ describe("prompts/read.md (model-facing contract)", () => {
   });
 
   it("documents pagination support", () => {
-    expect(readPrompt).toContain("offset/limit");
+    // Re-pointed from "offset/limit" (stage A/B): the published schema is strictly `files: [...]`,
+    // so the continuation the prompt teaches is the 4.4 footer, not the legacy top-level pair.
+    expect(readPrompt).toContain("Use windows: [{ offset, limit }] to continue.");
+    expect(readPrompt).toContain("`windows`");
   });
 
   it("documents file-kind handling", () => {

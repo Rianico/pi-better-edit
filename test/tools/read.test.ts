@@ -27,7 +27,9 @@ describe("fmtReadPreview", () => {
   it("keeps continuation hints for partial previews", async () => {
     const text = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
     const result = await fmtReadPreview(text, { limit: 3 }, undefined, home.testPath);
-    expect(result.text).toContain("[Showing lines 1-3 of 10. Use offset=4 to continue.]");
+    expect(result.text).toContain(
+      "[lines 1-3 of 10. Use windows: [{ offset: 4, limit: 3 }] to continue.]",
+    );
   });
 
   it("reports when offset is beyond end of content", async () => {

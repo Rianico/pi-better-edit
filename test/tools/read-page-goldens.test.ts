@@ -19,25 +19,30 @@ const CRLF = "a\r\nb\r\nc\r\n";
 const LONE_CR = "one\rtwo\nthree";
 const NO_TRAILING = Array.from({ length: 5 }, (_, i) => `n${i}`).join("\n");
 
+// The per-file header every tool-level golden now opens with (spec §4.4). The line count is written
+// out per case rather than recomputed, so a count regression fails here instead of agreeing with itself.
+const servedHeader = (lines: number) => `[golden.txt (${lines} lines total)]\n`;
+const verbatimHeader = (lines: number) => `[golden.txt (verbatim, ${lines} lines, no anchors)]\n`;
+
 const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]> = [
   [
     "the first page",
     NL,
     { offset: 1, limit: 5 },
-    `l0\nl1\nl2\nl3\nl4\n\n[Showing lines 1-5 of 40. Use offset=6 to continue.]`,
+    `${verbatimHeader(40)}l0\nl1\nl2\nl3\nl4\n\n[golden.txt lines 1-5 of 40. Use windows: [{ offset: 6, limit: 5 }] to continue.]`,
   ],
   [
     "a middle page",
     NL,
     { offset: 17, limit: 5 },
-    `l16\nl17\nl18\nl19\nl20\n\n[Showing lines 17-21 of 40. Use offset=22 to continue.]`,
+    `${verbatimHeader(40)}l16\nl17\nl18\nl19\nl20\n\n[golden.txt lines 17-21 of 40. Use windows: [{ offset: 22, limit: 5 }] to continue.]`,
   ],
-  ["the last page", NL, { offset: 38, limit: 10 }, `l37\nl38\nl39`],
+  ["the last page", NL, { offset: 38, limit: 10 }, `${verbatimHeader(40)}l37\nl38\nl39`],
   [
     "a page past the end",
     NL,
     { offset: 50, limit: 5 },
-    `Offset 50 is beyond end of file (40 lines total). Use offset=1 to read from the start, or offset=40 to read the last line.`,
+    `${verbatimHeader(40)}Offset 50 is beyond end of file (40 lines total). Use offset=1 to read from the start, or offset=40 to read the last line.`,
   ],
   [
     "disjoint windows",
@@ -48,7 +53,7 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
         { offset: 20, limit: 3 },
       ],
     },
-    `=== Lines 2-3 of 40 ===\nl1\nl2\n\n=== Lines 20-22 of 40 ===\nl19\nl20\nl21`,
+    `${verbatimHeader(40)}=== Lines 2-3 of 40 ===\nl1\nl2\n\n=== Lines 20-22 of 40 ===\nl19\nl20\nl21`,
   ],
   [
     "overlapping windows",
@@ -59,26 +64,31 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
         { offset: 4, limit: 3 },
       ],
     },
-    `=== Lines 3-5 of 40 ===\nl2\nl3\nl4\n\n=== Lines 4-6 of 40 ===\nl3\nl4\nl5`,
+    `${verbatimHeader(40)}=== Lines 3-5 of 40 ===\nl2\nl3\nl4\n\n=== Lines 4-6 of 40 ===\nl3\nl4\nl5`,
   ],
   [
     "a limit alone",
     NL,
     { limit: 7 },
-    `l0\nl1\nl2\nl3\nl4\nl5\nl6\n\n[Showing lines 1-7 of 40. Use offset=8 to continue.]`,
+    `${verbatimHeader(40)}l0\nl1\nl2\nl3\nl4\nl5\nl6\n\n[golden.txt lines 1-7 of 40. Use windows: [{ offset: 8, limit: 7 }] to continue.]`,
   ],
   [
     "no arguments (the whole file)",
     NL,
     {},
-    Array.from({ length: 40 }, (_, i) => `l${i}`).join("\n"),
+    `${verbatimHeader(40)}${Array.from({ length: 40 }, (_, i) => `l${i}`).join("\n")}`,
   ],
-  ["the page ending on the last line", NL, { offset: 39, limit: 9 }, `l38\nl39`],
-  ["CRLF text (normalized to LF)", CRLF, {}, `a\nb\nc`],
-  ["a lone \\r is not a break", LONE_CR, {}, `one\ntwo\nthree`],
-  ["no trailing newline", NO_TRAILING, {}, `n0\nn1\nn2\nn3\nn4`],
-  ["an empty file", "", {}, `[File is empty.]`],
-  ["a file that is one newline", "\n", {}, `[1 empty line]`],
+  [
+    "the page ending on the last line",
+    NL,
+    { offset: 39, limit: 9 },
+    `${verbatimHeader(40)}l38\nl39`,
+  ],
+  ["CRLF text (normalized to LF)", CRLF, {}, `${verbatimHeader(3)}a\nb\nc`],
+  ["a lone \\r is not a break", LONE_CR, {}, `${verbatimHeader(3)}one\ntwo\nthree`],
+  ["no trailing newline", NO_TRAILING, {}, `${verbatimHeader(5)}n0\nn1\nn2\nn3\nn4`],
+  ["an empty file", "", {}, `${verbatimHeader(0)}[File is empty.]`],
+  ["a file that is one newline", "\n", {}, `${verbatimHeader(1)}[1 empty line]`],
 ];
 
 type AnchorOracle = (anchors: string[]) => string;
@@ -89,27 +99,27 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
     NL,
     { offset: 1, limit: 5 },
     (a) =>
-      `${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n\n[Showing lines 1-5 of 40. Use offset=6 to continue.]`,
+      `${servedHeader(40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n\n[golden.txt lines 1-5 of 40. Use windows: [{ offset: 6, limit: 5 }] to continue.]`,
   ],
   [
     "a middle page",
     NL,
     { offset: 17, limit: 5 },
     (a) =>
-      `${a[16]}│l16\n${a[17]}│l17\n${a[18]}│l18\n${a[19]}│l19\n${a[20]}│l20\n\n[Showing lines 17-21 of 40. Use offset=22 to continue.]`,
+      `${servedHeader(40)}${a[16]}│l16\n${a[17]}│l17\n${a[18]}│l18\n${a[19]}│l19\n${a[20]}│l20\n\n[golden.txt lines 17-21 of 40. Use windows: [{ offset: 22, limit: 5 }] to continue.]`,
   ],
   [
     "the last page",
     NL,
     { offset: 38, limit: 10 },
-    (a) => `${a[37]}│l37\n${a[38]}│l38\n${a[39]}│l39`,
+    (a) => `${servedHeader(40)}${a[37]}│l37\n${a[38]}│l38\n${a[39]}│l39`,
   ],
   [
     "a page past the end",
     NL,
     { offset: 50, limit: 5 },
     () =>
-      `Offset 50 is beyond end of file (40 lines total). Use offset=1 to read from the start, or offset=40 to read the last line.`,
+      `${servedHeader(40)}Offset 50 is beyond end of file (40 lines total). Use offset=1 to read from the start, or offset=40 to read the last line.`,
   ],
   [
     "disjoint windows",
@@ -121,25 +131,40 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
       ],
     },
     (a) =>
-      `=== Lines 2-3 of 40 ===\n${a[1]}│l1\n${a[2]}│l2\n\n=== Lines 20-22 of 40 ===\n${a[19]}│l19\n${a[20]}│l20\n${a[21]}│l21`,
+      `${servedHeader(40)}=== Lines 2-3 of 40 ===\n${a[1]}│l1\n${a[2]}│l2\n\n=== Lines 20-22 of 40 ===\n${a[19]}│l19\n${a[20]}│l20\n${a[21]}│l21`,
   ],
   [
     "a limit alone",
     NL,
     { limit: 7 },
     (a) =>
-      `${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n${a[5]}│l5\n${a[6]}│l6\n\n[Showing lines 1-7 of 40. Use offset=8 to continue.]`,
+      `${servedHeader(40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n${a[5]}│l5\n${a[6]}│l6\n\n[golden.txt lines 1-7 of 40. Use windows: [{ offset: 8, limit: 7 }] to continue.]`,
   ],
   [
     "no trailing newline",
     NO_TRAILING,
     {},
-    (a) => `${a[0]}│n0\n${a[1]}│n1\n${a[2]}│n2\n${a[3]}│n3\n${a[4]}│n4`,
+    (a) => `${servedHeader(5)}${a[0]}│n0\n${a[1]}│n1\n${a[2]}│n2\n${a[3]}│n3\n${a[4]}│n4`,
   ],
-  ["an empty file", "", {}, (a) => `${a[0]}│\n[File is empty. Use edit to insert content.]`],
-  ["a file that is one newline", "\n", {}, (a) => `${a[0]}│`],
-  ["CRLF text (normalized to LF)", CRLF, {}, (a) => `${a[0]}│a\n${a[1]}│b\n${a[2]}│c`],
-  ["a lone \\r is not a break", LONE_CR, {}, (a) => `${a[0]}│one\n${a[1]}│two\n${a[2]}│three`],
+  [
+    "an empty file",
+    "",
+    {},
+    (a) => `${servedHeader(0)}${a[0]}│\n[File is empty. Use edit to insert content.]`,
+  ],
+  ["a file that is one newline", "\n", {}, (a) => `${servedHeader(1)}${a[0]}│`],
+  [
+    "CRLF text (normalized to LF)",
+    CRLF,
+    {},
+    (a) => `${servedHeader(3)}${a[0]}│a\n${a[1]}│b\n${a[2]}│c`,
+  ],
+  [
+    "a lone \\r is not a break",
+    LONE_CR,
+    {},
+    (a) => `${servedHeader(3)}${a[0]}│one\n${a[1]}│two\n${a[2]}│three`,
+  ],
 ];
 
 async function read(file: string, content: string, args: Record<string, unknown>): Promise<string> {

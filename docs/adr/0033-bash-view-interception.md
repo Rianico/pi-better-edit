@@ -9,6 +9,12 @@ ast-research corpus review R1–R5 (verdict: sound, cleared with four guards, al
 four recorded below as D5). Implements the read-side half of Issue #28; the
 mutation half (`sed -i` and friends) is Issue #53 and explicitly out of scope.
 
+Amended 2026-10-09 (commit `7b78278`, P3.1 of the search-and-read evolution
+spec, `docs/spec/search-and-read-evolution.md`): D1 is amended to admit
+`;`-separated silent-prefix chains, D9 is amended to normalize CRLF/BOM
+symmetrically instead of failing closed, and D7 pins newline-separated
+multi-statement scripts as pass-through pending P3.2 corpus telemetry.
+
 ## Context
 
 Issue #28 (adoption gap): in the explicit-edit benchmark (904 trials, 5,102 bash
@@ -68,6 +74,19 @@ slice-accurate serve needs no new serve infrastructure.
    viewed `./f`, not `sub/f`), and chained `cd`s compose (`cd a && cd b` lands in
    `a/b`, not `b`), so applying one of them out of order would lease a path never
    viewed (`post-view-cd` / `multi-cd` pass-through reasons).
+
+   **D1 amended 2026-10-09 (`7b78278`).** A `;`-separated statement chain is
+   admitted under the same rule. `unbash` reports `;` and a newline as the same
+   statement boundary, so the separator *text* decides: every boundary between
+   adjacent statements must be an unconditional `;` (`isSemicolonStatementChain`
+   requires the separator span between adjacent statements to match a
+   whitespace-wrapped semicolon). Every statement before the terminal one must
+   itself be a silent prefix (a view in a prefix statement fails closed), so the
+   view is the last statement and the sequencing before it is deterministic. A
+   pre-view literal `cd <dir>;` re-bases relative resolution exactly as the `&&`
+   form does. Because the gate is position-sensitive, `pwd` with no arguments
+   joins the silent set in prefix position only; D9 still byte-checks stdout,
+   whose directory line therefore never matches the slice.
 2. **Slice-view algebra.** One literal source file; stages are `cat` source or
    file-direct `head`/`tail`/`sed -n`, followed by pure line-window filters
    (`head -n`/`tail -n` incl. bare `-N` and GNU `+N`/`-N` line forms;
@@ -106,7 +125,11 @@ slice-accurate serve needs no new serve infrastructure.
 7. **Non-goals confirmed:** multi-file views (atomic lease invariant
    `(SessionKey, Path) -> SnapshotHash`; parallel calls subsume batching);
    search output (match metadata, not content); Issue #53 mutations;
-   `;`/`||` chains (the 814-call compound ceiling stays pass-through).
+   `||` chains; and newline-separated multi-statement scripts — D7 as amended
+   2026-10-09 (`7b78278`) — which `unbash` reports with the same parse shape as
+   `;`. Bare `;` chains are no longer a flat non-goal: they are admitted only
+   under D1's silent-prefix-and-terminal-view rule. The newline form stays
+   pass-through pending P3.2 corpus telemetry.
 8. **Transparent wrapper (amendment 2026-10-07).** A leading `rtk` around a view
    command (`rtk cat f`, `rtk head -n 3 f`, …) unwraps to the inner view shape in
    source positions (bare, `&&` segments, pipeline stage zero) and around pipe
@@ -122,9 +145,17 @@ slice-accurate serve needs no new serve infrastructure.
    stdout (exactly one text block) must byte-match the re-read slice —
    `joined` or `joined + "\n"`, trailing-newline leniency only. This converts
    wrapper transparency from an assumption into a check: filtering/numbering
-   wrappers, TOCTOU drift between exec and re-read, and encoding skew (CRLF,
-   BOM, undecodable bytes) all fail closed to pass-through. It also backstops
+   wrappers, TOCTOU drift between exec and re-read, and skew the re-read does
+   not normalize (undecodable bytes, a reordered row, an edited line) all still
+   fail closed to pass-through. It also backstops
    the truncation guard on runtimes that report truncation elsewhere.
+
+   **D9 amended 2026-10-09 (`7b78278`).** Line-ending and BOM skew is
+   normalized instead of rejected: the observed stdout is compared as
+   `toLF(stripBOM(stdoutText).text)` against `joinedSlice`, symmetric with the
+   normalized LF/no-BOM text the anchors describe — comparing raw stdout bytes
+   would drop anchors on exactly the CRLF and BOM files the model views through
+   bash.
 
 ## Consequences
 

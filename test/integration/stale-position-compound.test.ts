@@ -1,12 +1,12 @@
 import { describe, expect, it } from "vitest";
-import { lineHashes } from "../../src/hashline";
+import { readFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
 
-const home = useTestHome();
+useTestHome();
 
 describe("stale-position compound edits", () => {
   it("rejects stale anchors after an edit", async () => {
-    await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd }) => {
+    await withTempFile("sample.ts", "a\nb\nc\nd\ne\nf\ng\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
       const firstRead = await readTool.execute(
@@ -30,19 +30,39 @@ describe("stale-position compound edits", () => {
         ctx,
       );
 
-      const freshHash = (await lineHashes(result.content?.[0]?.text ?? "", home.testPath))?.[4];
-      if (freshHash) {
-        await editTool.execute(
+      // The pre-edit anchor for line 5 no longer resolves: its line identity was retired.
+      await expect(
+        editTool.execute(
           "e2",
           {
             file: "sample.ts",
-            edits: [{ anchor_from: freshHash, anchor_to: freshHash, text: "E-AGAIN" }],
+            edits: [{ anchor_from: line5Hash, anchor_to: line5Hash, text: "E-STALE" }],
           },
           undefined,
           undefined,
           ctx,
-        );
-      }
+        ),
+      ).rejects.toThrow(/E_TARGET_LOST/);
+
+      // Re-pointed for I4 (spec §5): the model-visible anchored diff carries the fresh anchor for
+      // the modified row, so a follow-up edit chains with no intermediate read.
+      const freshHash = (result.content[0].text as string)
+        .split("\n")
+        .find((line: string) => line.startsWith("+") && line.includes("│E"))!
+        .slice(1)
+        .split("│")[0]!;
+      const chained = await editTool.execute(
+        "e3",
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: freshHash, anchor_to: freshHash, text: "E-AGAIN" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(chained.content[0].text).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toBe("a\nb\nc\nd\nE-AGAIN\nf\ng\n");
     });
   });
 

@@ -191,3 +191,32 @@ export async function loadFileKindAndText(
     await fileHandle.close();
   }
 }
+
+/**
+ * The non-printable control characters of the I2 byte-view notice (spec §6): C0 except the three
+ * text whitespaces (\t, \n, \r) that render as layout, plus DEL and the C1 block. These are the
+ * code points that reach the model invisibly, so a verbatim read names them instead of escaping
+ * them — see docs/spec/search-and-read-evolution.md §6.
+ */
+// eslint-disable-next-line no-control-regex -- WHY: these code points ARE the notice's subject.
+const NON_PRINTABLE_CONTROL_RE = /[\u0000-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F]/;
+
+export interface ControlCharReport {
+  /** Total occurrences, not distinct code points. */
+  count: number;
+  /** Distinct `U+XXXX` spellings, in first-encounter order. */
+  codes: string[];
+}
+
+/** Scans emitted text for invisible control characters, reporting what a notice should name. */
+export function scanControlChars(text: string): ControlCharReport {
+  const codes: string[] = [];
+  let count = 0;
+  for (const char of text) {
+    if (!NON_PRINTABLE_CONTROL_RE.test(char)) continue;
+    count++;
+    const code = `U+${char.codePointAt(0)!.toString(16).toUpperCase().padStart(4, "0")}`;
+    if (!codes.includes(code)) codes.push(code);
+  }
+  return { count, codes };
+}

@@ -1,7 +1,13 @@
 import { describe, expect, it } from "vitest";
 import { HASH_LEN } from "../../src/hashline/index.js";
 import { readFile } from "fs/promises";
-import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import {
+  withTempFile,
+  setupIntegrationTest,
+  getText,
+  extractHash,
+  anchorRows,
+} from "../support/fixtures";
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { loadLeases, sessionKeyFor } from "../../src/served-session/session";
@@ -74,7 +80,7 @@ describe("WAL lineage commit from the working buffer", () => {
     await withTempFile("dup.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute("r1", { file: "dup.txt" }, undefined, undefined, ctx);
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const first = extractHash(lines[0]!);
       const second = extractHash(lines[1]!);
       expect(second).not.toBe(first);
@@ -127,7 +133,7 @@ describe("WAL lineage commit from the working buffer", () => {
         undefined,
         ctx,
       );
-      const b = extractHash(getText(readRes).split("\n")[1]!);
+      const b = extractHash(anchorRows(getText(readRes))[1]!);
 
       const store = await loadHashStore();
       const counterBefore = nextId(store, path);
@@ -156,7 +162,7 @@ describe("WAL lineage commit from the working buffer", () => {
     await withTempFile("revert.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute("r1", { file: "revert.txt" }, undefined, undefined, ctx);
-      const bravo = extractHash(getText(r1).split("\n")[1]!);
+      const bravo = extractHash(anchorRows(getText(r1))[1]!);
 
       const store = await loadHashStore();
       const canonicalId = snapshotId(store, path, original);
@@ -173,9 +179,9 @@ describe("WAL lineage commit from the working buffer", () => {
       const counterAfterForward = nextId(store, path);
       const snapshotsAfterForward = snapshotCount(store, path);
       const bravoUpper = extractHash(
-        getText(
-          await readTool.execute("r2", { file: "revert.txt" }, undefined, undefined, ctx),
-        ).split("\n")[1]!,
+        anchorRows(
+          getText(await readTool.execute("r2", { file: "revert.txt" }, undefined, undefined, ctx)),
+        )[1]!,
       );
 
       await editTool.execute(

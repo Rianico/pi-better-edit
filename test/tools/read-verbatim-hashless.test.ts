@@ -43,7 +43,9 @@ describe("verbatim hashless seam", () => {
         undefined,
         ctx,
       );
-      expect(result.content[0]!.text).toBe("alpha\nbeta");
+      expect(result.content[0]!.text).toBe(
+        "[plain.txt (verbatim, 2 lines, no anchors)]\nalpha\nbeta",
+      );
       expect(spy).not.toHaveBeenCalled();
     });
   });

@@ -7,6 +7,7 @@ import {
   withTempFile,
   getText,
   extractHash,
+  anchorRows,
   makeFakePiRegistry,
   testSessionManager,
 } from "../support/fixtures";
@@ -530,7 +531,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
       };
       const { ctx, getTool } = setupTarget(cwd);
       const r1 = await call(rec, getTool("read"), "read", { file: "b14.ts" }, ctx);
-      const emptyHash = r1.text.split("\n")[0]!.split("│")[0]!;
+      const emptyHash = anchorRows(r1.text)[0]!.split("│")[0]!;
       expect(emptyHash).toMatch(/^[A-Za-z0-9]{4}$/);
       const e1 = await call(
         rec,

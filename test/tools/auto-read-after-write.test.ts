@@ -330,7 +330,7 @@ describe("auto-read after write", () => {
 
       expect(autoReadText).toContain("line 1");
 
-      expect(autoReadText).toMatch(/offset=\d+/);
+      expect(autoReadText).toMatch(/Use windows: \[\{ offset: \d+, limit: \d+ \}\] to continue\./);
     } finally {
       await cleanupCwd(cwd);
     }

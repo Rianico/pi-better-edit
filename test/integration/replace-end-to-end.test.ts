@@ -6,6 +6,7 @@ import {
   setupIntegrationTest,
   getText,
   extractHash,
+  anchorRows,
 } from "../support/fixtures";
 
 describe("edit tool — end-to-end", () => {
@@ -20,7 +21,7 @@ describe("edit tool — end-to-end", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readResult).split("\n");
+      const lines = anchorRows(getText(readResult));
       const betaHash = extractHash(lines.find((l: string) => l.includes("│bbb"))!);
 
       const editResult = await editTool.execute(
@@ -50,7 +51,7 @@ describe("edit tool — end-to-end", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readResult).split("\n");
+      const lines = anchorRows(getText(readResult));
       const bHash = extractHash(lines.find((l: string) => l.includes("│bbb"))!);
       const cHash = extractHash(lines.find((l: string) => l.includes("│ccc"))!);
 
@@ -81,7 +82,7 @@ describe("edit tool — end-to-end", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readResult).split("\n");
+      const lines = anchorRows(getText(readResult));
       const bHash = extractHash(lines.find((l: string) => l.includes("│bbb"))!);
       const cHash = extractHash(lines.find((l: string) => l.includes("│ccc"))!);
 
@@ -154,7 +155,7 @@ describe("edit tool — end-to-end", () => {
         undefined,
         ctx,
       );
-      const emptyHash = getText(readResult).split("\n")[0]!.split("│")[0]!;
+      const emptyHash = anchorRows(getText(readResult))[0]!.split("│")[0]!;
       expect(emptyHash).toMatch(/^[A-Za-z0-9]{4}$/);
 
       await editTool.execute(

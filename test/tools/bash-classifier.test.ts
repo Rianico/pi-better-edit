@@ -4,6 +4,8 @@ import {
   BASH_VIEW_MAX_CHAIN_SEGMENTS,
   BASH_VIEW_MAX_PIPELINE_STAGES,
   classifyBashCommand,
+  withSearchLineNumbers,
+  type BashSearch,
   type BashView,
 } from "../../src/bash-classifier";
 
@@ -19,6 +21,13 @@ function reasonOf(command: string): string {
   expect(result.kind).toBe("passThrough");
   if (result.kind !== "passThrough") throw new Error(`not pass-through: ${command}`);
   return result.reason;
+}
+
+function searchOf(command: string): BashSearch {
+  const result = classifyBashCommand(command);
+  expect(result.kind).toBe("pureSearch");
+  if (result.kind !== "pureSearch") throw new Error(`not a search: ${command}`);
+  return result.search;
 }
 
 describe("bash-classifier span matrix", () => {
@@ -169,7 +178,10 @@ describe("bash-classifier fail-closed matrix", () => {
     expect(reasonOf("cd --; cat f")).toBe("unsupported-command:cd");
     expect(reasonOf("cd -P; cat f")).toBe("unsupported-command:cd");
     expect(reasonOf("cd d; cat f &")).toBe("background");
-    expect(reasonOf("cd d; grep x f")).toBe("unsupported-command:grep");
+    // WHY: the search branch inherits the `;` chain ruling verbatim (see the search matrix
+    // WHY: below): a silent prefix plus a terminal search is the same deterministic shape as
+    // WHY: `cd d; cat f`, so it is admitted rather than denied.
+    expect(searchOf("cd d; grep -n x f").baseDir).toBe("d");
     // WHY: `unbash` reports `;` and a newline as the same statement boundary, so
     // WHY: the separator text is what keeps a newline script out of the gate.
     expect(reasonOf("cd d\ncat f")).toBe("multi-statement");
@@ -212,7 +224,9 @@ describe("bash-classifier fail-closed matrix", () => {
   });
 
   it("passes through search and transform pipelines", () => {
-    expect(reasonOf("grep -n pat f")).toBe("unsupported-command:grep");
+    expect(searchOf("grep -n pat f").program).toBe("grep");
+    // WHY: `rg pat` has no file operand (it would search the cwd recursively), so the search
+    // WHY: selector refuses it and the segment falls through to the unsupported-command reason.
     expect(reasonOf("rg pat")).toBe("unsupported-command:rg");
     expect(reasonOf("cat f | grep x")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f | sort | head")).toBe("unsupported-pipeline");
@@ -247,6 +261,206 @@ describe("bash-classifier fail-closed matrix", () => {
     expect(reasonOf(longChain)).toBe("chain-too-long");
     const longStatementChain = `${`true; `.repeat(BASH_VIEW_MAX_CHAIN_SEGMENTS)}cat f`;
     expect(reasonOf(longStatementChain)).toBe("chain-too-long");
+  });
+});
+
+describe("bash-classifier search matrix (I1a)", () => {
+  it("accepts single-file grep/rg searches over the allowlisted flags", () => {
+    expect(searchOf("grep pattern f.ts")).toEqual({
+      program: "grep",
+      pattern: "pattern",
+      filePath: "f.ts",
+      lineNumbered: false,
+    });
+    expect(searchOf("grep -n pattern f.ts")).toEqual({
+      program: "grep",
+      pattern: "pattern",
+      filePath: "f.ts",
+      lineNumbered: true,
+    });
+    expect(searchOf("grep --line-number pattern f.ts").lineNumbered).toBe(true);
+    expect(searchOf("grep -i -F -E pattern f.ts")).toEqual({
+      program: "grep",
+      pattern: "pattern",
+      filePath: "f.ts",
+      lineNumbered: false,
+    });
+    expect(searchOf("rg pattern f.ts")).toEqual({
+      program: "rg",
+      pattern: "pattern",
+      filePath: "f.ts",
+      lineNumbered: false,
+    });
+    expect(searchOf("rg -n -i pattern f.ts").lineNumbered).toBe(true);
+    expect(searchOf('grep "a b" f.ts').pattern).toBe("a b");
+    expect(searchOf("grep 'a b' f.ts").pattern).toBe("a b");
+    // WHY: a `-`-leading pattern is legal only behind the `--` separator (spec §3.3).
+    expect(searchOf("grep -- -pat f.ts")).toEqual({
+      program: "grep",
+      pattern: "-pat",
+      filePath: "f.ts",
+      lineNumbered: false,
+    });
+    expect(searchOf("grep pattern /abs/f.ts").filePath).toBe("/abs/f.ts");
+    expect(searchOf("cd sub && grep x f").baseDir).toBe("sub");
+  });
+
+  it("denies every non-allowlisted grep flag", () => {
+    const denied = [
+      "grep -c pat f",
+      "grep --count pat f",
+      "grep -v pat f",
+      "grep --invert-match pat f",
+      "grep -o pat f",
+      "grep --only-matching pat f",
+      "grep -A 2 pat f",
+      "grep -B 2 pat f",
+      "grep -C 2 pat f",
+      "grep -l pat f",
+      "grep -L pat f",
+      "grep --color=never pat f",
+      "grep -m 3 pat f",
+      "grep --max-count 3 pat f",
+      "grep -q pat f",
+      "grep -s pat f",
+      "grep -w pat f",
+      "grep -x pat f",
+      "grep -b pat f",
+      "grep -H pat f",
+      "grep -h pat f",
+      "grep -r pat f",
+      "grep -R pat f",
+      "grep -P pat f",
+      "grep -e pat f",
+      "grep -f pats f",
+      "grep -in pat f",
+      "grep -n5 pat f",
+      "grep --line-number=x pat f",
+      "grep pat -i f",
+    ];
+    for (const command of denied) expect(reasonOf(command)).toBe("unsupported-command:grep");
+  });
+
+  it("denies every non-allowlisted rg flag", () => {
+    const denied = [
+      "rg --column pat f",
+      "rg --heading pat f",
+      "rg --no-heading pat f",
+      "rg -N pat f",
+      "rg --no-line-number pat f",
+      "rg --json pat f",
+      "rg --stats pat f",
+      "rg --files",
+      "rg -r x pat f",
+      "rg --replace x pat f",
+      "rg -0 pat f",
+      "rg --null pat f",
+      "rg --vimgrep pat f",
+      "rg -uu pat f",
+      "rg -t ts pat f",
+      "rg -j 4 pat f",
+      "rg --hidden pat f",
+      "rg -g '*.ts' pat f",
+      "rg pat -i f",
+    ];
+    for (const command of denied) expect(reasonOf(command)).toBe("unsupported-command:rg");
+  });
+  it("denies attached context flags, filename/formatting flags, and a non-literal operand", () => {
+    // WHY: `-A2` is an attached context flag; admitting it would emit rows whose line-number geometry
+    // WHY: is absent (`--` group separators and bare context rows instead of `^(\d+):`).
+    expect(reasonOf("grep -A2 pat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep -B3 pat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep -C1 pat f")).toBe("unsupported-command:grep");
+    // WHY: the filename flags add or drop a `file:` prefix, so the first parsed field would be a path or
+    // WHY: the pattern instead of the line number the anchors index by.
+    expect(reasonOf("grep --with-filename pat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep --no-filename pat f")).toBe("unsupported-command:grep");
+    // WHY: colour escapes (with or without a value) wrap the digits, so `^(\d+):` no longer matches the
+    // WHY: bytes the disk witness would be compared against.
+    expect(reasonOf("grep --color pat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep --color=auto pat f")).toBe("unsupported-command:grep");
+    // WHY: a backtick operand is expanded by bash before grep reads a byte, so the file this classifier
+    // WHY: resolved is not the file that runs — the non-literal gate, not the flag allowlist, is the lock.
+    expect(reasonOf("grep `cmd` f")).toBe("non-literal-command");
+    // WHY: rg's context and filename flags widen the same geometry (`-A2` group separators,
+    // WHY: `--with-filename` path prefix), so they fail closed on the rg allowlist rather than grep's.
+    expect(reasonOf("rg -A2 pat f")).toBe("unsupported-command:rg");
+    expect(reasonOf("rg --with-filename pat f")).toBe("unsupported-command:rg");
+    // WHY: positive control — the allowlisted line-number flag still admits, so the rows above
+    // WHY: discriminate on flag shape rather than on search being refused wholesale.
+    expect(searchOf("grep -n pat f")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: true,
+    });
+  });
+
+  it("denies structural shapes, globs, and non-single-file operands", () => {
+    // WHY: zero or two-plus operands break the `^(\\d+):` stdout geometry (stdin search, or
+    // WHY: filename prefixes), so only exactly one file operand is admitted.
+    expect(reasonOf("grep")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep pat")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep pat a.ts b.ts")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep -n pat a.ts b.ts")).toBe("unsupported-command:grep");
+    expect(reasonOf("rg pat")).toBe("unsupported-command:rg");
+    expect(reasonOf("rg pat a.ts b.ts")).toBe("unsupported-command:rg");
+    // WHY: globs, tildes and expansions never reach the selector — `stageShape` refuses them.
+    expect(reasonOf("grep pat *.ts")).toBe("non-literal-command");
+    expect(reasonOf("grep pat ~/f.ts")).toBe("non-literal-command");
+    expect(reasonOf("grep $P f")).toBe("non-literal-command");
+    expect(reasonOf("grep $(cat p) f")).toBe("non-literal-command");
+    // WHY: structural shapes (spec §3.2): pipelines, redirections, subshells, compounds, jobs.
+    expect(reasonOf("grep pat f | head -5")).toBe("unsupported-pipeline");
+    expect(reasonOf("cat f | grep x")).toBe("unsupported-pipeline");
+    expect(reasonOf("grep pat f > out.txt")).toBe("non-literal-command");
+    expect(reasonOf("grep pat f && cat g")).toBe("multi-view");
+    expect(reasonOf("grep pat f || cat g")).toBe("non-and-chain");
+    expect(reasonOf("grep pat f &")).toBe("background");
+    expect(reasonOf("grep pat f; cat g")).toBe("multi-statement");
+    // WHY: a search chained with a view breaks the exactly-one-target rule, exactly as two views do.
+    expect(reasonOf("grep pat f && head -2 g")).toBe("multi-view");
+    expect(reasonOf("cd d && grep -r x .")).toBe("unsupported-command:grep");
+  });
+});
+
+describe("withSearchLineNumbers injection (I1a)", () => {
+  it("injects the line-number flag after the program name, before any `--`", () => {
+    expect(withSearchLineNumbers("grep 'function' src/app.ts")).toBe(
+      "grep -n 'function' src/app.ts",
+    );
+    expect(withSearchLineNumbers("grep -- -pat f")).toBe("grep -n -- -pat f");
+    expect(withSearchLineNumbers("rg pat f")).toBe("rg --line-number pat f");
+    expect(withSearchLineNumbers("cd sub; grep x f")).toBe("cd sub; grep -n x f");
+    expect(withSearchLineNumbers("cd sub && rg -F x f")).toBe("cd sub && rg --line-number -F x f");
+    expect(withSearchLineNumbers("grep   -i  pat   f")).toBe("grep -n   -i  pat   f");
+  });
+
+  it("leaves an already-numbered search byte-identical", () => {
+    expect(withSearchLineNumbers("grep -n pat f")).toBe("grep -n pat f");
+    expect(withSearchLineNumbers("grep --line-number pat f")).toBe("grep --line-number pat f");
+    expect(withSearchLineNumbers("rg --line-number pat f")).toBe("rg --line-number pat f");
+  });
+
+  it("leaves every denied or non-search command byte-identical", () => {
+    const untouched = [
+      "",
+      "   ",
+      "cat f.txt",
+      "grep -c pat f",
+      "grep -r pat .",
+      "grep -in pat f",
+      "grep pat",
+      "grep pat a.ts b.ts",
+      "grep pat f | head -5",
+      "grep pat f > out.txt",
+      "grep pat f && cat g",
+      "grep pat *.ts",
+      "cat f | grep x",
+      "rg --json pat f",
+      "echo hi",
+    ];
+    for (const command of untouched) expect(withSearchLineNumbers(command)).toBe(command);
   });
 });
 

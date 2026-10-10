@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { writeFile } from "fs/promises";
-import { withTempFile, setupIntegrationTest } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, anchorRows } from "../support/fixtures";
 import { loadHashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 
@@ -29,7 +29,7 @@ describe("read-path materialization retires absent leases on a snapshot cache hi
       await readTool.execute("r0", { file: "revert.txt" }, undefined, undefined, ctx);
       await writeFile(path, CONTENT_B, "utf-8");
       const readB = await readTool.execute("r1", { file: "revert.txt" }, undefined, undefined, ctx);
-      const hashB = readB.content[0]!.text.split("\n")[2]!.split("│")[0]!;
+      const hashB = anchorRows(readB.content[0]!.text)[2]!.split("│")[0]!;
 
       const store = await loadHashStore();
       const rows = <T>(sql: string, ...params: (string | number)[]): T[] =>

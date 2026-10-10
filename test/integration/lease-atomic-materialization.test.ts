@@ -1,6 +1,12 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
-import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import {
+  withTempFile,
+  setupIntegrationTest,
+  getText,
+  extractHash,
+  anchorRows,
+} from "../support/fixtures";
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { HASH_LEN } from "../../src/hashline/index.js";
@@ -56,7 +62,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         undefined,
         ctx,
       );
-      const shown = getText(res).split("\n").length;
+      const shown = anchorRows(getText(res)).length;
 
       const store = await loadHashStore();
       const leases = leasesForSnapshot(store, sessionKeyFor(ctx), path, ORIGINAL);
@@ -78,7 +84,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
       // WHY: the served anchor the lease materializes from must be a live-width
       // WHY: token — a hardcoded width here would pass while the stack moved on.
       expect(bravoHash).toHaveLength(HASH_LEN);
@@ -136,7 +142,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
 
       const store = await loadHashStore();
       store.db.exec(
@@ -247,7 +253,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
 
       const store = await loadHashStore();
       store.db.exec(
@@ -290,7 +296,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         undefined,
         ctx,
       );
-      const bravoHash = extractHash(getText(r1).split("\n")[1]!);
+      const bravoHash = extractHash(anchorRows(getText(r1))[1]!);
 
       const store = await loadHashStore();
       store.db.exec(
@@ -327,7 +333,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
         undefined,
         ctx,
       );
-      const bravoHash2 = extractHash(getText(r2).split("\n")[1]!);
+      const bravoHash2 = extractHash(anchorRows(getText(r2))[1]!);
       const res2 = await editTool.execute(
         "e2",
         {

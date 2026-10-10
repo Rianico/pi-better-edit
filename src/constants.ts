@@ -27,6 +27,18 @@ export const SERVED_MAX_LINES = 200_000;
 // WHY: budget (preview.ts buildWindowedPreview).
 export const MAX_READ_WINDOWS = 16;
 
+// WHY: the ONE wording of the window-cap refusal (spec §4.2). Three points enforce the same cap — the
+// WHY: registered schema's per-array `maxItems`, `admitReadRequest`'s call-wide total, and the preview's
+// WHY: runtime mirror for direct callers — and each naming the limit its own way made the same refusal
+// WHY: read three ways. The mirror shares this message with admission rather than holding a fourth
+// WHY: spelling of "16 windows".
+export const MAX_READ_WINDOWS_MESSAGE = `Read request accepts at most ${MAX_READ_WINDOWS} windows across all files.`;
+
+// WHY: a multi-file read is still ONE tool result, so the file fan-out is bounded with the same
+// WHY: reasoning as `MAX_READ_WINDOWS`: N files draw on one served anchor budget and one shared
+// WHY: `SERVED_MAX_LINES` line budget, so the call must not be able to multiply either without bound.
+export const MAX_READ_FILES = 10;
+
 export const HASH_STORE_BUSY_TIMEOUT = 1000;
 // WHY: v9 renames the persisted anchor-generation column (`canon_version` → `anchor_generation`
 // WHY: on `file_snapshots` and `file_undo`, guarded rename preserving stamped values) — pre-generation
@@ -47,6 +59,14 @@ export const DEFERRED_STORE_SYNC_WARNING =
   "Store synchronization deferred: the file was written to disk, but the post-write snapshot commit failed. The next call re-materializes the file from disk.";
 
 export const SERVED_ROWS_CAP = 150;
+
+// WHY: spec §3.4 match-cap gate — a search that matched more than this many lines is served raw
+// WHY: instead of anchored. Anchors add ~7 B/row and a sparse match set can span the whole file,
+// WHY: so past this point the anchored rewrite costs more bytes than the plain match list while
+// WHY: leasing lines the model would have to re-read anyway; raw output is complete and safer.
+// WHY: Pass-through is all-or-nothing: never truncate the anchored set and never lease a partial
+// WHY: grant (matching ADR-0033 D3's strictly-slice-accurate-or-pass-through rule).
+export const SEARCH_MAX_MATCHES = 50;
 
 // WHY: ADR-0024 (#174 diction) — the applied diff's removed-line cap, the mirror of SERVED_ROWS_CAP
 // WHY: on the refusal side: a range deletion renders head + tail with an exact deleted count

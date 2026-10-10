@@ -1,0 +1,53 @@
+// knip configuration — THE single source of config for this repo.
+// (There is deliberately no "knip" key in package.json: knip resolves knip.json(c) first, so a
+// package.json block would be dead config that silently drifts.)
+{
+  "$schema": "https://unpkg.com/knip@6/schema.json",
+  "entry": ["index.ts", "src/hashline/index.ts", "scripts/**/*.{js,mjs,ts,mts}"],
+  "project": ["src/**/*.ts", "scripts/**/*.{js,mjs,ts,mts}"],
+  "ignore": [],
+  // Strict: reports exports that nothing outside their own module imports. This is the setting that
+  // caught the five dead exports fixed by hand in #78, so it is the one we keep.
+  "ignoreExportsUsedInFile": false,
+  // Both names are live public API (tests and the served-cap seam consume MAX_HASH_LINES, the
+  // allocation path consumes USABLE_HASH_SPACE), so the alias cannot be dropped — but knip reports
+  // every same-module alias pair as a duplicate export. Exemption is scoped to this one file and
+  // this one issue type; duplicates elsewhere in the repo still fail the run.
+  "ignoreIssues": {
+    "src/hashline/hash-identity.ts": ["duplicates"],
+  },
+  "ignoreDependencies": [
+    // knip DOES read .releaserc.json — its semantic-release plugin maps config.plugins
+    // (node_modules/knip/dist/plugins/semantic-release/index.js:17). The reason npm and github are
+    // still reported unused is an UPSTREAM PLUGIN POLICY: that plugin hard-codes an excludePackages
+    // list of four names (:10-15) and filters exactly those out of dependency resolution (:18), so a
+    // devDependency in that list can never be credited even when .releaserc.json lists it as a plugin.
+    // Proof the file really is read: @semantic-release/git and ./scripts/release-changelog.mjs appear
+    // ONLY in .releaserc.json, are absent from excludePackages, and are correctly NOT flagged.
+    // Do NOT "fix" these findings by deleting release tooling: release.yml:42 runs
+    // `pnpm exec semantic-release`, which loads exactly these plugins per .releaserc.json.
+    "@semantic-release/npm", // .releaserc.json:6 — release plugin
+    "@semantic-release/github", // .releaserc.json:7 — release plugin
+    // Spawned as a binary, never imported. knip DOES ship a husky plugin
+    // (node_modules/knip/dist/plugins/husky/index.js), but it credits husky only through the
+    // package.json "hooks" shape or a husky invocation inside a .husky hook script. Ours is neither:
+    // scripts/prepare.mjs:32 spawnSync()s the husky binary, and .husky/commit-msg merely sources
+    // `_/husky.sh` (core.hooksPath=.husky/_), so nothing credits the devDependency.
+    "husky",
+  ],
+  // The unused export/type surface is real and large (34 unused exports + 50 unused exported types)
+  // and deliberately NOT pruned here: un-exporting dozens of symbols across ~23 modules is a
+  // source-behaviour change that is out of scope for a toolchain ticket. The findings stay VISIBLE
+  // in knip's output — nothing is silenced or class-exempted — and every one of them is still counted
+  // as an error. The enforced baseline is the --max-issues cap on the CLI in package.json
+  // (`knip --max-issues 84`), which is a ratchet: the 84 known findings are tolerated, but ANY new
+  // finding pushes the total above the cap and fails the run mechanically (and is named in output).
+  // knip's config schema has no maxIssues key, so the cap must live on the command line.
+  //
+  // LOWER the number as the debt is pruned; the follow-up pruning ticket should drive it to 0 and
+  // then delete the flag entirely.
+  //
+  // Consequence, deliberate and documented: bare `knip` (no cap) exits 1 on this repo — it is not a
+  // bug and must not be "fixed" by reintroducing a `rules` downgrade. The enforced entry points are
+  // `pnpm run lint` and `pnpm run lint:knip`.
+}

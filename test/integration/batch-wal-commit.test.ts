@@ -1,6 +1,12 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFile, writeFile } from "fs/promises";
-import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
+import {
+  withTempFile,
+  setupIntegrationTest,
+  getText,
+  extractHash,
+  anchorRows,
+} from "../support/fixtures";
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { loadLeases, sessionKeyFor } from "../../src/served-session/session";
@@ -72,7 +78,7 @@ describe("multi-edit batch WAL commit", () => {
     await withTempFile("nest.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute("r1", { file: "nest.txt" }, undefined, undefined, ctx);
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const h1 = extractHash(lines[0]!);
       const h2 = extractHash(lines[1]!);
       const h3 = extractHash(lines[2]!);
@@ -115,7 +121,7 @@ describe("multi-edit batch WAL commit", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const h2 = extractHash(lines[1]!);
       const h4 = extractHash(lines[3]!);
       const h5 = extractHash(lines[4]!);
@@ -154,7 +160,7 @@ describe("multi-edit batch WAL commit", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const dupRef = extractHash(lines[1]!);
       const alphaRef = extractHash(lines[0]!);
       const betaRef = extractHash(lines[2]!);
@@ -206,7 +212,7 @@ describe("multi-edit batch WAL commit", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const dupRef = extractHash(lines[1]!);
       const alphaRef = extractHash(lines[0]!);
       const betaRef = extractHash(lines[2]!);
@@ -264,7 +270,7 @@ describe("multi-edit batch WAL commit", () => {
         undefined,
         ctx,
       );
-      const lines = getText(readRes).split("\n");
+      const lines = anchorRows(getText(readRes));
       const h3 = extractHash(lines[2]!);
 
       const store = await loadHashStore();
@@ -291,7 +297,7 @@ describe("multi-edit batch WAL commit", () => {
     await withTempFile("cycle.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute("r1", { file: "cycle.txt" }, undefined, undefined, ctx);
-      const lines = getText(r1).split("\n");
+      const lines = anchorRows(getText(r1));
       const bravo = extractHash(lines[1]!);
 
       const store = await loadHashStore();
@@ -307,9 +313,9 @@ describe("multi-edit batch WAL commit", () => {
       );
       const counterAfterForward = nextId(store, path);
       const snapshotsAfterForward = snapshotCount(store, path);
-      const forwardLines = getText(
-        await readTool.execute("r2", { file: "cycle.txt" }, undefined, undefined, ctx),
-      ).split("\n");
+      const forwardLines = anchorRows(
+        getText(await readTool.execute("r2", { file: "cycle.txt" }, undefined, undefined, ctx)),
+      );
       const bravoUpper = extractHash(forwardLines[1]!);
 
       await editTool.execute(
@@ -337,7 +343,7 @@ describe("multi-edit batch WAL commit", () => {
     await withTempFile("retire.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute("r1", { file: "retire.txt" }, undefined, undefined, ctx);
-      const lines = getText(r1).split("\n");
+      const lines = anchorRows(getText(r1));
       const row2 = extractHash(lines[1]!);
 
       await editTool.execute(
@@ -375,7 +381,7 @@ describe("multi-edit batch WAL commit", () => {
         undefined,
         ctx,
       );
-      const lines = getText(r1).split("\n");
+      const lines = anchorRows(getText(r1));
       const aaa = extractHash(lines[0]!);
 
       // edit[1] carries a `HASH│` prefix, so `resEdit` throws; with more than one item the parse loop
@@ -417,7 +423,7 @@ describe("multi-edit batch WAL commit", () => {
         undefined,
         ctx,
       );
-      const lines = getText(r1).split("\n");
+      const lines = anchorRows(getText(r1));
       const alpha = extractHash(lines[0]!);
       const beta = extractHash(lines[1]!);
       const gamma = extractHash(lines[2]!);
@@ -463,7 +469,7 @@ describe("multi-edit batch WAL commit", () => {
     await withTempFile("chain.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute("r1", { file: "chain.txt" }, undefined, undefined, ctx);
-      const lines = getText(r1).split("\n");
+      const lines = anchorRows(getText(r1));
       const alpha = extractHash(lines[0]!);
       const dupSecond = extractHash(lines[1]!);
 

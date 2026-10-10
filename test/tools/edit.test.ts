@@ -7,7 +7,8 @@ import { applyEdit } from "../../src/hashline/apply";
 import { canonDigest } from "../../src/hashline/hash-identity";
 import type { LeaseIdentityView, LeaseSpanSource, HEdit } from "../../src/hashline/resolve";
 import { HASH_RE } from "../../src/hashline/alphabet.js";
-import { withTempFile, setupIntegrationTest, useTestHome } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, useTestHome, extractHash } from "../support/fixtures";
+import { DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE } from "../../src/constants";
 
 useTestHome();
 
@@ -56,7 +57,7 @@ describe("regEdit", () => {
     });
   });
 
-  it("renders details diff while keeping diff out of LLM-visible text", async () => {
+  it("renders the anchored diff in the model-visible text alongside the details diff", async () => {
     await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
@@ -76,6 +77,9 @@ describe("regEdit", () => {
       expect(result.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       expect(result.details?.diff).toBeDefined();
       expect(result.details?.diff).toContain("BBB");
+      // Re-pointed for I4 (spec §5): the anchored diff now travels in content[0].text, not only in
+      // details.diff — the details field stays byte-identical for TUI presentation clients.
+      expect(result.content[0].text).toContain(result.details!.diff);
     });
   });
 
@@ -381,6 +385,115 @@ describe("regEdit — robustness", () => {
       }
       const content = await readFile(path, "utf-8");
       expect(content).toBe("aaa\nbbb\nccc\n");
+    });
+  });
+});
+
+/**
+ * I4 (spec §5): the edit tool's model-visible text is `<summary line>\n\n<anchored diff>`; the diff
+ * stays collapsed by the #174 single-projection rule, and the rows it shows are leased before the
+ * tool result returns — so a follow-up edit anchors on a just-modified row with no intermediate read.
+ */
+describe("I4 — model-visible anchored diff", () => {
+  it("T1: returns the summary line, a blank line, then the anchored diff", async () => {
+    await withTempFile("sample.ts", "aaa\nbbb\nccc\n", async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.ts"));
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
+
+      const result = await editTool.execute(
+        "e1",
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "BBB" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const text: string = result.content[0]!.text;
+      const [summaryLine, blankLine, ...diffRows] = text.split("\n");
+      expect(summaryLine).toBe(
+        "Successfully edited 1 file(s) — 1 of 1 edit(s) applied. Added 1 line(s), removed 1 line(s).",
+      );
+      expect(blankLine).toBe("");
+      const modelDiff = diffRows.join("\n");
+      expect(modelDiff).toBe(result.details!.diff);
+      expect(modelDiff).toMatch(/^[ +-][A-Za-z0-9]{4}│/m);
+      expect(modelDiff).toContain("│BBB");
+    });
+  });
+
+  it("T2: chains a second edit onto a row the first edit modified with no intermediate read", async () => {
+    await withTempFile("sample.ts", "l1\nl2\nl3\nl4\nl5\n", async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes("l1\nl2\nl3\nl4\nl5\n", join(cwd, "sample.ts"));
+      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
+
+      const first = await editTool.execute(
+        "e1",
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "MID" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(first.content[0]!.text).toContain("Successfully edited");
+      const modifiedRow = first.content[0]!.text.split("\n").find(
+        (line: string) => line.startsWith("+") && line.includes("│MID"),
+      )!;
+      const modifiedRef = extractHash(modifiedRow.slice(1));
+
+      const second = await editTool.execute(
+        "e2",
+        {
+          file: "sample.ts",
+          edits: [{ anchor_from: modifiedRef, anchor_to: modifiedRef, text: "DONE" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(second.content[0]!.text).toContain("Successfully edited");
+      expect(await readFile(path, "utf-8")).toBe("l1\nDONE\nl3\nl4\nl5\n");
+    });
+  });
+
+  it("T3: keeps the model-visible diff collapsed with deleted-span counting", async () => {
+    const content = `${Array.from({ length: 400 }, (_, i) => `line ${i + 1}`).join("\n")}\n`;
+    await withTempFile("big.ts", content, async ({ cwd }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await lineHashes(content, join(cwd, "big.ts"));
+      await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
+
+      const result = await editTool.execute(
+        "e1",
+        {
+          file: "big.ts",
+          edits: [{ anchor_from: hashes[2]!, anchor_to: hashes[201]!, text: "REPLACED" }],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+
+      const text: string = result.content[0]!.text;
+      const modelDiff = text.split("\n").slice(2).join("\n");
+      expect(modelDiff).toBe(result.details!.diff);
+      expect(modelDiff.split("\n")).toContain(" - ... [196 lines deleted] ...");
+      expect(modelDiff).not.toContain("│line 100");
+      // WHY: deleted-span counting is the DIFF_REMOVED_CAP / DIFF_REMOVED_EDGE collapse in
+      // WHY: src/edit-diff.ts pushRemovedLines: a deleted span is emitted either in full (at most
+      // WHY: DIFF_REMOVED_CAP anchored rows) or as DIFF_REMOVED_EDGE head rows + the exact-size marker
+      // WHY: + DIFF_REMOVED_EDGE tail rows, never all 200. Only anchored rows are counted here; the
+      // WHY: "--- <path> ---" header row also starts with "-" but is not an anchored row.
+      const removedRows = modelDiff.split("\n").filter((line) => /^-[A-Za-z0-9]{4}│/.test(line));
+      expect(removedRows.length).toBeLessThanOrEqual(
+        Math.max(DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE * 2),
+      );
     });
   });
 });

@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { withTempFile, setupIntegrationTest } from "../support/fixtures";
+import { withTempFile, setupIntegrationTest, anchorRows } from "../support/fixtures";
 
 describe("strict hashline tool loop", () => {
   it("supports read -> fresh edit -> target-lost rejection -> retry with fresh anchor", async () => {
@@ -79,7 +79,7 @@ describe("strict hashline tool loop", () => {
         undefined,
         ctx,
       );
-      const emptyHash = readResult.content[0].text.split("\n")[0]!.split("│")[0]!;
+      const emptyHash = anchorRows(readResult.content[0].text)[0]!.split("│")[0]!;
       expect(emptyHash).toMatch(/^[A-Za-z0-9]{4}$/);
 
       await editTool.execute(
