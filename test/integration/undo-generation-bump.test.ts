@@ -1,4 +1,4 @@
-import { describe, expect, it, vi } from "vitest";
+import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
@@ -148,6 +148,21 @@ function plantSnapshotRow(store: HashStore, absPath: string, key: string, hashes
     insLine.run(sid.snapshot_id, i + 1, i + 1, canonDigest(""), hashes[i]);
   }
 }
+
+// WHY (#89): these tests plant rows through the store handle and then assert on whole-table counts
+// WHY: (e.g. `SELECT COUNT(*) FROM file_snapshots WHERE snapshot_hash = ?`, unscoped by path), so they
+// WHY: need a store dir that is fresh per CALL — what the HOME-derived path inside withTempFile gives.
+// WHY: The worker-wide setupFiles seam hands every test in this file one shared, already-populated
+// WHY: dir, so opt the whole file out; vi.stubEnv records the seam's worker value and unstubAllEnvs
+// WHY: restores it for the rest of this worker.
+beforeAll(() => {
+  vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
+});
+
+afterAll(() => {
+  vi.unstubAllEnvs();
+});
+
 describe("generation bump refuses pre-v3 anchors", () => {
   it("a legacy undo row restores file-scoped anchors and refuses use from another file", async () => {
     await withTempFile("a.txt", POST, async ({ cwd }) => {

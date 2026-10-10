@@ -110,6 +110,9 @@ describe("snapshot cache — canon-version invalidation (ADR-0005)", () => {
     const tmp = await mkdtemp(join(await getWritableTempRoot(), "pi-canon-version-test-"));
     vi.stubEnv("HOME", tmp);
     vi.stubEnv("XDG_CONFIG_HOME", "");
+    // WHY (#89): these tests open/assert the store under THIS temp home, so opt out of the worker-wide
+    // WHY: setupFiles seam and let it resolve through HOME, which is fresh per call here.
+    vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
     try {
       await run(tmp);
     } finally {

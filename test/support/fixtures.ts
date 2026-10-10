@@ -49,6 +49,7 @@ export function useTestHome(): { testPath: string } {
   return state;
 }
 
+// NOTE (#89): with the setupFiles seam active the store no longer follows this HOME stub, so a test that needs a HOME-derived store dir must clear the seam with an empty PI_BETTER_EDIT_CONFIG_DIR.
 export function withHome(home: string | undefined): () => void {
   const previousHome = process.env.HOME;
   const previousXdg = process.env.XDG_CONFIG_HOME;

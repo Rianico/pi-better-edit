@@ -50,6 +50,10 @@ import { defineConfig } from "vitest/config";
  */
 export default defineConfig({
   test: {
+    // WHY: (#89) pin the hash store into a per-worker temp dir BEFORE any test module is imported, so
+    // WHY: no test can open the developer's real ~/.config/pi-better-edit/hash-store.sqlite.
+    // WHY: test/support/isolate-store.ts records why this is a worker-level seam.
+    setupFiles: ["./test/support/isolate-store.ts"],
     testTimeout: 20_000,
     hookTimeout: 30_000,
   },

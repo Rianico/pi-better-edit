@@ -24,6 +24,13 @@ function configBase(): string {
 }
 
 export function configDir(): string {
+  // WHY: precedence for the app config dir is PI_BETTER_EDIT_CONFIG_DIR > XDG_CONFIG_HOME > $HOME/.config.
+  // SAFETY: PI_BETTER_EDIT_CONFIG_DIR is trusted operator input — the env var names the app config dir
+  // SAFETY: itself, not a user-supplied path — so it is returned VERBATIM: nothing is appended or
+  // SAFETY: sanitised, and nothing is created here. An empty string counts as UNSET, mirroring the XDG
+  // SAFETY: reading in configBase() above.
+  const override = process.env.PI_BETTER_EDIT_CONFIG_DIR;
+  if (override && override.length > 0) return override;
   // SAFETY: join of trusted configBase (homedir/.config) with fixed "pi-better-edit" — constant suffix, no traversal.
   return join(configBase(), "pi-better-edit");
 }
