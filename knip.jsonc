@@ -17,15 +17,22 @@
     "src/hashline/hash-identity.ts": ["duplicates"],
   },
   "ignoreDependencies": [
-    // KNIP CANNOT SEE THROUGH .releaserc.json. Plugin names are strings in a JSON array, not
-    // imports, so knip's dependency detection misses them entirely. Do NOT "fix" these findings by
-    // deleting release tooling: release.yml runs `pnpm exec semantic-release`, which loads exactly
-    // these plugins. Exempted only because they are genuinely used, knip-blind.
+    // knip DOES read .releaserc.json — its semantic-release plugin maps config.plugins
+    // (node_modules/knip/dist/plugins/semantic-release/index.js:17). The reason npm and github are
+    // still reported unused is an UPSTREAM PLUGIN POLICY: that plugin hard-codes an excludePackages
+    // list of four names (:10-15) and filters exactly those out of dependency resolution (:18), so a
+    // devDependency in that list can never be credited even when .releaserc.json lists it as a plugin.
+    // Proof the file really is read: @semantic-release/git and ./scripts/release-changelog.mjs appear
+    // ONLY in .releaserc.json, are absent from excludePackages, and are correctly NOT flagged.
+    // Do NOT "fix" these findings by deleting release tooling: release.yml:42 runs
+    // `pnpm exec semantic-release`, which loads exactly these plugins per .releaserc.json.
     "@semantic-release/npm", // .releaserc.json:6 — release plugin
     "@semantic-release/github", // .releaserc.json:7 — release plugin
-    // Spawned as a binary, never imported: scripts/prepare.mjs:26 execs the `husky` binary, and
-    // .husky/commit-msg sources `_/husky.sh` (core.hooksPath=.husky/_). Knip sees a devDependency
-    // with no import and cannot follow the spawn.
+    // Spawned as a binary, never imported. knip DOES ship a husky plugin
+    // (node_modules/knip/dist/plugins/husky/index.js), but it credits husky only through the
+    // package.json "hooks" shape or a husky invocation inside a .husky hook script. Ours is neither:
+    // scripts/prepare.mjs:32 spawnSync()s the husky binary, and .husky/commit-msg merely sources
+    // `_/husky.sh` (core.hooksPath=.husky/_), so nothing credits the devDependency.
     "husky",
   ],
   // The unused export/type surface is real and large (34 unused exports + 50 unused exported types)
