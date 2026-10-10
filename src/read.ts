@@ -27,7 +27,7 @@ import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
 import { leaseSpanSource } from "./mutation-engine/edit-source.js";
 import { resolveLineIdentity } from "./hashline/resolve.js";
 import { toCwd } from "./paths.js";
-import { DomainError } from "./domain-errors.js";
+import { DomainError, withPayloadSubject } from "./domain-errors.js";
 import { notifyServedSpans, servedRowsToSpans } from "./served-spans.js";
 import { fileSnap } from "./file-reader.js";
 import { snapshotHashFor, upsertSnapshotsFor } from "./snapshot-store";
@@ -513,250 +513,266 @@ export function regRead(pi: ExtensionAPI): void {
     parameters: readToolSchema,
 
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
-      const request = admitReadRequest(params as RawReadParams);
-      const cwd = ctx.cwd as string;
-      const sessionCtx = ctx as { sessionManager?: { getSessionId(): string } };
-      abortIf(signal);
-      // WHY: spec §4.3 resolves `around_anchor` against the target file's active lineage for the
-      // WHY: session and carries NO mode qualifier, so the store opens for an anchor window whether or
-      // WHY: not that target serves rows. Gating it on "some target is served" made one target's output
-      // WHY: depend on a sibling's mode. A call naming neither a served target nor an anchor window
-      // WHY: still opens nothing, so the read that serves nothing pays nothing.
-      const needsStore = request.files.some(
-        (target) =>
-          (target.mode ?? request.mode) === "served" ||
-          target.windows?.some((window) => window.kind === "anchor") === true,
-      );
-      const store = needsStore ? await loadHashStore() : undefined;
-      const results: FileResult[] = [];
-      // WHY: spec §4.2 — the budget is CALL-WIDE: every served file draws on the same 200,000 lines,
-      // WHY: so the file that cannot afford what is left is refused inline instead of every prepared
-      // WHY: file's anchors, normalized text and hashes staying alive until the return.
-      let remainingServedLines = SERVED_MAX_LINES;
-
-      for (const target of request.files) {
+      try {
+        const request = admitReadRequest(params as RawReadParams);
+        const cwd = ctx.cwd as string;
+        const sessionCtx = ctx as { sessionManager?: { getSessionId(): string } };
         abortIf(signal);
-        try {
-          const mode = target.mode ?? request.mode;
-          // WHY: the served cap bounds the anchor space a read materializes; a verbatim file serves no
-          // WHY: anchors, so it carries no cap here (the decode gate is the served path's). The served
-          // WHY: file is admitted against what the earlier files of this call left of the shared budget.
-          const cap = mode === "served" ? { maxLines: remainingServedLines } : {};
-          // WHY: an anchor window must resolve BEFORE the file is prepared (its offset is not known
-          // WHY: yet), so the file is read once here and handed to the seam below — never twice.
-          const wantsAnchor = target.windows?.some((window) => window.kind === "anchor") === true;
-          const preloaded: LFile | undefined = wantsAnchor
-            ? await loadFileKindAndText(toCwd(target.file, cwd), {
+        // WHY: spec §4.3 resolves `around_anchor` against the target file's active lineage for the
+        // WHY: session and carries NO mode qualifier, so the store opens for an anchor window whether or
+        // WHY: not that target serves rows. Gating it on "some target is served" made one target's output
+        // WHY: depend on a sibling's mode. A call naming neither a served target nor an anchor window
+        // WHY: still opens nothing, so the read that serves nothing pays nothing.
+        const needsStore = request.files.some(
+          (target) =>
+            (target.mode ?? request.mode) === "served" ||
+            target.windows?.some((window) => window.kind === "anchor") === true,
+        );
+        const store = needsStore ? await loadHashStore() : undefined;
+        const results: FileResult[] = [];
+        // WHY: spec §4.2 — the budget is CALL-WIDE: every served file draws on the same 200,000 lines,
+        // WHY: so the file that cannot afford what is left is refused inline instead of every prepared
+        // WHY: file's anchors, normalized text and hashes staying alive until the return.
+        let remainingServedLines = SERVED_MAX_LINES;
+
+        for (const target of request.files) {
+          abortIf(signal);
+          try {
+            const mode = target.mode ?? request.mode;
+            // WHY: the served cap bounds the anchor space a read materializes; a verbatim file serves no
+            // WHY: anchors, so it carries no cap here (the decode gate is the served path's). The served
+            // WHY: file is admitted against what the earlier files of this call left of the shared budget.
+            const cap = mode === "served" ? { maxLines: remainingServedLines } : {};
+            // WHY: an anchor window must resolve BEFORE the file is prepared (its offset is not known
+            // WHY: yet), so the file is read once here and handed to the seam below — never twice.
+            const wantsAnchor = target.windows?.some((window) => window.kind === "anchor") === true;
+            const preloaded: LFile | undefined = wantsAnchor
+              ? await loadFileKindAndText(toCwd(target.file, cwd), {
+                  ...cap,
+                  displayPath: target.file,
+                })
+              : undefined;
+            let resolver: AnchorResolver | undefined;
+            // WHY: resolution is lineage-scoped, not mode-scoped (spec §4.3): the store now opens for an
+            // WHY: anchor window of a verbatim target too, so this guard is the safety net for a window
+            // WHY: whose file could not be loaded as text — that window falls through to the same §4.3
+            // WHY: "not found" warning instead of dereferencing a store that is not there.
+            if (store !== undefined && preloaded !== undefined && preloaded.kind === "text") {
+              const norm = await decodeNormText(target.file, cwd, {
+                ...(signal !== undefined ? { signal } : {}),
                 ...cap,
-                displayPath: target.file,
-              })
-            : undefined;
-          let resolver: AnchorResolver | undefined;
-          // WHY: resolution is lineage-scoped, not mode-scoped (spec §4.3): the store now opens for an
-          // WHY: anchor window of a verbatim target too, so this guard is the safety net for a window
-          // WHY: whose file could not be loaded as text — that window falls through to the same §4.3
-          // WHY: "not found" warning instead of dereferencing a store that is not there.
-          if (store !== undefined && preloaded !== undefined && preloaded.kind === "text") {
-            const norm = await decodeNormText(target.file, cwd, {
+                preloadedFile: preloaded,
+              });
+              resolver = {
+                sessionKey: sessionFromContext(sessionCtx, norm.absolutePath).sessionKey,
+                absolutePath: norm.absolutePath,
+                normalized: norm.normalized,
+                store,
+              };
+            }
+            const plan = planWindows(target, resolver);
+            // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
+            // WHY: `noPersist` defers the authoritative materialization until the served windows are
+            // WHY: known, so the snapshots + lineage + retirement + lease grants below commit as the ONE
+            // WHY: transaction spec §3.1.2 mandates instead of materializing first and leasing later.
+            const prepared = await prepareFile(target.file, cwd, {
               ...(signal !== undefined ? { signal } : {}),
-              ...cap,
-              preloadedFile: preloaded,
+              ...(target.legacyPage !== undefined
+                ? {
+                    ...(target.legacyPage.offset !== undefined
+                      ? { offset: target.legacyPage.offset }
+                      : {}),
+                    ...(target.legacyPage.limit !== undefined
+                      ? { limit: target.legacyPage.limit }
+                      : {}),
+                  }
+                : plan.windows !== undefined
+                  ? { windows: plan.windows }
+                  : {}),
+              // WHY: the served cap stays the served budget (independent of the anchor space): the paged
+              // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
+              // WHY: survives paging — while verbatim skips the cap and the store (no anchors to bound).
+              maxLines: remainingServedLines,
+              ...(mode === "served" && store !== undefined ? { store } : {}),
+              noPersist: true,
+              render: mode,
+              ...(preloaded === undefined ? {} : { preloadedFile: preloaded }),
             });
-            resolver = {
-              sessionKey: sessionFromContext(sessionCtx, norm.absolutePath).sessionKey,
-              absolutePath: norm.absolutePath,
-              normalized: norm.normalized,
-              store,
-            };
+            if (prepared.kind !== "text") throw unsupportedFile(target, prepared);
+            results.push({
+              file: target.file,
+              mode,
+              plan,
+              prepared,
+              ...(plan.omittedAll
+                ? {}
+                : {
+                    ...(prepared.truncation !== undefined
+                      ? { truncation: prepared.truncation }
+                      : {}),
+                    ...(prepared.nextOffset !== undefined
+                      ? { nextOffset: prepared.nextOffset }
+                      : {}),
+                  }),
+            });
+            // WHY: a served file draws the WHOLE file's line count off the shared budget, not its page —
+            // WHY: the paged walk retained one anchor per hashed line, which is what the budget bounds.
+            // WHY: A verbatim file takes no cap and so draws nothing, and a refused file draws nothing.
+            if (mode === "served") remainingServedLines -= prepared.lineTotals.split;
+          } catch (error) {
+            // WHY: one file's failure must never abort its siblings (spec §4.4): the refusal becomes
+            // WHY: that file's own section and every other file still renders. A LONE file has no
+            // WHY: sibling to render for, so its failure stays the call's failure — byte-identical to
+            // WHY: the refusal the single-file contract pins. An abort is never a per-file error.
+            if (request.files.length === 1 || signal?.aborted) throw error;
+            // WHY: the inline section carries no header, so the subject is stamped here too — the
+            // WHY: read tool raised this refusal and its own name is what the model must repair.
+            results.push({
+              file: target.file,
+              message: failureMessage(target.file, withPayloadSubject(error, "read")),
+            });
           }
-          const plan = planWindows(target, resolver);
-          // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
-          // WHY: `noPersist` defers the authoritative materialization until the served windows are
-          // WHY: known, so the snapshots + lineage + retirement + lease grants below commit as the ONE
-          // WHY: transaction spec §3.1.2 mandates instead of materializing first and leasing later.
-          const prepared = await prepareFile(target.file, cwd, {
-            ...(signal !== undefined ? { signal } : {}),
-            ...(target.legacyPage !== undefined
-              ? {
-                  ...(target.legacyPage.offset !== undefined
-                    ? { offset: target.legacyPage.offset }
-                    : {}),
-                  ...(target.legacyPage.limit !== undefined
-                    ? { limit: target.legacyPage.limit }
-                    : {}),
-                }
-              : plan.windows !== undefined
-                ? { windows: plan.windows }
-                : {}),
-            // WHY: the served cap stays the served budget (independent of the anchor space): the paged
-            // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
-            // WHY: survives paging — while verbatim skips the cap and the store (no anchors to bound).
-            maxLines: remainingServedLines,
-            ...(mode === "served" && store !== undefined ? { store } : {}),
-            noPersist: true,
-            render: mode,
-            ...(preloaded === undefined ? {} : { preloadedFile: preloaded }),
-          });
-          if (prepared.kind !== "text") throw unsupportedFile(target, prepared);
-          results.push({
-            file: target.file,
-            mode,
-            plan,
-            prepared,
-            ...(plan.omittedAll
-              ? {}
-              : {
-                  ...(prepared.truncation !== undefined ? { truncation: prepared.truncation } : {}),
-                  ...(prepared.nextOffset !== undefined ? { nextOffset: prepared.nextOffset } : {}),
-                }),
-          });
-          // WHY: a served file draws the WHOLE file's line count off the shared budget, not its page —
-          // WHY: the paged walk retained one anchor per hashed line, which is what the budget bounds.
-          // WHY: A verbatim file takes no cap and so draws nothing, and a refused file draws nothing.
-          if (mode === "served") remainingServedLines -= prepared.lineTotals.split;
-        } catch (error) {
-          // WHY: one file's failure must never abort its siblings (spec §4.4): the refusal becomes
-          // WHY: that file's own section and every other file still renders. A LONE file has no
-          // WHY: sibling to render for, so its failure stays the call's failure — byte-identical to
-          // WHY: the refusal the single-file contract pins. An abort is never a per-file error.
-          if (request.files.length === 1 || signal?.aborted) throw error;
-          results.push({ file: target.file, message: failureMessage(target.file, error) });
         }
-      }
-      const preparedFiles = results.filter(isPrepared);
+        const preparedFiles = results.filter(isPrepared);
 
-      for (const entry of preparedFiles) {
-        if (entry.mode !== "served" || entry.plan.omittedAll) continue;
+        for (const entry of preparedFiles) {
+          if (entry.mode !== "served" || entry.plan.omittedAll) continue;
+          try {
+            entry.snapshotId = (
+              await fileSnap(
+                entry.prepared.absolutePath,
+                contentChecksum(entry.prepared.normalized),
+                entry.prepared.stats,
+              )
+            ).snapshotId;
+          } catch {
+            entry.snapshotId = undefined;
+          }
+        }
+
+        const single = results.length === 1 ? preparedFiles[0] : undefined;
+        const firstTruncation = preparedFiles.find(
+          (entry) => entry.truncation !== undefined,
+        )?.truncation;
+        const anyTruncated = firstTruncation !== undefined;
+        const content = [{ type: "text" as const, text: results.map(sectionText).join("\n\n") }];
+        const metrics = {
+          truncated: anyTruncated,
+          ...(single?.nextOffset !== undefined ? { next_offset: single.nextOffset } : {}),
+        };
+
+        const servedEntries = preparedFiles.filter(
+          (entry) => entry.mode === "served" && !entry.plan.omittedAll,
+        );
+        // WHY: a verbatim-only call shares admission/normalization but must not touch served state —
+        // WHY: no lease, snapshot, epoch, drift clear, or span notification. Return before any of it.
+        if (servedEntries.length === 0) {
+          return {
+            content,
+            details:
+              single?.mode === "verbatim"
+                ? {
+                    ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
+                    ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
+                    metrics,
+                  }
+                : {
+                    ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
+                    metrics,
+                  },
+          };
+        }
+
+        const sessionKey = sessionFromContext(
+          sessionCtx,
+          servedEntries[0]!.prepared.absolutePath,
+        ).sessionKey;
+        // WHY: the multi-file materialization (spec §3.1.2 steps 4-6, extended to N files): every
+        // WHY: file's snapshot + lineage + retirement + served leases commit in ONE `BEGIN IMMEDIATE`,
+        // WHY: so a multi-file read can never lease one file's anchors without the other's snapshot.
+        // WHY: Best-effort — a store failure never fails the read; the next call re-materializes.
         try {
-          entry.snapshotId = (
-            await fileSnap(
-              entry.prepared.absolutePath,
-              contentChecksum(entry.prepared.normalized),
-              entry.prepared.stats,
-            )
-          ).snapshotId;
-        } catch {
-          entry.snapshotId = undefined;
+          await upsertSnapshotsFor(
+            servedEntries.map((entry) => ({
+              descriptor: {
+                path: entry.prepared.absolutePath,
+                snapshotHash: snapshotHashFor(entry.prepared.normalized),
+                lineCount: entry.prepared.lineTotals.split,
+                hashes: entry.prepared.fileHashes,
+                content: entry.prepared.normalized,
+              },
+              options: {
+                retireLeases: true,
+                leases: { sessionKey, rows: servedRowsOf(entry) },
+              },
+            })),
+          );
+        } catch (error) {
+          // SAFETY: best-effort post-read materialization — the preview rows are already computed
+          // SAFETY: and the served mirror below still records them; a missed snapshot/lease degrades
+          // SAFETY: to the fail-closed path the next edit would take anyway.
+          console.error("Failed to commit read-path snapshot materialization:", error);
         }
-      }
+        for (const entry of servedEntries) {
+          const session = sessionFromContext(sessionCtx, entry.prepared.absolutePath);
+          const isFullRead = entry.plan.windows === undefined && entry.truncation === undefined;
+          // WHY: the mirror phase is best-effort PER FILE, exactly like the materialization phase
+          // WHY: above: the leases already committed in the transaction, so a session write failing for
+          // WHY: one file must not reject a call whose every row is already rendered (spec §4.4) — the
+          // WHY: next edit degrades to the fail-closed path it would take anyway.
+          try {
+            // WHY: mirror-only — the leases already committed in the transaction above, so no
+            // WHY: `contentHash` is passed and no third transaction remains on the read path. Canon
+            // WHY: evidence needs no write at all: it is derived from those leases (#151).
+            await session.recordEpoch({
+              rows: servedRowsOf(entry),
+              lineCount: entry.prepared.lineTotals.visible,
+              fullReadHashes: entry.prepared.fileHashes,
+              ...(isFullRead && entry.snapshotId !== undefined
+                ? { snapshotId: entry.snapshotId }
+                : {}),
+              isFullRead,
+            });
+            if (isFullRead) await session.clearDrift();
+          } catch (error) {
+            // WHY: a LONE file has no sibling to render for, so its failure stays the call's failure,
+            // WHY: exactly as the per-file admission catch above rules — the single-file contract pins it.
+            if (request.files.length === 1) throw error;
+            console.error(
+              "Failed to mirror the served read into the session:",
+              entry.prepared.absolutePath,
+              error,
+            );
+          }
+          // WHY: fire-and-forget by design — the seam snapshots its observers and isolates each one, so
+          // WHY: this read's return value and timing are unchanged whether or not an observer is attached.
+          notifyServedSpans({
+            filePath: entry.prepared.absolutePath,
+            spans: servedRowsToSpans(entry.prepared.served),
+            source: "read",
+            // WHY: the verbatim normalized bytes let the mirror hash caller evidence in memory instead
+            // WHY: of re-reading the file; the anchored preview is never the source of a line hash.
+            content: entry.prepared.normalized,
+          });
+        }
 
-      const single = results.length === 1 ? preparedFiles[0] : undefined;
-      const firstTruncation = preparedFiles.find(
-        (entry) => entry.truncation !== undefined,
-      )?.truncation;
-      const anyTruncated = firstTruncation !== undefined;
-      const content = [{ type: "text" as const, text: results.map(sectionText).join("\n\n") }];
-      const metrics = {
-        truncated: anyTruncated,
-        ...(single?.nextOffset !== undefined ? { next_offset: single.nextOffset } : {}),
-      };
-
-      const servedEntries = preparedFiles.filter(
-        (entry) => entry.mode === "served" && !entry.plan.omittedAll,
-      );
-      // WHY: a verbatim-only call shares admission/normalization but must not touch served state —
-      // WHY: no lease, snapshot, epoch, drift clear, or span notification. Return before any of it.
-      if (servedEntries.length === 0) {
         return {
           content,
-          details:
-            single?.mode === "verbatim"
-              ? {
-                  ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
-                  ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
-                  metrics,
-                }
-              : {
-                  ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
-                  metrics,
-                },
+          details: single
+            ? {
+                ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
+                ...(single.snapshotId !== undefined ? { snapshotId: single.snapshotId } : {}),
+                ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
+                metrics,
+              }
+            : {
+                ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
+                metrics,
+              },
         };
-      }
-
-      const sessionKey = sessionFromContext(
-        sessionCtx,
-        servedEntries[0]!.prepared.absolutePath,
-      ).sessionKey;
-      // WHY: the multi-file materialization (spec §3.1.2 steps 4-6, extended to N files): every
-      // WHY: file's snapshot + lineage + retirement + served leases commit in ONE `BEGIN IMMEDIATE`,
-      // WHY: so a multi-file read can never lease one file's anchors without the other's snapshot.
-      // WHY: Best-effort — a store failure never fails the read; the next call re-materializes.
-      try {
-        await upsertSnapshotsFor(
-          servedEntries.map((entry) => ({
-            descriptor: {
-              path: entry.prepared.absolutePath,
-              snapshotHash: snapshotHashFor(entry.prepared.normalized),
-              lineCount: entry.prepared.lineTotals.split,
-              hashes: entry.prepared.fileHashes,
-              content: entry.prepared.normalized,
-            },
-            options: {
-              retireLeases: true,
-              leases: { sessionKey, rows: servedRowsOf(entry) },
-            },
-          })),
-        );
       } catch (error) {
-        // SAFETY: best-effort post-read materialization — the preview rows are already computed
-        // SAFETY: and the served mirror below still records them; a missed snapshot/lease degrades
-        // SAFETY: to the fail-closed path the next edit would take anyway.
-        console.error("Failed to commit read-path snapshot materialization:", error);
+        throw withPayloadSubject(error, "read");
       }
-      for (const entry of servedEntries) {
-        const session = sessionFromContext(sessionCtx, entry.prepared.absolutePath);
-        const isFullRead = entry.plan.windows === undefined && entry.truncation === undefined;
-        // WHY: the mirror phase is best-effort PER FILE, exactly like the materialization phase
-        // WHY: above: the leases already committed in the transaction, so a session write failing for
-        // WHY: one file must not reject a call whose every row is already rendered (spec §4.4) — the
-        // WHY: next edit degrades to the fail-closed path it would take anyway.
-        try {
-          // WHY: mirror-only — the leases already committed in the transaction above, so no
-          // WHY: `contentHash` is passed and no third transaction remains on the read path. Canon
-          // WHY: evidence needs no write at all: it is derived from those leases (#151).
-          await session.recordEpoch({
-            rows: servedRowsOf(entry),
-            lineCount: entry.prepared.lineTotals.visible,
-            fullReadHashes: entry.prepared.fileHashes,
-            ...(isFullRead && entry.snapshotId !== undefined
-              ? { snapshotId: entry.snapshotId }
-              : {}),
-            isFullRead,
-          });
-          if (isFullRead) await session.clearDrift();
-        } catch (error) {
-          // WHY: a LONE file has no sibling to render for, so its failure stays the call's failure,
-          // WHY: exactly as the per-file admission catch above rules — the single-file contract pins it.
-          if (request.files.length === 1) throw error;
-          console.error(
-            "Failed to mirror the served read into the session:",
-            entry.prepared.absolutePath,
-            error,
-          );
-        }
-        // WHY: fire-and-forget by design — the seam snapshots its observers and isolates each one, so
-        // WHY: this read's return value and timing are unchanged whether or not an observer is attached.
-        notifyServedSpans({
-          filePath: entry.prepared.absolutePath,
-          spans: servedRowsToSpans(entry.prepared.served),
-          source: "read",
-          // WHY: the verbatim normalized bytes let the mirror hash caller evidence in memory instead
-          // WHY: of re-reading the file; the anchored preview is never the source of a line hash.
-          content: entry.prepared.normalized,
-        });
-      }
-
-      return {
-        content,
-        details: single
-          ? {
-              ...(single.truncation !== undefined ? { truncation: single.truncation } : {}),
-              ...(single.snapshotId !== undefined ? { snapshotId: single.snapshotId } : {}),
-              ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
-              metrics,
-            }
-          : { ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}), metrics },
-      };
     },
   });
 }

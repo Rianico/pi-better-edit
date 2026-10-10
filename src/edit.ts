@@ -20,6 +20,8 @@ import {
   editModeSchema,
   assertReq,
 } from "./payload-contract.js";
+import { withPayloadSubject } from "./domain-errors.js";
+import { attributePayloadSubject } from "./error-envelope.js";
 import { createEditTool, type PreviewContext } from "./edit-tool.js";
 import { createTuiPresenter } from "./tui-presenter.js";
 import { loadP, loadGuide } from "./prompts.js";
@@ -83,22 +85,37 @@ export function buildToolDef(
     parameters,
     promptSnippet: E_SNIPPET,
     promptGuidelines: E_GUIDE,
-    prepareArguments: prepareEditArguments,
+    // WHY: an admission refusal raised here carries no subject, so it must name the edit tool.
+    // WHY: Without the stamp the model reads the neutral wording — the analyzer names no caller.
+    prepareArguments: (args: unknown) => {
+      try {
+        return prepareEditArguments(args);
+      } catch (error) {
+        throw withPayloadSubject(error, "edit");
+      }
+    },
     renderShell: "default",
     // SAFETY: presenter owns TUI casts — asToolDef returns ToolDefinition-typed renders, edit.ts has zero direct TUI casts
     ...presenter.asToolDef(),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       // SAFETY: pi execute boundary is untyped — ctx narrowed via sessionKeyFor, signal is AbortSignal validated by engine
-      const res = await tool.execute(
-        params,
-        signal as AbortSignal | undefined,
-        ctx as unknown as {
-          cwd: string;
-          sessionManager?: { getSessionId(): string };
-        },
-      );
-      // SAFETY: res is validated tool result after tool.execute — cast to pi ToolDef return type for registration
-      return res as unknown as ReturnType<ToolDef["execute"]> extends Promise<infer R> ? R : never;
+      try {
+        const res = await tool.execute(
+          params,
+          signal as AbortSignal | undefined,
+          // SAFETY: ctx is untyped at the pi boundary — cast validated by pi's runtime shape
+          ctx as unknown as {
+            cwd: string;
+            sessionManager?: { getSessionId(): string };
+          },
+        );
+        // SAFETY: res is validated tool result after tool.execute — cast to pi ToolDef return type for registration
+        return res as unknown as ReturnType<ToolDef["execute"]> extends Promise<infer R>
+          ? R
+          : never;
+      } catch (error) {
+        throw attributePayloadSubject(error, "edit");
+      }
     },
   };
 }

@@ -79,7 +79,7 @@ In accordance with agentic interface design:
 
 For atomic multi-edit batches:
 1. When edit $i$ fails, execution aborts atomically (`batchAbortFor`).
-2. The error envelope must represent **only** the failing item ($i$), retaining its exact `servedBlock`, `servedRows`, `code`, and `cause`.
+2. The error envelope must represent **only** the failing item ($i$), retaining its exact `servedBlock`, `servedRows`, `code`, and `cause`, plus the single-purpose `payloadMessage` slot an `E_BAD_PAYLOAD` refusal needs so a routed refusal keeps its invoking tool.
 3. Sibling items ($0 \dots i-1, i+1 \dots N$) must not pollute the diagnostic payload or overwrite the failed item's serve block.
 
 ---
@@ -154,6 +154,8 @@ export interface ErrorPayloadMap {
   };
   E_BAD_PAYLOAD: {
     message: string;
+    /** The registered tool that raised the refusal, absent when no boundary stamped one. */
+    subject?: PayloadSubject;
   };
   E_EMPTY_RANGE: {
     path: string;

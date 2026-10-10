@@ -56,6 +56,22 @@ export type DomainErrorCode =
   | "E_LARGE_FILE";
 
 /**
+ * The registered tool whose call produced an `E_BAD_PAYLOAD`. WHY the registered name: the model
+ * reads the tool list, so `undo_last_edit` names the call it must repair and a short form would
+ * name nothing. A tool belongs here only after a live path is measured, never by assumption.
+ */
+export type PayloadSubject = "read" | "edit" | "undo_last_edit";
+
+// WHY: this is the runtime companion of the `PayloadSubject` union, like `isDomainErrorCode`.
+// WHY: Only a member may name a tool.
+// WHY: A non-member renders the neutral wording instead.
+const PAYLOAD_SUBJECTS: readonly PayloadSubject[] = ["read", "edit", "undo_last_edit"];
+
+export function isPayloadSubject(value: unknown): value is PayloadSubject {
+  return typeof value === "string" && (PAYLOAD_SUBJECTS as readonly string[]).includes(value);
+}
+
+/**
  * Applied-tier warning codes — the `W_*` namespace (spec
  * docs/spec/unified-error-and-warning-contract.md sections 3.1, 3.3, D3).
  * A `[W_*]` line reports an applied mutation; `[E_*]` reports a rejection.
@@ -111,6 +127,12 @@ export function isRangeCause(value: unknown): value is RangeCause {
 export interface ErrorPayloadMap {
   E_BAD_PAYLOAD: {
     message: string;
+    /**
+     * The invoking tool, when the boundary knows it. WHY optional: an absent subject renders the
+     * neutral wording, while a required field would force every producer to claim a writer it
+     * cannot prove — the defect this field removes.
+     */
+    subject?: PayloadSubject;
   };
   E_EMPTY_RANGE: Record<string, never>;
   E_STALE_ANCHOR: {
@@ -327,7 +349,13 @@ function foreignAnchorFormat(payload: ErrorPayloadMap["E_FOREIGN_ANCHOR"]): stri
 export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[K]> } = {
   E_BAD_PAYLOAD: {
     audience: "MODEL",
-    format: ({ message }) => `The edit payload is not valid: ${message}`,
+    // WHY: the same refusal reaches the model from read, edit and undo_last_edit.
+    // WHY: Naming the caller's own tool is what tells it which payload to repair.
+    // WHY: A subject outside the union cannot name a tool, so it renders the neutral clause.
+    format: ({ message, subject }) =>
+      isPayloadSubject(subject)
+        ? `The ${subject} payload is not valid: ${message}`
+        : `The payload is not valid: ${message}`,
     // WHY remedy: validation rejected the payload before any resolution, so the field fix is the only next action. See ADR-0021.
     remedy: "Fix the payload fields and retry.",
   },
@@ -672,6 +700,41 @@ export class DomainError<K extends DomainErrorCode = DomainErrorCode> extends Er
       ...(fields.cause !== undefined ? { cause: fields.cause } : {}),
     };
   }
+}
+
+/**
+ * The single cast from an unknown throw to the registry's `E_BAD_PAYLOAD` shape. WHY it is sound:
+ * the code check fixes which member's payload this is — `message` plus the optional subject, and no
+ * envelope field to lose — which the type system cannot see through the payload union.
+ */
+function badPayloadOf(error: unknown): ErrorPayloadMap["E_BAD_PAYLOAD"] | undefined {
+  if (!(error instanceof DomainError) || error.code !== "E_BAD_PAYLOAD") return undefined;
+  // SAFETY: the code gate above selects the registry member whose shape `payload` holds.
+  return error.payload as ErrorPayloadMap["E_BAD_PAYLOAD"];
+}
+
+/**
+ * The raw `message` of an `E_BAD_PAYLOAD`, for a seam that must re-attribute a refusal the engine
+ * already rendered. WHY here: the payload type is registry-owned, so its one cast sits beside it.
+ * Returns `undefined` for every other failure, and for anything that is not a DomainError.
+ */
+export function badPayloadMessageOf(error: unknown): string | undefined {
+  return badPayloadOf(error)?.message;
+}
+
+/**
+ * Attribute an `E_BAD_PAYLOAD` to the tool that raised it. WHY a re-wrap: the model-visible header
+ * is composed inside the constructor, so the subject must sit in the payload before construction.
+ * WHY transparent: a foreign failure of any kind comes back as the SAME object, so a boundary can
+ * wrap its whole body without changing abort or any other path.
+ */
+export function withPayloadSubject<T>(
+  error: T,
+  subject: PayloadSubject,
+): T | DomainError<"E_BAD_PAYLOAD"> {
+  const payload = badPayloadOf(error);
+  if (payload === undefined) return error;
+  return new DomainError("E_BAD_PAYLOAD", { ...payload, subject });
 }
 
 // WHY: the batch-abort wrapper carries the inner code as a plain field — this

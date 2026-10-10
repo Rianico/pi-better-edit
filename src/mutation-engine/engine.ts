@@ -16,19 +16,21 @@ import { DIFF_PREVIEW_CONTEXT } from "../constants.js";
 import type { PipelineOptions } from "./types.js";
 import type { MutationResult } from "./types.js";
 import type { NormalizedEditRequest } from "../payload-contract.js";
-import { DomainError, type DomainErrorCode } from "../domain-errors.js";
+import { DomainError, badPayloadMessageOf, type DomainErrorCode } from "../domain-errors.js";
 import { readEnvelope, type ErrorEnvelope } from "../error-envelope.js";
 
 function failureFromEnvelope(args: {
   code: DomainErrorCode;
   message: string;
   env: ErrorEnvelope;
+  payloadMessage?: string;
 }): MutationResult {
-  const { code, message, env } = args;
+  const { code, message, env, payloadMessage } = args;
   return {
     ok: false,
     code,
     message,
+    ...(payloadMessage !== undefined ? { payloadMessage } : {}),
     ...(env.servedRows !== undefined && env.servedRows.length > 0
       ? { servedRows: env.servedRows }
       : {}),
@@ -42,10 +44,14 @@ function toFailure(error: unknown): MutationResult {
   // WHY: fields — the code is read, never scraped from the message, so a
   // WHY: `[MODEL]`-only message can never surface as `code: "MODEL"`.
   if (error instanceof DomainError) {
+    // WHY: a rendered refusal cannot be re-attributed at the tool seam.
+    // WHY: The RAW payload message travels beside it, undefined for every other code.
+    const payloadMessage = badPayloadMessageOf(error);
     return failureFromEnvelope({
       code: error.code,
       message: error.message,
       env: readEnvelope(error) ?? {},
+      ...(payloadMessage !== undefined ? { payloadMessage } : {}),
     });
   }
   const message = error instanceof Error ? error.message : String(error);

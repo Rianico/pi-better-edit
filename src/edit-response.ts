@@ -1,7 +1,7 @@
 import { denseServeRows, type ServedRow } from "./hashline/served.js";
 import { genDiff } from "./edit-diff.js";
 import { visLines, clipLine } from "./utils.js";
-import { isDomainErrorCode } from "./domain-errors.js";
+import { isDomainErrorCode, withPayloadSubject } from "./domain-errors.js";
 import { attachEnvelope, rawCodeOf, readEnvelope, type ErrorEnvelope } from "./error-envelope.js";
 import { snapshotHashFor } from "./snapshot-store";
 import type { ProcessedEditFile } from "./mutation-engine/types.js";
@@ -410,6 +410,16 @@ function stripModelPrefix(message: string): string {
 }
 
 /**
+ * The inner diagnostic a wrapper embeds. WHY the ATTRIBUTED inner: the engine renders a refusal
+ * before the wrapper sees it, so the raw message would freeze the neutral clause. WHY here, not at
+ * the tool boundary: a rebuild there discards this wrapper's own prefix. It would also drop the
+ * atomicity trailer, which is worse than a neutral clause. Only `E_BAD_PAYLOAD` is re-wrapped.
+ */
+function innerDiagnostic(error: Error): string {
+  return stripModelPrefix(withPayloadSubject(error, "edit").message);
+}
+
+/**
  * Wraps a rejected item of a multi-item call for the model. Shared by the pre-mutation span gate and
  * the sequential mutate loop, so an item that fails either way reads identically: the failing item,
  * its own diagnostic, and the reject-and-serve rows of the range the model retries from.
@@ -427,7 +437,7 @@ export function batchAbortFor(args: { error: Error; index: number; path: string 
   // WHY: the failing edit's pre-rendered serve block is forwarded too (spec D2): an atomic
   // WHY: batch abort must preserve the serve block or the retry owes a re-read.
   const wrapped = new Error(
-    `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}\n` +
+    `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n` +
       `${BATCH_ATOMICITY_TRAILER} Fix the failing edit (and any later edit that depends on it), then resubmit.`,
   );
   // WHY: the whole forwarded payload moves through the envelope reader/writer pair
@@ -458,9 +468,7 @@ export function batchAbortForMany(args: {
   path: string;
 }): Error {
   const { failures, path } = args;
-  const bullets = failures.map(
-    ({ error, index }) => `- edit[${index}]: ${stripModelPrefix(error.message)}`,
-  );
+  const bullets = failures.map(({ error, index }) => `- edit[${index}]: ${innerDiagnostic(error)}`);
   const wrapped = new Error(
     `[MODEL] ${failures.length} edits in ${path} failed. The whole edit call was rejected and the file is unchanged.\n` +
       `${bullets.join("\n")}\n` +
@@ -507,7 +515,7 @@ export function wrapParseFailure(error: Error, index: number, path: string): Err
   // WHY: atomicity trailer explains the rolled-back siblings without misdirecting the model to
   // WHY: hunt for coordinate overlap.
   const wrapped = new Error(
-    `[MODEL] edit[${index}] (${path}) failed: ${stripModelPrefix(error.message)}\n${BATCH_ATOMICITY_TRAILER}`,
+    `[MODEL] edit[${index}] (${path}) failed: ${innerDiagnostic(error)}\n${BATCH_ATOMICITY_TRAILER}`,
   );
   // WHY: the wrapper carries the inner code and diagnosis through the envelope pair so the
   // WHY: failure envelope keeps the code the model can act on. A parse failure carries no

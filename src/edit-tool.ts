@@ -73,6 +73,9 @@ export function createEditTool(): EditTool {
       attachEnvelope(failure, {
         code: result.code,
         ...(result.cause !== undefined ? { cause: result.cause } : {}),
+        // WHY: the raw payload message rides the envelope so the adapter can name the tool.
+        // WHY: The rendered message alone cannot say which call raised the refusal.
+        ...(result.payloadMessage !== undefined ? { payloadMessage: result.payloadMessage } : {}),
         servedRows: result.servedRows ?? [],
         servedBlock: result.servedBlock ?? "",
       });

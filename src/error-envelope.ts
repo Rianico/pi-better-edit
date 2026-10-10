@@ -1,7 +1,7 @@
 /**
- * SAFETY: single owner of the rejection envelope — the four forwarded fields
- * (`code`, `details.cause`, `servedRows`, `servedBlock`) every rejection carries
- * between its producer and the engine's reader. Before this module each site
+ * SAFETY: single owner of the rejection envelope. The five forwarded fields are `code`,
+ * `details.cause`, `servedRows`, `servedBlock`, and `payloadMessage`. Every rejection carries
+ * them from its producer to the engine's reader. Before this module each site
  * hand-copied them through `as { code?: string }` casts (batch-abort wrappers,
  * the tool-seam throw, `toFailure`'s sniff), so adding a field meant five edits.
  *
@@ -11,8 +11,7 @@
  * would force `DomainError` — whose public surface the registry tests pin — or
  * the batch wrappers onto a new hierarchy without deepening anything: the
  * wrappers must stay `instanceof Error`-plain while a caught `DomainError` is
- * still routed by class identity in `toFailure`. Adding a fifth envelope field
- * is one `ErrorEnvelope` slot + one line in `attachEnvelope` + one line in
+ * still routed by class identity in `toFailure`. Adding a sixth envelope field
  * `readEnvelope` — never a call-site change.
  *
  * Honesty rule: the read validates, it does not trust. Only a registry member
@@ -26,13 +25,15 @@
  */
 
 import {
+  DomainError,
   isDomainErrorCode,
   isRangeCause,
+  withPayloadSubject,
   type DomainErrorCode,
+  type PayloadSubject,
   type RangeCause,
   type ServedRow,
 } from "./domain-errors.js";
-
 /** The one owned representation of the forwarded rejection fields. */
 export interface ErrorEnvelope {
   /** Machine code — registry members only; see the honesty rule above. */
@@ -43,6 +44,14 @@ export interface ErrorEnvelope {
   servedRows?: ServedRow[];
   /** Pre-rendered serve block; a blank block is absence, never forwarded. */
   servedBlock?: string;
+  /**
+   * The raw `E_BAD_PAYLOAD` payload message a ROUTED refusal had to carry: the engine turns a
+   * thrown refusal into `code` plus a rendered message, so the tool seam cannot name the invoking
+   * tool without the unrendered text. WHY single-purpose rather than a payload bag: one predicate
+   * admits it at both ends of the pair — `E_BAD_PAYLOAD` only, and only a non-empty string —
+   * which keeps the untyped-extras hole this module closes shut.
+   */
+  payloadMessage?: string;
 }
 
 /** The wire projection `attachEnvelope` stamps — the single cast site for the envelope fields. */
@@ -51,6 +60,7 @@ type EnvelopedError = Error & {
   cause?: RangeCause;
   servedRows?: ServedRow[];
   servedBlock?: string;
+  payloadMessage?: string;
   details?: { code?: DomainErrorCode; cause: RangeCause };
 };
 
@@ -60,13 +70,26 @@ type EnvelopeCarrier = {
   cause?: unknown;
   servedRows?: unknown;
   servedBlock?: unknown;
+  payloadMessage?: unknown;
   details?: { cause?: unknown } | undefined;
 };
 
 /**
- * Stamp the envelope onto a rejection error. Only defined slots are written; the
- * `cause` slot also materialises its `details: { code?, cause }` projection so a
- * consumer reading `details.cause` sees exactly the top-level diagnosis.
+ * WHY one predicate gates BOTH ends of the pair: the writer never stamps a slot the reader
+ * would refuse, so the two ends cannot drift. `E_BAD_PAYLOAD` only, and only a non-empty string.
+ */
+function admitsPayloadMessage(code: unknown, payloadMessage: unknown): payloadMessage is string {
+  return (
+    code === "E_BAD_PAYLOAD" && typeof payloadMessage === "string" && payloadMessage.length > 0
+  );
+}
+
+/**
+ * Stamp the envelope onto a rejection error. Only defined slots are written, and the
+ * single-purpose `payloadMessage` slot must also pass `admitsPayloadMessage` so the writer
+ * never stamps what the reader would refuse. The `cause` slot also materialises its
+ * `details: { code?, cause }` projection so a consumer reading `details.cause` sees exactly
+ * the top-level diagnosis.
  */
 export function attachEnvelope(error: Error, envelope: ErrorEnvelope): void {
   // SAFETY: the only cast of an Error to the envelope wire shape — both ends of the
@@ -82,6 +105,8 @@ export function attachEnvelope(error: Error, envelope: ErrorEnvelope): void {
   }
   if (envelope.servedRows !== undefined) carrier.servedRows = envelope.servedRows;
   if (envelope.servedBlock !== undefined) carrier.servedBlock = envelope.servedBlock;
+  const payloadMessage = envelope.payloadMessage;
+  if (admitsPayloadMessage(envelope.code, payloadMessage)) carrier.payloadMessage = payloadMessage;
 }
 
 /**
@@ -106,6 +131,12 @@ export function readEnvelope(source: unknown): ErrorEnvelope | undefined {
   if (typeof carrier.servedBlock === "string" && carrier.servedBlock.length > 0) {
     envelope.servedBlock = carrier.servedBlock;
   }
+  // WHY: the slot is single-purpose, so the same predicate gates the reader.
+  // WHY: A payload message under any other code is an untyped extra this reader refuses.
+  const payloadMessage = carrier.payloadMessage;
+  if (admitsPayloadMessage(envelope.code, payloadMessage)) {
+    envelope.payloadMessage = payloadMessage;
+  }
   return envelope;
 }
 
@@ -121,4 +152,24 @@ export function rawCodeOf(source: unknown): string | undefined {
   if (source === null || typeof source !== "object") return undefined;
   const code = (source as EnvelopeCarrier).code;
   return typeof code === "string" ? code : undefined;
+}
+
+/**
+ * Attribute a routed `E_BAD_PAYLOAD` to the tool at the boundary. WHY this seam: the engine turns a
+ * thrown refusal into `code` plus a rendered message, so the raw payload survives only on this
+ * envelope — and the header shape stays with the registry, never re-split here. WHY transparent:
+ * every other carrier, and every payload slot the reader rejected, comes back as the SAME object.
+ */
+export function attributePayloadSubject<T>(
+  error: T,
+  subject: PayloadSubject,
+): T | DomainError<"E_BAD_PAYLOAD"> {
+  const attributed = withPayloadSubject(error, subject);
+  if (attributed !== error) return attributed;
+  const envelope = readEnvelope(error);
+  if (envelope?.code !== "E_BAD_PAYLOAD" || envelope.payloadMessage === undefined) return error;
+  const rebuilt = new DomainError("E_BAD_PAYLOAD", { message: envelope.payloadMessage, subject });
+  // WHY: the rebuilt refusal keeps the routed envelope's diagnosis, rows and block intact.
+  attachEnvelope(rebuilt, envelope);
+  return rebuilt;
 }

@@ -131,6 +131,12 @@ export interface MutationFailure {
   /** SAFETY: Fresh served block for retry when available (reject-and-serve). */
   servedBlock?: string;
   servedRows?: ServedRow[];
+  /**
+   * SAFETY: the RAW `E_BAD_PAYLOAD` message behind a rendered refusal, when the route is one, so
+   * SAFETY: the tool seam can name the invoking tool instead of falling back to the neutral
+   * SAFETY: wording. Present only for `code: "E_BAD_PAYLOAD"`.
+   */
+  payloadMessage?: string;
   /** SAFETY: User-facing diagnosis, never a model remedy — a CONTEXT.md glossary term. */
   cause?: RangeCause;
   details?: { code: DomainErrorCode; cause: RangeCause };
