@@ -4,6 +4,7 @@ import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 import { Type } from "typebox";
 import {
   MAX_READ_FILES,
+  MAX_READ_FILES_MESSAGE,
   MAX_READ_WINDOWS,
   MAX_READ_WINDOWS_MESSAGE,
   SERVED_MAX_LINES,
@@ -289,7 +290,7 @@ function admitReadRequest(params: RawReadParams): AdmittedRequest {
     throw badPayload("Read request needs at least one file: pass `files` (or a legacy `file`).");
   }
   if (files.length > MAX_READ_FILES) {
-    throw badPayload(`Read request accepts at most ${MAX_READ_FILES} files.`);
+    throw badPayload(MAX_READ_FILES_MESSAGE);
   }
   let windowTotal = 0;
   const targets = files.map((entry, index): AdmittedTarget => {
