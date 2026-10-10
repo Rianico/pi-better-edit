@@ -5,34 +5,50 @@ import { DomainError } from "../../src/domain-errors.js";
 
 /**
  * Envelope contract oracle (CAND-4): `src/error-envelope.ts` is the single owner of the
- * four forwarded rejection fields (`code`, `details.cause`, `servedRows`, `servedBlock`)
- * that were previously hand-copied at five sites. This test pins the contract at ONE
- * place: the assembler round-trips all four fields, and the engine's routing decision on
+ * five forwarded rejection fields (`code`, `details.cause`, `servedRows`, `servedBlock`,
+ * `payloadMessage`) that were previously hand-copied at five sites. This test pins the
+ * contract at ONE place: the assembler round-trips all five fields, and the engine's
  * a caught error — registry code keeps its typed route, a non-registry (errno-style)
  * code still lands as `E_UNKNOWN` — is owned by the reader's validation.
  */
 
 describe("error envelope — one assembler/reader for the forwarded rejection fields", () => {
-  it("attachEnvelope round-trips all four forwarded fields", () => {
+  it("attachEnvelope round-trips all five forwarded fields", () => {
     const err = new Error("[MODEL] wrapped rejection");
+    // WHY: `payloadMessage` is single-purpose, so the carrier code must be the one the
+    // WHY: reader's gate admits — a foreign code drops that slot (pinned below).
     attachEnvelope(err, {
-      code: "E_STALE_RANGE",
+      code: "E_BAD_PAYLOAD",
       cause: "retirement",
       servedRows: [{ position: 1, hash: "abc" }],
       servedBlock: "abc│b",
+      payloadMessage: 'Field "at" needs one line.',
     });
     expect(readEnvelope(err)).toEqual({
-      code: "E_STALE_RANGE",
+      code: "E_BAD_PAYLOAD",
       cause: "retirement",
       servedRows: [{ position: 1, hash: "abc" }],
       servedBlock: "abc│b",
+      payloadMessage: 'Field "at" needs one line.',
     });
     // WHY: the wire projection is pinned too: consumers catch `details.cause` off the
     // WHY: thrown error, and `toFailure`'s failure shape carries the {code, cause} twin.
     const wire = err as Error & { code?: unknown; cause?: unknown; details?: unknown };
-    expect(wire.code).toBe("E_STALE_RANGE");
+    expect(wire.code).toBe("E_BAD_PAYLOAD");
     expect(wire.cause).toBe("retirement");
-    expect(wire.details).toEqual({ code: "E_STALE_RANGE", cause: "retirement" });
+    expect(wire.details).toEqual({ code: "E_BAD_PAYLOAD", cause: "retirement" });
+  });
+
+  it("a foreign registry code bearing a payload message still comes out without it", () => {
+    const err = new Error("stale anchor");
+    attachEnvelope(err, { code: "E_STALE_ANCHOR", payloadMessage: 'Field "at" needs one line.' });
+    expect(readEnvelope(err)?.code).toBe("E_STALE_ANCHOR");
+    expect(readEnvelope(err)?.payloadMessage).toBeUndefined();
+    // WHY: a blank message is absence, exactly like a blank served block, so the
+    // WHY: non-empty clause of the gate needs its own witness.
+    const blank = new Error("blank payload message");
+    attachEnvelope(blank, { code: "E_BAD_PAYLOAD", payloadMessage: "" });
+    expect(readEnvelope(blank)?.payloadMessage).toBeUndefined();
   });
 
   it("a non-registry code on a caught error still lands as E_UNKNOWN (errno pass-through keeps its route)", () => {
