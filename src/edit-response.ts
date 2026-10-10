@@ -131,14 +131,17 @@ export function finalizeResult(input: FinalizeInput): string {
 
 export function finalizeToolResult(details: EditDetails): {
   content: Array<{ type: "text"; text: string }>;
-  servedRows: ServedRow[] | undefined;
+  servedRows?: ServedRow[];
 } {
   const text = finalizeResult({
     diff: details.diff,
-    warnings: details.warnings,
-    driftNotice: details.driftNotice,
+    ...(details.warnings !== undefined ? { warnings: details.warnings } : {}),
+    ...(details.driftNotice !== undefined ? { driftNotice: details.driftNotice } : {}),
   });
-  return { content: [{ type: "text", text }], servedRows: details.servedRows };
+  return {
+    content: [{ type: "text", text }],
+    ...(details.servedRows !== undefined ? { servedRows: details.servedRows } : {}),
+  };
 }
 
 function warnBlock(warnings: string[] | undefined): string {
@@ -165,8 +168,7 @@ export function buildNoop(input: NoopInput): TResult {
     details: {
       path,
       diff: "",
-      firstChangedLine: undefined,
-      snapshotId,
+      ...(snapshotId !== undefined ? { snapshotId } : {}),
       classification: "noop" as const,
       metrics,
       ...(warnings !== undefined && warnings.length > 0 ? { warnings } : {}),
@@ -210,22 +212,29 @@ export function buildChanged(input: SuccessInput): TResult {
     editsAttempted: editMeta.editsAttempted,
     noopEditsCount: editMeta.noopEditsCount,
     warningsCount: warnings?.length ?? 0,
-    firstChangedLine: editMeta.firstChangedLine,
-    lastChangedLine: editMeta.lastChangedLine,
+    ...(editMeta.firstChangedLine !== undefined
+      ? { firstChangedLine: editMeta.firstChangedLine }
+      : {}),
+    ...(editMeta.lastChangedLine !== undefined
+      ? { lastChangedLine: editMeta.lastChangedLine }
+      : {}),
     addedLines,
     removedLines,
   });
   const denseServedRows = denseServeRows(resultHashes);
+  // WHY: the explicit `editMeta` range wins, else the rendered diff names it; either may be absent.
+  const firstChangedLine = editMeta.firstChangedLine ?? diffResult.firstChangedLine;
+  const lastChangedLine = editMeta.lastChangedLine ?? diffResult.lastChangedLine;
 
   return {
     content: [{ type: "text", text }],
     details: {
       path,
       diff: diffResult.diff,
-      firstChangedLine: editMeta.firstChangedLine ?? diffResult.firstChangedLine,
-      lastChangedLine: editMeta.lastChangedLine ?? diffResult.lastChangedLine,
+      ...(firstChangedLine !== undefined ? { firstChangedLine } : {}),
+      ...(lastChangedLine !== undefined ? { lastChangedLine } : {}),
       resultLineCount: resultLines.length,
-      snapshotId,
+      ...(snapshotId !== undefined ? { snapshotId } : {}),
       metrics,
       ...(warnings !== undefined && warnings.length > 0 ? { warnings } : {}),
       servedRows: denseServedRows,
@@ -322,8 +331,12 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
         servedRows: denseRows,
         contentHash: s.resultHash,
         resultLineCount: visLines(s.result).length,
-        firstChangedLine: diffResult.firstChangedLine,
-        lastChangedLine: diffResult.lastChangedLine,
+        ...(diffResult.firstChangedLine !== undefined
+          ? { firstChangedLine: diffResult.firstChangedLine }
+          : {}),
+        ...(diffResult.lastChangedLine !== undefined
+          ? { lastChangedLine: diffResult.lastChangedLine }
+          : {}),
       });
     }
   }
@@ -477,7 +490,10 @@ export function wrapParseFailure(error: Error, index: number, path: string): Err
   // WHY: failure envelope keeps the code the model can act on. A parse failure carries no
   // WHY: rows or block — only the two diagnostic slots are forwarded here.
   const { code, cause } = readEnvelope(error) ?? {};
-  attachEnvelope(wrapped, { code, cause });
+  attachEnvelope(wrapped, {
+    ...(code !== undefined ? { code } : {}),
+    ...(cause !== undefined ? { cause } : {}),
+  });
   return wrapped;
 }
 

@@ -213,7 +213,7 @@ describe("registerLensCommand", () => {
 
   it("treats Esc as a cancel: no write and no confirmation", async () => {
     const { options } = captureCommand();
-    const cancelled = fakeCtx({ hasUI: true, cwd: projectDir, select: undefined });
+    const cancelled = fakeCtx({ hasUI: true, cwd: projectDir });
 
     await options.handler("lens", cancelled.ctx);
 

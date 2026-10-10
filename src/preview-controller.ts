@@ -39,7 +39,7 @@ export class DebouncedPreview {
     // WHY: and the next renderCall re-arms against the session that actually serves anchors.
     const armedSessionId = this.getSessionId?.();
     state.previewTimer = setTimeout(() => {
-      state.previewTimer = undefined;
+      delete state.previewTimer;
       if (this.getSessionId && this.getSessionId() !== armedSessionId) {
         this.cancel(state);
         host.invalidate();
@@ -66,19 +66,19 @@ export class DebouncedPreview {
   cancel(state: RRState): void {
     if (state.previewTimer) {
       clearTimeout(state.previewTimer);
-      state.previewTimer = undefined;
+      delete state.previewTimer;
     }
-    state.argsKey = undefined;
-    state.preview = undefined;
+    delete state.argsKey;
+    delete state.preview;
     state.previewGeneration = (state.previewGeneration ?? 0) + 1;
   }
 
   clearResult(state: RRState): void {
     if (state.previewTimer) {
       clearTimeout(state.previewTimer);
-      state.previewTimer = undefined;
+      delete state.previewTimer;
     }
-    state.preview = undefined;
+    delete state.preview;
     state.previewGeneration = (state.previewGeneration ?? 0) + 1;
   }
 }

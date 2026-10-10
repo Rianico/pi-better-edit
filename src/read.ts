@@ -105,16 +105,19 @@ export function regRead(pi: ExtensionAPI): void {
       // WHY: known, so the snapshot + lineage + retirement + lease grant below commit as the ONE
       // WHY: transaction spec §3.1.2 mandates instead of materializing first and leasing a
       // WHY: transaction later.
+      // WHY: the store is only opened for a served read — verbatim touches no anchors, so it must
+      // WHY: not pay for (or persist into) the anchor store.
+      const hashStore = mode === "served" ? await loadHashStore() : undefined;
       const prepared = await prepareFile(rawPath, ctx.cwd, {
-        signal,
-        offset: params.offset,
-        limit: params.limit,
-        windows: params.windows,
+        ...(signal !== undefined ? { signal } : {}),
+        ...(params.offset !== undefined ? { offset: params.offset } : {}),
+        ...(params.limit !== undefined ? { limit: params.limit } : {}),
+        ...(params.windows !== undefined ? { windows: params.windows } : {}),
         // WHY: the served cap stays `SERVED_MAX_LINES` (independent of the anchor space): the paged
         // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
         // WHY: survives paging — while verbatim skips the cap and the store (no anchors to bound).
         maxLines: SERVED_MAX_LINES,
-        store: mode === "served" ? await loadHashStore() : undefined,
+        ...(hashStore !== undefined ? { store: hashStore } : {}),
         noPersist: true,
         render: mode,
       });
@@ -127,7 +130,7 @@ export function regRead(pi: ExtensionAPI): void {
           throw new DomainError("E_UNSUPPORTED_FILE", {
             path: rawPath,
             kind: "binary",
-            description: prepared.description,
+            ...(prepared.description !== undefined ? { description: prepared.description } : {}),
           });
         }
         throw new DomainError("E_UNSUPPORTED_FILE", { path: rawPath, kind: "image" });
@@ -211,7 +214,7 @@ export function regRead(pi: ExtensionAPI): void {
         rows: prepared.served,
         lineCount,
         fullReadHashes: prepared.fileHashes,
-        snapshotId: isFullRead ? snapshotId : undefined,
+        ...(isFullRead && snapshotId !== undefined ? { snapshotId } : {}),
         isFullRead,
       });
       if (isFullRead) await session.clearDrift();

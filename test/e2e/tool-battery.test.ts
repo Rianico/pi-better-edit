@@ -116,11 +116,15 @@ async function call(
     const text = getText(r);
     rec.calls.push({ tool: name, outLen: text.length });
     const isError = (r as any)?.isError === true;
-    return isError ? { ok: false, text, code: codeOf(text), r } : { ok: true, text, r };
+    const code = codeOf(text);
+    return isError
+      ? { ok: false, text, ...(code !== undefined ? { code } : {}), r }
+      : { ok: true, text, r };
   } catch (e) {
     const msg = e instanceof Error ? e.message : String(e);
     rec.calls.push({ tool: name, outLen: msg.length });
-    return { ok: false, text: msg, code: codeOf(msg) };
+    const code = codeOf(msg);
+    return { ok: false, text: msg, ...(code !== undefined ? { code } : {}) };
   }
 }
 
@@ -245,7 +249,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -294,7 +298,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -320,7 +324,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -348,7 +352,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
           ctx,
         );
         rec.outcome = e1.ok ? "success" : "rejected";
-        rec.code = e1.code;
+        if (e1.code !== undefined) rec.code = e1.code;
         rec.finalContent = await readFile(path, "utf-8");
         results.push(rec);
       },
@@ -371,7 +375,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -395,7 +399,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -420,7 +424,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -508,7 +512,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         );
         if (!e2.ok) {
           rec.outcome = "rejected";
-          rec.code = e2.code;
+          if (e2.code !== undefined) rec.code = e2.code;
         }
       } else {
         rec.outcome = "error";
@@ -539,7 +543,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -573,7 +577,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
           ctx,
         );
         rec.outcome = e1.ok ? "success" : "rejected";
-        rec.code = e1.code;
+        if (e1.code !== undefined) rec.code = e1.code;
         rec.finalContent = await readFile(path, "utf-8");
         results.push(rec);
       },
@@ -598,7 +602,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
       );
       const u1 = await call(rec, getTool("undo_last_edit"), "undo", { path: "b16.ts" }, ctx);
       rec.outcome = u1.ok ? "success" : "rejected";
-      rec.code = u1.code;
+      if (u1.code !== undefined) rec.code = u1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -623,7 +627,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
       await writeFile(path, "AAA\nBBB\nccc\n", "utf-8");
       const u1 = await call(rec, getTool("undo_last_edit"), "undo", { path: "b16b.ts" }, ctx);
       rec.outcome = u1.ok ? "success" : "rejected";
-      rec.code = u1.code;
+      if (u1.code !== undefined) rec.code = u1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -647,7 +651,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -670,7 +674,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -696,7 +700,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         mainCtx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -740,7 +744,8 @@ describe("tool battery (deterministic edit scenarios)", () => {
         mainCtx,
       );
       rec.outcome = se.ok ? (e1.ok ? "success" : "rejected") : "error";
-      rec.code = se.ok ? e1.code : se.code;
+      const code = se.ok ? e1.code : se.code;
+      if (code !== undefined) rec.code = code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -766,7 +771,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         mainCtx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -791,7 +796,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         mainCtx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -822,7 +827,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -861,7 +866,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });
@@ -889,7 +894,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(pathB, "utf-8");
       results.push(rec);
     });
@@ -912,7 +917,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         ctx,
       );
       rec.outcome = e1.ok ? "success" : "rejected";
-      rec.code = e1.code;
+      if (e1.code !== undefined) rec.code = e1.code;
       rec.finalContent = await readFile(path, "utf-8");
       results.push(rec);
     });

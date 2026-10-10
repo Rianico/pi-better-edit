@@ -54,9 +54,9 @@ async function _lineHashes(
 ): Promise<string[]> {
   return _defaultHI.hashesFor(content, {
     path,
-    prior: previous,
+    ...(previous !== undefined ? { prior: previous } : {}),
     persist: persist ?? true,
     snapshotIO: io as any,
-    blockedHashes,
+    ...(blockedHashes !== undefined ? { blockedHashes } : {}),
   });
 }

@@ -97,7 +97,7 @@ export async function prepareFile(
   const file =
     options?.preloadedFile ??
     (await loadFileKindAndText(absolutePath, {
-      maxLines,
+      ...(maxLines === undefined ? {} : { maxLines }),
       displayPath: path,
     }));
   if (file.kind !== "text") {
@@ -147,8 +147,8 @@ export async function prepareFile(
   // WHY: `decodeNormText`; only served then reaches the anchor store, because anchors and the
   // WHY: anchor-space line cap are edit-domain concerns.
   const norm = await decodeNormText(path, cwd, {
-    signal,
-    accessMode: options?.accessMode,
+    ...(signal !== undefined ? { signal } : {}),
+    ...(options?.accessMode !== undefined ? { accessMode: options.accessMode } : {}),
     ...(maxLines === undefined ? {} : { maxLines }),
     preloadedFile: file,
   });
@@ -158,17 +158,17 @@ export async function prepareFile(
   const anchors = verbatim
     ? []
     : await anchorWalkFor(norm.normalized, norm.absolutePath, {
-        store: options?.store,
-        noPersist: options?.noPersist,
+        ...(options?.store !== undefined ? { store: options.store } : {}),
+        ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
       });
 
   const preview = await fmtReadPreview(
     norm.normalized,
     {
-      offset: options?.offset,
-      limit: options?.limit,
-      windows: options?.windows,
-      render: options?.render,
+      ...(options?.offset !== undefined ? { offset: options.offset } : {}),
+      ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+      ...(options?.windows !== undefined ? { windows: options.windows } : {}),
+      ...(options?.render !== undefined ? { render: options.render } : {}),
     },
     anchors,
     norm.absolutePath,

@@ -296,7 +296,11 @@ function resolveEdit(
   if (served && identity) {
     const leased = resolveLeasedEdit({
       edit,
-      snapshot: { fileHashes, fileLines, filePath },
+      snapshot: {
+        fileHashes,
+        fileLines,
+        ...(filePath !== undefined ? { filePath } : {}),
+      },
       served,
       source: identity,
     });
@@ -309,7 +313,11 @@ function resolveEdit(
   // WHY: no seam at all (no mirror, no lease source): the library-level `applyEdit` seam, where
   // WHY: anchor algebra is the only authority. A session edit always carries both, so it can never
   // WHY: reach this branch — lost identity fails closed in the lease seam above.
-  const byContent = resolveEditByContent(edit, { fileHashes, fileLines, filePath }, signal);
+  const byContent = resolveEditByContent(
+    edit,
+    { fileHashes, fileLines, ...(filePath !== undefined ? { filePath } : {}) },
+    signal,
+  );
   return {
     resolved: byContent.resolved,
     mismatches: byContent.mismatches,

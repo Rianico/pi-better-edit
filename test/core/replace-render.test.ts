@@ -122,7 +122,7 @@ describe("fmtCall", () => {
       file: "test.txt",
       edits: [{ anchor_from: "AAA", anchor_to: "BBB", text: "new" }],
     };
-    const state = { preview: undefined };
+    const state = {};
     const result = fmtCall(args, state, false, mockTheme);
     expect(result).toContain("test.txt");
   });
@@ -148,7 +148,7 @@ describe("fmtCall", () => {
   });
 
   it("handles undefined args", () => {
-    const state = { preview: undefined };
+    const state = {};
     const result = fmtCall(null, state, false, mockTheme);
     expect(result).toContain("...");
   });

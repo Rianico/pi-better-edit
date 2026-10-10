@@ -210,8 +210,6 @@ describe("buildChanged", () => {
       editMeta: {
         editsAttempted: 1,
         noopEditsCount: 1,
-        firstChangedLine: undefined,
-        lastChangedLine: undefined,
         addedLines: 0,
         removedLines: 0,
       },
