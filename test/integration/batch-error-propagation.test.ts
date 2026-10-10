@@ -117,6 +117,41 @@ describe("multi-item edit error propagation", () => {
       expect(await readFile(path, "utf-8")).toBe(drifted);
     });
   });
+  it("an item rejected in the apply loop keeps the attributed edit clause, prefix and trailer", async () => {
+    const content = "alpha\nbeta\ngamma\ndelta\nepsilon\n";
+    await withTempFile("apply-payload.txt", content, async ({ cwd, path }) => {
+      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const hashes = await servedHashes(ctx, readTool, "apply-payload.txt");
+
+      // Item 0 applies to the working buffer; item 1 asks for a `before` placement on a multi-line
+      // span, which the apply seam refuses with E_BAD_PAYLOAD.
+      const rejection = (await editTool
+        .execute(
+          "e1",
+          {
+            file: "apply-payload.txt",
+            edits: [
+              { anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "ALPHA" },
+              { anchor_from: hashes[1]!, anchor_to: hashes[3]!, text: "X", at: "before" },
+            ],
+          },
+          undefined,
+          undefined,
+          ctx,
+        )
+        .catch((error: unknown) => error)) as Error;
+
+      const message = rejection.message;
+      // WHY: the single-call path already pins one header, and it provably cannot catch this
+      // WHY: defect: this batch rendered the NEUTRAL clause with exactly one header.
+      expect(message.match(/\[E_BAD_PAYLOAD\]/g)?.length).toBe(1);
+      expect(message).toContain("[E_BAD_PAYLOAD] The edit payload is not valid:");
+      expect(message).not.toContain("The payload is not valid:");
+      expect(message).toContain("edit[1] (apply-payload.txt) failed");
+      expect(message).toContain(ATOMICITY_TRAILER);
+      expect(await readFile(path, "utf-8")).toBe(content);
+    });
+  });
 });
 
 describe("batch abort serve-block preservation and isolation (spec D2, section 3.4)", () => {

@@ -47,9 +47,9 @@ export interface ErrorEnvelope {
   /**
    * The raw `E_BAD_PAYLOAD` payload message a ROUTED refusal had to carry: the engine turns a
    * thrown refusal into `code` plus a rendered message, so the tool seam cannot name the invoking
-   * tool without the unrendered text. WHY single-purpose rather than a payload bag: only
-   * `E_BAD_PAYLOAD` may write it and the reader ignores it under any other code, which keeps the
-   * untyped-extras hole this module closes shut.
+   * tool without the unrendered text. WHY single-purpose rather than a payload bag: one predicate
+   * admits it at both ends of the pair — `E_BAD_PAYLOAD` only, and only a non-empty string —
+   * which keeps the untyped-extras hole this module closes shut.
    */
   payloadMessage?: string;
 }
@@ -75,9 +75,21 @@ type EnvelopeCarrier = {
 };
 
 /**
- * Stamp the envelope onto a rejection error. Only defined slots are written; the
- * `cause` slot also materialises its `details: { code?, cause }` projection so a
- * consumer reading `details.cause` sees exactly the top-level diagnosis.
+ * WHY one predicate gates BOTH ends of the pair: the writer never stamps a slot the reader
+ * would refuse, so the two ends cannot drift. `E_BAD_PAYLOAD` only, and only a non-empty string.
+ */
+function admitsPayloadMessage(code: unknown, payloadMessage: unknown): payloadMessage is string {
+  return (
+    code === "E_BAD_PAYLOAD" && typeof payloadMessage === "string" && payloadMessage.length > 0
+  );
+}
+
+/**
+ * Stamp the envelope onto a rejection error. Only defined slots are written, and the
+ * single-purpose `payloadMessage` slot must also pass `admitsPayloadMessage` so the writer
+ * never stamps what the reader would refuse. The `cause` slot also materialises its
+ * `details: { code?, cause }` projection so a consumer reading `details.cause` sees exactly
+ * the top-level diagnosis.
  */
 export function attachEnvelope(error: Error, envelope: ErrorEnvelope): void {
   // SAFETY: the only cast of an Error to the envelope wire shape — both ends of the
@@ -93,7 +105,8 @@ export function attachEnvelope(error: Error, envelope: ErrorEnvelope): void {
   }
   if (envelope.servedRows !== undefined) carrier.servedRows = envelope.servedRows;
   if (envelope.servedBlock !== undefined) carrier.servedBlock = envelope.servedBlock;
-  if (envelope.payloadMessage !== undefined) carrier.payloadMessage = envelope.payloadMessage;
+  const payloadMessage = envelope.payloadMessage;
+  if (admitsPayloadMessage(envelope.code, payloadMessage)) carrier.payloadMessage = payloadMessage;
 }
 
 /**
@@ -118,14 +131,11 @@ export function readEnvelope(source: unknown): ErrorEnvelope | undefined {
   if (typeof carrier.servedBlock === "string" && carrier.servedBlock.length > 0) {
     envelope.servedBlock = carrier.servedBlock;
   }
-  // WHY: the slot is single-purpose, so the code gate is part of the validation.
+  // WHY: the slot is single-purpose, so the same predicate gates the reader.
   // WHY: A payload message under any other code is an untyped extra this reader refuses.
-  if (
-    envelope.code === "E_BAD_PAYLOAD" &&
-    typeof carrier.payloadMessage === "string" &&
-    carrier.payloadMessage.length > 0
-  ) {
-    envelope.payloadMessage = carrier.payloadMessage;
+  const payloadMessage = carrier.payloadMessage;
+  if (admitsPayloadMessage(envelope.code, payloadMessage)) {
+    envelope.payloadMessage = payloadMessage;
   }
   return envelope;
 }
