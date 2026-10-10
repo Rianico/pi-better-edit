@@ -80,6 +80,7 @@ Model issues: { command: "grep 'function' src/app.ts" }
 ### 3.4 Gate 2: D9 Disk Witness Verification & Output
 In `tool_result`:
 1. **Exit Code Gate**: If process exit code $\ne 0$ (e.g. grep exit 1 when no matches are found), pass through raw bash untouched (no fake empty anchor block).
+   - **How gate 1 is realised**: structurally, not by reading a number — `ToolResultEvent` carries no exit-code field (`src/lifecycle-hooks/types.ts:8`), so "non-zero exit" is enforced as `isError` plus empty or unparsable stdout. A refused or closed path returns the raw stdout of the `-n`-injected command, unchanged.
 2. **Line Geometry Parsing**: Parse lines conforming to `^(\d+):(.*)$`. If any non-empty line cannot be parsed, fail closed to raw bash.
 3. **Match Cap Gate**: If match count exceeds `SEARCH_MAX_MATCHES` (default 50), pass through raw bash directly without truncation or partial leases (raw bash output is complete and safer).
 4. **Byte Equality Check**: Read disk lines via `readNormFile`. For every parsed match $L$, verify `diskLines[L - 1] === parsedContent`. Any mismatch fails closed.

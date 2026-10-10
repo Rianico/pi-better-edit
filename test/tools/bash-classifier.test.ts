@@ -365,6 +365,36 @@ describe("bash-classifier search matrix (I1a)", () => {
     ];
     for (const command of denied) expect(reasonOf(command)).toBe("unsupported-command:rg");
   });
+  it("denies attached context flags, filename/formatting flags, and a non-literal operand", () => {
+    // WHY: `-A2` is an attached context flag; admitting it would emit rows whose line-number geometry
+    // WHY: is absent (`--` group separators and bare context rows instead of `^(\d+):`).
+    expect(reasonOf("grep -A2 pat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep -B3 pat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep -C1 pat f")).toBe("unsupported-command:grep");
+    // WHY: the filename flags add or drop a `file:` prefix, so the first parsed field would be a path or
+    // WHY: the pattern instead of the line number the anchors index by.
+    expect(reasonOf("grep --with-filename pat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep --no-filename pat f")).toBe("unsupported-command:grep");
+    // WHY: colour escapes (with or without a value) wrap the digits, so `^(\d+):` no longer matches the
+    // WHY: bytes the disk witness would be compared against.
+    expect(reasonOf("grep --color pat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep --color=auto pat f")).toBe("unsupported-command:grep");
+    // WHY: a backtick operand is expanded by bash before grep reads a byte, so the file this classifier
+    // WHY: resolved is not the file that runs — the non-literal gate, not the flag allowlist, is the lock.
+    expect(reasonOf("grep `cmd` f")).toBe("non-literal-command");
+    // WHY: rg's context and filename flags widen the same geometry (`-A2` group separators,
+    // WHY: `--with-filename` path prefix), so they fail closed on the rg allowlist rather than grep's.
+    expect(reasonOf("rg -A2 pat f")).toBe("unsupported-command:rg");
+    expect(reasonOf("rg --with-filename pat f")).toBe("unsupported-command:rg");
+    // WHY: positive control — the allowlisted line-number flag still admits, so the rows above
+    // WHY: discriminate on flag shape rather than on search being refused wholesale.
+    expect(searchOf("grep -n pat f")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: true,
+    });
+  });
 
   it("denies structural shapes, globs, and non-single-file operands", () => {
     // WHY: zero or two-plus operands break the `^(\\d+):` stdout geometry (stdin search, or

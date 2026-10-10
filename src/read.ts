@@ -70,7 +70,7 @@ const renderModeSchema = Type.Union([Type.Literal("served"), Type.Literal("verba
   description: `Render mode: "served" (default) returns each line as a ${HASH_LEN}-char anchor plus content; "verbatim" returns plain text with no anchor prefix.`,
 });
 
-export const readOffsetWindowSchema = Type.Object(
+const readOffsetWindowSchema = Type.Object(
   {
     offset: Type.Optional(
       Type.Integer({ minimum: 1, description: "Start line number (1-indexed). Defaults to 1." }),
@@ -88,7 +88,7 @@ export const readOffsetWindowSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const readAnchorWindowSchema = Type.Object(
+const readAnchorWindowSchema = Type.Object(
   {
     around_anchor: Type.String({
       minLength: HASH_LEN,
@@ -106,9 +106,9 @@ export const readAnchorWindowSchema = Type.Object(
   { additionalProperties: false },
 );
 
-export const readWindowSchema = Type.Union([readAnchorWindowSchema, readOffsetWindowSchema]);
+const readWindowSchema = Type.Union([readAnchorWindowSchema, readOffsetWindowSchema]);
 
-export const readFileTargetSchema = Type.Object({
+const readFileTargetSchema = Type.Object({
   file: Type.String({ description: "Path to the file to read (relative or absolute)." }),
   windows: Type.Optional(
     Type.Array(readWindowSchema, {
@@ -255,7 +255,7 @@ function admitWindow(window: unknown, label: string): AdmittedWindow {
  * Runs on a copy — the registered payload the caller passed is never mutated, and the renderers read
  * the original `args` object.
  */
-export function admitReadRequest(params: RawReadParams): AdmittedRequest {
+function admitReadRequest(params: RawReadParams): AdmittedRequest {
   const normalized: RawReadParams = { ...params };
   // WHY: `path` is `file`'s legacy alias and §4.2's own fold snippet reads `legacy.file ?? legacy.path`,
   // WHY: so the gate keys on the PAIR. Gating on `file` alone published `path` and then refused it.

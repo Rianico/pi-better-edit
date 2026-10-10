@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { execFileSync } from "child_process";
 import { mkdir, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
@@ -806,6 +807,73 @@ describe("bash search interception (I1a #73)", () => {
     });
   });
 
+  it("fails closed on a genuine stale capture: real stdout that went stale before tool_result", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      const original = numberedLines(5);
+      await writeFile(join(dir, "f.txt"), original, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result")!;
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-toctou" } };
+      // WHY: a separate session so the control's leases cannot mask the stale-capture refusal below.
+      const controlCtx = {
+        cwd: dir,
+        sessionManager: { getSessionId: () => "bash-search-toctou-ctl" },
+      };
+      const command = "grep -n line3 f.txt";
+      // WHY: real bash, not a hand-written string — the capture below is the bytes bash actually printed
+      // WHY: for line 3 as it was on disk at capture time.
+      const runReal = () => execFileSync("bash", ["-c", command], { cwd: dir, encoding: "utf-8" });
+
+      const captured = runReal();
+      expect(captured).toBe("3:line3\n");
+      // WHY: control — the same handler over the same capture while the disk still matches produces an
+      // WHY: anchor block, so the `undefined` after the mutation is the stale-capture refusal itself and
+      // WHY: not a dead code path that would pass under any implementation.
+      const control = await bashResult(handler, command, controlCtx, captured);
+      expect(control).toBeDefined();
+      expect(control!.content[0]!.text).toContain("[f.txt (1 match)]");
+
+      // WHY: the race - the file mutates on disk AFTER the capture and BEFORE `tool_result` runs, so the
+      // WHY: witness handed to the hook names line 3, but every line has shifted down one, so it names
+      // WHY: content the disk no longer holds at that line.
+      await writeFile(join(dir, "f.txt"), `line0\n${original}`, "utf-8");
+      const fresh = runReal();
+      // WHY: discriminating staleness proof: a fresh real run over the mutated file no longer matches the
+      // WHY: captured text, so the capture is genuinely stale and not a fabricated mismatch.
+      expect(fresh).toBe("4:line3\n");
+      expect(fresh).not.toBe(captured);
+
+      const event = {
+        toolName: "bash",
+        isError: false,
+        input: { command },
+        content: [{ type: "text", text: captured }],
+      };
+      const result = await handler(event, ctx);
+      // (a) fails closed: no anchor block is fabricated for a witness the disk no longer supports.
+      expect(result).toBeUndefined();
+      // (b) what the model sees stays the raw bash stdout byte-for-byte: the hook rewrote nothing.
+      expect(event.content[0]!.text).toBe(captured);
+
+      // (c) zero leases were granted, so the anchor the captured stdout named is still unknown.
+      const staleHashes = await lineHashes(original, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: staleHashes[2]!, anchor_to: staleHashes[2]!, text: "L3" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
   it("keeps rg on the same gates and leaves denied commands byte-identical at tool_call", async () => {
     await withTempDir("bash-search-", async (dir) => {
       await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
@@ -918,6 +986,45 @@ describe("bash search interception (I1a #73)", () => {
       }
     });
   });
+  it("passes attached context, filename/formatting and non-literal search shapes through both hooks", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, handlersAll } = makeFakePi();
+      register(pi);
+      const calls = handlersAll.get("tool_call") ?? [];
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-search-widen" } };
+      const raw = "3:line3\n";
+
+      // WHY: the shapes the pure classifier refuses must also be inert at the hook seam — the injection
+      // WHY: hook leaves the command byte-identical and `tool_result` returns undefined, so a widening
+      // WHY: that admitted one of these would surface here as an injected `-n` or an anchor block.
+      const denied = [
+        // WHY: attached context flags; `-A2` prints `--` separators and bare context rows, so the
+        // WHY: `^(\d+):` row geometry the anchors are built from is gone.
+        "grep -A2 pat f.txt",
+        "grep -B3 pat f.txt",
+        "grep -C1 pat f.txt",
+        // WHY: the filename flags add or drop the `file:` prefix the line-number parse keys on.
+        "grep --with-filename pat f.txt",
+        "grep --no-filename pat f.txt",
+        // WHY: colour escapes wrap the digits the disk witness compares against.
+        "grep --color pat f.txt",
+        "grep --color=auto pat f.txt",
+        // WHY: a backtick operand is expanded by bash, so the resolved file is not the file bash reads.
+        "grep `cmd` f.txt",
+        // WHY: the rg spellings of the same two widenings.
+        "rg -A2 pat f.txt",
+        "rg --with-filename pat f.txt",
+      ];
+      for (const command of denied) {
+        const call = { toolName: "bash", input: { command } };
+        for (const handler of calls) await handler(call, ctx);
+        expect(call.input.command).toBe(command);
+        expect(await bashResult(handlers.get("tool_result")!, command, ctx, raw)).toBeUndefined();
+      }
+    });
+  });
+
   it("normalizes CRLF and BOM in the search witness exactly as D9 does for a view", async () => {
     await withTempDir("bash-search-", async (dir) => {
       // WHY: grep prints the disk bytes, so a CRLF file yields `3:line3\r` and a BOM file yields a
