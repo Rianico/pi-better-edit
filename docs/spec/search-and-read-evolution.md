@@ -60,21 +60,27 @@ Model issues: { command: "grep 'function' src/app.ts" }
 ```
 
 ### 3.2 Gate 1: AST & Flag Allowlist (Strict Default-Deny)
+*(Amended 2026-10-10 for Issue #82 Tier 1: admitted flag shapes expanded to include boundary matching, match limits, color suppression, bundled short flags, and arbitrary flag positions before `--`)*
 - **Target Command**: Strictly `grep` and `rg`.
 - **Permitted Flags ONLY**:
   - Line numbers: `-n`, `--line-number`
   - Case folding: `-i`, `--ignore-case`
   - Literal strings: `-F`, `--fixed-strings`
   - Extended regex: `-E`, `--extended-regexp`
+  - Boundary match: `-w`, `--word-regexp`, `-x`, `--line-regexp`
+  - Match limit: `-m N` (a strictly positive integer as a **separate** argument) and the attached long form `--max-count=N`
+  - Colour suppression: `--color=never`, `--colour=never`
+- **Flag positions**: An admitted flag is honoured **at any position before `--`** — before the pattern, between the pattern and the file, and after the file (`grep pat -i f`, `grep pat f -n`), matching the `getopt` permutation both GNU and BSD grep/rg perform. A `--` separator ends flag parsing: every later token is an operand, so `grep pat -- -n` names the file `-n`.
+- **Bundled short flags**: A token starting with a single `-` and longer than two characters is **decomposed into letters**, and **every** letter must be an admitted short letter (`n`, `i`, `F`, `E`, `w`, `x`, `m`). Any digit or unknown letter anywhere in the cluster fails closed (`-n5`, `-inQ`, `-x5`), and the value-taking `m` may only **close** the cluster, consuming the next argument (`-nm 3`). The attached spellings `-m3`/`-nm3` and the `=`-long form `--line-number=x` fail closed.
 - **Default-Deny Principle**: Any flag not explicitly permitted **fails closed to raw bash**. This includes:
-  - Output-altering: `-c/--count`, `-v/--invert-match`, `-o/--only-matching`, `-A/-B/-C` (context), `-l/-L` (file list), `--color`, `-m/--max-count`, `-q/-s` (silent), `-w/-x` (word/line match), `-b` (byte offset), `-H/-h/--with-filename/--no-filename`.
+  - Output-altering: `-c/--count`, `-v/--invert-match`, `-o/--only-matching`, `-A/-B/-C` (context), `-l/-L` (file list), `--color` (bare, and every value but `never`), `-q/-s` (silent), `-b` (byte offset), `-H/-h/--with-filename/--no-filename`, and a match limit whose value is not a strictly positive integer literal (`-m0`, `-m 0`, `-m -1`, `-m abc`, `--max-count=0`, `--max-count=`, bare `-m`, bare `--max-count`).
   - `rg`-specific: `--column`, `--heading/--no-heading`, `-N/--no-line-number`, `--json`, `--stats`, `--files`, `-r/--replace`, `-0/--null`, `--vimgrep`.
   - Structural: Pipelines (`|`), redirections (`>`), subshells, compounds (`&&`, `||`), background jobs (`&`).
   - Target operands: Must have exactly **one file operand**. No recursive directory flags (`-r`, `-R`), globs (`*`), tildes (`~`), or directories. (Note: Because the rewriter in `tool_call` is pure and performs no filesystem I/O, a directory operand is rewritten with `-n` then refused fail-closed at `tool_result` with byte-identical raw output and zero leases).
 
 ### 3.3 Flag Injection Rules (`tool_call` Hook)
 - The rewrite function in `bash-classifier.ts` must be a pure, unit-tested function with zero filesystem dependencies.
-- **Placement**: Inject `-n` (or `--line-number` for `rg`) immediately after the command name and **before any `--` option separator** (e.g. `grep -- -pat file` becomes `grep -n -- -pat file`).
+- **Placement**: Inject `-n` (or `--line-number` for `rg`) immediately after the command name and **before any `--` option separator** (e.g. `grep -- -pat file` becomes `grep -n -- -pat file`). Injection is **skipped** whenever `-n`/`--line-number` was seen at any position, including inside a bundled cluster — `grep -in pat f` and `grep pat f -n` are returned byte-identically.
 - **No Cross-Hook Shared State**: `tool_result` re-parses the mutated `event.input.command` to identify the target file and options, avoiding session or concurrency leak hazards.
 
 ### 3.4 Gate 2: D9 Disk Witness Verification & Output

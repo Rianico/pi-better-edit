@@ -304,6 +304,92 @@ describe("bash-classifier search matrix (I1a)", () => {
     expect(searchOf("grep pattern /abs/f.ts").filePath).toBe("/abs/f.ts");
     expect(searchOf("cd sub && grep x f").baseDir).toBe("sub");
   });
+  it("accepts the five Tier-1 flag shapes (spec §3.2 expansion)", () => {
+    // WHY: (a) boundary flags — word/line match do not touch the `^\d+:` row geometry.
+    expect(searchOf("grep -w pat f").lineNumbered).toBe(false);
+    expect(searchOf("grep --word-regexp pat f").pattern).toBe("pat");
+    expect(searchOf("grep -x pat f").filePath).toBe("f");
+    expect(searchOf("grep --line-regexp pat f").program).toBe("grep");
+    // WHY: (b) match limit — `-m N` takes its value as the next argument, `--max-count=N` attached.
+    expect(searchOf("grep -m 3 pat f")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: false,
+    });
+    expect(searchOf("grep --max-count=3 pat f").pattern).toBe("pat");
+    expect(searchOf("rg -m 1 pat f").program).toBe("rg");
+    // WHY: (c) bundled shorts — every letter admitted, with `m` closing the cluster and eating `3`.
+    expect(searchOf("grep -in pat f").lineNumbered).toBe(true);
+    expect(searchOf("grep -iF pat f").lineNumbered).toBe(false);
+    expect(searchOf("grep -wF pat f").pattern).toBe("pat");
+    expect(searchOf("grep -nw pat f").lineNumbered).toBe(true);
+    expect(searchOf("grep -nm 3 pat f")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: true,
+    });
+    // WHY: (d) post-operand flags — between the pattern and the file, and after the file.
+    expect(searchOf("grep pat -i f")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: false,
+    });
+    expect(searchOf("grep pat f -n").lineNumbered).toBe(true);
+    expect(searchOf("rg pat -i f").program).toBe("rg");
+    expect(searchOf("grep pat f -w").filePath).toBe("f");
+    // WHY: `--` ends flag parsing, so the trailing `-n` here is the *file* operand, not a flag.
+    expect(searchOf("grep pat -- -n")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePath: "-n",
+      lineNumbered: false,
+    });
+    // WHY: (e) colour — only the `never` value is admitted, and only in the `=` spelling.
+    expect(searchOf("grep --color=never pat f").lineNumbered).toBe(false);
+    expect(searchOf("grep --colour=never pat f").pattern).toBe("pat");
+    expect(searchOf("rg --color=never pat f").program).toBe("rg");
+  });
+
+  it("fails closed on malformed values, attached short values and unknown cluster letters", () => {
+    // WHY: `-m`/`--max-count` values must be strictly positive integer literals (spec §3.2).
+    for (const command of [
+      "grep -m0 pat f",
+      "grep -m 0 pat f",
+      "grep -m -1 pat f",
+      "grep -m abc pat f",
+      "grep -m pat f",
+      "grep --max-count=0 pat f",
+      "grep --max-count= pat f",
+      "grep --max-count pat f",
+      "grep -m3 pat f",
+      "grep -nm3 pat f",
+    ]) {
+      expect(reasonOf(command)).toBe("unsupported-command:grep");
+    }
+    // WHY: a cluster is decomposed letter by letter — a digit or an unknown letter anywhere,
+    // WHY: and `m` anywhere but last, are not flags this gate admits.
+    for (const command of [
+      "grep -n5 pat f",
+      "grep -inQ pat f",
+      "grep --line-number=x pat f",
+      "grep -mw pat f",
+      "grep -x5 pat f",
+    ]) {
+      expect(reasonOf(command)).toBe("unsupported-command:grep");
+    }
+    // WHY: colour escapes wrap the digits, so every value but `never` stays raw bash.
+    for (const command of [
+      "grep --color pat f",
+      "grep --color=always pat f",
+      "grep --color=auto pat f",
+      "grep --colour pat f",
+    ]) {
+      expect(reasonOf(command)).toBe("unsupported-command:grep");
+    }
+  });
 
   it("denies every non-allowlisted grep flag", () => {
     const denied = [
@@ -318,13 +404,14 @@ describe("bash-classifier search matrix (I1a)", () => {
       "grep -C 2 pat f",
       "grep -l pat f",
       "grep -L pat f",
-      "grep --color=never pat f",
-      "grep -m 3 pat f",
+      // WHY: `--max-count` is admitted only in the attached `=N` spelling — spec §3.2 admits a
+      // WHY: separate-argument value for the short `-m` alone, and its fail-closed list names
+      // WHY: this very shape ("bare `--max-count`"). Ticket #82 §4 lists the pin below as a
+      // WHY: positive case; §2 is the normative admitted surface, so the conservative reading
+      // WHY: wins and this stays denied (see the completion report's P2 issue).
       "grep --max-count 3 pat f",
       "grep -q pat f",
       "grep -s pat f",
-      "grep -w pat f",
-      "grep -x pat f",
       "grep -b pat f",
       "grep -H pat f",
       "grep -h pat f",
@@ -333,10 +420,8 @@ describe("bash-classifier search matrix (I1a)", () => {
       "grep -P pat f",
       "grep -e pat f",
       "grep -f pats f",
-      "grep -in pat f",
       "grep -n5 pat f",
       "grep --line-number=x pat f",
-      "grep pat -i f",
     ];
     for (const command of denied) expect(reasonOf(command)).toBe("unsupported-command:grep");
   });
@@ -361,7 +446,6 @@ describe("bash-classifier search matrix (I1a)", () => {
       "rg -j 4 pat f",
       "rg --hidden pat f",
       "rg -g '*.ts' pat f",
-      "rg pat -i f",
     ];
     for (const command of denied) expect(reasonOf(command)).toBe("unsupported-command:rg");
   });
@@ -440,6 +524,26 @@ describe("withSearchLineNumbers injection (I1a)", () => {
     expect(withSearchLineNumbers("grep -n pat f")).toBe("grep -n pat f");
     expect(withSearchLineNumbers("grep --line-number pat f")).toBe("grep --line-number pat f");
     expect(withSearchLineNumbers("rg --line-number pat f")).toBe("rg --line-number pat f");
+    // WHY: a bundled `-in` carries `n`, so the injection is skipped exactly as for a bare `-n`.
+    expect(withSearchLineNumbers("grep -in pat f")).toBe("grep -in pat f");
+    expect(withSearchLineNumbers("grep -nm 3 pat f")).toBe("grep -nm 3 pat f");
+    // WHY: a post-operand `-n` is a flag position too (spec §3.2) — the search is numbered already.
+    expect(withSearchLineNumbers("grep pat f -n")).toBe("grep pat f -n");
+  });
+
+  it("rewrites the Tier-1 flag shapes with the line-number flag after the program name", () => {
+    // WHY: the injection is a pure splice at the program-name offset (spec §3.3), so a
+    // WHY: post-operand flag keeps its position and the search still emits `LINE:content`.
+    expect(withSearchLineNumbers("grep pat -i f")).toBe("grep -n pat -i f");
+    expect(withSearchLineNumbers("grep pat f -n")).toBe("grep pat f -n");
+    expect(withSearchLineNumbers("grep -w pat f")).toBe("grep -n -w pat f");
+    expect(withSearchLineNumbers("grep -m 3 pat f")).toBe("grep -n -m 3 pat f");
+    expect(withSearchLineNumbers("grep --max-count=3 pat f")).toBe("grep -n --max-count=3 pat f");
+    expect(withSearchLineNumbers("grep --color=never pat f")).toBe("grep -n --color=never pat f");
+    expect(withSearchLineNumbers("rg -w pat f")).toBe("rg --line-number -w pat f");
+    expect(withSearchLineNumbers("grep pat -- -n")).toBe("grep -n pat -- -n");
+    expect(withSearchLineNumbers("grep -in pat f")).toBe("grep -in pat f");
+    expect(withSearchLineNumbers("grep -nm 3 pat f")).toBe("grep -nm 3 pat f");
   });
 
   it("leaves every denied or non-search command byte-identical", () => {
@@ -449,7 +553,6 @@ describe("withSearchLineNumbers injection (I1a)", () => {
       "cat f.txt",
       "grep -c pat f",
       "grep -r pat .",
-      "grep -in pat f",
       "grep pat",
       "grep pat a.ts b.ts",
       "grep pat f | head -5",

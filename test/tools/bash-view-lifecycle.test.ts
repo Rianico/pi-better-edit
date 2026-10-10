@@ -933,13 +933,11 @@ describe("bash search interception (I1a #73)", () => {
         "grep -C 2 pat f.txt",
         "grep -l pat f.txt",
         "grep -L pat f.txt",
-        "grep --color=never pat f.txt",
-        "grep -m 3 pat f.txt",
+        // WHY: the bare `--max-count` spelling stays denied — spec §3.2 admits the separate
+        // WHY: argument for the short `-m` alone (see the classifier matrix for the same pin).
         "grep --max-count 3 pat f.txt",
         "grep -q pat f.txt",
         "grep -s pat f.txt",
-        "grep -w pat f.txt",
-        "grep -x pat f.txt",
         "grep -b pat f.txt",
         "grep -H pat f.txt",
         "grep -h pat f.txt",
@@ -948,7 +946,6 @@ describe("bash search interception (I1a #73)", () => {
         "grep -P pat f.txt",
         "grep -e pat f.txt",
         "grep -f pats f.txt",
-        "grep -in pat f.txt",
         "grep -n5 pat f.txt",
         "grep --line-number=x pat f.txt",
         "rg --column pat f.txt",
@@ -986,6 +983,40 @@ describe("bash search interception (I1a #73)", () => {
       }
     });
   });
+
+  it("serves anchored rows for the Tier-1 flag shapes end to end", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, handlersAll } = makeFakePi();
+      register(pi);
+      const calls = handlersAll.get("tool_call") ?? [];
+      const raw = "3:line3\n";
+
+      // WHY: the Tier-1 expansion (spec §3.2) only matters if it survives both seams — the
+      // WHY: injected `-n` at `tool_call` AND the served rows at `tool_result`. Each case gets
+      // WHY: its own session so the lease bookkeeping of one serve cannot mask the next.
+      const cases: ReadonlyArray<readonly [string, string]> = [
+        ["grep 'line3' f.txt -w", "grep -n 'line3' f.txt -w"],
+        ["grep 'line3' -x f.txt", "grep -n 'line3' -x f.txt"],
+        ["grep -m 1 'line3' f.txt", "grep -n -m 1 'line3' f.txt"],
+        ["grep --color=never -in 'line3' f.txt", "grep --color=never -in 'line3' f.txt"],
+      ];
+      for (const [index, [command, rewritten]] of cases.entries()) {
+        const ctx = {
+          cwd: dir,
+          sessionManager: { getSessionId: () => `bash-search-tier1-${index}` },
+        };
+        const call = { toolName: "bash", input: { command } };
+        for (const handler of calls) await handler(call, ctx);
+        expect(call.input.command).toBe(rewritten);
+        const result = await bashResult(handlers.get("tool_result")!, rewritten, ctx, raw);
+        expect(result).toBeDefined();
+        expect(result!.content[0]!.text).toContain("[f.txt (1 match)]");
+        expect(rowsOf(result!.content[0]!.text)).toHaveLength(1);
+      }
+    });
+  });
+
   it("passes attached context, filename/formatting and non-literal search shapes through both hooks", async () => {
     await withTempDir("bash-search-", async (dir) => {
       await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
