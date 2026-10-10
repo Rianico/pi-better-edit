@@ -44,6 +44,9 @@ describe("the anchors a served read hands out", () => {
   it("are the ones recorded before this walk existed", async () => {
     const source = "a\nb\nc\nd\ne\n";
     const plan = await defaultHashIdentity.anchorsForWalk(source, { path: PATH, persist: false });
+    // WHY (#89): pin the precondition, or the `??` below quietly passes on the cached array. The
+    // file's seam opt-out keeps the store fresh per call, so no sibling test can leave one here.
+    expect(plan.cached).toBeUndefined();
     expect(plan.cached ?? walkAssigned(source, plan.assign!)).toEqual([...RECORDED]);
     expect(fileHashesFor(PATH, source)).toEqual([...RECORDED]);
   });

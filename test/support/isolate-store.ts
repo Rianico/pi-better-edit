@@ -1,8 +1,8 @@
 /**
  * Worker-level hash-store isolation (#89).
  *
- * WHY this file exists at all, instead of stubbing HOME at each fixture call site: isolation is a per
- * WORKER invariant, not a per call convention. Store-touching call sites are many — 73 test files go
+ * WHY this file exists at all, instead of stubbing HOME at each fixture call site: isolation belongs
+ * to the harness, not to each call site. Store-touching call sites are many — 73 test files go
  * through setupIntegrationTest and 5 through setupReadTest (measured with `grep -rl 'setupIntegrationTest('
  * test/ --include=*.test.ts`), plus every ad-hoc `withTempFile` — and each new call site can forget the
  * stub, which is exactly how test runs came to open the developer's real store at
@@ -12,17 +12,24 @@
  * before the test module is.
  *
  * HOW: point PI_BETTER_EDIT_CONFIG_DIR (read by configDir() in src/hash-store.ts) at a fresh temp dir
- * for this worker. The variable names the app config dir itself, so it needs no suffix.
+ * for each evaluation (per test file under the default isolate: true). The variable names the app
+ * config dir itself, so it needs no suffix.
  *
- * GRANULARITY, measured (`pnpm exec vitest run` over two probe files): the module registry is reset
- * per test file, so this module re-evaluates and mkdtemps again for each file in a worker — one dir
- * per FILE, never the developer's. A test that needs a store dir fresh per CALL (e.g. one asserting
- * the store file does not exist yet, or counting rows across the whole table) still has to opt out
- * with an empty PI_BETTER_EDIT_CONFIG_DIR, because every test in its file shares this dir. The opt-out
- * rule in full: fresh-per-call needs arise when a test asserts the store file does not exist yet, counts
- * rows across a whole table, or reads a plan cached under a fixed path. The current set is enumerated by
- * `grep -rlE 'PI_BETTER_EDIT_CONFIG_DIR("?, ""| = "")' test/ --include=*.test.ts` — re-measure rather than
- * trusting a count.
+ * GRANULARITY and the guarantee. Guaranteed: every evaluation of this module allocates its own fresh
+ * directory with mkdtemp under the OS temp root and publishes it as PI_BETTER_EDIT_CONFIG_DIR before
+ * the test module is imported; configDir() returns that value verbatim while it is non-empty, so the
+ * store path cannot be derived from HOME, XDG_CONFIG_HOME or the cwd and cannot be a pre-existing
+ * config dir. Isolation therefore holds at any granularity and under any pool setting, however many
+ * files share one dir or however often one is re-allocated. Granularity only decides how often a fresh
+ * dir appears: under the default isolate: true the module registry resets per test file, so allocation
+ * happens per file (measured with a two-file probe) — nothing asserts two files get different dirs,
+ * because the safety property does not rest on that.
+ *
+ * THE OPT-OUT RULE: a test needing a store dir fresh per CALL must clear the seam with an empty
+ * PI_BETTER_EDIT_CONFIG_DIR. Those needs arise when a test asserts the store file does not exist yet,
+ * counts rows across a whole table, or reads a plan cached under a fixed path. The current set is
+ * enumerated by `grep -rlE 'PI_BETTER_EDIT_CONFIG_DIR("?, ""| = "")' test/ --include=*.test.ts` —
+ * re-measure rather than trusting a count.
  */
 import { mkdtemp } from "node:fs/promises";
 import { rmSync } from "node:fs";
