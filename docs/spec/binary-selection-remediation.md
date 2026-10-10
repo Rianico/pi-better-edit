@@ -18,14 +18,14 @@ Per the owner's standing instruction (*"it is acceptable to break the original d
   - **Strict Tri-State Dictionary**: Absent means omitted; `null` is explicitly rejected as an invalid type; values are values.
   - **Clean TypeScript Model**: No normalization or key-stripping required at runtime; aligns naturally with `exactOptionalPropertyTypes`.
 * **Costs & Risks**:
-  - **Client Deadlocks**: Callers whose client harness strictly auto-fills all declared properties with `null` (e.g., the Obsidian Claudian plugin setup from issue #67) cannot omit keys and will deadlock in retry loops.
+  - **Client Deadlocks**: A caller whose client harness cannot omit a declared optional key — it emits the key even when no value exists — has no way to satisfy a schema that refuses `null`, and can deadlock in a retry loop.
   - **Retry Penalties**: Every `text_ref: null` or `text_ref.file: null` costs an extra round-trip and token burn while the model learns to omit the key.
 
 ### 1.2 Option C — Schema Matches Runtime (Declare Optional Fields Explicitly Nullable)
 * **Mechanics**: The TypeBox schema explicitly permits `null` on optional fields via `Type.Optional(Type.Union([T, Type.Null()]))`. Admission folds `null` to absent (via `foldAbsentSlots` / `delete`).
 * **Merits**:
   - **Truthful Contract**: Eliminates the contradiction where the schema claims a property is non-nullable while admission and prompts permit `null`.
-  - **Aligned with Platform Compiler**: Pi’s host compiler (`@earendil-works/pi-ai/dist/api/constrained-sampling.js:99-101`) rewrites non-required properties to `{ anyOf: [property, { type: "null" }] }` when targeting strict sampling. In strict mode, `null` is the host platform's own canonical wire encoding for absent keys.
+  - **Aligned with Platform Compiler**: Pi’s host compiler (`makeJsonSchemaNodeStrict`; upstream `@earendil-works/pi-ai`, which is not an installed package in this checkout — the function is vendored inside the `@earendil-works/pi-coding-agent` bundle) rewrites non-required properties to `{ anyOf: [property, { type: "null" }] }` when targeting strict sampling. In strict mode, `null` is the host platform's own canonical wire encoding for absent keys.
   - **Client Resiliency**: Safely tolerates auto-nulling client harnesses without triggering false type errors.
 * **Costs & Risks**:
   - **Schema Overhead**: Marginally expands the TypeBox AST and serialized tool schema.
@@ -35,7 +35,7 @@ Per the owner's standing instruction (*"it is acceptable to break the original d
 * **Mechanics**: The schema publishes non-nullable optional properties (`Type.Optional(T)`). Admission runs `foldAbsentSlots` before validation, deleting `null` and `undefined` keys so downstream validation only inspects post-folded keys.
 * **Merits**:
   - **Minimalist Schema**: Keeps the published JSON Schema compact and free of union nodes.
-  - **Native Pi Alignment**: Mirrors Pi’s built-in `normalizeOptionalNulls` in `validation.js:226-231`, which automatically deletes `null` in non-required properties before schema validation.
+  - **Native Pi Alignment**: Mirrors Pi’s built-in `normalizeOptionalNulls` (upstream `@earendil-works/pi-ai`, not an installed package in this checkout), which automatically deletes `null` in non-required properties before schema validation.
   - **Zero Regressions**: Preserves existing behavior for issues #67, #74, #75, and #77.
 * **Costs & Risks**:
   - **Two Sources of Truth**: The schema artifact served to the model says `null` violates the type, but the engine tolerates it. Third-party client-side validators running ahead of admission could reject `null` prematurely.
@@ -45,6 +45,8 @@ Per the owner's standing instruction (*"it is acceptable to break the original d
 ## 2. Binary Selection Remediation (Orthogonal Improvement)
 
 Regardless of which null-handling option (A, C, or B) the owner selects, the framing of XOR violations can be significantly clarified.
+
+What #67 and #75 *reported* is mechanical, not causal: #67 shows a model emitting both payload fields and then retrying the same rejected call; #75 shows a strict caller emitting `text_ref.file: null` for an omitted optional property. Neither report measures *why* a model picks that shape, so the causal reading is stated below as the hypothesis this remediation is intended to test — not as fact.
 
 > [!NOTE]
 > **Behavioural Hypothesis (Unprobed)**:

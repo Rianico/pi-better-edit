@@ -28,11 +28,11 @@ object. No `type` list and no `anyOf` admitted `null`, so a client-side validato
 schema concluded `null` was a type error while the engine silently folded it. Two sources of
 truth — the debt this record retires.
 
-The platform's own strict compiler already spells nullable the same way:
-`makeJsonSchemaNodeStrict` rewrites each non-required property that does not already allow
-`null` to `{ anyOf: [property, { type: "null" }] }`
-(`@earendil-works/pi-ai@0.84.4` `dist/api/constrained-sampling.js`). Nullability is pi's own
-wire spelling of "absent".
+The platform's own strict compiler already spells nullable the same way. `makeJsonSchemaNodeStrict`
+(upstream `@earendil-works/pi-ai`; not an installed package in this checkout — the function is
+vendored inside the `@earendil-works/pi-coding-agent` bundle) rewrites each non-required property
+that does not already allow `null` to `{ anyOf: [property, { type: "null" }] }`. Nullability is
+pi's own wire spelling of "absent".
 
 ## Decision
 
