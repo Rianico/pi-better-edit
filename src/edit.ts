@@ -20,6 +20,7 @@ import {
   editModeSchema,
   assertReq,
 } from "./payload-contract.js";
+import { withPayloadSubject } from "./domain-errors.js";
 import { createEditTool, type PreviewContext } from "./edit-tool.js";
 import { createTuiPresenter } from "./tui-presenter.js";
 import { loadP, loadGuide } from "./prompts.js";
@@ -83,22 +84,36 @@ export function buildToolDef(
     parameters,
     promptSnippet: E_SNIPPET,
     promptGuidelines: E_GUIDE,
-    prepareArguments: prepareEditArguments,
+    // WHY: pi calls this before execute, so the admission refusal of a bad edit payload lands here
+    // WHY: and needs the tool's own name stamped before the E_UNKNOWN envelope can replace it.
+    prepareArguments: (args: unknown) => {
+      try {
+        return prepareEditArguments(args);
+      } catch (error) {
+        throw withPayloadSubject(error, "edit");
+      }
+    },
     renderShell: "default",
     // SAFETY: presenter owns TUI casts — asToolDef returns ToolDefinition-typed renders, edit.ts has zero direct TUI casts
     ...presenter.asToolDef(),
     async execute(_toolCallId, params, signal, _onUpdate, ctx) {
       // SAFETY: pi execute boundary is untyped — ctx narrowed via sessionKeyFor, signal is AbortSignal validated by engine
-      const res = await tool.execute(
-        params,
-        signal as AbortSignal | undefined,
-        ctx as unknown as {
-          cwd: string;
-          sessionManager?: { getSessionId(): string };
-        },
-      );
-      // SAFETY: res is validated tool result after tool.execute — cast to pi ToolDef return type for registration
-      return res as unknown as ReturnType<ToolDef["execute"]> extends Promise<infer R> ? R : never;
+      try {
+        const res = await tool.execute(
+          params,
+          signal as AbortSignal | undefined,
+          ctx as unknown as {
+            cwd: string;
+            sessionManager?: { getSessionId(): string };
+          },
+        );
+        // SAFETY: res is validated tool result after tool.execute — cast to pi ToolDef return type for registration
+        return res as unknown as ReturnType<ToolDef["execute"]> extends Promise<infer R>
+          ? R
+          : never;
+      } catch (error) {
+        throw withPayloadSubject(error, "edit");
+      }
     },
   };
 }
