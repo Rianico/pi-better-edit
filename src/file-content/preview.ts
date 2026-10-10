@@ -293,7 +293,7 @@ function buildWindowSection(params: {
       maxTruncLines,
       hintRemainder: false,
       verbatim,
-      displayPath,
+      ...(displayPath !== undefined ? { displayPath } : {}),
     });
   }
   const normal = buildNormalPreview({
@@ -306,7 +306,7 @@ function buildWindowSection(params: {
     selectedHashes,
     hintRemainder: false,
     verbatim,
-    displayPath,
+    ...(displayPath !== undefined ? { displayPath } : {}),
   });
   return {
     text: normal.preview,
@@ -440,7 +440,7 @@ function buildWindowedPreview(params: {
       maxBytes: remainingBytes,
       maxTruncLines: remainingLines,
       verbatim,
-      displayPath,
+      ...(displayPath !== undefined ? { displayPath } : {}),
     });
     sections.push(`${header}\n${built.text}`);
     for (const row of built.served) hashByPosition.set(row.position, row.hash);
@@ -568,7 +568,7 @@ export async function fmtReadPreview(
         maxBytes: maxLineBytes,
         maxTruncLines,
         verbatim,
-        displayPath,
+        ...(displayPath !== undefined ? { displayPath } : {}),
       }),
       hashes: page.hashes,
       lineTotals: totals,
@@ -613,7 +613,7 @@ export async function fmtReadPreview(
         maxBytes,
         maxTruncLines,
         verbatim,
-        displayPath,
+        ...(displayPath !== undefined ? { displayPath } : {}),
       })),
       hashes: allHashes,
       lineTotals: totals,
@@ -629,7 +629,7 @@ export async function fmtReadPreview(
     maxTruncLines,
     selectedHashes,
     verbatim,
-    displayPath,
+    ...(displayPath !== undefined ? { displayPath } : {}),
   });
   return {
     text: normal.preview,

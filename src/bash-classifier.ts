@@ -590,7 +590,9 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
         return { kind: "passThrough", reason: "multi-view" };
       }
       searchSeg = classified.search;
-      located.searchNameEnd = node.type === "Command" ? node.name?.end : undefined;
+      if (node.type === "Command" && node.name?.end !== undefined) {
+        located.searchNameEnd = node.name.end;
+      }
       continue;
     }
     // WHY: only the terminal statement may carry the view (ADR-0033 D1 as

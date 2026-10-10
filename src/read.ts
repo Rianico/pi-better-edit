@@ -413,7 +413,7 @@ interface PreparedTarget {
   /** The page's truncation, or `undefined` when the file rendered no page at all. */
   truncation?: TruncationResult;
   nextOffset?: number;
-  snapshotId?: string;
+  snapshotId?: string | undefined;
 }
 
 /** The `E_UNSUPPORTED_FILE` a non-text file owes, shaped exactly like the single-file read's. */
@@ -425,7 +425,7 @@ function unsupportedFile(target: AdmittedTarget, prepared: PrepareResult): Domai
     return new DomainError("E_UNSUPPORTED_FILE", {
       path: target.file,
       kind: "binary",
-      description: prepared.description,
+      ...(prepared.description !== undefined ? { description: prepared.description } : {}),
     });
   }
   return new DomainError("E_UNSUPPORTED_FILE", { path: target.file, kind: "image" });
@@ -557,7 +557,7 @@ export function regRead(pi: ExtensionAPI): void {
           // WHY: "not found" warning instead of dereferencing a store that is not there.
           if (store !== undefined && preloaded !== undefined && preloaded.kind === "text") {
             const norm = await decodeNormText(target.file, cwd, {
-              signal,
+              ...(signal !== undefined ? { signal } : {}),
               ...cap,
               preloadedFile: preloaded,
             });
@@ -574,7 +574,7 @@ export function regRead(pi: ExtensionAPI): void {
           // WHY: known, so the snapshots + lineage + retirement + lease grants below commit as the ONE
           // WHY: transaction spec §3.1.2 mandates instead of materializing first and leasing later.
           const prepared = await prepareFile(target.file, cwd, {
-            signal,
+            ...(signal !== undefined ? { signal } : {}),
             ...(target.legacyPage !== undefined
               ? {
                   ...(target.legacyPage.offset !== undefined
@@ -584,12 +584,14 @@ export function regRead(pi: ExtensionAPI): void {
                     ? { limit: target.legacyPage.limit }
                     : {}),
                 }
-              : { windows: plan.windows }),
+              : plan.windows !== undefined
+                ? { windows: plan.windows }
+                : {}),
             // WHY: the served cap stays the served budget (independent of the anchor space): the paged
             // WHY: walk still retains one anchor per hashed line (see `src/constants.ts`), so the budget
             // WHY: survives paging — while verbatim skips the cap and the store (no anchors to bound).
             maxLines: remainingServedLines,
-            store: mode === "served" ? store : undefined,
+            ...(mode === "served" && store !== undefined ? { store } : {}),
             noPersist: true,
             render: mode,
             ...(preloaded === undefined ? {} : { preloadedFile: preloaded }),
@@ -663,7 +665,10 @@ export function regRead(pi: ExtensionAPI): void {
                   ...(single.nextOffset !== undefined ? { nextOffset: single.nextOffset } : {}),
                   metrics,
                 }
-              : { ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}), metrics },
+              : {
+                  ...(firstTruncation !== undefined ? { truncation: firstTruncation } : {}),
+                  metrics,
+                },
         };
       }
 
