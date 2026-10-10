@@ -26,6 +26,9 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   const home = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-soft-overflow-"));
   vi.stubEnv("HOME", home);
   vi.stubEnv("XDG_CONFIG_HOME", "");
+  // WHY (#89): these tests count rows across the whole file_snapshots table, so they need a store dir that
+  // WHY: is fresh per call — opt out of the worker-wide setupFiles seam and resolve through HOME.
+  vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(home);
   } finally {

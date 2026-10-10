@@ -1,4 +1,4 @@
-import { describe, expect, it } from "vitest";
+import { beforeAll, describe, expect, it, vi } from "vitest";
 import { walkLines } from "../../src/file-content/line-walker.js";
 import { loadHashStore } from "../../src/hash-store.js";
 import { _lineHashesPure, defaultHashIdentity, fileHashesFor } from "../../src/hashline/index.js";
@@ -13,6 +13,13 @@ import {
 } from "../support/fixtures";
 
 useTestHome();
+
+// WHY (#89): PATH is a fixed constant and a test below persists a real snapshot for it, so with the
+// WHY: worker-wide setupFiles seam any test shuffled ahead of it reads that cached plan
+// WHY: (plan.assign undefined); clearing the seam puts every call back on its own HOME-repointed store.
+beforeAll(() => {
+  vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
+});
 
 // WHY: the served contract pins the file-scoped assignment at a fixed path — derivation is a pure
 // WHY: function of (path, content), so these five width-4 anchors for PATH below are stable across
@@ -37,6 +44,9 @@ describe("the anchors a served read hands out", () => {
   it("are the ones recorded before this walk existed", async () => {
     const source = "a\nb\nc\nd\ne\n";
     const plan = await defaultHashIdentity.anchorsForWalk(source, { path: PATH, persist: false });
+    // WHY (#89): pin the precondition, or the `??` below quietly passes on the cached array. The
+    // file's seam opt-out keeps the store fresh per call, so no sibling test can leave one here.
+    expect(plan.cached).toBeUndefined();
     expect(plan.cached ?? walkAssigned(source, plan.assign!)).toEqual([...RECORDED]);
     expect(fileHashesFor(PATH, source)).toEqual([...RECORDED]);
   });

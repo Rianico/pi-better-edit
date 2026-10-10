@@ -21,6 +21,23 @@ vi.mock("../../src/hashline/index.js", async (importOriginal) => {
 
 const home = useTestHome();
 
+// WHY (#89): the store-file-absence assertion below needs a store dir that is fresh per CALL — what
+// WHY: the HOME-derived path inside withTempFile gives. The worker-wide setupFiles seam points at one
+// WHY: dir shared by every test in this file, so opt out for the duration of that test.
+// WHY process.env rather than vi.stubEnv: the file-level useTestHome() stubs HOME/XDG through
+// WHY: vi.stubEnv and owns their unstub in afterAll, so vi.unstubAllEnvs() here would drop them
+// WHY: mid-file.
+async function withoutStoreSeam(run: () => Promise<void>): Promise<void> {
+  const previous = process.env.PI_BETTER_EDIT_CONFIG_DIR;
+  process.env.PI_BETTER_EDIT_CONFIG_DIR = "";
+  try {
+    await run();
+  } finally {
+    if (previous === undefined) delete process.env.PI_BETTER_EDIT_CONFIG_DIR;
+    else process.env.PI_BETTER_EDIT_CONFIG_DIR = previous;
+  }
+}
+
 describe("verbatim hashless seam", () => {
   afterEach(() => {
     vi.restoreAllMocks();
@@ -83,21 +100,23 @@ describe("verbatim hashless seam", () => {
   });
 
   it("opens no anchor store for a verbatim read, and does for a served read", async () => {
-    await withTempFile("plain.txt", "alpha\nbeta\n", async ({ cwd }) => {
-      const { readTool, ctx } = setupReadTest(cwd);
-      const storePath = hashStorePath();
+    await withoutStoreSeam(() =>
+      withTempFile("plain.txt", "alpha\nbeta\n", async ({ cwd }) => {
+        const { readTool, ctx } = setupReadTest(cwd);
+        const storePath = hashStorePath();
 
-      await readTool.execute(
-        "v2",
-        { file: "plain.txt", mode: "verbatim" },
-        undefined,
-        undefined,
-        ctx,
-      );
-      expect(existsSync(storePath)).toBe(false);
+        await readTool.execute(
+          "v2",
+          { file: "plain.txt", mode: "verbatim" },
+          undefined,
+          undefined,
+          ctx,
+        );
+        expect(existsSync(storePath)).toBe(false);
 
-      await readTool.execute("s2", { file: "plain.txt" }, undefined, undefined, ctx);
-      expect(existsSync(storePath)).toBe(true);
-    });
+        await readTool.execute("s2", { file: "plain.txt" }, undefined, undefined, ctx);
+        expect(existsSync(storePath)).toBe(true);
+      }),
+    );
   });
 });

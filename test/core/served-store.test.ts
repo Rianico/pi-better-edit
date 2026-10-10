@@ -1200,6 +1200,11 @@ async function withTempHome(run: (home: string) => Promise<void>): Promise<void>
   tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-served-test-"));
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
+  // WHY (#89): these tests read the store file directly at sqlitePath(home) and count rows across
+  // WHY: the whole table, so they need a store dir that is fresh per CALL — what the HOME-derived
+  // WHY: path gives. The worker-wide setupFiles seam would hand them one shared, already-populated
+  // WHY: dir, so opt out for the duration of this helper.
+  vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run(tmpHome);
   } finally {

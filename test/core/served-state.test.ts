@@ -203,6 +203,9 @@ async function withTempHome(run: () => Promise<void>): Promise<void> {
   tmpHome = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-served-state-test-"));
   vi.stubEnv("HOME", tmpHome);
   vi.stubEnv("XDG_CONFIG_HOME", "");
+  // WHY (#89): these tests open/assert the store under THIS temp home, so opt out of the worker-wide
+  // WHY: setupFiles seam and let it resolve through HOME, which is fresh per call here.
+  vi.stubEnv("PI_BETTER_EDIT_CONFIG_DIR", "");
   try {
     await run();
   } finally {
