@@ -21,6 +21,13 @@ import { defineConfig } from "vitest/config";
  * are ceilings, not budgets — no test is expected to reach them, and a real hang still fails rather
  * than blocking the run.
  *
+ * THE COST OF THAT SLACK, stated next to the numbers: a genuine hang now takes the higher ceiling to
+ * surface, so the pessimistic case — every worker stuck at once, e.g. a deadlocked hash-store call —
+ * costs about (204 files ÷ ~9 workers) × 15-20s ≈ 6-8 min before the run fails, against ≈2-3 min at
+ * the old 5s/10s defaults. A single hung test still costs only its own 20s. That tax is paid only
+ * when something is truly stuck; the alternative, measured above, is paying it in false failures
+ * under load.
+ *
  * WHY `hookTimeout` as well as `testTimeout`: the failures come in BOTH shapes — a plain test body
  * (`replace-validation`, `lifecycle-hooks`) and a module-level `beforeAll(async () => await
  * initHasher())` (`whitespace-insensitive-canon`, `task147-rejection-diagnostics`). Raising only

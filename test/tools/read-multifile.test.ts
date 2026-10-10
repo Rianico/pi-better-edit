@@ -591,6 +591,12 @@ describe("read files — the fan-out cap", () => {
           () => undefined,
           (error: Error) => error,
         );
+      // WHY: LIMIT OF THIS ASSERTION — the wording asserted here is OUR test double's construction
+      // WHY: (test/support/fixtures.ts:165-173), not pi's: this repo carries typebox 1.3.27 while pi
+      // WHY: bundles 1.3.7, and the SDK's own refusal reads `Validation failed for tool "read":`.
+      // WHY: So this pins the harness's imitation of the runtime wording and would stay green if
+      // WHY: pi's wording changed. The load-bearing claim — that the schema fires BEFORE `execute` —
+      // WHY: is asserted behaviourally in the unwrapped-definition test below.
       expect(failure?.message).toContain(`must not have more than ${MAX_READ_FILES} items`);
       expect(failure?.message).not.toContain(MAX_READ_FILES_MESSAGE);
     });
