@@ -144,8 +144,8 @@ export async function preview(
     };
     const details: import("../edit-response.js").EditDetails = {
       diff,
-      warnings: file.warnings.length > 0 ? file.warnings : undefined,
-      driftNotice: file.driftNotice,
+      ...(file.warnings.length > 0 ? { warnings: file.warnings } : {}),
+      ...(file.driftNotice !== undefined ? { driftNotice: file.driftNotice } : {}),
       metrics,
       servedRows: [],
     };

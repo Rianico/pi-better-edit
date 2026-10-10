@@ -292,11 +292,14 @@ export class HashIdentity {
   private snapshotIO?: HashSnapshotIO;
 
   constructor(options?: { snapshotIO?: HashSnapshotIO }) {
-    this.snapshotIO = options?.snapshotIO;
+    // WHY: the slot is absent, never explicitly `undefined` (`exactOptionalPropertyTypes`).
+    if (options?.snapshotIO !== undefined) this.snapshotIO = options.snapshotIO;
   }
 
   setSnapshotIO(io: HashSnapshotIO | undefined): void {
-    this.snapshotIO = io;
+    // WHY: clearing must drop the slot — a guarded write would keep a stale IO behind.
+    if (io === undefined) delete this.snapshotIO;
+    else this.snapshotIO = io;
   }
 
   getSnapshotIO(): HashSnapshotIO | undefined {
@@ -746,9 +749,9 @@ export async function lineHashes(
   if (path === undefined) return contentOnlyHashes(content, blockedHashes);
   return defaultHashIdentity.hashesFor(content, {
     path,
-    prior: previous,
+    ...(previous !== undefined ? { prior: previous } : {}),
     persist: persist ?? true,
-    snapshotIO: io,
-    blockedHashes,
+    ...(io !== undefined ? { snapshotIO: io } : {}),
+    ...(blockedHashes !== undefined ? { blockedHashes } : {}),
   });
 }

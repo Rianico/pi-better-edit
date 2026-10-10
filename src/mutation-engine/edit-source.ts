@@ -46,11 +46,11 @@ export interface LoadedEditFile {
 export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFile> {
   const { normalized, bom, originalEnding, fileHashes, hadUtf8DecodeErrors, absolutePath } =
     await readNormFile(source.path, source.cwd, {
-      signal: source.signal,
-      accessMode: source.accessMode,
+      ...(source.signal !== undefined ? { signal: source.signal } : {}),
+      ...(source.accessMode !== undefined ? { accessMode: source.accessMode } : {}),
       maxLines: SERVED_MAX_LINES,
-      store: source.store,
-      noPersist: source.noPersist,
+      ...(source.store !== undefined ? { store: source.store } : {}),
+      ...(source.noPersist !== undefined ? { noPersist: source.noPersist } : {}),
     });
   const served = await createSessionHandle(source.sessionKey, absolutePath).load();
   let blockedHashes: ReadonlySet<string> = new Set();

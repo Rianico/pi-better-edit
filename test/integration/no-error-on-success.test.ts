@@ -50,7 +50,8 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       );
       const text = getText(result);
       expect(text).toContain("Successfully edited");
-      assertNoErrorOnSuccess({ text, warnings: result.details.warnings as string[] | undefined });
+      const warnings = result.details.warnings as string[] | undefined;
+      assertNoErrorOnSuccess({ text, ...(warnings !== undefined ? { warnings } : {}) });
       expect(await readFile(path, "utf-8")).toBe("aaa\nBBB\nccc\n");
     });
   });
@@ -73,7 +74,8 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       expect(text).toContain("Successfully edited");
       expect(text).toContain("[USER] [W_REVERSED_ANCHORS]");
       expect(text).toContain("were reversed");
-      assertNoErrorOnSuccess({ text, warnings: result.details.warnings as string[] | undefined });
+      const warnings = result.details.warnings as string[] | undefined;
+      assertNoErrorOnSuccess({ text, ...(warnings !== undefined ? { warnings } : {}) });
       expect(await readFile(path, "utf-8")).toBe("aaa\nX\nddd\n");
     });
   });
@@ -87,9 +89,10 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
         edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "bbb" }],
       };
       const first = await editTool.execute("e1", payload, undefined, undefined, ctx);
+      const warnings = first.details.warnings as string[] | undefined;
       assertNoErrorOnSuccess({
         text: getText(first),
-        warnings: first.details.warnings as string[] | undefined,
+        ...(warnings !== undefined ? { warnings } : {}),
       });
       // The second identical resend applies nothing yet warns: the count
       // guard would miss it, the not-refused predicate still holds it.
@@ -97,7 +100,11 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       const text = getText(second);
       expect(text).toContain("No changes made");
       expect(text).toContain("[USER] [W_NOOP]");
-      assertNoErrorOnSuccess({ text, warnings: second.details.warnings as string[] | undefined });
+      const resendWarnings = second.details.warnings as string[] | undefined;
+      assertNoErrorOnSuccess({
+        text,
+        ...(resendWarnings !== undefined ? { warnings: resendWarnings } : {}),
+      });
     });
   });
 
@@ -119,7 +126,8 @@ describe("no error on success uses the not-refused predicate (spec 6.3)", () => 
       const text = getText(result);
       expect(text).toContain("Successfully edited");
       expect(text).toContain("[MODEL] [W_NEVER_SERVED_SHAPE]");
-      assertNoErrorOnSuccess({ text, warnings: result.details.warnings as string[] | undefined });
+      const warnings = result.details.warnings as string[] | undefined;
+      assertNoErrorOnSuccess({ text, ...(warnings !== undefined ? { warnings } : {}) });
       expect(await readFile(path, "utf-8")).toContain("ZZZZ│alpha");
     });
   });

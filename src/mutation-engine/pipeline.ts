@@ -222,7 +222,7 @@ async function applyOneEdit(input: ApplyOneEditInput): Promise<ApplyOneEditOutco
     sessionKey: input.sessionKey,
     absolutePath: input.absolutePath,
     content: input.content,
-    currentIds: input.currentIds,
+    ...(input.currentIds !== undefined ? { currentIds: input.currentIds } : {}),
   });
 
   let anchorResult: ReturnType<typeof applyEdit>;
@@ -770,11 +770,11 @@ async function runMutations(
   } = await loadEditFile({
     path,
     cwd,
-    signal: options?.signal,
-    accessMode: options?.accessMode,
+    ...(options?.signal !== undefined ? { signal: options.signal } : {}),
+    ...(options?.accessMode !== undefined ? { accessMode: options.accessMode } : {}),
     sessionKey,
     store: hashStore,
-    noPersist: options?.noPersist,
+    ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
   });
 
   // WHY: (04b-rem P2-3) the admission round-trip guard: anchors were derived from the DECODED
@@ -887,7 +887,7 @@ async function runMutations(
       content: currentContent,
       hashes: currentHashes,
       edit,
-      signal: options?.signal,
+      ...(options?.signal !== undefined ? { signal: options.signal } : {}),
       served,
       blockedHashes: batchBlockedHashes,
       canonDigests: baseCanonDigests,
@@ -899,7 +899,7 @@ async function runMutations(
       // WHY: the intermediate buffer is in-memory only, so its identities come from the buffer map
       // WHY: (`null` lines are the batch's own creations) — a re-diff of it against S_latest cannot
       // WHY: tell which of two byte-identical lines carries a leased line_id.
-      currentIds: isPreview ? undefined : currentIds,
+      ...(isPreview ? {} : { currentIds }),
       onRejected: async (error) => {
         if (items.length === 1) throw error;
         throw batchAbortFor({ error, index, path });

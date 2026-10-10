@@ -181,7 +181,7 @@ function buildOversizedPreview(params: {
         served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
   return {
     text: preview,
-    truncation: skippedTruncation.truncated ? skippedTruncation : undefined,
+    ...(skippedTruncation.truncated ? { truncation: skippedTruncation } : {}),
     ...(nextOffset !== undefined ? { nextOffset } : {}),
     served,
   };
@@ -233,7 +233,7 @@ function buildNormalPreview(params: {
   if (!verbatim)
     for (let index = 0; index < truncation.outputLines; index++)
       served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
-  return { preview, nextOffset, truncation, served };
+  return { preview, truncation, ...(nextOffset !== undefined ? { nextOffset } : {}), served };
 }
 
 function windowHeader(startLine: number, endLine: number, totalLines: number): string {
@@ -292,7 +292,7 @@ function buildWindowSection(params: {
   });
   return {
     text: normal.preview,
-    truncation: normal.truncation.truncated ? normal.truncation : undefined,
+    ...(normal.truncation.truncated ? { truncation: normal.truncation } : {}),
     served: normal.served,
   };
 }
@@ -573,7 +573,7 @@ export async function fmtReadPreview(
   });
   return {
     text: normal.preview,
-    truncation: normal.truncation.truncated ? normal.truncation : undefined,
+    ...(normal.truncation.truncated ? { truncation: normal.truncation } : {}),
     ...(normal.nextOffset !== undefined ? { nextOffset: normal.nextOffset } : {}),
     served: normal.served,
     hashes: allHashes,

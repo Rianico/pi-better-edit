@@ -124,10 +124,10 @@ export function createTuiPresenter(
     renderCall,
     renderResult,
     asToolDef() {
-      // SAFETY: ToolDef renderCall/renderResult typed strictly by pi — casts validated by ToolDef contract, owned by framework adapter seam
+      // SAFETY: ToolDef renderCall/renderResult typed strictly by pi — casts validated by ToolDef contract, owned by framework adapter seam. `NonNullable` names the always-defined renders this adapter owns (`ToolDefinition` declares them optional).
       return {
-        renderCall: renderCall as unknown as TuiToolDef["renderCall"],
-        renderResult: renderResult as unknown as TuiToolDef["renderResult"],
+        renderCall: renderCall as unknown as NonNullable<TuiToolDef["renderCall"]>,
+        renderResult: renderResult as unknown as NonNullable<TuiToolDef["renderResult"]>,
       };
     },
   };

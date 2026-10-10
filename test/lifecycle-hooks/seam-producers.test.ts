@@ -302,7 +302,7 @@ describe("lifecycle seam producers", () => {
           toolName: "edit",
           isError: false,
           input: { path: "p.txt" },
-          details: outcome.details,
+          ...(outcome.details !== undefined ? { details: outcome.details } : {}),
           content: [],
         },
         harness.ctx,

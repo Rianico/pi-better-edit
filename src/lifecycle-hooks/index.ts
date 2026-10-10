@@ -32,9 +32,9 @@ async function defaultRecordDiffServes(input: {
 }): Promise<void> {
   await createSessionHandle(input.sessionKey, input.path).recordDiff(input.servedRows, {
     contentHash: input.contentHash,
-    resultLineCount: input.resultLineCount,
-    firstChangedLine: input.firstChangedLine,
-    lastChangedLine: input.lastChangedLine,
+    ...(input.resultLineCount !== undefined ? { resultLineCount: input.resultLineCount } : {}),
+    ...(input.firstChangedLine !== undefined ? { firstChangedLine: input.firstChangedLine } : {}),
+    ...(input.lastChangedLine !== undefined ? { lastChangedLine: input.lastChangedLine } : {}),
   });
 }
 import { readNormFile as defaultReadNormFile } from "../file-reader.js";
@@ -314,9 +314,15 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           path: resolvedPath,
           servedRows: entry.servedRows,
           contentHash: entry.contentHash,
-          resultLineCount: entry.resultLineCount,
-          firstChangedLine: entry.firstChangedLine,
-          lastChangedLine: entry.lastChangedLine,
+          ...(entry.resultLineCount !== undefined
+            ? { resultLineCount: entry.resultLineCount }
+            : {}),
+          ...(entry.firstChangedLine !== undefined
+            ? { firstChangedLine: entry.firstChangedLine }
+            : {}),
+          ...(entry.lastChangedLine !== undefined
+            ? { lastChangedLine: entry.lastChangedLine }
+            : {}),
         });
         // WHY: a served diff means the bytes changed on disk, and the committed span is this
         // WHY: file's changed range. A `reject-and-serve` payload never reaches here (it carries an
@@ -352,9 +358,15 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           // WHY: details may not, in which case "" names no snapshot and no lease is granted
           // WHY: (fail-closed rather than binding to whatever was materialized most recently).
           contentHash: details.contentHash ?? "",
-          resultLineCount: details.resultLineCount,
-          firstChangedLine: details.firstChangedLine,
-          lastChangedLine: details.lastChangedLine,
+          ...(details.resultLineCount !== undefined
+            ? { resultLineCount: details.resultLineCount }
+            : {}),
+          ...(details.firstChangedLine !== undefined
+            ? { firstChangedLine: details.firstChangedLine }
+            : {}),
+          ...(details.lastChangedLine !== undefined
+            ? { lastChangedLine: details.lastChangedLine }
+            : {}),
         });
         // WHY: same contract as the servedByPath branch: the undo or edit landed on disk, and the
         // WHY: details' first/last changed lines bound the changed span (empty when unnamed).

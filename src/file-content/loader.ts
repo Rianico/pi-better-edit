@@ -89,7 +89,7 @@ export async function decodeNormText(
   const file =
     options?.preloadedFile ??
     (await loadFileKindAndText(resolvedPath, {
-      maxLines: options?.maxLines,
+      ...(options?.maxLines === undefined ? {} : { maxLines: options.maxLines }),
       displayPath: path,
     }));
   valKind(file, path);

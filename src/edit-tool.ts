@@ -55,7 +55,7 @@ export function createEditTool(): EditTool {
       const result = await engineExecute(canonical as NormalizedEditRequest, ctx.cwd, {
         accessMode: constants.R_OK | constants.W_OK,
         // SAFETY: signal is AbortSignal | undefined at pi boundary — runtime check via engine's abortIf
-        signal: signal as AbortSignal | undefined,
+        ...(signal !== undefined ? { signal } : {}),
         sessionKey,
       });
       if (isMutationSuccess(result)) {

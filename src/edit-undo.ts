@@ -507,8 +507,12 @@ async function undoCorrelatedTransaction(
         // WHY: the same `--- path ---` section convention the edit response uses for multi-file
         // WHY: batches, so the model reads a two-file revert the same way it reads a two-file cut.
         diff: sections.map((s) => `--- ${s.member.displayPath} ---\n${s.diff}`).join("\n"),
-        firstChangedLine: requestedRange?.firstChangedLine,
-        lastChangedLine: requestedRange?.lastChangedLine,
+        ...(requestedRange?.firstChangedLine !== undefined
+          ? { firstChangedLine: requestedRange.firstChangedLine }
+          : {}),
+        ...(requestedRange?.lastChangedLine !== undefined
+          ? { lastChangedLine: requestedRange.lastChangedLine }
+          : {}),
         resultLineCount: requestedLineCount,
         servedRows: allServedRows,
         contentHash: requestedContentHash,
@@ -518,8 +522,12 @@ async function undoCorrelatedTransaction(
           editsAttempted: sections.length,
           noopEditsCount: 0,
           warningsCount: deferredSyncWarnings.length,
-          firstChangedLine: requestedRange?.firstChangedLine,
-          lastChangedLine: requestedRange?.lastChangedLine,
+          ...(requestedRange?.firstChangedLine !== undefined
+            ? { firstChangedLine: requestedRange.firstChangedLine }
+            : {}),
+          ...(requestedRange?.lastChangedLine !== undefined
+            ? { lastChangedLine: requestedRange.lastChangedLine }
+            : {}),
           addedLines: totalRemoved,
           removedLines: totalAdded,
         }),
@@ -784,10 +792,13 @@ export function regEditUndo(pi: ExtensionAPI): void {
         );
         parts.push(...deferredSyncWarnings);
 
+        // WHY: the restored range wins, else the rendered diff names it; either may be absent.
+        const firstChangedLine = restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine;
+        const lastChangedLine = restoredRange?.lastChangedLine ?? undoDiffResult.lastChangedLine;
         const details: EditDetails = {
           diff: undoDiff,
-          firstChangedLine: restoredRange?.firstChangedLine ?? undoDiffResult.firstChangedLine,
-          lastChangedLine: restoredRange?.lastChangedLine ?? undoDiffResult.lastChangedLine,
+          ...(firstChangedLine !== undefined ? { firstChangedLine } : {}),
+          ...(lastChangedLine !== undefined ? { lastChangedLine } : {}),
           resultLineCount: visLines(undo.content).length,
           servedRows: undoDenseRows,
           contentHash: restoredContentHash,
@@ -797,8 +808,12 @@ export function regEditUndo(pi: ExtensionAPI): void {
             editsAttempted: 1,
             noopEditsCount: 0,
             warningsCount: deferredSyncWarnings.length,
-            firstChangedLine: restoredRange?.firstChangedLine,
-            lastChangedLine: restoredRange?.lastChangedLine,
+            ...(restoredRange?.firstChangedLine !== undefined
+              ? { firstChangedLine: restoredRange.firstChangedLine }
+              : {}),
+            ...(restoredRange?.lastChangedLine !== undefined
+              ? { lastChangedLine: restoredRange.lastChangedLine }
+              : {}),
             addedLines: linesRemovedByEdit,
             removedLines: linesAddedByEdit,
           }),

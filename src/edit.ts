@@ -69,7 +69,11 @@ export function buildToolDef(
   const presenter = createTuiPresenter(
     // SAFETY: fire-time read is paired with the arm-time getSessionId below; DebouncedPreview
     // SAFETY: drops the compute if the serving session changed between arming and firing.
-    (req, cwd) => tool.preview(req, cwd, { sessionManager: getSessionManager?.() }),
+    (req, cwd) => {
+      // SAFETY: the fire-time read stays inside the call so the ctx names the session serving anchors now.
+      const sessionManager = getSessionManager?.();
+      return tool.preview(req, cwd, sessionManager === undefined ? {} : { sessionManager });
+    },
     () => getSessionManager?.()?.getSessionId(),
   );
   return {

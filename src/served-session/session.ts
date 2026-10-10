@@ -666,7 +666,10 @@ function recordServesTruncatedInner(
   contentHash?: string,
 ): void {
   if (rows.length === 0) return;
-  writeServeRecord(store, sessionKey, path, rows, contentHash, { lineCount, clearFrom });
+  writeServeRecord(store, sessionKey, path, rows, contentHash, {
+    lineCount,
+    ...(clearFrom !== undefined ? { clearFrom } : {}),
+  });
 }
 
 /**

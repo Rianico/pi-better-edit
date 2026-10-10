@@ -344,7 +344,7 @@ describe("never-served hint with no lease state (spec D6)", () => {
     expect(result.neverServedCount).toBe(1);
   });
 
-  it("fires with an explicitly undefined served mirror", () => {
+  it("fires with an absent served mirror", () => {
     const content = "alpha\nbeta\ngamma";
     const hashes = contentOnlyHashes(content);
     expect(hashes).not.toContain("ZZZZ");
@@ -353,10 +353,9 @@ describe("never-served hint with no lease state (spec D6)", () => {
       hash_bounds: [{ hash: hashes[1]! }, { hash: hashes[1]! }] as any,
       content_lines: [submitted],
     };
-    const result = applyEdit(content, edit, undefined, hashes, {
-      filePath: "a.txt",
-      served: undefined,
-    });
+    // NOTE: the mirror is absent, not explicitly `undefined` — one value to the seam, and
+    // `exactOptionalPropertyTypes` permits only the absent spelling.
+    const result = applyEdit(content, edit, undefined, hashes, { filePath: "a.txt" });
     expect(result.content).toBe(`alpha\n${submitted}\ngamma`);
     expect(result.neverServedCount).toBe(1);
   });
