@@ -12,6 +12,10 @@ is a payload detail). Ordering note: this record was authored as `0027` to fill 
 before `0028`, but ADR-0027 (prebuilt bundle) reached the trunk first and already
 held `0027`, so this record moved to `0032` rather than share a number.
 
+Amended by [ADR-0036 — Optional wire fields are declared nullable](0036-optional-wire-fields-declared-nullable.md)
+(the five optional properties now admit `null` as a legal spelling of absent; the flat item, the
+XOR, and every required field are unchanged)
+
 ## Context
 
 The pre-04 contract text (including the superseded `ticket-06-decision-record.md`,
@@ -98,8 +102,10 @@ line number; hashes carry commit + command.
 
 9. **Transport citation (auditable form of record).** The wire is flat because
    the transport refuses structured unions: an `anyOf` whose variants are
-   objects or arrays throws (`dist/api/constrained-sampling.js:56-57`), and
-   the strict-key array beginning at `:3` (16 entries) rejects
+   objects or arrays throws (`makeJsonSchemaNodeStrict`; upstream-only:
+   `@earendil-works/pi-ai` is not an installed package here -- the function is
+   vendored inside the `@earendil-works/pi-coding-agent` bundle), and the
+   strict-key array `UNSUPPORTED_STRICT_SCHEMA_KEYS` (16 entries) rejects
    `$ref`/`$defs`/`definitions` (schema reuse) and `patternProperties`
    (property-keyed maps) -- the three techniques a contract author reaches for
    first when expressing a uniform edit item. Mechanics: package + version
@@ -110,8 +116,9 @@ line number; hashes carry commit + command.
    transitive package is reachable only through `.pnpm`; reproduction command
    `find node_modules/.pnpm -path '*pi-ai*' -name 'constrained-sampling.js'
    -exec grep -n 'UNSUPPORTED_STRICT_SCHEMA_KEYS' {} +`. Never a `/tmp` path,
-   never a bare store path. Scalar `anyOf` is permitted (emitted by the library
-  itself at `:93`); `:51`/`:52-53` guard shape, `:55-57` iterate variants.
+   never a bare store path. Scalar `anyOf` is permitted (the library emits it
+   itself); its shape guard and variant-iteration helpers sit beside the
+   strict-key array in the same function.
 
 10. **Glossary.** *foreign-source copy*: a `text_ref` whose `file` names
     another served file (README:255; never called "cross-file" here).

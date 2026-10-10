@@ -21,7 +21,11 @@ describe("editToolSchema", () => {
     expect(schema.properties.edits.items.type).toBe("object");
     expect(schema.properties.edits.items.properties.anchor_from.type).toBe("string");
     expect(schema.properties.edits.items.properties.anchor_to.type).toBe("string");
-    expect(schema.properties.edits.items.properties.text.type).toBe("string");
+    // WHY: (ADR-0036) the optional `text` field is nullable: the union admits a string or null.
+    expect(schema.properties.edits.items.properties.text.anyOf).toEqual([
+      { type: "string", description: 'Bare file content for the range; use "" to delete' },
+      { type: "null" },
+    ]);
     expect(Object.keys(schema.properties.edits.items.properties).sort()).toEqual([
       "anchor_from",
       "anchor_to",

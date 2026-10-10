@@ -115,10 +115,13 @@ export const textRefSchema = Type.Object(
     anchor_from: anchorFromSchema,
     anchor_to: anchorToSchema,
     file: Type.Optional(
-      Type.String({
-        description:
-          'Served file the span is read from; another served file supports both "copy" and "cut" like this file does',
-      }),
+      Type.Union([
+        Type.String({
+          description:
+            'Served file the span is read from; another served file supports both "copy" and "cut" like this file does',
+        }),
+        Type.Null(),
+      ]),
     ),
     mode: Type.Union([Type.Literal("copy"), Type.Literal("cut")], {
       description:
@@ -140,11 +143,19 @@ export const editItemSchema = Type.Object(
   {
     anchor_from: anchorFromSchema,
     anchor_to: anchorToSchema,
-    at: Type.Optional(editAtSchema),
+    // WHY: (binary-selection-remediation Option C, ADR-0036) every optional property is declared
+    // WHY: NULLABLE so the served schema agrees with admission: `null` reads as absent
+    // WHY: (`foldAbsentSlots`). TypeBox's natural union-optional form serialises as
+    // WHY: `anyOf: [<schema>, {"type":"null"}]`, the same spelling pi's strict compiler emits
+    // WHY: (`makeJsonSchemaNodeStrict`). Required properties stay non-nullable on purpose.
+    at: Type.Optional(Type.Union([editAtSchema, Type.Null()])),
     text: Type.Optional(
-      Type.String({ description: 'Bare file content for the range; use "" to delete' }),
+      Type.Union([
+        Type.String({ description: 'Bare file content for the range; use "" to delete' }),
+        Type.Null(),
+      ]),
     ),
-    text_ref: Type.Optional(textRefSchema),
+    text_ref: Type.Optional(Type.Union([textRefSchema, Type.Null()])),
   },
   {
     // WHY: (ticket-67, CORRECTION-1) no oneOf/anyOf union here by trade-off: available today, but it would foreclose a future strict constrained-decoding opt-in; admission-time XOR already enforces the rule.
@@ -162,7 +173,7 @@ export const editToolSchema = Type.Object(
       minItems: 1,
       maxItems: EDITS_MAX_ITEMS,
     }),
-    mode: Type.Optional(editModeSchema),
+    mode: Type.Optional(Type.Union([editModeSchema, Type.Null()])),
   },
   { additionalProperties: false },
 );
@@ -179,11 +190,11 @@ const EDIT_PAYLOAD_HINT =
   '"file" may name another served file, where both modes apply too); optional "at" is "in-place" (default), ' +
   '"before" or "after" (single-line resolved target only); optional "mode" is "general" (default, reproduced ' +
   'served rows are refused) or "literal" (declared literal content).';
-export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one top-level file per call). For text files seen via \`read\`/diff. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors — copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)), never \`│\` or content. Exactly one payload per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\` — a served span's bytes (\`mode\` \`"copy"\`|\`"cut"\`; \`file\`=another served file, where \`cut\` retires the span there too); \`at\`: "in-place" (default), "before", "after". A null optional field reads as absent. \`[MODEL]\` in \`content\` is your retry instruction.`;
+export const EDIT_DESCRIPTION = `Edit a range of lines in a text file via \`edit\`: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` (one top-level file per call). For text files seen via \`read\`/diff. \`anchor_from\`/\`anchor_to\` are bare ${HASH_LEN}-char HASH anchors — copy the ${HASH_LEN} chars before \`│\` in this file's served rows (lease (session, file, anchor)), never \`│\` or content. Exactly one payload field per item: \`text\` (\`\\n\` joins lines, \`""\` deletes) or \`text_ref\` \`{anchor_from, anchor_to, mode (required), file?}\` — a served span's bytes (\`mode\` \`"copy"\`|\`"cut"\`; \`file\`=another served file, where \`cut\` retires the span there too); \`at\`: "in-place" (default), "before", "after". A null optional field reads as absent. \`[MODEL]\` in \`content\` is your retry instruction.`;
 export const EDIT_SNIPPET = `Edit a file range via \`edit\`: \`{"file":file,"edits":[{"anchor_from":a,"anchor_to":b,"text":text}]}\` — anchors are bare ${HASH_LEN}-char hashes copied from served \`HASH│content\` (never copy \`│\`), one payload per item: \`text\` is bare content (\`""\` deletes) or \`text_ref\` writes a served span (\`"copy"\` keeps the source, \`"cut"\` also retires it — in this file or in the \`file\` it names). \`at\`: "in-place" (default), "before", "after". Chain from diff anchors with no re-read.`;
 export const EDIT_GUIDELINES: string[] = [
   `edit: \`anchor\` vs \`HASH│content\` — an \`anchor\` is a bare ${HASH_LEN}-char hash (e.g. "wUpX"); a \`HASH│content\` line (e.g. \`wUpX│    pass\`) is a served row; the \`│\` is a separator — copy only the ${HASH_LEN} chars before it into \`anchor_from\`/\`anchor_to\`.`,
-  `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; each item carries exactly one payload: \`text\` or \`text_ref\`, plus optional \`at\`; both payloads or neither is refused (a null in an optional field — \`text\`, \`text_ref\`, \`at\`, the top-level \`mode\`, \`text_ref.file\` — reads as absent; a null in a required one — \`file\`, \`edits\`, any anchor, or \`text_ref.mode\` — is refused).`,
+  `edit: give each item two anchors and exactly one payload: \`{ "file": file, "edits": [{ "anchor_from": a, "anchor_to": b, "text": text }, ...] }\` — \`file\` is the text file (never a directory); one item is a single edit, and several items are batched to that one file; choose exactly one payload field per item: the "text" field OR the "text_ref" field, plus optional \`at\`; providing both fields or omitting both fields is refused (a null in an optional field — \`text\`, \`text_ref\`, \`at\`, the top-level \`mode\`, \`text_ref.file\` — reads as absent; a null in a required one — \`file\`, \`edits\`, any anchor, or \`text_ref.mode\` — is refused).`,
   "edit: `anchor_from`/`anchor_to` bound the inclusive range — in-place replaces both boundary lines, while `before`/`after` insert at the boundary instead; out-of-band writes (bash, scripts, formatters) bypass serve recording, so when an anchor no longer matches, re-read the file and copy fresh anchors.",
   'edit: `text` is plain file content — join lines with `\\n`, mirror trailing blank lines, use `""` to delete the range; a line reproducing a served row (served anchor plus its served content) is refused; `text` is verbatim, so include the indentation you want.',
   'edit: place the payload with `at` — "in-place" (default) rewrites it, "before"/"after" insert at its boundary and require a single-line resolved target; `text: ""` with "before"/"after" writes nothing (noop).',
@@ -327,8 +338,9 @@ function analyzeItem(value: unknown, index: number): string | undefined {
   if (!isLegalItemKeySet(keys)) {
     if (hasText && hasRef) {
       return (
-        `edit[${index}] carries both "text" and "text_ref": exactly one payload per item (${ITEM_SHAPE}). ` +
-        `Keep "text" and delete "text_ref" when the content is yours; keep "text_ref" and delete "text" to copy a served span.`
+        `edit[${index}] carries both "text" and "text_ref" fields: choose exactly one payload field per item (${ITEM_SHAPE}). ` +
+        `Choice A (literal content): Keep "text" and delete "text_ref" from the JSON object. ` +
+        `Choice B (copy/cut served span): keep "text_ref" and delete "text" from the JSON object.`
       );
     }
     // WHY: (§9.3) an illegal key set is often also MISSING a required key; the unsupported-field
@@ -341,7 +353,10 @@ function analyzeItem(value: unknown, index: number): string | undefined {
     if (missing.length > 0) clauses.push(`missing required field(s) ${quoted(missing)}`);
     if (!hasText && !hasRef) {
       const named = clauses.length > 0 ? `${clauses.join(";")} — ` : "";
-      return `edit[${index}] carries no payload: ${named}exactly one payload per item (${ITEM_SHAPE}).`;
+      return (
+        `edit[${index}] carries no payload (neither "text" nor "text_ref" fields): ${named}choose exactly one payload field per item (${ITEM_SHAPE}) — ` +
+        `supply the "text" field (authored content) OR the "text_ref" field (served span).`
+      );
     }
     return `edit[${index}] has ${clauses.join(";")} (${ITEM_SHAPE}).`;
   }

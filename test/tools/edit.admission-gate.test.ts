@@ -8,7 +8,8 @@ import { withTempFile, setupIntegrationTest } from "../support/fixtures";
 // WHY: (ticket-04 §3) the admission analyzer now names the per-class failure reason, so the old
 // WHY: verbatim one-hint-for-everything prefix is gone; what every rejection still shares is the
 // WHY: canonical payload phrase.
-const PAYLOAD_HINT = "exactly one payload per item";
+// WHY: (ADR-0036) the refusal now says "payload field"; the shared substring is the leading phrase.
+const PAYLOAD_HINT = "exactly one payload";
 
 async function executeWithFile(cwd: string, fileValue: unknown): Promise<Error> {
   const { ctx, readTool } = setupIntegrationTest(cwd);
