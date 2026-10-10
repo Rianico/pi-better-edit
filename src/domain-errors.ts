@@ -62,6 +62,15 @@ export type DomainErrorCode =
  */
 export type PayloadSubject = "read" | "edit" | "undo_last_edit";
 
+// WHY: this is the runtime companion of the `PayloadSubject` union, like `isDomainErrorCode`.
+// WHY: Only a member may name a tool.
+// WHY: A non-member renders the neutral wording instead.
+const PAYLOAD_SUBJECTS: readonly PayloadSubject[] = ["read", "edit", "undo_last_edit"];
+
+export function isPayloadSubject(value: unknown): value is PayloadSubject {
+  return typeof value === "string" && (PAYLOAD_SUBJECTS as readonly string[]).includes(value);
+}
+
 /**
  * Applied-tier warning codes — the `W_*` namespace (spec
  * docs/spec/unified-error-and-warning-contract.md sections 3.1, 3.3, D3).
@@ -340,12 +349,13 @@ function foreignAnchorFormat(payload: ErrorPayloadMap["E_FOREIGN_ANCHOR"]): stri
 export const ERROR_REGISTRY: { [K in DomainErrorCode]: CodeSpec<ErrorPayloadMap[K]> } = {
   E_BAD_PAYLOAD: {
     audience: "MODEL",
-    // WHY: the same refusal reaches the model from read, edit and undo_last_edit, so naming the
-    // WHY: caller's own tool is what tells it which payload to repair.
+    // WHY: the same refusal reaches the model from read, edit and undo_last_edit.
+    // WHY: Naming the caller's own tool is what tells it which payload to repair.
+    // WHY: A subject outside the union cannot name a tool, so it renders the neutral clause.
     format: ({ message, subject }) =>
-      subject === undefined
-        ? `The payload is not valid: ${message}`
-        : `The ${subject} payload is not valid: ${message}`,
+      isPayloadSubject(subject)
+        ? `The ${subject} payload is not valid: ${message}`
+        : `The payload is not valid: ${message}`,
     // WHY remedy: validation rejected the payload before any resolution, so the field fix is the only next action. See ADR-0021.
     remedy: "Fix the payload fields and retry.",
   },
@@ -693,6 +703,26 @@ export class DomainError<K extends DomainErrorCode = DomainErrorCode> extends Er
 }
 
 /**
+ * The single cast from an unknown throw to the registry's `E_BAD_PAYLOAD` shape. WHY it is sound:
+ * the code check fixes which member's payload this is — `message` plus the optional subject, and no
+ * envelope field to lose — which the type system cannot see through the payload union.
+ */
+function badPayloadOf(error: unknown): ErrorPayloadMap["E_BAD_PAYLOAD"] | undefined {
+  if (!(error instanceof DomainError) || error.code !== "E_BAD_PAYLOAD") return undefined;
+  // SAFETY: the code gate above selects the registry member whose shape `payload` holds.
+  return error.payload as ErrorPayloadMap["E_BAD_PAYLOAD"];
+}
+
+/**
+ * The raw `message` of an `E_BAD_PAYLOAD`, for a seam that must re-attribute a refusal the engine
+ * already rendered. WHY here: the payload type is registry-owned, so its one cast sits beside it.
+ * Returns `undefined` for every other failure, and for anything that is not a DomainError.
+ */
+export function badPayloadMessageOf(error: unknown): string | undefined {
+  return badPayloadOf(error)?.message;
+}
+
+/**
  * Attribute an `E_BAD_PAYLOAD` to the tool that raised it. WHY a re-wrap: the model-visible header
  * is composed inside the constructor, so the subject must sit in the payload before construction.
  * WHY transparent: a foreign failure of any kind comes back as the SAME object, so a boundary can
@@ -702,10 +732,8 @@ export function withPayloadSubject<T>(
   error: T,
   subject: PayloadSubject,
 ): T | DomainError<"E_BAD_PAYLOAD"> {
-  if (!(error instanceof DomainError) || error.code !== "E_BAD_PAYLOAD") return error;
-  // SAFETY: the check narrows the code alone, so the registry shape asserts the payload:
-  // SAFETY: `message` plus the optional subject, with no envelope field to lose.
-  const payload = error.payload as ErrorPayloadMap["E_BAD_PAYLOAD"];
+  const payload = badPayloadOf(error);
+  if (payload === undefined) return error;
   return new DomainError("E_BAD_PAYLOAD", { ...payload, subject });
 }
 

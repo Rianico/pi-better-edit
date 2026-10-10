@@ -21,6 +21,7 @@ import {
   assertReq,
 } from "./payload-contract.js";
 import { withPayloadSubject } from "./domain-errors.js";
+import { attributePayloadSubject } from "./error-envelope.js";
 import { createEditTool, type PreviewContext } from "./edit-tool.js";
 import { createTuiPresenter } from "./tui-presenter.js";
 import { loadP, loadGuide } from "./prompts.js";
@@ -84,8 +85,8 @@ export function buildToolDef(
     parameters,
     promptSnippet: E_SNIPPET,
     promptGuidelines: E_GUIDE,
-    // WHY: pi calls this before execute, so the admission refusal of a bad edit payload lands here
-    // WHY: and needs the tool's own name stamped before the E_UNKNOWN envelope can replace it.
+    // WHY: an admission refusal raised here carries no subject, so it must name the edit tool.
+    // WHY: Without the stamp the model reads the neutral wording — the analyzer names no caller.
     prepareArguments: (args: unknown) => {
       try {
         return prepareEditArguments(args);
@@ -102,6 +103,7 @@ export function buildToolDef(
         const res = await tool.execute(
           params,
           signal as AbortSignal | undefined,
+          // SAFETY: ctx is untyped at the pi boundary — cast validated by pi's runtime shape
           ctx as unknown as {
             cwd: string;
             sessionManager?: { getSessionId(): string };
@@ -112,7 +114,7 @@ export function buildToolDef(
           ? R
           : never;
       } catch (error) {
-        throw withPayloadSubject(error, "edit");
+        throw attributePayloadSubject(error, "edit");
       }
     },
   };

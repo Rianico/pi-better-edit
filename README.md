@@ -294,7 +294,7 @@ referenced span is retired — the current word is `cut`.
 ## Error and Warning Contract
 
 `pi-better-edit` enforces a strict, machine-actionable diagnostic contract ([ADR-0021](docs/adr/0021-unified-error-and-warning-contract.md)):
-- `[E_*]` indicates an edit **rejection** — nothing was written to disk.
+- `[E_*]` marks a refusal from the call that raised it: `read`, `edit`, or `undo_last_edit`. Nothing was written to disk.
 - `[W_*]` indicates an **applied mutation** with an informational warning.
 - Range-family rejections carry structured `details.cause` values (`retirement`, `never-served`, `served-range staleness`) — `never-served` on a leased span means a **boundary** row, because an unread interior between two leased boundaries is accepted ([ADR-0024](docs/adr/0024-narrow-p2-interior-exposure-cap-removed-diffs.md)).
 

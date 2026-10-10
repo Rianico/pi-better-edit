@@ -154,6 +154,8 @@ export interface ErrorPayloadMap {
   };
   E_BAD_PAYLOAD: {
     message: string;
+    /** The registered tool that raised the refusal, absent when no boundary stamped one. */
+    subject?: PayloadSubject;
   };
   E_EMPTY_RANGE: {
     path: string;

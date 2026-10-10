@@ -219,6 +219,7 @@ async function undoCorrelatedTransaction(
   }
 
   const sessionKeyForUndo = sessionKeyFor(
+    // SAFETY: ctx is untyped at the pi boundary — cast validated by pi's runtime shape
     ctx as unknown as { sessionManager?: { getSessionId(): string } },
   );
 
@@ -590,6 +591,9 @@ export function regEditUndo(pi: ExtensionAPI): void {
             // SAFETY: envelope renders it with its audience and code. Transactional state is
             // SAFETY: honest either way: the revert intent lands before the first write, so any
             // SAFETY: escape between writes leaves a half-reverted set that repair resolves.
+            // WHY: the trace precedes BOTH exits, since a payload-shaped refusal returns early.
+            // WHY: The operator must still see the unexpected failure that produced it.
+            console.error("Unexpected failure in correlated undo:", error);
             // WHY: the subject must be stamped BEFORE the E_UNKNOWN envelope below, or that
             // WHY: conversion would replace the tool's own name and hide which call to repair.
             const stamped = withPayloadSubject(error, "undo_last_edit");
@@ -600,7 +604,6 @@ export function regEditUndo(pi: ExtensionAPI): void {
                 details: {},
               };
             }
-            console.error("Unexpected failure in correlated undo:", error);
             const err = error as { name?: string; message?: string };
             return {
               content: [
