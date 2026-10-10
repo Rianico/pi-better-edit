@@ -2,8 +2,10 @@
  * Worker-level hash-store isolation (#89).
  *
  * WHY this file exists at all, instead of stubbing HOME at each fixture call site: isolation is a
- * per WORKER invariant, not a per call convention. There are hundreds of call sites — 74 files use
- * setupIntegrationTest, 6 use setupReadTest, plus every ad-hoc `withTempFile` — and each new one can
+ * per WORKER invariant, not a per call convention. Store-touching call sites are many: 73 test files
+ * go through setupIntegrationTest and 5 through setupReadTest (measured with `grep -rl
+ * 'setupIntegrationTest(' test/ --include=*.test.ts`), plus every ad-hoc `withTempFile` — and each new
+ * call site can
  * forget the stub, which is exactly how test runs came to open the developer's real store at
  * ~/.config/pi-better-edit/hash-store.sqlite and race live pi sessions ("database is locked",
  * observed 4708ms). Pinning the seam once at setupFiles time also covers code that never touches the
