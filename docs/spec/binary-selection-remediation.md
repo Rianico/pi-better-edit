@@ -18,7 +18,7 @@ Per the owner's standing instruction (*"it is acceptable to break the original d
   - **Strict Tri-State Dictionary**: Absent means omitted; `null` is explicitly rejected as an invalid type; values are values.
   - **Clean TypeScript Model**: No normalization or key-stripping required at runtime; aligns naturally with `exactOptionalPropertyTypes`.
 * **Costs & Risks**:
-  - **Client Deadlocks**: A caller whose client harness cannot omit a declared optional key — it emits the key even when no value exists — has no way to satisfy a schema that refuses `null`, and can deadlock in a retry loop.
+  - **Client Deadlocks**: A client harness that cannot omit a declared optional key has no way to satisfy a schema that refuses `null`, and can deadlock in a retry loop. Issue #67's environment is the `Obsidian Claudian plugin` (model `gpt-6-luna`, v2.7.0); the emitted shape that motivates this risk — `text_ref.file: null` for an omitted optional property — is documented in #75.
   - **Retry Penalties**: Every `text_ref: null` or `text_ref.file: null` costs an extra round-trip and token burn while the model learns to omit the key.
 
 ### 1.2 Option C — Schema Matches Runtime (Declare Optional Fields Explicitly Nullable)
