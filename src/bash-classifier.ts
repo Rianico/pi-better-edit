@@ -87,8 +87,9 @@ const UNQUOTED_GLOB = /[*?[]/;
 /** The only two intercepted search programs (spec §3.2). */
 const SEARCH_PROGRAMS: ReadonlySet<string> = new Set(["grep", "rg"]);
 
-/** The ONLY flags a search may carry (spec §3.2). Everything else — output-altering
- * (`-c -v -o -A -B -C -l -L --color -m -q -s -w -x -b -H -h`), rg's display shapes
+/** The flags a search may carry verbatim (spec §3.2). The value-taking match-limit forms
+ * (`-m N`, `--max-count=N`) are parsed in `parseSearchStage` instead. Everything else —
+ * output-altering (`-c -v -o -A -B -C -l -L -q -s -b -H -h`), rg's display shapes
  * (`--column --heading --json --stats --files -r -0 --vimgrep -N`), and every other short
  * or long form — fails closed to raw bash by absence from this set. */
 const SEARCH_ALLOWED_FLAGS: ReadonlySet<string> = new Set([
@@ -100,9 +101,39 @@ const SEARCH_ALLOWED_FLAGS: ReadonlySet<string> = new Set([
   "--fixed-strings",
   "-E",
   "--extended-regexp",
+  "-w",
+  "--word-regexp",
+  "-x",
+  "--line-regexp",
+  // WHY: only the `never` value is admitted — `--color` alone, `--color=auto` and
+  // WHY: `--color=always` all change or fail to change the row geometry unpredictably.
+  "--color=never",
+  "--colour=never",
 ]);
+
+/** The letters a bundled single-dash cluster may contain (spec §3.2). Any digit or unknown
+ * letter anywhere in the cluster fails closed, so `-n5`, `-inQ` and `-x5` stay raw bash.
+ * `m` is special-cased: it may only close the cluster and consumes the next argument
+ * (`-nm 3`), while the attached forms (`-m3`, `-nm3`) fail closed. */
+const SEARCH_SHORT_LETTERS: ReadonlySet<string> = new Set(["n", "i", "F", "E", "w", "x", "m"]);
+
+/** The attached long match-limit form only: `--max-count=N`. A bare `--max-count` (value as
+ * a separate argument) fails closed — spec §3.2 admits the separate-argument spelling for
+ * the short `-m` alone. */
+const SEARCH_MAX_COUNT_LONG = /^--max-count=(\d+)$/;
+
+/** A run of ASCII digits: the only spelling an admitted `-m`/`--max-count` value may take. */
+const SEARCH_COUNT_VALUE = /^\d+$/;
 /** The two spellings that already request line numbers, so injection is skipped. */
 const SEARCH_LINE_NUMBER_FLAGS: ReadonlySet<string> = new Set(["-n", "--line-number"]);
+
+/** The one admitted match-limit value: `N` strictly positive, so `-m 0` and `-m 00` fail
+ * closed alongside `-m -1` and `-m abc`. A missing argument is `undefined` at runtime. */
+function isPositiveCount(value: string | undefined): boolean {
+  if (value === undefined || !SEARCH_COUNT_VALUE.test(value)) return false;
+  const num = Number(value);
+  return Number.isSafeInteger(num) && num > 0;
+}
 
 /**
  * The statically-known value of a word, or `undefined` when the word can mean
@@ -277,31 +308,61 @@ function parseSourceStage(shape: StageShape): SourceStage | undefined {
 
 /**
  * `grep`/`rg` single-file search selector (spec §3.2). Strict default-deny: only the
- * allowlisted flags above survive, they must precede the operands, and the shape must be exactly
- * `PROGRAM [flags] [--] PATTERN FILE`. Flags after the pattern, bundled short flags (`-in`),
- * `=` long forms, `-e`/`-f`, a `-`-leading pattern with no `--`, zero operands (stdin) and
- * two-or-more operands (filename prefixes break the `^\d+:` geometry) all fail closed, as do
- * globs, tildes and expansions — those never reach here because `stageShape`/`literalValue`
- * reject them first. Directory operands are deliberately NOT detected here: this module is pure
- * and zero-fs, so the lifecycle layer re-checks the resolved file kind.
+ * allowlisted flags above survive and the shape must be exactly
+ * `[flags] PATTERN [flags] FILE [flags]`. Flags are admitted at any position before `--` —
+ * before the pattern, between pattern and file, and after the file — because GNU grep/rg
+ * accept post-operand options and the benchmark issues them (`grep pat -i f`). A bundled
+ * single-dash cluster (`-in`, `-wF`) is decomposed and EVERY letter must be admitted; the
+ * value-taking `m` may only close it (`-nm 3`). `--` ends flag parsing, so `grep pat -- -n`
+ * names the file `-n`. Fail closed: attached short values (`-m3`, `-nm3`), any digit in a
+ * cluster (`-n5`), an unknown letter (`-inQ`), every `=`-long form but `--max-count=N`
+ * (`--line-number=x`, `--color=always`), a value that is not a strictly positive integer or
+ * not exactly `never`, `-e`/`-f`, a `-`-leading pattern with no `--`, zero operands (stdin)
+ * and two-or-more operands (filename prefixes break the `^\d+:` geometry). Globs, tildes and
+ * expansions never reach here because `stageShape`/`literalValue` reject them first.
+ * Directory operands are deliberately NOT detected here: this module is pure and zero-fs, so
+ * the lifecycle layer re-checks the resolved file kind.
  */
 function parseSearchStage(stage: StageShape): BashSearch | undefined {
   if (!SEARCH_PROGRAMS.has(stage.name)) return undefined;
+  const args = stage.args;
   const operands: string[] = [];
   let lineNumbered = false;
   let separatorSeen = false;
-  for (const arg of stage.args) {
+  for (let index = 0; index < args.length; index++) {
+    const arg = args[index];
     if (!separatorSeen && arg === "--") {
       separatorSeen = true;
       continue;
     }
     if (!separatorSeen && arg.startsWith("-")) {
-      // WHY: GNU grep/rg permit post-operand options, but the tranche-1 selector contract
-      // WHY: ("flags must precede the file") is the conservative reading and a mid-command
-      // WHY: flag is not the benchmark shape — deny rather than guess.
-      if (operands.length > 0) return undefined;
-      if (!SEARCH_ALLOWED_FLAGS.has(arg)) return undefined;
-      if (SEARCH_LINE_NUMBER_FLAGS.has(arg)) lineNumbered = true;
+      if (SEARCH_ALLOWED_FLAGS.has(arg)) {
+        if (SEARCH_LINE_NUMBER_FLAGS.has(arg)) lineNumbered = true;
+        continue;
+      }
+      const attachedMaxCount = SEARCH_MAX_COUNT_LONG.exec(arg);
+      if (attachedMaxCount !== null) {
+        // WHY: `--max-count=N` is the only admitted `=`-long form and N must be a strictly
+        // WHY: positive integer literal — `--max-count=0` and `--max-count=` fail closed.
+        if (!isPositiveCount(attachedMaxCount[1])) return undefined;
+        continue;
+      }
+      // WHY: every other `--…` token is an unlisted long option (`--json`, `--color=always`).
+      if (arg.startsWith("--")) return undefined;
+      // WHY: a single-dash token is a short cluster: every letter must be admitted, and the
+      // WHY: value-taking `m` may only close it, consuming the following argument (`-nm 3`).
+      const letters = arg.slice(1).split("");
+      if (letters.length === 0) return undefined;
+      for (let position = 0; position < letters.length; position++) {
+        const letter = letters[position];
+        if (!SEARCH_SHORT_LETTERS.has(letter)) return undefined;
+        if (letter === "n") lineNumbered = true;
+        if (letter === "m") {
+          if (position !== letters.length - 1) return undefined;
+          if (!isPositiveCount(args.at(index + 1))) return undefined;
+          index += 1;
+        }
+      }
       continue;
     }
     operands.push(arg);

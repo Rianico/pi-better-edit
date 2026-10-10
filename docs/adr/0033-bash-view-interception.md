@@ -15,6 +15,13 @@ spec, `docs/spec/search-and-read-evolution.md`): D1 is amended to admit
 symmetrically instead of failing closed, and D7 pins newline-separated
 multi-statement scripts as pass-through pending P3.2 corpus telemetry.
 
+Amended 2026-10-10 (Issue #82, commit `60d56a1`): admitted grep/rg flag shapes
+expanded for Tier 1 to include boundary matching (`-w`, `-x`), match limit
+(`-m N` separate arg, `--max-count=N` attached long form), color suppression
+(`--color=never`, `--colour=never`), bundled short flags (`-nw`, `-nm 3`), and
+flags placed at any position before `--`.
+
+
 ## Context
 
 Issue #28 (adoption gap): in the explicit-edit benchmark (904 trials, 5,102 bash
