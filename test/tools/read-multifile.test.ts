@@ -2,17 +2,25 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Compile } from "typebox/compile";
-import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE, SERVED_MAX_LINES } from "../../src/constants";
+import {
+  MAX_READ_FILES,
+  MAX_READ_FILES_MESSAGE,
+  MAX_READ_WINDOWS,
+  MAX_READ_WINDOWS_MESSAGE,
+  SERVED_MAX_LINES,
+} from "../../src/constants";
 import { mergeRanges } from "../../src/file-content/line-walker";
 import { loadHashStore } from "../../src/hash-store";
 import { resolveTarget } from "../../src/fs-write";
-import { fmtReadPreview, readToolSchema } from "../../src/read";
+import { fmtReadPreview, readToolSchema, regRead } from "../../src/read";
 import { getServed, loadLeases } from "../../src/served-session";
 import {
   extractHash,
   getText,
   setupIntegrationTest,
   TEST_SESSION_ID,
+  testSessionManager,
+  withTempDir,
   withTempFile,
 } from "../support/fixtures";
 
@@ -511,6 +519,104 @@ describe("read payload contract", () => {
         ],
       }),
     ).toBe(false);
+  });
+
+  it("caps the files array at MAX_READ_FILES", () => {
+    const many = Array.from({ length: MAX_READ_FILES + 1 }, (_, index) => ({
+      file: `f${index}.ts`,
+    }));
+    expect(validator.Check({ files: many.slice(0, MAX_READ_FILES) })).toBe(true);
+    expect(validator.Check({ files: many })).toBe(false);
+    // WHY: the `maxItems` limit is what the runtime builds its structural refusal wording from, so
+    // WHY: pinning it to the constant admission reads keeps the two enforcement points from
+    // WHY: drifting apart without a test noticing.
+    expect(validator.Errors({ files: many })[0]).toMatchObject({
+      keyword: "maxItems",
+      params: { limit: MAX_READ_FILES },
+    });
+  });
+});
+
+/** The read definition as a caller holds it when it does NOT validate `parameters` first. */
+interface UnvalidatedReadTool {
+  execute: (
+    toolCallId: string,
+    params: unknown,
+    signal: undefined,
+    onUpdate: undefined,
+    ctx: unknown,
+  ) => Promise<unknown>;
+}
+
+/**
+ * Captures the read definition WITHOUT the harness's schema pre-check. `makeFakePiRegistry` wraps
+ * `execute` in `Compile(tool.parameters).Check` — the same order the pi runtime uses — so the
+ * admission guard inside `execute` cannot be reached through `setupIntegrationTest`; this is the
+ * shape a caller holds when it invokes the tool without validating `parameters` first.
+ */
+function unvalidatedReadTool(): UnvalidatedReadTool {
+  let captured: UnvalidatedReadTool | undefined;
+  regRead({
+    registerTool: (tool: unknown) => {
+      captured = tool as UnvalidatedReadTool;
+    },
+  } as never);
+  if (captured === undefined) throw new Error("regRead did not register the read tool");
+  return captured;
+}
+
+describe("read files — the fan-out cap", () => {
+  it("admits exactly the cap and refuses one more through the registered tool", async () => {
+    await withTempDir("read-files-", async (dir) => {
+      const names = Array.from({ length: MAX_READ_FILES + 1 }, (_, index) => `f${index}.ts`);
+      for (const name of names) await writeFile(join(dir, name), SIX, "utf-8");
+      const { ctx, readTool } = setupIntegrationTest(dir);
+      const target = (file: string) => ({ file });
+      const atCap = await readTool.execute(
+        "r1",
+        { files: names.slice(0, MAX_READ_FILES).map(target) },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(getText(atCap)).toContain(`[${names[0]}`);
+      // WHY: MEASURED — the refusal a >cap call hits on this path is the registered schema's, raised
+      // WHY: BEFORE `execute` runs, so the wording is the validator's structural message built from
+      // WHY: `maxItems: MAX_READ_FILES` and never `MAX_READ_FILES_MESSAGE`. The divergence is by
+      // WHY: construction (a validator generates its own message), so it is pinned here instead of
+      // WHY: being papered over; the guard below is the backstop for a caller that skips the schema.
+      const failure = await readTool
+        .execute("r2", { files: names.map(target) }, undefined, undefined, ctx)
+        .then(
+          () => undefined,
+          (error: Error) => error,
+        );
+      expect(failure?.message).toContain(`must not have more than ${MAX_READ_FILES} items`);
+      expect(failure?.message).not.toContain(MAX_READ_FILES_MESSAGE);
+    });
+  });
+
+  it("refuses one more through the unvalidated definition, naming the cap in the shared wording", async () => {
+    await withTempDir("read-files-raw-", async (dir) => {
+      const names = Array.from({ length: MAX_READ_FILES + 1 }, (_, index) => `f${index}.ts`);
+      for (const name of names) await writeFile(join(dir, name), SIX, "utf-8");
+      const ctx = { cwd: dir, sessionManager: testSessionManager };
+      const tool = unvalidatedReadTool();
+      // WHY: without the schema in front, admission is the only thing keeping the cap true — and it
+      // WHY: names the limit in the one shared wording, which is what a mirror (if one were ever
+      // WHY: added) would reuse.
+      await expect(
+        tool.execute("r1", { files: names.map((file) => ({ file })) }, undefined, undefined, ctx),
+      ).rejects.toThrow(MAX_READ_FILES_MESSAGE);
+      const atCap = await tool.execute(
+        "r2",
+        { files: names.slice(0, MAX_READ_FILES).map((file) => ({ file })) },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(atCap).toBeDefined();
+    });
   });
 });
 

@@ -5,6 +5,12 @@
 ### Features
 * **bash-view:** admit the five Tier-1 `grep`/`rg` flag shapes (#82) to the intercepted search — boundary match (`-w`/`--word-regexp`, `-x`/`--line-regexp`), match limit (`-m N` with its value as a separate strictly positive integer argument, and the attached `--max-count=N`), bundled single-dash clusters (`-in`, `-nw`, `-nm 3`: every letter admitted, `m` only closing the cluster and consuming the next argument), flags after the pattern or after the file (`grep pat -i f`, `grep pat f -n`), and colour suppression (`--color=never`/`--colour=never`) — while a digit or unknown letter in a cluster (`-n5`, `-inQ`), an attached short value (`-m3`), a malformed limit (`-m0`, `-m 0`, `-m -1`, `-m abc`, `--max-count=0`, `--max-count=`, bare `-m`, bare `--max-count`), a `=`-long form other than `--max-count=` (`--line-number=x`), and every colour value but `never` still fail closed to byte-identical raw bash; flags are honoured at any position before `--`, which ends flag parsing so `grep pat -- -n` names the file `-n`, and the `-n` injection is skipped when the line-number flag appears anywhere, bundles included. (#83)
 
+### Tests
+* **harness:** harden the vitest harness against host-load timer lateness — a new `vitest.config.ts` raises `testTimeout` to 20s and `hookTimeout` to 30s, because the observed failures are a 5526ms test body against the 5000ms default and ~14s module-level `beforeAll(initHasher())` hooks against the 10000ms hook default; this is the lever the measurements support, since `isolate: false` fails 19 tests, `maxWorkers: 4` costs +33s wall without removing the failure mode, and `initHasher()` is already a module-level singleton with nothing to hoist. (#84)
+
+### Code Refactoring
+* **read:** name the file-count cap's refusal in one constant (`MAX_READ_FILES_MESSAGE`) instead of an inline template, and pin the 10/11 boundary on both enforcement points — the registered `files`-array `maxItems` that an over-cap tool call actually hits and the admission guard that backstops a caller skipping the schema; the two wordings diverge by construction, because the runtime validates `parameters` before `execute` and builds its message from `maxItems`. (#85)
+
 
 ## [2.11.0] - 2026-10-10
 

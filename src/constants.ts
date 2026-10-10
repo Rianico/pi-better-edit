@@ -38,6 +38,13 @@ export const MAX_READ_WINDOWS_MESSAGE = `Read request accepts at most ${MAX_READ
 // WHY: reasoning as `MAX_READ_WINDOWS`: N files draw on one served anchor budget and one shared
 // WHY: `SERVED_MAX_LINES` line budget, so the call must not be able to multiply either without bound.
 export const MAX_READ_FILES = 10;
+// WHY: the ONE wording of the file-cap refusal (spec §4.2). Two points enforce this cap — the
+// WHY: registered schema's `files`-array `maxItems` and `admitReadRequest`'s explicit length guard —
+// WHY: and each naming the limit its own way made the same refusal read two ways, so admission now
+// WHY: reuses this constant. Unlike the window cap there is no preview mirror to align: the only
+// WHY: exported preview entry point (`fmtReadPreview`) renders ONE file's text, so a direct caller
+// WHY: cannot express a file fan-out and cannot outrun this cap.
+export const MAX_READ_FILES_MESSAGE = `Read request accepts at most ${MAX_READ_FILES} files.`;
 
 export const HASH_STORE_BUSY_TIMEOUT = 1000;
 // WHY: v9 renames the persisted anchor-generation column (`canon_version` → `anchor_generation`
