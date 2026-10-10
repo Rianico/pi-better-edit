@@ -1,7 +1,0 @@
-{
-  "$schema": "https://unpkg.com/knip@5/schema.json",
-  "entry": ["index.ts", "src/hashline/index.ts", "scripts/**/*.{js,mjs,ts,mts}"],
-  "project": ["src/**/*.ts", "index.ts", "scripts/**/*.{js,mjs,ts,mts}"],
-  "ignore": [],
-  "ignoreExportsUsedInFile": false
-}
