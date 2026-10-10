@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.11.0] - 2026-10-10
+
 ### Features
 * **edit:** declare the optional wire fields (`text`, `text_ref`, `at`, root `mode`, and `text_ref.file`) nullable so the served schema admits the `null` that admission already reads as absent, and reframe both XOR refusals as an explicit binary field choice — the flat wire contract, the required fields, and admission behaviour are unchanged. (ADR-0036) (#81)
 
