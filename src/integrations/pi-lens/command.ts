@@ -34,6 +34,7 @@ import {
   type BashViewMode,
 } from "../../bash-view-config.js";
 import { CONFIG_REL, type ConfigScope } from "../../json-config.js";
+import { SettingsOverlay } from "./settings-overlay.js";
 const COMMAND_NAME = "pi-better-edit";
 const IO_BRIDGE_SYMBOL_KEY = "pi-lens:io-bridge";
 
@@ -54,6 +55,13 @@ const BASH_VIEW_USAGE = [
   `Alias: /${COMMAND_NAME} bash [on|off|status] [project|global]`,
 ].join("\n");
 
+const SETTINGS_USAGE = [
+  `${COMMAND_NAME} — review every setting in one overlay`,
+  `Usage: /${COMMAND_NAME} settings`,
+  `  /${COMMAND_NAME} settings              review and change every setting`,
+  `  /${COMMAND_NAME}                       bare invocation opens the same overlay`,
+].join("\n");
+
 const COMMAND_COMPLETIONS: readonly string[] = [
   "lens",
   "lens auto",
@@ -68,6 +76,7 @@ const COMMAND_COMPLETIONS: readonly string[] = [
   "bash on",
   "bash off",
   "bash status",
+  "settings",
 ];
 type LensPickerChoice =
   | {
@@ -349,6 +358,29 @@ async function handleBashView(args: string, ctx: ExtensionCommandContext): Promi
   await pickBashViewInteractively(ctx);
 }
 /**
+ * WHY the overlay owns its scope switch: headed hosts pick the write scope inside
+ * the dialog, so the command takes no scope argument; headless hosts read the
+ * same combined status text the other routes print.
+ */
+async function handleSettings(args: string, ctx: ExtensionCommandContext): Promise<void> {
+  const tokens = args
+    .trim()
+    .split(/\s+/)
+    .filter((token) => token.length > 0);
+  if (tokens.length > 1) {
+    notify(ctx, `Too many arguments.\n${SETTINGS_USAGE}`, "warning");
+    return;
+  }
+  if (!ctx.hasUI) {
+    notify(ctx, statusText(ctx.cwd));
+    return;
+  }
+  await ctx.ui.custom((_tui, _theme, _keybindings, done) => new SettingsOverlay(ctx.cwd, done), {
+    overlay: true,
+    overlayOptions: { width: 68 },
+  });
+}
+/**
  * Register `/pi-better-edit`. Registration is the extension's only side effect here; every
  * handler path reports through notify/console and never rejects into the host.
  */
@@ -371,6 +403,8 @@ export function registerLensCommand(pi: ExtensionAPI): void {
           .filter((token) => token.length > 0)[0];
         if (head === "bash-view" || head === "bash") {
           await handleBashView(args, ctx);
+        } else if (head === undefined || head === "settings") {
+          await handleSettings(args, ctx);
         } else {
           await handleLens(args, ctx);
         }
