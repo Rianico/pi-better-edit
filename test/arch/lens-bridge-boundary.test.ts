@@ -70,6 +70,7 @@ describe("lens bridge boundary", () => {
       join(INTEGRATION_DIR, "config.ts"),
       join(INTEGRATION_DIR, "io-bridge-adapter.ts"),
       join(INTEGRATION_DIR, "io-bridge.ts"),
+      join(INTEGRATION_DIR, "settings-overlay.ts"),
     ]);
   });
 

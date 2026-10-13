@@ -35,9 +35,6 @@ import {
   STORE_JANITOR_ENV_VAR,
 } from "../../store-config.js";
 
-/** Row ids stay stable for the routing tests and the select seam below. */
-export const SETTINGS_OVERLAY_IDS = ["target-scope", "lens", "bash-view", "store"] as const;
-
 /** WHY a local theme: pi-tui 0.85.1 ships the interface but no factory, so identity styling keeps the rows legible without inventing border art. */
 function getSettingsListTheme(): SettingsListTheme {
   return {

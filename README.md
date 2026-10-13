@@ -296,6 +296,10 @@ Pure single-file views (`cat`, `head`, `tail`, `sed -n` prints, and the admitted
 - **Option**: `bash.view` in `.pi/agents/pi-better-edit.json` (`on` by default; `off` passes every view and search through raw). Resolves per key through env `PI_BETTER_EDIT_BASH_VIEW` over project file over global file over the default, with the same rung-source reporting as the other settings.
 - **Slash command**: `/pi-better-edit bash-view [on|off|status] [project|global]` (alias `/pi-better-edit bash ...`). Bare invocation offers the five-option picker (`On`/`Off` per scope, `Status`); headless hosts get the combined status text instead.
 - **First notice**: the first interception of each session warns once — naming the round trip saved and the off-ramp — and later interceptions stay silent until the next session.
+
+### Settings overlay
+
+`/pi-better-edit settings` (bare `/pi-better-edit` opens the same overlay) reviews the lens bridge, bash view and store janitor rows with effective-source diagnostics ([ADR-0038](docs/adr/0038-settings-overlay.md)). The target scope switch steers later saves without persisting anything itself; headless hosts get the combined status text instead.
 ---
 
 ## Error and Warning Contract
