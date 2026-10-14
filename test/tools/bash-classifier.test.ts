@@ -31,6 +31,27 @@ function searchOf(command: string): BashSearch {
   return result.search;
 }
 
+function multiOf(command: string) {
+  const result = classifyBashCommand(command);
+  expect(result.kind).toBe("pureMultiSearch");
+  if (result.kind !== "pureMultiSearch") throw new Error(`not a multi search: ${command}`);
+  return result.search;
+}
+
+function recursiveOf(command: string) {
+  const result = classifyBashCommand(command);
+  expect(result.kind).toBe("pureRecursiveSearch");
+  if (result.kind !== "pureRecursiveSearch") throw new Error(`not a recursive search: ${command}`);
+  return result.search;
+}
+
+function filesOf(command: string) {
+  const result = classifyBashCommand(command);
+  expect(result.kind).toBe("pureFilesList");
+  if (result.kind !== "pureFilesList") throw new Error(`not a file list: ${command}`);
+  return result.search;
+}
+
 describe("bash-classifier span matrix", () => {
   it("accepts bare single-file views", () => {
     expect(viewOf("cat f.txt")).toEqual({ filePath: "f.txt", ops: [] });
@@ -156,7 +177,7 @@ describe("bash-classifier fail-closed matrix", () => {
     expect(reasonOf("echo hi && cat f")).toBe("unsupported-command:echo");
     expect(reasonOf("make && cat f")).toBe("unsupported-command:make");
     expect(reasonOf("cat f && echo done")).toBe("unsupported-command:echo");
-    expect(reasonOf("cd /x && grep -r foo . && cat f")).toBe("unsupported-command:grep");
+    expect(reasonOf("cd /x && grep -r foo . && cat f")).toBe("multi-view");
     expect(reasonOf("cd -")).toBe("unsupported-command:cd");
     expect(reasonOf("cd -- && cat f")).toBe("unsupported-command:cd");
     expect(reasonOf("cd -P && cat f")).toBe("unsupported-command:cd");
@@ -412,8 +433,6 @@ describe("bash-classifier search matrix (I1a)", () => {
       "grep -b pat f",
       "grep -H pat f",
       "grep -h pat f",
-      "grep -r pat f",
-      "grep -R pat f",
       "grep -P pat f",
       "grep -f pats f",
       "grep -n5 pat f",
@@ -431,7 +450,6 @@ describe("bash-classifier search matrix (I1a)", () => {
       "rg --no-line-number pat f",
       "rg --json pat f",
       "rg --stats pat f",
-      "rg --files",
       "rg -r x pat f",
       "rg --replace x pat f",
       "rg -0 pat f",
@@ -481,10 +499,7 @@ describe("bash-classifier search matrix (I1a)", () => {
     // WHY: filename prefixes), so only exactly one file operand is admitted.
     expect(reasonOf("grep")).toBe("unsupported-command:grep");
     expect(reasonOf("grep pat")).toBe("unsupported-command:grep");
-    expect(reasonOf("grep pat a.ts b.ts")).toBe("unsupported-command:grep");
-    expect(reasonOf("grep -n pat a.ts b.ts")).toBe("unsupported-command:grep");
     expect(reasonOf("rg pat")).toBe("unsupported-command:rg");
-    expect(reasonOf("rg pat a.ts b.ts")).toBe("unsupported-command:rg");
     // WHY: globs, tildes and expansions never reach the selector — `stageShape` refuses them.
     expect(reasonOf("grep pat *.ts")).toBe("non-literal-command");
     expect(reasonOf("grep pat ~/f.ts")).toBe("non-literal-command");
@@ -498,7 +513,7 @@ describe("bash-classifier search matrix (I1a)", () => {
     expect(reasonOf("grep pat f; cat g")).toBe("multi-statement");
     // WHY: a search chained with a view breaks the exactly-one-target rule, exactly as two views do.
     expect(reasonOf("grep pat f && head -2 g")).toBe("multi-view");
-    expect(reasonOf("cd d && grep -r x .")).toBe("unsupported-command:grep");
+    expect(recursiveOf("cd d && grep -r x .").baseDir).toBe("d");
   });
 });
 
@@ -546,9 +561,7 @@ describe("withSearchLineNumbers injection (I1a)", () => {
       "   ",
       "cat f.txt",
       "grep -c pat f",
-      "grep -r pat .",
       "grep pat",
-      "grep pat a.ts b.ts",
       "grep pat f | head -5",
       "grep pat f > out.txt",
       "grep pat f && cat g",
@@ -726,12 +739,6 @@ describe("bash-classifier search -e matrix (Tier-2 item 6)", () => {
       "grep -e pat -e pat f",
       "grep -ine a -e b f",
       "grep -ine a -ine b f",
-      // WHY: operands must then be exactly `[FILE]` — a positional pattern plus `-e` is both ways.
-      "grep -e a b f",
-      "grep b -e a f",
-      "grep -ea b f",
-      "grep b -ea f",
-      "grep -e a -- b f",
     ]) {
       expect(reasonOf(command)).toBe("unsupported-command:grep");
     }
@@ -739,16 +746,11 @@ describe("bash-classifier search -e matrix (Tier-2 item 6)", () => {
 
   it("fails closed on `-e`-as-cluster misreadings and `-e`+`-m` collisions", () => {
     for (const command of [
-      // WHY: any token starting `-e` is the attached form, so `-ei` is pattern `i` plus two
-      // WHY: operands (`pat`, `f`) — both-ways, not a cluster.
-      "grep -ei pat f",
-      "grep -en pat f",
-      // WHY: `m` anywhere but last fails closed, even beside `e`.
+      // WHY: a token starting `-e` is the attached form, so `-emi` is pattern `mi` (admitted
+      // WHY: multi-file, pinned positively below); these start with another letter, where `m`
+      // WHY: anywhere but last still fails closed.
       "grep -me pat f",
       "grep -iem pat f",
-      "grep -emi pat f",
-      // WHY: `-e` swallows `-m` as its pattern value, leaving two operands (`3`, `f`).
-      "grep -e -m 3 f",
       // WHY: bad `-m` values still fail with `-e` present.
       "grep -e pat -m 0 f",
       "grep -e pat -m3 f",
@@ -777,7 +779,6 @@ describe("bash-classifier search -e matrix (Tier-2 item 6)", () => {
     expect(withSearchLineNumbers("grep -e -n f")).toBe("grep -n -e -n f");
     // WHY: denied `-e` shapes pass through the rewriter byte-identical.
     expect(withSearchLineNumbers("grep -e a -e b f")).toBe("grep -e a -e b f");
-    expect(withSearchLineNumbers("grep -e a b f")).toBe("grep -e a b f");
   });
 });
 
@@ -1164,5 +1165,92 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
         lines,
       ).map((entry) => entry.line),
     ).toEqual([4]);
+  });
+});
+
+describe("bash-classifier multi-file, recursive and --files (Tier-3 item 10)", () => {
+  it("admits multi-file searches, recursive grep and rg --files", () => {
+    expect(multiOf("grep pat a.ts b.ts")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePaths: ["a.ts", "b.ts"],
+      lineNumbered: false,
+    });
+    expect(multiOf("grep -n pat a.ts b.ts c.ts").lineNumbered).toBe(true);
+    expect(multiOf("grep pat -i a.ts b.ts").filePaths).toEqual(["a.ts", "b.ts"]);
+    expect(multiOf("grep pat a.ts b.ts -n").lineNumbered).toBe(true);
+    expect(multiOf("rg pat a.ts b.ts").program).toBe("rg");
+    // WHY: with `-e` the value IS the pattern, so every operand is a file — the Tier-2
+    // WHY: "pattern both ways" denial dissolves at every count, not just for one file.
+    expect(multiOf("grep -e pat a.ts b.ts").pattern).toBe("pat");
+    expect(multiOf("grep -epat a.ts b.ts").filePaths).toEqual(["a.ts", "b.ts"]);
+    expect(multiOf("grep -e a b f").filePaths).toEqual(["b", "f"]);
+    // WHY: `-ei`/`-en` are attached-`-e` spellings — getopt puts the rest of the token in the
+    // WHY: option argument, so bash runs pattern `i`/`n` over two files; the count widening is
+    // WHY: exactly what newly admits them, and the serve seam then witnesses what bash printed.
+    expect(multiOf("grep -ei pat f").pattern).toBe("i");
+    expect(multiOf("grep -en pat f").filePaths).toEqual(["pat", "f"]);
+    expect(multiOf("grep -emi pat f").pattern).toBe("mi");
+    expect(multiOf("grep -- -pat a.ts b.ts").pattern).toBe("-pat");
+    expect(multiOf("cd sub && grep x a.ts b.ts").baseDir).toBe("sub");
+    expect(recursiveOf("grep -r pat dir")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      dirPath: "dir",
+      lineNumbered: false,
+    });
+    expect(recursiveOf("grep -rn pat dir").lineNumbered).toBe(true);
+    expect(recursiveOf("grep -inr pat dir").lineNumbered).toBe(true);
+    expect(recursiveOf("grep -R pat dir").dirPath).toBe("dir");
+    expect(recursiveOf("grep --recursive pat dir").program).toBe("grep");
+    expect(recursiveOf("grep --dereference-recursive pat dir").dirPath).toBe("dir");
+    expect(recursiveOf("grep -e pat -r dir").pattern).toBe("pat");
+    expect(recursiveOf("cd d && grep -r x .").baseDir).toBe("d");
+    // WHY: rg recurses by default, so the dir/file decision is the lifecycle's stat (the
+    // WHY: classifier stays pure); grep needs its explicit marker.
+    expect(searchOf("rg pat dir").filePath).toBe("dir");
+    expect(searchOf("rg pat f.ts").filePath).toBe("f.ts");
+    expect(searchOf("grep pat dir").filePath).toBe("dir");
+    expect(filesOf("rg --files")).toEqual({ program: "rg" });
+    expect(filesOf("rg --files dir").dirPath).toBe("dir");
+    expect(filesOf("cd sub && rg --files").baseDir).toBe("sub");
+  });
+
+  it("fails closed beyond the file bound and on every mixed or wrong-tool shape", () => {
+    const tooMany = `grep pat ${Array.from({ length: 11 }, (_, i) => `f${i}.ts`).join(" ")}`;
+    expect(reasonOf(tooMany)).toBe("unsupported-command:grep");
+    // WHY: recursion takes exactly one operand — recursion and multi-file never mix.
+    expect(reasonOf("grep -r pat a.ts b.ts")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep -r pat d1 d2")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep -r pat")).toBe("unsupported-command:grep");
+    // WHY: rg's `-r`/`-R` are `--replace`/dereference flags, not recursion — the letters are
+    // WHY: per program, so `rg -r x pat f` can never be read as a walk.
+    expect(reasonOf("rg -r x pat f")).toBe("unsupported-command:rg");
+    expect(reasonOf("rg -R pat f")).toBe("unsupported-command:rg");
+    expect(reasonOf("rg --replace x pat f")).toBe("unsupported-command:rg");
+    // WHY: the `--files` shape is exactly the flag plus an optional non-`-` root.
+    expect(reasonOf("rg --files pat f")).toBe("unsupported-command:rg");
+    expect(reasonOf("rg --files --json")).toBe("unsupported-command:rg");
+    expect(reasonOf("rg --files -n")).toBe("unsupported-command:rg");
+    // WHY: stdin and implicit-cwd searches stay denied.
+    expect(reasonOf("grep pat")).toBe("unsupported-command:grep");
+    expect(reasonOf("rg pat")).toBe("unsupported-command:rg");
+    // WHY: `git grep`/`git show` are not the two intercepted programs, and the denied-growth
+    // WHY: list keeps context flags, `-c/-l/-o/-q` and `tee`/`tac`/`sort` out of the surface.
+    expect(reasonOf("git grep pat")).toBe("unsupported-command:git");
+    expect(reasonOf("git show HEAD:f")).toBe("unsupported-command:git");
+    expect(reasonOf("grep -e a -e b f g")).toBe("unsupported-command:grep");
+    expect(reasonOf("grep pat a.ts b.ts | head -2")).toBe("unsupported-pipeline");
+  });
+
+  it("splices line numbers into multi-file and recursive searches, never into --files", () => {
+    expect(withSearchLineNumbers("grep pat a.ts b.ts")).toBe("grep -n pat a.ts b.ts");
+    expect(withSearchLineNumbers("rg pat a.ts b.ts")).toBe("rg --line-number pat a.ts b.ts");
+    expect(withSearchLineNumbers("grep -r pat dir")).toBe("grep -n -r pat dir");
+    expect(withSearchLineNumbers("grep -rn pat dir")).toBe("grep -rn pat dir");
+    expect(withSearchLineNumbers("rg pat dir")).toBe("rg --line-number pat dir");
+    // WHY: a path list has no match rows — nothing to number and no geometry to parse.
+    expect(withSearchLineNumbers("rg --files")).toBe("rg --files");
+    expect(withSearchLineNumbers("rg --files dir")).toBe("rg --files dir");
   });
 });

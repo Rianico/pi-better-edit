@@ -14,6 +14,7 @@
  */
 import { parse } from "unbash";
 import type { AndOr, Command, ParsedScript, Pipeline, Statement, Word } from "unbash";
+import { BASH_SEARCH_MAX_FILES } from "./constants.js";
 
 /** Maximum pipeline stages in one view segment (source + filters). */
 export const BASH_VIEW_MAX_PIPELINE_STAGES = 4;
@@ -89,9 +90,56 @@ export interface BashSearch {
 /** The only two intercepted search programs (spec §3.2). */
 type SearchProgram = "grep" | "rg";
 
+/**
+ * WHY: (item 10) `grep`/`rg PATTERN FILE...` — two or more explicit files, no recursion flag.
+ * WHY: Every operand is a FILE, so the stdout geometry is the `FILE:LINE:content` triple that
+ * WHY: its own serve seam parses; the single-file `BashSearch` above is left byte-identical.
+ */
+export interface BashMultiSearch {
+  program: SearchProgram;
+  /** Match pattern exactly as written; same `-`-leading/`-e` rules as `BashSearch`. */
+  pattern: string;
+  /** Every file operand exactly as written, in operand order; 2..`BASH_SEARCH_MAX_FILES`. */
+  filePaths: string[];
+  lineNumbered: boolean;
+  baseDir?: string;
+}
+
+/** WHY: (item 10) `grep -r PATTERN DIR` — exactly one explicit dir (or file) operand. */
+export interface BashRecursiveSearch {
+  program: SearchProgram;
+  pattern: string;
+  /** The one operand exactly as written; a file operand recurses over just that file. */
+  dirPath: string;
+  lineNumbered: boolean;
+  baseDir?: string;
+}
+
+/** WHY: (item 10) `rg --files [DIR]` — an anchorless, existence-checked path list. */
+export interface BashFilesList {
+  program: "rg";
+  /** Optional explicit list root exactly as written; absent means the effective cwd. */
+  dirPath?: string;
+  baseDir?: string;
+}
+
+/**
+ * WHY: (item 10) the admitted search family, tagged by stdout geometry so each shape gets its
+ * WHY: own serve seam. `pureSearch` is the Tier-1/2 single-file shape and keeps its exact
+ * WHY: `toEqual` contract; the three new tags never reshape it.
+ */
+type SearchFamily =
+  | { kind: "pureSearch"; search: BashSearch }
+  | { kind: "pureMultiSearch"; search: BashMultiSearch }
+  | { kind: "pureRecursiveSearch"; search: BashRecursiveSearch }
+  | { kind: "pureFilesList"; search: BashFilesList };
+
 export type BashClass =
   | { kind: "pureView"; view: BashView }
   | { kind: "pureSearch"; search: BashSearch }
+  | { kind: "pureMultiSearch"; search: BashMultiSearch }
+  | { kind: "pureRecursiveSearch"; search: BashRecursiveSearch }
+  | { kind: "pureFilesList"; search: BashFilesList }
   | { kind: "passThrough"; reason: string };
 
 /** `sed -n` numeric print only — locks out `w`/`e`/`r`/`s`/`;`/`{}`/`/` (R4). */
@@ -137,6 +185,14 @@ const SEARCH_ALLOWED_FLAGS: ReadonlySet<string> = new Set([
  * (`-ePAT` never reaches the cluster loop: any token starting `-e` is the attached
  * explicit-pattern form and is handled before decomposition.) */
 const SEARCH_SHORT_LETTERS: ReadonlySet<string> = new Set(["n", "i", "F", "E", "w", "x", "m", "e"]);
+
+/** Long grep recursion markers (`-R`'s long form is `--dereference-recursive`). */
+const SEARCH_GREP_RECURSIVE_FLAGS: ReadonlySet<string> = new Set([
+  "-r",
+  "-R",
+  "--recursive",
+  "--dereference-recursive",
+]);
 
 /** The attached long match-limit form only: `--max-count=N`. A bare `--max-count` (value as
  * a separate argument) fails closed — spec §3.2 admits the separate-argument spelling for
@@ -344,6 +400,20 @@ function parseSourceStage(shape: StageShape): SourceStage | undefined {
 }
 
 /**
+ * WHY: (item 10) `rg --files [DIR]` — the anchorless path list. The shape is exactly the flag
+ * WHY: plus zero or one non-`-` root; any other token (a pattern, another flag) fails closed,
+ * WHY: because this shape has no match rows and therefore no `LINE:content` geometry at all.
+ */
+function parseFilesListStage(stage: StageShape): BashFilesList | undefined {
+  if (stage.name !== "rg") return undefined;
+  if (stage.args.length === 0 || stage.args.length > 2) return undefined;
+  if (stage.args[0] !== "--files") return undefined;
+  const root = stage.args[1];
+  if (root !== undefined && root.startsWith("-")) return undefined;
+  return { program: "rg", ...(root !== undefined ? { dirPath: root } : {}) };
+}
+
+/**
  * `grep`/`rg` single-file search selector (spec §3.2). Strict default-deny: only the
  * allowlisted flags above survive and the shape must be exactly
  * `[flags] PATTERN [flags] FILE [flags]`. Flags are admitted at any position before `--` —
@@ -361,18 +431,29 @@ function parseSourceStage(shape: StageShape): SourceStage | undefined {
  * positive integer or not exactly `never`, `-f` (stays denied: file-input patterns break
  * the single-`PATTERN FILE` geometry), `-e` with no value, `-e` twice, a pattern both via
  * `-e` and positionally, a `-`-leading pattern with no `--` (unless given via `-e`), zero
- * operands (stdin) and two-or-more operands (filename prefixes break the `^\d+:` geometry).
+ * operands (stdin), and more than `BASH_SEARCH_MAX_FILES` file operands.
  * Globs, tildes and expansions never reach here because `stageShape`/`literalValue` reject
  * them first.
- * Directory operands are deliberately NOT detected here: this module is pure and zero-fs, so
- * the lifecycle layer re-checks the resolved file kind.
+ * WHY: (item 10) the operand arity now spans four shapes — `[PATTERN FILE]` (single-file),
+ * WHY: `[PATTERN FILE...]` (multi-file), `grep -r PATTERN DIR` (recursive walk) and
+ * WHY: `rg --files [DIR]` (anchorless list). Their stdout geometries differ (`LINE:content`,
+ * WHY: `FILE:LINE:content`, a path list), so the family is returned as a tagged union rather
+ * WHY: than one widened interface. Directory operands are still NOT detected here: this module
+ * WHY: is pure and zero-fs, so the lifecycle layer re-checks the resolved file kind — and
+ * WHY: upgrades an `rg` directory operand (rg recurses by default) while a `grep` directory
+ * WHY: operand stays raw (native grep errors without `-r`).
  */
-function parseSearchStage(stage: StageShape): BashSearch | undefined {
+function parseSearchStage(stage: StageShape): SearchFamily | undefined {
+  const filesList = parseFilesListStage(stage);
+  if (filesList) return { kind: "pureFilesList", search: filesList };
   if (!SEARCH_PROGRAMS.has(stage.name)) return undefined;
+  const program = stage.name as SearchProgram;
+  const isGrep = program === "grep";
   const args = stage.args;
   const operands: string[] = [];
   let lineNumbered = false;
   let separatorSeen = false;
+  let recursive = false;
   let explicitPattern: string | undefined;
   for (let index = 0; index < args.length; index++) {
     const arg = args[index];
@@ -390,6 +471,12 @@ function parseSearchStage(stage: StageShape): BashSearch | undefined {
         // WHY: `--max-count=N` is the only admitted `=`-long form and N must be a strictly
         // WHY: positive integer literal — `--max-count=0` and `--max-count=` fail closed.
         if (!isPositiveCount(attachedMaxCount[1])) return undefined;
+        continue;
+      }
+      // WHY: (item 10) grep's long recursion markers; rg's `--files` was handled whole above,
+      // WHY: so it can only reach here in a shape that fails the list gate and must stay denied.
+      if (isGrep && SEARCH_GREP_RECURSIVE_FLAGS.has(arg)) {
+        recursive = true;
         continue;
       }
       // WHY: every other `--…` token is an unlisted long option (`--json`, `--color=always`).
@@ -416,19 +503,26 @@ function parseSearchStage(stage: StageShape): BashSearch | undefined {
       // WHY: a single-dash token is a short cluster: every letter must be admitted, and the
       // WHY: value-taking `m`/`e` may only close it, each consuming the next argument
       // WHY: (`-nm 3`, `-ine pat`).
-      const letters = arg.slice(1).split("");
-      if (letters.length === 0) return undefined;
-      for (let position = 0; position < letters.length; position++) {
-        const letter = letters[position];
+      const cluster = arg.slice(1).split("");
+      if (cluster.length === 0) return undefined;
+      for (let position = 0; position < cluster.length; position++) {
+        const letter = cluster[position];
+        // WHY: (item 10) `r`/`R` are grep's recursion markers and may sit anywhere in a cluster
+        // WHY: (`-rn`); for rg the same letters are `--replace` and stay denied.
+        if (letter === "r" || letter === "R") {
+          if (!isGrep) return undefined;
+          recursive = true;
+          continue;
+        }
         if (!SEARCH_SHORT_LETTERS.has(letter)) return undefined;
         if (letter === "n") lineNumbered = true;
         if (letter === "m") {
-          if (position !== letters.length - 1) return undefined;
+          if (position !== cluster.length - 1) return undefined;
           if (!isPositiveCount(args.at(index + 1))) return undefined;
           index += 1;
         }
         if (letter === "e") {
-          if (position !== letters.length - 1) return undefined;
+          if (position !== cluster.length - 1) return undefined;
           if (explicitPattern !== undefined) return undefined;
           const value = args.at(index + 1);
           if (value === undefined) return undefined;
@@ -440,26 +534,32 @@ function parseSearchStage(stage: StageShape): BashSearch | undefined {
     }
     operands.push(arg);
   }
-  // WHY: exactly two operands — the pattern and the one file. `grep pat` searches stdin, and
-  // WHY: `grep pat a b` prints `file:` prefixes, so both fail closed to raw bash.
-  // WHY: with `-e` the value IS the pattern, so exactly one operand (the file) must remain;
-  // WHY: two operands with `-e` means the pattern came both ways and fails closed.
-  // WHY: (item-9/10 gate preserved: no new operand shape is admitted, only the count shifts
-  // WHY: from 2 to 1 when `-e` supplies the pattern.)
-  if (explicitPattern !== undefined) {
-    if (operands.length !== 1) return undefined;
-    const filePath = operands[0];
-    if (filePath === undefined) return undefined;
-    return {
-      program: stage.name as SearchProgram,
-      pattern: explicitPattern,
-      filePath,
-      lineNumbered,
-    };
+  // WHY: (item 10) operand arity. Without `-e` the first operand is the PATTERN and the rest
+  // WHY: are FILES; with `-e` the value IS the pattern, so EVERY operand is a file. Counts
+  // WHY: beyond `BASH_SEARCH_MAX_FILES` fail closed HERE (never silent-truncate, invariant 3);
+  // WHY: the total matched-line budget is enforced at serve time against `SEARCH_MAX_MATCHES`.
+  const fileOperands = explicitPattern === undefined ? operands.slice(1) : [...operands];
+  const pattern = explicitPattern ?? operands[0];
+  if (pattern === undefined) return undefined;
+  if (recursive) {
+    // WHY: grep's recursion marker takes exactly one operand — the dir (or file) to walk.
+    // WHY: Recursion and multi-file never mix (`grep -r pat a b` fails the whole stage closed).
+    if (fileOperands.length !== 1) return undefined;
+    const dirPath = fileOperands[0];
+    if (dirPath === undefined) return undefined;
+    return { kind: "pureRecursiveSearch", search: { program, pattern, dirPath, lineNumbered } };
   }
-  if (operands.length !== 2) return undefined;
-  const [pattern, filePath] = operands;
-  return { program: stage.name as SearchProgram, pattern, filePath, lineNumbered };
+  // WHY: zero file operands is a stdin search (`grep pat`) — still denied, unchanged.
+  if (fileOperands.length === 0 || fileOperands.length > BASH_SEARCH_MAX_FILES) return undefined;
+  if (fileOperands.length === 1) {
+    const filePath = fileOperands[0];
+    if (filePath === undefined) return undefined;
+    return { kind: "pureSearch", search: { program, pattern, filePath, lineNumbered } };
+  }
+  return {
+    kind: "pureMultiSearch",
+    search: { program, pattern, filePaths: [...fileOperands], lineNumbered },
+  };
 }
 
 /** Downstream pipe stages: selectors with no file operand (stdin only). */
@@ -593,7 +693,7 @@ interface ViewSeg {
 
 interface SearchSeg {
   kind: "search";
-  search: BashSearch;
+  family: SearchFamily;
 }
 
 type Segment = SilentSeg | ViewSeg | SearchSeg | { kind: "unsafe"; reason: string };
@@ -689,9 +789,14 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | undefined {
       // WHY: inventing a coordinate the model never asked for). It fails closed here, exactly
       // WHY: like the item-8 numbered-view guard, and NO command is ever rewritten.
       const searchSource = parseSearchStage(stage);
-      if (!searchSource || searchSource.lineNumbered) return undefined;
-      filePath = searchSource.filePath;
-      ops.push({ kind: "keep", pattern: searchSource.pattern });
+      // WHY: (item 10) only the SINGLE-file, unnumbered shape has bare-content stdout that one
+      // WHY: `keep` over ONE file can model; multi-file and recursive stdout carry `FILE:LINE:`
+      // WHY: prefixes and `rg --files` carries paths, so those compose with nothing downstream.
+      if (searchSource?.kind !== "pureSearch" || searchSource.search.lineNumbered) {
+        return undefined;
+      }
+      filePath = searchSource.search.filePath;
+      ops.push({ kind: "keep", pattern: searchSource.search.pattern });
       continue;
     }
     const filter = parseFilterStage(stage);
@@ -717,7 +822,7 @@ function classifySegment(node: Command | Pipeline, prefixPosition = false): Segm
         ...(source.lineNumbered === true ? { lineNumbered: true } : {}),
       };
     const search = parseSearchStage(stage);
-    if (search) return { kind: "search", search };
+    if (search) return { kind: "search", family: search };
     return { kind: "unsafe", reason: `unsupported-command:${stage.name}` };
   }
   const view = parseViewSegment(node);
@@ -817,7 +922,7 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
     return { kind: "passThrough", reason: "chain-too-long" };
   }
   let view: ViewSeg | undefined;
-  let searchSeg: BashSearch | undefined;
+  let searchSeg: SearchFamily | undefined;
   let baseDir: string | undefined;
   for (const { node, prefixPosition } of segments) {
     if (node.type !== "Command" && node.type !== "Pipeline") {
@@ -849,7 +954,7 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
       if (view !== undefined || searchSeg !== undefined) {
         return { kind: "passThrough", reason: "multi-view" };
       }
-      searchSeg = classified.search;
+      searchSeg = classified.family;
       if (node.type === "Command" && node.name?.end !== undefined) {
         located.searchNameEnd = node.name.end;
       }
@@ -864,12 +969,7 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
     }
     view = classified;
   }
-  if (searchSeg) {
-    return {
-      kind: "pureSearch",
-      search: baseDir === undefined ? searchSeg : { ...searchSeg, baseDir },
-    };
-  }
+  if (searchSeg) return applyBaseDir(searchSeg, baseDir);
   if (!view) return { kind: "passThrough", reason: "no-view" };
   return {
     kind: "pureView",
@@ -887,6 +987,25 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
             ...(view.lineNumbered === true ? { lineNumbered: true } : {}),
           },
   };
+}
+
+/**
+ * WHY: (item 10) one place applies the chain's single pre-view `cd` to whichever search family
+ * WHY: shape won, so the resolution base cannot be remembered for one shape and forgotten for
+ * WHY: another (the `pureSearch`-only spread this replaces covered the single-file case alone).
+ */
+function applyBaseDir(family: SearchFamily, baseDir: string | undefined): BashClass {
+  if (baseDir === undefined) return family;
+  switch (family.kind) {
+    case "pureSearch":
+      return { kind: "pureSearch", search: { ...family.search, baseDir } };
+    case "pureMultiSearch":
+      return { kind: "pureMultiSearch", search: { ...family.search, baseDir } };
+    case "pureRecursiveSearch":
+      return { kind: "pureRecursiveSearch", search: { ...family.search, baseDir } };
+    case "pureFilesList":
+      return { kind: "pureFilesList", search: { ...family.search, baseDir } };
+  }
 }
 
 function takeFirst(list: LineInterval[], n: number): LineInterval[] {
@@ -1016,10 +1135,18 @@ export function applyViewOps(ops: readonly ViewOp[], lines: readonly ContentLine
 export function withSearchLineNumbers(command: string): string {
   const located: { searchNameEnd?: number } = {};
   const classification = classifyBash(command, located);
-  if (classification.kind !== "pureSearch") return command;
-  if (classification.search.lineNumbered) return command;
+  // WHY: (item 10) multi-file and recursive searches take the same stage-0 splice: their serve
+  // WHY: seams parse `FILE:LINE:content` triples, and with no downstream stage the injected
+  // WHY: column is inert (nothing consumes it), exactly as for a single-file search.
+  const search =
+    classification.kind === "pureSearch" ||
+    classification.kind === "pureMultiSearch" ||
+    classification.kind === "pureRecursiveSearch"
+      ? classification.search
+      : undefined;
+  if (search === undefined || search.lineNumbered) return command;
   const nameEnd = located.searchNameEnd;
   if (nameEnd === undefined) return command;
-  const flag = classification.search.program === "rg" ? "--line-number" : "-n";
+  const flag = search.program === "rg" ? "--line-number" : "-n";
   return `${command.slice(0, nameEnd)} ${flag}${command.slice(nameEnd)}`;
 }

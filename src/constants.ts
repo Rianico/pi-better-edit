@@ -114,6 +114,17 @@ export const SERVED_ROWS_CAP = 150;
 // WHY: grant (matching ADR-0033 D3's strictly-slice-accurate-or-pass-through rule).
 export const SEARCH_MAX_MATCHES = 50;
 
+// WHY: (item 10) the multi-file / recursive / `--files` DISTINCT-FILE bound: a search that
+// WHY: names more files than this passes through raw rather than exploding one bash call into
+// WHY: an unbounded anchor budget (mirrors `MAX_READ_FILES`, so one tool result keeps one
+// WHY: budget). It fails closed beyond — never silent-truncate (invariant 3).
+export const BASH_SEARCH_MAX_FILES = 10;
+
+// WHY: (item 10) the recursive walk's VISIT bound: a tree larger than this passes through raw
+// WHY: instead of turning one bash call into an unbounded directory walk. Only files actually
+// WHY: visited can ever be leased, so the bound is also the membership set's size.
+export const BASH_SEARCH_WALK_MAX_FILES = 200;
+
 // WHY: ADR-0024 (#174 diction) — the applied diff's removed-line cap, the mirror of SERVED_ROWS_CAP
 // WHY: on the refusal side: a range deletion renders head + tail with an exact deleted count
 // WHY: (` - ... [N lines deleted] ...`) instead of every removed row. The hidden rows still advance
