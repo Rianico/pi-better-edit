@@ -116,7 +116,9 @@ export function resolveEffectiveLensMode(cwd: string): LensBridgeMode {
 /**
  * Persist `mode` for `scope`, preserving unknown top-level keys and other `lens.*` keys already
  * in the file. Creates the directory as needed and replaces the file atomically (sibling temp
- * file + rename, same filesystem). Throws `E_BAD_PAYLOAD` for a mode or scope outside the enum.
+ * file + rename, same filesystem). Throws `E_INTERNAL_INVARIANT` — and writes nothing — for a
+ * mode or scope outside the enum, which no caller can reach: the command and the overlay narrow
+ * both to the enum.
  */
 export function saveLensBridgeConfig(
   mode: LensBridgeMode,
@@ -124,13 +126,13 @@ export function saveLensBridgeConfig(
   cwd: string,
 ): { path: string } {
   if (!isLensBridgeMode(mode)) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Unknown lens bridge mode "${String(mode)}". Pass auto, on or off and retry.`,
+    throw new DomainError("E_INTERNAL_INVARIANT", {
+      message: `Unknown lens bridge mode "${String(mode)}".`,
     });
   }
   if (!isLensBridgeScope(scope)) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Unknown lens bridge scope "${String(scope)}". Pass project or global and retry.`,
+    throw new DomainError("E_INTERNAL_INVARIANT", {
+      message: `Unknown lens bridge scope "${String(scope)}".`,
     });
   }
 

@@ -215,7 +215,7 @@ describe("saveLensBridgeConfig", () => {
     expect(existsSync(join(projectDir, ".pi"))).toBe(false);
   });
 
-  it("rejects a mode or scope outside the enum with E_BAD_PAYLOAD and writes nothing", () => {
+  it("rejects a mode or scope outside the enum with E_INTERNAL_INVARIANT and writes nothing", () => {
     let modeError: unknown;
     try {
       saveLensBridgeConfig("nope" as LensBridgeMode, "project", projectDir);
@@ -223,11 +223,11 @@ describe("saveLensBridgeConfig", () => {
       modeError = caught;
     }
     expect(modeError).toBeInstanceOf(DomainError);
-    expect((modeError as { code: string }).code).toBe("E_BAD_PAYLOAD");
+    expect((modeError as { code: string }).code).toBe("E_INTERNAL_INVARIANT");
     expect((modeError as Error).message).toContain("nope");
 
     expect(() => saveLensBridgeConfig("auto", "mars" as LensBridgeScope, projectDir)).toThrowError(
-      /E_BAD_PAYLOAD/,
+      /E_INTERNAL_INVARIANT/,
     );
     expect(readdirSync(projectDir)).toEqual([]);
   });

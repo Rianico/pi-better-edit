@@ -246,8 +246,9 @@ export function resolveStoreJanitorSettings(
 /**
  * Persist the keys in `settings` for `scope`, preserving every other top-level key, other `store.*`
  * keys and other owners' keys already in the file. Creates the directory as needed and replaces the
- * file atomically. Throws `E_BAD_PAYLOAD` — and writes nothing — for a value outside its accepted
- * shape or a scope outside the enum, because a silently dropped value reads back as a default.
+ * file atomically. Throws `E_INTERNAL_INVARIANT` — and writes nothing — for a value outside its
+ * accepted shape or a scope outside the enum: a defensive guard, unreachable from the command
+ * and the overlay, because a silently dropped value would read back as a default.
  */
 export function saveStoreJanitorConfig(
   settings: StoreJanitorScopeSettings,
@@ -255,23 +256,23 @@ export function saveStoreJanitorConfig(
   cwd: string,
 ): { path: string } {
   if (!isConfigScope(scope)) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Unknown config scope "${String(scope)}". Pass project or global and retry.`,
+    throw new DomainError("E_INTERNAL_INVARIANT", {
+      message: `Unknown config scope "${String(scope)}".`,
     });
   }
   if (settings.mode !== undefined && !isStoreJanitorMode(settings.mode)) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Unknown store janitor mode "${String(settings.mode)}". Pass on or off and retry.`,
+    throw new DomainError("E_INTERNAL_INVARIANT", {
+      message: `Unknown store janitor mode "${String(settings.mode)}".`,
     });
   }
   if (settings.intervalMs !== undefined && !isIntervalMs(settings.intervalMs)) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Unknown store janitor interval "${String(settings.intervalMs)}". Pass a whole number of milliseconds at least 1 and retry.`,
+    throw new DomainError("E_INTERNAL_INVARIANT", {
+      message: `Unknown store janitor interval "${String(settings.intervalMs)}".`,
     });
   }
   if (settings.batchSize !== undefined && !isBatchSize(settings.batchSize)) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Unknown store janitor batch size "${String(settings.batchSize)}". Pass a whole number of rows at least 1 and retry.`,
+    throw new DomainError("E_INTERNAL_INVARIANT", {
+      message: `Unknown store janitor batch size "${String(settings.batchSize)}".`,
     });
   }
 

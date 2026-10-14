@@ -122,8 +122,9 @@ export function resolveBashViewMode(cwd: string, onWarn?: ConfigOnWarn): BashVie
 /**
  * Persist `mode` for `scope`, preserving unknown top-level keys and other `bash.*` keys already
  * in the file. Creates the directory as needed and replaces the file atomically. Throws
- * `E_BAD_PAYLOAD` — and writes nothing — for a value outside its accepted shape or a scope
- * outside the enum, because a silently dropped value reads back as the default.
+ * `E_INTERNAL_INVARIANT` — and writes nothing — for a value outside its accepted shape or a
+ * scope outside the enum: a defensive guard, unreachable from the command and the overlay,
+ * because a silently dropped value would read back as the default.
  */
 export function saveBashViewConfig(
   mode: BashViewMode,
@@ -131,13 +132,13 @@ export function saveBashViewConfig(
   cwd: string,
 ): { path: string } {
   if (!isBashViewMode(mode)) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Unknown bash view mode "${String(mode)}". Pass on or off and retry.`,
+    throw new DomainError("E_INTERNAL_INVARIANT", {
+      message: `Unknown bash view mode "${String(mode)}".`,
     });
   }
   if (!isBashViewScope(scope)) {
-    throw new DomainError("E_BAD_PAYLOAD", {
-      message: `Unknown bash view scope "${String(scope)}". Pass project or global and retry.`,
+    throw new DomainError("E_INTERNAL_INVARIANT", {
+      message: `Unknown bash view scope "${String(scope)}".`,
     });
   }
 

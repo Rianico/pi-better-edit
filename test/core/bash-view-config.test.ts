@@ -209,13 +209,13 @@ describe("saveBashViewConfig", () => {
     expect(existsSync(join(projectDir, ".pi"))).toBe(false);
   });
 
-  it("rejects a value or scope outside its accepted shape with E_BAD_PAYLOAD and writes nothing", () => {
+  it("rejects a value or scope outside its accepted shape with E_INTERNAL_INVARIANT and writes nothing", () => {
     expect(() =>
       saveBashViewConfig("sometimes" as BashViewMode, "project", projectDir),
-    ).toThrowError(/E_BAD_PAYLOAD/);
+    ).toThrowError(/E_INTERNAL_INVARIANT/);
     expect(() =>
       saveBashViewConfig("off", "mars" as Parameters<typeof saveBashViewConfig>[1], projectDir),
-    ).toThrowError(/E_BAD_PAYLOAD/);
+    ).toThrowError(/E_INTERNAL_INVARIANT/);
 
     let caught: unknown;
     try {

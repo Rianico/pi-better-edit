@@ -6,6 +6,10 @@ Date: 2026-10-11
 
 accepted — the design record for issue [#90](https://github.com/Rianico/pi-better-edit/issues/90), written against what landed, in `src/store-janitor.ts`, `src/store-config.ts`, `src/json-config.ts` and the predicates exported from `src/hash-store.ts`. It says what those modules DO, not what the ticket proposed; where the ticket's brief and the code disagree, the code is the record and the disagreement is stated. It leaves [ADR-0017](0017-lru-vacuum-supersedes-epoch-concurrency.md) intact and adds the periodic item above its vacuum; it relies on [ADR-0031](0031-file-scoped-anchors-residual-and-generation-discipline.md)'s generation discipline for what "foreign" means. No earlier ADR is superseded.
 
+Amended 2026-10-14 (Issue #94): the write path's enum guards throw `E_INTERNAL_INVARIANT`,
+not `E_BAD_PAYLOAD` — they are defensive checks that no caller can reach, since the command and
+the settings overlay narrow every value to the enum.
+
 ## Context
 
 ### The promise this record pays off
@@ -89,7 +93,7 @@ The janitor's knobs live in the same JSON seam the lens bridge uses — `.pi/age
 - **There is deliberately no store-directory key.** `PI_BETTER_EDIT_CONFIG_DIR` alone owns the store path (`configDir`/`configDirOverride` in `src/hash-store.ts`, read verbatim, empty counting as unset, precedence over `XDG_CONFIG_HOME` and `$HOME/.config`). A config file must not be able to move the store — an operator/security decision, owner-ruled — so `store.dir` is an unknown key like any other: preserved on write, ignored on read, resolving to nothing. `test/core/store-config.test.ts` pins that the path stays on the variable alone.
 - Ticket #90's title says "yaml"; there is **no yaml config surface anywhere** in this repository — the only `.yaml` file is `pnpm-lock.yaml` — and the seam is JSON. The title has since been corrected to "JSON/env config seam". The "configurable store directory" as a test-isolation lever (#89) is not this: the lever is the env variable, which already existed.
 
-The published schema (`schemas/pi-better-edit.json`) gains the `store` object with root and per-object `additionalProperties: true`, so an owner's keys need no schema change to be written, only to be validated. The write path (`saveStoreJanitorConfig` → `updateConfigFile`) rebuilds `$schema`, then spreads the existing object, so unknown keys, sibling `store.*` keys and the `lens` block survive; it throws `E_BAD_PAYLOAD` and writes nothing for a value outside its accepted shape, because a silently dropped value reads back as a default.
+The published schema (`schemas/pi-better-edit.json`) gains the `store` object with root and per-object `additionalProperties: true`, so an owner's keys need no schema change to be written, only to be validated. The write path (`saveStoreJanitorConfig` → `updateConfigFile`) rebuilds `$schema`, then spreads the existing object, so unknown keys, sibling `store.*` keys and the `lens` block survive; it throws `E_INTERNAL_INVARIANT` and writes nothing for a value outside its accepted shape, because a silently dropped value reads back as a default.
 
 ## Invariants GC must not break
 

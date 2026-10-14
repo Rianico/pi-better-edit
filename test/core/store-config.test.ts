@@ -394,7 +394,7 @@ describe("saveStoreJanitorConfig", () => {
     expect(existsSync(join(projectDir, ".pi"))).toBe(false);
   });
 
-  it("rejects a value or scope outside its accepted shape with E_BAD_PAYLOAD and writes nothing", () => {
+  it("rejects a value or scope outside its accepted shape with E_INTERNAL_INVARIANT and writes nothing", () => {
     const bad: StoreJanitorScopeSettings[] = [
       { mode: "maybe" as StoreJanitorMode },
       { intervalMs: 0 },
@@ -404,7 +404,7 @@ describe("saveStoreJanitorConfig", () => {
     ];
     for (const settings of bad) {
       expect(() => saveStoreJanitorConfig(settings, "project", projectDir)).toThrowError(
-        /E_BAD_PAYLOAD/,
+        /E_INTERNAL_INVARIANT/,
       );
     }
     expect(() =>
@@ -413,7 +413,7 @@ describe("saveStoreJanitorConfig", () => {
         "mars" as Parameters<typeof saveStoreJanitorConfig>[1],
         projectDir,
       ),
-    ).toThrowError(/E_BAD_PAYLOAD/);
+    ).toThrowError(/E_INTERNAL_INVARIANT/);
 
     let caught: unknown;
     try {
