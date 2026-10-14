@@ -2,7 +2,7 @@
 
 ## [Unreleased]
 ### Features
-* **bash-view:** admit the Tier-3 interception surface (#82): `grep`/`rg` as downstream filter stages (`cat f | grep -v x`) and an unnumbered search source translated into a `keep` filter, multi-file `grep`/`rg PATTERN FILE...` served as per-file `FILE:LINE:content` sections, `grep -r`/`rg` directory walks that never descend into hidden or `node_modules` directories, an anchorless existence-checked `rg --files` list, and the `sort -u`/`uniq`/`wc -l` line-set consumers. Every bound fails closed to raw output with zero leases, and numbered sources and views still compose with nothing downstream. (#82)
+* **bash-view:** admit the Tier-3 interception surface (#82): `grep`/`rg` as downstream filter stages (`cat f | grep -v x`) and an unnumbered search source translated into a `keep` filter, multi-file `grep`/`rg PATTERN FILE...` served as per-file `FILE:LINE:content` sections, `grep -r`/`rg` directory walks that never descend into hidden or `node_modules` directories, an anchorless existence-checked `rg --files` list, and the `sort -u`/`uniq`/`wc -l` line-set consumers. Every bound fails closed to raw output with zero leases, and numbered sources and views still compose with nothing downstream. (#82) (#121)
 * **bash-view:** admit Tier-2 view spellings to interception: explicit `-e` search patterns (separate, attached, cluster-close; exactly once), multi-range `sed -n -e RANGEp` merged at parse, and numbered `cat -n` / `nl -ba` sharing one full-file renderer. Malformed shapes fail closed to raw bash. (#82) (#120)
 
 ### Bug Fixes
