@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { execFileSync } from "child_process";
-import { mkdir, writeFile } from "fs/promises";
+import { mkdir, symlink, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
 import { lineHashes } from "../../src/hashline";
@@ -1976,7 +1976,8 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       register(pi);
       const editTool = getTool("edit");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-count" } };
-      // WHY: GNU pads the count when the input is a pipe, so the observed bytes are "   4\n".
+      // WHY: both count spellings are accepted (`4\n` piped, padded when GNU names a
+      // WHY: file), so the padded observed bytes are a legal count.
       const result = await bashResult(
         handlers.get("tool_result")!,
         "cat f.txt | grep -v line3 | wc -l",
@@ -2219,6 +2220,150 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
           ctx,
         ),
       ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+});
+
+describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
+  it("never admits a symlinked entry, and resolves a symlinked operand shared", async () => {
+    await withTempDir("bash-hard-", async (dir) => {
+      await mkdir(join(dir, "real"), { recursive: true });
+      await writeFile(join(dir, "real", "ok.txt"), "line1\nline2\n", "utf-8");
+      await symlink(join(dir, "real"), join(dir, "linked"), "dir");
+      await symlink(join(dir, "real", "ok.txt"), join(dir, "link-file.txt"), "file");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-symlink" } };
+      // WHY: the OPERAND goes through the shared target resolver — the path authority every other
+      // WHY: seam uses, which resolves symlink components on purpose — so a symlinked root is
+      // WHY: walked as its target and the served display path stays editable through that resolver.
+      const viaRoot = await bashResult(
+        handler!,
+        "grep -rn line2 linked",
+        ctx,
+        "linked/ok.txt:2:line2\n",
+      );
+      expect(viaRoot).toBeDefined();
+      expect(viaRoot!.content[0]!.text).toContain("[linked/ok.txt (1 match)]");
+      // WHY: the walk never admits a symlink ENTRY (a `Dirent` is not followed) but the seam
+      // WHY: matches a stdout entry by RESOLVED identity, so a spelling that resolves into the
+      // WHY: walked set serves the walked file's own display path and true line — the bytes are
+      // WHY: verified against that file, and the render never echoes the link spelling.
+      const viaEntry = await bashResult(
+        handler!,
+        "grep -rn line2 .",
+        ctx,
+        "link-file.txt:2:line2\n",
+      );
+      expect(viaEntry).toBeDefined();
+      expect(viaEntry!.content[0]!.text).toContain("[real/ok.txt (1 match)]");
+      // WHY: an entry that resolves OUTSIDE the walked set still fails the whole serve closed.
+      await writeFile(join(dir, "other.txt"), "line1\nline2\n", "utf-8");
+      expect(
+        await bashResult(handler!, "grep -rn line2 real", ctx, "other.txt:2:line2\n"),
+      ).toBeUndefined();
+      // WHY: the real tree still serves — the refusals above are about links, not about walking.
+      const good = await bashResult(handler!, "grep -rn line2 real", ctx, "real/ok.txt:2:line2\n");
+      expect(good).toBeDefined();
+      expect(good!.content[0]!.text).toContain("[real/ok.txt (1 match)]");
+    });
+  });
+
+  it("bounds the walk by directories queued when a forest holds no files", async () => {
+    await withTempDir("bash-hard-", async (dir) => {
+      // WHY: review F4 — the visit bound must trip on a directory-only forest, where the file
+      // WHY: counter never moves.
+      for (let i = 0; i < 250; i++) await mkdir(join(dir, "d", `n${i}`), { recursive: true });
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-dirs" } };
+      expect(
+        await bashResult(handlers.get("tool_result")!, "grep -rn zz d", ctx, "d/n1/x.txt:1:zz\n"),
+      ).toBeUndefined();
+    });
+  });
+
+  it("bounds the walk by files visited past the visit cap", async () => {
+    await withTempDir("bash-hard-", async (dir) => {
+      for (let i = 0; i < 205; i++) {
+        await writeFile(join(dir, `f${i}.txt`), "line1\nline2\n", "utf-8");
+      }
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-files" } };
+      expect(
+        await bashResult(handlers.get("tool_result")!, "grep -rn line2 .", ctx, "f1.txt:2:line2\n"),
+      ).toBeUndefined();
+    });
+  });
+
+  it("honors an explicitly named excluded root and still skips a nested one", async () => {
+    await withTempDir("bash-hard-", async (dir) => {
+      await mkdir(join(dir, "node_modules", "dep"), { recursive: true });
+      await writeFile(join(dir, "node_modules", "top.txt"), "line1\nline2\n", "utf-8");
+      await writeFile(join(dir, "node_modules", "dep", "deep.txt"), "line1\nline2\n", "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-nm" } };
+      // WHY: the exclusion gates DESCENT, not the operand — naming the root admits it whole,
+      // WHY: including the subtree below it.
+      const deep = await bashResult(
+        handler!,
+        "grep -rn line2 node_modules",
+        ctx,
+        "node_modules/dep/deep.txt:2:line2\n",
+      );
+      expect(deep).toBeDefined();
+      expect(deep!.content[0]!.text).toContain("[node_modules/dep/deep.txt (1 match)]");
+      // WHY: a `node_modules` seen while walking ANOTHER root is skipped (the nested case).
+      await mkdir(join(dir, "other", "node_modules"), { recursive: true });
+      await writeFile(join(dir, "other", "node_modules", "nested.txt"), "line1\nline2\n", "utf-8");
+      await writeFile(join(dir, "other", "ok.txt"), "line1\nline2\n", "utf-8");
+      expect(
+        await bashResult(
+          handler!,
+          "grep -rn line2 other",
+          ctx,
+          "other/ok.txt:2:line2\nother/node_modules/nested.txt:2:line2\n",
+        ),
+      ).toBeUndefined();
+    });
+  });
+
+  it("refuses an `rg --files` entry that is a directory", async () => {
+    await withTempDir("bash-hard-", async (dir) => {
+      await mkdir(join(dir, "sub"), { recursive: true });
+      await writeFile(join(dir, "a.txt"), "x\n", "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-listdir" } };
+      // WHY: only regular files enter the walk's membership, so a directory entry (which native
+      // WHY: `rg --files` never prints) fails the whole list closed.
+      expect(
+        await bashResult(handlers.get("tool_result")!, "rg --files", ctx, "a.txt\nsub\n"),
+      ).toBeUndefined();
+    });
+  });
+
+  it("passes a composed multi-range sed through raw (recorded boundary)", async () => {
+    await withTempDir("bash-hard-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(40), "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-hard-sed" } };
+      // WHY: review F6 — the two `range` ops are COMPOSED by the interval algebra, so the second
+      // WHY: selection resolves against the already-narrowed stream, selects nothing and passes
+      // WHY: the raw output through. Never a wrong slice; recorded in ADR-0033 D10.
+      expect(
+        await bashResult(
+          handlers.get("tool_result")!,
+          "cat f.txt | sed -n -e '1p' -e '30p'",
+          ctx,
+          "line1\nline30\n",
+        ),
+      ).toBeUndefined();
     });
   });
 });

@@ -117,7 +117,9 @@ export const SEARCH_MAX_MATCHES = 50;
 // WHY: (item 10) the multi-file / recursive / `--files` DISTINCT-FILE bound: a search that
 // WHY: names more files than this passes through raw rather than exploding one bash call into
 // WHY: an unbounded anchor budget (mirrors `MAX_READ_FILES`, so one tool result keeps one
-// WHY: budget). It fails closed beyond — never silent-truncate (invariant 3).
+// WHY: budget). It fails closed beyond — never silent-truncate (invariant 3). NOTE: the
+// WHY: `rg --files` list leases nothing, so its share of this bound is the brief's "same count
+// WHY: cap"; a repository-wide listing therefore usually passes through raw (ADR-0033 D10).
 export const BASH_SEARCH_MAX_FILES = 10;
 
 // WHY: (item 10) the recursive walk's VISIT bound: a tree larger than this passes through raw

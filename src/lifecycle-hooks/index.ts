@@ -153,8 +153,9 @@ const SEARCH_STDOUT_LINE = /^(\d+):([\s\S]*)$/;
 /** `cat -n`/`nl -ba` stdout row: blank-padded 1-indexed number, a tab, the line content. */
 const NUMBERED_STDOUT_LINE = /^\s*(\d+)\t([\s\S]*)$/;
 /**
- * WHY: (item 11) `wc -l` stdout is the count ALONE, with the surrounding spaces GNU pads a piped
- * WHY: input with (`12\n`, `   12\n`); every other shape fails the count gate.
+ * WHY: (item 11) `wc -l` stdout is the count ALONE. GNU pads to a fixed width when it
+ * WHY: names a file (`   12 f`), so both `12\n` and `   12\n` are accepted
+ * WHY: for a piped count; a second field, a non-number or an empty stdout fails the gate.
  */
 const COUNT_STDOUT_LINE = /^\s*(\d+)\s*$/;
 
@@ -575,9 +576,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     ctx: ToolContext,
   ): Promise<{ content: Array<{ type: string; text: string }>; details?: unknown } | undefined> {
     if (event.toolName !== "bash") return undefined;
-    // WHY: the off switch bypasses BOTH branches below — view and search — so raw output
-    // WHY: passes through byte-identical. The default is on, so an unconfigured session
-    // WHY: never reaches this return.
+    // WHY: the off switch bypasses EVERY seam below — view, search, content filter,
+    // WHY: multi-file, recursive walk and `rg --files` — so raw output passes through
+    // WHY: byte-identical. The default is on, so an unconfigured session never reaches this
+    // WHY: return.
     if (resolveBashViewMode(ctx.cwd) === "off") return undefined;
     if (event.isError) return undefined;
     const rawInput = event.input as Record<string, unknown> | undefined;
@@ -814,6 +816,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: spellings that resolve outside the set, and unwalked subtrees all fail closed.
       if (!input.admitted.has(resolved)) return undefined;
       const rows = grouped.get(resolved) ?? [];
+      // WHY: (review F3) a repeated `(file, line)` coordinate renders and leases ONCE: the
+      // WHY: coordinate set is a set, and `grep -n pat a.txt a.txt` prints the same line twice
+      // WHY: only because the operand was repeated. Nothing new is witnessed by a second copy.
       if (!rows.some((existing) => existing.line === row.line)) {
         rows.push({ line: row.line, content: row.content });
       }
@@ -916,6 +921,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
               abs: join(current.abs, entry.name),
               display: join(current.display, entry.name),
             });
+            // WHY: (review F4) the visit bound must cover DIRECTORIES too: a forest of empty
+            // WHY: directories has no files to count, so an unbounded queue would walk it whole.
+            if (queue.length > BASH_SEARCH_WALK_MAX_FILES) return undefined;
           }
           continue;
         }
@@ -980,6 +988,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     const rootResolved = await deps.resolveTarget(deps.toCwd(rootDisplay, effCwd));
     const walked = await walkSearchFiles(rootResolved, rootDisplay);
     if (walked === undefined) return undefined;
+    // WHY: (review F5) no `valAccess`/`loadFileKindAndText` here on purpose: a path list has
+    // WHY: no bytes to witness and grants no anchors, so the walk's membership is the whole
+    // WHY: witness chain. And because nothing is leased, the anchor-budget rationale behind
+    // WHY: `BASH_SEARCH_MAX_FILES` does not apply to this shape — a repository-wide listing
+    // WHY: therefore passes through raw, which ADR-0033 D10 records.
     const stdoutText = singleTextBlock(event);
     if (stdoutText === undefined) return undefined;
     const lines = toLF(stripBOM(stdoutText).text).split("\n");

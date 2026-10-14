@@ -28,7 +28,9 @@ export function registerSearchHook(pi: ExtensionAPI): void {
       if (typeof command !== "string" || command.trim() === "") return;
       const rewritten = withSearchLineNumbers(command);
       // WHY: a denied or non-search command must reach bash byte-identical, so the only
-      // WHY: mutation this hook can ever make is the documented `-n` injection.
+      // WHY: mutation this hook can ever make is the documented line-number splice — `-n` for
+      // WHY: grep, `--line-number` for rg, and only for a bare single-file, multi-file or
+      // WHY: recursive search (never a pipeline, never `rg --files`).
       if (rewritten === command) return;
       input.command = rewritten;
     } catch {

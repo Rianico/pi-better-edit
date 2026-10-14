@@ -605,7 +605,6 @@ function parseSearchStage(stage: StageShape): SearchFamily | undefined {
   };
 }
 
-/** Downstream pipe stages: selectors with no file operand (stdin only). */
 /**
  * Downstream pipe stages: selectors with no file operand (stdin only). The `rtk`
  * unwrap applies here too (ADR-0033 D8 as amended): the field issues
@@ -1213,8 +1212,9 @@ export function applyViewOps(ops: readonly ViewOp[], lines: readonly ContentLine
 /**
  * WHY: (item 11) `sort -u` dedupes by text keeping the FIRST occurrence's true line — the
  * WHY: anchor that travels with the row is a real file coordinate, never a renumbered one —
- * WHY: then orders by text. The order is raw bytes (the C locale `sort` uses), never a locale
- * WHY: collation, which would reorder case and accents per host environment.
+ * WHY: then orders by raw bytes — the C/POSIX collation `sort` uses under `LC_ALL=C`. A host
+ * WHY: whose locale collation reorders the set (case-folding, accents) folds differently, fails
+ * WHY: the whole-stdout byte gate and passes through raw, never a wrong order.
  */
 function sortUniqueLines(stream: ContentLine[]): ContentLine[] {
   const firstByText = new Map<string, ContentLine>();
