@@ -8,6 +8,9 @@
 ### Bug Fixes
 * **store:** quarantine and rebuild the hash store on the first statement that fails with a corruption error, instead of leaving the damage for the next open or janitor run. The guarded handle rethrows the original error, so callers still fail loud. (#100) (#119)
 
+### Code Refactoring
+* **config:** re-home the three config setters' enum guards off `E_BAD_PAYLOAD` onto the remedy-free `E_INTERNAL_INVARIANT`, since a typed slash command cannot reach them: every handler narrows its tokens and the overlay offers only enum choices. Their messages state the fact and name the offending value with no retry tail, and the command handler no longer renders a DomainError's `[MODEL] [E_…]` envelope into the user channel — the envelope goes to the log while the user sees a plain failure notice. (#94)
+
 ## [2.12.0] - 2026-10-13
 
 ### Features

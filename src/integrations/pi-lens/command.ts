@@ -34,6 +34,7 @@ import {
   type BashViewMode,
 } from "../../bash-view-config.js";
 import { CONFIG_REL, type ConfigScope } from "../../json-config.js";
+import { DomainError } from "../../domain-errors.js";
 import { SettingsOverlay } from "./settings-overlay.js";
 const COMMAND_NAME = "pi-better-edit";
 const IO_BRIDGE_SYMBOL_KEY = "pi-lens:io-bridge";
@@ -410,8 +411,17 @@ export function registerLensCommand(pi: ExtensionAPI): void {
         }
       } catch (error: unknown) {
         // SAFETY: a command handler must never reject into the host's event loop — the failure is
-        // SAFETY: reported to the user (typed DomainError payloads included) and the command ends.
-        notify(ctx, `${COMMAND_NAME}: ${errorText(error)}`, "error");
+        // SAFETY: reported to the user and the command ends.
+        if (error instanceof DomainError) {
+          // WHY: a DomainError's `message` is the `[AUDIENCE] [CODE] …` envelope built for the model
+          // WHY: and host channels, not a sentence for the operator, so the envelope goes to the log
+          // WHY: (where a diagnosis can still reach it) and the user gets a plain failure notice. A
+          // WHY: failure that is not a DomainError keeps its own text: that part is user-actionable.
+          console.error(`${COMMAND_NAME}: ${errorText(error)}`);
+          notify(ctx, `${COMMAND_NAME}: the command failed unexpectedly.`, "error");
+        } else {
+          notify(ctx, `${COMMAND_NAME}: ${errorText(error)}`, "error");
+        }
       }
     },
   });
