@@ -32,6 +32,23 @@ export type SliceOp =
   | { kind: "from"; n: number }
   | { kind: "range"; from: number; to: number };
 
+/**
+ * WHY: (item 9) a content filter cannot fold over `LineInterval[]` — that algebra is
+ * WHY: count-based over a line count, so a keep/drop stage needs the line bytes. These ops
+ * WHY: carry the filter through the ordered stage array; the lifecycle layer folds them over
+ * WHY: `(true line, stream text)` pairs left to right and byte-gates the recomputed output
+ * WHY: against the observed stdout. Matching is literal substring, so a regex-looking
+ * WHY: pattern simply fails that gate and passes through raw.
+ */
+type ContentOp = { kind: "keep"; pattern: string } | { kind: "drop"; pattern: string };
+
+/**
+ * WHY: (item 9) one ordered pipeline stage. A single fold-left array keeps `grep|head` and
+ * WHY: `head|grep` distinguishable by position; `SliceOp` is a structural subset, so every
+ * WHY: Tier-1/2 `toEqual` literal still matches.
+ */
+export type ViewOp = SliceOp | ContentOp;
+
 /** Ordered disjoint 1-indexed inclusive line intervals over `[1..L]`. */
 export interface LineInterval {
   lo: number;
@@ -46,8 +63,8 @@ export interface BashView {
    * because bash resolves each `cd` against the directory in effect at that point —
    * applying only one of them out of order would lease a path never viewed. */
   baseDir?: string;
-  /** Slice ops in stream order, folded by `applySliceOps` over the line count. */
-  ops: SliceOp[];
+  /** Ordered stages in stream order; see `ViewOp` — folded left, so order matters. */
+  ops: ViewOp[];
   /** Present-and-true only for `cat -n FILE` / `nl -ba FILE`; absent means unnumbered. Optional so Tier-1 `toEqual` literals keep passing. */
   lineNumbered?: boolean;
 }
@@ -453,7 +470,7 @@ function parseSearchStage(stage: StageShape): BashSearch | undefined {
  * the transparency claim honest per call. Single unwrap, view commands only —
  * `rtk` around anything else stays `unsafe` via the unchanged rules below.
  */
-function parseFilterStage(shape: StageShape): SliceOp[] | undefined {
+function parseFilterStage(shape: StageShape): ViewOp[] | undefined {
   const stage = unwrapViewWrapper(shape);
   if (!stage) return undefined;
   if (stage.name === "head" || stage.name === "tail") {
@@ -465,6 +482,41 @@ function parseFilterStage(shape: StageShape): SliceOp[] | undefined {
     const selection = parseSedArgs(stage.args);
     if (!selection || selection.file !== undefined) return undefined;
     return selection.ops;
+  }
+  return parseContentFilter(stage);
+}
+
+/**
+ * WHY: (item 9) stdin content filters — `grep PATTERN` keeps, `grep -v PATTERN` drops,
+ * WHY: `rg -N PATTERN` keeps. Exact shapes only: no other flag, exactly one positional
+ * WHY: pattern, and a `-`-leading pattern fails closed (there is no `--` separator
+ * WHY: downstream). Patterns arrive through `stageShape`/`literalValue`, so quoting and
+ * WHY: expansion rules match search patterns. `-v`/`-N` are admitted HERE ONLY —
+ * WHY: `parseSearchStage` and `SEARCH_ALLOWED_FLAGS` are untouched, so `grep -v pat f` and
+ * WHY: `rg -N pat f` stay `unsupported-command:*` at source position.
+ */
+function parseContentFilter(stage: StageShape): ViewOp[] | undefined {
+  if (stage.name === "grep") {
+    const [first, second] = stage.args;
+    if (stage.args.length === 1) {
+      if (first === undefined || first.startsWith("-")) return undefined;
+      return [{ kind: "keep", pattern: first }];
+    }
+    if (stage.args.length === 2 && first === "-v") {
+      if (second === undefined || second.startsWith("-")) return undefined;
+      return [{ kind: "drop", pattern: second }];
+    }
+    return undefined;
+  }
+  // WHY: `rg -N` is the one spelling that pins the no-number geometry; bare `rg PAT` keeps
+  // WHY: its default numbering, which the classifier refuses to guess at.
+  if (stage.name === "rg") {
+    const [first, second] = stage.args;
+    if (stage.args.length === 2 && first === "-N") {
+      if (second === undefined || second.startsWith("-")) return undefined;
+      return [{ kind: "keep", pattern: second }];
+    }
+    return undefined;
   }
   return undefined;
 }
@@ -535,7 +587,7 @@ interface SilentSeg {
 interface ViewSeg {
   kind: "view";
   filePath: string;
-  ops: SliceOp[];
+  ops: ViewOp[];
   lineNumbered?: boolean;
 }
 
@@ -607,7 +659,7 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | undefined {
   if (node.commands.length < 2 || node.commands.length > BASH_VIEW_MAX_PIPELINE_STAGES) {
     return undefined;
   }
-  const ops: SliceOp[] = [];
+  const ops: ViewOp[] = [];
   let filePath: string | undefined;
   for (let index = 0; index < node.commands.length; index++) {
     const child = node.commands[index];
@@ -619,12 +671,27 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | undefined {
     if (!stage) return undefined;
     if (index === 0) {
       const source = parseSourceStage(stage);
-      if (!source) return undefined;
-      // WHY: (item 8) the numbered geometry is full-file display only; any downstream
-      // WHY: filter would silently drop numbered rows while claiming full-file leases.
-      if (source.lineNumbered === true) return undefined;
-      filePath = source.filePath;
-      ops.push(...source.ops);
+      if (source) {
+        // WHY: (item 8) the numbered geometry is full-file display only; any downstream
+        // WHY: filter would silently drop numbered rows while claiming full-file leases.
+        // WHY: (item 9) Tier 3 does NOT lift this guard.
+        if (source.lineNumbered === true) return undefined;
+        filePath = source.filePath;
+        ops.push(...source.ops);
+        continue;
+      }
+      // WHY: (item 9) stage 0 may be a search (`grep pat f | head -5`). An UNNUMBERED
+      // WHY: search proves exactly what a `keep` filter proves — the file's lines matching
+      // WHY: the pattern — so it is translated into one and the content seam byte-gates the
+      // WHY: fold against the observed stdout. A NUMBERED search (`grep -n pat f | head -5`)
+      // WHY: must not be admitted: its injected `LINE:` column is DATA the downstream stage
+      // WHY: inspects, so composing it would change the model's own command's row set (and
+      // WHY: inventing a coordinate the model never asked for). It fails closed here, exactly
+      // WHY: like the item-8 numbered-view guard, and NO command is ever rewritten.
+      const searchSource = parseSearchStage(stage);
+      if (!searchSource || searchSource.lineNumbered) return undefined;
+      filePath = searchSource.filePath;
+      ops.push({ kind: "keep", pattern: searchSource.pattern });
       continue;
     }
     const filter = parseFilterStage(stage);
@@ -904,13 +971,47 @@ export function applySliceOps(ops: readonly SliceOp[], lineCount: number): LineI
   return intervals;
 }
 
+/** One stream line in a content fold: its TRUE 1-indexed file line and the text stages see. */
+export interface ContentLine {
+  line: number;
+  text: string;
+}
+
+/**
+ * WHY: (item 9) content-aware fold over `(line, text)` pairs, left in stage order. Slice
+ * WHY: stages reuse the interval algebra over stream positions, mapped back to entries so a
+ * WHY: multi-interval `sed -n -e` stage keeps its exact shape; `keep`/`drop` narrow by
+ * WHY: literal substring. Total and pure — an empty result means the caller passes through
+ * WHY: with zero leases, the same contract `applySliceOps` has.
+ */
+export function applyViewOps(ops: readonly ViewOp[], lines: readonly ContentLine[]): ContentLine[] {
+  let stream = [...lines];
+  for (const op of ops) {
+    if (op.kind === "keep") {
+      stream = stream.filter((entry) => entry.text.includes(op.pattern));
+    } else if (op.kind === "drop") {
+      stream = stream.filter((entry) => !entry.text.includes(op.pattern));
+    } else {
+      const intervals = applySliceOps([op], stream.length);
+      const next: ContentLine[] = [];
+      for (const iv of intervals) next.push(...stream.slice(iv.lo - 1, iv.hi));
+      stream = next;
+    }
+    if (stream.length === 0) return [];
+  }
+  return stream;
+}
+
 /**
  * [spec §3.3] The pure `tool_call` rewrite: inject the line-number flag immediately after the
  * search program name — before any `--` separator, so `grep -- -pat f` becomes
  * `grep -n -- -pat f` — and return the command byte-identically unchanged for everything the
- * allowlist does not admit (a denied flag, a pipeline, a non-search command, or an already
- * numbered search). Zero filesystem access: the rewrite is decided from the AST alone, and the
- * `tool_result` side re-parses the mutated command instead of sharing state with this hook.
+ * allowlist does not admit (a denied flag, a non-search command, or an already numbered
+ * search). WHY no pipeline rewrite (item 9): a search-led pipeline is served from the
+ * model's own command's output — an unnumbered source is translated into a `keep` filter and
+ * a numbered one composes with nothing — so injecting `-n` would change what a downstream
+ * content filter sees. Zero filesystem access: the rewrite is decided from the AST alone, and
+ * the `tool_result` side re-parses the mutated command instead of sharing state with this hook.
  */
 export function withSearchLineNumbers(command: string): string {
   const located: { searchNameEnd?: number } = {};

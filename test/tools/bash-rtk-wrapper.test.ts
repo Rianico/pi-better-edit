@@ -56,7 +56,6 @@ describe("rtk transparent wrapper (ADR-0033 D8)", () => {
     expect(reasonOf("rtk cat -A f")).toBe("unsupported-command:rtk");
     expect(reasonOf("rtk rtk cat f")).toBe("unsupported-command:rtk");
     expect(reasonOf("rtk ls | head -5")).toBe("unsupported-pipeline");
-    expect(reasonOf("cat f | rtk grep x")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f | rtk")).toBe("unsupported-pipeline");
     expect(reasonOf("rtk cat a b")).toBe("unsupported-command:rtk");
   });

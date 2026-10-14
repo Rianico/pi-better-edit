@@ -52,7 +52,7 @@ import {
   SEARCH_MAX_MATCHES,
   SERVED_MAX_LINES,
 } from "../constants.js";
-import type { BashSearch } from "../bash-classifier.js";
+import type { BashSearch, SliceOp, ViewOp } from "../bash-classifier.js";
 import type { LifecycleDeps, ToolContext, ToolResultEvent } from "./types.js";
 
 export type { ToolContext, ToolResultEvent, LifecycleDeps } from "./types.js";
@@ -563,7 +563,25 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: intervals fold over the re-read line count, so an empty selection
       // WHY: (e.g. `head -n 0`, out-of-range `sed` addresses) serves nothing and
       // WHY: passes through — zero leases, zero output change (ADR-0033 D3).
-      const intervals = applySliceOps(ops, deps.visLines(normalized).length);
+      const allLines = deps.visLines(normalized);
+      // WHY: (item 9) a content stage needs the line bytes, so it takes its own seam (row
+      // WHY: leases over the survivors, bounded like a search). The predicate is the type
+      // WHY: refinement that keeps the selector-only path structurally `SliceOp[]`, so the
+      // WHY: interval algebra keeps its exact contract.
+      if (ops.some((op) => op.kind === "keep" || op.kind === "drop")) {
+        return await serveContentView(event, ctx, {
+          filePath,
+          absolutePath,
+          normalized,
+          fileHashes,
+          allLines,
+          ops,
+        });
+      }
+      const intervals = applySliceOps(
+        ops.filter((op): op is SliceOp => op.kind !== "keep" && op.kind !== "drop"),
+        allLines.length,
+      );
       if (intervals.length === 0 || intervals.length > MAX_READ_WINDOWS) return undefined;
       // WHY: [ADR-0033 D9] the observed stdout must byte-match the re-read slice —
       // WHY: this is what makes transparent wrappers (e.g. `rtk`) safe by
@@ -584,7 +602,6 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           ? stdoutBlock[0].text
           : undefined;
       if (typeof stdoutText !== "string") return undefined;
-      const allLines = deps.visLines(normalized);
       const sliceLines: string[] = [];
       for (const iv of intervals) sliceLines.push(...allLines.slice(iv.lo - 1, iv.hi));
       const joinedSlice = sliceLines.join("\n");
@@ -655,6 +672,74 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       console.error("Bash view interception failed:", error);
       return undefined;
     }
+  }
+
+  /**
+   * WHY: (item 9) the content stage's serve seam. A filter's survivors are sparse, so they are
+   * WHY: leased row by row exactly like a search's matches — the same `fmtServedRows` renderer
+   * WHY: and `SEARCH_MAX_MATCHES` bound — rather than borrowing the read tool's window budget,
+   * WHY: which would pass a realistic sparse filter through raw. The whole-stdout byte gate is
+   * WHY: the witness: a literal fold that diverges from what bash printed (a regex pattern, an
+   * WHY: `-i` spelling) fails closed here instead of being served as if it were the command's
+   * WHY: output. Empty survivors pass through, so a filter that matched nothing leases nothing.
+   */
+  async function serveContentView(
+    event: ToolResultEvent,
+    ctx: ToolContext,
+    input: {
+      filePath: string;
+      absolutePath: string;
+      normalized: string;
+      fileHashes: string[];
+      allLines: string[];
+      ops: ViewOp[];
+    },
+  ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
+    const { applyViewOps } = await import("../bash-classifier.js");
+    // WHY: exactly one text block, the same attribution rule every other seam applies.
+    const stdoutBlock = Array.isArray(event.content) ? event.content : undefined;
+    const stdoutText =
+      stdoutBlock?.length === 1 && stdoutBlock[0]?.type === "text"
+        ? stdoutBlock[0].text
+        : undefined;
+    if (typeof stdoutText !== "string") return undefined;
+    const observedText = toLF(stripBOM(stdoutText).text);
+    const survivors = applyViewOps(
+      input.ops,
+      input.allLines.map((text, index) => ({ line: index + 1, text })),
+    );
+    const joined = survivors.map((entry) => entry.text).join("\n");
+    if (observedText !== joined && observedText !== `${joined}\n`) return undefined;
+    if (survivors.length === 0 || survivors.length > SEARCH_MAX_MATCHES) return undefined;
+    const servedRows: ServedRow[] = [];
+    for (const entry of survivors) {
+      const hash = input.fileHashes[entry.line - 1];
+      if (hash === undefined) return undefined;
+      servedRows.push({ position: entry.line - 1, hash });
+    }
+    const sessionKey = deps.sessionKeyFor(ctx);
+    await recordServesBestEffort({
+      sessionKey,
+      path: input.absolutePath,
+      servedRows,
+      contentHash: snapshotHashFor(input.normalized),
+    });
+    notifyServedSpans({
+      filePath: input.absolutePath,
+      spans: servedRowsToSpans(servedRows),
+      source: "auto-read",
+      content: input.normalized,
+    });
+    notifyBashViewOnce(ctx, sessionKey);
+    const count = servedRows.length;
+    return {
+      content: [
+        {
+          type: "text",
+          text: `--- Bash view (hashline anchors) ---\n[${input.filePath} (${count} ${count === 1 ? "line" : "lines"})]\n${fmtServedRows(servedRows, input.allLines)}`,
+        },
+      ],
+    };
   }
 
   /**

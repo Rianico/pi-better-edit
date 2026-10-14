@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
   applySliceOps,
+  applyViewOps,
   BASH_VIEW_MAX_CHAIN_SEGMENTS,
   BASH_VIEW_MAX_PIPELINE_STAGES,
   classifyBashCommand,
@@ -227,10 +228,7 @@ describe("bash-classifier fail-closed matrix", () => {
     // WHY: `rg pat` has no file operand (it would search the cwd recursively), so the search
     // WHY: selector refuses it and the segment falls through to the unsupported-command reason.
     expect(reasonOf("rg pat")).toBe("unsupported-command:rg");
-    expect(reasonOf("cat f | grep x")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f | sort | head")).toBe("unsupported-pipeline");
-    expect(reasonOf("cat f | grep x | head -5")).toBe("unsupported-pipeline");
-    expect(reasonOf("cat f | head -5 | grep x")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f | head -5 | cat")).toBe("unsupported-pipeline");
     expect(reasonOf("cat f |& head")).toBe("unsupported-pipeline");
     expect(reasonOf("cat a b | head")).toBe("unsupported-pipeline");
@@ -493,8 +491,6 @@ describe("bash-classifier search matrix (I1a)", () => {
     expect(reasonOf("grep $P f")).toBe("non-literal-command");
     expect(reasonOf("grep $(cat p) f")).toBe("non-literal-command");
     // WHY: structural shapes (spec §3.2): pipelines, redirections, subshells, compounds, jobs.
-    expect(reasonOf("grep pat f | head -5")).toBe("unsupported-pipeline");
-    expect(reasonOf("cat f | grep x")).toBe("unsupported-pipeline");
     expect(reasonOf("grep pat f > out.txt")).toBe("non-literal-command");
     expect(reasonOf("grep pat f && cat g")).toBe("multi-view");
     expect(reasonOf("grep pat f || cat g")).toBe("non-and-chain");
@@ -948,5 +944,225 @@ describe("bash-classifier numbered viewers (Tier-2 item 8)", () => {
     expect(reasonOf("cat -n f | head -5")).toBe("unsupported-pipeline");
     expect(reasonOf("nl -ba f | head -5")).toBe("unsupported-pipeline");
     expect(reasonOf("cat -n f | cat")).toBe("unsupported-pipeline");
+  });
+});
+
+describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
+  it("admits grep keep / grep -v drop / rg -N keep as downstream stages", () => {
+    expect(viewOf("cat f | grep foo")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "keep", pattern: "foo" }],
+    });
+    expect(viewOf("cat f | grep -v foo")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "drop", pattern: "foo" }],
+    });
+    expect(viewOf("cat f | rg -N foo")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "keep", pattern: "foo" }],
+    });
+    // WHY: patterns arrive through `literalValue`, so quoting carries the exact spelling.
+    expect(viewOf("cat f | grep 'a b'")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "keep", pattern: "a b" }],
+    });
+    expect(viewOf('cat f | grep -v "a b"')).toEqual({
+      filePath: "f",
+      ops: [{ kind: "drop", pattern: "a b" }],
+    });
+    // WHY: the `rtk` unwrap covers content filters exactly as it covers selectors.
+    expect(viewOf("cat f | rtk grep -v foo")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "drop", pattern: "foo" }],
+    });
+    expect(viewOf("cat f | rtk rg -N foo")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "keep", pattern: "foo" }],
+    });
+  });
+
+  it("folds mixed selector and filter stages left in pipeline order", () => {
+    expect(viewOf("cat f | grep foo | head -3")).toEqual({
+      filePath: "f",
+      ops: [
+        { kind: "keep", pattern: "foo" },
+        { kind: "first", n: 3 },
+      ],
+    });
+    expect(viewOf("cat f | grep a | grep -v b | head -5")).toEqual({
+      filePath: "f",
+      ops: [
+        { kind: "keep", pattern: "a" },
+        { kind: "drop", pattern: "b" },
+        { kind: "first", n: 5 },
+      ],
+    });
+    expect(viewOf("head -n 30 f | grep foo | tail -5")).toEqual({
+      filePath: "f",
+      ops: [
+        { kind: "first", n: 30 },
+        { kind: "keep", pattern: "foo" },
+        { kind: "last", n: 5 },
+      ],
+    });
+    expect(viewOf("cat f | sed -n '3,7p' | grep foo")).toEqual({
+      filePath: "f",
+      ops: [
+        { kind: "range", from: 3, to: 7 },
+        { kind: "keep", pattern: "foo" },
+      ],
+    });
+    expect(viewOf("cat f | sed -n -e '3p' -e '7p' | grep foo")).toEqual({
+      filePath: "f",
+      ops: [
+        { kind: "range", from: 3, to: 3 },
+        { kind: "range", from: 7, to: 7 },
+        { kind: "keep", pattern: "foo" },
+      ],
+    });
+  });
+
+  it("translates an unnumbered search source into a keep filter", () => {
+    // WHY: an unnumbered source search proves exactly what a `keep` filter proves, so it is
+    // WHY: translated into one — the model's own command is never rewritten, and the content
+    // WHY: seam byte-gates the fold against the stdout bash actually printed.
+    expect(viewOf("grep pat f | head -5")).toEqual({
+      filePath: "f",
+      ops: [
+        { kind: "keep", pattern: "pat" },
+        { kind: "first", n: 5 },
+      ],
+    });
+    expect(viewOf("rg pat f | rg -N x | tail -2")).toEqual({
+      filePath: "f",
+      ops: [
+        { kind: "keep", pattern: "pat" },
+        { kind: "keep", pattern: "x" },
+        { kind: "last", n: 2 },
+      ],
+    });
+    expect(viewOf("cd sub && grep pat f | head -5")).toEqual({
+      filePath: "f",
+      baseDir: "sub",
+      ops: [
+        { kind: "keep", pattern: "pat" },
+        { kind: "first", n: 5 },
+      ],
+    });
+    // WHY: a NUMBERED search source composes with NOTHING downstream, the item-8 rule — its
+    // WHY: `LINE:` column is data a downstream stage inspects, so admitting it would change the
+    // WHY: model's own command's row set. It fails closed, and no command is rewritten to help.
+    expect(reasonOf("grep -n pat f | head -5")).toBe("unsupported-pipeline");
+    expect(reasonOf("rg --line-number pat f | head -5")).toBe("unsupported-pipeline");
+    expect(reasonOf("rtk grep pat f | head -3")).toBe("unsupported-pipeline");
+    // WHY: `-v`/`-N` stay denied at SOURCE position — the Tier-1 source pins hold, so item 9
+    // WHY: flips no source-flag denial (only cat/head/sed-led pipelines gain filters).
+    expect(reasonOf("grep -v pat f | head -5")).toBe("unsupported-pipeline");
+    expect(reasonOf("rg -N pat f | head -5")).toBe("unsupported-pipeline");
+  });
+
+  it("fails closed on every non-exact filter shape and every un-admitted stage", () => {
+    for (const command of [
+      "cat f | grep",
+      "cat f | grep a b",
+      "cat f | grep -i x",
+      "cat f | grep -F x",
+      "cat f | grep -E x",
+      "cat f | grep -w x",
+      "cat f | grep -e x",
+      "cat f | grep -m 1 x",
+      "cat f | grep -n x",
+      "cat f | grep -c x",
+      "cat f | grep -A2 x",
+      "cat f | grep --invert-match x",
+      "cat f | grep --color=never x",
+      "cat f | grep -v",
+      "cat f | grep -v a b",
+      "cat f | grep -v -x",
+      "cat f | grep -- -x",
+      "cat f | grep -x",
+      "cat f | rg x",
+      "cat f | rg -N",
+      "cat f | rg -N a b",
+      "cat f | rg --no-line-number x",
+      "cat f | rg -i -N x",
+      "cat f | rg -N -x",
+      "cat f | sort",
+      "cat f | tac",
+      "cat f | tee out.txt",
+      "cat f | head -c 5",
+      "cat f | grep $P",
+      "cat f | grep *.ts",
+      // WHY: the structural default — an unknown program needs zero new code to fail closed.
+      "cat f | frobnicate",
+    ]) {
+      expect(reasonOf(command)).toBe("unsupported-pipeline");
+    }
+    // WHY: Tier 3 does NOT lift the item-8 numbered-source guard.
+    expect(reasonOf("cat -n f | grep x")).toBe("unsupported-pipeline");
+    expect(reasonOf("nl -ba f | rg -N x")).toBe("unsupported-pipeline");
+    // WHY: five stages exceed the pipeline ceiling even when every stage parses.
+    expect(reasonOf("cat f | grep a | grep -v b | head -5 | tail -2")).toBe("unsupported-pipeline");
+  });
+
+  it("never mutates a pipeline: the rewrite is bare searches only", () => {
+    // WHY: injecting `-n` into a search-led pipeline would insert a column its downstream stage
+    // WHY: inspects, silently changing the model's own command's row set — so pipelines stay
+    // WHY: byte-identical and the interception is a translate-or-raw decision.
+    expect(withSearchLineNumbers("grep pat f | head -5")).toBe("grep pat f | head -5");
+    expect(withSearchLineNumbers("rg pat f | head -5")).toBe("rg pat f | head -5");
+    expect(withSearchLineNumbers("grep -n pat f | head -5")).toBe("grep -n pat f | head -5");
+    expect(withSearchLineNumbers("cat f | grep x")).toBe("cat f | grep x");
+    expect(withSearchLineNumbers("cat f | grep x | head -5")).toBe("cat f | grep x | head -5");
+    // WHY: the bare single-file search keeps its Tier-1 splice.
+    expect(withSearchLineNumbers("grep pat f")).toBe("grep -n pat f");
+  });
+
+  it("folds applyViewOps left, so subtract-then-head differs from head-then-subtract", () => {
+    const lines = [
+      { line: 1, text: "K1" },
+      { line: 2, text: "K2" },
+      { line: 3, text: "a" },
+      { line: 4, text: "b" },
+    ];
+    // WHY: subtract-then-head keeps file lines 3 and 4 ...
+    expect(
+      applyViewOps(
+        [
+          { kind: "drop", pattern: "K" },
+          { kind: "first", n: 2 },
+        ],
+        lines,
+      ).map((entry) => entry.line),
+    ).toEqual([3, 4]);
+    // WHY: ... while head-then-subtract empties (lines 1 and 2 both contain K).
+    expect(
+      applyViewOps(
+        [
+          { kind: "first", n: 2 },
+          { kind: "drop", pattern: "K" },
+        ],
+        lines,
+      ),
+    ).toEqual([]);
+    // WHY: slice positions are stream-relative AFTER a filter, and never renumber the line.
+    expect(
+      applyViewOps(
+        [
+          { kind: "keep", pattern: "K" },
+          { kind: "last", n: 1 },
+        ],
+        lines,
+      ).map((entry) => entry.line),
+    ).toEqual([2]);
+    expect(
+      applyViewOps(
+        [
+          { kind: "from", n: 2 },
+          { kind: "keep", pattern: "b" },
+        ],
+        lines,
+      ).map((entry) => entry.line),
+    ).toEqual([4]);
   });
 });

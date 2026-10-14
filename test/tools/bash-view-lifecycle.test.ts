@@ -1345,3 +1345,255 @@ describe("bash numbered view lifecycle (Tier-2 item 8)", () => {
     });
   });
 });
+
+describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
+  it("serves cat|grep -v with file-true anchors and leases only the survivors", async () => {
+    await withTempDir("bash-filter-", async (dir) => {
+      const content = "keep1\nDROP\nkeep2\nDROP\nkeep3\n";
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-drop" } };
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        "cat f.txt | grep -v DROP",
+        ctx,
+        "keep1\nkeep2\nkeep3\n",
+      );
+      expect(result).toBeDefined();
+      const rows = rowsOf(result!.content[0]!.text);
+      expect(rows).toHaveLength(3);
+      expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["keep1", "keep2", "keep3"]);
+      // WHY: the dropped line's true anchor was never served, so it grants nothing —
+      // WHY: least privilege, and the witness that the fold binds real file positions.
+      const allHashes = await lineHashes(content, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[1]!, anchor_to: allHashes[1]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "keep2"),
+              anchor_to: anchorFor(rows, "keep2"),
+              text: "KEEP2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("distinguishes subtract-then-head from head-then-subtract", async () => {
+    await withTempDir("bash-filter-", async (dir) => {
+      const content = "K1\nK2\na\nb\n";
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      // WHY: subtract-then-head serves file lines 3 and 4.
+      const first = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-order-a" } };
+      const served = await bashResult(handler!, "cat f.txt | grep -v K | head -2", first, "a\nb\n");
+      expect(served).toBeDefined();
+      expect(rowsOf(served!.content[0]!.text).map((row) => row.split("\u2502")[1])).toEqual([
+        "a",
+        "b",
+      ]);
+      // WHY: head-then-subtract empties (lines 1 and 2 both contain K) — the fold yields
+      // WHY: no windows, so the view passes through with zero leases.
+      const second = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-order-b" } };
+      expect(
+        await bashResult(handler!, "cat f.txt | head -2 | grep -v K", second, ""),
+      ).toBeUndefined();
+    });
+  });
+
+  it("serves an unnumbered search source through the content fold, mutating nothing", async () => {
+    await withTempDir("bash-filter-", async (dir) => {
+      await writeFile(join(dir, "f.txt"), numberedLines(5), "utf-8");
+      const { pi, handlers, handlersAll, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-search-head" } };
+      // WHY: the command reaches bash byte-identical — the source search became a `keep`, so
+      // WHY: whatever the model's own semantics are is what the fold is gated against.
+      const call = { toolName: "bash", input: { command: "grep line f.txt | head -2" } };
+      for (const handler of handlersAll.get("tool_call") ?? []) await handler(call, ctx);
+      expect(call.input.command).toBe("grep line f.txt | head -2");
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        call.input.command,
+        ctx,
+        "line1\nline2\n",
+      );
+      expect(result).toBeDefined();
+      expect(result!.content[0]!.text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(
+        true,
+      );
+      expect(result!.content[0]!.text).toContain("[f.txt (2 lines)]");
+      const rows = rowsOf(result!.content[0]!.text);
+      expect(rows).toHaveLength(2);
+      // WHY: file-true coordinates — the survivors are lines 1 and 2, and both edit cleanly.
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line2"),
+              anchor_to: anchorFor(rows, "line2"),
+              text: "LINE2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("leases sparse survivors row by row instead of passing them through raw", async () => {
+    await withTempDir("bash-filter-", async (dir) => {
+      // WHY: 20 survivors over 40 lines is 20 runs — far past the read tool's 16-window budget —
+      // WHY: yet a search-shaped row lease serves it; the window budget would go raw here.
+      const sparse =
+        Array.from({ length: 40 }, (_, i) => (i % 2 === 0 ? `hit${i + 1}` : "miss")).join("\n") +
+        "\n";
+      await writeFile(join(dir, "f.txt"), sparse, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-sparse" } };
+      const stdout = Array.from({ length: 20 }, (_, i) => `hit${i * 2 + 1}`).join("\n") + "\n";
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        "cat f.txt | grep hit",
+        ctx,
+        stdout,
+      );
+      expect(result).toBeDefined();
+      const rows = rowsOf(result!.content[0]!.text);
+      expect(rows).toHaveLength(20);
+      expect(rows[0]!.split("\u2502")[1]).toBe("hit1");
+      // WHY: the interleaved `miss` line was filtered out, so its true anchor grants nothing.
+      const allHashes = await lineHashes(sparse, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[1]!, anchor_to: allHashes[1]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "hit1"),
+              anchor_to: anchorFor(rows, "hit1"),
+              text: "HIT",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("serves exactly the match cap and passes one row over it through raw", async () => {
+    await withTempDir("bash-filter-", async (dir) => {
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const handler = handlers.get("tool_result");
+      // WHY: SEARCH_MAX_MATCHES bounds the content seam exactly as it bounds a search:
+      // WHY: over-cap passes the WHOLE output raw — never a silently truncated render.
+      const fifty = Array.from({ length: 50 }, (_, i) => `hit${i + 1}`).join("\n") + "\n";
+      await writeFile(join(dir, "f.txt"), fifty, "utf-8");
+      const atCap = await bashResult(
+        handler!,
+        "cat f.txt | grep hit",
+        { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-cap-50" } },
+        fifty,
+      );
+      expect(atCap).toBeDefined();
+      expect(rowsOf(atCap!.content[0]!.text)).toHaveLength(50);
+      const over = `${fifty}hit51\n`;
+      await writeFile(join(dir, "f.txt"), over, "utf-8");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-cap-51" } };
+      expect(await bashResult(handler!, "cat f.txt | grep hit", ctx, over)).toBeUndefined();
+      const allHashes = await lineHashes(over, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[0]!, anchor_to: allHashes[0]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("fails closed on a stdout that the disk fold does not reproduce", async () => {
+    await withTempDir("bash-filter-", async (dir) => {
+      const body = numberedLines(5);
+      await writeFile(join(dir, "f.txt"), body, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-filter-gates" } };
+      // WHY: stdout claims every line survived a `-v line3` while the disk fold removes line3 —
+      // WHY: the whole-stdout byte gate refuses the serve (never a partial grant).
+      expect(await bashResult(handler!, "cat f.txt | grep -v line3", ctx, body)).toBeUndefined();
+      // WHY: and the mirror image — stdout claims everything was filtered while the fold keeps
+      // WHY: four lines — also refused, so "no output" can never be manufactured by the seam.
+      expect(await bashResult(handler!, "cat f.txt | grep -v line3", ctx, "")).toBeUndefined();
+      // WHY: zero leases after every refusal.
+      const allHashes = await lineHashes(body, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[0]!, anchor_to: allHashes[0]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+});
