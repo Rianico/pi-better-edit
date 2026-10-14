@@ -33,6 +33,17 @@ The first successful interception of each session warns once — naming the roun
 saved and the off-ramp — tracked per session key and re-armed by `session_start`;
 later interceptions stay silent.
 
+Amended 2026-10-14 (Issue #82 Tier 3, commits `1507182`, `48dd802`, item 11):
+D10 admits the Tier-3 interception surface — `grep`/`rg` as downstream content
+filters, an unnumbered search source translated into a `keep` filter (so no
+command is ever rewritten for a pipeline), multi-file `[PATTERN, FILE...]` and
+`grep -r`/`rg` directory searches served from `FILE:LINE:content` triples under
+retained per-file leases, the anchorless existence-checked `rg --files` list, and
+the `sort -u` / `uniq` / `wc -l` line-set consumers. D7's search-output and
+multi-file non-goals are superseded for the search class by D10; the numbered
+view shapes (`cat -n` / `nl -ba`) and a numbered search source still compose with
+nothing downstream.
+
 ## Context
 
 Issue #28 (adoption gap): in the explicit-edit benchmark (904 trials, 5,102 bash
@@ -174,6 +185,65 @@ slice-accurate serve needs no new serve infrastructure.
    normalized LF/no-BOM text the anchors describe — comparing raw stdout bytes
    would drop anchors on exactly the CRLF and BOM files the model views through
    bash.
+
+10. **Tier-3 search surface (amendment 2026-10-14, Issue #82).** The search
+    class is a tagged family — single-file, multi-file, recursive and `rg --files`
+    — each with its own stdout geometry and serve seam:
+    - **Content filters.** Downstream `grep PATTERN` (keep), `grep -v PATTERN`
+      (drop) and `rg -N PATTERN` (keep) are admitted in exact shapes only. A
+      file-led pipeline folds them left over `(true line, text)` pairs and serves
+      the survivors row by row (the same `fmtServedRows` renderer and
+      `SEARCH_MAX_MATCHES` bound the search seam uses), gated by a whole-stdout
+      byte comparison against the disk-derived fold. Literal-substring matching is
+      deliberate: a regex pattern, or `-i`/`-w`/`-x`/`-E`/`-F` whose fold diverges
+      from what bash printed, fails that gate and passes through raw.
+    - **Unnumbered search source.** `grep PAT f | head -5` translates the source
+      into one `keep` filter, so the model's command is never rewritten; a
+      NUMBERED source (`grep -n PAT f | head -5`) composes with nothing downstream
+      (the `cat -n`/`nl -ba` rule) because its injected `LINE:` column is data a
+      downstream stage would inspect. `withSearchLineNumbers` keeps splicing bare
+      single/multi/recursive searches only, never a pipeline.
+    - **Multi-file.** `[PATTERN, FILE...]` (2..`BASH_SEARCH_MAX_FILES`) is served
+      from `FILE:LINE:content` triples: every named file must resolve into the
+      operand set, every row's bytes must equal the disk line, and all of it is
+      verified before the first lease. Per-file leases ride the existing
+      `(session, file_path, anchor)` key — no new identity scheme. A repeated
+      `(file, line)` coordinate renders and leases once (the coordinate set is a
+      set). `SEARCH_MAX_MATCHES` is the TOTAL matched-line budget across files.
+    - **Recursive.** `grep -r|-R|--recursive|--dereference-recursive PATTERN DIR`
+      walks one explicit root; `rg PATTERN DIR` (rg recurses by default) is the
+      single-file shape whose directory operand the lifecycle upgrades to the same
+      walk, while a `grep` directory operand stays raw. The walk is bounded by
+      `BASH_SEARCH_WALK_MAX_FILES` (files visited AND directories queued);
+      descent never enters a hidden directory (this covers `.git`) or
+      `node_modules`, and no symlink is ever followed INSIDE the walk (a
+      `Dirent` that is a symlink is never a member); the operand itself is
+      resolved by the shared target resolver — the path authority every other
+      seam uses — so a symlinked operand is walked as its target. The exclusions gate DESCENT only: an explicitly named
+      excluded root is honored.
+    - **`rg --files [DIR]`.** An anchorless, existence-checked path list rendered
+      under `--- Bash file list (no anchors) ---`, bounded by the same
+      distinct-file constant and leasing NOTHING. It is deliberately not routed
+      through `valAccess`/`loadFileKindAndText`: no bytes are read, so there is
+      nothing to witness and nothing to anchor — and because it leases nothing,
+      the anchor-budget rationale behind that constant does not apply, so a
+      repository-wide listing usually passes through raw.
+    - **Line-set consumers.** `sort -u` (dedupe by text, first occurrence's line
+      travels, rows ordered by raw bytes — the C/POSIX collation `sort` uses under
+      `LC_ALL=C`; a host whose locale collation reorders the set folds differently,
+      fails the byte gate and passes through raw), `uniq` (adjacent-only, run-head
+      anchors) and `wc -l` (terminal: the observed count must equal the folded
+      survivor count and ALL counted rows are leased in file order, so the number
+      is checkable by editing a row). These break the monotone-subsequence property
+      on purpose: coordinates stay file-true, but render order is not disk order.
+      The header names the order (`sorted`, `adjacent-dedup`, `count: N`). Bare
+      `sort`, `sort -o`, `sed -i`, `head/tail -c`, `tee` and `tac` stay raw.
+    - **Bounds and refusals.** Beyond any bound (file count, line count, walk
+      files or walk directories) the WHOLE output passes through raw — never a
+      truncated render; a mismatched or unwitnessed row fails the whole serve with
+      zero leases. Accepted boundary: multi-range `sed -n -e A -e B` is COMPOSED,
+      not unioned, by the interval algebra, so it selects nothing and passes
+      through raw.
 
 ## Consequences
 
