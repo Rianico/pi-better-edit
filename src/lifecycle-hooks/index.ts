@@ -61,7 +61,7 @@ import type {
   BashMultiSearch,
   BashRecursiveSearch,
   BashSearch,
-  SliceOp,
+  ContentLine,
   ViewOp,
 } from "../bash-classifier.js";
 
@@ -121,6 +121,21 @@ function singleTextBlock(event: ToolResultEvent): string | undefined {
 }
 
 /**
+ * WHY: (item 11) the header states the order whenever a consumer reordered the stream — a sorted
+ * WHY: or adjacent-deduped render is not the file's own order, and the model reads the header to
+ * WHY: know which coordinates it holds. The order suffix is empty for every order-preserving fold
+ * WHY: (so the item-9/item-10 headers stay byte-identical), and `count` names itself instead.
+ */
+function viewHeader(filePath: string, ops: readonly ViewOp[], count: number): string {
+  if (ops.some((op) => op.kind === "count")) return `[${filePath} (count: ${count})]`;
+  const markers: string[] = [];
+  if (ops.some((op) => op.kind === "sortUnique")) markers.push("sorted");
+  if (ops.some((op) => op.kind === "uniq")) markers.push("adjacent-dedup");
+  const order = markers.length === 0 ? "" : `, ${markers.join(", ")}`;
+  return `[${filePath} (${count} ${count === 1 ? "line" : "lines"}${order})]`;
+}
+
+/**
  * WHY: (item 10) the recursive-walk exclusion list, stated rather than inferred: no directory
  * whose name is hidden (leading `.`, which covers `.git`) and none named `node_modules` is ever
  * descended into. Exclusions gate DESCENT only — an explicitly named operand is still honored,
@@ -137,6 +152,11 @@ function isWalkableDirName(name: string): boolean {
 const SEARCH_STDOUT_LINE = /^(\d+):([\s\S]*)$/;
 /** `cat -n`/`nl -ba` stdout row: blank-padded 1-indexed number, a tab, the line content. */
 const NUMBERED_STDOUT_LINE = /^\s*(\d+)\t([\s\S]*)$/;
+/**
+ * WHY: (item 11) `wc -l` stdout is the count ALONE, with the surrounding spaces GNU pads a piped
+ * WHY: input with (`12\n`, `   12\n`); every other shape fails the count gate.
+ */
+const COUNT_STDOUT_LINE = /^\s*(\d+)\s*$/;
 
 /**
  * Parse the `LINE:content` rows of a line-numbered single-file search. Fails closed (`undefined`)
@@ -578,7 +598,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       return undefined;
     }
     try {
-      const { classifyBashCommand, applySliceOps } = await import("../bash-classifier.js");
+      const { classifyBashCommand, applySliceOps, isContentOp, isSliceOp } =
+        await import("../bash-classifier.js");
       const classification = classifyBashCommand(command);
       if (classification.kind === "pureSearch") {
         return await handleBashSearch(event, ctx, classification.search);
@@ -637,7 +658,9 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       // WHY: leases over the survivors, bounded like a search). The predicate is the type
       // WHY: refinement that keeps the selector-only path structurally `SliceOp[]`, so the
       // WHY: interval algebra keeps its exact contract.
-      if (ops.some((op) => op.kind === "keep" || op.kind === "drop")) {
+      // WHY: (item 11) the line-set consumers take this same seam: the predicate is the single
+      // WHY: split over `ViewOp`, so a new content op routes here by construction.
+      if (ops.some(isContentOp)) {
         return await serveContentView(event, ctx, {
           filePath,
           absolutePath,
@@ -647,10 +670,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           ops,
         });
       }
-      const intervals = applySliceOps(
-        ops.filter((op): op is SliceOp => op.kind !== "keep" && op.kind !== "drop"),
-        allLines.length,
-      );
+      const intervals = applySliceOps(ops.filter(isSliceOp), allLines.length);
       if (intervals.length === 0 || intervals.length > MAX_READ_WINDOWS) return undefined;
       // WHY: [ADR-0033 D9] the observed stdout must byte-match the re-read slice —
       // WHY: this is what makes transparent wrappers (e.g. `rtk`) safe by
@@ -983,6 +1003,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
    * WHY: the witness: a literal fold that diverges from what bash printed (a regex pattern, an
    * WHY: `-i` spelling) fails closed here instead of being served as if it were the command's
    * WHY: output. Empty survivors pass through, so a filter that matched nothing leases nothing.
+   *
+   * WHY: (item 11) the same seam serves the line-SET consumers. `sort -u`/`uniq` reorder the
+   * WHY: rows, so the header names the order while every lease keeps the true file coordinate;
+   * WHY: `wc -l` is terminal and takes the count gate instead of the byte gate, leasing EVERY
+   * WHY: counted row in file order so the number it printed is checkable by editing a row.
    */
   async function serveContentView(
     event: ToolResultEvent,
@@ -997,23 +1022,36 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     },
   ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
     const { applyViewOps } = await import("../bash-classifier.js");
-    // WHY: exactly one text block, the same attribution rule every other seam applies.
-    const stdoutBlock = Array.isArray(event.content) ? event.content : undefined;
-    const stdoutText =
-      stdoutBlock?.length === 1 && stdoutBlock[0]?.type === "text"
-        ? stdoutBlock[0].text
-        : undefined;
-    if (typeof stdoutText !== "string") return undefined;
+    const stdoutText = singleTextBlock(event);
+    if (stdoutText === undefined) return undefined;
     const observedText = toLF(stripBOM(stdoutText).text);
     const survivors = applyViewOps(
       input.ops,
       input.allLines.map((text, index) => ({ line: index + 1, text })),
     );
-    const joined = survivors.map((entry) => entry.text).join("\n");
-    if (observedText !== joined && observedText !== `${joined}\n`) return undefined;
+    // WHY: empty survivors and over-cap output both pass the WHOLE stdout through with zero
+    // WHY: leases: `SEARCH_MAX_MATCHES` bounds a content stage exactly as it bounds a search, and
+    // WHY: an empty fold has no row to lease — never a truncated or invented render.
     if (survivors.length === 0 || survivors.length > SEARCH_MAX_MATCHES) return undefined;
+    let rows: ContentLine[];
+    if (input.ops.some((op) => op.kind === "count")) {
+      // WHY: (item 11) `wc -l` is terminal and its observed stdout is the NUMBER, not the
+      // WHY: content, so the count REPLACES the whole-stdout byte gate. A count the fold does
+      // WHY: not produce refuses the whole serve with zero leases.
+      const observed = COUNT_STDOUT_LINE.exec(observedText);
+      if (observed === null || Number(observed[1]) !== survivors.length) return undefined;
+      // WHY: the counted rows render in FILE order — the number is checkable only against stable
+      // WHY: coordinates, not against the stream order a preceding consumer established.
+      rows = [...survivors].sort((left, right) => left.line - right.line);
+    } else {
+      // WHY: [ADR-0033 D9] the whole-stdout byte gate against the disk-derived fold; a fold
+      // WHY: that diverges from what bash printed fails closed here.
+      const joined = survivors.map((entry) => entry.text).join("\n");
+      if (observedText !== joined && observedText !== `${joined}\n`) return undefined;
+      rows = survivors;
+    }
     const servedRows: ServedRow[] = [];
-    for (const entry of survivors) {
+    for (const entry of rows) {
       const hash = input.fileHashes[entry.line - 1];
       if (hash === undefined) return undefined;
       servedRows.push({ position: entry.line - 1, hash });
@@ -1037,7 +1075,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       content: [
         {
           type: "text",
-          text: `--- Bash view (hashline anchors) ---\n[${input.filePath} (${count} ${count === 1 ? "line" : "lines"})]\n${fmtServedRows(servedRows, input.allLines)}`,
+          text: `--- Bash view (hashline anchors) ---\n${viewHeader(input.filePath, input.ops, count)}\n${fmtServedRows(servedRows, input.allLines)}`,
         },
       ],
     };

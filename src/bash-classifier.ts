@@ -15,6 +15,7 @@
 import { parse } from "unbash";
 import type { AndOr, Command, ParsedScript, Pipeline, Statement, Word } from "unbash";
 import { BASH_SEARCH_MAX_FILES } from "./constants.js";
+import { assertNever } from "./utils.js";
 
 /** Maximum pipeline stages in one view segment (source + filters). */
 export const BASH_VIEW_MAX_PIPELINE_STAGES = 4;
@@ -40,8 +41,21 @@ export type SliceOp =
  * WHY: `(true line, stream text)` pairs left to right and byte-gates the recomputed output
  * WHY: against the observed stdout. Matching is literal substring, so a regex-looking
  * WHY: pattern simply fails that gate and passes through raw.
+ *
+ * WHY: (item 11) `sortUnique`, `uniq` and `count` are the line-SET consumers. `sortUnique`
+ * WHY: (`sort -u`) dedupes by text keeping the FIRST occurrence's true line, then orders by
+ * WHY: raw bytes; `uniq` collapses ADJACENT equal runs keeping each run head; `count`
+ * WHY: (`wc -l`) is terminal — it consumes the whole stream and emits its length, so
+ * WHY: `parseViewSegment` refuses any stage after it. The first two reorder the stream, which
+ * WHY: is why the render states the order in its header while every lease keeps the true file
+ * WHY: coordinate it was folded from.
  */
-type ContentOp = { kind: "keep"; pattern: string } | { kind: "drop"; pattern: string };
+type ContentOp =
+  | { kind: "keep"; pattern: string }
+  | { kind: "drop"; pattern: string }
+  | { kind: "sortUnique" }
+  | { kind: "uniq" }
+  | { kind: "count" };
 
 /**
  * WHY: (item 9) one ordered pipeline stage. A single fold-left array keeps `grep|head` and
@@ -49,6 +63,35 @@ type ContentOp = { kind: "keep"; pattern: string } | { kind: "drop"; pattern: st
  * WHY: Tier-1/2 `toEqual` literal still matches.
  */
 export type ViewOp = SliceOp | ContentOp;
+
+/**
+ * WHY: (item 11) the union split is a total function, not a hand-rolled predicate: every arm is
+ * WHY: named here, so a new `ViewOp` kind fails `pnpm run typecheck` at this switch instead of
+ * WHY: being classified as a slice and folded through the interval algebra by accident.
+ */
+export function isContentOp(viewOp: ViewOp): viewOp is ContentOp {
+  switch (viewOp.kind) {
+    case "keep":
+    case "drop":
+    case "sortUnique":
+    case "uniq":
+    case "count":
+      return true;
+    case "first":
+    case "last":
+    case "dropLast":
+    case "from":
+    case "range":
+      return false;
+    default:
+      return assertNever(viewOp);
+  }
+}
+
+/** The complement of `isContentOp`, derived from it so the split has one authority. */
+export function isSliceOp(viewOp: ViewOp): viewOp is SliceOp {
+  return !isContentOp(viewOp);
+}
 
 /** Ordered disjoint 1-indexed inclusive line intervals over `[1..L]`. */
 export interface LineInterval {
@@ -618,6 +661,19 @@ function parseContentFilter(stage: StageShape): ViewOp[] | undefined {
     }
     return undefined;
   }
+  // WHY: (item 11) the three line-set consumers, each admitted in exactly ONE spelling: `sort
+  // WHY: -u` is the dedupe (bare `sort`, `-n`, `-r`, `-o FILE`, a file operand and every
+  // WHY: combined flag fail closed), `uniq` takes no flag or operand (adjacent-only, literal),
+  // WHY: and `wc -l` is the count (bare `wc`, `-c`, `-w` and any operand fail closed).
+  if (stage.name === "sort") {
+    return stage.args.length === 1 && stage.args[0] === "-u" ? [{ kind: "sortUnique" }] : undefined;
+  }
+  if (stage.name === "uniq") {
+    return stage.args.length === 0 ? [{ kind: "uniq" }] : undefined;
+  }
+  if (stage.name === "wc") {
+    return stage.args.length === 1 && stage.args[0] === "-l" ? [{ kind: "count" }] : undefined;
+  }
   return undefined;
 }
 
@@ -803,6 +859,11 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | undefined {
     if (!filter) return undefined;
     ops.push(...filter);
   }
+  // WHY: (item 11) `wc -l` is TERMINAL: its stdout is the count, so nothing may consume the
+  // WHY: rows after it (`... | wc -l | head -2` would head a number). The classifier refuses
+  // WHY: the whole pipeline rather than admit a stage order the fold cannot model.
+  const countAt = ops.findIndex((op) => op.kind === "count");
+  if (countAt !== -1 && countAt !== ops.length - 1) return undefined;
   if (filePath === undefined || ops.length === 0) return undefined;
   return { kind: "view", filePath, ops };
 }
@@ -1102,23 +1163,81 @@ export interface ContentLine {
  * WHY: multi-interval `sed -n -e` stage keeps its exact shape; `keep`/`drop` narrow by
  * WHY: literal substring. Total and pure — an empty result means the caller passes through
  * WHY: with zero leases, the same contract `applySliceOps` has.
+ *
+ * WHY: (item 11) the fold is a `switch` over the whole union with no fall-through slice arm, so
+ * WHY: the three line-set consumers are handled where they are declared and an unknown kind is
+ * WHY: refused (`assertNever`) instead of silently degrading to a slice.
  */
 export function applyViewOps(ops: readonly ViewOp[], lines: readonly ContentLine[]): ContentLine[] {
   let stream = [...lines];
   for (const op of ops) {
-    if (op.kind === "keep") {
-      stream = stream.filter((entry) => entry.text.includes(op.pattern));
-    } else if (op.kind === "drop") {
-      stream = stream.filter((entry) => !entry.text.includes(op.pattern));
-    } else {
-      const intervals = applySliceOps([op], stream.length);
-      const next: ContentLine[] = [];
-      for (const iv of intervals) next.push(...stream.slice(iv.lo - 1, iv.hi));
-      stream = next;
+    switch (op.kind) {
+      case "keep":
+        stream = stream.filter((entry) => entry.text.includes(op.pattern));
+        break;
+      case "drop":
+        stream = stream.filter((entry) => !entry.text.includes(op.pattern));
+        break;
+      case "sortUnique":
+        stream = sortUniqueLines(stream);
+        break;
+      case "uniq":
+        stream = collapseAdjacentRuns(stream);
+        break;
+      case "count":
+        // WHY: (item 11) `wc -l` is terminal: the stream IS the counted set and its length is
+        // WHY: the number, so this arm leaves the rows for the lifecycle layer to lease. No op
+        // WHY: folds after it (`parseViewSegment` refuses one).
+        break;
+      case "first":
+      case "last":
+      case "dropLast":
+      case "from":
+      case "range": {
+        const intervals = applySliceOps([op], stream.length);
+        const next: ContentLine[] = [];
+        for (const iv of intervals) next.push(...stream.slice(iv.lo - 1, iv.hi));
+        stream = next;
+        break;
+      }
+      default:
+        // WHY: (item 11) an unknown op kind must never silently become a slice; the `never`
+        // WHY: binding is what keeps `pnpm run typecheck` exhaustive over `ViewOp`.
+        return assertNever(op);
     }
     if (stream.length === 0) return [];
   }
   return stream;
+}
+
+/**
+ * WHY: (item 11) `sort -u` dedupes by text keeping the FIRST occurrence's true line — the
+ * WHY: anchor that travels with the row is a real file coordinate, never a renumbered one —
+ * WHY: then orders by text. The order is raw bytes (the C locale `sort` uses), never a locale
+ * WHY: collation, which would reorder case and accents per host environment.
+ */
+function sortUniqueLines(stream: ContentLine[]): ContentLine[] {
+  const firstByText = new Map<string, ContentLine>();
+  for (const entry of stream) {
+    if (!firstByText.has(entry.text)) firstByText.set(entry.text, entry);
+  }
+  return [...firstByText.values()].sort((left, right) =>
+    Buffer.compare(Buffer.from(left.text, "utf8"), Buffer.from(right.text, "utf8")),
+  );
+}
+
+/**
+ * WHY: (item 11) `uniq` is ADJACENT-only and literal: each run of equal text collapses to its
+ * WHY: head, so the same text may survive at two non-adjacent positions, each keeping its own
+ * WHY: true line. Sorting is never part of it.
+ */
+function collapseAdjacentRuns(stream: ContentLine[]): ContentLine[] {
+  const out: ContentLine[] = [];
+  for (const entry of stream) {
+    const head = out[out.length - 1];
+    if (head === undefined || head.text !== entry.text) out.push(entry);
+  }
+  return out;
 }
 
 /**

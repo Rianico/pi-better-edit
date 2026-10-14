@@ -1850,3 +1850,375 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
     });
   });
 });
+
+describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
+  it("serves `sort -u` sorted, holding each surviving line's original anchor", async () => {
+    await withTempDir("bash-lineset-", async (dir) => {
+      const content = "beta\nalpha\nbeta\ngamma\n";
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-sortu" } };
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        "cat f.txt | sort -u",
+        ctx,
+        "alpha\nbeta\ngamma\n",
+      );
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      expect(text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(true);
+      expect(text).toContain("[f.txt (3 lines, sorted)]");
+      const rows = rowsOf(text);
+      expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["alpha", "beta", "gamma"]);
+      // WHY: coordinates travel WITH the row — the surviving `beta` is file line 1 (the FIRST
+      // WHY: occurrence), so it holds line 1's anchor even though it renders second, and the
+      // WHY: duplicate line 3 was deduped away so its anchor was never leased.
+      const allHashes = await lineHashes(content, join(dir, "f.txt"));
+      expect(anchorFor(rows, "beta")).toBe(allHashes[0]);
+      expect(anchorFor(rows, "alpha")).toBe(allHashes[1]);
+      expect(anchorFor(rows, "gamma")).toBe(allHashes[3]);
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[2]!, anchor_to: allHashes[2]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "beta"),
+              anchor_to: anchorFor(rows, "beta"),
+              text: "BETA",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("collapses adjacent runs only for `uniq`, keeping each run head's own anchor", async () => {
+    await withTempDir("bash-lineset-", async (dir) => {
+      const content = "x\nx\ny\nx\n";
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-uniq" } };
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        "cat f.txt | uniq",
+        ctx,
+        "x\ny\nx\n",
+      );
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      expect(text).toContain("[f.txt (3 lines, adjacent-dedup)]");
+      const rows = rowsOf(text);
+      expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["x", "y", "x"]);
+      // WHY: `uniq` never sorts — the SECOND `x` run (file line 4) survives beside the first,
+      // WHY: and each run head carries its own true line. Line 2 was the collapsed twin.
+      const allHashes = await lineHashes(content, join(dir, "f.txt"));
+      expect(rows[0]!.split("\u2502")[0]).toBe(allHashes[0]);
+      expect(rows[1]!.split("\u2502")[0]).toBe(allHashes[2]);
+      expect(rows[2]!.split("\u2502")[0]).toBe(allHashes[3]);
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[1]!, anchor_to: allHashes[1]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "y"),
+              anchor_to: anchorFor(rows, "y"),
+              text: "Y",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("serves `wc -l` as a checkable count over every counted row, in file order", async () => {
+    await withTempDir("bash-lineset-", async (dir) => {
+      const content = numberedLines(5);
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-count" } };
+      // WHY: GNU pads the count when the input is a pipe, so the observed bytes are "   4\n".
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        "cat f.txt | grep -v line3 | wc -l",
+        ctx,
+        "   4\n",
+      );
+      expect(result).toBeDefined();
+      const text = result!.content[0]!.text;
+      expect(text).toContain("[f.txt (count: 4)]");
+      const rows = rowsOf(text);
+      expect(rows.map((row) => row.split("\u2502")[1])).toEqual([
+        "line1",
+        "line2",
+        "line4",
+        "line5",
+      ]);
+      // WHY: the number is checkable because EVERY counted row is leased from the re-read
+      // WHY: snapshot (file order, true coordinates) while the dropped line grants nothing.
+      const allHashes = await lineHashes(content, join(dir, "f.txt"));
+      expect(rows[3]!.split("\u2502")[0]).toBe(allHashes[4]);
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[2]!, anchor_to: allHashes[2]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line4"),
+              anchor_to: anchorFor(rows, "line4"),
+              text: "LINE4",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("accepts both `wc -l` output spellings and refuses any other number", async () => {
+    await withTempDir("bash-lineset-", async (dir) => {
+      const content = numberedLines(3);
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const handler = handlers.get("tool_result");
+      const run = (session: string, stdout: string) =>
+        bashResult(
+          handler!,
+          "cat f.txt | wc -l",
+          { cwd: dir, sessionManager: { getSessionId: () => session } },
+          stdout,
+        );
+      const plain = await run("bash-lineset-count-plain", "3\n");
+      expect(plain).toBeDefined();
+      expect(plain!.content[0]!.text).toContain("[f.txt (count: 3)]");
+      expect(await run("bash-lineset-count-padded", "  3\n")).toBeDefined();
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-count-gates" } };
+      // WHY: every other observed shape refuses the WHOLE serve with zero leases — a number the
+      // WHY: fold does not produce, a trailing extra field, a non-numeric line, a negative and
+      // WHY: an empty stdout (the count gate never manufactures a number).
+      for (const stdout of ["4\n", "3 4\n", "three\n", "-3\n", ""]) {
+        expect(await bashResult(handler!, "cat f.txt | wc -l", ctx, stdout)).toBeUndefined();
+      }
+      const allHashes = await lineHashes(content, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[0]!, anchor_to: allHashes[0]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("folds stage order: sort-then-head differs from head-then-sort", async () => {
+    await withTempDir("bash-lineset-", async (dir) => {
+      const content = "c\na\nb\na\n";
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers } = makeFakePi();
+      register(pi);
+      const handler = handlers.get("tool_result");
+      const allHashes = await lineHashes(content, join(dir, "f.txt"));
+      // WHY: the sorted stream is what the NEXT stage sees, so sort-then-head keeps a(2) and
+      // WHY: b(3) while head-then-sort keeps c(1) and a(2) — same command words, other rows.
+      const sortedFirst = await bashResult(
+        handler!,
+        "cat f.txt | sort -u | head -2",
+        { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-order-a" } },
+        "a\nb\n",
+      );
+      expect(sortedFirst).toBeDefined();
+      const sortedRows = rowsOf(sortedFirst!.content[0]!.text);
+      expect(sortedRows.map((row) => row.split("\u2502")[1])).toEqual(["a", "b"]);
+      expect(sortedRows[0]!.split("\u2502")[0]).toBe(allHashes[1]);
+      expect(sortedRows[1]!.split("\u2502")[0]).toBe(allHashes[2]);
+      const headFirst = await bashResult(
+        handler!,
+        "cat f.txt | head -2 | sort -u",
+        { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-order-b" } },
+        "a\nc\n",
+      );
+      expect(headFirst).toBeDefined();
+      const headRows = rowsOf(headFirst!.content[0]!.text);
+      expect(headRows.map((row) => row.split("\u2502")[1])).toEqual(["a", "c"]);
+      expect(headRows[0]!.split("\u2502")[0]).toBe(allHashes[1]);
+      expect(headRows[1]!.split("\u2502")[0]).toBe(allHashes[0]);
+      // WHY: the named pair agrees — dropping then sorting is the same set in the same order as
+      // WHY: sorting then dropping — and both keep b(3) and c(1) as the surviving rows.
+      for (const [session, command] of [
+        ["bash-lineset-order-c", "cat f.txt | grep -v a | sort -u"],
+        ["bash-lineset-order-d", "cat f.txt | sort -u | grep -v a"],
+      ] as const) {
+        const served = await bashResult(
+          handler!,
+          command,
+          { cwd: dir, sessionManager: { getSessionId: () => session } },
+          "b\nc\n",
+        );
+        expect(served).toBeDefined();
+        const rows = rowsOf(served!.content[0]!.text);
+        expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["b", "c"]);
+        expect(rows[0]!.split("\u2502")[0]).toBe(allHashes[2]);
+        expect(rows[1]!.split("\u2502")[0]).toBe(allHashes[0]);
+      }
+    });
+  });
+
+  it("passes a consumer over the row cap through raw with zero leases", async () => {
+    await withTempDir("bash-lineset-", async (dir) => {
+      const over =
+        Array.from(
+          { length: SEARCH_MAX_MATCHES + 1 },
+          (_, i) => `u${String(i).padStart(3, "0")}`,
+        ).join("\n") + "\n";
+      await writeFile(join(dir, "f.txt"), over, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const handler = handlers.get("tool_result");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-cap" } };
+      // WHY: SEARCH_MAX_MATCHES bounds a consumer exactly as it bounds a search or filter — one
+      // WHY: row over the cap passes the WHOLE output through raw, never a truncated render.
+      expect(await bashResult(handler!, "cat f.txt | sort -u", ctx, over)).toBeUndefined();
+      expect(
+        await bashResult(handler!, "cat f.txt | wc -l", ctx, `${SEARCH_MAX_MATCHES + 1}\n`),
+      ).toBeUndefined();
+      const allHashes = await lineHashes(over, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[0]!, anchor_to: allHashes[0]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("refuses a render the disk fold does not reproduce, with zero leases", async () => {
+    await withTempDir("bash-lineset-", async (dir) => {
+      const content = "beta\nalpha\nbeta\n";
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const handler = handlers.get("tool_result");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-gates" } };
+      // WHY: each of these claims a row set the disk fold does not produce — a foreign row, the
+      // WHY: file's own order instead of byte order, and a duplicated survivor.
+      for (const stdout of ["alpha\ngamma\n", "beta\nalpha\n", "alpha\nalpha\nbeta\n"]) {
+        expect(await bashResult(handler!, "cat f.txt | sort -u", ctx, stdout)).toBeUndefined();
+      }
+      const allHashes = await lineHashes(content, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[0]!, anchor_to: allHashes[0]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("passes an empty fold through raw instead of rendering a count over no rows", async () => {
+    await withTempDir("bash-lineset-", async (dir) => {
+      const content = numberedLines(5);
+      await writeFile(join(dir, "f.txt"), content, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const editTool = getTool("edit");
+      const handler = handlers.get("tool_result");
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-empty" } };
+      // WHY: a `wc -l` whose fold kept nothing has no row to lease, so the whole stdout passes
+      // WHY: through — a bare `[f.txt (count: 0)]` header would claim a ledger it cannot honour.
+      expect(
+        await bashResult(handler!, "cat f.txt | grep -v line | wc -l", ctx, "0\n"),
+      ).toBeUndefined();
+      expect(
+        await bashResult(handler!, "cat f.txt | grep -v line | sort -u", ctx, ""),
+      ).toBeUndefined();
+      const allHashes = await lineHashes(content, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[0]!, anchor_to: allHashes[0]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+});

@@ -8,6 +8,7 @@ import {
   withSearchLineNumbers,
   type BashSearch,
   type BashView,
+  type ViewOp,
 } from "../../src/bash-classifier";
 
 function viewOf(command: string): BashView {
@@ -1252,5 +1253,190 @@ describe("bash-classifier multi-file, recursive and --files (Tier-3 item 10)", (
     // WHY: a path list has no match rows — nothing to number and no geometry to parse.
     expect(withSearchLineNumbers("rg --files")).toBe("rg --files");
     expect(withSearchLineNumbers("rg --files dir")).toBe("rg --files dir");
+  });
+});
+
+describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
+  it("admits exactly `sort -u`, `uniq` and `wc -l` as downstream stages", () => {
+    expect(viewOf("cat f | sort -u")).toEqual({ filePath: "f", ops: [{ kind: "sortUnique" }] });
+    expect(viewOf("cat f | uniq")).toEqual({ filePath: "f", ops: [{ kind: "uniq" }] });
+    expect(viewOf("cat f | wc -l")).toEqual({ filePath: "f", ops: [{ kind: "count" }] });
+    // WHY: the `rtk` unwrap covers line-set consumers exactly as it covers selectors and filters.
+    expect(viewOf("cat f | rtk sort -u")).toEqual({ filePath: "f", ops: [{ kind: "sortUnique" }] });
+    expect(viewOf("cat f | rtk uniq")).toEqual({ filePath: "f", ops: [{ kind: "uniq" }] });
+    expect(viewOf("cat f | rtk wc -l")).toEqual({ filePath: "f", ops: [{ kind: "count" }] });
+    expect(viewOf("cd sub && cat f | sort -u")).toEqual({
+      filePath: "f",
+      baseDir: "sub",
+      ops: [{ kind: "sortUnique" }],
+    });
+    expect(viewOf("head -n 30 f | uniq")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "first", n: 30 }, { kind: "uniq" }],
+    });
+  });
+
+  it("keeps stage order for every composition with the existing ops", () => {
+    expect(viewOf("cat f | grep x | sort -u")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "keep", pattern: "x" }, { kind: "sortUnique" }],
+    });
+    expect(viewOf("cat f | sort -u | head -2")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "sortUnique" }, { kind: "first", n: 2 }],
+    });
+    expect(viewOf("cat f | uniq | wc -l")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "uniq" }, { kind: "count" }],
+    });
+    expect(viewOf("cat f | grep -v x | wc -l")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "drop", pattern: "x" }, { kind: "count" }],
+    });
+    expect(viewOf("cat f | sed -n '3,7p' | sort -u")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "range", from: 3, to: 7 }, { kind: "sortUnique" }],
+    });
+    expect(viewOf("cat f | sort -u | uniq")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "sortUnique" }, { kind: "uniq" }],
+    });
+    // WHY: an unnumbered search source is the `keep` filter, so it composes with a consumer too.
+    expect(viewOf("grep pat f | sort -u")).toEqual({
+      filePath: "f",
+      ops: [{ kind: "keep", pattern: "pat" }, { kind: "sortUnique" }],
+    });
+  });
+
+  it("denies every growth spelling around the three consumers", () => {
+    for (const command of [
+      // bare/flagged/operand `sort`, its `-o` write form and combined flags
+      "cat f | sort",
+      "cat f | sort -n",
+      "cat f | sort -r",
+      "cat f | sort -u -n",
+      "cat f | sort -o out.txt",
+      "cat f | sort g",
+      // `uniq` with any flag or operand
+      "cat f | uniq -c",
+      "cat f | uniq -d",
+      "cat f | uniq -u",
+      "cat f | uniq extra",
+      // `wc` in every spelling but `-l` alone
+      "cat f | wc",
+      "cat f | wc -c",
+      "cat f | wc -w",
+      "cat f | wc -l f",
+      // `wc -l` is terminal — nothing may consume the count after it
+      "cat f | wc -l | head -2",
+      "cat f | wc -l | sort -u",
+      // any pipe program not explicitly admitted stays raw
+      "cat f | sort -u | frobnicate",
+      "cat f | frobnicate",
+      // the denied-growth list: context, output-shaping and count flags
+      "cat f | grep -A 2 x",
+      "cat f | grep -B 1 x",
+      "cat f | grep -C 1 x",
+      "cat f | grep -c x",
+      "cat f | grep -l x",
+      "cat f | grep -o x",
+      "cat f | grep -q x",
+      "cat f | sed -i 's/a/b/'",
+      "cat f | head -c 5",
+      "cat f | tail -c 5",
+      "cat f | tee out.txt",
+      "cat f | tac",
+      // a numbered view composes with nothing downstream (item-8 guard, not lifted)
+      "cat -n f | sort -u",
+      "cat -n f | grep x | sort -u",
+      "nl -ba f | wc -l",
+      // a path list has no lines to count
+      "rg --files | wc -l",
+    ]) {
+      expect(reasonOf(command)).toBe("unsupported-pipeline");
+    }
+    // WHY: a line-set consumer with no source file is not a view at all, and `git grep`/`git show`
+    // WHY: are outside the two intercepted programs (their growth stays denied).
+    expect(reasonOf("sort -u f")).toBe("unsupported-command:sort");
+    expect(reasonOf("uniq f")).toBe("unsupported-command:uniq");
+    expect(reasonOf("wc -l f")).toBe("unsupported-command:wc");
+    expect(reasonOf("git grep pat")).toBe("unsupported-command:git");
+    expect(reasonOf("git show HEAD:f")).toBe("unsupported-command:git");
+  });
+
+  it("folds sort -u, uniq and wc -l over (true line, text) pairs", () => {
+    const lines = [
+      { line: 1, text: "b" },
+      { line: 2, text: "a" },
+      { line: 3, text: "b" },
+      { line: 4, text: "a" },
+      { line: 5, text: "c" },
+    ];
+    // WHY: `sort -u` dedupes by text keeping the FIRST occurrence's line, then orders by text —
+    // WHY: the surviving `a` is line 2 and the surviving `b` is line 1, never a renumbered row.
+    expect(applyViewOps([{ kind: "sortUnique" }], lines)).toEqual([
+      { line: 2, text: "a" },
+      { line: 1, text: "b" },
+      { line: 5, text: "c" },
+    ]);
+    // WHY: `uniq` is ADJACENT-only and literal: the same text survives at two non-adjacent
+    // WHY: positions, and each run head keeps its own true line.
+    expect(applyViewOps([{ kind: "uniq" }], lines)).toEqual(lines);
+    expect(
+      applyViewOps(
+        [{ kind: "uniq" }],
+        [
+          { line: 1, text: "x" },
+          { line: 2, text: "x" },
+          { line: 3, text: "y" },
+          { line: 4, text: "x" },
+        ],
+      ),
+    ).toEqual([
+      { line: 1, text: "x" },
+      { line: 3, text: "y" },
+      { line: 4, text: "x" },
+    ]);
+    // WHY: a slice after a consumer is stream-relative over the REORDERED stream.
+    expect(applyViewOps([{ kind: "sortUnique" }, { kind: "first", n: 2 }], lines)).toEqual([
+      { line: 2, text: "a" },
+      { line: 1, text: "b" },
+    ]);
+    // WHY: `wc -l` is terminal — the fold returns the COUNTED SET, whose length is the number.
+    expect(applyViewOps([{ kind: "count" }], lines)).toEqual(lines);
+    expect(applyViewOps([{ kind: "drop", pattern: "a" }, { kind: "count" }], lines)).toHaveLength(
+      3,
+    );
+    // WHY: raw byte order, never locale collation — `Z` (0x5A) precedes `a` (0x61).
+    expect(
+      applyViewOps(
+        [{ kind: "sortUnique" }],
+        [
+          { line: 1, text: "a" },
+          { line: 2, text: "Z" },
+        ],
+      ).map((entry) => entry.text),
+    ).toEqual(["Z", "a"]);
+  });
+
+  it("throws on an unknown op kind instead of degrading it to a slice", () => {
+    // WHY: the fold is exhaustive over `ViewOp`: an op kind the runtime does not know must never
+    // WHY: silently become a slice and re-serve the whole file as if it were the model's output.
+    expect(() =>
+      applyViewOps([{ kind: "unknown-op" } as unknown as ViewOp], [{ line: 1, text: "a" }]),
+    ).toThrow();
+  });
+
+  it("never mutates a line-set consumer command (no rewrite)", () => {
+    for (const command of [
+      "cat f | sort -u",
+      "cat f | uniq",
+      "cat f | wc -l",
+      "cat f | grep x | sort -u",
+      "cat f | sort -u | head -2",
+      "cat f | uniq | wc -l",
+    ]) {
+      expect(withSearchLineNumbers(command)).toBe(command);
+    }
   });
 });
