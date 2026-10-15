@@ -15,6 +15,15 @@ async function servedHashes(ctx: unknown, readTool: any, path: string): Promise<
     .map(extractHash);
 }
 
+/** The content column of a served block — the 4-char anchor stripped, so a sentinel can never
+ *  match a randomly generated hash (#122). */
+const contentColumn = (block: string): string =>
+  block
+    .split("\n")
+    .filter((line) => /^[A-Za-z0-9]{4}│/.test(line))
+    .map((line) => line.split("│")[1])
+    .join("\n");
+
 describe("multi-item edit error propagation", () => {
   it("a malformed anchor in a later item surfaces [E_MALFORMED_ANCHOR], never [E_BATCH_ABORT]", async () => {
     const content = "alpha\nbeta\ngamma\n";
@@ -262,9 +271,23 @@ describe("batch abort serve-block preservation and isolation (spec D2, section 3
         .split("\n")
         .filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
       expect(blockLines.map((line) => line.split("│")[1])).toEqual(["l3", "l4", "L5X", "l6", "l7"]);
-      expect(blockLines.join("\n")).not.toContain("L1");
+      expect(contentColumn(rejection.servedBlock ?? "")).not.toContain("L1");
       expect(rejection.message).not.toContain("│L1");
       expect(await readFile(path, "utf-8")).toBe(driftedLines);
     });
+  });
+});
+
+// WHY: (#122) the invariant has to survive its own fix: an anchor that carries the sentinel is
+// WHY: harmless, and a leak in the CONTENT column must still fail — the flake and the teeth are
+// WHY: pinned together so neither can regress alone.
+describe("content column of a served block (#122)", () => {
+  it("strips the anchor, so an anchor containing the sentinel is harmless", () => {
+    expect(contentColumn("L1jg│l4\nHQPZ│l3")).toBe("l4\nl3");
+    expect(contentColumn("not a row\nHQPZ│l3")).toBe("l3");
+  });
+
+  it("still fails when the sentinel leaks through the content column", () => {
+    expect(() => expect(contentColumn("HQPZ│L1")).not.toContain("L1")).toThrow();
   });
 });
