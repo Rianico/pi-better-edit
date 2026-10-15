@@ -6,6 +6,7 @@
 * **bash-view:** admit Tier-2 view spellings to interception: explicit `-e` search patterns (separate, attached, cluster-close; exactly once), multi-range `sed -n -e RANGEp` merged at parse, and numbered `cat -n` / `nl -ba` sharing one full-file renderer. Malformed shapes fail closed to raw bash. (#82) (#120)
 
 ### Bug Fixes
+* **errors:** drop the "Pass a plain file string and retry." tail from the three `fs-write` null-byte invariants: they raise `E_INTERNAL_INVARIANT`, which carries no remedy, so its message states the fact alone. The arch oracle now also reads the messages real producers pass — the code set derived from the registry's remedy-free entries — so a planted tail at any site fails the suite. It had checked only each code's declared format against its own example payload, which is how the tails survived #93. (#125)
 * **store:** quarantine and rebuild the hash store on the first statement that fails with a corruption error, instead of leaving the damage for the next open or janitor run. The guarded handle rethrows the original error, so callers still fail loud. (#100)
 
 ### Code Refactoring
