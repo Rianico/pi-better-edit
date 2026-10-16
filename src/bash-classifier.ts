@@ -1056,6 +1056,22 @@ function isSemicolonStatementChain(command: string, statements: readonly Stateme
  * prefix, so the view is the last statement and the sequencing before it is
  * deterministic (see `isSemicolonStatementChain`).
  */
+/**
+ * WHY: (ADR-0039 D7/D9) redundancy without a known cwd. Dot-forms (relative, no `..`,
+ * WHY: normalizing to self) resolve to the base for EVERY base, so they need no tracked state.
+ * WHY: An absolute target matches only a known-absolute tracked dir exactly (D9 lexical; the
+ * WHY: `realpath` fallback belongs to the lifecycle, which has fs access). Everything else counts
+ * WHY: normally — sound because an unproven `cd` is treated as a real change, never a no-op.
+ */
+function isRedundantCd(target: string, effCwd: string | undefined): boolean {
+  if (!target.startsWith("/") && target.split("/").every((part) => part === "" || part === ".")) {
+    return true;
+  }
+  if (effCwd !== undefined && effCwd.startsWith("/") && target === effCwd) {
+    return true;
+  }
+  return false;
+}
 export function classifyBashCommand(command: string): BashClass {
   return classifyBash(command, {});
 }
@@ -1118,6 +1134,7 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
   let view: ViewSeg | undefined;
   let searchSeg: SearchFamily | undefined;
   let baseDir: string | undefined;
+  let effCwd: string | undefined;
   const compoundSegs: CompoundSegment[] = [];
   let sawGlue = false;
   for (const { node, prefixPosition } of segments) {
@@ -1138,6 +1155,11 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
     }
     if (classified.kind === "silent") {
       if (classified.cdDir !== undefined) {
+        // WHY: (ADR-0039 D7) a redundant `cd` is inert, identical to `:`/`true`: it resolves to
+        // WHY: the directory already in effect, so it is skipped — not counted toward the single
+        // WHY: `cd` limit and never tripping multi/post-view guards. Only base-independent dot
+        // WHY: forms and exact known-absolute repeats qualify; anything else counts normally.
+        if (isRedundantCd(classified.cdDir, effCwd)) continue;
         // WHY: bash resolves each `cd` against the directory in effect at that
         // WHY: point, so only a single pre-view `cd` applied to `ctx.cwd` is sound.
         // WHY: A `cd` after the view ran too late to affect it (`cat f && cd sub`
@@ -1147,6 +1169,7 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
         if (view !== undefined) return { kind: "passThrough", reason: "post-view-cd" };
         if (baseDir !== undefined) return { kind: "passThrough", reason: "multi-cd" };
         baseDir = classified.cdDir;
+        if (classified.cdDir.startsWith("/")) effCwd = classified.cdDir;
       }
       continue;
     }

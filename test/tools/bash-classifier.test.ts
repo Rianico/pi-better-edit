@@ -1554,3 +1554,33 @@ describe("bash-classifier line-set consumers (Tier-3 item 11)", () => {
     }
   });
 });
+describe("bash-classifier redundant cd (D7/D8)", () => {
+  // WHY: (ADR-0039 D7) a redundant `cd` is inert like `:`/`true`: dot-forms resolve to the base
+  // WHY: for every base, and an absolute repeat matches tracked exact knowledge — so neither is
+  // WHY: counted toward the single-`cd` limit nor trips multi/post-view guards. Anything else
+  // WHY: (including `..`, which can escape a symbolic root) counts normally.
+  it("skips dot-form cds without counting them", () => {
+    expect(viewOf("cd . && cat f")).toEqual({ filePath: "f", ops: [] });
+    expect(viewOf("cd sub && cd . && cat f")).toEqual({ filePath: "f", baseDir: "sub", ops: [] });
+    expect(viewOf("cd . && cd . && cat f")).toEqual({ filePath: "f", ops: [] });
+    expect(viewOf("cat f && cd .")).toEqual({ filePath: "f", ops: [] });
+  });
+  it("skips an exact absolute repeat against tracked knowledge", () => {
+    expect(viewOf("cd /x && cd /x && cat f")).toEqual({ filePath: "f", baseDir: "/x", ops: [] });
+  });
+  it("still counts non-redundant seconds (relative repeat, parent, absolute change)", () => {
+    expect(reasonOf("cd sub && cd sub && cat f")).toBe("multi-cd");
+    expect(reasonOf("cd /x && cd /y && cat f")).toBe("multi-cd");
+    expect(reasonOf("cd sub && cd .. && cat f")).toBe("multi-cd");
+  });
+  it("carries the base through glue to the view", () => {
+    expect(compoundOf("cd sub && echo hi && cat f")).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "glue", glue: { program: "echo", expectedText: "hi\n", expectedBytes: 3 } },
+        { kind: "view", filePath: "f", ops: [] },
+      ],
+      baseDir: "sub",
+    });
+  });
+});
