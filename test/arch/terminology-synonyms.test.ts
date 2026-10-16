@@ -73,6 +73,11 @@ function stripCanonical(text: string): string {
   // the tier task codes it as `[W_LITERAL_BYPASS]`; the served wording is capitalized
   // ("Served-echo …") and the registry owns the header, so the strip is case-insensitive.
   out = out.replace(/served-echo check bypassed by literal declaration/gi, "");
+  // Allow the shell-builtin homonym, quoted only (double quotes, single quotes, or backticks):
+  // spelling names both the static-print builtin and the avoided synonym for served feedback,
+  // so a quoted mention names the builtin while a bare mention — or an identifier carrying the
+  // letters — still fails below. Matching pairs only; mixed quotes are not a quoted form.
+  out = out.replace(/"echo"|'echo'|`echo`|/gi, "");
   return out;
 }
 
@@ -262,6 +267,22 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () =>
     expect(readFileSync("src/hashline/served-verification.ts", "utf-8")).toMatch(
       /served-range[\s*]+staleness/,
     );
+  });
+});
+
+describe("quoted homonym strip stays narrow (option c)", () => {
+  const fails = (sample: string): boolean => /echo/i.test(stripCanonical(sample));
+  it("strips the three quoted homonym forms so they pass", () => {
+    expect(fails('the static-print builtin "echo" prints a line')).toBe(false);
+    expect(fails("the static-print builtin 'echo' prints a line")).toBe(false);
+    expect(fails("the static-print builtin `echo` prints a line")).toBe(false);
+  });
+  it("a bare homonym mention still fails", () => {
+    expect(fails("the static-print builtin echo prints a line")).toBe(true);
+  });
+  it("an identifier carrying the letters still fails", () => {
+    expect(fails("function recordEchoRows() {")).toBe(true);
+    expect(fails("const myEcho = 1;")).toBe(true);
   });
 });
 
