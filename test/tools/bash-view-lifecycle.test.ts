@@ -2888,6 +2888,22 @@ describe("bash compound envelope (#135 C4)", () => {
       expect(text).toContain("[f.txt (2 matches)]");
       const rows = rowsOf(text!);
       expect(rows).toHaveLength(2);
+      // WHY: F4 — file line 5 is displayed nowhere (empty block plus head-2 cover only 1-2);
+      // WHY: its valid anchor carries no lease. Probed BEFORE any file-modifying edit,
+      // WHY: because post-edit grants would enable it (pre-existing engine behavior).
+      const allHashes = await lineHashes(body, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[4]!, anchor_to: allHashes[4]!, text: "LX" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
       const ok = await editTool.execute(
         "e1",
         {
@@ -2976,6 +2992,22 @@ describe("bash compound envelope (#135 C4)", () => {
       expect(text).toContain("[f.txt (lines 1-2 of 10)]");
       expect(text).toContain("[f.txt (2 matches)]");
       expect(rowsOf(text!)).toHaveLength(4);
+      // WHY: F4 — file line 5 sits in the gap (view took 1-2, search took 9-10);
+      // WHY: its valid anchor carries no lease. Probed BEFORE any file-modifying edit,
+      // WHY: because post-edit grants would enable it (pre-existing engine behavior).
+      const allHashes = await lineHashes(body, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[4]!, anchor_to: allHashes[4]!, text: "LX" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
       const ok = await editTool.execute(
         "e1",
         {

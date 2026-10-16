@@ -77,7 +77,7 @@ function stripCanonical(text: string): string {
   // spelling names both the static-print builtin and the avoided synonym for served feedback,
   // so a quoted mention names the builtin while a bare mention — or an identifier carrying the
   // letters — still fails below. Matching pairs only; mixed quotes are not a quoted form.
-  out = out.replace(/"echo"|'echo'|`echo`|/gi, "");
+  out = out.replace(/"echo"|'echo'|`echo`/gi, "");
   return out;
 }
 
