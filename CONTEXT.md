@@ -267,7 +267,7 @@ Deterministically verifying and slicing each statement's output left-to-right fr
 _Avoid_: stream splitting, stdout demuxing
 
 **static glue segment**:
-A non-view statement emitting statically predictable output (e.g. literal quoted `echo`, `printf`) that can be cleanly peeled from the combined stdout stream.
+A non-view statement emitting statically predictable output (e.g. literal quoted prints via `printf`) that can be cleanly peeled from the combined stdout stream.
 _Avoid_: print segment (ambiguous with dynamic prints)
 
 **redundant cd**:
