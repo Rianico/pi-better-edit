@@ -257,3 +257,19 @@ _Avoid_: range math (intervals are sets; ranges are model-facing spans)
 **transparent wrapper**:
 A command prefix (`rtk`) that forwards a view command's bytes unchanged. Accepted in source positions only and unwrapped to the inner view shape — but never trusted: the stdout-verification gate (D9) re-checks every replacement against the observed bytes, so transparency is proven per call, not assumed per tool (ADR-0033 D8).
 _Avoid_: silent segment (silence is proven no-output; transparency is proven byte-identity)
+
+**atomic view block**:
+An individual statement or pipeline in a compound bash command evaluated for view or search interception.
+_Avoid_: sub-command (ambiguous with subshell or git subcommand)
+
+**sequential peeling**:
+Deterministically verifying and slicing each statement's output left-to-right from a combined bash stdout stream.
+_Avoid_: stream splitting, stdout demuxing
+
+**static glue segment**:
+A non-view statement emitting statically predictable output (e.g. literal quoted `echo`, `printf`) that can be cleanly peeled from the combined stdout stream.
+_Avoid_: print segment (ambiguous with dynamic prints)
+
+**redundant cd**:
+A `cd` statement resolving to the active `effCwd`, treated as an inert silent no-op.
+_Avoid_: duplicate cd, unnecessary cd
