@@ -62,6 +62,7 @@ import type {
   BashRecursiveSearch,
   BashSearch,
   ContentLine,
+  SliceOp,
   ViewOp,
 } from "../bash-classifier.js";
 
@@ -1188,27 +1189,62 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       if (hash === undefined) return undefined;
       servedRows.push({ position: line - 1, hash });
     }
+    // WHY: [ADR-0039 D3] a pipelined search (`grep -n pat f | head -2`) slices the resolved rows,
+    // WHY: not the file. Only survivors are leased, rendered and counted; an empty survivor set
+    // WHY: declines rather than leasing nothing while claiming success (F4).
+    const shownRows = applySliceToServedRows(servedRows, search.sliceOps ?? []);
+    if (shownRows.length === 0) return undefined;
     const sessionKey = deps.sessionKeyFor(ctx);
     await recordServesBestEffort({
       sessionKey,
       path: absolutePath,
-      servedRows,
+      servedRows: shownRows,
       contentHash: snapshotHashFor(normalized),
     });
     notifyServedSpans({
       filePath: absolutePath,
-      spans: servedRowsToSpans(servedRows),
+      spans: servedRowsToSpans(shownRows),
       source: "auto-read",
       content: normalized,
     });
     // WHY: the header is frozen (spec §3.4): the same `--- Bash search (hashline anchors) ---` literal
     // WHY: names the interception seam, and the bracketed count uses the singular for one match.
-    const count = servedRows.length;
+    const count = shownRows.length;
     const header = `--- Bash search (hashline anchors) ---\n[${search.filePath} (${count} ${count === 1 ? "match" : "matches"})]`;
     notifyBashViewOnce(ctx, sessionKey);
     return {
-      content: [{ type: "text", text: `${header}\n${fmtServedRows(servedRows, diskLines)}` }],
+      content: [{ type: "text", text: `${header}\n${fmtServedRows(shownRows, diskLines)}` }],
     };
+  }
+
+  /**
+   * WHY: [ADR-0039 D3] positional fold over resolved search rows. `first`/`last` (and their
+   * WHY: `from`/`dropLast`/`range` siblings, kept total so a new kind breaks typecheck here)
+   * WHY: select by stream position; each row already carries its original file line, so surviving
+   * WHY: rows keep original numbers by construction. Uses `slice`, never a line split.
+   */
+  function applySliceToServedRows(rows: ServedRow[], ops: SliceOp[]): ServedRow[] {
+    let shown = rows;
+    for (const op of ops) {
+      switch (op.kind) {
+        case "first":
+          shown = shown.slice(0, Math.max(0, op.n));
+          break;
+        case "last":
+          shown = op.n <= 0 ? [] : shown.slice(Math.max(0, shown.length - op.n));
+          break;
+        case "from":
+          shown = shown.slice(Math.max(0, op.n - 1));
+          break;
+        case "dropLast":
+          shown = shown.slice(0, Math.max(0, shown.length - op.n));
+          break;
+        case "range":
+          shown = shown.slice(Math.max(0, op.from - 1), Math.max(0, op.to));
+          break;
+      }
+    }
+    return shown;
   }
 
   async function handleToolResult(

@@ -2550,3 +2550,152 @@ describe("bash view — pureView section banners (#134)", () => {
     });
   });
 });
+describe("bash search — pipelined head/tail slices (#135 W1)", () => {
+  const driveSearch = async (
+    dir: string,
+    body: string,
+    command: string,
+    stdout: string,
+    session: string,
+  ) => {
+    await writeFile(join(dir, "f.txt"), body, "utf-8");
+    const { pi, handlers, getTool } = makeFakePi();
+    register(pi);
+    const ctx = { cwd: dir, sessionManager: { getSessionId: () => session } };
+    const result = await bashResult(handlers.get("tool_result")!, command, ctx, stdout);
+    return { text: result?.content[0]?.text, editTool: getTool("edit"), ctx };
+  };
+
+  it("leases exactly the head-sliced matches at their original lines", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      const body = numberedLines(10);
+      const { text, editTool, ctx } = await driveSearch(
+        dir,
+        body,
+        'grep -n "line" f.txt | rtk head -2',
+        "1:line1\n2:line2\n",
+        "w1-head",
+      );
+      expect(text).toBeDefined();
+      expect(text).toContain("[f.txt (2 matches)]");
+      const rows = rowsOf(text!);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.endsWith("│line1")).toBe(true);
+      expect(rows[1]!.endsWith("│line2")).toBe(true);
+      // WHY: F4 — file line 5 matched but was sliced away; its valid anchor carries no lease.
+      const allHashes = await lineHashes(body, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[4]!, anchor_to: allHashes[4]!, text: "L5" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line2"),
+              anchor_to: anchorFor(rows, "line2"),
+              text: "LINE2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("tail slicing keeps the last matches with original numbers", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      const body = numberedLines(10);
+      const { text, editTool, ctx } = await driveSearch(
+        dir,
+        body,
+        'grep -n "line" f.txt | rtk tail -2',
+        "9:line9\n10:line10\n",
+        "w1-tail",
+      );
+      expect(text).toBeDefined();
+      expect(text).toContain("[f.txt (2 matches)]");
+      const rows = rowsOf(text!);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.endsWith("│line9")).toBe(true);
+      expect(rows[1]!.endsWith("│line10")).toBe(true);
+      // WHY: F4 — file line 1 matched but was sliced away; its valid anchor carries no lease.
+      const allHashes = await lineHashes(body, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[0]!, anchor_to: allHashes[0]!, text: "L1" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line10"),
+              anchor_to: anchorFor(rows, "line10"),
+              text: "LINE10",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("a head-plus-tail chain folds left to right over matches", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      const body = numberedLines(10);
+      const { text } = await driveSearch(
+        dir,
+        body,
+        'grep -n "line" f.txt | rtk head -5 | rtk tail -2',
+        "4:line4\n5:line5\n",
+        "w1-chain",
+      );
+      expect(text).toBeDefined();
+      expect(text).toContain("[f.txt (2 matches)]");
+      const rows = rowsOf(text!);
+      expect(rows).toHaveLength(2);
+      expect(rows[0]!.endsWith("│line4")).toBe(true);
+      expect(rows[1]!.endsWith("│line5")).toBe(true);
+    });
+  });
+
+  it("a zero-count slice declines instead of leasing nothing", async () => {
+    await withTempDir("bash-search-", async (dir) => {
+      const body = numberedLines(10);
+      const { text } = await driveSearch(
+        dir,
+        body,
+        'grep -n "line" f.txt | rtk head -0',
+        "",
+        "w1-zero",
+      );
+      expect(text).toBeUndefined();
+    });
+  });
+});
