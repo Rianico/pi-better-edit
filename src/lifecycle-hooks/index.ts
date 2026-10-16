@@ -10,7 +10,7 @@ import {
   LITERAL_BYPASS_NOTICE,
   clearServedRefusals,
 } from "../hashline/index.js";
-import { splitLines } from "../utils.js";
+import { assertNever, splitLines } from "../utils.js";
 import { denseServeRows, fmtServedRows, type ServedRow } from "../hashline/served.js";
 import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served-spans.js";
 import { notifyMutatedFile } from "../mutated-files.js";
@@ -1242,6 +1242,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         case "range":
           shown = shown.slice(Math.max(0, op.from - 1), Math.max(0, op.to));
           break;
+        default:
+          // WHY: `assertNever` carries the union's exhaustiveness to the compiler: a sixth SliceOp
+          // WHY: kind fails the build here instead of passing silently through the fold.
+          return assertNever(op);
       }
     }
     return shown;
