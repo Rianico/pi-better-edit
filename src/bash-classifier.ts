@@ -126,6 +126,8 @@ export interface BashSearch {
   filePath: string;
   /** True when the model already asked for line numbers (`-n` / `--line-number`). */
   lineNumbered: boolean;
+  /** Slice ops from a trailing `head`/`tail` pipeline (ADR-0039 D3); absent for a bare search. */
+  sliceOps?: SliceOp[];
   /** Resolution base for a single pre-view literal `cd` — the view rule verbatim (ADR-0033 D1). */
   baseDir?: string;
 }
@@ -797,7 +799,7 @@ function unwrapViewWrapper(stage: StageShape): StageShape | undefined {
   return { name: inner, args: rest };
 }
 
-function parseViewSegment(node: Command | Pipeline): ViewSeg | undefined {
+function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undefined {
   if (node.type === "Command") {
     const stage = stageShape(node);
     if (!stage) return undefined;
@@ -838,17 +840,43 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | undefined {
       // WHY: (item 9) stage 0 may be a search (`grep pat f | head -5`). An UNNUMBERED
       // WHY: search proves exactly what a `keep` filter proves — the file's lines matching
       // WHY: the pattern — so it is translated into one and the content seam byte-gates the
-      // WHY: fold against the observed stdout. A NUMBERED search (`grep -n pat f | head -5`)
-      // WHY: must not be admitted: its injected `LINE:` column is DATA the downstream stage
-      // WHY: inspects, so composing it would change the model's own command's row set (and
-      // WHY: inventing a coordinate the model never asked for). It fails closed here, exactly
-      // WHY: like the item-8 numbered-view guard, and NO command is ever rewritten.
+      // WHY: fold against the observed stdout.
+      // WHY: [ADR-0039 D3, superseding the numbered-search decline] A NUMBERED single-file search
+      // WHY: piped into `head`/`tail` is admitted as `pureSearch` with the slice ops attached.
+      // WHY: Admission is safe because the slice is a pure line-count truncation evaluated on
+      // WHY: already-resolved rows: original file line numbers are preserved as identifiers, and
+      // WHY: leases cover only the survivors shown. Any other downstream stage (sort, uniq,
+      // WHY: count, keep, sed ranges) still fails closed here, like the item-8 numbered-view guard.
       const searchSource = parseSearchStage(stage);
       // WHY: (item 10) only the SINGLE-file, unnumbered shape has bare-content stdout that one
       // WHY: `keep` over ONE file can model; multi-file and recursive stdout carry `FILE:LINE:`
       // WHY: prefixes and `rg --files` carries paths, so those compose with nothing downstream.
-      if (searchSource?.kind !== "pureSearch" || searchSource.search.lineNumbered) {
+      if (searchSource?.kind !== "pureSearch") {
         return undefined;
+      }
+      if (searchSource.search.lineNumbered) {
+        // WHY: [ADR-0039 D3] collect the trailing head/tail slices; anything else fails closed.
+        const sliceOps: SliceOp[] = [];
+        for (let s = 1; s < node.commands.length; s++) {
+          const downstream = node.commands[s];
+          if (downstream === undefined || downstream.type !== "Command") return undefined;
+          const downstreamStage = stageShape(downstream);
+          if (!downstreamStage) return undefined;
+          const filter = parseFilterStage(downstreamStage);
+          if (!filter) return undefined;
+          for (const op of filter) {
+            if (op.kind !== "first" && op.kind !== "last") return undefined;
+            sliceOps.push(op);
+          }
+        }
+        if (sliceOps.length === 0) return undefined;
+        return {
+          kind: "search",
+          family: {
+            kind: "pureSearch",
+            search: { ...searchSource.search, sliceOps },
+          },
+        };
       }
       filePath = searchSource.search.filePath;
       ops.push({ kind: "keep", pattern: searchSource.search.pattern });

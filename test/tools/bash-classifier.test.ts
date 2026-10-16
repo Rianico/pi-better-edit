@@ -1051,11 +1051,41 @@ describe("bash-classifier content filter stages (Tier-3 item 9)", () => {
         { kind: "first", n: 5 },
       ],
     });
-    // WHY: a NUMBERED search source composes with NOTHING downstream, the item-8 rule — its
-    // WHY: `LINE:` column is data a downstream stage inspects, so admitting it would change the
-    // WHY: model's own command's row set. It fails closed, and no command is rewritten to help.
-    expect(reasonOf("grep -n pat f | head -5")).toBe("unsupported-pipeline");
-    expect(reasonOf("rg --line-number pat f | head -5")).toBe("unsupported-pipeline");
+    // WHY: [ADR-0039 D3, superseding the item-8 decline] a NUMBERED single-file search piped
+    // WHY: into `head`/`tail` is a `pureSearch` with the slice ops attached — the slice is a pure
+    // WHY: line-count truncation on resolved rows, so the `LINE:` column is never re-inspected.
+    expect(searchOf("grep -n pat f | head -5")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: true,
+      sliceOps: [{ kind: "first", n: 5 }],
+    });
+    expect(searchOf("rg --line-number pat f | head -5")).toEqual({
+      program: "rg",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: true,
+      sliceOps: [{ kind: "first", n: 5 }],
+    });
+    expect(searchOf("grep -n pat f | tail -5")).toEqual({
+      program: "grep",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: true,
+      sliceOps: [{ kind: "last", n: 5 }],
+    });
+    expect(searchOf("rg --line-number pat f | tail -5")).toEqual({
+      program: "rg",
+      pattern: "pat",
+      filePath: "f",
+      lineNumbered: true,
+      sliceOps: [{ kind: "last", n: 5 }],
+    });
+    // WHY: F4 — a slice that leaves zero survivors declines: `head -0`/`tail -0` admit no
+    // WHY: slice (positive counts only), so the pipeline fails closed before any lease exists.
+    expect(reasonOf("grep -n pat f | head -0")).toBe("unsupported-pipeline");
+    expect(reasonOf("grep -n pat f | tail -0")).toBe("unsupported-pipeline");
     expect(reasonOf("rtk grep pat f | head -3")).toBe("unsupported-pipeline");
     // WHY: `-v`/`-N` stay denied at SOURCE position — the Tier-1 source pins hold, so item 9
     // WHY: flips no source-flag denial (only cat/head/sed-led pipelines gain filters).
