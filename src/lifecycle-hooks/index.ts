@@ -14,6 +14,7 @@ import { assertNever, splitLines } from "../utils.js";
 import { denseServeRows, fmtServedRows, type ServedRow } from "../hashline/served.js";
 import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served-spans.js";
 import { notifyMutatedFile } from "../mutated-files.js";
+import { applySliceOps, isSliceOp } from "../bash-classifier.js";
 import { resolveBashViewMode } from "../bash-view-config.js";
 import { pruneMissingAll as defaultPruneMissingAll } from "../snapshot-store";
 import { clearUndo as defaultClearUndo } from "../edit-undo.js";
@@ -61,6 +62,7 @@ import type {
   BashMultiSearch,
   BashRecursiveSearch,
   BashSearch,
+  CompoundSegment,
   ContentLine,
   SliceOp,
   ViewOp,
@@ -637,13 +639,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         return await handleBashFilesList(event, ctx, classification.search);
       }
       if (classification.kind === "pureCompound") {
-        // WHY: (ADR-0039) compounds have no envelope yet — peel/verify lands separately, so the
-        // WHY: lifecycle declines by default (raw output, zero leases) exactly like pass-through.
-        const debugValue = process.env.PI_HASHLINE_DEBUG;
-        if (debugValue === "1" || debugValue === "true") {
-          console.error(`[bash-view] pass-through (compound, no envelope yet)`);
-        }
-        return undefined;
+        return await handleBashCompound(event, ctx, classification);
       }
       if (classification.kind !== "pureView") {
         // WHY: (ADR-0033 observability) a systematic regression (parser drift, a
@@ -656,139 +652,267 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         }
         return undefined;
       }
-      const { filePath, baseDir, ops, lineNumbered } = classification.view;
-      // WHY: (item 8) numbered and unnumbered are the same view — full-file, leased.
-      // WHY: `lineNumbered` only selects the stdout-verification parser; leases and render
-      // WHY: always come from re-read positions, never from parsed stdout numbers.
-      const isNumbered = lineNumbered === true;
-      // WHY: (item 8) numbered views admit no slice ops — the classifier only emits
-      // WHY: `ops: []` with the marker, but defense-in-depth fails closed on any drift.
-      if (isNumbered && ops.length !== 0) return undefined;
-      // WHY: the single pre-view literal `cd` re-bases relative resolution; an absolute
-      // WHY: view target ignores it (`toCwd` returns absolutes unchanged). Multi-`cd`
-      // WHY: and post-view-`cd` chains never reach here — the classifier fails them
-      // WHY: closed to pass-through (ADR-0033 D1).
-      const effCwd = baseDir === undefined ? ctx.cwd : deps.toCwd(baseDir, ctx.cwd);
-      const resolvedPath = await deps.resolveTarget(deps.toCwd(filePath, effCwd));
-      await deps.valAccess(resolvedPath, filePath);
-      const file = await deps.loadFileKindAndText(resolvedPath, {
-        maxLines: SERVED_MAX_LINES,
-        displayPath: filePath,
-      });
-      if (file.kind !== "text") return undefined;
-      const { normalized, fileHashes, absolutePath } = await deps.readNormFile(filePath, effCwd, {
-        maxLines: SERVED_MAX_LINES,
-        preloadedFile: file,
-      });
-      // WHY: intervals fold over the re-read line count, so an empty selection
-      // WHY: (e.g. `head -n 0`, out-of-range `sed` addresses) serves nothing and
-      // WHY: passes through — zero leases, zero output change (ADR-0033 D3).
-      const allLines = deps.visLines(normalized);
-      // WHY: (item 9) a content stage needs the line bytes, so it takes its own seam (row
-      // WHY: leases over the survivors, bounded like a search). The predicate is the type
-      // WHY: refinement that keeps the selector-only path structurally `SliceOp[]`, so the
-      // WHY: interval algebra keeps its exact contract.
-      // WHY: (item 11) the line-set consumers take this same seam: the predicate is the single
-      // WHY: split over `ViewOp`, so a new content op routes here by construction.
-      if (ops.some(isContentOp)) {
-        return await serveContentView(event, ctx, {
-          filePath,
-          absolutePath,
-          normalized,
-          fileHashes,
-          allLines,
-          ops,
-        });
-      }
-      const intervals = applySliceOps(ops.filter(isSliceOp), allLines.length);
-      if (intervals.length === 0 || intervals.length > MAX_READ_WINDOWS) return undefined;
-      // WHY: [ADR-0033 D9] the observed stdout must byte-match the re-read slice —
-      // WHY: this is what makes transparent wrappers (e.g. `rtk`) safe by
-      // WHY: construction instead of by reputation. A filtering wrapper, a
-      // WHY: numbering wrapper, TOCTOU drift between exec and re-read, or any
-      // WHY: skew the re-read does not normalize (undecodable bytes, a reordered
-      // WHY: row, an edited line) still fails closed to pass-through. Line-ending
-      // WHY: and BOM skew is normalized instead of rejected: `cat` emits the disk
-      // WHY: bytes while `readNormFile` — and therefore the anchors below —
-      // WHY: describes the LF/no-BOM text, so comparing raw stdout would drop
-      // WHY: anchors on exactly the CRLF and BOM files the model views via bash.
-      // WHY: Exactly one text block is required — anything else (multi-block,
-      // WHY: non-text) cannot be attributed to the view.
-      // WHY: Trailing-newline-only leniency: `joined` vs `joined + "\n"`.
-      const stdoutBlock = Array.isArray(event.content) ? event.content : undefined;
-      const stdoutText =
-        stdoutBlock?.length === 1 && stdoutBlock[0]?.type === "text"
-          ? stdoutBlock[0].text
-          : undefined;
-      if (typeof stdoutText !== "string") return undefined;
-      const sliceLines: string[] = [];
-      for (const iv of intervals) sliceLines.push(...allLines.slice(iv.lo - 1, iv.hi));
-      const joinedSlice = sliceLines.join("\n");
-      // D1/D9, amended 2026-10-09 (commit 7b78278): See ADR-0033. This site
-      // WHY: implements D9's symmetric CRLF/BOM normalization here; D1's
-      // WHY: `;`-chain gate lives in the classifier.
-      const observedText = toLF(stripBOM(stdoutText).text);
-      if (isNumbered) {
-        // WHY: (item 8) strip display numbers, then the SAME byte-equality gate as below.
-        // WHY: the numbers are never trusted as coordinates — positions come from `intervals`
-        // WHY: (full-file here), and a row-count or content mismatch fails closed with no lease.
-        const deNumbered = parseNumberedStdout(observedText);
-        if (deNumbered === undefined) return undefined;
-        if (deNumbered.length !== allLines.length) return undefined;
-        for (let i = 0; i < allLines.length; i++) {
-          if (deNumbered[i] !== allLines[i]) return undefined;
+      /**
+       * WHY: shared view serving (single views call it with whole stdout; the envelope calls it
+       * WHY: per verified slice). Pure relocation of the branch body — `event`, `deps` and helpers
+       * WHY: resolve via closure. Throws propagate to the caller SAFETY catch.
+       */
+      /**
+       * WHY: (ADR-0039 D1/D2/D4) sequential peeling + hybrid envelope. Each segment's expected raw
+       * WHY: bytes come from re-read disk (never observed stdout); the peel consumes exact prefixes
+       * WHY: left-to-right and halts at the first mismatch, keeping verified prefix rendering and
+       * WHY: leases with the rest raw. Glue contributes verified bytes verbatim; views/searches
+       * WHY: render anchored blocks via the shared paths on verified slices. Zero blocks, nothing
+       * WHY: verified, or a trailing remainder beyond lone-newline leniency returns undefined (F2).
+       */
+      async function handleBashCompound(
+        event: ToolResultEvent,
+        ctx: ToolContext,
+        compound: { kind: "pureCompound"; segments: CompoundSegment[]; baseDir?: string },
+      ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
+        const dbg = (...a: unknown[]) => {
+          if (process.env.PI_HASHLINE_DEBUG === "1") console.error("[peel]", ...a);
+        };
+        dbg("segments", compound.segments.map((x) => x.kind).join(","));
+        const blocks = compound.segments.filter(
+          (segment) => segment.kind === "view" || segment.kind === "search",
+        );
+        if (blocks.length === 0) return undefined;
+        const effCwd =
+          compound.baseDir === undefined ? ctx.cwd : deps.toCwd(compound.baseDir, ctx.cwd);
+        const stdoutText = singleTextBlock(event);
+        if (stdoutText === undefined) return undefined;
+        const observed = toLF(stripBOM(stdoutText).text);
+        const parts: string[] = [];
+        let renderedBlocks = 0;
+        let pos = 0;
+        try {
+          for (const segment of compound.segments) {
+            const candidates = await segmentExpectedVariants(segment, effCwd);
+            dbg(
+              segment.kind,
+              "candidates",
+              candidates === undefined ? "UNDEF" : candidates.map((c) => c.length),
+            );
+            if (candidates === undefined) break;
+            let consumed: string | undefined;
+            for (const candidate of candidates) {
+              if (observed.startsWith(candidate, pos)) {
+                consumed = candidate;
+                break;
+              }
+            }
+            if (consumed === undefined) {
+              dbg(segment.kind, "NO-CONSUME halt");
+              break;
+            }
+            if (segment.kind === "glue") {
+              if (consumed !== "") parts.push(consumed);
+              pos += consumed.length;
+              continue;
+            }
+            const rendered = await renderVerifiedBlock(
+              segment,
+              observed.slice(pos, pos + consumed.length),
+              compound.baseDir,
+              ctx,
+            );
+            if (rendered === undefined) {
+              dbg(segment.kind, "RENDER-UNDEF halt");
+              break;
+            }
+            parts.push(rendered);
+            renderedBlocks++;
+            pos += consumed.length;
+          }
+        } catch {
+          // fall through to partial halt below (SAFETY: never break the view).
         }
-      } else if (observedText !== joinedSlice && observedText !== `${joinedSlice}\n`) {
-        return undefined;
+        dbg("done", { renderedBlocks, pos, len: observed.length });
+        if (renderedBlocks === 0) return undefined;
+        const rest = observed.slice(pos);
+        if (rest !== "" && rest !== "\n") {
+          return { content: [{ type: "text", text: parts.join("") + rest }] };
+        }
+        return { content: [{ type: "text", text: parts.join("") + (rest === "\n" ? "\n" : "") }] };
       }
-      const preview = await deps.fmtReadPreview(
-        normalized,
-        {
-          sectionHeader: (startLine, endLine, totalLines) =>
-            pureViewHeader(filePath, startLine, endLine, totalLines),
-          windows: intervals.map((iv) => ({ offset: iv.lo, limit: iv.hi - iv.lo + 1 })),
-        },
-        fileHashes,
-        absolutePath,
-        DEFAULT_MAX_BYTES,
-        AUTO_READ_MAX,
-      );
-      // WHY: (ADR-0033 D3) anchors add bytes per row, so a view whose raw stdout
-      // WHY: fits the bash byte budget can still exceed the preview budget — the
-      // WHY: shortened preview would then silently drop lines while the header
-      // WHY: claims the full range. A truncated preview is never slice-accurate:
-      // WHY: pass through with the original output untouched.
-      if (preview.truncation !== undefined) return undefined;
-      if (preview.served.length === 0) return undefined;
-      const sessionKey = deps.sessionKeyFor(ctx);
-      // WHY: plain mode (no `resultLineCount`/`firstChangedLine`): truncated mode
-      // WHY: belongs to diffs and would corrupt the mirror. The grant leases
-      // WHY: exactly the served rows against the re-read snapshot (ADR-0033 D4).
-      await recordServesBestEffort({
-        sessionKey,
-        path: absolutePath,
-        servedRows: preview.served,
-        contentHash: snapshotHashFor(normalized),
-      });
-      // WHY: `servedRowsToSpans` compresses the served window rows into honest
-      // WHY: per-run spans — a slice view notifies its slice, never whole-file. The bash
-      // WHY: view already re-read the file, so the mirror gets those bytes rather than
-      // WHY: re-reading the slice itself.
-      notifyServedSpans({
-        filePath: absolutePath,
-        spans: servedRowsToSpans(preview.served),
-        source: "auto-read",
-        content: normalized,
-      });
-      // WHY: FULL replacement (not append): the raw stdout is unanchored bytes the
-      // WHY: model already paid for once — swapping it for the anchored slice is
-      // WHY: the zero-bloat interception point (ADR-0033 D4).
-      // WHY: FIRST-notice: the interception landed, so the session is told once what saved
-      // WHY: the round trip and where the off switch lives; later interceptions stay silent.
-      notifyBashViewOnce(ctx, sessionKey);
-      return {
-        content: [{ type: "text", text: `--- Bash view (hashline anchors) ---\n${preview.text}` }],
-      };
+      /**
+       * WHY: (ADR-0039 D2/D4) render one verified envelope block (single trailing newline; glue
+       * WHY: stays byte-exact). Views/searches render through the shared serving paths on their
+       * WHY: verified slice (their internal gates re-verify defensively); multi/recursive/file-list
+       * WHY: searches never reach here (no expected variants — the peel halts first). An empty
+       * WHY: search renders its banner with zero rows and zero leases rather than halting the rest.
+       */
+      async function renderVerifiedBlock(
+        segment: CompoundSegment,
+        slice: string,
+        baseDir: string | undefined,
+        ctx: ToolContext,
+      ): Promise<string | undefined> {
+        const withBase = baseDir === undefined ? {} : { baseDir };
+        if (segment.kind === "view") {
+          const res = await servePureViewBlock({ ...segment, ...withBase }, slice, ctx);
+          if (res === undefined) return undefined;
+          const text = res.content[0]?.text;
+          if (typeof text !== "string") return undefined;
+          return text.endsWith("\n") ? text : `${text}\n`;
+        }
+        if (segment.kind !== "search" || segment.family.kind !== "pureSearch") return undefined;
+        if (slice === "") {
+          const file = segment.family.search.filePath;
+          return `--- Bash search (hashline anchors) ---\n[${file} (0 matches)]\n`;
+        }
+        const res = await handleBashSearch(
+          event,
+          ctx,
+          { ...segment.family.search, ...withBase },
+          slice,
+        );
+        if (res === undefined) return undefined;
+        const text = res.content[0]?.text;
+        if (typeof text !== "string") return undefined;
+        return text.endsWith("\n") ? text : `${text}\n`;
+      }
+      async function servePureViewBlock(
+        view: { filePath: string; baseDir?: string; ops: ViewOp[]; lineNumbered?: boolean },
+        rawText: string | undefined,
+        ctx: ToolContext,
+      ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
+        const { filePath, baseDir, ops, lineNumbered } = view;
+        // WHY: (item 8) numbered and unnumbered are the same view — full-file, leased.
+        // WHY: `lineNumbered` only selects the stdout-verification parser; leases and render
+        // WHY: always come from re-read positions, never from parsed stdout numbers.
+        const isNumbered = lineNumbered === true;
+        // WHY: (item 8) numbered views admit no slice ops — the classifier only emits
+        // WHY: `ops: []` with the marker, but defense-in-depth fails closed on any drift.
+        if (isNumbered && ops.length !== 0) return undefined;
+        // WHY: the single pre-view literal `cd` re-bases relative resolution; an absolute
+        // WHY: view target ignores it (`toCwd` returns absolutes unchanged). Multi-`cd`
+        // WHY: and post-view-`cd` chains never reach here — the classifier fails them
+        // WHY: closed to pass-through (ADR-0033 D1).
+        const effCwd = baseDir === undefined ? ctx.cwd : deps.toCwd(baseDir, ctx.cwd);
+        const resolvedPath = await deps.resolveTarget(deps.toCwd(filePath, effCwd));
+        await deps.valAccess(resolvedPath, filePath);
+        const file = await deps.loadFileKindAndText(resolvedPath, {
+          maxLines: SERVED_MAX_LINES,
+          displayPath: filePath,
+        });
+        if (file.kind !== "text") return undefined;
+        const { normalized, fileHashes, absolutePath } = await deps.readNormFile(filePath, effCwd, {
+          maxLines: SERVED_MAX_LINES,
+          preloadedFile: file,
+        });
+        // WHY: intervals fold over the re-read line count, so an empty selection
+        // WHY: (e.g. `head -n 0`, out-of-range `sed` addresses) serves nothing and
+        // WHY: passes through — zero leases, zero output change (ADR-0033 D3).
+        const allLines = deps.visLines(normalized);
+        // WHY: (item 9) a content stage needs the line bytes, so it takes its own seam (row
+        // WHY: leases over the survivors, bounded like a search). The predicate is the type
+        // WHY: refinement that keeps the selector-only path structurally `SliceOp[]`, so the
+        // WHY: interval algebra keeps its exact contract.
+        // WHY: (item 11) the line-set consumers take this same seam: the predicate is the single
+        // WHY: split over `ViewOp`, so a new content op routes here by construction.
+        if (ops.some(isContentOp)) {
+          return await serveContentView(event, ctx, {
+            filePath,
+            absolutePath,
+            normalized,
+            fileHashes,
+            allLines,
+            ops,
+            observedText: rawText,
+          });
+        }
+        const intervals = applySliceOps(ops.filter(isSliceOp), allLines.length);
+        if (intervals.length === 0 || intervals.length > MAX_READ_WINDOWS) return undefined;
+        // WHY: [ADR-0033 D9] the observed stdout must byte-match the re-read slice —
+        // WHY: this is what makes transparent wrappers (e.g. `rtk`) safe by
+        // WHY: construction instead of by reputation. A filtering wrapper, a
+        // WHY: numbering wrapper, TOCTOU drift between exec and re-read, or any
+        // WHY: skew the re-read does not normalize (undecodable bytes, a reordered
+        // WHY: row, an edited line) still fails closed to pass-through. Line-ending
+        // WHY: and BOM skew is normalized instead of rejected: `cat` emits the disk
+        // WHY: bytes while `readNormFile` — and therefore the anchors below —
+        // WHY: describes the LF/no-BOM text, so comparing raw stdout would drop
+        // WHY: anchors on exactly the CRLF and BOM files the model views via bash.
+        // WHY: Exactly one text block is required — anything else (multi-block,
+        // WHY: non-text) cannot be attributed to the view.
+        // WHY: Trailing-newline-only leniency: `joined` vs `joined + "\n"`.
+        if (typeof rawText !== "string") return undefined;
+        const stdoutText: string = rawText;
+        const sliceLines: string[] = [];
+        for (const iv of intervals) sliceLines.push(...allLines.slice(iv.lo - 1, iv.hi));
+        const joinedSlice = sliceLines.join("\n");
+        // D1/D9, amended 2026-10-09 (commit 7b78278): See ADR-0033. This site
+        // WHY: implements D9's symmetric CRLF/BOM normalization here; D1's
+        // WHY: `;`-chain gate lives in the classifier.
+        const observedText = toLF(stripBOM(stdoutText).text);
+        if (isNumbered) {
+          // WHY: (item 8) strip display numbers, then the SAME byte-equality gate as below.
+          // WHY: the numbers are never trusted as coordinates — positions come from `intervals`
+          // WHY: (full-file here), and a row-count or content mismatch fails closed with no lease.
+          const deNumbered = parseNumberedStdout(observedText);
+          if (deNumbered === undefined) return undefined;
+          if (deNumbered.length !== allLines.length) return undefined;
+          for (let i = 0; i < allLines.length; i++) {
+            if (deNumbered[i] !== allLines[i]) return undefined;
+          }
+        } else if (observedText !== joinedSlice && observedText !== `${joinedSlice}\n`) {
+          return undefined;
+        }
+        const preview = await deps.fmtReadPreview(
+          normalized,
+          {
+            sectionHeader: (startLine, endLine, totalLines) =>
+              pureViewHeader(filePath, startLine, endLine, totalLines),
+            windows: intervals.map((iv) => ({ offset: iv.lo, limit: iv.hi - iv.lo + 1 })),
+          },
+          fileHashes,
+          absolutePath,
+          DEFAULT_MAX_BYTES,
+          AUTO_READ_MAX,
+        );
+        // WHY: (ADR-0033 D3) anchors add bytes per row, so a view whose raw stdout
+        // WHY: fits the bash byte budget can still exceed the preview budget — the
+        // WHY: shortened preview would then silently drop lines while the header
+        // WHY: claims the full range. A truncated preview is never slice-accurate:
+        // WHY: pass through with the original output untouched.
+        if (preview.truncation !== undefined) return undefined;
+        if (preview.served.length === 0) return undefined;
+        const sessionKey = deps.sessionKeyFor(ctx);
+        // WHY: plain mode (no `resultLineCount`/`firstChangedLine`): truncated mode
+        // WHY: belongs to diffs and would corrupt the mirror. The grant leases
+        // WHY: exactly the served rows against the re-read snapshot (ADR-0033 D4).
+        await recordServesBestEffort({
+          sessionKey,
+          path: absolutePath,
+          servedRows: preview.served,
+          contentHash: snapshotHashFor(normalized),
+        });
+        // WHY: `servedRowsToSpans` compresses the served window rows into honest
+        // WHY: per-run spans — a slice view notifies its slice, never whole-file. The bash
+        // WHY: view already re-read the file, so the mirror gets those bytes rather than
+        // WHY: re-reading the slice itself.
+        notifyServedSpans({
+          filePath: absolutePath,
+          spans: servedRowsToSpans(preview.served),
+          source: "auto-read",
+          content: normalized,
+        });
+        // WHY: FULL replacement (not append): the raw stdout is unanchored bytes the
+        // WHY: model already paid for once — swapping it for the anchored slice is
+        // WHY: the zero-bloat interception point (ADR-0033 D4).
+        // WHY: FIRST-notice: the interception landed, so the session is told once what saved
+        // WHY: the round trip and where the off switch lives; later interceptions stay silent.
+        notifyBashViewOnce(ctx, sessionKey);
+        return {
+          content: [
+            { type: "text", text: `--- Bash view (hashline anchors) ---\n${preview.text}` },
+          ],
+        };
+      }
+
+      return await servePureViewBlock(classification.view, singleTextBlock(event), ctx);
     } catch (error) {
       // SAFETY: every failure returns undefined so the original bash output reaches
       // SAFETY: the model untouched — interception must never break a view.
@@ -1065,10 +1189,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       fileHashes: string[];
       allLines: string[];
       ops: ViewOp[];
+      observedText?: string | undefined;
     },
   ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
     const { applyViewOps } = await import("../bash-classifier.js");
-    const stdoutText = singleTextBlock(event);
+    const stdoutText = input.observedText ?? singleTextBlock(event);
     if (stdoutText === undefined) return undefined;
     const observedText = toLF(stripBOM(stdoutText).text);
     const survivors = applyViewOps(
@@ -1142,10 +1267,84 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
    * a line the hash array does not cover. Truncating or partially leasing would serve anchors for
    * lines the model never saw.
    */
+  /**
+   * WHY: (ADR-0039 D1) expected raw bytes for one envelope segment, computed from re-read disk
+   * WHY: content (never from observed stdout). Each entry is an exact byte candidate, longest
+   * WHY: first: glue is a single predicted literal; views cover the two D9-accepted trailing
+   * WHY: forms; searches cover theirs. A candidate that matches as a prefix is consumed; if none
+   * WHY: matches, peeling halts. No candidate invents bytes — mismatch fails closed, never leases.
+   */
+  async function segmentExpectedVariants(
+    segment: CompoundSegment,
+    effCwd: string,
+  ): Promise<string[] | undefined> {
+    if (segment.kind === "glue") {
+      return [segment.glue.expectedText];
+    }
+    if (segment.kind === "view") {
+      const resolved = await resolveSegmentFile(segment.filePath, effCwd);
+      if (resolved === undefined) return undefined;
+      const intervals = applySliceOps(segment.ops.filter(isSliceOp), resolved.allLines.length);
+      if (segment.lineNumbered === true) {
+        if (intervals.length === 0) return [""];
+        const numbered = resolved.allLines.map(
+          (line, index) => `${String(index + 1).padStart(6)}\t${line}`,
+        );
+        return variantsOf(numbered.join("\n"));
+      }
+      if (intervals.length === 0) return [""];
+      const selected: string[] = [];
+      for (const iv of intervals) selected.push(...resolved.allLines.slice(iv.lo - 1, iv.hi));
+      return variantsOf(selected.join("\n"));
+    }
+    const family = segment.family;
+    if (family.kind !== "pureSearch") return undefined;
+    const resolved = await resolveSegmentFile(family.search.filePath, effCwd);
+    if (resolved === undefined) return undefined;
+    const rows: ServedRow[] = [];
+    for (let i = 0; i < resolved.diskLines.length; i++) {
+      const content = resolved.diskLines[i];
+      if (content === undefined || !content.includes(family.search.pattern)) continue;
+      const hash = resolved.fileHashes[i];
+      if (hash === undefined) return undefined;
+      rows.push({ position: i, hash });
+    }
+    const shown = applySliceToServedRows(rows, family.search.sliceOps ?? []);
+    if (shown.length === 0) return [""];
+    const text = shown
+      .map((row) => `${row.position + 1}:${resolved.diskLines[row.position]}`)
+      .join("\n");
+    return variantsOf(text);
+  }
+  function variantsOf(base: string): string[] {
+    return base === "" ? [""] : [`${base}\n`, base];
+  }
+  async function resolveSegmentFile(
+    filePath: string,
+    effCwd: string,
+  ): Promise<
+    | { normalized: string; allLines: string[]; fileHashes: string[]; diskLines: string[] }
+    | undefined
+  > {
+    const resolvedPath = await deps.resolveTarget(deps.toCwd(filePath, effCwd));
+    await deps.valAccess(resolvedPath, filePath);
+    const file = await deps.loadFileKindAndText(resolvedPath, {
+      maxLines: SERVED_MAX_LINES,
+      displayPath: filePath,
+    });
+    if (file.kind !== "text") return undefined;
+    const { normalized, fileHashes } = await deps.readNormFile(filePath, effCwd, {
+      maxLines: SERVED_MAX_LINES,
+      preloadedFile: file,
+    });
+    const allLines = deps.visLines(normalized);
+    return { normalized, allLines, fileHashes, diskLines: allLines };
+  }
   async function handleBashSearch(
     event: ToolResultEvent,
     ctx: ToolContext,
     search: BashSearch,
+    observedText?: string,
   ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
     // WHY: the single pre-search literal `cd` re-bases relative resolution under the same rule as a
     // WHY: view (ADR-0033 D1); multi-`cd` and post-search-`cd` chains never reach here.
@@ -1175,7 +1374,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     if (file.kind !== "text") return undefined;
     // WHY: exactly one text block, the same attribution rule the view path applies — a search whose
     // WHY: stdout is split or non-text cannot be proven to be this command's output.
-    const stdoutText = singleTextBlock(event);
+    const stdoutText = observedText ?? singleTextBlock(event);
     if (stdoutText === undefined) return undefined;
     const matches = parseSearchStdout(toLF(stripBOM(stdoutText).text));
     if (matches === undefined || matches.length === 0) return undefined;

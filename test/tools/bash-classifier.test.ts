@@ -1594,3 +1594,45 @@ describe("bash-classifier redundant cd (D7/D8)", () => {
     });
   });
 });
+describe("bash-classifier compound multi-block (C4)", () => {
+  // WHY: (commit 4) multiple view/search blocks admit only with glue present (hasGlue-gated
+  // WHY: relaxation); glue-less multis keep their exact current reasons. A non-redundant `cd`
+  // WHY: after a block fails closed (post-block-cd) so no block misresolves.
+  it("admits multiple blocks when glue is present anywhere", () => {
+    expect(compoundOf("grep -n A f && grep -n B g && echo hi")).toEqual({
+      kind: "pureCompound",
+      segments: [
+        {
+          kind: "search",
+          family: {
+            kind: "pureSearch",
+            search: { program: "grep", pattern: "A", filePath: "f", lineNumbered: true },
+          },
+        },
+        {
+          kind: "search",
+          family: {
+            kind: "pureSearch",
+            search: { program: "grep", pattern: "B", filePath: "g", lineNumbered: true },
+          },
+        },
+        { kind: "glue", glue: { program: "echo", expectedText: "hi\n", expectedBytes: 3 } },
+      ],
+    });
+    expect(compoundOf("cat f; echo hi")).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "view", filePath: "f", ops: [] },
+        { kind: "glue", glue: { program: "echo", expectedText: "hi\n", expectedBytes: 3 } },
+      ],
+    });
+  });
+  it("declines a non-redundant cd after a block in a glue chain", () => {
+    expect(reasonOf("grep A f; cd sub; echo hi")).toBe("post-block-cd");
+  });
+  it("numbers every unnumbered search in a compound in one pass", () => {
+    expect(withSearchLineNumbers("echo hi && grep x f && grep y g")).toBe(
+      "echo hi && grep -n x f && grep -n y g",
+    );
+  });
+});

@@ -2699,3 +2699,300 @@ describe("bash search — pipelined head/tail slices (#135 W1)", () => {
     });
   });
 });
+describe("bash compound envelope (#135 C4)", () => {
+  const SEARCH_HEAD = "--- Bash search (hashline anchors) ---";
+  const catNumberedLocal = (text: string): string =>
+    `${text
+      .split("\n")
+      .filter((l) => l !== "")
+      .map((l, i) => `${String(i + 1).padStart(6)}\t${l}`)
+      .join("\n")}\n`;
+  const driveCompound = async (
+    dir: string,
+    files: Record<string, string>,
+    command: string,
+    stdout: string,
+    session: string,
+  ) => {
+    for (const [name, text] of Object.entries(files)) {
+      await writeFile(join(dir, name), text, "utf-8");
+    }
+    const { pi, handlers, getTool } = makeFakePi();
+    register(pi);
+    const ctx = { cwd: dir, sessionManager: { getSessionId: () => session } };
+    const result = await bashResult(handlers.get("tool_result")!, command, ctx, stdout);
+    return { text: result?.content[0]?.text, editTool: getTool("edit"), ctx };
+  };
+  const matchRows = (from: number, to: number): string =>
+    `${Array.from({ length: to - from + 1 }, (_, i) => `${from + i}:line${from + i}`).join("\n")}\n`;
+
+  it("W5a — anchors the motivating compound: redundant cd, banner, two pipelined searches", async () => {
+    await withTempDir("bash-compound-", async (dir) => {
+      const body = numberedLines(10);
+      const stdout = `=== header ===\n${matchRows(1, 3)}${matchRows(1, 5)}`;
+      const { text, editTool, ctx } = await driveCompound(
+        dir,
+        { "f.txt": body },
+        'cd . && printf "=== header ===\n"; grep -n "line" f.txt | head -3; grep -n "line" f.txt | head -5',
+        stdout,
+        "w5a",
+      );
+      expect(text).toBeDefined();
+      const lines = text!.split("\n");
+      expect(lines[0]).toBe("=== header ===");
+      expect(lines[1]).toBe(SEARCH_HEAD);
+      expect(lines[2]).toBe("[f.txt (3 matches)]");
+      const rows = rowsOf(text!);
+      expect(rows).toHaveLength(8);
+      // WHY: every observed match row is anchored (none leak through raw).
+      expect(rows.filter((l) => l.endsWith("│line1")).length).toBe(2);
+      // WHY: leases cover exactly the served survivors in both blocks.
+      const allHashes = await lineHashes(body, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[5]!, anchor_to: allHashes[5]!, text: "L6" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok2 = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line2"),
+              anchor_to: anchorFor(rows, "line2"),
+              text: "L2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok2.isError).toBeFalsy();
+    });
+  });
+
+  it("W5b — a corrupted middle block halts: prefix anchored, rest raw, partial leases", async () => {
+    await withTempDir("bash-compound-", async (dir) => {
+      const body = numberedLines(10);
+      const badTail = "9:zzz\n9:zzz\n9:zzz\n9:zzz\n9:zzz\n";
+      const stdout = `=== header ===\n${matchRows(1, 3)}${badTail}`;
+      const { text, editTool, ctx } = await driveCompound(
+        dir,
+        { "f.txt": body },
+        'cd . && printf "=== header ===\n"; grep -n "line" f.txt | head -3; grep -n "line" f.txt | head -5',
+        stdout,
+        "w5b",
+      );
+      expect(text).toBeDefined();
+      // WHY: exactly one search block rendered (the verified prefix); the corrupt tail stays raw.
+      expect(text!.split("\n").filter((l) => l === SEARCH_HEAD)).toHaveLength(1);
+      expect(text!.split("\n")[2]).toBe("[f.txt (3 matches)]");
+      expect(text!.includes("9:zzz")).toBe(true);
+      expect(rowsOf(text!).some((l) => l.endsWith("│zzz"))).toBe(false);
+      const rows = rowsOf(text!);
+      const allHashes = await lineHashes(body, join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[3]!, anchor_to: allHashes[3]!, text: "L4" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      const ok2 = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line2"),
+              anchor_to: anchorFor(rows, "line2"),
+              text: "L2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok2.isError).toBeFalsy();
+    });
+  });
+
+  it("W5c — a disk mismatch halts rather than leasing", async () => {
+    await withTempDir("bash-compound-", async (dir) => {
+      const v1 = numberedLines(10);
+      const stdout = `=== header ===\n${matchRows(1, 3)}${matchRows(1, 5)}`;
+      await writeFile(join(dir, "f.txt"), v1, "utf-8");
+      const v2 = v1.replace("line1\n", "CHANGED1\n");
+      await writeFile(join(dir, "f.txt"), v2, "utf-8");
+      const { pi, handlers, getTool } = makeFakePi();
+      register(pi);
+      const ctx = { cwd: dir, sessionManager: { getSessionId: () => "w5c" } };
+      const result = await bashResult(
+        handlers.get("tool_result")!,
+        'cd . && printf "=== header ===\n"; grep -n "line" f.txt | head -3; grep -n "line" f.txt | head -5',
+        ctx,
+        stdout,
+      );
+      expect(result?.content[0]?.text).toBeUndefined();
+      const allHashes = await lineHashes(v2, join(dir, "f.txt"));
+      await expect(
+        getTool("edit").execute(
+          "e0",
+          {
+            file: "f.txt",
+            edits: [{ anchor_from: allHashes[1]!, anchor_to: allHashes[1]!, text: "L2" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("F2 — glue alone (no blocks) returns undefined even when its bytes verify", async () => {
+    await withTempDir("bash-compound-", async (dir) => {
+      const { text } = await driveCompound(dir, {}, 'printf "a"; printf "b"', "ab", "w5f2");
+      expect(text).toBeUndefined();
+    });
+  });
+
+  it("an empty search renders its banner with zero rows and the peel continues", async () => {
+    await withTempDir("bash-compound-", async (dir) => {
+      const body = numberedLines(10);
+      const stdout = `h\n${matchRows(1, 2)}`;
+      const { text, editTool, ctx } = await driveCompound(
+        dir,
+        { "f.txt": body },
+        'printf "h\n"; grep -n "zzz" f.txt | head -5; grep -n "line" f.txt | head -2',
+        stdout,
+        "w5empty",
+      );
+      expect(text).toBeDefined();
+      expect(text).toContain("[f.txt (0 matches)]");
+      expect(text).toContain("[f.txt (2 matches)]");
+      const rows = rowsOf(text!);
+      expect(rows).toHaveLength(2);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line2"),
+              anchor_to: anchorFor(rows, "line2"),
+              text: "L2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("a numbered view anchors inside the envelope", async () => {
+    await withTempDir("bash-compound-", async (dir) => {
+      const body = numberedLines(10);
+      const { text, editTool, ctx } = await driveCompound(
+        dir,
+        { "f.txt": body },
+        'printf "h\n" && cat -n f.txt',
+        `h\n${catNumberedLocal(body)}`,
+        "w5num",
+      );
+      expect(text).toBeDefined();
+      expect(text!.split("\n")[1]).toBe("--- Bash view (hashline anchors) ---");
+      expect(text!.split("\n")[2]).toBe("[f.txt (10 lines)]");
+      expect(rowsOf(text!)).toHaveLength(10);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rowsOf(text!), "line10"),
+              anchor_to: anchorFor(rowsOf(text!), "line10"),
+              text: "L10",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("a lone trailing newline is tolerated, extra bytes halt", async () => {
+    await withTempDir("bash-compound-", async (dir) => {
+      const body = numberedLines(10);
+      const base = `=== header ===\n${matchRows(1, 3)}${matchRows(1, 5)}`;
+      const cmd =
+        'cd . && printf "=== header ===\n"; grep -n "line" f.txt | head -3; grep -n "line" f.txt | head -5';
+      const good = await driveCompound(dir, { "f.txt": body }, cmd, `${base}\n`, "w5nl-ok");
+      expect(good.text).toBeDefined();
+      expect(good.text).toContain("[f.txt (5 matches)]");
+      const bad = await driveCompound(dir, { "f.txt": body }, cmd, `${base}EXTRA`, "w5nl-bad");
+      // WHY: D4 partial — both blocks verified before the trailing garbage, so they
+      // WHY: stand anchored with their leases while the unverified tail stays raw.
+      expect(bad.text).toBeDefined();
+      expect(bad.text!.split("\n").filter((l) => l === SEARCH_HEAD)).toHaveLength(2);
+      expect(bad.text!.includes("EXTRA")).toBe(true);
+      expect(rowsOf(bad.text!).some((l) => l.endsWith("│EXTRA"))).toBe(false);
+    });
+  });
+
+  it("a view and a search anchor side by side with one base", async () => {
+    await withTempDir("bash-compound-", async (dir) => {
+      const body = numberedLines(10);
+      const head2 = `${body.split("\n").slice(0, 2).join("\n")}\n`;
+      const { text, editTool, ctx } = await driveCompound(
+        dir,
+        { "f.txt": body },
+        'printf "h\n" && cat f.txt | head -n 2 && grep -n "line" f.txt | tail -2',
+        `h\n${head2}9:line9\n10:line10\n`,
+        "w5mix",
+      );
+      expect(text).toBeDefined();
+      expect(text).toContain("[f.txt (lines 1-2 of 10)]");
+      expect(text).toContain("[f.txt (2 matches)]");
+      expect(rowsOf(text!)).toHaveLength(4);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rowsOf(text!), "line10"),
+              anchor_to: anchorFor(rowsOf(text!), "line10"),
+              text: "L10",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+});

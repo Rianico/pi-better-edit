@@ -189,7 +189,7 @@ interface GlueSegment {
   expectedBytes: number;
 }
 /** One admitted segment of a compound, in encounter order (`:`/`true` drop out, `cd` to base). */
-type CompoundSegment = ViewSeg | SearchSeg | { kind: "glue"; glue: GlueSegment };
+export type CompoundSegment = ViewSeg | SearchSeg | { kind: "glue"; glue: GlueSegment };
 export type BashClass =
   | { kind: "pureView"; view: BashView }
   | { kind: "pureSearch"; search: BashSearch }
@@ -1082,7 +1082,12 @@ export function classifyBashCommand(command: string): BashClass {
  * Classifying here and locating again in the rewriter would duplicate the whole `;`/`&&`/silent
  * chain gate, so the terminal search records its offset in the caller's box instead.
  */
-function classifyBash(command: string, located: { searchNameEnd?: number }): BashClass {
+function classifyBash(
+  command: string,
+  located: {
+    searchNameEnds?: Array<{ end: number; program: SearchProgram; lineNumbered: boolean }>;
+  },
+): BashClass {
   if (command.trim() === "") return { kind: "passThrough", reason: "empty" };
   let script;
   try {
@@ -1137,6 +1142,12 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
   let effCwd: string | undefined;
   const compoundSegs: CompoundSegment[] = [];
   let sawGlue = false;
+  // WHY: (commit 4) compound-aware relaxations below (multi-block, non-terminal blocks,
+  // WHY: post-block `cd`) apply only when glue is present anywhere in the chain; with no glue
+  // WHY: every rule behaves exactly as before (F1 by construction — the added conditions differ).
+  const hasGlue = segments.some(
+    (segment) => segment.node.type === "Command" && parseGlueSegment(segment.node) !== undefined,
+  );
   for (const { node, prefixPosition } of segments) {
     if (node.type !== "Command" && node.type !== "Pipeline") {
       return { kind: "passThrough", reason: "compound-segment" };
@@ -1166,6 +1177,12 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
         // WHY: viewed `./f`, not `sub/f`), and chained `cd`s compose (`cd a && cd b`
         // WHY: lands in `a/b`, not `b`) — both fail closed to pass-through rather
         // WHY: than lease a path the model never saw (ADR-0033 D1).
+        // WHY: (commit 4) a non-redundant `cd` after an admitted block would misresolve that block
+        // WHY: (`baseDir` attaches to later blocks only) — fail closed. Gated on glue presence so
+        // WHY: single-block chains keep their exact current reasons.
+        if (hasGlue && (view !== undefined || searchSeg !== undefined)) {
+          return { kind: "passThrough", reason: "post-block-cd" };
+        }
         if (view !== undefined) return { kind: "passThrough", reason: "post-view-cd" };
         if (baseDir !== undefined) return { kind: "passThrough", reason: "multi-cd" };
         baseDir = classified.cdDir;
@@ -1177,22 +1194,34 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
       // WHY: the search obeys the view's chain rule verbatim (ADR-0033 D1 as amended): only the
       // WHY: terminal statement may carry it, and one view-or-search per command — a prefix
       // WHY: `grep` would be a compound chain the model did not ask about, so it fails closed.
-      if (prefixPosition) return { kind: "passThrough", reason: "multi-statement" };
-      if (view !== undefined || searchSeg !== undefined) {
+      if (prefixPosition && !hasGlue) return { kind: "passThrough", reason: "multi-statement" };
+      if ((view !== undefined || searchSeg !== undefined) && !hasGlue) {
         return { kind: "passThrough", reason: "multi-view" };
       }
       searchSeg = classified.family;
       compoundSegs.push(classified);
       if (node.type === "Command" && node.name?.end !== undefined) {
-        located.searchNameEnd = node.name.end;
+        const fam = classified.family;
+        if (
+          fam.kind === "pureSearch" ||
+          fam.kind === "pureMultiSearch" ||
+          fam.kind === "pureRecursiveSearch"
+        ) {
+          if (located.searchNameEnds === undefined) located.searchNameEnds = [];
+          located.searchNameEnds.push({
+            end: node.name.end,
+            program: fam.search.program,
+            lineNumbered: fam.search.lineNumbered,
+          });
+        }
       }
       continue;
     }
     // WHY: only the terminal statement may carry the view (ADR-0033 D1 as
     // WHY: amended) — a view in a prefix statement means the script is a
     // WHY: compound chain the model did not ask about, so it fails closed.
-    if (prefixPosition) return { kind: "passThrough", reason: "multi-statement" };
-    if (view !== undefined || searchSeg !== undefined) {
+    if (prefixPosition && !hasGlue) return { kind: "passThrough", reason: "multi-statement" };
+    if ((view !== undefined || searchSeg !== undefined) && !hasGlue) {
       return { kind: "passThrough", reason: "multi-view" };
     }
     view = classified;
@@ -1430,51 +1459,29 @@ function collapseAdjacentRuns(stream: ContentLine[]): ContentLine[] {
  * content filter sees. Zero filesystem access: the rewrite is decided from the AST alone, and
  * the `tool_result` side re-parses the mutated command instead of sharing state with this hook.
  */
-/**
- * WHY: (ADR-0039 D5) the compound's single injectable search, if any: a `pureSearch`,
- * WHY: `pureMultiSearch`, or `pureRecursiveSearch` segment still lacking line numbers.
- * WHY: File-list segments need no numbering; an admitted compound holds at most one search.
- */
-function compoundInjectableSearch(
-  segments: CompoundSegment[],
-): { program: SearchProgram; lineNumbered: boolean } | undefined {
-  const found = segments.filter((segment) => segment.kind === "search");
-  if (found.length !== 1) return undefined;
-  const only = found[0];
-  if (only === undefined || only.kind !== "search") return undefined;
-  const family = only.family;
-  if (
-    family.kind !== "pureSearch" &&
-    family.kind !== "pureMultiSearch" &&
-    family.kind !== "pureRecursiveSearch"
-  ) {
-    return undefined;
-  }
-  return family.search;
-}
 export function withSearchLineNumbers(command: string): string {
-  const located: { searchNameEnd?: number } = {};
+  const located: {
+    searchNameEnds?: Array<{ end: number; program: SearchProgram; lineNumbered: boolean }>;
+  } = {};
   const classification = classifyBash(command, located);
-  // WHY: (item 10) multi-file and recursive searches take the same stage-0 splice: their serve
-  // WHY: seams parse `FILE:LINE:content` triples, and with no downstream stage the injected
-  // WHY: column is inert (nothing consumes it), exactly as for a single-file search.
-  const search =
-    classification.kind === "pureSearch" ||
-    classification.kind === "pureMultiSearch" ||
-    classification.kind === "pureRecursiveSearch"
-      ? classification.search
-      : undefined;
-  // WHY: (ADR-0039 D5) a compound's unnumbered search gets the same splice: the envelope needs
-  // WHY: `LINE:` columns to byte-gate each block, so every admitted search is numbered in a single
-  // WHY: pass before execution. Pipelined searches are already numbered (or views, left alone).
-  const compoundSearch =
-    classification.kind === "pureCompound"
-      ? compoundInjectableSearch(classification.segments)
-      : undefined;
-  const target = search ?? compoundSearch;
-  if (target === undefined || target.lineNumbered) return command;
-  const nameEnd = located.searchNameEnd;
-  if (nameEnd === undefined) return command;
-  const flag = target.program === "rg" ? "--line-number" : "-n";
-  return `${command.slice(0, nameEnd)} ${flag}${command.slice(nameEnd)}`;
+  // WHY: (item 10 + ADR-0039 D5) only search families (bare or compound segments) take the splice;
+  // WHY: views, file lists, and declined commands return unchanged. Unnumbered offsets splice
+  // WHY: right-to-left so earlier offsets stay valid; already-numbered need nothing.
+  if (
+    classification.kind !== "pureSearch" &&
+    classification.kind !== "pureMultiSearch" &&
+    classification.kind !== "pureRecursiveSearch" &&
+    classification.kind !== "pureCompound"
+  ) {
+    return command;
+  }
+  let rewritten = command;
+  const injections = [...(located.searchNameEnds ?? [])]
+    .filter((injection) => !injection.lineNumbered)
+    .sort((a, b) => b.end - a.end);
+  for (const { end, program } of injections) {
+    const flag = program === "rg" ? "--line-number" : "-n";
+    rewritten = `${rewritten.slice(0, end)} ${flag}${rewritten.slice(end)}`;
+  }
+  return rewritten;
 }
