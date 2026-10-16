@@ -215,6 +215,16 @@ describe("bash-classifier compound glue segments", () => {
     expect(reasonOf('echo -n "hi" && cat f')).toBe("unsupported-command:echo");
     expect(reasonOf('printf "%s" hi && cat f')).toBe("unsupported-command:printf");
   });
+  it("numbers an unnumbered search inside a compound, leaving the rest alone", () => {
+    expect(withSearchLineNumbers("echo hi && grep x f")).toBe("echo hi && grep -n x f");
+    expect(withSearchLineNumbers("echo hi; grep x f")).toBe("echo hi; grep -n x f");
+    expect(withSearchLineNumbers("export A=b && rg -F x f")).toBe(
+      "export A=b && rg --line-number -F x f",
+    );
+    expect(withSearchLineNumbers("set -e; grep x f")).toBe("set -e; grep -n x f");
+    expect(withSearchLineNumbers("cat f && echo done")).toBe("cat f && echo done");
+    expect(withSearchLineNumbers("echo hi && grep -n x f")).toBe("echo hi && grep -n x f");
+  });
 });
 
 describe("bash-classifier fail-closed matrix", () => {

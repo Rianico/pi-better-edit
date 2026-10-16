@@ -1430,6 +1430,28 @@ function collapseAdjacentRuns(stream: ContentLine[]): ContentLine[] {
  * content filter sees. Zero filesystem access: the rewrite is decided from the AST alone, and
  * the `tool_result` side re-parses the mutated command instead of sharing state with this hook.
  */
+/**
+ * WHY: (ADR-0039 D5) the compound's single injectable search, if any: a `pureSearch`,
+ * WHY: `pureMultiSearch`, or `pureRecursiveSearch` segment still lacking line numbers.
+ * WHY: File-list segments need no numbering; an admitted compound holds at most one search.
+ */
+function compoundInjectableSearch(
+  segments: CompoundSegment[],
+): { program: SearchProgram; lineNumbered: boolean } | undefined {
+  const found = segments.filter((segment) => segment.kind === "search");
+  if (found.length !== 1) return undefined;
+  const only = found[0];
+  if (only === undefined || only.kind !== "search") return undefined;
+  const family = only.family;
+  if (
+    family.kind !== "pureSearch" &&
+    family.kind !== "pureMultiSearch" &&
+    family.kind !== "pureRecursiveSearch"
+  ) {
+    return undefined;
+  }
+  return family.search;
+}
 export function withSearchLineNumbers(command: string): string {
   const located: { searchNameEnd?: number } = {};
   const classification = classifyBash(command, located);
@@ -1442,9 +1464,17 @@ export function withSearchLineNumbers(command: string): string {
     classification.kind === "pureRecursiveSearch"
       ? classification.search
       : undefined;
-  if (search === undefined || search.lineNumbered) return command;
+  // WHY: (ADR-0039 D5) a compound's unnumbered search gets the same splice: the envelope needs
+  // WHY: `LINE:` columns to byte-gate each block, so every admitted search is numbered in a single
+  // WHY: pass before execution. Pipelined searches are already numbered (or views, left alone).
+  const compoundSearch =
+    classification.kind === "pureCompound"
+      ? compoundInjectableSearch(classification.segments)
+      : undefined;
+  const target = search ?? compoundSearch;
+  if (target === undefined || target.lineNumbered) return command;
   const nameEnd = located.searchNameEnd;
   if (nameEnd === undefined) return command;
-  const flag = search.program === "rg" ? "--line-number" : "-n";
+  const flag = target.program === "rg" ? "--line-number" : "-n";
   return `${command.slice(0, nameEnd)} ${flag}${command.slice(nameEnd)}`;
 }
