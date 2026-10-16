@@ -636,6 +636,15 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       if (classification.kind === "pureFilesList") {
         return await handleBashFilesList(event, ctx, classification.search);
       }
+      if (classification.kind === "pureCompound") {
+        // WHY: (ADR-0039) compounds have no envelope yet — peel/verify lands separately, so the
+        // WHY: lifecycle declines by default (raw output, zero leases) exactly like pass-through.
+        const debugValue = process.env.PI_HASHLINE_DEBUG;
+        if (debugValue === "1" || debugValue === "true") {
+          console.error(`[bash-view] pass-through (compound, no envelope yet)`);
+        }
+        return undefined;
+      }
       if (classification.kind !== "pureView") {
         // WHY: (ADR-0033 observability) a systematic regression (parser drift, a
         // WHY: filtering wrapper, a new view shape) is otherwise indistinguishable

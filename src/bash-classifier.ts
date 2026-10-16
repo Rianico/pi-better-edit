@@ -179,12 +179,30 @@ type SearchFamily =
   | { kind: "pureRecursiveSearch"; search: BashRecursiveSearch }
   | { kind: "pureFilesList"; search: BashFilesList };
 
+/** A static glue segment: a literal print or silent env command with parse-time expected bytes. */
+interface GlueSegment {
+  /** Program exactly as written (`"echo"`, `"printf"`, `"export"`, `"set"`). */
+  program: "echo" | "printf" | "export" | "set";
+  /** Exact stdout contribution, computed at parse time and verified during peeling. */
+  expectedText: string;
+  /** UTF-8 byte length of `expectedText`. */
+  expectedBytes: number;
+}
+/** One admitted segment of a compound, in encounter order (`:`/`true` drop out, `cd` to base). */
+type CompoundSegment = ViewSeg | SearchSeg | { kind: "glue"; glue: GlueSegment };
 export type BashClass =
   | { kind: "pureView"; view: BashView }
   | { kind: "pureSearch"; search: BashSearch }
   | { kind: "pureMultiSearch"; search: BashMultiSearch }
   | { kind: "pureRecursiveSearch"; search: BashRecursiveSearch }
   | { kind: "pureFilesList"; search: BashFilesList }
+  | {
+      kind: "pureCompound";
+      /** Ordered admitted segments; silent prefixes are absorbed (`cd` into `baseDir`). */
+      segments: CompoundSegment[];
+      /** Chain-level resolution base (single pre-block literal `cd`), if any. */
+      baseDir?: string;
+    }
   | { kind: "passThrough"; reason: string };
 
 /** `sed -n` numeric print only — locks out `w`/`e`/`r`/`s`/`;`/`{}`/`/` (R4). */
@@ -799,6 +817,94 @@ function unwrapViewWrapper(stage: StageShape): StageShape | undefined {
   return { name: inner, args: rest };
 }
 
+/** Programs admitted as static glue (exact standalone quoted literals; see the synonym gate). */
+const LITERAL_PRINT_PROGRAMS = new Set(["echo", "printf"]);
+/**
+ * WHY: (ADR-0039 D6) static glue for compounds: literal prints without dynamic expansions, plus
+ * WHY: silent env commands. Expected content and byte length are computed at parse time and
+ * WHY: verified during peeling; any form whose bytes cannot be predicted with certainty fails
+ * WHY: closed here, because a wrong prediction must never produce a lease.
+ */
+function parseGlueSegment(node: Command | Pipeline): GlueSegment | undefined {
+  if (node.type !== "Command") return undefined;
+  if (node.prefix.length > 0 || node.redirects.length > 0) return undefined;
+  if (!isWord(node.name)) return undefined;
+  const name = literalValue(node.name);
+  if (name === undefined) return undefined;
+  if (name === "export") return parseExportGlue(node);
+  const stage = stageShape(node);
+  if (!stage) return undefined;
+  if (LITERAL_PRINT_PROGRAMS.has(stage.name)) return parsePrintGlue(stage);
+  if (stage.name === "set") return parseSetGlue(stage);
+  return undefined;
+}
+function parsePrintGlue(stage: { name: string; args: string[] }): GlueSegment | undefined {
+  if (stage.args.length !== 1) return undefined;
+  const arg = stage.args[0];
+  if (arg === undefined || arg.startsWith("-")) return undefined;
+  if (stage.name === "echo") {
+    // WHY: the print builtin's backslash handling varies by shell; only backslash-free literals
+    // WHY: have certain bytes. Escaped content belongs to `printf` (below), which owns escapes.
+    if (arg.includes("\\")) return undefined;
+    return makeGlue("echo", `${arg}\n`);
+  }
+  if (stage.name !== "printf") return undefined;
+  if (arg.includes("%")) return undefined;
+  const text = parsePrintfEscapes(arg);
+  if (text === undefined) return undefined;
+  return makeGlue("printf", text);
+}
+function parsePrintfEscapes(format: string): string | undefined {
+  let out = "";
+  for (let i = 0; i < format.length; i++) {
+    const ch = format[i];
+    if (ch !== "\\") {
+      out += ch;
+      continue;
+    }
+    const esc = format[i + 1];
+    if (esc === "n") {
+      out += "\n";
+      i++;
+    } else if (esc === "t") {
+      out += "\t";
+      i++;
+    } else if (esc === "\\") {
+      out += "\\";
+      i++;
+    } else {
+      return undefined;
+    }
+  }
+  return out;
+}
+function parseExportGlue(node: Command): GlueSegment | undefined {
+  if (node.suffix.length !== 1) return undefined;
+  const only = node.suffix[0];
+  if (only === undefined) return undefined;
+  if (isWord(only)) {
+    const name = literalValue(only);
+    if (name === undefined || !/^[A-Za-z_][A-Za-z0-9_]*$/.test(name)) return undefined;
+    return makeGlue("export", "");
+  }
+  if (only.type !== "Assignment") return undefined;
+  if (only.append === true || only.index !== undefined) return undefined;
+  if (!/^[A-Za-z_][A-Za-z0-9_]*$/.test(only.name)) return undefined;
+  if (!isWord(only.value) || literalValue(only.value) === undefined) return undefined;
+  return makeGlue("export", "");
+}
+function parseSetGlue(stage: { name: string; args: string[] }): GlueSegment | undefined {
+  if (stage.args.length !== 1) return undefined;
+  const flag = stage.args[0];
+  if (flag !== "-e" && flag !== "+e") return undefined;
+  return makeGlue("set", "");
+}
+function makeGlue(
+  program: "echo" | "printf" | "export" | "set",
+  expectedText: string,
+): GlueSegment {
+  return { program, expectedText, expectedBytes: Buffer.byteLength(expectedText, "utf-8") };
+}
 function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undefined {
   if (node.type === "Command") {
     const stage = stageShape(node);
@@ -1012,13 +1118,23 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
   let view: ViewSeg | undefined;
   let searchSeg: SearchFamily | undefined;
   let baseDir: string | undefined;
+  const compoundSegs: CompoundSegment[] = [];
+  let sawGlue = false;
   for (const { node, prefixPosition } of segments) {
     if (node.type !== "Command" && node.type !== "Pipeline") {
       return { kind: "passThrough", reason: "compound-segment" };
     }
     const classified = classifySegment(node, prefixPosition);
     if (classified.kind === "unsafe") {
-      return { kind: "passThrough", reason: classified.reason };
+      // WHY: (ADR-0039 D6) static glue parses here so a compound can carry it — but only inside a
+      // WHY: multi-segment chain (below) and only beside an admitted block. A lone print keeps its
+      // WHY: own decline (F2: glue locates blocks; with no block there is nothing to locate).
+      const glue =
+        segments.length > 1 && node.type === "Command" ? parseGlueSegment(node) : undefined;
+      if (!glue) return { kind: "passThrough", reason: classified.reason };
+      sawGlue = true;
+      compoundSegs.push({ kind: "glue", glue });
+      continue;
     }
     if (classified.kind === "silent") {
       if (classified.cdDir !== undefined) {
@@ -1043,6 +1159,7 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
         return { kind: "passThrough", reason: "multi-view" };
       }
       searchSeg = classified.family;
+      compoundSegs.push(classified);
       if (node.type === "Command" && node.name?.end !== undefined) {
         located.searchNameEnd = node.name.end;
       }
@@ -1056,6 +1173,17 @@ function classifyBash(command: string, located: { searchNameEnd?: number }): Bas
       return { kind: "passThrough", reason: "multi-view" };
     }
     view = classified;
+    compoundSegs.push(classified);
+  }
+  // WHY: F2-as-restated (ADR-0039): glue alone admits nothing — zero admitted BLOCKS (view/search)
+  // WHY: means the compound declines even if glue parsed, because glue only locates blocks inside
+  // WHY: combined stdout and with no block there is nothing to locate. Falls through to `no-view`.
+  if (sawGlue && (view !== undefined || searchSeg !== undefined)) {
+    return {
+      kind: "pureCompound",
+      segments: compoundSegs,
+      ...(baseDir === undefined ? {} : { baseDir }),
+    };
   }
   if (searchSeg) return applyBaseDir(searchSeg, baseDir);
   if (!view) return { kind: "passThrough", reason: "no-view" };

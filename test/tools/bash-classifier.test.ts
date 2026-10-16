@@ -158,6 +158,65 @@ describe("bash-classifier span matrix", () => {
   });
 });
 
+import type { BashClass } from "../../src/bash-classifier";
+
+function compoundOf(command: string): Extract<BashClass, { kind: "pureCompound" }> {
+  const result = classifyBashCommand(command);
+  expect(result.kind).toBe("pureCompound");
+  if (result.kind !== "pureCompound") throw new Error(`not a compound: ${command}`);
+  return result;
+}
+
+describe("bash-classifier compound glue segments", () => {
+  // WHY: (ADR-0039 D6 + F2-as-restated) glue is admitted only inside a compound beside an
+  // WHY: admitted block. A lone print keeps its own decline, and glue-only chains fail closed
+  // WHY: to `no-view` because glue locates blocks and with no block there is nothing to locate.
+  it("still declines lone prints and glue-only chains", () => {
+    expect(reasonOf('printf "hi"')).toBe("unsupported-command:printf");
+    expect(reasonOf("export A=b")).toBe("non-literal-command");
+    expect(reasonOf("set -e")).toBe("unsupported-command:set");
+    expect(reasonOf("printf a; printf b")).toBe("no-view");
+    expect(reasonOf("echo hi; echo bye")).toBe("no-view");
+  });
+  it("admits print and env glue beside a view, with parse-time expected bytes", () => {
+    expect(compoundOf('printf "hi\\n" && cat f')).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "glue", glue: { program: "printf", expectedText: "hi\n", expectedBytes: 3 } },
+        { kind: "view", filePath: "f", ops: [] },
+      ],
+    });
+    expect(compoundOf("export A=b && cat f")).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "glue", glue: { program: "export", expectedText: "", expectedBytes: 0 } },
+        { kind: "view", filePath: "f", ops: [] },
+      ],
+    });
+    expect(compoundOf("set -e; cat f")).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "glue", glue: { program: "set", expectedText: "", expectedBytes: 0 } },
+        { kind: "view", filePath: "f", ops: [] },
+      ],
+    });
+    // WHY: a QUOTED glob is static (the shell never expands it) — only unquoted `*` is dynamic
+    // WHY: and `literalValue` already rejects that before glue is attempted. Predictable admit.
+    expect(compoundOf('echo "a*b" && cat f')).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "glue", glue: { program: "echo", expectedText: "a*b\n", expectedBytes: 4 } },
+        { kind: "view", filePath: "f", ops: [] },
+      ],
+    });
+  });
+  it("fails closed on dynamic, flagged, or converting print forms", () => {
+    expect(reasonOf('echo "a$b" && cat f')).toBe("non-literal-command");
+    expect(reasonOf('echo -n "hi" && cat f')).toBe("unsupported-command:echo");
+    expect(reasonOf('printf "%s" hi && cat f')).toBe("unsupported-command:printf");
+  });
+});
+
 describe("bash-classifier fail-closed matrix", () => {
   it("passes through commands with no view", () => {
     expect(reasonOf("")).toBe("empty");
@@ -175,9 +234,26 @@ describe("bash-classifier fail-closed matrix", () => {
   });
 
   it("passes through unsafe chain segments", () => {
-    expect(reasonOf("echo hi && cat f")).toBe("unsupported-command:echo");
+    // WHY: (ADR-0039 D6) a literal print beside a view is glue in an admitted compound — the
+    // WHY: envelope (separately) verifies the predicted bytes against observed stdout, and the
+    // WHY: lifecycle still declines this shape until then, so no lease exists yet.
+    expect(compoundOf("echo hi && cat f")).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "glue", glue: { program: "echo", expectedText: "hi\n", expectedBytes: 3 } },
+        { kind: "view", filePath: "f", ops: [] },
+      ],
+    });
     expect(reasonOf("make && cat f")).toBe("unsupported-command:make");
-    expect(reasonOf("cat f && echo done")).toBe("unsupported-command:echo");
+    // WHY: (ADR-0039 D6) trailing glue is the same admitted shape — position-agnostic, verified
+    // WHY: against observed stdout by the envelope, declined by default until then.
+    expect(compoundOf("cat f && echo done")).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "view", filePath: "f", ops: [] },
+        { kind: "glue", glue: { program: "echo", expectedText: "done\n", expectedBytes: 5 } },
+      ],
+    });
     expect(reasonOf("cd /x && grep -r foo . && cat f")).toBe("multi-view");
     expect(reasonOf("cd -")).toBe("unsupported-command:cd");
     expect(reasonOf("cd -- && cat f")).toBe("unsupported-command:cd");
@@ -193,7 +269,15 @@ describe("bash-classifier fail-closed matrix", () => {
     // WHY: is not the deterministic shape this decision authorises.
     expect(reasonOf("cat f; cat g")).toBe("multi-statement");
     expect(reasonOf("cat f; cd sub")).toBe("multi-statement");
-    expect(reasonOf("echo hi; cat f")).toBe("unsupported-command:echo");
+    // WHY: (ADR-0039 D6) a `;`-chain print prefix is glue, not an unknown command — the chain
+    // WHY: stays deterministic (static bytes + a terminal view), so it classifies as a compound.
+    expect(compoundOf("echo hi; cat f")).toEqual({
+      kind: "pureCompound",
+      segments: [
+        { kind: "glue", glue: { program: "echo", expectedText: "hi\n", expectedBytes: 3 } },
+        { kind: "view", filePath: "f", ops: [] },
+      ],
+    });
     expect(reasonOf("cd a; cd b; cat f")).toBe("multi-cd");
     expect(reasonOf("cd $D; cat f")).toBe("non-literal-command");
     // WHY: `cd --`/`cd -P` consume the word as an option and cd to `$HOME`,
