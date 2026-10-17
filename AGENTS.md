@@ -18,6 +18,10 @@ The architecture-revision spec lives at `docs/spec/content-addressed-line-identi
 
 The method for changing a tool's description, snippet or guidelines — map the surfaces, map the pins, probe behaviourally, measure every ambiguity, review, ticket, verify the served text — and the principles behind it: see `docs/agents/refining-tool-prompts.md`.
 
+### Model-facing surfaces
+
+The tool schema the model reads is a cheap surface: the model re-reads it every session and there is no compiled client, so adding or removing a field is a MINOR change at most — never `!`. Two things stay expensive and must not be swept up with it: **recorded history** (transcripts store the arguments actually sent, so renderers keep tolerating shapes that no longer validate) and **pinned removals** (a deleted field needs one test asserting the old shape is now rejected). Reasoning: `docs/adr/0040-read-payload-single-shape.md`.
+
 ### Contribution
 
 Conventional commits & changelog: see CONTRIBUTING.md

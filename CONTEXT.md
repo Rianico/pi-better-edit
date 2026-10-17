@@ -273,3 +273,15 @@ _Avoid_: print segment (ambiguous with dynamic prints)
 **redundant cd**:
 A `cd` statement resolving to the active `effCwd`, treated as an inert silent no-op.
 _Avoid_: duplicate cd, unnecessary cd
+
+**canonical payload**:
+The single argument shape a tool accepts from the model — for `read`, `{ files: [{ file, windows?, mode? }], mode? }`. Caps, window resolution and row serving see only this shape.
+_Avoid_: primary shape, new format
+
+**render projection**:
+The pure mapping from a tool's argument payload onto the shape pi's builtin renderer consumes, used only for TUI presentation. It never mutates the payload and never changes what is served to the model.
+_Avoid_: display mapping, path fixup, view model
+
+**legacy shape**:
+An argument shape a tool no longer accepts but which survives in already-recorded transcripts. Rendering tolerates it; the schema rejects it.
+_Avoid_: deprecated shape, backward compatibility, old format
