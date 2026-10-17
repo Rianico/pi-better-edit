@@ -13,7 +13,7 @@ Forensic evaluation of benchmark runs revealed high bash dominance (65–67%), d
 
 This specification unifies search and read into a cohesive, deterministic, line-identity MVCC pipeline:
 1. **I1a (Intercepted `grep`/`rg`)**: Pre-execution argument injection via `tool_call` to ensure native `-n` line numbering, verified against disk bytes via a D9 gate, serving anchored rows with MVCC leases ($R=1$).
-2. **I1b (Unified `read`)**: Clean-break hierarchical schema supporting multi-file reads and unified line/anchor windows (`files -> windows`), with file-level `mode`; runtime admission accepts only the canonical shape (the tolerant fold was removed per ADR-0040, §4.2 kept as history).
+2. **I1b (Unified `read`)**: Clean-break schema of one flat target per call (`{ file, windows?, mode? }`; supersedes the original nested `files -> windows` design per ADR-0041, §4.1), with unified line/anchor windows and a call-wide `mode`; runtime admission accepts only the flat shape (the tolerant fold and the outer array are both removed, §4.2 kept as history).
 3. **I4 (Post-Edit Diffs)**: Returning anchored unified diffs directly in `content[0].text` with synchronous lease registration.
 4. **I2 (Byte View)**: Verbatim UTF-8 display by default with invisible/binary character warnings.
 5. **P3.1 (ADR-0033 Amendment)**: Formally updating the architecture record to match implemented CRLF/BOM normalization and semicolon prefix chains.
