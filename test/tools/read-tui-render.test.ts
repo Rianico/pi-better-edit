@@ -131,3 +131,57 @@ describe("read tool — TUI renderers for the {file} payload", () => {
     expect(calls).not.toContain("toolOutput");
   });
 });
+
+describe("read tool — TUI renderers for the canonical {files} payload (#141)", () => {
+  it("renders the filename on the call line for { files: [{ file }] } without mutating args", () => {
+    const tool = readTool();
+    const args = { files: [{ file: "notes.txt" }] };
+    const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
+
+    const call = tool.renderCall(args, theme, context);
+
+    expect(call.render(80).join("\n")).toContain("notes.txt");
+    expect(args).toEqual({ files: [{ file: "notes.txt" }] });
+    expect("path" in args).toBe(false);
+  });
+
+  it("renders filename and :start-end for { files: [{ file, windows: [{ offset, limit }] }] }", () => {
+    const tool = readTool();
+    const args = { files: [{ file: "notes.txt", windows: [{ offset: 3, limit: 5 }] }] };
+    const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
+
+    const call = tool.renderCall(args, theme, context);
+
+    // WHY: the builtin renders `:offset-(offset+limit-1)`, so offset 3 limit 5 shows `:3-7`.
+    const line = call.render(80).join("\n");
+    expect(line).toContain("notes.txt");
+    expect(line).toContain(":3-7");
+    expect(args).toEqual({ files: [{ file: "notes.txt", windows: [{ offset: 3, limit: 5 }] }] });
+  });
+
+  it("shows the first target with no range for a multi-file call", () => {
+    const tool = readTool();
+    const args = {
+      files: [{ file: "a.txt", windows: [{ offset: 2, limit: 4 }] }, { file: "b.txt" }],
+    };
+    const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
+
+    const call = tool.renderCall(args, theme, context);
+
+    // WHY: ADR-0040 D4 renders the first target only, and a range needs exactly one file —
+    // WHY: even though the first file carries a window, no `:2-5` range is fabricated.
+    const line = call.render(80).join("\n");
+    expect(line).toContain("a.txt");
+    expect(line).not.toContain(":2-5");
+  });
+
+  it("renders the filename for { files: [{ file, mode: verbatim }] } (mode is header-neutral)", () => {
+    const tool = readTool();
+    const args = { files: [{ file: "notes.txt", mode: "verbatim" }] };
+    const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
+
+    const call = tool.renderCall(args, theme, context);
+
+    expect(call.render(80).join("\n")).toContain("notes.txt");
+  });
+});

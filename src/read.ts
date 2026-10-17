@@ -46,9 +46,46 @@ function readGuide(): string[] {
   return loadGuide("../prompts/read-guidelines.md");
 }
 
-// WHY: the builtin renderers read `file_path ?? path`; our payload is `file`, but a legacy
-// WHY: `path` caller must still render, so the seam accepts either key.
-type ReadRenderArgs = { file?: string; path?: string };
+// WHY: the builtin renderers key on `file_path ?? path` plus `offset`/`limit`; our payload
+// WHY: field is `files` since d272b1c, but a legacy `file`/`path` caller (and recorded history
+// WHY: per ADR-0040 D3) must still render, so the seam accepts every key.
+type ReadRenderFileTarget = {
+  file?: string;
+  windows?: ReadonlyArray<{
+    offset?: number;
+    limit?: number;
+    around_anchor?: string;
+    radius?: number;
+  }>;
+  mode?: string;
+};
+type ReadRenderArgs = {
+  file?: string;
+  path?: string;
+  files?: ReadonlyArray<ReadRenderFileTarget>;
+  mode?: string;
+};
+/** Project the canonical `files` payload onto the builtin renderer's keys (ADR-0040 D3/D4).
+ * Path is the first file's target, falling back to legacy `file ?? path` for recorded
+ * history. A range is derived only from exactly one file carrying exactly one simple
+ * `{ offset, limit }` window; anything else (multi-file, multi-window, `around_anchor`)
+ * leaves the range absent rather than fabricating one. The result is a new object —
+ * `context.args` is never mutated. */
+function projectReadRenderArgs(args: ReadRenderArgs | undefined): {
+  path: string | undefined;
+  offset?: number;
+  limit?: number;
+} {
+  const first = args?.files?.[0];
+  const only =
+    args?.files?.length === 1 && first?.windows?.length === 1 ? first.windows[0] : undefined;
+  const ranged =
+    typeof only?.offset === "number" && typeof only?.limit === "number" ? only : undefined;
+  return {
+    path: first?.file ?? args?.file ?? args?.path,
+    ...(ranged !== undefined ? { offset: ranged.offset, limit: ranged.limit } : {}),
+  };
+}
 
 /** Render mode of one file: `served` (anchored rows) or `verbatim` (plain text, no leases). */
 type RenderMode = "served" | "verbatim";
@@ -522,9 +559,11 @@ function servedRowsOf(entry: PreparedTarget): ServedRow[] {
 }
 
 export function regRead(pi: ExtensionAPI): void {
-  // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer reads
-  // WHY: `file_path ?? path`. Our payload field is `file`, so re-map it for rendering only —
-  // WHY: the call line and expanded output keep the filename, and `args` is never mutated.
+  // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer keys on
+  // WHY: `file_path ?? path` plus `offset`/`limit`. Our payload field is `files` since d272b1c,
+  // WHY: so project it for rendering only — the call line and expanded output keep the filename,
+  // WHY: and `args` is never mutated. The `file ?? path` fallback is permanent tolerance for
+  // WHY: recorded transcripts (ADR-0040 D3), not dead code.
   const builtinReadDef = createReadToolDefinition("");
   const builtinRenderCall = builtinReadDef.renderCall as any;
   const builtinRenderResult = builtinReadDef.renderResult as any;
@@ -534,18 +573,19 @@ export function regRead(pi: ExtensionAPI): void {
     description: R_DESC,
     promptSnippet: R_SNIPPET,
     promptGuidelines: readGuide(),
-    // SAFETY: the builtin renderers are keyed on `file_path ?? path`; the spread re-maps our
-    // SAFETY: `file` payload onto `path` for rendering without mutating the caller's `args`.
+    // SAFETY: the builtin renderers are keyed on `file_path ?? path` plus `offset`/`limit`;
+    // SAFETY: projectReadRenderArgs derives both from the `files` payload (first target only
+    // SAFETY: per ADR-0040 D4) without mutating the caller's `args`.
     renderCall: (args: ReadRenderArgs, theme, context) =>
-      builtinRenderCall({ ...args, path: args?.file ?? args?.path }, theme, context),
+      builtinRenderCall({ ...args, ...projectReadRenderArgs(args) }, theme, context),
     renderResult: (result, options, theme, context) => {
       // SAFETY: renderers receive raw call args, not the validated payload, so `context.args` may
-      // SAFETY: carry a legacy `path` that `Static<TParams>` does not model; this cast reads only
-      // SAFETY: `file`/`path`, both of which the renderers below already key on.
+      // SAFETY: carry a legacy shape that `Static<TParams>` does not model; this cast reads only
+      // SAFETY: `files`/`file`/`path`, all of which the projection below already keys on.
       const args = context.args as ReadRenderArgs;
       return builtinRenderResult(result, options, theme, {
         ...context,
-        args: { ...args, path: args?.file ?? args?.path },
+        args: { ...args, ...projectReadRenderArgs(args) },
       });
     },
     parameters: readToolSchema,
