@@ -90,7 +90,7 @@ In `tool_result`:
 2. **Line Geometry Parsing**: Parse lines conforming to `^(\d+):(.*)$`. If any non-empty line cannot be parsed, fail closed to raw bash.
 3. **Match Cap Gate**: If match count exceeds `SEARCH_MAX_MATCHES` (default 50), pass through raw bash directly without truncation or partial leases (raw bash output is complete and safer).
 4. **Byte Equality Check**: Read disk lines via `readNormFile`. For every parsed match $L$, verify `diskLines[L - 1] === parsedContent`. Any mismatch fails closed.
-5. **Frozen Header & Formatting**:
+5. **Frozen Header & Formatting** (single definition site: `src/bash-view-banner.ts`; call sites must import `bashBanner(kind)`, never re-declare the text):
    ```text
    --- Bash search (hashline anchors) ---
    [src/app.ts (2 matches)]

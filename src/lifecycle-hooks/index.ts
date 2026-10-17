@@ -24,6 +24,7 @@ import {
   sessionKeyFor as defaultSessionKeyFor,
 } from "../served-session/session.js";
 import { snapshotHashFor } from "../snapshot-store";
+import { bashBanner } from "../bash-view-banner.js";
 import { formatRangedServedHeader } from "../file-content/served-header.js";
 
 async function defaultRecordDiffServes(input: {
@@ -449,7 +450,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           ...(event.content ?? []),
           {
             type: "text",
-            text: `\n\n--- Auto-read (hashline anchors) ---\n${preview.text}`,
+            text: `\n\n${bashBanner("auto-read")}\n${preview.text}`,
           },
           ...(literalBypass ? [{ type: "text" as const, text: LITERAL_BYPASS_NOTICE }] : []),
           ...prefixNotes.map((note) => ({ type: "text" as const, text: note })),
@@ -761,7 +762,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         if (segment.kind !== "search" || segment.family.kind !== "pureSearch") return undefined;
         if (slice === "") {
           const file = segment.family.search.filePath;
-          return `--- Bash search (hashline anchors) ---\n[${file} (0 matches)]\n`;
+          return `${bashBanner("search")}\n[${file} (0 matches)]\n`;
         }
         const res = await handleBashSearch(
           event,
@@ -907,9 +908,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         // WHY: the round trip and where the off switch lives; later interceptions stay silent.
         notifyBashViewOnce(ctx, sessionKey);
         return {
-          content: [
-            { type: "text", text: `--- Bash view (hashline anchors) ---\n${preview.text}` },
-          ],
+          content: [{ type: "text", text: `${bashBanner("view")}\n${preview.text}` }],
         };
       }
 
@@ -1029,9 +1028,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     }
     notifyBashViewOnce(ctx, sessionKey);
     return {
-      content: [
-        { type: "text", text: `--- Bash search (hashline anchors) ---\n${blocks.join("\n")}` },
-      ],
+      content: [{ type: "text", text: `${bashBanner("search")}\n${blocks.join("\n")}` }],
     };
   }
 
@@ -1162,7 +1159,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       }
     }
     return {
-      content: [{ type: "text", text: `--- Bash file list (no anchors) ---\n${lines.join("\n")}` }],
+      content: [{ type: "text", text: `${bashBanner("file-list")}\n${lines.join("\n")}` }],
     };
   }
 
@@ -1247,7 +1244,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       content: [
         {
           type: "text",
-          text: `--- Bash view (hashline anchors) ---\n${viewHeader(input.filePath, input.ops, count)}\n${fmtServedRows(servedRows, input.allLines)}`,
+          text: `${bashBanner("view")}\n${viewHeader(input.filePath, input.ops, count)}\n${fmtServedRows(servedRows, input.allLines)}`,
         },
       ],
     };
@@ -1416,10 +1413,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       source: "auto-read",
       content: normalized,
     });
-    // WHY: the header is frozen (spec §3.4): the same `--- Bash search (hashline anchors) ---` literal
-    // WHY: names the interception seam, and the bracketed count uses the singular for one match.
+    // WHY: the header is frozen (spec §3.4): the same search banner literal from `bashBanner` names
+    // WHY: the interception seam, and the bracketed count uses the singular for one match.
     const count = shownRows.length;
-    const header = `--- Bash search (hashline anchors) ---\n[${search.filePath} (${count} ${count === 1 ? "match" : "matches"})]`;
+    const header = `${bashBanner("search")}\n[${search.filePath} (${count} ${count === 1 ? "match" : "matches"})]`;
     notifyBashViewOnce(ctx, sessionKey);
     return {
       content: [{ type: "text", text: `${header}\n${fmtServedRows(shownRows, diskLines)}` }],
