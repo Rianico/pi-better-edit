@@ -71,8 +71,8 @@ describe("prompts/read.md (model-facing contract)", () => {
   });
 
   it("documents pagination support", () => {
-    // Re-pointed from "offset/limit" (stage A/B): the published schema is strictly `files: [...]`,
-    // so the continuation the prompt teaches is the 4.4 footer, not the legacy top-level pair.
+    // The published schema is strictly the flat `{ file, windows?, mode? }` shape (ADR-0041),
+    // so the continuation the prompt teaches is the 4.4 footer, not a top-level offset/limit pair.
     expect(readPrompt).toContain("Use windows: [{ offset, limit }] to continue.");
     expect(readPrompt).toContain("`windows`");
   });

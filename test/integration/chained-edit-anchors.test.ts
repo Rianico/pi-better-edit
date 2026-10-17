@@ -8,7 +8,7 @@ describe("chained edit anchors", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -30,7 +30,7 @@ describe("chained edit anchors", () => {
       expect(editResult.content[0].text).toContain("Added 1 line(s), removed 1 line(s).");
       const secondRead = await readTool.execute(
         "r2",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -61,13 +61,7 @@ describe("chained edit anchors", () => {
     await withTempFile("big.ts", fifteenLines, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const firstRead = await readTool.execute(
-        "r1",
-        { files: [{ file: "big.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const firstRead = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const line1Ref = firstRead.content[0].text
         .split("\n")
         .find((line: string) => line.includes("│line 1"))!
@@ -98,7 +92,7 @@ describe("chained edit anchors", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "expand.ts" }] },
+        { file: "expand.ts" },
         undefined,
         undefined,
         ctx,
@@ -130,7 +124,7 @@ describe("chained edit anchors", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "stale.ts" }] },
+        { file: "stale.ts" },
         undefined,
         undefined,
         ctx,
@@ -186,7 +180,7 @@ describe("chained edit anchors", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "stable.ts" }] },
+        { file: "stable.ts" },
         undefined,
         undefined,
         ctx,

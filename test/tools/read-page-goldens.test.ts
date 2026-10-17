@@ -176,13 +176,7 @@ async function read(file: string, content: string, args: Record<string, unknown>
   let text = "";
   await withTempFile(file, content, async ({ cwd }) => {
     const { readTool, ctx } = setupReadTest(cwd);
-    const result = await readTool.execute(
-      "r1",
-      { files: [{ file, ...args }] },
-      undefined,
-      undefined,
-      ctx,
-    );
+    const result = await readTool.execute("r1", { file, ...args }, undefined, undefined, ctx);
     text = result.content?.[0]?.text ?? "";
   });
   return text;
@@ -197,13 +191,7 @@ async function readServed(
   let anchors: string[] = [];
   await withTempFile(file, content, async ({ cwd, path }) => {
     const { readTool, ctx } = setupReadTest(cwd);
-    const result = await readTool.execute(
-      "r1",
-      { files: [{ file, ...args }] },
-      undefined,
-      undefined,
-      ctx,
-    );
+    const result = await readTool.execute("r1", { file, ...args }, undefined, undefined, ctx);
     text = result.content?.[0]?.text ?? "";
     // WHY: the oracle is derived for the same absolute path the tool served — the loader's own
     // WHY: derivation agrees with it anchor for anchor (probed in anchor-walk-identity), so the
@@ -236,7 +224,7 @@ describe("the served read's refusals", () => {
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const error = await readTool
-        .execute("r1", { files: [{ file: "huge.ts" }] }, undefined, undefined, ctx)
+        .execute("r1", { file: "huge.ts" }, undefined, undefined, ctx)
         .then(
           () => undefined,
           (thrown: unknown) => thrown as Error,
@@ -255,7 +243,7 @@ describe("the served read's refusals", () => {
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const error = await readTool
-        .execute("r1", { files: [{ file: "huge.ts" }] }, undefined, undefined, ctx)
+        .execute("r1", { file: "huge.ts" }, undefined, undefined, ctx)
         .then(
           () => undefined,
           (thrown: unknown) => thrown as Error,

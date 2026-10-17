@@ -96,13 +96,7 @@ describe("stable hashing with duplicate content lines", () => {
     await withTempFile("sample.ts", file, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const read1 = await readTool.execute(
-        "r1",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const read1 = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
 
       const firstBraceHash = extractHash(lines1.find((l) => l.includes("│}"))!);
@@ -123,13 +117,7 @@ describe("stable hashing with duplicate content lines", () => {
         ctx,
       );
 
-      const read2 = await readTool.execute(
-        "r2",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const read2 = await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");
       const survivingBrace = lines2.find((l) => l.endsWith("│}"))!;
       expect(survivingBrace).toBeTruthy();
@@ -143,13 +131,7 @@ describe("stable hashing with duplicate content lines", () => {
     await withTempFile("sample.ts", file, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const read1 = await readTool.execute(
-        "r1",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const read1 = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
 
       const bLines = lines1.filter((l) => l.endsWith("│b"));
@@ -169,13 +151,7 @@ describe("stable hashing with duplicate content lines", () => {
         ctx,
       );
 
-      const read2 = await readTool.execute(
-        "r2",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const read2 = await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");
       const survivingB = lines2.find((l) => l.endsWith("│b"))!;
       expect(survivingB).toBeTruthy();
@@ -189,13 +165,7 @@ describe("stable hashing with duplicate content lines", () => {
     await withTempFile("sample.ts", file, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const read1 = await readTool.execute(
-        "r1",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const read1 = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const lines1 = getText(read1).split("\n");
 
       const bLines = lines1.filter((l) => l.endsWith("│b"));
@@ -226,13 +196,7 @@ describe("stable hashing with duplicate content lines", () => {
         ctx,
       );
 
-      const read2 = await readTool.execute(
-        "r2",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const read2 = await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx);
       const lines2 = getText(read2).split("\n");
       const survivingBLines = lines2.filter((l) => l.endsWith("│b"));
       expect(survivingBLines).toHaveLength(2);

@@ -154,7 +154,7 @@ describe("read tool — served (default) mode", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "served.txt" }] },
+        { file: "served.txt" },
         undefined,
         undefined,
         ctx,
@@ -169,7 +169,7 @@ describe("read tool — served (default) mode", () => {
   it("creates an active lease for the file (positive control)", async () => {
     await withTempFile("served.txt", "alpha\nbeta\n", async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { files: [{ file: "served.txt" }] }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "served.txt" }, undefined, undefined, ctx);
 
       const absolute = await resolveTarget(path);
       const store = await loadHashStore();
@@ -187,7 +187,7 @@ describe("read tool — mode: verbatim", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "verbatim.txt" }], mode: "verbatim" },
+        { file: "verbatim.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -204,7 +204,7 @@ describe("read tool — mode: verbatim", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "empty.txt" }], mode: "verbatim" },
+        { file: "empty.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -220,7 +220,7 @@ describe("read tool — mode: verbatim", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "oneblank.txt" }], mode: "verbatim" },
+        { file: "oneblank.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -236,7 +236,7 @@ describe("read tool — mode: verbatim", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "literal.txt" }], mode: "verbatim" },
+        { file: "literal.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -253,15 +253,11 @@ describe("read tool — mode: verbatim", () => {
       const result = await readTool.execute(
         "r1",
         {
-          files: [
-            {
-              file: "windows.txt",
-              mode: "verbatim",
-              windows: [
-                { offset: 1, limit: 2 },
-                { offset: 4, limit: 1 },
-              ],
-            },
+          file: "windows.txt",
+          mode: "verbatim",
+          windows: [
+            { offset: 1, limit: 2 },
+            { offset: 4, limit: 1 },
           ],
         },
         undefined,
@@ -281,7 +277,7 @@ describe("read tool — mode: verbatim", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await readTool.execute(
         "r1",
-        { files: [{ file: "verbatim.txt" }], mode: "verbatim" },
+        { file: "verbatim.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -318,7 +314,7 @@ describe("read tool — mode: verbatim", () => {
       try {
         await readTool.execute(
           "r1",
-          { files: [{ file: "state.txt" }], mode: "verbatim" },
+          { file: "state.txt", mode: "verbatim" },
           undefined,
           undefined,
           ctx,
@@ -327,7 +323,7 @@ describe("read tool — mode: verbatim", () => {
         expect(seen).toEqual([]);
         expect(sessionSpy).not.toHaveBeenCalled();
 
-        await readTool.execute("r2", { files: [{ file: "state.txt" }] }, undefined, undefined, ctx);
+        await readTool.execute("r2", { file: "state.txt" }, undefined, undefined, ctx);
         expect(mirrorCount()).toBeGreaterThan(0);
         expect(seen.length).toBeGreaterThan(0);
         expect(sessionSpy).toHaveBeenCalled();
@@ -343,7 +339,7 @@ describe("read tool — mode: verbatim", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const servedResult = await readTool.execute(
         "r1",
-        { files: [{ file: "reserved.txt" }] },
+        { file: "reserved.txt" },
         undefined,
         undefined,
         ctx,
@@ -372,7 +368,7 @@ describe("read tool — mode: verbatim", () => {
 
       const verbatimResult = await readTool.execute(
         "r2",
-        { files: [{ file: "reserved.txt" }], mode: "verbatim" },
+        { file: "reserved.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -393,7 +389,7 @@ describe("read verbatim — served-row reproduction guard", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "echo.txt" }], mode: "verbatim" },
+        { file: "echo.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -407,13 +403,7 @@ describe("read verbatim — served-row reproduction guard", () => {
   it("a write reproducing served output IS denied (positive control)", async () => {
     await withTempFile("echo.txt", "alpha\nbeta\n", async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const result = await readTool.execute(
-        "r1",
-        { files: [{ file: "echo.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const result = await readTool.execute("r1", { file: "echo.txt" }, undefined, undefined, ctx);
       const servedText = result.content[0].text as string;
       const denial = await servedHashEchoDenial(null, path, servedText, cwd, TEST_SESSION_ID);
       expect(denial).toContain("[E_SUSPICIOUS_TEXT]");
@@ -437,16 +427,10 @@ describe("read verbatim — exhaustiveness guard", () => {
       if (!tool) throw new Error("read not registered");
 
       await expect(
-        tool.execute(
-          "r1",
-          { files: [{ file: "guard.txt" }], mode: "__bogus__" },
-          undefined,
-          undefined,
-          {
-            cwd,
-            sessionManager: testSessionManager,
-          },
-        ),
+        tool.execute("r1", { file: "guard.txt", mode: "__bogus__" }, undefined, undefined, {
+          cwd,
+          sessionManager: testSessionManager,
+        }),
       ).rejects.toThrow(/Unexpected value/);
     });
   });

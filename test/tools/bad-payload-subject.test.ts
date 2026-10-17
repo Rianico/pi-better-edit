@@ -48,28 +48,22 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
     });
   });
 
-  it("stamps a per-file read refusal in a multi-file call with the same read name", async () => {
-    await withTempDir("bad-payload-read-multi-", async (cwd) => {
-      await writeFile(join(cwd, "a.ts"), "alpha\n", "utf-8");
+  it("stamps a lone read refusal with the same read name", async () => {
+    await withTempDir("bad-payload-read-nul-", async (cwd) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: the null-byte path is refused deeper than admission, so this refusal is rendered as
-      // WHY: one file's own section (spec section 4.4) instead of aborting its sibling.
-      const text = await modelVisibleText(() =>
-        readTool.execute(
-          "r1",
-          { files: [{ file: "a.ts" }, { file: "nul\u0000byte.ts" }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      );
-      expect(text).toContain("[E_INTERNAL_INVARIANT]");
-      expect(text).toContain("The read invariant failed:");
-      expect(text).not.toContain("The edit payload");
-      expect(text).not.toContain("Fix the payload fields and retry.");
+      // WHY: one file per call — the null-byte path is refused as the call's own failure, stamped
+      // WHY: with the read name (never an edit name).
+      const failure = await readTool
+        .execute("r1", { file: "nul\u0000byte.ts" }, undefined, undefined, ctx)
+        .then(
+          () => undefined,
+          (error: Error) => error,
+        );
+      expect(failure?.message).toContain("[E_INTERNAL_INVARIANT]");
+      expect(failure?.message).toContain("The read invariant failed:");
+      expect(failure?.message).not.toContain("The edit payload");
     });
   });
-
   it("keeps the edit tool's own registered name on an edit admission refusal", async () => {
     await withTempDir("bad-payload-edit-", async (cwd) => {
       const { ctx, editTool } = setupIntegrationTest(cwd);
@@ -101,7 +95,7 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
     const content = "a\nb\nc\n";
     await withTempFile("sample.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
       const h = await lineHashes(content, path);
       // WHY: the single-line-span refusal is raised deep in the engine (hashline/apply), so the
       // WHY: engine must carry the RAW payload message back; a rendered string cannot be split.

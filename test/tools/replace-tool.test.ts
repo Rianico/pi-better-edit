@@ -41,7 +41,7 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, {
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -65,7 +65,7 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\nddd\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\nddd\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, {
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -90,7 +90,7 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, {
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -115,7 +115,7 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, {
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -156,7 +156,7 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, {
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -180,7 +180,7 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, {
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -207,7 +207,7 @@ describe("regEdit", () => {
     await withTempFile("sample.txt", "aaa\nbbb\nccc\n", async ({ cwd }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\nccc\n", join(cwd, "sample.txt"));
-      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, {
+      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);
@@ -232,7 +232,7 @@ describe("regEdit", () => {
     await withTempFile("crlf.txt", "alpha\r\nbeta\r\ngamma\r\n", async ({ cwd, path }) => {
       const { readTool, editTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("alpha\nbeta\ngamma\n", path);
-      await readTool.execute("r1", { files: [{ file: "crlf.txt" }] }, undefined, undefined, {
+      await readTool.execute("r1", { file: "crlf.txt" }, undefined, undefined, {
         cwd,
         sessionManager: testSessionManager,
       } as any);

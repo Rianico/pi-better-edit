@@ -16,7 +16,7 @@ describe("edit tool — end-to-end", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -46,7 +46,7 @@ describe("edit tool — end-to-end", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -77,7 +77,7 @@ describe("edit tool — end-to-end", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -108,7 +108,7 @@ describe("edit tool — end-to-end", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -150,7 +150,7 @@ describe("edit tool — end-to-end", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { files: [{ file: "empty.ts" }] },
+        { file: "empty.ts" },
         undefined,
         undefined,
         ctx,
@@ -180,7 +180,7 @@ describe("edit tool — end-to-end", () => {
 
       const readResult = await readTool.execute(
         "r1",
-        { files: [{ file: "crlf.ts" }] },
+        { file: "crlf.ts" },
         undefined,
         undefined,
         ctx,
@@ -208,13 +208,7 @@ describe("edit tool — end-to-end", () => {
     await withTempBytes("cr.ts", Buffer.from("alpha\rbeta\rgamma\r"), async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const readResult = await readTool.execute(
-        "r1",
-        { files: [{ file: "cr.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const readResult = await readTool.execute("r1", { file: "cr.ts" }, undefined, undefined, ctx);
       const betaRef = getText(readResult)
         .split("\n")
         .find((line: string) => line.includes("│beta"))!
@@ -261,7 +255,7 @@ describe("edit tool — end-to-end", () => {
           const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
           const readResult = await readTool.execute(
             "r1",
-            { files: [{ file: c.fileName }] },
+            { file: c.fileName },
             undefined,
             undefined,
             ctx,
@@ -287,7 +281,7 @@ describe("edit tool — end-to-end", () => {
           const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
           const readResult = await readTool.execute(
             "r1",
-            { files: [{ file: c.fileName }] },
+            { file: c.fileName },
             undefined,
             undefined,
             ctx,

@@ -2,18 +2,12 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it, vi } from "vitest";
 import { Compile } from "typebox/compile";
-import {
-  MAX_READ_FILES,
-  MAX_READ_FILES_MESSAGE,
-  MAX_READ_WINDOWS,
-  MAX_READ_WINDOWS_MESSAGE,
-  SERVED_MAX_LINES,
-} from "../../src/constants";
+import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE, SERVED_MAX_LINES } from "../../src/constants";
 import { mergeRanges } from "../../src/file-content/line-walker";
 import { loadHashStore } from "../../src/hash-store";
 import { resolveTarget } from "../../src/fs-write";
 import { fmtReadPreview, readToolSchema, regRead } from "../../src/read";
-import { getServed, loadLeases } from "../../src/served-session";
+import { loadLeases } from "../../src/served-session";
 import {
   extractHash,
   getText,
@@ -54,35 +48,20 @@ async function withTwoFiles(
 const SIX = Array.from({ length: 6 }, (_, index) => `alpha ${index + 1}`).join("\n") + "\n";
 const EIGHT = Array.from({ length: 8 }, (_, index) => `beta ${index + 1}`).join("\n") + "\n";
 
-describe("read tool — multi-file", () => {
-  it("reads every file of one call and serves each file's rows", async () => {
-    await withTwoFiles(SIX, EIGHT, async ({ cwd }) => {
+describe("read tool — single file", () => {
+  it("reads the file of one call and serves its rows", async () => {
+    await withTempFile("a.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const result = await readTool.execute(
-        "r1",
-        { files: [{ file: "a.ts" }, { file: "b.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const result = await readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx);
       const text = getText(result);
-      expect(rowsOf(text)).toEqual([...SIX.trimEnd().split("\n"), ...EIGHT.trimEnd().split("\n")]);
-      // WHY: one call, one result — so no single-file root offset or snapshotId is owed.
-      expect(result.details.nextOffset).toBeUndefined();
-      expect(result.details.snapshotId).toBeUndefined();
+      expect(rowsOf(text)).toEqual(SIX.trimEnd().split("\n"));
     });
   });
 
-  it("leases every file's anchors in the one transaction, so either file is editable", async () => {
-    await withTwoFiles(SIX, EIGHT, async ({ cwd }) => {
+  it("leases the file's anchors in the one transaction, so the file is editable", async () => {
+    await withTempFile("b.ts", EIGHT, async ({ cwd }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const readResult = await readTool.execute(
-        "r1",
-        { files: [{ file: "a.ts" }, { file: "b.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const readResult = await readTool.execute("r1", { file: "b.ts" }, undefined, undefined, ctx);
       const byLine = anchorsByLine(getText(readResult));
       const edited = await editTool.execute(
         "e1",
@@ -110,34 +89,35 @@ describe("read tool — multi-file", () => {
     });
   });
 
-  it("lets a per-file mode override the top-level mode", async () => {
-    await withTwoFiles(SIX, EIGHT, async ({ cwd }) => {
+  it("applies the top-level mode to the file (no per-file override exists)", async () => {
+    await withTempFile("a.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { mode: "verbatim", files: [{ file: "a.ts" }, { file: "b.ts", mode: "served" }] },
+        { file: "a.ts", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
       );
       const text = getText(result);
-      // The served file keeps HASH│ rows; the verbatim file renders plain text.
-      const anchorRows = text.split("\n").filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
-      expect(anchorRows.map((row) => row.split("│")[1])).toEqual(EIGHT.trimEnd().split("\n"));
+      // WHY: verbatim renders plain text with no anchors and grants no lease (ADR-0041 D3: the
+      // WHY: mode lives top-level only, so there is no per-file override to consult).
       expect(text).toContain(SIX.trimEnd().split("\n")[0]!);
       expect(text).not.toContain(`│${SIX.trimEnd().split("\n")[0]!}`);
+      const anchorRows = text.split("\n").filter((line) => /^[A-Za-z0-9]{4}│/.test(line));
+      expect(anchorRows).toHaveLength(0);
     });
   });
 
-  it("rejects a legacy { file, offset, limit } payload (ADR-0040 D1/D2)", async () => {
+  it("rejects the retired `{ files: [...] }` outer shape with windows (ADR-0041 D1)", async () => {
     await withTempFile("legacy.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: the fold is deleted — a legacy-only payload reaches admission with no `files`,
-      // WHY: which is the same refusal a call naming no file at all gets.
+      // WHY: one file per call — the outer array is gone, so a `files`-shaped payload fails
+      // WHY: validation (no top-level `file`), never partially reads.
       await expect(
         readTool.execute(
           "r1",
-          { file: "legacy.ts", offset: 2, limit: 2 },
+          { files: [{ file: "legacy.ts", windows: [{ offset: 2, limit: 2 }] }] },
           undefined,
           undefined,
           ctx,
@@ -146,28 +126,35 @@ describe("read tool — multi-file", () => {
     });
   });
 
-  it("rejects a bare legacy { file } payload (ADR-0040 D1/D2)", async () => {
+  it("rejects the retired bare `{ files: [...] }` outer shape (ADR-0041 D1)", async () => {
     await withTempFile("legacy.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
+      // WHY: the retired alias for one file — rejected at the schema, not read.
       await expect(
-        readTool.execute("r1", { file: "legacy.ts" }, undefined, undefined, ctx),
+        readTool.execute("r1", { files: [{ file: "legacy.ts" }] }, undefined, undefined, ctx),
       ).rejects.toThrow(/Schema validation failed/);
     });
   });
 
-  it("rejects a legacy limit-only call (ADR-0040 D1/D2)", async () => {
+  it("rejects the retired limit-only `files` shape (ADR-0041 D1)", async () => {
     await withTempFile("limit.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await expect(
-        readTool.execute("r1", { file: "limit.ts", limit: 3 }, undefined, undefined, ctx),
+        readTool.execute(
+          "r1",
+          { files: [{ file: "limit.ts", windows: [{ offset: 1, limit: 3 }] }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
       ).rejects.toThrow(/Schema validation failed/);
     });
   });
 
-  it("rejects the legacy `path` alias (ADR-0040 D1/D2)", async () => {
+  it("rejects the `path` alias (never a field)", async () => {
     await withTempFile("aliased.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      // WHY: the alias died with the fold (§4.2 kept as history); both bare and paged uses refuse.
+      // WHY: `path` was never a read field — bare and paged uses refuse at the schema.
       await expect(
         readTool.execute("r1", { path: "aliased.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow(/Schema validation failed/);
@@ -188,7 +175,7 @@ describe("read tool — multi-file", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "empty-windows.ts", windows: [] }] },
+        { file: "empty-windows.ts", windows: [] },
         undefined,
         undefined,
         ctx,
@@ -197,26 +184,16 @@ describe("read tool — multi-file", () => {
     });
   });
 
-  it("rejects more than the window cap across all files of one call", async () => {
-    await withTwoFiles(SIX, EIGHT, async ({ cwd }) => {
+  it("rejects more than the window cap in one call", async () => {
+    await withTempFile("a.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const nine = Array.from({ length: 9 }, (_, index) => ({ offset: index + 1, limit: 1 }));
-      const eight = Array.from({ length: 8 }, (_, index) => ({ offset: index + 1, limit: 1 }));
-      expect(nine.length + eight.length).toBeGreaterThan(MAX_READ_WINDOWS);
+      const seventeen = Array.from({ length: MAX_READ_WINDOWS + 1 }, (_, index) => ({
+        offset: index + 1,
+        limit: 1,
+      }));
       await expect(
-        readTool.execute(
-          "r1",
-          {
-            files: [
-              { file: "a.ts", windows: nine },
-              { file: "b.ts", windows: eight },
-            ],
-          },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      ).rejects.toThrow(`at most ${MAX_READ_WINDOWS} windows across all files`);
+        readTool.execute("r1", { file: "a.ts", windows: seventeen }, undefined, undefined, ctx),
+      ).rejects.toThrow(new RegExp(`must not have more than ${MAX_READ_WINDOWS} items`));
     });
   });
 
@@ -236,8 +213,8 @@ describe("read tool — multi-file", () => {
   });
 
   it("rejects a call that names no file at all", async () => {
-    // WHY: under D1 the schema itself requires `files`, so the empty call fails validation
-    // WHY: before admission runs — the same refusal, one layer up from the old admission error.
+    // WHY: under ADR-0041 D1 the schema itself requires `file`, so the empty call fails
+    // WHY: validation before admission runs — the same refusal, one layer up from admission.
     await withTempFile("none.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await expect(readTool.execute("r1", {}, undefined, undefined, ctx)).rejects.toThrow(
@@ -286,15 +263,11 @@ describe("read windows — interval algebra", () => {
       const result = await readTool.execute(
         "r1",
         {
-          files: [
-            {
-              file: "merge.ts",
-              windows: [
-                { offset: 1, limit: 3 },
-                { offset: 2, limit: 3 },
-                { offset: 4, limit: 2 },
-              ],
-            },
+          file: "merge.ts",
+          windows: [
+            { offset: 1, limit: 3 },
+            { offset: 2, limit: 3 },
+            { offset: 4, limit: 2 },
           ],
         },
         undefined,
@@ -330,7 +303,7 @@ describe("read windows — around_anchor", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const served = await readTool.execute(
         "r1",
-        { files: [{ file: "anchored.ts" }] },
+        { file: "anchored.ts" },
         undefined,
         undefined,
         ctx,
@@ -338,7 +311,7 @@ describe("read windows — around_anchor", () => {
       const anchor = anchorsByLine(getText(served)).get("line 5")!;
       const result = await readTool.execute(
         "r2",
-        { files: [{ file: "anchored.ts", windows: [{ around_anchor: anchor, radius: 2 }] }] },
+        { file: "anchored.ts", windows: [{ around_anchor: anchor, radius: 2 }] },
         undefined,
         undefined,
         ctx,
@@ -354,7 +327,7 @@ describe("read windows — around_anchor", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const served = await readTool.execute(
         "r1",
-        { files: [{ file: "anchored.ts" }] },
+        { file: "anchored.ts" },
         undefined,
         undefined,
         ctx,
@@ -362,7 +335,7 @@ describe("read windows — around_anchor", () => {
       const anchor = anchorsByLine(getText(served)).get("line 2")!;
       const result = await readTool.execute(
         "r2",
-        { files: [{ file: "anchored.ts", windows: [{ around_anchor: anchor }] }] },
+        { file: "anchored.ts", windows: [{ around_anchor: anchor }] },
         undefined,
         undefined,
         ctx,
@@ -371,19 +344,12 @@ describe("read windows — around_anchor", () => {
     });
   });
 
-  it("warns for an unknown anchor and still renders the sibling windows", async () => {
+  it("warns for an unknown anchor and still renders the other windows", async () => {
     await withTempFile("unknown.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        {
-          files: [
-            {
-              file: "unknown.ts",
-              windows: [{ around_anchor: "a1b2" }, { offset: 1, limit: 2 }],
-            },
-          ],
-        },
+        { file: "unknown.ts", windows: [{ around_anchor: "a1b2" }, { offset: 1, limit: 2 }] },
         undefined,
         undefined,
         ctx,
@@ -398,21 +364,11 @@ describe("read windows — around_anchor", () => {
   it("warns for an anchor this session served for another file, and still reads its own windows", async () => {
     await withTwoFiles(SIX, EIGHT, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const served = await readTool.execute(
-        "r1",
-        { files: [{ file: "a.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const served = await readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx);
       const foreignAnchor = anchorsByLine(getText(served)).get("alpha 2")!;
       const result = await readTool.execute(
         "r2",
-        {
-          files: [
-            { file: "b.ts", windows: [{ around_anchor: foreignAnchor }, { offset: 1, limit: 1 }] },
-          ],
-        },
+        { file: "b.ts", windows: [{ around_anchor: foreignAnchor }, { offset: 1, limit: 1 }] },
         undefined,
         undefined,
         ctx,
@@ -430,7 +386,7 @@ describe("read windows — around_anchor", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const served = await readTool.execute(
         "r1",
-        { files: [{ file: "retired.ts" }] },
+        { file: "retired.ts" },
         undefined,
         undefined,
         ctx,
@@ -442,12 +398,8 @@ describe("read windows — around_anchor", () => {
       const result = await readTool.execute(
         "r2",
         {
-          files: [
-            {
-              file: "retired.ts",
-              windows: [{ around_anchor: anchor }, { offset: 2, limit: 1 }],
-            },
-          ],
+          file: "retired.ts",
+          windows: [{ around_anchor: anchor }, { offset: 2, limit: 1 }],
         },
         undefined,
         undefined,
@@ -464,7 +416,7 @@ describe("read windows — around_anchor", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "only-anchor.ts", windows: [{ around_anchor: "zzzz" }] }] },
+        { file: "only-anchor.ts", windows: [{ around_anchor: "zzzz" }] },
         undefined,
         undefined,
         ctx,
@@ -480,60 +432,45 @@ describe("read windows — around_anchor", () => {
 describe("read payload contract", () => {
   const validator = Compile(readToolSchema);
 
-  it("admits the canonical files shape and refuses the removed legacy shapes", () => {
-    expect(validator.Check({ files: [{ file: "a.ts" }] })).toBe(true);
+  it("admits the flat canonical shape and refuses the retired outer shape", () => {
+    expect(validator.Check({ file: "a.ts" })).toBe(true);
     expect(
       validator.Check({
-        files: [
-          { file: "a.ts", windows: [{ offset: 1, limit: 5 }] },
-          {
-            file: "b.ts",
-            windows: [{ around_anchor: "a1b2", radius: 3 }],
-            mode: "verbatim",
-          },
-        ],
+        file: "a.ts",
+        windows: [{ offset: 1, limit: 5 }],
         mode: "served",
       }),
     ).toBe(true);
-    // WHY: the legacy aliases are a stated removal (ADR-0040 D2): schema refusal, not absence.
-    expect(validator.Check({ file: "a.ts" })).toBe(false);
-    expect(validator.Check({ file: "a.ts", offset: 2, limit: 5 })).toBe(false);
-    expect(validator.Check({ file: "a.ts", windows: [{ offset: 2, limit: 5 }] })).toBe(false);
-  });
-
-  it("refuses shapes outside the contract", () => {
-    expect(validator.Check({ files: [] })).toBe(false);
-    expect(
-      validator.Check({ files: [{ file: "a.ts", windows: [{ around_anchor: "abc" }] }] }),
-    ).toBe(false);
+    // WHY: the outer array is a stated removal (ADR-0041 D1): schema refusal, not absence.
+    expect(validator.Check({ files: [{ file: "a.ts" }] })).toBe(false);
     expect(
       validator.Check({
-        files: [
-          {
-            file: "a.ts",
-            windows: Array.from({ length: MAX_READ_WINDOWS + 1 }, (_, index) => ({
-              offset: index + 1,
-              limit: 1,
-            })),
-          },
-        ],
+        files: [{ file: "a.ts", windows: [{ offset: 2, limit: 5 }] }],
+        mode: "served",
       }),
     ).toBe(false);
   });
 
-  it("caps the files array at MAX_READ_FILES", () => {
-    const many = Array.from({ length: MAX_READ_FILES + 1 }, (_, index) => ({
-      file: `f${index}.ts`,
-    }));
-    expect(validator.Check({ files: many.slice(0, MAX_READ_FILES) })).toBe(true);
-    expect(validator.Check({ files: many })).toBe(false);
-    // WHY: the `maxItems` limit is what the runtime builds its structural refusal wording from, so
-    // WHY: pinning it to the constant admission reads keeps the two enforcement points from
-    // WHY: drifting apart without a test noticing.
-    expect(validator.Errors({ files: many })[0]).toMatchObject({
-      keyword: "maxItems",
-      params: { limit: MAX_READ_FILES },
-    });
+  it("refuses shapes outside the contract", () => {
+    expect(validator.Check({} as never)).toBe(false);
+    expect(validator.Check({ file: "a.ts", windows: [{ around_anchor: "abc" }] })).toBe(false);
+    expect(
+      validator.Check({
+        file: "a.ts",
+        windows: Array.from({ length: MAX_READ_WINDOWS + 1 }, (_, index) => ({
+          offset: index + 1,
+          limit: 1,
+        })),
+      }),
+    ).toBe(false);
+  });
+
+  it("rejects the retired `{ files: [...] }` outer shape at the schema (ADR-0041 D1)", () => {
+    // WHY: one file per call — the outer array is gone, so a `files`-shaped payload fails
+    // WHY: validation (no `file` property). This states the removal as contract, not absence.
+    expect(validator.Check({ file: "a.ts" })).toBe(true);
+    expect(validator.Check({ files: [{ file: "a.ts" }] })).toBe(false);
+    expect(validator.Check({ files: [{ file: "a.ts" }, { file: "b.ts" }] })).toBe(false);
   });
 });
 
@@ -565,28 +502,16 @@ function unvalidatedReadTool(): UnvalidatedReadTool {
   return captured;
 }
 
-describe("read files — the fan-out cap", () => {
-  it("admits exactly the cap and refuses one more through the registered tool", async () => {
+describe("read retired shape — the removed fan-out", () => {
+  it("refuses the retired files shape through the registered tool (ADR-0041 D1)", async () => {
     await withTempDir("read-files-", async (dir) => {
-      const names = Array.from({ length: MAX_READ_FILES + 1 }, (_, index) => `f${index}.ts`);
-      for (const name of names) await writeFile(join(dir, name), SIX, "utf-8");
+      for (const name of ["a.ts", "b.ts"]) await writeFile(join(dir, name), SIX, "utf-8");
       const { ctx, readTool } = setupIntegrationTest(dir);
-      const target = (file: string) => ({ file });
-      const atCap = await readTool.execute(
-        "r1",
-        { files: names.slice(0, MAX_READ_FILES).map(target) },
-        undefined,
-        undefined,
-        ctx,
-      );
-      expect(getText(atCap)).toContain(`[${names[0]}`);
-      // WHY: MEASURED — the refusal a >cap call hits on this path is the registered schema's, raised
-      // WHY: BEFORE `execute` runs, so the wording is the validator's structural message built from
-      // WHY: `maxItems: MAX_READ_FILES` and never `MAX_READ_FILES_MESSAGE`. The divergence is by
-      // WHY: construction (a validator generates its own message), so it is pinned here instead of
-      // WHY: being papered over; the guard below is the backstop for a caller that skips the schema.
+      // WHY: one file per call — a two-entry `files` payload fails validation (no `file`
+      // WHY: property), so fan-out is refused, never silently partially read. The flat shape
+      // WHY: still reads fine on the same setup (pinned by the single-file tests above).
       const failure = await readTool
-        .execute("r2", { files: names.map(target) }, undefined, undefined, ctx)
+        .execute("r2", { files: [{ file: "a.ts" }, { file: "b.ts" }] }, undefined, undefined, ctx)
         .then(
           () => undefined,
           (error: Error) => error,
@@ -597,31 +522,22 @@ describe("read files — the fan-out cap", () => {
       // WHY: So this pins the harness's imitation of the runtime wording and would stay green if
       // WHY: pi's wording changed. The load-bearing claim — that the schema fires BEFORE `execute` —
       // WHY: is asserted behaviourally in the unwrapped-definition test below.
-      expect(failure?.message).toContain(`must not have more than ${MAX_READ_FILES} items`);
-      expect(failure?.message).not.toContain(MAX_READ_FILES_MESSAGE);
+      expect(failure?.message).toContain("Schema validation failed");
     });
   });
 
-  it("refuses one more through the unvalidated definition, naming the cap in the shared wording", async () => {
+  it("refuses the retired files shape through the unvalidated definition, naming the field", async () => {
     await withTempDir("read-files-raw-", async (dir) => {
-      const names = Array.from({ length: MAX_READ_FILES + 1 }, (_, index) => `f${index}.ts`);
-      for (const name of names) await writeFile(join(dir, name), SIX, "utf-8");
+      for (const name of ["a.ts", "b.ts"]) await writeFile(join(dir, name), SIX, "utf-8");
       const ctx = { cwd: dir, sessionManager: testSessionManager };
       const tool = unvalidatedReadTool();
-      // WHY: without the schema in front, admission is the only thing keeping the cap true — and it
-      // WHY: names the limit in the one shared wording, which is what a mirror (if one were ever
-      // WHY: added) would reuse.
+      // WHY: without the schema in front, admission is the only thing keeping the shape true —
+      // WHY: a `files`-shaped payload has no `file`, so it fails with the field's own message.
       await expect(
-        tool.execute("r1", { files: names.map((file) => ({ file })) }, undefined, undefined, ctx),
-      ).rejects.toThrow(MAX_READ_FILES_MESSAGE);
-      const atCap = await tool.execute(
-        "r2",
-        { files: names.slice(0, MAX_READ_FILES).map((file) => ({ file })) },
-        undefined,
-        undefined,
-        ctx,
-      );
-      expect(atCap).toBeDefined();
+        tool.execute("r1", { files: [{ file: "a.ts" }] }, undefined, undefined, ctx),
+      ).rejects.toThrow('Read request field "file" must be a non-empty path.');
+      const flat = await tool.execute("r2", { file: "a.ts" }, undefined, undefined, ctx);
+      expect(flat).toBeDefined();
     });
   });
 });
@@ -637,28 +553,19 @@ const TWENTY_FIVE_HUNDRED =
 const BUDGET_EXACT =
   Array.from({ length: SERVED_MAX_LINES }, (_, index) => `row ${index + 1}`).join("\n") + "\n";
 describe("read render UX — headers, sub-banners and continuation footers (spec §4.4)", () => {
-  it("heads every served file with its path and its total line count", async () => {
-    await withTwoFiles(SIX, EIGHT, async ({ cwd }) => {
+  it("heads the served file with its path and its total line count", async () => {
+    await withTempFile("a.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const text = getText(
-        await readTool.execute(
-          "r1",
-          { files: [{ file: "a.ts" }, { file: "b.ts" }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
+        await readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx),
       );
       expect(text.startsWith("[a.ts (6 lines total)]\n")).toBe(true);
-      expect(text).toContain("\n\n[b.ts (8 lines total)]\n");
       // WHY: the header is chrome — the rows stay strictly `HASH│content`, with no line numbers.
-      expect(rowsOf(text)).toEqual([...SIX.trimEnd().split("\n"), ...EIGHT.trimEnd().split("\n")]);
+      expect(rowsOf(text)).toEqual(SIX.trimEnd().split("\n"));
       // WHY: every line carrying a `HASH│` separator must BE a served row with the 4-char anchor
       // WHY: prefix — a numbered (`12│line`) or unanchored row fails the prefix or stops being a row.
       const rowLines = text.split("\n").filter((line) => line.includes("│"));
-      expect(rowLines).toHaveLength(
-        SIX.trimEnd().split("\n").length + EIGHT.trimEnd().split("\n").length,
-      );
+      expect(rowLines).toHaveLength(SIX.trimEnd().split("\n").length);
       expect(rowLines.every((line) => /^[A-Za-z0-9]{4}│/.test(line))).toBe(true);
     });
   });
@@ -670,14 +577,10 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
         await readTool.execute(
           "r1",
           {
-            files: [
-              {
-                file: "a.ts",
-                windows: [
-                  { offset: 2, limit: 2 },
-                  { offset: 6, limit: 2 },
-                ],
-              },
+            file: "a.ts",
+            windows: [
+              { offset: 2, limit: 2 },
+              { offset: 6, limit: 2 },
             ],
           },
           undefined,
@@ -701,7 +604,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "README.md", mode: "verbatim" }] },
+        { file: "README.md", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -723,7 +626,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       const text = getText(
         await readTool.execute(
           "r1",
-          { files: [{ file: "app.ts", windows: [{ offset: 1, limit: 50 }] }] },
+          { file: "app.ts", windows: [{ offset: 1, limit: 50 }] },
           undefined,
           undefined,
           ctx,
@@ -741,14 +644,14 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       const text = getText(
         await readTool.execute(
           "r1",
-          { files: [{ file: "app.ts", windows: [{ offset: 1, limit: 50 }] }] },
+          { file: "app.ts", windows: [{ offset: 1, limit: 50 }] },
           undefined,
           undefined,
           ctx,
         ),
       );
-      // WHY: the collapse unifies single-window chrome to the §4.4 page form — at base this
-      // WHY: canonical shape rendered the bounded-ask sub-banner with no continuation footer.
+      // WHY: the flattening unifies single-window reads on the §4.4 page form — the retired
+      // WHY: files-shaped canonical read rendered the bounded-ask sub-banner with no footer.
       expect(text).toContain("[app.ts (200 lines total)]");
       expect(text).toContain(
         "[app.ts lines 1-50 of 200. Use windows: [{ offset: 51, limit: 50 }] to continue.]",
@@ -757,83 +660,49 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
     });
   });
 
-  it("refuses the file the call-wide served budget cannot afford, inline, and still renders its siblings", async () => {
-    // WHY: b.ts fits the budget on its own (exactly SERVED_MAX_LINES lines) but not after a.ts drew
-    // WHY: the first TWELVE lines of the ONE shared budget, so a per-file gate would render both
-    // WHY: files and this test would still pass (spec 4.2, `SERVED_MAX_LINES`).
-    await withTwoFiles(TWELVE, BUDGET_EXACT, async ({ cwd }) => {
+  it("reads a file exactly the served budget with no inline refusal", async () => {
+    // WHY: BUDGET_EXACT fits the call's budget on its own (exactly SERVED_MAX_LINES lines): with one
+    // WHY: file per call there is no sibling to draw first, so the budget gate has nothing to refuse.
+    await withTempFile("exact.ts", BUDGET_EXACT, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const text = getText(
-        await readTool.execute(
-          "r1",
-          { files: [{ file: "a.ts" }, { file: "b.ts" }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
+        await readTool.execute("r1", { file: "exact.ts" }, undefined, undefined, ctx),
       );
-      const remaining = SERVED_MAX_LINES - 12;
-      expect(text).toContain("[a.ts (12 lines total)]\n");
-      expect(text).toContain(
-        `[MODEL] [E_LARGE_FILE] b.ts has more than ${remaining} lines, exceeding the ${remaining}-line edit limit.`,
-      );
-      expect(rowsOf(text)).toEqual(TWELVE.trimEnd().split("\n"));
+      expect(text).toContain("[exact.ts (200000 lines total)]\n");
+      expect(text).not.toContain("[MODEL] [E_LARGE_FILE]");
     });
   });
-  it("names each file in its own footer when its own page is cut", async () => {
-    await withTwoFiles(TWENTY_FIVE_HUNDRED, TWENTY_FIVE_HUNDRED, async ({ cwd }) => {
+  it("names the file in its footer when its page is cut", async () => {
+    await withTempFile("a.ts", TWENTY_FIVE_HUNDRED, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const text = getText(
-        await readTool.execute(
-          "r1",
-          { files: [{ file: "a.ts" }, { file: "b.ts" }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
+        await readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx),
       );
       expect(text).toContain(
         "[a.ts lines 1-2000 of 2500. Use windows: [{ offset: 2001, limit: 2000 }] to continue.]",
       );
-      expect(text).toContain(
-        "[b.ts lines 1-2000 of 2500. Use windows: [{ offset: 2001, limit: 2000 }] to continue.]",
-      );
     });
   });
 
-  it("reports an unreadable file inline and still renders its siblings", async () => {
-    await withTwoFiles(SIX, EIGHT, async ({ cwd }) => {
-      const { ctx, readTool } = setupIntegrationTest(cwd);
-      const text = getText(
-        await readTool.execute(
-          "r1",
-          { files: [{ file: "a.ts" }, { file: "missing.ts" }, { file: "b.ts" }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      );
-      expect(text).toContain("[MODEL] [E_NOT_FOUND] File not found: missing.ts.");
-      expect(text).toContain("[a.ts (6 lines total)]\n");
-      expect(text).toContain("[b.ts (8 lines total)]\n");
-      expect(rowsOf(text)).toEqual([...SIX.trimEnd().split("\n"), ...EIGHT.trimEnd().split("\n")]);
-    });
-  });
-
-  it("reports a non-text sibling inline without aborting the call", async () => {
+  it("names the missing file in the call refusal", async () => {
     await withTempFile("a.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const text = getText(
-        await readTool.execute(
-          "r1",
-          { files: [{ file: "a.ts" }, { file: "." }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      );
-      expect(text).toContain("[E_UNSUPPORTED_FILE]");
-      expect(rowsOf(text)).toEqual(SIX.trimEnd().split("\n"));
+      // WHY: one file per call, so an unreadable file fails the call — and the refusal names the
+      // WHY: file, which is what the model must re-read past. (The E_NOT_FOUND code itself is
+      // WHY: pinned by the sibling test below.)
+      await expect(
+        readTool.execute("r1", { file: "missing.ts" }, undefined, undefined, ctx),
+      ).rejects.toThrow(/File not found: missing\.ts/);
+    });
+  });
+
+  it("refuses a non-text file with E_UNSUPPORTED_FILE", async () => {
+    await withTempFile("a.ts", SIX, async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      // WHY: one file per call, so a directory target fails the call with the tool's own refusal.
+      await expect(
+        readTool.execute("r1", { file: "." }, undefined, undefined, ctx),
+      ).rejects.toThrow(/\[E_UNSUPPORTED_FILE\]/);
     });
   });
 
@@ -841,7 +710,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
     await withTempFile("a.ts", SIX, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await expect(
-        readTool.execute("r1", { files: [{ file: "missing.ts" }] }, undefined, undefined, ctx),
+        readTool.execute("r1", { file: "missing.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow(/\[E_NOT_FOUND\]/);
     });
   });
@@ -852,7 +721,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       const text = getText(
         await readTool.execute(
           "r1",
-          { files: [{ file: "small.ts", windows: [{ offset: 99, limit: 5 }] }] },
+          { file: "small.ts", windows: [{ offset: 99, limit: 5 }] },
           undefined,
           undefined,
           ctx,
@@ -869,7 +738,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
     await withTempFile("wide.ts", wide, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const text = getText(
-        await readTool.execute("r1", { files: [{ file: "wide.ts" }] }, undefined, undefined, ctx),
+        await readTool.execute("r1", { file: "wide.ts" }, undefined, undefined, ctx),
       );
       expect(text).toContain(
         "[Line 2 is 205.1KB, exceeds 50.0KB; content not shown. Use bash: sed -n '2p' <path> | head -c 51200]",
@@ -892,7 +761,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { mode: "verbatim", files: [{ file: "plain.txt", windows: [{ around_anchor: "a1b2" }] }] },
+        { file: "plain.txt", windows: [{ around_anchor: "a1b2" }], mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -910,13 +779,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
   it("resolves a genuinely served anchor for a verbatim-only call and grants no new lease", async () => {
     await withTempFile("plain.txt", TWELVE, async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const served = await readTool.execute(
-        "s1",
-        { files: [{ file: "plain.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const served = await readTool.execute("s1", { file: "plain.txt" }, undefined, undefined, ctx);
       const anchor = anchorsByLine(getText(served)).get("line 3")!;
       const absolute = await resolveTarget(path);
       const store = await loadHashStore();
@@ -925,7 +788,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
 
       const verbatim = await readTool.execute(
         "v1",
-        { mode: "verbatim", files: [{ file: "plain.txt", windows: [{ around_anchor: anchor }] }] },
+        { file: "plain.txt", windows: [{ around_anchor: anchor }], mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -945,67 +808,40 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
     });
   });
 
-  it("renders a verbatim anchor window identically whether or not a sibling is served", async () => {
+  it("renders a verbatim anchor window against the file's own served lineage", async () => {
     await withTempFile("plain.txt", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const served = await readTool.execute(
-        "s1",
-        { files: [{ file: "plain.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const served = await readTool.execute("s1", { file: "plain.txt" }, undefined, undefined, ctx);
       const anchor = anchorsByLine(getText(served)).get("line 3")!;
-      const target = { file: "plain.txt", windows: [{ around_anchor: anchor, radius: 1 }] };
-      // WHY: the sibling is a directory, so it fails before any render mode matters and its inline
-      // WHY: E_UNSUPPORTED_FILE section is byte-identical in both calls — the one variable left between
-      // WHY: them is whether a SERVED target opens the store the anchor resolves against.
-      const withoutServedSibling = getText(
+      // WHY: one file per call — the store opens for the verbatim target's own anchor window
+      // WHY: (needsStore keys on verbatim+anchor), resolving against the lineage s1 served above;
+      // WHY: the resolved window renders as PLAIN lines (§4.4), not served rows.
+      const text = getText(
         await readTool.execute(
           "v1",
-          { mode: "verbatim", files: [target, { file: ".", mode: "verbatim" }] },
+          { file: "plain.txt", mode: "verbatim", windows: [{ around_anchor: anchor, radius: 1 }] },
           undefined,
           undefined,
           ctx,
         ),
       );
-      const withServedSibling = getText(
-        await readTool.execute(
-          "v2",
-          { mode: "verbatim", files: [target, { file: ".", mode: "served" }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
-      );
-      // WHY: this session served the anchor, so §4.3 resolves the window for the verbatim target
-      // WHY: exactly as it would for a served one — rendered as PLAIN lines (§4.4).
-      expect(withServedSibling).toContain(
+      expect(text).toContain(
         "[plain.txt (verbatim, 12 lines, no anchors)]\n" +
           "=== Lines 2-4 of 12 ===\n" +
           "line 2\nline 3\nline 4",
       );
-      // INVARIANT (spec §4.3): one target's output is a function of (target, session lineage) ONLY —
-      // WHY: never of sibling composition. Compared as the WHOLE response, byte for byte.
-      expect(withServedSibling).toBe(withoutServedSibling);
     });
   });
 
   it("still warns when a verbatim target names an anchor this session served for another file", async () => {
     await withTwoFiles(SIX, TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const served = await readTool.execute(
-        "s1",
-        { files: [{ file: "a.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const served = await readTool.execute("s1", { file: "a.ts" }, undefined, undefined, ctx);
       const foreign = anchorsByLine(getText(served)).get("alpha 2")!;
       const text = getText(
         await readTool.execute(
           "v1",
-          { mode: "verbatim", files: [{ file: "b.ts", windows: [{ around_anchor: foreign }] }] },
+          { file: "b.ts", windows: [{ around_anchor: foreign }], mode: "verbatim" },
           undefined,
           undefined,
           ctx,
@@ -1025,9 +861,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        {
-          files: [{ file: "plain.txt", mode: "verbatim", windows: [{ around_anchor: "a1b2" }] }],
-        },
+        { file: "plain.txt", mode: "verbatim", windows: [{ around_anchor: "a1b2" }] },
         undefined,
         undefined,
         ctx,
@@ -1039,39 +873,30 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
     });
   });
 
-  it("keeps a served sibling's anchor window resolving while a verbatim sibling warns", async () => {
-    await withTwoFiles(TWELVE, SIX, async ({ cwd }) => {
+  it("resolves the served anchor window while an unknown anchor warns alone", async () => {
+    await withTempFile("a.ts", TWELVE, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const served = await readTool.execute(
-        "s1",
-        { files: [{ file: "a.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const served = await readTool.execute("s1", { file: "a.ts" }, undefined, undefined, ctx);
       const anchor = anchorsByLine(getText(served)).get("line 4")!;
 
+      // WHY: one file per call — the genuine anchor resolves to its window (§4.3) while the
+      // WHY: unresolvable anchor in the second window leaves the warning; windows proceed
+      // WHY: independently within the one file.
       const text = getText(
         await readTool.execute(
           "r1",
           {
-            files: [
-              { file: "a.ts", windows: [{ around_anchor: anchor, radius: 1 }] },
-              { file: "b.ts", mode: "verbatim", windows: [{ around_anchor: "a1b2" }] },
-            ],
+            file: "a.ts",
+            windows: [{ around_anchor: anchor, radius: 1 }, { around_anchor: "a1b2" }],
           },
           undefined,
           undefined,
           ctx,
         ),
       );
-      expect(text).toContain("[Window warning: Anchor 'a1b2' not found; window omitted]");
-      expect(text).toContain("[b.ts (verbatim, 6 lines, no anchors)]");
-      // WHY: the served sibling's genuine anchor still resolves to its window, while the verbatim
-      // WHY: sibling's unresolvable one leaves the header and the warning alone (spec §4.3).
       expect(text).toContain("=== Lines 3-5 of 12 ===\n");
+      expect(text).toContain("[Window warning: Anchor 'a1b2' not found; window omitted]");
       expect(rowsOf(text)).toEqual(["line 3", "line 4", "line 5"]);
-      expect(text).not.toContain("alpha 1");
     });
   });
 
@@ -1082,26 +907,22 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
     await withTempFile("huge.ts", overBudget, async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       await expect(
-        readTool.execute("r1", { files: [{ file: "huge.ts" }] }, undefined, undefined, ctx),
+        readTool.execute("r1", { file: "huge.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow(
         `[E_LARGE_FILE] huge.ts has more than ${SERVED_MAX_LINES} lines, exceeding the ${SERVED_MAX_LINES}-line edit limit.`,
       );
     });
   });
 
-  it("keeps every sibling's rows when the mirror phase fails for one file", async () => {
+  it("fails the call when the mirror phase throws for the lone file", async () => {
     await withTempFile("a.ts", SIX, async ({ cwd }) => {
-      await writeFile(join(cwd, "b.ts"), EIGHT, "utf-8");
-      await writeFile(join(cwd, "c.ts"), SIX, "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const sessions = await import("../../src/served-session");
       const realSessionFromContext = sessions.sessionFromContext;
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       const mirrorSpy = vi
         .spyOn(sessions, "sessionFromContext")
         .mockImplementation((sessionCtx, path) => {
           const handle = realSessionFromContext(sessionCtx, path);
-          if (!path.endsWith("b.ts")) return handle;
           return {
             ...handle,
             recordEpoch: async () => {
@@ -1110,36 +931,13 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
           };
         });
       try {
-        const text = getText(
-          await readTool.execute(
-            "r1",
-            { files: [{ file: "a.ts" }, { file: "b.ts" }, { file: "c.ts" }] },
-            undefined,
-            undefined,
-            ctx,
-          ),
-        );
-        expect(text).toContain("[a.ts (6 lines total)]\n");
-        expect(text).toContain("[b.ts (8 lines total)]\n");
-        expect(text).toContain("[c.ts (6 lines total)]\n");
-        expect(rowsOf(text)).toEqual([
-          ...SIX.trimEnd().split("\n"),
-          ...EIGHT.trimEnd().split("\n"),
-          ...SIX.trimEnd().split("\n"),
-        ]);
-        expect(errorSpy).toHaveBeenCalledWith(
-          "Failed to mirror the served read into the session:",
-          expect.stringContaining("b.ts"),
-          expect.anything(),
-        );
-        // WHY: the loop continued past the failed file — the LAST file's mirror still landed.
-        const store = await loadHashStore();
-        expect(
-          getServed(store, TEST_SESSION_ID, await resolveTarget(join(cwd, "c.ts"))).length,
-        ).toBeGreaterThan(0);
+        // WHY: one file per call — a session-write failure stays the call's failure (the
+        // WHY: single-file contract), even though every row is already rendered.
+        await expect(
+          readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx),
+        ).rejects.toThrow("mirror phase boom");
       } finally {
         mirrorSpy.mockRestore();
-        errorSpy.mockRestore();
       }
     });
   });

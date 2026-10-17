@@ -46,15 +46,7 @@ describe("closed #31 — retired anchors never re-bind to a twin", () => {
     await withTempFile("twins.txt", "aaa\nbbb\naaa\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const first = rows(
-        getText(
-          await readTool.execute(
-            "r1",
-            { files: [{ file: "twins.txt" }] },
-            undefined,
-            undefined,
-            ctx,
-          ),
-        ),
+        getText(await readTool.execute("r1", { file: "twins.txt" }, undefined, undefined, ctx)),
       );
       const line1 = first[0]!.hash;
       const line3 = first[2]!.hash;
@@ -91,15 +83,7 @@ describe("closed #53 — served refresh after a multi-entry batch", () => {
     await withTempFile("batch.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const served = rows(
-        getText(
-          await readTool.execute(
-            "r1",
-            { files: [{ file: "batch.txt" }] },
-            undefined,
-            undefined,
-            ctx,
-          ),
-        ),
+        getText(await readTool.execute("r1", { file: "batch.txt" }, undefined, undefined, ctx)),
       );
       const line2 = served[1]!.hash;
       const line10 = served[9]!.hash;
@@ -150,21 +134,13 @@ describe("closed #48 — full re-read after an external change", () => {
   it("re-serves a dense mirror and accepts the fresh anchors for the next edit", async () => {
     await withTempFile("shift.txt", "a\nb\nc\nd\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { files: [{ file: "shift.txt" }] }, undefined, undefined, ctx);
+      await readTool.execute("r1", { file: "shift.txt" }, undefined, undefined, ctx);
 
       const { writeFile } = await import("fs/promises");
       await writeFile(path, "a\nb\nc\nd\ne\nf\n", "utf-8");
 
       const reread = rows(
-        getText(
-          await readTool.execute(
-            "r2",
-            { files: [{ file: "shift.txt" }] },
-            undefined,
-            undefined,
-            ctx,
-          ),
-        ),
+        getText(await readTool.execute("r2", { file: "shift.txt" }, undefined, undefined, ctx)),
       );
       expect(reread.map((r) => r.text)).toEqual(["a", "b", "c", "d", "e", "f"]);
       const mirror = await createSessionHandle(sessionKeyFor(ctx as never), path).load();
@@ -196,7 +172,7 @@ describe("closed #51 — anchor space is a line-count limit, not a retirement ac
           getText(
             await readTool.execute(
               `r${round}`,
-              { files: [{ file: "churn.txt" }] },
+              { file: "churn.txt" },
               undefined,
               undefined,
               sessionCtx,
@@ -216,13 +192,7 @@ describe("closed #51 — anchor space is a line-count limit, not a retirement ac
       const finalCtx = ctxFor(cwd, "churn-final");
       const fresh = rows(
         getText(
-          await readTool.execute(
-            "rf",
-            { files: [{ file: "churn.txt" }] },
-            undefined,
-            undefined,
-            finalCtx,
-          ),
+          await readTool.execute("rf", { file: "churn.txt" }, undefined, undefined, finalCtx),
         ),
       );
       expect(fresh).toHaveLength(14);
@@ -251,15 +221,7 @@ describe("closed #23/#60 — BOM and encoding handling", () => {
       async ({ cwd, path }) => {
         const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
         const served = rows(
-          getText(
-            await readTool.execute(
-              "r1",
-              { files: [{ file: "bom.txt" }] },
-              undefined,
-              undefined,
-              ctx,
-            ),
-          ),
+          getText(await readTool.execute("r1", { file: "bom.txt" }, undefined, undefined, ctx)),
         );
         const line2 = served[1]!.hash;
 
@@ -283,7 +245,7 @@ describe("closed #23/#60 — BOM and encoding handling", () => {
     await withTempBytes("gbk.txt", Buffer.from([0xd6, 0xd0, 0xce, 0xc4, 0x0a]), async ({ cwd }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const text = getText(
-        await readTool.execute("r1", { files: [{ file: "gbk.txt" }] }, undefined, undefined, ctx),
+        await readTool.execute("r1", { file: "gbk.txt" }, undefined, undefined, ctx),
       );
       // #34's contract: readable, with the lossy-decoding disclosure
       expect(text).toContain("Non-UTF-8 bytes shown as U+FFFD");
@@ -305,7 +267,7 @@ describe("multi-session — session key authority", () => {
       expect(() => sessionKeyFor(bareB as never)).toThrow(/no session/);
 
       await expect(
-        readTool.execute("r1", { files: [{ file: "fallback.txt" }] }, undefined, undefined, bareA),
+        readTool.execute("r1", { file: "fallback.txt" }, undefined, undefined, bareA),
       ).rejects.toThrow(/no session/i);
     });
   });
@@ -316,15 +278,7 @@ describe("closed #38 — boundary duplicate removal", () => {
     await withTempFile("braces.ts", "a\nb\nc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const served = rows(
-        getText(
-          await readTool.execute(
-            "r1",
-            { files: [{ file: "braces.ts" }] },
-            undefined,
-            undefined,
-            ctx,
-          ),
-        ),
+        getText(await readTool.execute("r1", { file: "braces.ts" }, undefined, undefined, ctx)),
       );
       const line1 = served[0]!.hash;
 

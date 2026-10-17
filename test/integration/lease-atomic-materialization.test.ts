@@ -57,7 +57,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const res = await readTool.execute(
         "r1",
-        { files: [{ file: "lease_read.txt" }] },
+        { file: "lease_read.txt" },
         undefined,
         undefined,
         ctx,
@@ -79,7 +79,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { files: [{ file: "lease_edit.txt" }] },
+        { file: "lease_edit.txt" },
         undefined,
         undefined,
         ctx,
@@ -119,13 +119,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
           "BEGIN SELECT RAISE(ABORT, 'induced lease failure'); END",
       );
       try {
-        await readTool.execute(
-          "r1",
-          { files: [{ file: "lease_read_atomic.txt" }] },
-          undefined,
-          undefined,
-          ctx,
-        );
+        await readTool.execute("r1", { file: "lease_read_atomic.txt" }, undefined, undefined, ctx);
       } finally {
         store.db.exec("DROP TRIGGER lease_read_atomic_fail");
       }
@@ -143,7 +137,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { files: [{ file: "lease_edit_atomic.txt" }] },
+        { file: "lease_edit_atomic.txt" },
         undefined,
         undefined,
         ctx,
@@ -199,7 +193,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       try {
         await readTool.execute(
           "r1",
-          { files: [{ file: "lease_lineage_atomic.txt" }] },
+          { file: "lease_lineage_atomic.txt" },
           undefined,
           undefined,
           ctx,
@@ -225,7 +219,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       try {
         readPromise = readTool.execute(
           "r1",
-          { files: [{ file: "lease_read_notx3.txt" }] },
+          { file: "lease_read_notx3.txt" },
           undefined,
           undefined,
           ctx,
@@ -254,7 +248,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { files: [{ file: "lease_edit_notx3.txt" }] },
+        { file: "lease_edit_notx3.txt" },
         undefined,
         undefined,
         ctx,
@@ -297,7 +291,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { files: [{ file: "lease_deferred.txt" }] },
+        { file: "lease_deferred.txt" },
         undefined,
         undefined,
         ctx,
@@ -334,7 +328,7 @@ describe("lease grant inside the materialization transaction (#116)", () => {
       // Recovery: a re-read re-materializes from disk and the next edit succeeds.
       const r2 = await readTool.execute(
         "r2",
-        { files: [{ file: "lease_deferred.txt" }] },
+        { file: "lease_deferred.txt" },
         undefined,
         undefined,
         ctx,

@@ -193,13 +193,7 @@ describe("read tool line cap", () => {
     const content = Array.from({ length: 20_000 }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
-      const result = await readTool.execute(
-        "r1",
-        { files: [{ file: "big.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│x0");
       expect(text).toContain("[big.ts lines 1-");
@@ -210,7 +204,7 @@ describe("read tool line cap", () => {
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       await expect(
-        readTool.execute("r1", { files: [{ file: "huge.ts" }] }, undefined, undefined, ctx),
+        readTool.execute("r1", { file: "huge.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow("E_LARGE_FILE");
     });
   });
@@ -225,7 +219,7 @@ describe("read tool line cap", () => {
     await withTempFile("cr-only.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const error = await readTool
-        .execute("r1", { files: [{ file: "cr-only.ts" }] }, undefined, undefined, ctx)
+        .execute("r1", { file: "cr-only.ts" }, undefined, undefined, ctx)
         .then(
           () => undefined,
           (thrown: unknown) => thrown as Error,
@@ -242,13 +236,7 @@ describe("read tool line cap", () => {
     const content = Array.from({ length: SERVED_MAX_LINES }, (_, i) => `x${i}`).join("\n");
     await withTempFile("big.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
-      const result = await readTool.execute(
-        "r1",
-        { files: [{ file: "big.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│x0");
       expect(text).toContain("[big.ts lines 1-");
@@ -346,10 +334,7 @@ describe("read tool line cap", () => {
       const { readTool, ctx } = setupReadTest(cwd);
       const verbatim = await readTool.execute(
         "v1",
-        {
-          files: [{ file: "huge-verbatim.ts", windows: [{ offset: 1, limit: 3 }] }],
-          mode: "verbatim",
-        },
+        { file: "huge-verbatim.ts", windows: [{ offset: 1, limit: 3 }], mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -361,13 +346,7 @@ describe("read tool line cap", () => {
       expect(verbatim.details?.snapshotId).toBeUndefined();
 
       await expect(
-        readTool.execute(
-          "s1",
-          { files: [{ file: "huge-verbatim.ts" }] },
-          undefined,
-          undefined,
-          ctx,
-        ),
+        readTool.execute("s1", { file: "huge-verbatim.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow(
         new RegExp(`\\[E_LARGE_FILE\\].*exceeding the ${SERVED_MAX_LINES}-line edit limit`),
       );
@@ -380,13 +359,7 @@ describe("read tool row budget", () => {
     const big = "X".repeat(60_000);
     await withTempFile("wide.txt", `${big}\nsmall\n`, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
-      const result = await readTool.execute(
-        "r1",
-        { files: [{ file: "wide.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const result = await readTool.execute("r1", { file: "wide.txt" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│small");
       expect(text).not.toContain("│X");

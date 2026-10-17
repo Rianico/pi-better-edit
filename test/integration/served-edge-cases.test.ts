@@ -19,7 +19,7 @@ describe("served-state edge cases for edit", () => {
 
       const first = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts", windows: [{ offset: 1, limit: 3 }] }] },
+        { file: "sample.ts", windows: [{ offset: 1, limit: 3 }] },
         undefined,
         undefined,
         ctx,
@@ -29,7 +29,7 @@ describe("served-state edge cases for edit", () => {
 
       const second = await readTool.execute(
         "r2",
-        { files: [{ file: "sample.ts", windows: [{ offset: 7 }] }] },
+        { file: "sample.ts", windows: [{ offset: 7 }] },
         undefined,
         undefined,
         ctx,
@@ -55,13 +55,7 @@ describe("served-state edge cases for edit", () => {
     await withTempFile("sample.ts", "a\nb\nc\nd\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const first = await readTool.execute(
-        "r1",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const aRef = extractHash(text.split("\n").find((l) => l.includes("│a"))!);
       const dRef = extractHash(text.split("\n").find((l) => l.includes("│d"))!);
@@ -98,13 +92,7 @@ describe("served-state edge cases for edit", () => {
     await withTempFile("sample.ts", "a\nb\nc\n", async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const first = await readTool.execute(
-        "r1",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const aRef = extractHash(
         getText(first)
           .split("\n")
@@ -114,7 +102,7 @@ describe("served-state edge cases for edit", () => {
       await writeFile(path, "x\ny\na\n", "utf-8");
       await readTool.execute(
         "r2",
-        { files: [{ file: "sample.ts", windows: [{ offset: 3 }] }] },
+        { file: "sample.ts", windows: [{ offset: 3 }] },
         undefined,
         undefined,
         ctx,
@@ -139,7 +127,7 @@ describe("served-state edge cases for edit", () => {
 
       await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts", windows: [{ offset: 1, limit: 2 }] }] },
+        { file: "sample.ts", windows: [{ offset: 1, limit: 2 }] },
         undefined,
         undefined,
         ctx,
@@ -167,7 +155,7 @@ describe("served-state edge cases for edit", () => {
       expect(await readFile(path, "utf-8")).toBe(content);
 
       const fresh = getText(
-        await readTool.execute("r2", { files: [{ file: "sample.ts" }] }, undefined, undefined, ctx),
+        await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx),
       );
       const servedFor = (line: string): string =>
         fresh
@@ -198,13 +186,7 @@ describe("served-state edge cases for edit", () => {
     await withTempFile("sample.ts", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
 
-      const first = await readTool.execute(
-        "r1",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const first = await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
       const text = getText(first);
       const firstRef = extractHash(text.split("\n").find((l) => l.includes("│line_001"))!);
       const lastRef = extractHash(text.split("\n").find((l) => l.includes("│line_200"))!);

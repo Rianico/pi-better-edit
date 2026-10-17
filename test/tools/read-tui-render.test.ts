@@ -99,12 +99,12 @@ describe("read tool — TUI renderers for the {file} payload", () => {
 
   it("qualifies the windows serve claim with the served default (fix 2)", () => {
     const tool = readTool();
-    // WHY: the top-level legacy `windows` field is gone (ADR-0040 D1); the serve claim now lives
-    // WHY: on each file target's own `windows` description, which the canonical shape requires.
-    const filesSchema = tool.parameters.properties.files as {
-      items: { properties: { windows: { description: string } } };
+    // WHY: the flat shape (ADR-0041 D1) carries its own `windows` description — the serve
+    // WHY: claim lives on the call's windows array, not a nested file target.
+    const params = tool.parameters.properties as {
+      windows: { description: string };
     };
-    const description = filesSchema.items.properties.windows.description;
+    const description = params.windows.description;
     expect(description).toContain("in the default `served` mode every window's rows are served");
   });
 
@@ -137,22 +137,26 @@ describe("read tool — TUI renderers for the {file} payload", () => {
   });
 });
 
-describe("read tool — TUI renderers for the canonical {files} payload (#141)", () => {
-  it("renders the filename on the call line for { files: [{ file }] } without mutating args", () => {
+describe("read tool — TUI renderers for the flat {file} payload (#147)", () => {
+  it("renders the filename on the call line for { file } without mutating args", () => {
     const tool = readTool();
-    const args = { files: [{ file: "notes.txt" }] };
+    const args = { file: "notes.txt" };
     const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
 
     const call = tool.renderCall(args, theme, context);
 
-    expect(call.render(80).join("\n")).toContain("notes.txt");
-    expect(args).toEqual({ files: [{ file: "notes.txt" }] });
+    const line = call.render(80).join("\n");
+    expect(line).toContain("notes.txt");
+    // WHY: whole-file reads render the bare path — no range, no window count.
+    expect(line).not.toMatch(/:\d/);
+    expect(line).not.toContain("windows)");
+    expect(args).toEqual({ file: "notes.txt" });
     expect("path" in args).toBe(false);
   });
 
-  it("renders filename and :start-end for { files: [{ file, windows: [{ offset, limit }] }] }", () => {
+  it("renders filename and :start-end for { file, windows: [{ offset, limit }] }", () => {
     const tool = readTool();
-    const args = { files: [{ file: "notes.txt", windows: [{ offset: 3, limit: 5 }] }] };
+    const args = { file: "notes.txt", windows: [{ offset: 3, limit: 5 }] };
     const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
 
     const call = tool.renderCall(args, theme, context);
@@ -161,64 +165,61 @@ describe("read tool — TUI renderers for the canonical {files} payload (#141)",
     const line = call.render(80).join("\n");
     expect(line).toContain("notes.txt");
     expect(line).toContain(":3-7");
-    expect(args).toEqual({ files: [{ file: "notes.txt", windows: [{ offset: 3, limit: 5 }] }] });
+    expect(args).toEqual({ file: "notes.txt", windows: [{ offset: 3, limit: 5 }] });
   });
 
-  it("shows the first target with no range for a multi-file call", () => {
+  it("renders the retired files shape from history via the D5 fallback (first entry)", () => {
     const tool = readTool();
     const args = {
-      files: [{ file: "a.txt", windows: [{ offset: 2, limit: 4 }] }, { file: "b.txt" }],
+      files: [{ file: "old.txt", windows: [{ offset: 2, limit: 4 }] }, { file: "new.txt" }],
     };
     const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
 
     const call = tool.renderCall(args, theme, context);
 
-    // WHY: ADR-0040 D4 renders the first target only, and a range needs exactly one file —
-    // WHY: even though the first file carries a window, no `:2-5` range is fabricated.
+    // WHY: ADR-0041 D5 — recorded transcripts render: `file ?? path ?? files?.[0]?.file`, so the
+    // WHY: history entry shows the first file's path even though the shape is retired.
     const line = call.render(80).join("\n");
-    expect(line).toContain("a.txt");
-    expect(line).not.toContain(":2-5");
+    expect(line).toContain("old.txt");
+    expect(line).not.toContain("new.txt");
   });
 
-  it("derives no range from multiple windows on one file (never fabricate)", () => {
+  it("shows the path with (N windows) and no range for a multi-window call", () => {
     const tool = readTool();
     const args = {
-      files: [
-        {
-          file: "a.txt",
-          windows: [
-            { offset: 2, limit: 4 },
-            { offset: 20, limit: 4 },
-          ],
-        },
+      file: "a.txt",
+      windows: [
+        { offset: 2, limit: 4 },
+        { offset: 20, limit: 4 },
       ],
     };
     const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
 
     const line = tool.renderCall(args, theme, context).render(80).join("\n");
 
-    // WHY: a range needs exactly one window — two windows mean no `:2-5`, filename still shows.
+    // WHY: ADR-0041 D4 — the builtin has no multi-window chrome, so the call line carries the
+    // WHY: count itself; a range is never fabricated from two windows.
     expect(line).toContain("a.txt");
+    expect(line).toContain("(2 windows)");
     expect(line).not.toContain(":2-5");
   });
 
   it("derives no range from an around_anchor window", () => {
     const tool = readTool();
-    const args = {
-      files: [{ file: "a.txt", windows: [{ around_anchor: "deadbeef", radius: 3 }] }],
-    };
+    const args = { file: "a.txt", windows: [{ around_anchor: "deadbeef", radius: 3 }] };
     const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
 
     const line = tool.renderCall(args, theme, context).render(80).join("\n");
 
-    // WHY: an anchor window has no offset/limit to project — filename shows, no range at all.
+    // WHY: an anchor window has no offset/limit to project — bare path, no range, no count.
     expect(line).toContain("a.txt");
     expect(line).not.toMatch(/:\d/);
+    expect(line).not.toContain("windows)");
   });
 
-  it("renders the filename for { files: [{ file, mode: verbatim }] } (mode is header-neutral)", () => {
+  it("renders the filename for { file, mode: verbatim } (mode is header-neutral)", () => {
     const tool = readTool();
-    const args = { files: [{ file: "notes.txt", mode: "verbatim" }] };
+    const args = { file: "notes.txt", mode: "verbatim" };
     const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
 
     const call = tool.renderCall(args, theme, context);

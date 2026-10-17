@@ -77,13 +77,7 @@ describe("multi-edit batch WAL commit", () => {
     const content = "a\nb\nc\nd\ne\n";
     await withTempFile("nest.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const readRes = await readTool.execute(
-        "r1",
-        { files: [{ file: "nest.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const readRes = await readTool.execute("r1", { file: "nest.txt" }, undefined, undefined, ctx);
       const lines = anchorRows(getText(readRes));
       const h1 = extractHash(lines[0]!);
       const h2 = extractHash(lines[1]!);
@@ -122,7 +116,7 @@ describe("multi-edit batch WAL commit", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { files: [{ file: "overlap.txt" }] },
+        { file: "overlap.txt" },
         undefined,
         undefined,
         ctx,
@@ -161,7 +155,7 @@ describe("multi-edit batch WAL commit", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { files: [{ file: "shift-overlap.txt" }] },
+        { file: "shift-overlap.txt" },
         undefined,
         undefined,
         ctx,
@@ -213,7 +207,7 @@ describe("multi-edit batch WAL commit", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { files: [{ file: "duplicate-canon.txt" }] },
+        { file: "duplicate-canon.txt" },
         undefined,
         undefined,
         ctx,
@@ -271,7 +265,7 @@ describe("multi-edit batch WAL commit", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { files: [{ file: "survive.txt" }] },
+        { file: "survive.txt" },
         undefined,
         undefined,
         ctx,
@@ -302,13 +296,7 @@ describe("multi-edit batch WAL commit", () => {
     const original = "alpha\nbravo\ncharlie\n";
     await withTempFile("cycle.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const r1 = await readTool.execute(
-        "r1",
-        { files: [{ file: "cycle.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const r1 = await readTool.execute("r1", { file: "cycle.txt" }, undefined, undefined, ctx);
       const lines = anchorRows(getText(r1));
       const bravo = extractHash(lines[1]!);
 
@@ -326,15 +314,7 @@ describe("multi-edit batch WAL commit", () => {
       const counterAfterForward = nextId(store, path);
       const snapshotsAfterForward = snapshotCount(store, path);
       const forwardLines = anchorRows(
-        getText(
-          await readTool.execute(
-            "r2",
-            { files: [{ file: "cycle.txt" }] },
-            undefined,
-            undefined,
-            ctx,
-          ),
-        ),
+        getText(await readTool.execute("r2", { file: "cycle.txt" }, undefined, undefined, ctx)),
       );
       const bravoUpper = extractHash(forwardLines[1]!);
 
@@ -362,13 +342,7 @@ describe("multi-edit batch WAL commit", () => {
     const content = "row1\nrow2\nrow3\n";
     await withTempFile("retire.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const r1 = await readTool.execute(
-        "r1",
-        { files: [{ file: "retire.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const r1 = await readTool.execute("r1", { file: "retire.txt" }, undefined, undefined, ctx);
       const lines = anchorRows(getText(r1));
       const row2 = extractHash(lines[1]!);
 
@@ -402,7 +376,7 @@ describe("multi-edit batch WAL commit", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { files: [{ file: "parse-abort.txt" }] },
+        { file: "parse-abort.txt" },
         undefined,
         undefined,
         ctx,
@@ -444,7 +418,7 @@ describe("multi-edit batch WAL commit", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const r1 = await readTool.execute(
         "r1",
-        { files: [{ file: "reject-abort.txt" }] },
+        { file: "reject-abort.txt" },
         undefined,
         undefined,
         ctx,
@@ -494,13 +468,7 @@ describe("multi-edit batch WAL commit", () => {
     const content = "alpha\ndup\ndup\n";
     await withTempFile("chain.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const r1 = await readTool.execute(
-        "r1",
-        { files: [{ file: "chain.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const r1 = await readTool.execute("r1", { file: "chain.txt" }, undefined, undefined, ctx);
       const lines = anchorRows(getText(r1));
       const alpha = extractHash(lines[0]!);
       const dupSecond = extractHash(lines[1]!);

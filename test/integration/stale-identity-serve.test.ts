@@ -13,7 +13,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -51,7 +51,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -98,7 +98,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -121,13 +121,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
         .catch((e: unknown) => e)) as Error;
       expect(rejected.message).toMatch(/\[E_TARGET_LOST\]/);
 
-      const fresh = await readTool.execute(
-        "r2",
-        { files: [{ file: "sample.ts" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const fresh = await readTool.execute("r2", { file: "sample.ts" }, undefined, undefined, ctx);
       const freshText = getText(fresh);
       const deltaRef = extractHash(freshText.split("\n").find((l) => l.includes("│delta"))!);
       const result = await editTool.execute(
@@ -150,7 +144,7 @@ describe("stale-identity target-lost rejection (spec stale-identity-reject-and-s
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,
@@ -190,7 +184,7 @@ describe("target-lost leases nothing (D2 seam)", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const firstRead = await readTool.execute(
         "r1",
-        { files: [{ file: "sample.ts" }] },
+        { file: "sample.ts" },
         undefined,
         undefined,
         ctx,

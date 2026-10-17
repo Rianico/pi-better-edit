@@ -55,7 +55,7 @@ describe("verbatim hashless seam", () => {
       const spy = vi.spyOn(defaultHashIdentity, "hashesFor");
       const result = await readTool.execute(
         "v1",
-        { files: [{ file: "plain.txt" }], mode: "verbatim" },
+        { file: "plain.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -71,13 +71,7 @@ describe("verbatim hashless seam", () => {
     await withTempFile("plain.txt", "alpha\nbeta\n", async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const spy = vi.spyOn(defaultHashIdentity, "anchorsForWalk");
-      const result = await readTool.execute(
-        "s1",
-        { files: [{ file: "plain.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const result = await readTool.execute("s1", { file: "plain.txt" }, undefined, undefined, ctx);
       expect(result.content[0]!.text).toContain("│alpha");
       expect(spy).toHaveBeenCalled();
     });
@@ -113,14 +107,14 @@ describe("verbatim hashless seam", () => {
 
         await readTool.execute(
           "v2",
-          { files: [{ file: "plain.txt" }], mode: "verbatim" },
+          { file: "plain.txt", mode: "verbatim" },
           undefined,
           undefined,
           ctx,
         );
         expect(existsSync(storePath)).toBe(false);
 
-        await readTool.execute("s2", { files: [{ file: "plain.txt" }] }, undefined, undefined, ctx);
+        await readTool.execute("s2", { file: "plain.txt" }, undefined, undefined, ctx);
         expect(existsSync(storePath)).toBe(true);
       }),
     );

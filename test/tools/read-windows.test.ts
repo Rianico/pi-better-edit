@@ -216,14 +216,10 @@ describe("read tool — windows", () => {
       const readResult = await readTool.execute(
         "r1",
         {
-          files: [
-            {
-              file: "windows.ts",
-              windows: [
-                { offset: 1, limit: 2 },
-                { offset: 11, limit: 2 },
-              ],
-            },
+          file: "windows.ts",
+          windows: [
+            { offset: 1, limit: 2 },
+            { offset: 11, limit: 2 },
           ],
         },
         undefined,
@@ -255,14 +251,10 @@ describe("read tool — windows", () => {
       const readResult = await readTool.execute(
         "r1",
         {
-          files: [
-            {
-              file: "overlap.ts",
-              windows: [
-                { offset: 1, limit: 3 },
-                { offset: 2, limit: 3 },
-              ],
-            },
+          file: "overlap.ts",
+          windows: [
+            { offset: 1, limit: 3 },
+            { offset: 2, limit: 3 },
           ],
         },
         undefined,
@@ -298,7 +290,7 @@ describe("read tool — windows", () => {
       await session.markDriftReported(["abcc"]);
       await readTool.execute(
         "r1",
-        { files: [{ file: "empty-windows.ts", windows: [] }] },
+        { file: "empty-windows.ts", windows: [] },
         undefined,
         undefined,
         ctx,
@@ -309,7 +301,7 @@ describe("read tool — windows", () => {
       await session.markDriftReported(["abcc"]);
       await readTool.execute(
         "r2",
-        { files: [{ file: "empty-windows.ts", windows: [{ offset: 1, limit: 2 }] }] },
+        { file: "empty-windows.ts", windows: [{ offset: 1, limit: 2 }] },
         undefined,
         undefined,
         ctx,
@@ -323,7 +315,7 @@ describe("read tool — windows", () => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { files: [{ file: "plain.ts", windows: [{ offset: 2, limit: 2 }] }] },
+        { file: "plain.ts", windows: [{ offset: 2, limit: 2 }] },
         undefined,
         undefined,
         ctx,

@@ -41,7 +41,7 @@ async function read(
 ): Promise<string> {
   const res = await readTool.execute(
     id,
-    { files: [{ file: file, windows: [{ offset, limit }] }] },
+    { file: file, windows: [{ offset, limit }] },
     undefined,
     undefined,
     ctx,

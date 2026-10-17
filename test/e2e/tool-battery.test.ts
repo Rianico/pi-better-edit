@@ -193,7 +193,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b1.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b1.ts" }, ctx);
       const anchor = readAnchor(r1.text, "│bbb");
       const e1 = await call(
         rec,
@@ -215,7 +215,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b2.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b2.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       const b = readAnchor(r1.text, "│ccc");
       const e1 = await call(
@@ -238,7 +238,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b3.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b3.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       const b = readAnchor(r1.text, "│ddd");
       await writeFile(path, "aaa\nbbb\nCCC\nddd\n", "utf-8");
@@ -263,7 +263,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b4.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b4.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       const b = readAnchor(r1.text, "│ccc");
       await writeFile(path, "AAA\nbbb\nccc\nddd\n", "utf-8");
@@ -287,7 +287,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b5.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b5.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const b = readAnchor(r1.text, "│c");
       await writeFile(path, "b\nc\nd\ne\n", "utf-8");
@@ -312,7 +312,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b6.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b6.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const b = readAnchor(r1.text, "│c");
       await writeFile(path, "a\nB\nc\nd\n", "utf-8");
@@ -345,14 +345,14 @@ describe("tool battery (deterministic edit scenarios)", () => {
           rec,
           getTool("read"),
           "read",
-          { files: [{ file: "b7.ts", windows: [{ offset: 1, limit: 3 }] }] },
+          { file: "b7.ts", windows: [{ offset: 1, limit: 3 }] },
           ctx,
         );
         const r2 = await call(
           rec,
           getTool("read"),
           "read",
-          { files: [{ file: "b7.ts", windows: [{ offset: 7 }] }] },
+          { file: "b7.ts", windows: [{ offset: 7 }] },
           ctx,
         );
         const a = readAnchor(r1.text, "│l3");
@@ -401,7 +401,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b9.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b9.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       await writeFile(path, "aaa\nBBB\nccc\n", "utf-8");
       const e1 = await call(
@@ -425,7 +425,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b10.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b10.ts" }, ctx);
       const a = readAnchor(r1.text, "│a");
       const b = readAnchor(r1.text, "│d");
       await writeFile(path, "a\nb\nb\nd\n", "utf-8");
@@ -450,7 +450,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b11.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b11.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       rec.preEdit = await readFile(path, "utf-8");
       const e1 = await call(
@@ -473,7 +473,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b12.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b12.ts" }, ctx);
       const a = readAnchor(r1.text, "│a");
       await writeFile(path, "a\nb\nc\nD\n", "utf-8");
       rec.preEdit = await readFile(path, "utf-8");
@@ -497,7 +497,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool, handlers } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b13.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b13.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const e1 = await call(
         rec,
@@ -542,7 +542,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b14.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b14.ts" }, ctx);
       const emptyHash = anchorRows(r1.text)[0]!.split("│")[0]!;
       expect(emptyHash).toMatch(/^[A-Za-z0-9]{4}$/);
       const e1 = await call(
@@ -572,7 +572,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
           finalContent: "",
         };
         const { ctx, getTool } = setupTarget(cwd);
-        const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b15.ts" }] }, ctx);
+        const r1 = await call(rec, getTool("read"), "read", { file: "b15.ts" }, ctx);
         const a = readAnchor(r1.text, "│line 1");
         const b = readAnchor(r1.text, "│line 200");
         await writeFile(
@@ -604,7 +604,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b16.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b16.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       await call(
         rec,
@@ -628,7 +628,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b16b.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b16b.ts" }, ctx);
       const a = readAnchor(r1.text, "│bbb");
       await call(
         rec,
@@ -653,7 +653,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b17.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b17.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const b = readAnchor(r1.text, "│c");
       const e1 = await call(
@@ -677,7 +677,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b18.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b18.ts" }, ctx);
       const a = readAnchor(r1.text, "│b");
       const e1 = await call(
         rec,
@@ -702,7 +702,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
       const { getTool, handlers } = setupTarget(cwd);
       const mainCtx = sessionCtx(cwd, "eval-main");
       const subCtx = sessionCtx(cwd, "eval-sub");
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b19.ts" }] }, mainCtx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b19.ts" }, mainCtx);
       const a = readAnchor(r1.text, "│bbb");
       await fireSessionStart(handlers, subCtx);
       const e1 = await call(
@@ -728,14 +728,14 @@ describe("tool battery (deterministic edit scenarios)", () => {
       const { getTool, handlers } = setupTarget(cwd);
       const mainCtx = sessionCtx(cwd, "eval-main");
       const subCtx = sessionCtx(cwd, "eval-sub");
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b20.ts" }] }, mainCtx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b20.ts" }, mainCtx);
       const aC = readAnchor(r1.text, "│c");
       await fireSessionStart(handlers, subCtx);
       const s1 = await call(
         rec,
         getTool("read"),
         "read",
-        { files: [{ file: "b20.ts", windows: [{ offset: 1, limit: 2 }] }] },
+        { file: "b20.ts", windows: [{ offset: 1, limit: 2 }] },
         subCtx,
       );
       const sB = readAnchor(s1.text, "│b");
@@ -779,7 +779,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
       const { getTool, handlers } = setupTarget(cwd);
       const mainCtx = sessionCtx(cwd, "eval-main");
       await fireSessionStart(handlers, mainCtx);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b21.ts" }] }, mainCtx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b21.ts" }, mainCtx);
       const a = readAnchor(r1.text, "│bbb");
       await fireSessionStart(handlers, mainCtx);
       const e1 = await call(
@@ -805,7 +805,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
       const { getTool } = setupTarget(cwd);
       const mainCtx = sessionCtx(cwd, "eval-main");
       const subCtx = sessionCtx(cwd, "eval-sub");
-      await call(rec, getTool("read"), "read", { files: [{ file: "b22.ts" }] }, subCtx);
+      await call(rec, getTool("read"), "read", { file: "b22.ts" }, subCtx);
       const hashes = await lineHashes("a\nb\nc\n", join(cwd, "b22.ts"));
       const e1 = await call(
         rec,
@@ -832,7 +832,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b23.cpp" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b23.cpp" }, ctx);
       const line2Hash = readAnchor(r1.text, "│\tif (x > 0) {");
       await writeFile(path, B23_F2_ONLY, "utf-8");
       const e1 = await call(
@@ -864,7 +864,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b24.js" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b24.js" }, ctx);
       const a = readAnchor(r1.text, "│function alpha() {");
       const b = readAnchor(r1.text, "│} // end alpha");
       await writeFile(path, B24_SWAPPED, "utf-8");
@@ -900,7 +900,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b25a.ts" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b25a.ts" }, ctx);
       const anchorBravo = readAnchor(r1.text, "│bravo");
       const e1 = await call(
         rec,
@@ -926,7 +926,7 @@ describe("tool battery (deterministic edit scenarios)", () => {
         finalContent: "",
       };
       const { ctx, getTool } = setupTarget(cwd);
-      const r1 = await call(rec, getTool("read"), "read", { files: [{ file: "b26.txt" }] }, ctx);
+      const r1 = await call(rec, getTool("read"), "read", { file: "b26.txt" }, ctx);
       const anchor = readAnchor(r1.text, "│second");
       const e1 = await call(
         rec,

@@ -67,7 +67,7 @@ describe("the verbatim page never materializes the line array", () => {
       const run = async (args: Record<string, unknown>): Promise<string> => {
         const result = await readTool.execute(
           "v1",
-          { files: [{ file: "plain.txt", mode: "verbatim", ...args }] },
+          { file: "plain.txt", mode: "verbatim", ...args },
           undefined,
           undefined,
           ctx,
@@ -100,7 +100,7 @@ describe("the verbatim page never materializes the line array", () => {
       const { readTool, ctx } = setupReadTest(cwd);
       const result = await readTool.execute(
         "v1",
-        { files: [{ file: "empty.txt" }], mode: "verbatim" },
+        { file: "empty.txt", mode: "verbatim" },
         undefined,
         undefined,
         ctx,
@@ -121,7 +121,7 @@ describe("the served page never materializes the line array", () => {
       const run = async (args: Record<string, unknown>): Promise<string> => {
         const result = await readTool.execute(
           "s1",
-          { files: [{ file: "plain.txt", ...args }] },
+          { file: "plain.txt", ...args },
           undefined,
           undefined,
           ctx,
@@ -160,13 +160,7 @@ describe("the served page never materializes the line array", () => {
     await withTempFile("empty.txt", "", async ({ cwd }) => {
       splitCalls.length = 0;
       const { readTool, ctx } = setupReadTest(cwd);
-      const result = await readTool.execute(
-        "s1",
-        { files: [{ file: "empty.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const result = await readTool.execute("s1", { file: "empty.txt" }, undefined, undefined, ctx);
       expect(result.content[0]?.text).toMatch(
         /^\[empty\.txt \(0 lines total\)\]\n\w{4}│\n\[File is empty\. Use edit to insert content\.\]$/,
       );
@@ -198,7 +192,7 @@ describe("the served page never materializes the line array", () => {
       splitCalls.length = 0;
       const { readTool, ctx } = setupReadTest(cwd);
       await expect(
-        readTool.execute("s1", { files: [{ file: "cr-only.ts" }] }, undefined, undefined, ctx),
+        readTool.execute("s1", { file: "cr-only.ts" }, undefined, undefined, ctx),
       ).rejects.toThrow(`cr-only.ts has ${MAX_HASH_LINES + 1} lines`);
       expect(splitCalls).toEqual([]);
     });

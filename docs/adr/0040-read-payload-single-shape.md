@@ -8,7 +8,7 @@ accepted — operator grill Q1–Q15. Extends the tolerant-admission design of
 `docs/spec/search-and-read-evolution.md` §4.2 and removes the legacy aliases that design introduced.
 Implementation tracks #142; the render-projection fix that makes this safe ships separately in #141.
 
-Superceded by [41. Read payload flat file target with windows and top level mode](0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md)
+Superseded by [ADR-0041](0041-read-payload-flat-file-target-with-windows-and-top-level-mode.md)
 
 ## Context
 

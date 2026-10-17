@@ -32,19 +32,7 @@ export const MAX_READ_WINDOWS = 16;
 // WHY: runtime mirror for direct callers — and each naming the limit its own way made the same refusal
 // WHY: read three ways. The mirror shares this message with admission rather than holding a fourth
 // WHY: spelling of "16 windows".
-export const MAX_READ_WINDOWS_MESSAGE = `Read request accepts at most ${MAX_READ_WINDOWS} windows across all files.`;
-
-// WHY: a multi-file read is still ONE tool result, so the file fan-out is bounded with the same
-// WHY: reasoning as `MAX_READ_WINDOWS`: N files draw on one served anchor budget and one shared
-// WHY: `SERVED_MAX_LINES` line budget, so the call must not be able to multiply either without bound.
-export const MAX_READ_FILES = 10;
-// WHY: the ONE wording of the file-cap refusal (spec §4.2). Two points enforce this cap — the
-// WHY: registered schema's `files`-array `maxItems` and `admitReadRequest`'s explicit length guard —
-// WHY: and each naming the limit its own way made the same refusal read two ways, so admission now
-// WHY: reuses this constant. Unlike the window cap there is no preview mirror to align: the only
-// WHY: exported preview entry point (`fmtReadPreview`) renders ONE file's text, so a direct caller
-// WHY: cannot express a file fan-out and cannot outrun this cap.
-export const MAX_READ_FILES_MESSAGE = `Read request accepts at most ${MAX_READ_FILES} files.`;
+export const MAX_READ_WINDOWS_MESSAGE = `Read request accepts at most ${MAX_READ_WINDOWS} windows.`;
 
 // WHY: (#87b) the per-attempt wait inside SQLite, passed as the `timeout` constructor option — in
 // WHY: node:sqlite that option IS the busy handler, so `PRAGMA busy_timeout` reports this value back.
@@ -116,8 +104,8 @@ export const SEARCH_MAX_MATCHES = 50;
 
 // WHY: (item 10) the multi-file / recursive / `--files` DISTINCT-FILE bound: a search that
 // WHY: names more files than this passes through raw rather than exploding one bash call into
-// WHY: an unbounded anchor budget (mirrors `MAX_READ_FILES`, so one tool result keeps one
-// WHY: budget). It fails closed beyond — never silent-truncate (invariant 3). NOTE: the
+// WHY: an unbounded anchor budget (mirrors the retired per-call read file cap, so one tool result
+// WHY: keeps one budget). It fails closed beyond — never silent-truncate (invariant 3). NOTE: the
 // WHY: `rg --files` list leases nothing, so its share of this bound is the brief's "same count
 // WHY: cap"; a repository-wide listing therefore usually passes through raw (ADR-0033 D10).
 export const BASH_SEARCH_MAX_FILES = 10;

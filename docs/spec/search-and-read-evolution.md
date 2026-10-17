@@ -142,30 +142,21 @@ export const ReadParamsSchema = Type.Object({
 > and align 1:1 with Pi's TUI component. Multi-file inspection is handled by parallel
 > tool calls and bash view.
 
-### 4.2 Tolerant Runtime Admission & Limits
-- **Prompt Pruning**: Documented schema in prompts publishes strictly `files: [...]`.
-- **Runtime Tolerance**:
-  ```typescript
-  if ((params as any).file && !params.files) {
-    const legacy = params as any;
-    params.files = [{
-      file: legacy.file ?? legacy.path,
-      windows: legacy.offset !== undefined ? [{ offset: legacy.offset, limit: legacy.limit ?? 50 }] : legacy.windows,
-    }];
-  }
-  ```
-  Empty `windows: []` is treated as omitted (reads from line 1).
-- **Cap Invariant**: At most 16 total windows across all files in a single call. Exceeding 16 throws `[E_BAD_PAYLOAD]`.
-- **Global Budget**: All files draw against shared `SERVED_MAX_LINES = 200,000`.
-> Supersession note (ADR-0040, #142): the admission fold quoted above is deleted from
-> `src/read.ts` — the schema accepts exactly one shape, `{ files: [{ file, windows?,
-> mode? }], mode? }`, and legacy-only payloads are rejected. This section is kept as
-> history of the tolerant-admission design; do not treat the fold snippet as live
-> behaviour. Render-time tolerance for recorded transcripts lives in the render
-> projection (ADR-0040 D3), not in admission.
+### 4.2 Runtime Admission & Limits — one history
+- **Aliases → fold → `files` → flat.** The read payload once accepted legacy aliases
+  (`file`, `path`, top-level `offset`/`limit`/`windows`); admission folded them into a
+  canonical `files` array (tolerant runtime, ADR-0040), and the flattening (ADR-0041, #147)
+  collapsed that array to one target per call: `{ file, windows?, mode? }`. The fold and the
+  `files` wrapper are both deleted from `src/read.ts`; neither is live behaviour.
+- **Prompt Pruning**: documented schema in prompts publishes strictly the flat shape.
+- **Empty windows**: `windows: []` is treated as omitted (reads from line 1).
+- **Cap Invariant**: at most 16 windows in a single call. Exceeding 16 throws `[E_BAD_PAYLOAD]`.
+- **Global Budget**: the call draws against shared `SERVED_MAX_LINES = 200,000`.
+- **Recorded history**: render-time tolerance for archived transcripts lives in the render
+  projection (ADR-0040 D3/D5 as extended by ADR-0041 D5), not in admission.
 
 ### 4.3 Interval Algebra & Anchor Resolution
-1. For each file in `files`:
+1. For the file's `windows`:
    - `around_anchor` resolves against the target file's active lineage for the session.
    - If `around_anchor` is not found, expired, or foreign: emit inline warning `[Window warning: Anchor 'a1b2' not found; window omitted]`; remaining valid windows proceed.
    - Clamp `radius` to budget bounds (default 10).

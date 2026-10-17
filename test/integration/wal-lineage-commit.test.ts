@@ -79,13 +79,7 @@ describe("WAL lineage commit from the working buffer", () => {
 
     await withTempFile("dup.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const readRes = await readTool.execute(
-        "r1",
-        { files: [{ file: "dup.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const readRes = await readTool.execute("r1", { file: "dup.txt" }, undefined, undefined, ctx);
       const lines = anchorRows(getText(readRes));
       const first = extractHash(lines[0]!);
       const second = extractHash(lines[1]!);
@@ -134,7 +128,7 @@ describe("WAL lineage commit from the working buffer", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { files: [{ file: "insert.txt" }] },
+        { file: "insert.txt" },
         undefined,
         undefined,
         ctx,
@@ -167,13 +161,7 @@ describe("WAL lineage commit from the working buffer", () => {
     const original = "alpha\nbravo\ncharlie\n";
     await withTempFile("revert.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const r1 = await readTool.execute(
-        "r1",
-        { files: [{ file: "revert.txt" }] },
-        undefined,
-        undefined,
-        ctx,
-      );
+      const r1 = await readTool.execute("r1", { file: "revert.txt" }, undefined, undefined, ctx);
       const bravo = extractHash(anchorRows(getText(r1))[1]!);
 
       const store = await loadHashStore();
@@ -192,15 +180,7 @@ describe("WAL lineage commit from the working buffer", () => {
       const snapshotsAfterForward = snapshotCount(store, path);
       const bravoUpper = extractHash(
         anchorRows(
-          getText(
-            await readTool.execute(
-              "r2",
-              { files: [{ file: "revert.txt" }] },
-              undefined,
-              undefined,
-              ctx,
-            ),
-          ),
+          getText(await readTool.execute("r2", { file: "revert.txt" }, undefined, undefined, ctx)),
         )[1]!,
       );
 
