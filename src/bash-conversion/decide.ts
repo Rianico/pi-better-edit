@@ -27,11 +27,13 @@ import {
   isRedundantCd,
   isSemicolonStatementChain,
   parseGlueSegment,
+  parseInertTail,
 } from "../bash-classifier.js";
 import type {
   BashClass,
   CompoundSegment,
   SearchFamily,
+  SearchSeg,
   SearchProgram,
   Segment,
   ViewSeg,
@@ -110,6 +112,8 @@ interface RuleContext {
   effCwd: string | undefined;
   sawGlue: boolean;
   compoundSegs: CompoundSegment[];
+  /** Relaxation A (ADR-0039 D10): set by the head rule once the leading block is admitted — only inert tails may follow. */
+  tailMode: boolean;
 }
 
 function statementOf(ctx: RuleContext): Statement {
@@ -251,6 +255,21 @@ export const RULES: readonly ConversionRule[] = [
     },
   },
   {
+    id: "inert-tail",
+    // WHY: (ADR-0039 D10) an inert tail command contributes only its already-observed bytes —
+    // WHY: no block, no anchors, no leases. It fires only inside tail mode (set by the head
+    // WHY: rule), so a lone `wc` still declines via `unsafe` with its exact legacy reason.
+    why: "ADR-0039 D10 (relaxation A; inert tail accumulation)",
+    phase: "segment",
+    when: (ctx) => ctx.tailMode && isInertTailNode(segmentOf(ctx).node),
+    run: (ctx) => {
+      const { node } = segmentOf(ctx);
+      ctx.compoundSegs.push({ kind: "raw", command: ctx.command.slice(node.pos, node.end) });
+      return ADVANCE;
+    },
+  },
+
+  {
     id: "unsafe",
     // WHY: (ADR-0039 D6) a lone print keeps its own decline (F2: glue locates blocks; with no block
     // WHY: there is nothing to locate). The reason string flows through byte-identically.
@@ -347,6 +366,34 @@ export const RULES: readonly ConversionRule[] = [
     run: () => ADVANCE,
   },
   {
+    id: "inert-tail-head",
+    // WHY: (ADR-0039 D10) relaxation A admits a compound with NO glue iff exactly one block
+    // WHY: exists, it is the first segment, and every later segment is inert (checked by
+    // WHY: classifying the remainder up front — pure functions, no walk state touched). It
+    // WHY: preempts the prefix/second declines for that head only; anything else in the tail
+    // WHY: falls through to the original guards with their original reasons. Glued chains
+    // WHY: keep their exact legacy behavior (`!ctx.hasGlue`).
+    why: "ADR-0039 D10 (relaxation A; single leading block with inert tail)",
+    phase: "segment",
+    when: (ctx) => {
+      if (ctx.segIndex !== 0 || ctx.hasGlue) return false;
+      if (ctx.view !== undefined || ctx.searchSeg !== undefined) return false;
+      const current = currentOf(ctx);
+      if (current.kind !== "search" && !isViewTerminal(current)) return false;
+      const tail = ctx.segments.slice(1);
+      return tail.length > 0 && tail.every((segment) => isInertTailNode(segment.node));
+    },
+    run: (ctx) => {
+      const current = currentOf(ctx);
+      if (current.kind === "search") recordSearchBlock(ctx, current);
+      else if (current.kind === "view") recordViewBlock(ctx, current);
+      else throw new Error("[152] unreachable: head is not a block");
+      ctx.tailMode = true;
+      return ADVANCE;
+    },
+  },
+
+  {
     id: "search-prefix",
     // WHY: the search obeys the view's chain rule verbatim (ADR-0033 D1 as amended): only the
     // WHY: terminal statement may carry it — a prefix `grep` would be a compound chain the model
@@ -381,26 +428,7 @@ export const RULES: readonly ConversionRule[] = [
     run: (ctx) => {
       const current = currentOf(ctx);
       if (current.kind !== "search") throw new Error("[151] unreachable: kind changed");
-      ctx.searchSeg = current.family;
-      ctx.compoundSegs.push(current);
-      // WHY: the line-number injection must splice at the search program token's source offset, and
-      // WHY: that offset is only known while the chain walk runs (transcribed with the walk).
-      const { node } = segmentOf(ctx);
-      if (node.type === "Command" && node.name?.end !== undefined) {
-        const fam = current.family;
-        if (
-          fam.kind === "pureSearch" ||
-          fam.kind === "pureMultiSearch" ||
-          fam.kind === "pureRecursiveSearch"
-        ) {
-          if (ctx.located.searchNameEnds === undefined) ctx.located.searchNameEnds = [];
-          ctx.located.searchNameEnds.push({
-            end: node.name.end,
-            program: fam.search.program,
-            lineNumbered: fam.search.lineNumbered,
-          });
-        }
-      }
+      recordSearchBlock(ctx, current);
       return ADVANCE;
     },
   },
@@ -433,8 +461,7 @@ export const RULES: readonly ConversionRule[] = [
       if (!isViewTerminal(current) || current.kind !== "view") {
         throw new Error("[151] unreachable: non-view reached the view arm");
       }
-      ctx.view = current;
-      ctx.compoundSegs.push(current);
+      recordViewBlock(ctx, current);
       return ADVANCE;
     },
   },
@@ -451,6 +478,19 @@ export const RULES: readonly ConversionRule[] = [
       ...(ctx.baseDir === undefined ? {} : { baseDir: ctx.baseDir }),
     }),
   },
+  {
+    id: "inert-compound",
+    // WHY: (ADR-0039 D10) the relaxation-A envelope: the leading block plus its raw tail.
+    // WHY: No `baseDir` spread — the head fires only at segment zero, before any `cd` records.
+    why: "ADR-0039 D10 (relaxation A; envelope for the leading block plus raw tail)",
+    phase: "post",
+    when: (ctx) => ctx.tailMode && ctx.compoundSegs.length > 0,
+    run: (ctx) => ({
+      kind: "pureCompound",
+      segments: ctx.compoundSegs,
+    }),
+  },
+
   {
     id: "search",
     why: "item 10 single-base application (source src/bash-classifier.ts:1240 pre-extraction)",
@@ -501,6 +541,43 @@ function fireRule(rule: ConversionRule, ctx: RuleContext): Decision | typeof ADV
   return rule.run(ctx);
 }
 
+/**
+ * WHY: (ADR-0033 D5) the line-number injection needs the search program token's source offset.
+ * Shared by the plain and relaxation-A recording paths so the splice sees identical offsets.
+ */
+function recordSearchBlock(ctx: RuleContext, current: SearchSeg): void {
+  ctx.searchSeg = current.family;
+  ctx.compoundSegs.push(current);
+  // WHY: the line-number injection must splice at the search program token's source offset, and
+  // WHY: that offset is only known while the chain walk runs (transcribed with the walk).
+  const { node } = segmentOf(ctx);
+  if (node.type === "Command" && node.name?.end !== undefined) {
+    const family = current.family;
+    if (
+      family.kind === "pureSearch" ||
+      family.kind === "pureMultiSearch" ||
+      family.kind === "pureRecursiveSearch"
+    ) {
+      if (ctx.located.searchNameEnds === undefined) ctx.located.searchNameEnds = [];
+      ctx.located.searchNameEnds.push({
+        end: node.name.end,
+        program: family.search.program,
+        lineNumbered: family.search.lineNumbered,
+      });
+    }
+  }
+}
+
+function recordViewBlock(ctx: RuleContext, current: ViewSeg): void {
+  ctx.view = current;
+  ctx.compoundSegs.push(current);
+}
+
+/** A tail command is inert when it is exactly the D10 shape: `wc` with counting flags and file operands. */
+function isInertTailNode(node: Command | Pipeline): boolean {
+  return node.type === "Command" && parseInertTail(node) !== undefined;
+}
+
 function failUndecided(where: string): never {
   throw new Error(`[151] unreachable: no rule fired ${where} — RULES must end in a total rule`);
 }
@@ -534,6 +611,7 @@ export function decide(command: string, located: LocatedBox = {}): Decision {
     effCwd: undefined,
     sawGlue: false,
     compoundSegs: [],
+    tailMode: false,
   };
   for (const rule of RULES) {
     if (rule.phase !== "pre") continue;

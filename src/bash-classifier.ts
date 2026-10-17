@@ -190,7 +190,11 @@ export interface GlueSegment {
   expectedBytes: number;
 }
 /** One admitted segment of a compound, in encounter order (`:`/`true` drop out, `cd` to base). */
-export type CompoundSegment = ViewSeg | SearchSeg | { kind: "glue"; glue: GlueSegment };
+export type CompoundSegment =
+  | ViewSeg
+  | SearchSeg
+  | { kind: "glue"; glue: GlueSegment }
+  | { kind: "raw"; command: string };
 export type BashClass =
   | { kind: "pureView"; view: BashView }
   | { kind: "pureSearch"; search: BashSearch }
@@ -767,7 +771,7 @@ export interface ViewSeg {
   lineNumbered?: boolean;
 }
 
-interface SearchSeg {
+export interface SearchSeg {
   kind: "search";
   family: SearchFamily;
 }
@@ -819,6 +823,34 @@ function unwrapViewWrapper(stage: StageShape): StageShape | undefined {
 }
 
 /** Programs admitted as static glue (exact standalone quoted literals; see the synonym gate). */
+
+/**
+ * WHY: (ADR-0039 D10) the inert tail of a relaxation-A compound: a byte-count-style summary
+ * WHY: that cannot transform the block, redirect output, or reach the network. Only `wc` with
+ * WHY: counting flags and at least one file operand qualifies — no stdin reads (a bare `wc`
+ * WHY: counts the harness stdin, which misattributes), no `--` escape hatches, no file operands
+ * WHY: starting with `-`. `stageShape` already rejects prefixes, redirects, and non-literal
+ * WHY: words, so what remains is a fixed program with fixed counting semantics. Extending this
+ * WHY: set is a follow-up with its own safety case — add a name here, not a new rule.
+ */
+export function parseInertTail(
+  node: Command | Pipeline,
+): { program: "wc"; args: string[] } | undefined {
+  if (node.type !== "Command") return undefined;
+  const stage = stageShape(node);
+  if (stage === undefined || stage.name !== "wc") return undefined;
+  let files = 0;
+  for (const arg of stage.args) {
+    if (arg.startsWith("-")) {
+      if (!/^-[lwcm]+$/.test(arg)) return undefined;
+      continue;
+    }
+    files++;
+  }
+  if (files === 0) return undefined;
+  return { program: "wc", args: stage.args };
+}
+
 const LITERAL_PRINT_PROGRAMS = new Set(["echo", "printf"]);
 /**
  * WHY: (ADR-0039 D6) static glue for compounds: literal prints without dynamic expansions, plus

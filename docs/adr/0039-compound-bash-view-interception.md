@@ -49,6 +49,11 @@ The classifier maintains an `effCwd` state across statements in a compound scrip
 ### 9. Path Comparison for Redundant `cd`
 Path equivalence for `cd` statements is checked lexically first (`path.resolve(effCwd, target) === effCwd`). If lexical comparison does not match, it falls back to `fs.realpath` to detect symlink equivalence without incurring unnecessary I/O on common lexical matches.
 
+
+### 10. Relaxation A: Single Leading Block with Inert Tail (No Glue Required)
+A compound with no glue is admitted iff exactly one block-producing segment exists, it is the first segment, and every later segment is inert terminal output: not a view, not a search, not a `cd`, not background, and not unsafe in the transform/redirect/network sense. The inert set is deliberately minimal — today only `wc` with counting flags (`-l/-w/-c/-m`) and at least one file operand (`parseInertTail`; stdin reads, `--` escapes, and dash-led operands are rejected, and `stageShape` already excludes redirects, prefixes, and non-literal words). The leading block is self-locating via its own `[file (…)]` header, so no second block can compete for attribution; the tail contributes already-observed bytes only (a `raw` compound segment, passed through by the peel loop's `rest`, never leased or anchored).
+This decision does NOT reopen: (a) post-`cd` path attribution — a `cd` is explicitly not inert, so `post-view-cd`/`post-block-cd` still fail closed and path resolution past a `cd` stays unleased; (b) second-block attribution — any later view/search falls through to the original `multi-view`/`multi-statement` guards with their original reasons. Glue stays required for multi-block compounds (D1/D2/D4 + F2 unchanged).
+
 ## Consequences
 
 - Compound scripts mixing literal banner prints, redundant `cd`s, and multiple view/search commands (e.g. `grep | head`) are now intercepted and anchored, significantly reducing re-read round trips in agent workflows.

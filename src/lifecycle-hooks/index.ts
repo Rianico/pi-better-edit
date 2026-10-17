@@ -1294,6 +1294,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     segment: CompoundSegment,
     effCwd: string,
   ): Promise<string[] | undefined> {
+    // WHY: (ADR-0039 D10) a raw tail has no predicted bytes — its already-observed stdout
+    // WHY: passes through via the peel loop's `rest` (the loop breaks on this `undefined`).
+    // WHY: Nothing is leased or anchored for it; the block above carries the only leases.
+    if (segment.kind === "raw") return undefined;
+
     if (segment.kind === "glue") {
       return [segment.glue.expectedText];
     }
