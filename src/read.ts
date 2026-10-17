@@ -37,8 +37,8 @@ export { fmtReadPreview } from "./file-content/preview.js";
 const R_DESC = loadP("../prompts/read.md");
 const R_SNIPPET = loadP("../prompts/read-snippet.md");
 
-/** The `limit` a legacy `{ file, offset }` call folds into (spec §4.2) — and an omitted window limit. */
-const LEGACY_WINDOW_LIMIT = 50;
+/** Default `limit` for an `{ offset }` window that names none. */
+const DEFAULT_WINDOW_LIMIT = 50;
 /** `radius` default for `around_anchor` (spec §4.1/§4.3). */
 const DEFAULT_ANCHOR_RADIUS = 10;
 
@@ -116,7 +116,7 @@ const readOffsetWindowSchema = Type.Object(
     limit: Type.Optional(
       Type.Integer({
         minimum: 1,
-        description: `Number of lines to read. Defaults to ${LEGACY_WINDOW_LIMIT} when \`offset\` is given.`,
+        description: `Number of lines to read. Defaults to ${DEFAULT_WINDOW_LIMIT} when \`offset\` is given.`,
       }),
     ),
   },
@@ -162,52 +162,15 @@ const readFileTargetSchema = Type.Object({
   ),
 });
 
-// WHY: `files` is optional rather than required so the legacy single-file shape (`file`/`offset`/
-// WHY: `limit`/`windows`, spec §4.2) still satisfies the registered schema; admission enforces that
-// WHY: one of `files` and `file` is present, which TypeBox cannot express without losing the old shape.
+// WHY: `files` is required — the schema accepts exactly one shape (ADR-0040 D1). A payload
+// WHY: without `files` fails validation before admission runs.
 export const readToolSchema = Type.Object({
-  files: Type.Optional(
-    Type.Array(readFileTargetSchema, {
-      minItems: 1,
-      maxItems: MAX_READ_FILES,
-      description: "Files to read in one call; each carries its own windows and render mode.",
-    }),
-  ),
+  files: Type.Array(readFileTargetSchema, {
+    minItems: 1,
+    maxItems: MAX_READ_FILES,
+    description: "Files to read in one call; each carries its own windows and render mode.",
+  }),
   mode: Type.Optional(renderModeSchema),
-  file: Type.Optional(
-    Type.String({ description: "Path to the file to read (legacy; prefer `files`)." }),
-  ),
-  path: Type.Optional(
-    Type.String({ description: "Legacy alias of `file`; the §4.2 fold accepts either key." }),
-  ),
-  offset: Type.Optional(
-    Type.Integer({
-      minimum: 1,
-      description: "Legacy: line number to start reading from (1-indexed); folds into a window.",
-    }),
-  ),
-  limit: Type.Optional(
-    Type.Integer({ minimum: 1, description: "Legacy: maximum number of lines to read." }),
-  ),
-  windows: Type.Optional(
-    Type.Array(
-      Type.Object({
-        offset: Type.Integer({
-          minimum: 1,
-          description: "Line number to start reading from (1-indexed)",
-        }),
-        limit: Type.Integer({
-          minimum: 1,
-          description: "Maximum number of lines to read",
-        }),
-      }),
-      {
-        maxItems: MAX_READ_WINDOWS,
-        description:
-          "Batch several ranges in one `read` call; in the default `served` mode every window's rows are served, so anchors from all of them work in a single `edit`",
-      },
-    ),
-  ),
 });
 
 type RawReadParams = Record<string, unknown>;
@@ -221,17 +184,6 @@ interface AdmittedTarget {
   file: string;
   /** Absent when the request named no windows (`undefined` and `[]` both read from line 1). */
   windows?: AdmittedWindow[];
-  /**
-   * The legacy single-file page ask (`{ file, offset, limit }`, spec §4.2), kept alongside the folded
-   * window so the file still renders as ONE page with today's chrome.
-   *
-   * WHY: the fold above is for admission — caps, limits and one code path for the rows — while §4.4's
-   * page header/footer (a §4.4 served read names `windows: [{ offset }]` to continue) belongs to the
-   * next stage. Rendering the folded window with the window sub-banner now would change every legacy
-   * page's output, re-pointing byte-exact goldens and integration probes for chrome the next stage
-   * replaces; the legacy page keeps its contract until that lands. Absent on every `files`-shaped call.
-   */
-  legacyPage?: { offset?: number; limit?: number };
   mode?: RenderMode;
 }
 
@@ -279,52 +231,22 @@ function admitWindow(window: unknown, label: string): AdmittedWindow {
     return { kind: "anchor", anchor, radius: positiveInt(radius, `${label}.radius`) };
   }
   const offset = positiveInt(raw.offset, `${label}.offset`);
-  // WHY: an offset with no limit is the legacy `{ file, offset }` ask, so it takes the same window
-  // WHY: size the §4.2 fold gives that shape instead of inventing a third default.
+  // WHY: an offset with no limit still names a window, so it takes the canonical default size
   const limit =
-    raw.limit === undefined ? LEGACY_WINDOW_LIMIT : positiveInt(raw.limit, `${label}.limit`);
+    raw.limit === undefined ? DEFAULT_WINDOW_LIMIT : positiveInt(raw.limit, `${label}.limit`);
   return { kind: "offset", offset, limit };
 }
 
 /**
- * Tolerant runtime admission (spec §4.2): folds the legacy single-file shape into `files` exactly as
- * the specification's block does, then validates every file and window and the call-wide window cap.
- *
- * Runs on a copy — the registered payload the caller passed is never mutated, and the renderers read
- * the original `args` object.
+ * Admission for the single canonical shape (ADR-0040 D1/D2): validates every file and window
+ * and the call-wide window cap. A payload without `files` was already rejected by the schema;
+ * the empty check below is the safety net for callers that bypass validation.
  */
 function admitReadRequest(params: RawReadParams): AdmittedRequest {
-  const normalized: RawReadParams = { ...params };
-  // WHY: `path` is `file`'s legacy alias and §4.2's own fold snippet reads `legacy.file ?? legacy.path`,
-  // WHY: so the gate keys on the PAIR. Gating on `file` alone published `path` and then refused it.
-  const legacyFilePath = params.file ?? params.path;
-  if (legacyFilePath && !params.files) {
-    // WHY: the §4.2 fold, on a copy. `limit` without `offset` still names a window (from line 1):
-    // WHY: dropping it would read the whole file for a caller who asked for a page.
-    const legacy = normalized;
-    const hasWindow = legacy.offset !== undefined || legacy.limit !== undefined;
-    normalized.files = [
-      {
-        file: legacyFilePath as string,
-        windows: hasWindow
-          ? [{ offset: legacy.offset ?? 1, limit: legacy.limit ?? LEGACY_WINDOW_LIMIT }]
-          : legacy.windows,
-      },
-    ];
-  }
-  // WHY: the legacy page ask survives the fold for the RENDER path (see `AdmittedTarget.legacyPage`).
-  const legacyPage =
-    !params.files && legacyFilePath && (params.offset !== undefined || params.limit !== undefined)
-      ? {
-          ...(params.offset !== undefined ? { offset: params.offset as number } : {}),
-          ...(params.limit !== undefined ? { limit: params.limit as number } : {}),
-        }
-      : undefined;
-
-  const mode = admitMode(normalized.mode) ?? "served";
-  const files = normalized.files;
+  const mode = admitMode(params.mode) ?? "served";
+  const files = params.files;
   if (!Array.isArray(files) || files.length === 0) {
-    throw badPayload("Read request needs at least one file: pass `files` (or a legacy `file`).");
+    throw badPayload("Read request needs at least one file: pass `files`.");
   }
   if (files.length > MAX_READ_FILES) {
     throw badPayload(MAX_READ_FILES_MESSAGE);
@@ -355,7 +277,6 @@ function admitReadRequest(params: RawReadParams): AdmittedRequest {
       file,
       ...(windows !== undefined ? { windows } : {}),
       ...(entryMode !== undefined ? { mode: entryMode } : {}),
-      ...(index === 0 && legacyPage !== undefined ? { legacyPage } : {}),
     };
   });
   // WHY: the per-file `maxItems` cannot see a multi-file call, so the call-wide cap is enforced here —
@@ -657,21 +578,25 @@ export function regRead(pi: ExtensionAPI): void {
               };
             }
             const plan = planWindows(target, resolver);
+            // WHY: one file with one offset window renders as ONE page with §4.4 chrome (header plus
+            // WHY: continuation footer, no sub-banner). The collapsed shape reaches this arm for every
+            // WHY: single-window read, legacy-spelled or canonical — the fold's `legacyPage` only ever
+            // WHY: fired for this exact case, so the bytes are unchanged on both sides of the collapse.
+            // WHY: Multi-window, anchor-window, and multi-file singles keep the bounded-ask sub-banners.
+            const singlePage =
+              request.files.length === 1 &&
+              target.windows?.length === 1 &&
+              target.windows[0]?.kind === "offset"
+                ? { offset: target.windows[0].offset, limit: target.windows[0].limit }
+                : undefined;
             // WHY: Deep seam: one call handles kind detection, decode, normalize, hash, preview.
             // WHY: `noPersist` defers the authoritative materialization until the served windows are
             // WHY: known, so the snapshots + lineage + retirement + lease grants below commit as the ONE
             // WHY: transaction spec §3.1.2 mandates instead of materializing first and leasing later.
             const prepared = await prepareFile(target.file, cwd, {
               ...(signal !== undefined ? { signal } : {}),
-              ...(target.legacyPage !== undefined
-                ? {
-                    ...(target.legacyPage.offset !== undefined
-                      ? { offset: target.legacyPage.offset }
-                      : {}),
-                    ...(target.legacyPage.limit !== undefined
-                      ? { limit: target.legacyPage.limit }
-                      : {}),
-                  }
+              ...(singlePage !== undefined
+                ? { offset: singlePage.offset, limit: singlePage.limit }
                 : plan.windows !== undefined
                   ? { windows: plan.windows }
                   : {}),

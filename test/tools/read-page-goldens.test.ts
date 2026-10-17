@@ -28,20 +28,25 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
   [
     "the first page",
     NL,
-    { offset: 1, limit: 5 },
+    { windows: [{ offset: 1, limit: 5 }] },
     `${verbatimHeader(40)}l0\nl1\nl2\nl3\nl4\n\n[golden.txt lines 1-5 of 40. Use windows: [{ offset: 6, limit: 5 }] to continue.]`,
   ],
   [
     "a middle page",
     NL,
-    { offset: 17, limit: 5 },
+    { windows: [{ offset: 17, limit: 5 }] },
     `${verbatimHeader(40)}l16\nl17\nl18\nl19\nl20\n\n[golden.txt lines 17-21 of 40. Use windows: [{ offset: 22, limit: 5 }] to continue.]`,
   ],
-  ["the last page", NL, { offset: 38, limit: 10 }, `${verbatimHeader(40)}l37\nl38\nl39`],
+  [
+    "the last page",
+    NL,
+    { windows: [{ offset: 38, limit: 10 }] },
+    `${verbatimHeader(40)}l37\nl38\nl39`,
+  ],
   [
     "a page past the end",
     NL,
-    { offset: 50, limit: 5 },
+    { windows: [{ offset: 50, limit: 5 }] },
     `${verbatimHeader(40)}Offset 50 is beyond end of file (40 lines total). Use offset=1 to read from the start, or offset=40 to read the last line.`,
   ],
   [
@@ -69,7 +74,7 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
   [
     "a limit alone",
     NL,
-    { limit: 7 },
+    { windows: [{ offset: 1, limit: 7 }] },
     `${verbatimHeader(40)}l0\nl1\nl2\nl3\nl4\nl5\nl6\n\n[golden.txt lines 1-7 of 40. Use windows: [{ offset: 8, limit: 7 }] to continue.]`,
   ],
   [
@@ -81,7 +86,7 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
   [
     "the page ending on the last line",
     NL,
-    { offset: 39, limit: 9 },
+    { windows: [{ offset: 39, limit: 9 }] },
     `${verbatimHeader(40)}l38\nl39`,
   ],
   ["CRLF text (normalized to LF)", CRLF, {}, `${verbatimHeader(3)}a\nb\nc`],
@@ -97,27 +102,27 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
   [
     "the first page",
     NL,
-    { offset: 1, limit: 5 },
+    { windows: [{ offset: 1, limit: 5 }] },
     (a) =>
       `${servedHeader(40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n\n[golden.txt lines 1-5 of 40. Use windows: [{ offset: 6, limit: 5 }] to continue.]`,
   ],
   [
     "a middle page",
     NL,
-    { offset: 17, limit: 5 },
+    { windows: [{ offset: 17, limit: 5 }] },
     (a) =>
       `${servedHeader(40)}${a[16]}│l16\n${a[17]}│l17\n${a[18]}│l18\n${a[19]}│l19\n${a[20]}│l20\n\n[golden.txt lines 17-21 of 40. Use windows: [{ offset: 22, limit: 5 }] to continue.]`,
   ],
   [
     "the last page",
     NL,
-    { offset: 38, limit: 10 },
+    { windows: [{ offset: 38, limit: 10 }] },
     (a) => `${servedHeader(40)}${a[37]}│l37\n${a[38]}│l38\n${a[39]}│l39`,
   ],
   [
     "a page past the end",
     NL,
-    { offset: 50, limit: 5 },
+    { windows: [{ offset: 50, limit: 5 }] },
     () =>
       `${servedHeader(40)}Offset 50 is beyond end of file (40 lines total). Use offset=1 to read from the start, or offset=40 to read the last line.`,
   ],
@@ -136,7 +141,7 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
   [
     "a limit alone",
     NL,
-    { limit: 7 },
+    { windows: [{ offset: 1, limit: 7 }] },
     (a) =>
       `${servedHeader(40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n${a[5]}│l5\n${a[6]}│l6\n\n[golden.txt lines 1-7 of 40. Use windows: [{ offset: 8, limit: 7 }] to continue.]`,
   ],
@@ -171,7 +176,13 @@ async function read(file: string, content: string, args: Record<string, unknown>
   let text = "";
   await withTempFile(file, content, async ({ cwd }) => {
     const { readTool, ctx } = setupReadTest(cwd);
-    const result = await readTool.execute("r1", { file, ...args }, undefined, undefined, ctx);
+    const result = await readTool.execute(
+      "r1",
+      { files: [{ file, ...args }] },
+      undefined,
+      undefined,
+      ctx,
+    );
     text = result.content?.[0]?.text ?? "";
   });
   return text;
@@ -186,7 +197,13 @@ async function readServed(
   let anchors: string[] = [];
   await withTempFile(file, content, async ({ cwd, path }) => {
     const { readTool, ctx } = setupReadTest(cwd);
-    const result = await readTool.execute("r1", { file, ...args }, undefined, undefined, ctx);
+    const result = await readTool.execute(
+      "r1",
+      { files: [{ file, ...args }] },
+      undefined,
+      undefined,
+      ctx,
+    );
     text = result.content?.[0]?.text ?? "";
     // WHY: the oracle is derived for the same absolute path the tool served — the loader's own
     // WHY: derivation agrees with it anchor for anchor (probed in anchor-walk-identity), so the
@@ -219,7 +236,7 @@ describe("the served read's refusals", () => {
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const error = await readTool
-        .execute("r1", { file: "huge.ts" }, undefined, undefined, ctx)
+        .execute("r1", { files: [{ file: "huge.ts" }] }, undefined, undefined, ctx)
         .then(
           () => undefined,
           (thrown: unknown) => thrown as Error,
@@ -238,7 +255,7 @@ describe("the served read's refusals", () => {
     await withTempFile("huge.ts", content, async ({ cwd }) => {
       const { readTool, ctx } = setupReadTest(cwd);
       const error = await readTool
-        .execute("r1", { file: "huge.ts" }, undefined, undefined, ctx)
+        .execute("r1", { files: [{ file: "huge.ts" }] }, undefined, undefined, ctx)
         .then(
           () => undefined,
           (thrown: unknown) => thrown as Error,

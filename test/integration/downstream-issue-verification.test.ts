@@ -39,7 +39,13 @@ async function read(
   limit: number,
   file = "small.cpp",
 ): Promise<string> {
-  const res = await readTool.execute(id, { file: file, offset, limit }, undefined, undefined, ctx);
+  const res = await readTool.execute(
+    id,
+    { files: [{ file: file, windows: [{ offset, limit }] }] },
+    undefined,
+    undefined,
+    ctx,
+  );
   return getText(res);
 }
 

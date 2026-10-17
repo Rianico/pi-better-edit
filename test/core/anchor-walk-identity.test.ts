@@ -99,7 +99,7 @@ describe("the walk assigns the anchors the whole-content assignment produces", (
       const { readTool, ctx } = setupReadTest(cwd);
       const result = await readTool.execute(
         "r1",
-        { file: "collide.ts", offset: 2, limit: 12 },
+        { files: [{ file: "collide.ts", windows: [{ offset: 2, limit: 12 }] }] },
         undefined,
         undefined,
         ctx,

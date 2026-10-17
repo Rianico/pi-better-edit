@@ -38,7 +38,7 @@ describe("p0-drift-line-identity probes", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "small.cpp" },
+        { files: [{ file: "small.cpp" }] },
         undefined,
         undefined,
         ctx,
@@ -70,7 +70,7 @@ describe("p0-drift-line-identity probes", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "small.cpp", offset: 1, limit: 6 },
+        { files: [{ file: "small.cpp", windows: [{ offset: 1, limit: 6 }] }] },
         undefined,
         undefined,
         ctx,
@@ -102,7 +102,7 @@ describe("p0-drift-line-identity probes", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "small.cpp" },
+        { files: [{ file: "small.cpp" }] },
         undefined,
         undefined,
         ctx,
@@ -135,7 +135,7 @@ describe("p0-drift-line-identity probes", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "small.cpp" },
+        { files: [{ file: "small.cpp" }] },
         undefined,
         undefined,
         ctx,
@@ -171,7 +171,7 @@ describe("p0-drift-line-identity probes", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "small.cpp" },
+        { files: [{ file: "small.cpp" }] },
         undefined,
         undefined,
         ctx,
@@ -205,7 +205,13 @@ describe("p0-drift-line-identity probes", () => {
     const fixture = "a\nb\na\n";
     await withTempFile("dup.txt", fixture, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const readRes = await readTool.execute("r1", { file: "dup.txt" }, undefined, undefined, ctx);
+      const readRes = await readTool.execute(
+        "r1",
+        { files: [{ file: "dup.txt" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
       const lines = anchorRows(getText(readRes));
       const line3Hash = extractHash(lines[2]!); // ccc | a
 
@@ -236,7 +242,7 @@ describe("p0-drift-line-identity probes", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "batch.txt" },
+        { files: [{ file: "batch.txt" }] },
         undefined,
         undefined,
         ctx,
@@ -279,7 +285,7 @@ describe("p0-drift-line-identity probes", () => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "tear.txt", offset: 10, limit: 11 }, // lines 10 to 20
+        { files: [{ file: "tear.txt", windows: [{ offset: 10, limit: 11 }] }] }, // lines 10 to 20
         undefined,
         undefined,
         ctx,
@@ -332,7 +338,13 @@ function alpha() {
 `;
     await withTempFile("swap.js", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const readRes = await readTool.execute("r1", { file: "swap.js" }, undefined, undefined, ctx);
+      const readRes = await readTool.execute(
+        "r1",
+        { files: [{ file: "swap.js" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
       const readLines = anchorRows(getText(readRes));
       const alphaStartHash = extractHash(readLines[0]!);
       const alphaEndHash = extractHash(readLines[2]!);
@@ -371,7 +383,7 @@ function alpha() {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "large.txt", offset: 25000, limit: 1 },
+        { files: [{ file: "large.txt", windows: [{ offset: 25000, limit: 1 }] }] },
         undefined,
         undefined,
         ctx,
@@ -410,7 +422,7 @@ function alpha() {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "batch_drift.txt" },
+        { files: [{ file: "batch_drift.txt" }] },
         undefined,
         undefined,
         ctx,
@@ -462,7 +474,7 @@ function alpha() {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       const readRes = await readTool.execute(
         "r1",
-        { file: "boilerplate.txt", offset: 1500, limit: 1 },
+        { files: [{ file: "boilerplate.txt", windows: [{ offset: 1500, limit: 1 }] }] },
         undefined,
         undefined,
         ctx,
@@ -501,7 +513,13 @@ function alpha() {
     await withTempFile("reserve.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
       // 1. Initial read serves anchors for lines 1..3
-      const r1 = await readTool.execute("r1", { file: "reserve.txt" }, undefined, undefined, ctx);
+      const r1 = await readTool.execute(
+        "r1",
+        { files: [{ file: "reserve.txt" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
       const lines1 = anchorRows(getText(r1));
       const _bravoHash1 = extractHash(lines1[1]!);
 
@@ -509,7 +527,13 @@ function alpha() {
       await writeFile(path, "head1\nhead2\nalpha\nbravo\ncharlie\n", "utf-8");
 
       // 3. Re-read: authoritative re-serve assigns fresh presentation/lease
-      const r2 = await readTool.execute("r2", { file: "reserve.txt" }, undefined, undefined, ctx);
+      const r2 = await readTool.execute(
+        "r2",
+        { files: [{ file: "reserve.txt" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
       const lines2 = anchorRows(getText(r2));
       const bravoHash2 = extractHash(lines2[3]!); // line 4 in 1-based index is lines2[3]
 
@@ -538,7 +562,13 @@ function alpha() {
     const original = "row 1\nrow 2\nrow 3\n";
     await withTempFile("recover.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      const r1 = await readTool.execute("r1", { file: "recover.txt" }, undefined, undefined, ctx);
+      const r1 = await readTool.execute(
+        "r1",
+        { files: [{ file: "recover.txt" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
       const row2Hash = extractHash(anchorRows(getText(r1))[1]!);
 
       // Apply first edit
@@ -557,7 +587,13 @@ function alpha() {
       await writeFile(path, "row 1\nrow 2 updated\nrow 3\nrow 4 exterior\n", "utf-8");
 
       // Re-read file to observe disk state and fresh anchors
-      const r2 = await readTool.execute("r2", { file: "recover.txt" }, undefined, undefined, ctx);
+      const r2 = await readTool.execute(
+        "r2",
+        { files: [{ file: "recover.txt" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
       const lines2 = anchorRows(getText(r2));
       const row2HashAfter = extractHash(lines2[1]!);
 
@@ -585,7 +621,13 @@ function alpha() {
     await withTempFile("undo_flow.txt", original, async ({ cwd, path }) => {
       const { ctx, readTool, editTool, undoTool } = setupIntegrationTest(cwd);
       // 1. Initial read
-      const r1 = await readTool.execute("r1", { file: "undo_flow.txt" }, undefined, undefined, ctx);
+      const r1 = await readTool.execute(
+        "r1",
+        { files: [{ file: "undo_flow.txt" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
       const line2Hash = extractHash(anchorRows(getText(r1))[1]!);
 
       // 2. Perform edit

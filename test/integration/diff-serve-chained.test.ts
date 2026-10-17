@@ -53,7 +53,7 @@ describe("diff rows serve chained edits", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { file: "sample.ts" },
+        { files: [{ file: "sample.ts" }] },
         undefined,
         undefined,
         ctx,
@@ -109,7 +109,7 @@ describe("diff rows serve chained edits", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { file: "sample.ts" },
+        { files: [{ file: "sample.ts" }] },
         undefined,
         undefined,
         ctx,

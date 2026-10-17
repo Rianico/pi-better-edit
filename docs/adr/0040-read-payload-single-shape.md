@@ -54,9 +54,17 @@ the tool descriptions and the rendered row format the model consumes; **not chea
 history (D3) and pinned removals (D2). Recorded in `AGENTS.md`.
 
 **D6 — The fold's support structure goes with it.**
-`legacyPage` and `LEGACY_WINDOW_LIMIT` become unreachable once no payload can produce them. They
-are **not** detectably dead by reference counting, so no tool will flag them: they must be removed
-deliberately, in the same change, or they become a record claiming legacy pages still exist.
+`legacyPage` becomes unreachable once no payload can produce it. It is not detectably dead by
+reference counting (the render path still names it), so no tool will flag it: it must be removed
+deliberately, in the same change, or it becomes a record claiming legacy pages still exist.
+`LEGACY_WINDOW_LIMIT` is the exception the original sentence missed: beyond the fold it is also
+the default for a canonical `{ offset }` window that names no `limit`, so it stays — renamed to
+`DEFAULT_WINDOW_LIMIT` so no `LEGACY_` name survives the collapse.
+
+> Correction note (#142): the accepted version of D6 claimed both symbols were undetectable as
+> dead. That is true of `legacyPage` and false of the window-limit constant, whose canonical
+> uses (the window schema description and `admitWindow`'s omitted-limit default) outlive the
+> fold. Corrected in the PR that implemented the removal.
 
 **D7 — Versioning: `feat`-class, MINOR, with a ledger entry.**
 "Cheap to change" is a statement about compatibility risk, not visibility: the model-visible

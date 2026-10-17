@@ -99,7 +99,12 @@ describe("read tool — TUI renderers for the {file} payload", () => {
 
   it("qualifies the windows serve claim with the served default (fix 2)", () => {
     const tool = readTool();
-    const description = (tool.parameters.properties.windows as { description: string }).description;
+    // WHY: the top-level legacy `windows` field is gone (ADR-0040 D1); the serve claim now lives
+    // WHY: on each file target's own `windows` description, which the canonical shape requires.
+    const filesSchema = tool.parameters.properties.files as {
+      items: { properties: { windows: { description: string } } };
+    };
+    const description = filesSchema.items.properties.windows.description;
     expect(description).toContain("in the default `served` mode every window's rows are served");
   });
 

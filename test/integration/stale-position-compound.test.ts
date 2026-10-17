@@ -11,7 +11,7 @@ describe("stale-position compound edits", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { file: "sample.ts" },
+        { files: [{ file: "sample.ts" }] },
         undefined,
         undefined,
         ctx,
@@ -72,7 +72,7 @@ describe("stale-position compound edits", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { file: "sample.ts" },
+        { files: [{ file: "sample.ts" }] },
         undefined,
         undefined,
         ctx,
@@ -103,7 +103,7 @@ describe("stale-position compound edits", () => {
 
       const firstRead = await readTool.execute(
         "r1",
-        { file: "sample.ts" },
+        { files: [{ file: "sample.ts" }] },
         undefined,
         undefined,
         ctx,

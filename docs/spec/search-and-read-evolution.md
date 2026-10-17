@@ -13,7 +13,7 @@ Forensic evaluation of benchmark runs revealed high bash dominance (65–67%), d
 
 This specification unifies search and read into a cohesive, deterministic, line-identity MVCC pipeline:
 1. **I1a (Intercepted `grep`/`rg`)**: Pre-execution argument injection via `tool_call` to ensure native `-n` line numbering, verified against disk bytes via a D9 gate, serving anchored rows with MVCC leases ($R=1$).
-2. **I1b (Unified `read`)**: Clean-break hierarchical schema supporting multi-file reads and unified line/anchor windows (`files -> windows`), with file-level `mode` and tolerant runtime admission for legacy shapes.
+2. **I1b (Unified `read`)**: Clean-break hierarchical schema supporting multi-file reads and unified line/anchor windows (`files -> windows`), with file-level `mode`; runtime admission accepts only the canonical shape (the tolerant fold was removed per ADR-0040, §4.2 kept as history).
 3. **I4 (Post-Edit Diffs)**: Returning anchored unified diffs directly in `content[0].text` with synchronous lease registration.
 4. **I2 (Byte View)**: Verbatim UTF-8 display by default with invisible/binary character warnings.
 5. **P3.1 (ADR-0033 Amendment)**: Formally updating the architecture record to match implemented CRLF/BOM normalization and semicolon prefix chains.
@@ -151,6 +151,12 @@ export const ReadParamsSchema = Type.Object({
   Empty `windows: []` is treated as omitted (reads from line 1).
 - **Cap Invariant**: At most 16 total windows across all files in a single call. Exceeding 16 throws `[E_BAD_PAYLOAD]`.
 - **Global Budget**: All files draw against shared `SERVED_MAX_LINES = 200,000`.
+> Supersession note (ADR-0040, #142): the admission fold quoted above is deleted from
+> `src/read.ts` — the schema accepts exactly one shape, `{ files: [{ file, windows?,
+> mode? }], mode? }`, and legacy-only payloads are rejected. This section is kept as
+> history of the tolerant-admission design; do not treat the fold snippet as live
+> behaviour. Render-time tolerance for recorded transcripts lives in the render
+> projection (ADR-0040 D3), not in admission.
 
 ### 4.3 Interval Algebra & Anchor Resolution
 1. For each file in `files`:

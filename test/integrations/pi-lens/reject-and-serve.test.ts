@@ -92,7 +92,7 @@ async function seedDriftRejection(
   await writeFile(join(dir, "p.txt"), "alpha\nbeta\ngamma\ndelta\n", "utf-8");
   const read = await harness.readTool.execute(
     "r1",
-    { file: "p.txt" },
+    { files: [{ file: "p.txt" }] },
     undefined,
     undefined,
     harness.ctx,
@@ -171,7 +171,13 @@ describe("reject-and-serve mirror", () => {
   it("stays silent when a rejection carries no served rows at all", async () => {
     await withLensHarness("pbe-lens-empty-", async (harness, dir) => {
       await writeFile(join(dir, "q.txt"), "one\ntwo\n", "utf-8");
-      await harness.readTool.execute("r1", { file: "q.txt" }, undefined, undefined, harness.ctx);
+      await harness.readTool.execute(
+        "r1",
+        { files: [{ file: "q.txt" }] },
+        undefined,
+        undefined,
+        harness.ctx,
+      );
       notifications.length = 0;
       calls.length = 0;
 

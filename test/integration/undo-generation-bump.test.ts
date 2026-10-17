@@ -199,10 +199,14 @@ describe("generation bump refuses pre-v3 anchors", () => {
       expect(await readFile(absB, "utf-8")).toBe(PRE);
 
       const aRows = rows(
-        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+        getText(
+          await readTool.execute("r1", { files: [{ file: "a.txt" }] }, undefined, undefined, ctx),
+        ),
       );
       const bRows = rows(
-        getText(await readTool.execute("r2", { file: "b.txt" }, undefined, undefined, ctx)),
+        getText(
+          await readTool.execute("r2", { files: [{ file: "b.txt" }] }, undefined, undefined, ctx),
+        ),
       );
       const expectedA = await fileHashesFor(absA, PRE);
       const expectedB = await fileHashesFor(absB, PRE);
@@ -248,7 +252,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
       const served = rows(
-        getText(await readTool.execute("r1", { file: "p.txt" }, undefined, undefined, ctx)),
+        getText(
+          await readTool.execute("r1", { files: [{ file: "p.txt" }] }, undefined, undefined, ctx),
+        ),
       );
       // WHY: the rejected pin left no lineage — the read serves the current
       // WHY: file-scoped derivation.
@@ -285,7 +291,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       await expect(submit(v2A[1]!)).rejects.toThrow(/E_FOREIGN_ANCHOR/);
       expect(await readFile(absB, "utf-8")).toBe(PRE);
       const servedB = rows(
-        getText(await readTool.execute("r2", { file: "b.txt" }, undefined, undefined, ctx)),
+        getText(
+          await readTool.execute("r2", { files: [{ file: "b.txt" }] }, undefined, undefined, ctx),
+        ),
       ).map((r) => r.hash);
       expect(servedB).toEqual(await fileHashesFor(absB, PRE));
       // WHY: still FOREIGN after the fresh read — the re-serve retires nothing
@@ -326,7 +334,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const readTool = getTool("read");
       const editTool = getTool("edit");
       const servedA = rows(
-        getText(await readTool.execute("r1", { file: "a.txt" }, undefined, undefined, ctx)),
+        getText(
+          await readTool.execute("r1", { files: [{ file: "a.txt" }] }, undefined, undefined, ctx),
+        ),
       ).map((r) => r.hash);
       const expectedA = await fileHashesFor(absA, PRE);
       expect(servedA).toEqual(expectedA);
@@ -383,7 +393,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const readTool = getTool("read");
       const editTool = getTool("edit");
       const served = rows(
-        getText(await readTool.execute("r1", { file: "r.txt" }, undefined, undefined, ctx)),
+        getText(
+          await readTool.execute("r1", { files: [{ file: "r.txt" }] }, undefined, undefined, ctx),
+        ),
       );
       const store = await loadHashStore();
       const mirrorBefore = store.db
@@ -421,7 +433,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
       const served = rows(
-        getText(await readTool.execute("r1", { file: "g.txt" }, undefined, undefined, ctx)),
+        getText(
+          await readTool.execute("r1", { files: [{ file: "g.txt" }] }, undefined, undefined, ctx),
+        ),
       );
       const payload = served.map((r) => `${r.hash}│${r.text}`).join("\n") + "\n";
       const io = {
@@ -483,7 +497,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const absI = join(cwd, "i.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "i.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "i.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const liveBefore = (
         store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }
@@ -574,7 +588,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const absH = join(cwd, "h.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "h.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "h.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const liveKey = snapshotHashFor(PRE);
       const liveLeases = (
@@ -648,7 +662,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const ghostAbs = join(cwd, "ghost.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "f.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "f.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const liveKey = snapshotHashFor(PRE);
       const ghostRows = (
@@ -703,7 +717,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const ghostAbs = join(cwd, "ghost.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "f.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "f.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const liveKey = snapshotHashFor(PRE);
       // WHY: premise — a current-generation snapshot row for the ghost path exists but
@@ -757,7 +771,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const absT = join(cwd, "t.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "t.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "t.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       plantV2File(store, absT, PRE);
       const staleBefore = (
@@ -811,7 +825,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
     await withTempFile("b.txt", PRE, async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "b.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "b.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const origExec = store.db.exec.bind(store.db);
       const logged: unknown[][] = [];
@@ -844,7 +858,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       const absS = join(cwd, "s.txt");
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "s.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "s.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       plantV2File(store, absS, PRE);
       const leasesBefore = (
@@ -893,7 +907,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
     await withTempFile("q.txt", PRE, async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "q.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "q.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       sweepNow(store.db);
       const leasesFirst = (
@@ -940,7 +954,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
     await withTempFile("w.txt", PRE, async ({ cwd }) => {
       const { getTool, ctx } = setupIntegrationTest(cwd);
       const readTool = getTool("read");
-      await readTool.execute("r1", { file: "w.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "w.txt" }] }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const leasesBefore = (
         store.db.prepare("SELECT COUNT(*) AS n FROM served_leases").get() as { n: number }
@@ -1052,7 +1066,9 @@ describe("generation bump refuses pre-v3 anchors", () => {
       await undo.execute("u1", { path: "r.txt" }, undefined, undefined, ctx);
       expect(await readFile(absR, "utf-8")).toBe(PRE);
       const served = rows(
-        getText(await readTool.execute("r1", { file: "r.txt" }, undefined, undefined, ctx)),
+        getText(
+          await readTool.execute("r1", { files: [{ file: "r.txt" }] }, undefined, undefined, ctx),
+        ),
       ).map((r) => r.hash);
       expect(served).toEqual(await fileHashesFor(absR, PRE));
       expect(served).not.toEqual(legacyHashes);

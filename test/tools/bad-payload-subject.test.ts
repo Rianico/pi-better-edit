@@ -39,7 +39,10 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
         readTool.execute("r1", {}, undefined, undefined, ctx),
       );
       expect(text).toContain("[E_BAD_PAYLOAD]");
-      expect(text).toContain("The read payload is not valid:");
+      // WHY: under D1 the empty call fails schema validation before admission runs, so the
+      // WHY: refusal carries the framework's validation wording — still stamped with the
+      // WHY: read tool's own registered name, never an edit-tool name.
+      expect(text).toContain('Schema validation failed for tool "read"');
       // The defect this ticket removes: a bad read call told the model to fix an edit.
       expect(text).not.toContain("edit");
     });
@@ -98,7 +101,7 @@ describe("E_BAD_PAYLOAD names the invoking tool (#86)", () => {
     const content = "a\nb\nc\n";
     await withTempFile("sample.txt", content, async ({ cwd, path }) => {
       const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, ctx);
       const h = await lineHashes(content, path);
       // WHY: the single-line-span refusal is raised deep in the engine (hashline/apply), so the
       // WHY: engine must carry the RAW payload message back; a rendered string cannot be split.

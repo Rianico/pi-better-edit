@@ -14,7 +14,7 @@ const PAYLOAD_HINT = "exactly one payload";
 async function executeWithFile(cwd: string, fileValue: unknown): Promise<Error> {
   const { ctx, readTool } = setupIntegrationTest(cwd);
   const hashes = await lineHashes("aaa\nbbb\n", `${cwd}/sample.ts`);
-  await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
+  await readTool.execute("r1", { files: [{ file: "sample.ts" }] }, undefined, undefined, ctx);
   const tool = createEditTool();
   const payload: Record<string, unknown> = {
     edits: [{ anchor_from: hashes[0]!, anchor_to: hashes[0]!, text: "AAA" }],
@@ -87,7 +87,7 @@ describe("edit admission gate — shared payload hint", () => {
     await withTempFile("sample.ts", "aaa\nbbb\n", async ({ cwd, path }) => {
       const { ctx, readTool } = setupIntegrationTest(cwd);
       const hashes = await lineHashes("aaa\nbbb\n", path);
-      await readTool.execute("r1", { file: "sample.ts" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "sample.ts" }] }, undefined, undefined, ctx);
       const tool = createEditTool();
       const result = await tool.preview(
         {

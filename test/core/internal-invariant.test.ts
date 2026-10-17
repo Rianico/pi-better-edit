@@ -86,8 +86,8 @@ describe("E_INTERNAL_INVARIANT guards (#93)", () => {
       await writeFile(join(cwd, "sample.txt"), "a\nb\nc\nd\ne\n", "utf-8");
       await writeFile(join(cwd, "other.txt"), "x\ny\nz\n", "utf-8");
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      await readTool.execute("r1", { file: "sample.txt" }, undefined, undefined, ctx);
-      await readTool.execute("r2", { file: "other.txt" }, undefined, undefined, ctx);
+      await readTool.execute("r1", { files: [{ file: "sample.txt" }] }, undefined, undefined, ctx);
+      await readTool.execute("r2", { files: [{ file: "other.txt" }] }, undefined, undefined, ctx);
       const h = await lineHashes("a\nb\nc\nd\ne\n", join(cwd, "sample.txt"));
       const s = await lineHashes("x\ny\nz\n", join(cwd, "other.txt"));
       const result = await execute(

@@ -54,7 +54,13 @@ describe("read tool image delegation", () => {
       await writeFile(path, minimalPng);
 
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const result = await readTool.execute("r1", { file: "test.png" }, undefined, undefined, ctx);
+      const result = await readTool.execute(
+        "r1",
+        { files: [{ file: "test.png" }] },
+        undefined,
+        undefined,
+        ctx,
+      );
 
       const images = imageBlocksOf(result);
       expect(images).toHaveLength(1);
@@ -75,7 +81,13 @@ describe("read tool image delegation", () => {
       await writeFile(join(cwd, fileName), minimalPng);
 
       const { ctx, readTool } = setupIntegrationTest(cwd);
-      const result = await readTool.execute("r1", { file: fileName }, undefined, undefined, ctx);
+      const result = await readTool.execute(
+        "r1",
+        { files: [{ file: fileName }] },
+        undefined,
+        undefined,
+        ctx,
+      );
 
       const images = imageBlocksOf(result);
       expect(images).toHaveLength(1);

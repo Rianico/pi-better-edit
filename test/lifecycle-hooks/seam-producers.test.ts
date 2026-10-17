@@ -129,7 +129,7 @@ describe("lifecycle seam producers", () => {
       await writeFile(path, "alpha\nbeta\ngamma\n", "utf-8");
       const read = await harness.readTool.execute(
         "r1",
-        { file: "p.txt" },
+        { files: [{ file: "p.txt" }] },
         undefined,
         undefined,
         harness.ctx,
@@ -183,7 +183,7 @@ describe("lifecycle seam producers", () => {
       await writeFile(path, "alpha\nbeta\ngamma\n", "utf-8");
       const read = await harness.readTool.execute(
         "r1",
-        { file: "p.txt" },
+        { files: [{ file: "p.txt" }] },
         undefined,
         undefined,
         harness.ctx,
@@ -235,7 +235,7 @@ describe("lifecycle seam producers", () => {
       await writeFile(join(dir, "p.txt"), "alpha\nbeta\ngamma\ndelta\n", "utf-8");
       const read = await harness.readTool.execute(
         "r1",
-        { file: "p.txt" },
+        { files: [{ file: "p.txt" }] },
         undefined,
         undefined,
         harness.ctx,
@@ -276,7 +276,7 @@ describe("lifecycle seam producers", () => {
       await writeFile(join(dir, "p.txt"), "alpha\nbeta\ngamma\n", "utf-8");
       const read = await harness.readTool.execute(
         "r1",
-        { file: "p.txt" },
+        { files: [{ file: "p.txt" }] },
         undefined,
         undefined,
         harness.ctx,

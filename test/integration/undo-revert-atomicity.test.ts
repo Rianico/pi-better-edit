@@ -60,7 +60,7 @@ describe("undo_last_edit restore transaction atomicity", () => {
 
       const r1 = await readTool.execute(
         "r1",
-        { file: "undo_atomicity.txt" },
+        { files: [{ file: "undo_atomicity.txt" }] },
         undefined,
         undefined,
         ctx,
