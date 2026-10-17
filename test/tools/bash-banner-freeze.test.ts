@@ -1,4 +1,4 @@
-import { readFileSync } from "node:fs";
+import { readdirSync, readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { describe, expect, it } from "vitest";
 import {
@@ -28,17 +28,31 @@ describe("bash banner freeze (#150)", () => {
   });
 
   it("declares no banner literal outside the single definition site", () => {
-    const source = readFileSync(
-      fileURLToPath(new URL("../../src/lifecycle-hooks/index.ts", import.meta.url)),
-      "utf8",
-    );
-    for (const literal of [
+    // WHY: the pin's name promises every module, so the scan walks every `.ts` file under `src/`
+    // WHY: except the definition site itself — a future copy-paste in any new seam fails here.
+    const root = fileURLToPath(new URL("../../src", import.meta.url));
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = `${dir}/${entry.name}`;
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith(".ts")) files.push(full);
+      }
+    };
+    walk(root);
+    const literals = [
       BASH_VIEW_BANNER,
       BASH_SEARCH_BANNER,
       BASH_FILE_LIST_BANNER,
       BASH_AUTO_READ_BANNER,
-    ]) {
-      expect(source).not.toContain(literal);
+    ];
+    expect(files.length).toBeGreaterThan(0);
+    for (const file of files) {
+      if (file.endsWith("/bash-view-banner.ts")) continue;
+      const source = readFileSync(file, "utf8");
+      for (const literal of literals) {
+        expect(source).not.toContain(literal);
+      }
     }
   });
 });
