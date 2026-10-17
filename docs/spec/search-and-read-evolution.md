@@ -136,6 +136,12 @@ export const ReadParamsSchema = Type.Object({
 });
 ```
 
+> Supersession note (ADR-0041): the multi-file schema above is superseded by the flat
+> target shape `{ file: string, windows?: Window[], mode?: "served" | "verbatim" }`.
+> The outer `files` array is removed to restore model compliance on `mode: "verbatim"`
+> and align 1:1 with Pi's TUI component. Multi-file inspection is handled by parallel
+> tool calls and bash view.
+
 ### 4.2 Tolerant Runtime Admission & Limits
 - **Prompt Pruning**: Documented schema in prompts publishes strictly `files: [...]`.
 - **Runtime Tolerance**:

@@ -275,7 +275,7 @@ A `cd` statement resolving to the active `effCwd`, treated as an inert silent no
 _Avoid_: duplicate cd, unnecessary cd
 
 **canonical payload**:
-The single argument shape a tool accepts from the model — for `read`, `{ files: [{ file, windows?, mode? }], mode? }`. Caps, window resolution and row serving see only this shape.
+The single argument shape a tool accepts from the model — for `read`, `{ file, windows?, mode? }` (ADR-0041). Caps, window resolution and row serving see only this shape.
 _Avoid_: primary shape, new format
 
 **render projection**:
