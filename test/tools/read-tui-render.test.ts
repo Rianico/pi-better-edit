@@ -175,6 +175,42 @@ describe("read tool — TUI renderers for the canonical {files} payload (#141)",
     expect(line).not.toContain(":2-5");
   });
 
+  it("derives no range from multiple windows on one file (never fabricate)", () => {
+    const tool = readTool();
+    const args = {
+      files: [
+        {
+          file: "a.txt",
+          windows: [
+            { offset: 2, limit: 4 },
+            { offset: 20, limit: 4 },
+          ],
+        },
+      ],
+    };
+    const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
+
+    const line = tool.renderCall(args, theme, context).render(80).join("\n");
+
+    // WHY: a range needs exactly one window — two windows mean no `:2-5`, filename still shows.
+    expect(line).toContain("a.txt");
+    expect(line).not.toContain(":2-5");
+  });
+
+  it("derives no range from an around_anchor window", () => {
+    const tool = readTool();
+    const args = {
+      files: [{ file: "a.txt", windows: [{ around_anchor: "deadbeef", radius: 3 }] }],
+    };
+    const context = { args, cwd: "/tmp", lastComponent: undefined, expanded: false };
+
+    const line = tool.renderCall(args, theme, context).render(80).join("\n");
+
+    // WHY: an anchor window has no offset/limit to project — filename shows, no range at all.
+    expect(line).toContain("a.txt");
+    expect(line).not.toMatch(/:\d/);
+  });
+
   it("renders the filename for { files: [{ file, mode: verbatim }] } (mode is header-neutral)", () => {
     const tool = readTool();
     const args = { files: [{ file: "notes.txt", mode: "verbatim" }] };
