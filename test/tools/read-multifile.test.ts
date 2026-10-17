@@ -33,7 +33,7 @@ function anchorsByLine(text: string): Map<string, string> {
   return new Map(rows.map((row) => [row.split("│")[1]!, extractHash(row)]));
 }
 
-/** One temp directory holding two files: the multi-file read's own fixture shape. */
+/** One temp directory holding two files: shared fixture for the foreign-anchor lineage tests. */
 async function withTwoFiles(
   a: string,
   b: string,
