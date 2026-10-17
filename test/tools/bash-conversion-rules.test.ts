@@ -1,0 +1,203 @@
+import { describe, expect, it } from "vitest";
+import type {
+  ConversionRule,
+  DeclineReason,
+  LocatedBox,
+  RulePhase,
+} from "../../src/bash-conversion/decide.js";
+import { RULES, decide } from "../../src/bash-conversion/decide.js";
+
+// WHY per-rule pins (#151 S2): each decline reason fires on a command that must decline with
+// exactly that reason, beside an adjacent command that must not (the adjacent proves the pin is
+// not vacuous — the same command shape converts when the guard's condition lifts). Reason strings
+// are user-visible contract: byte-identical, never renamed.
+
+function reasonOf(command: string): DeclineReason {
+  const decision = decide(command);
+  if (decision.kind !== "passThrough") throw new Error(`expected decline for ${command}`);
+  return decision.reason;
+}
+
+describe("bash conversion decline reasons (#151)", () => {
+  it("declines empty input, converts a bare view", () => {
+    expect(reasonOf("")).toBe("empty");
+    expect(reasonOf("   ")).toBe("empty");
+    expect(decide("cat f").kind).toBe("pureView");
+  });
+  it("declines unparseable input, converts the completed pipe", () => {
+    expect(reasonOf("cat f |")).toBe("parse-error");
+    expect(decide("cat f | head -2").kind).toBe("pureView");
+  });
+  it("declines a newline-separated script, admits the semicolon gate", () => {
+    expect(reasonOf("cat a\ncat b")).toBe("multi-statement");
+    expect(decide("cd /tmp; cat f").kind).toBe("pureView");
+  });
+  it("declines backgrounded work, converts the foreground chain", () => {
+    expect(reasonOf("sleep 1 &")).toBe("background");
+    expect(decide("cat f").kind).toBe("pureView");
+  });
+  it("declines non-`&&` chains, converts the `&&` chain", () => {
+    expect(reasonOf("cat f || echo x")).toBe("non-and-chain");
+    expect(decide("cat f && echo done").kind).toBe("pureCompound");
+  });
+  it("declines a subshell top, converts the bare view", () => {
+    expect(reasonOf("(cat f)")).toBe("compound-top");
+    expect(decide("cat f").kind).toBe("pureView");
+  });
+  it("declines a nine-segment chain, converts the eight-segment chain", () => {
+    expect(reasonOf("true && true && true && true && true && true && true && true && cat f")).toBe(
+      "chain-too-long",
+    );
+    expect(decide("true && true && true && true && true && true && true && cat f").kind).toBe(
+      "pureView",
+    );
+  });
+  it("declines a non-literal command, converts the literal view", () => {
+    expect(reasonOf("FOO=bar")).toBe("non-literal-command");
+    expect(decide("cat f").kind).toBe("pureView");
+  });
+  it("declines an unsupported command with its name, converts the view", () => {
+    expect(reasonOf("ls /tmp")).toBe("unsupported-command:ls");
+    expect(decide("cat f").kind).toBe("pureView");
+  });
+  it("declines an unsupported pipeline, converts the supported one", () => {
+    expect(reasonOf("cat f | grep")).toBe("unsupported-pipeline");
+    expect(decide("cat f | head -2").kind).toBe("pureView");
+  });
+  it("declines a post-block `cd`, converts the pre-block `cd` compound", () => {
+    expect(reasonOf("echo hi && cat f && cd sub")).toBe("post-block-cd");
+    const adjacent = decide("echo hi && cd /tmp && cat f");
+    expect(adjacent.kind).toBe("pureCompound");
+  });
+  it("declines a post-view `cd`, converts the pre-view `cd`", () => {
+    expect(reasonOf("cat f && cd sub")).toBe("post-view-cd");
+    const adjacent = decide("cd sub && cat f");
+    expect(adjacent).toEqual({
+      kind: "pureView",
+      view: { filePath: "f", baseDir: "sub", ops: [] },
+    });
+  });
+  it("declines chained `cd`s, converts the single `cd`", () => {
+    expect(reasonOf("cd a && cd b && cat f")).toBe("multi-cd");
+    const adjacent = decide("cd /tmp && cat f");
+    expect(adjacent).toEqual({
+      kind: "pureView",
+      view: { filePath: "f", baseDir: "/tmp", ops: [] },
+    });
+  });
+  it("declines a prefix search, converts the based terminal search", () => {
+    expect(reasonOf("grep x f; cat g")).toBe("multi-statement");
+    const adjacent = decide("cd /tmp; grep x f");
+    expect(adjacent.kind).toBe("pureSearch");
+  });
+  it("declines a prefix view past the gate, converts the based terminal view", () => {
+    expect(reasonOf("cat a; cat b")).toBe("multi-statement");
+    expect(decide("cd /tmp; cat f").kind).toBe("pureView");
+  });
+  it("declines a second search without glue, converts the glued chain", () => {
+    expect(reasonOf("grep x f && cat g")).toBe("multi-view");
+    expect(decide("echo hi && grep x f && cat g").kind).toBe("pureCompound");
+  });
+  it("declines a second view without glue, converts the glued chain", () => {
+    expect(reasonOf("cat a && cat b")).toBe("multi-view");
+    expect(decide("echo hi && cat a && cat b").kind).toBe("pureCompound");
+  });
+  it("declines a blockless chain, converts the silent-prefixed view", () => {
+    expect(reasonOf(": && true")).toBe("no-view");
+    expect(decide(": && cat f").kind).toBe("pureView");
+  });
+  it("shares the multi-statement reason between the gate and the prefix arms", () => {
+    // WHY: the pre-phase gate ("cat a\\ncat b") and the prefix arms ("cat a; cat b",
+    // WHY: "grep x f; cat g") all fail closed with one reason string — one contract, three rules.
+    expect(reasonOf("cat a\ncat b")).toBe("multi-statement");
+    expect(reasonOf("cat a; cat b")).toBe("multi-statement");
+    expect(reasonOf("grep x f; cat g")).toBe("multi-statement");
+  });
+});
+
+describe("bash conversion accumulation (#151)", () => {
+  it("skips a redundant `cd` without recording a base", () => {
+    const decision = decide("cd . && cat f");
+    expect(decision.kind).toBe("pureView");
+    if (decision.kind === "pureView") expect("baseDir" in decision.view).toBe(false);
+  });
+  it("records one pre-view `cd` as the resolution base", () => {
+    const decision = decide("cd /tmp && cat f");
+    expect(decision).toEqual({
+      kind: "pureView",
+      view: { filePath: "f", baseDir: "/tmp", ops: [] },
+    });
+  });
+  it("carries glue beside its block in the compound", () => {
+    const decision = decide("echo hi && cat f");
+    expect(decision.kind).toBe("pureCompound");
+    if (decision.kind === "pureCompound") {
+      expect(decision.segments.map((segment) => segment.kind)).toEqual(["glue", "view"]);
+    }
+  });
+  it("records the terminal search offset for the line-number splice", () => {
+    const located: LocatedBox = {};
+    expect(decide("grep x f", located).kind).toBe("pureSearch");
+    expect(located.searchNameEnds?.length).toBe(1);
+    const empty: LocatedBox = {};
+    expect(decide("cat f", empty).kind).toBe("pureView");
+    expect(empty.searchNameEnds).toBeUndefined();
+  });
+});
+
+describe("bash conversion rule table (#151)", () => {
+  const table: readonly ConversionRule[] = RULES;
+  const ids = table.map((rule) => rule.id);
+  it("keeps rule ids unique", () => {
+    expect(new Set(ids).size).toBe(ids.length);
+  });
+  it("documents every rule's authority", () => {
+    // WHY: each entry names an ADR, a commit/item gate, or its structural source — a rule with
+    // WHY: no authority is a rule nobody can review.
+    for (const rule of RULES) {
+      expect(rule.why, `rule ${rule.id} lacks an authority citation`).toMatch(
+        /ADR-|commit |item |structural/,
+      );
+    }
+  });
+  it("pins the rule order (array order is precedence)", () => {
+    // WHY: precedence lives in this order — inserting a rule above a guard it should lose to
+    // WHY: fails here first, before any behavior test can go green on the wrong shadowing.
+    // NOTE: `compound-segment` is defensive (the walker only pushes Command/Pipeline, so no
+    // NOTE: parsed command reaches it); it is pinned in the order, not by a command.
+    expect(ids).toEqual([
+      "empty",
+      "parse-error",
+      "multi-statement",
+      "background",
+      "non-and-chain",
+      "compound-top",
+      "chain-too-long",
+      "compound-segment",
+      "admit-glue",
+      "unsafe",
+      "skip-redundant-cd",
+      "post-block-cd",
+      "post-view-cd",
+      "multi-cd",
+      "record-cd",
+      "silent-skip",
+      "search-prefix",
+      "search-second",
+      "record-search",
+      "view-prefix",
+      "view-second",
+      "record-view",
+      "compound",
+      "search",
+      "no-view",
+      "view",
+    ]);
+  });
+  it("keeps every phase transition total", () => {
+    const phases: RulePhase[] = table.map((rule) => rule.phase);
+    expect(phases[0]).toBe("pre");
+    expect(phases[phases.length - 1]).toBe("post");
+    expect(new Set(phases)).toEqual(new Set(["pre", "statement", "presegment", "segment", "post"]));
+  });
+});
