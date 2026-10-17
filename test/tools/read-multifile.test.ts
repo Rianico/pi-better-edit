@@ -735,6 +735,28 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
     });
   });
 
+  it("renders a canonical single-offset-window read as one 4.4 page", async () => {
+    await withTempFile("app.ts", TWO_HUNDRED, async ({ cwd }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      const text = getText(
+        await readTool.execute(
+          "r1",
+          { files: [{ file: "app.ts", windows: [{ offset: 1, limit: 50 }] }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      );
+      // WHY: the collapse unifies single-window chrome to the §4.4 page form — at base this
+      // WHY: canonical shape rendered the bounded-ask sub-banner with no continuation footer.
+      expect(text).toContain("[app.ts (200 lines total)]");
+      expect(text).toContain(
+        "[app.ts lines 1-50 of 200. Use windows: [{ offset: 51, limit: 50 }] to continue.]",
+      );
+      expect(text).not.toContain("=== Lines");
+    });
+  });
+
   it("refuses the file the call-wide served budget cannot afford, inline, and still renders its siblings", async () => {
     // WHY: b.ts fits the budget on its own (exactly SERVED_MAX_LINES lines) but not after a.ts drew
     // WHY: the first TWELVE lines of the ONE shared budget, so a per-file gate would render both

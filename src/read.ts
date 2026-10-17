@@ -578,11 +578,11 @@ export function regRead(pi: ExtensionAPI): void {
               };
             }
             const plan = planWindows(target, resolver);
-            // WHY: one file with one offset window renders as ONE page with §4.4 chrome (header plus
-            // WHY: continuation footer, no sub-banner). The collapsed shape reaches this arm for every
-            // WHY: single-window read, legacy-spelled or canonical — the fold's `legacyPage` only ever
-            // WHY: fired for this exact case, so the bytes are unchanged on both sides of the collapse.
-            // WHY: Multi-window, anchor-window, and multi-file singles keep the bounded-ask sub-banners.
+            // WHY: the collapse unifies single-window chrome to the legacy §4.4 page form (header
+            // WHY: plus continuation footer, no sub-banner). For legacy-spelled calls the bytes are
+            // WHY: unchanged; for `files`-shaped calls this is a visible change — at base they rendered
+            // WHY: the bounded-ask sub-banner with no footer. Multi-window, anchor-window, and multi-file
+            // WHY: singles keep the bounded-ask sub-banners.
             const singlePage =
               request.files.length === 1 &&
               target.windows?.length === 1 &&
