@@ -652,7 +652,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       );
       // WHY: the flattening unifies single-window reads on the §4.4 page form — the retired
       // WHY: files-shaped canonical read rendered the bounded-ask sub-banner with no footer.
-      expect(text).toContain("[app.ts (200 lines total)]");
+      expect(text).toContain("[app.ts (lines 1-50 of 200)]");
       expect(text).toContain(
         "[app.ts lines 1-50 of 200. Use windows: [{ offset: 51, limit: 50 }] to continue.]",
       );

@@ -129,7 +129,7 @@ describe("the served page never materializes the line array", () => {
         return result.content[0]?.text ?? "";
       };
       await expect(run({ windows: [{ offset: 1, limit: 2 }] })).resolves.toMatch(
-        /^\[plain\.txt \(4 lines total\)\]\n\w{4}│alpha\n\w{4}│beta\n\n\[plain\.txt lines 1-2 of 4\. Use windows: \[\{ offset: 3, limit: 2 \}\] to continue\.\]$/,
+        /^\[plain\.txt \(lines 1-2 of 4\)\]\n\w{4}│alpha\n\w{4}│beta\n\n\[plain\.txt lines 1-2 of 4\. Use windows: \[\{ offset: 3, limit: 2 \}\] to continue\.\]$/,
       );
       await expect(
         run({

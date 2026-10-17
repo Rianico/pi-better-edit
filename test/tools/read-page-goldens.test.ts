@@ -22,6 +22,10 @@ const NO_TRAILING = Array.from({ length: 5 }, (_, i) => `n${i}`).join("\n");
 // The per-file header every tool-level golden now opens with (spec §4.4). The line count is written
 // out per case rather than recomputed, so a count regression fails here instead of agreeing with itself.
 const servedHeader = (lines: number) => `[golden.txt (${lines} lines total)]\n`;
+// WHY: a single windowed read carries its shown range in the header (#149) — the same range the
+// WHY: footer already names — while whole-file and multi-window goldens keep the bare total above.
+const servedRangeHeader = (start: number, end: number, lines: number) =>
+  `[golden.txt (lines ${start}-${end} of ${lines})]\n`;
 const verbatimHeader = (lines: number) => `[golden.txt (verbatim, ${lines} lines, no anchors)]\n`;
 
 const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]> = [
@@ -104,20 +108,20 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
     NL,
     { windows: [{ offset: 1, limit: 5 }] },
     (a) =>
-      `${servedHeader(40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n\n[golden.txt lines 1-5 of 40. Use windows: [{ offset: 6, limit: 5 }] to continue.]`,
+      `${servedRangeHeader(1, 5, 40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n\n[golden.txt lines 1-5 of 40. Use windows: [{ offset: 6, limit: 5 }] to continue.]`,
   ],
   [
     "a middle page",
     NL,
     { windows: [{ offset: 17, limit: 5 }] },
     (a) =>
-      `${servedHeader(40)}${a[16]}│l16\n${a[17]}│l17\n${a[18]}│l18\n${a[19]}│l19\n${a[20]}│l20\n\n[golden.txt lines 17-21 of 40. Use windows: [{ offset: 22, limit: 5 }] to continue.]`,
+      `${servedRangeHeader(17, 21, 40)}${a[16]}│l16\n${a[17]}│l17\n${a[18]}│l18\n${a[19]}│l19\n${a[20]}│l20\n\n[golden.txt lines 17-21 of 40. Use windows: [{ offset: 22, limit: 5 }] to continue.]`,
   ],
   [
     "the last page",
     NL,
     { windows: [{ offset: 38, limit: 10 }] },
-    (a) => `${servedHeader(40)}${a[37]}│l37\n${a[38]}│l38\n${a[39]}│l39`,
+    (a) => `${servedRangeHeader(38, 40, 40)}${a[37]}│l37\n${a[38]}│l38\n${a[39]}│l39`,
   ],
   [
     "a page past the end",
@@ -143,7 +147,7 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
     NL,
     { windows: [{ offset: 1, limit: 7 }] },
     (a) =>
-      `${servedHeader(40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n${a[5]}│l5\n${a[6]}│l6\n\n[golden.txt lines 1-7 of 40. Use windows: [{ offset: 8, limit: 7 }] to continue.]`,
+      `${servedRangeHeader(1, 7, 40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n${a[5]}│l5\n${a[6]}│l6\n\n[golden.txt lines 1-7 of 40. Use windows: [{ offset: 8, limit: 7 }] to continue.]`,
   ],
   [
     "no trailing newline",

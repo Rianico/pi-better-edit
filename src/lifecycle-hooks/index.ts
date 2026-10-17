@@ -24,6 +24,7 @@ import {
   sessionKeyFor as defaultSessionKeyFor,
 } from "../served-session/session.js";
 import { snapshotHashFor } from "../snapshot-store";
+import { formatRangedServedHeader } from "../file-content/served-header.js";
 
 async function defaultRecordDiffServes(input: {
   sessionKey: string;
@@ -153,7 +154,7 @@ function pureViewHeader(
   if (startLine === 1 && endLine === totalLines) {
     return `[${filePath} (${totalLines} ${totalLines === 1 ? "line" : "lines"})]`;
   }
-  return `[${filePath} (lines ${startLine}-${endLine} of ${totalLines})]`;
+  return formatRangedServedHeader(filePath, startLine, endLine, totalLines);
 }
 
 /**

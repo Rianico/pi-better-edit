@@ -18,6 +18,7 @@ import {
   type PrepareResult,
 } from "./file-content/index.js";
 import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
+import { formatRangedServedHeader } from "./file-content/served-header.js";
 import { leaseSpanSource } from "./mutation-engine/edit-source.js";
 import { resolveLineIdentity } from "./hashline/resolve.js";
 import { toCwd } from "./paths.js";
@@ -374,12 +375,30 @@ type OrderedOutcome =
   | { kind: "image"; blocks: RoutedContent[] };
 /**
 
-/** The per-file header (spec §4.4): names the file and, per mode, what its rows carry. */
+/**
+ * WHY: the served header names the shown range a single windowed read actually rendered (#149):
+ * WHY: the footer's continuation range already does, and the bash view's own header does, so the
+ * WHY: file header carries the same numbers. Whole-file and multi-window reads keep the bare total.
+ */
 function fileHeader(entry: PreparedTarget): string {
   const lines = entry.prepared.lineTotals.visible;
-  return entry.mode === "verbatim"
-    ? `[${entry.file} (verbatim, ${lines} lines, no anchors)]`
-    : `[${entry.file} (${lines} lines total)]`;
+  if (entry.mode === "verbatim") return `[${entry.file} (verbatim, ${lines} lines, no anchors)]`;
+  const shown = shownSingleWindow(entry);
+  if (shown === undefined) return `[${entry.file} (${lines} lines total)]`;
+  return formatRangedServedHeader(entry.file, shown.start, shown.end, lines);
+}
+
+/**
+ * WHY: the header's range is the rows actually shown, not the rows asked for: truncation cuts the
+ * WHY: tail, so the served rows' own positions are the honest range — the same numbers the footer
+ * WHY: already carries. Exactly one walked window with at least one served row is a ranged header;
+ * WHY: anything else (whole file, several windows, warnings alone, an empty page) keeps the total.
+ */
+function shownSingleWindow(entry: PreparedTarget): { start: number; end: number } | undefined {
+  if (entry.plan.omittedAll || (entry.plan.windows?.length ?? 0) !== 1) return undefined;
+  const served = entry.prepared.served;
+  if (served.length === 0) return undefined;
+  return { start: served[0]!.position + 1, end: served[served.length - 1]!.position + 1 };
 }
 
 /** One prepared file's section: its header, then any inline anchor warnings, then its rows. */

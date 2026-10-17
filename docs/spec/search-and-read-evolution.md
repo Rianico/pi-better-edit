@@ -164,7 +164,7 @@ export const ReadParamsSchema = Type.Object({
    - Walk lines via single-pass `walkLines`.
 
 ### 4.4 Render UX & Verbatim Contract
-- **Served File Header**: `[src/server.ts (120 lines total)]`
+- **Served File Header**: `[src/server.ts (120 lines total)]` for a whole-file or multi-window read; `[src/server.ts (lines 1-15 of 120)]` for a single windowed read (the range actually shown, matching the bash view).
 - **Window Sub-banners**: `=== Lines 1-15 of 120 ===`
 - **Served Rows**: Strictly `HASH│content` (no row-level line numbers).
 - **Verbatim File Header**: `[README.md (verbatim, 45 lines, no anchors)]` (rows render as plain text, no leases granted).
