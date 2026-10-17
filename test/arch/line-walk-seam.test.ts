@@ -168,6 +168,22 @@ describe("the served page never materializes the line array", () => {
     });
   });
 
+  it("keeps the total header for a windowed read of an empty file", async () => {
+    // WHY: the empty marker row carries a phantom position; ranging it would print `lines 1-1 of 0`.
+    // WHY: Nothing was shown, so the header stays the total — the same header the whole-file read gets.
+    await withTempFile("empty.txt", "", async ({ cwd }) => {
+      const { readTool, ctx } = setupReadTest(cwd);
+      const result = await readTool.execute(
+        "s1",
+        { file: "empty.txt", windows: [{ offset: 1, limit: 5 }] },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(result.content[0]?.text).toMatch(/^\[empty\.txt \(0 lines total\)\]\n/);
+    });
+  });
+
   it("refuses a preloaded file over the anchor cap without materializing its lines", async () => {
     // WHY: a preloaded file skips the decode that counts newlines mid-stream, so this refusal is the
     // WHY: loader's own line count — the one place a second split could creep back in unnoticed.

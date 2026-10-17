@@ -396,6 +396,9 @@ function fileHeader(entry: PreparedTarget): string {
  */
 function shownSingleWindow(entry: PreparedTarget): { start: number; end: number } | undefined {
   if (entry.plan.omittedAll || (entry.plan.windows?.length ?? 0) !== 1) return undefined;
+  // WHY: an empty file's marker row carries a phantom position (0-based 0); ranging it would print
+  // WHY: `lines 1-1 of 0` — a range beyond the total. Nothing was shown, so the total header stands.
+  if (entry.prepared.lineTotals.visible === 0) return undefined;
   const served = entry.prepared.served;
   if (served.length === 0) return undefined;
   return { start: served[0]!.position + 1, end: served[served.length - 1]!.position + 1 };
