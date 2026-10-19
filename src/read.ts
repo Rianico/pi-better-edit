@@ -1,6 +1,7 @@
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import { createReadTool, createReadToolDefinition } from "@earendil-works/pi-coding-agent";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
+import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
 import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE, SERVED_MAX_LINES } from "./constants.js";
 import { HASH_LEN } from "./hashline/alphabet.js";
@@ -452,6 +453,8 @@ export function regRead(pi: ExtensionAPI): void {
   // WHY: project it for rendering only — the call line shows the filename, and `args` is never
   // WHY: mutated. The `file ?? path ?? files?.[0]?.file` fallback is permanent tolerance for
   // WHY: recorded transcripts (ADR-0040 D3/D5), not dead code.
+  // WHY: Pi reuses lastComponent; its builtin needs the Text behind our wrapper.
+  const readCallBases = new WeakMap<Component, Component>();
   const builtinReadDef = createReadToolDefinition("");
   const builtinRenderCall = builtinReadDef.renderCall as any;
   const builtinRenderResult = builtinReadDef.renderResult as any;
@@ -467,20 +470,32 @@ export function regRead(pi: ExtensionAPI): void {
     // SAFETY: get their count appended below — the builtin has no chrome for them.
     renderCall: (args: ReadRenderArgs, theme, context) => {
       const projected = projectReadRenderArgs(args);
-      const call = builtinRenderCall({ ...args, ...projected }, theme, context);
+      const lastComponent = context.lastComponent;
+      const call: Component = builtinRenderCall({ ...args, ...projected }, theme, {
+        ...context,
+        lastComponent: lastComponent
+          ? (readCallBases.get(lastComponent) ?? lastComponent)
+          : lastComponent,
+      });
       // WHY: 1:1 honesty (ADR-0041 D4) — the builtin renders `read <path>[:start-end]` but has no
       // WHY: multi-window chrome, so the call line carries the count itself. Single anchor-window and
       // WHY: whole-file reads render the bare path (no range is ever fabricated).
       if (projected.windowsCount === undefined) return call;
       const suffix = ` (${projected.windowsCount} windows)`;
-      return {
-        ...call,
+      const suffixWidth = visibleWidth(suffix);
+      const wrapped: Component = {
+        invalidate: () => call.invalidate(),
         render: (width: number): string[] => {
-          const lines = call.render(width) as string[];
-          if (lines.length > 0) lines[0] = `${lines[0]}${suffix}`;
-          return lines;
+          if (width <= 0) return [];
+          if (width <= suffixWidth) return [truncateToWidth(suffix.trimStart(), width)];
+          const budget = width - suffixWidth;
+          return call
+            .render(budget)
+            .map((line, index) => truncateToWidth(line, budget) + (index === 0 ? suffix : ""));
         },
       };
+      readCallBases.set(wrapped, call);
+      return wrapped;
     },
     renderResult: (result, options, theme, context) => {
       // SAFETY: renderers receive raw call args, not the validated payload, so `context.args` may

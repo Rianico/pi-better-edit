@@ -2,6 +2,9 @@
 
 ## [Unreleased]
 
+### Bug Fixes
+* **read:** keep multi-window TUI call titles within their render width, preserve stable cached output across repeated renders, and retain builtin component reuse and invalidation instead of falling back after a `setText` error. Narrow titles truncate the count rather than overflowing. (#158)
+
 ## [2.13.0] - 2026-10-18
 
 ### Features

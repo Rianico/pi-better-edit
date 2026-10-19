@@ -1,4 +1,5 @@
-import { describe, expect, it } from "vitest";
+import { stripTerminalSequences, visibleWidth } from "@earendil-works/pi-tui";
+import { describe, expect, it, vi } from "vitest";
 import register from "../../index";
 import { makeFakePiRegistry } from "../support/fixtures";
 
@@ -226,4 +227,141 @@ describe("read tool — TUI renderers for the flat {file} payload (#147)", () =>
 
     expect(call.render(80).join("\n")).toContain("notes.txt");
   });
+});
+
+describe("read tool — multi-window component contract (#157)", () => {
+  it("keeps a multi-window title within its render budget", () => {
+    const tool = readTool();
+    const args = {
+      file: "a.txt",
+      windows: [
+        { offset: 1, limit: 2 },
+        { offset: 20, limit: 2 },
+      ],
+    };
+    const call = tool.renderCall(args, theme, {
+      args,
+      cwd: "/tmp",
+      expanded: false,
+      lastComponent: undefined,
+    });
+
+    expect(Math.max(...call.render(207).map(visibleWidth))).toBeLessThanOrEqual(207);
+  });
+
+  it("does not mutate cached title lines across repeated renders", () => {
+    const tool = readTool();
+    const args = { file: "a.txt", windows: [{ offset: 1 }, { offset: 20 }] };
+    const call = tool.renderCall(args, theme, { args, cwd: "/tmp", expanded: false });
+    const first = [...call.render(207)];
+
+    expect(call.render(207)).toEqual(first);
+  });
+
+  it("reuses and invalidates the builtin component across window-count changes", () => {
+    const tool = readTool();
+    const args = { file: "a.txt", windows: [{ offset: 1 }, { offset: 20 }] };
+    const initial = tool.renderCall(args, theme, { args, cwd: "/tmp", expanded: false });
+    const nextArgs = {
+      file: "b.txt",
+      windows: [{ offset: 1 }, { offset: 20 }, { offset: 40 }],
+    };
+    const next = tool.renderCall(nextArgs, theme, {
+      args: nextArgs,
+      cwd: "/tmp",
+      expanded: false,
+      lastComponent: initial,
+    });
+
+    next.invalidate();
+    const title = next.render(80).join("\n");
+    expect(title).toContain("b.txt");
+    expect(title).toContain("(3 windows)");
+    expect(Math.max(...next.render(80).map(visibleWidth))).toBeLessThanOrEqual(80);
+
+    const singleArgs = { file: "single.txt", windows: [{ offset: 3, limit: 5 }] };
+    const single = tool.renderCall(singleArgs, theme, {
+      args: singleArgs,
+      cwd: "/tmp",
+      expanded: false,
+      lastComponent: next,
+    });
+    expect(stripTerminalSequences(single.render(80).join("\n"))).toContain("single.txt:3-7");
+    expect(single.render(80).join("\n")).not.toContain("windows)");
+
+    const again = tool.renderCall(args, theme, {
+      args,
+      cwd: "/tmp",
+      expanded: true,
+      lastComponent: single,
+    });
+    expect(again.render(80).join("\n")).toContain("a.txt");
+    expect(again.render(80).join("\n")).toContain("(2 windows)");
+    expect(again.render(80).join("\n")).not.toContain("single.txt");
+  });
+
+  it("delegates render and invalidation to the reused builtin component", () => {
+    const tool = readTool();
+    const singleArgs = { file: "AGENTS.md", windows: [{ offset: 1, limit: 2 }] };
+    const builtin = tool.renderCall(singleArgs, theme, {
+      args: singleArgs,
+      cwd: "/tmp",
+      expanded: false,
+    });
+    const render = vi.spyOn(builtin, "render");
+    const invalidate = vi.spyOn(builtin, "invalidate");
+    try {
+      const args = { file: "AGENTS.md", windows: [{ offset: 1 }, { offset: 20 }] };
+      const wrapped = tool.renderCall(args, theme, {
+        args,
+        cwd: "/tmp",
+        expanded: true,
+        lastComponent: builtin,
+      });
+      expect(wrapped.render(80).join("\n")).toContain("(2 windows)");
+      expect(render).toHaveBeenCalled();
+      wrapped.invalidate();
+      expect(invalidate).toHaveBeenCalledOnce();
+    } finally {
+      render.mockRestore();
+      invalidate.mockRestore();
+    }
+  });
+
+  it.each([0, 1, 2, 8, 11, 12, 13, 14, 20, 80, 207])(
+    "fits styled, wide and wrapped titles at width %i through resize and invalidation",
+    (width) => {
+      const tool = readTool();
+      const linkedTheme = {
+        fg: (_name: string, text: string) =>
+          `\x1b]8;;file:///tmp/source\x1b\\\x1b[36m${text}\x1b[39m\x1b]8;;\x1b\\`,
+        bold: (text: string) => `\x1b[1m${text}\x1b[22m`,
+      };
+      for (const file of [
+        "a.txt",
+        "long/".repeat(30) + "a.txt",
+        "目录/音楽.txt",
+        "e\u0301/👩‍💻.txt",
+        "AGENTS.md",
+      ]) {
+        for (const count of [2, 10, 16]) {
+          for (const currentTheme of [theme, linkedTheme]) {
+            const args = { file, windows: Array.from({ length: count }, () => ({ offset: 1 })) };
+            const call = tool.renderCall(args, currentTheme, {
+              args,
+              cwd: "/tmp",
+              expanded: false,
+            });
+            const first = [...call.render(width)];
+
+            expect(first.every((line: string) => visibleWidth(line) <= width)).toBe(true);
+            expect(call.render(width)).toEqual(first);
+            expect(call.render(207).join("\n")).toContain(`(${count} windows)`);
+            call.invalidate();
+            expect(call.render(width)).toEqual(first);
+          }
+        }
+      }
+    },
+  );
 });
