@@ -74,7 +74,7 @@ function seedVersion(
   db.prepare(
     "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
       "VALUES (?, 1, ?, ?, ?)",
-  ).run(row.snapshot_id, row.snapshot_id * 1000, `canon-${hash}`, `anc-${hash}`);
+  ).run(row.snapshot_id, row.snapshot_id * 1000, `canon-${hash}`, `anchor-${hash}`);
   return row.snapshot_id;
 }
 
@@ -85,7 +85,7 @@ function seedLease(db: DatabaseSync, path: string, snapshotHash: string): void {
   ).run(
     "sessionA",
     path,
-    `anc-${snapshotHash}`,
+    `anchor-${snapshotHash}`,
     `canon-${snapshotHash}`,
     snapshotHash,
     Date.now(),
@@ -97,7 +97,7 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
   it("emits one operator-visible warning with byte counts when overSoftOverflow holds", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
       const result = overSoftOverflowResult();
 
       reportVacuumSoftOverflow(store.db, result);
@@ -113,7 +113,7 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
   it("stays silent when overSoftOverflow does not hold", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
 
       reportVacuumSoftOverflow(store.db, underSoftOverflowResult());
 
@@ -124,7 +124,7 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
   it("throttles repeated over-soft-overflow passes to a single warning", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
 
       reportVacuumSoftOverflow(store.db, overSoftOverflowResult());
       reportVacuumSoftOverflow(store.db, overSoftOverflowResult());
@@ -137,7 +137,7 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
   it("re-arms after the store recovers below the soft cap", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
 
       reportVacuumSoftOverflow(store.db, overSoftOverflowResult());
       reportVacuumSoftOverflow(store.db, underSoftOverflowResult());
@@ -150,7 +150,7 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
   it("never throws when the diagnostic channel fails", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      vi.spyOn(console, "warn").mockImplementation(() => {
+      vi.spyOn(process, "emitWarning").mockImplementation(() => {
         throw new Error("diagnostic sink down");
       });
 
@@ -167,7 +167,7 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
         seedVersion(db, `/p${i}.ts`, `hash-${i}`, bigLines, 1000 * (i + 1));
         seedLease(db, `/p${i}.ts`, `hash-${i}`);
       }
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
+      const warn = vi.spyOn(process, "emitWarning").mockImplementation(() => {});
       const pinnedBefore = (
         db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }
       ).n;

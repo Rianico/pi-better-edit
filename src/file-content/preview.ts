@@ -105,7 +105,10 @@ function emptyFilePreview(
   if (startLine === 1) {
     // WHY: the walk already anchored this empty file's one line, which is the anchor of the empty
     // WHY: string — the only line an empty file has (`splitLines("")`), so it is the marker's own.
-    const emptyLineHash = hashes[0]!;
+    const emptyLineHash = hashes[0];
+    if (emptyLineHash === undefined) {
+      throw new Error("empty file preview is missing its walk anchor");
+    }
     return {
       text: `${emptyLineHash}${hashSep}\n[File is empty. Use edit to insert content.]`,
       served: [{ position: 0, hash: emptyLineHash }],
@@ -122,9 +125,10 @@ function oversizedWarning(oversized: { lineNumber: number }[]): {
   verb: string;
   addresses: string;
 } {
+  const [firstOversized] = oversized;
   const lineLabel =
-    oversized.length === 1
-      ? `Line ${oversized[0]!.lineNumber}`
+    oversized.length === 1 && firstOversized !== undefined
+      ? `Line ${firstOversized.lineNumber}`
       : `Lines ${oversized.map((row) => row.lineNumber).join(", ")}`;
   const verb = oversized.length === 1 ? "exceeds" : "exceed";
   const addresses = oversized.map((row) => `${row.lineNumber}p`).join(";");
@@ -158,11 +162,17 @@ function buildOversizedPreview(params: {
     displayPath,
   } = params;
   const oversized = rowSizes.filter((row) => row.bytes > maxBytes);
-  const rows = rowSizes.map((row, index) =>
-    row.bytes > maxBytes
-      ? `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`
-      : fmtRows([selectedHashes[index]!], [selected[index]!], verbatim),
-  );
+  const rows = rowSizes.map((row, index) => {
+    if (row.bytes > maxBytes) {
+      return `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`;
+    }
+    const hash = selectedHashes[index];
+    const line = selected[index];
+    if (hash === undefined || line === undefined) {
+      throw new Error(`preview row ${index} has no selected line`);
+    }
+    return fmtRows([hash], [line], verbatim);
+  });
   const skippedTruncation = truncateHead(rows.join("\n"), { maxBytes, maxLines: maxTruncLines });
   const shownRowCount =
     skippedTruncation.content === "" ? 0 : skippedTruncation.content.split("\n").length;
@@ -185,9 +195,14 @@ function buildOversizedPreview(params: {
   }
   const served: ServedRow[] = [];
   if (!verbatim)
-    for (let index = 0; index < shownRowCount; index++)
-      if (rowSizes[index]!.bytes <= maxBytes)
-        served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+    for (let index = 0; index < shownRowCount; index++) {
+      const row = rowSizes[index];
+      const hash = selectedHashes[index];
+      if (row === undefined || hash === undefined) {
+        throw new Error(`preview served row ${index} is missing`);
+      }
+      if (row.bytes <= maxBytes) served.push({ position: startLine - 1 + index, hash });
+    }
   return {
     text: preview,
     ...(skippedTruncation.truncated ? { truncation: skippedTruncation } : {}),
@@ -243,8 +258,10 @@ function buildNormalPreview(params: {
   }
   const served: ServedRow[] = [];
   if (!verbatim)
-    for (let index = 0; index < truncation.outputLines; index++)
-      served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+    for (const [index, hash] of selectedHashes.entries()) {
+      if (index >= truncation.outputLines) break;
+      served.push({ position: startLine - 1 + index, hash });
+    }
   return { preview, truncation, ...(nextOffset !== undefined ? { nextOffset } : {}), served };
 }
 
@@ -343,13 +360,16 @@ function sliceMergedRanges(
   end: number,
 ): string[] {
   const lines: string[] = [];
-  for (let index = 0; index < merged.length; index++) {
-    const piece = merged[index]!;
+  for (const [index, piece] of merged.entries()) {
     if (piece.end <= start) continue;
     if (piece.start >= end) break;
     const from = Math.max(start, piece.start) - piece.start;
     const to = Math.min(end, piece.end) - piece.start;
-    lines.push(...pieces[index]!.slice(from, to));
+    const pieceLines = pieces[index];
+    if (pieceLines === undefined) {
+      throw new Error(`preview merge piece ${index} has no lines`);
+    }
+    lines.push(...pieceLines.slice(from, to));
   }
   return lines;
 }
@@ -540,12 +560,14 @@ export async function fmtReadPreview(
     ranges: LineRange[],
   ): Promise<{ ranges: string[][]; hashes: string[] }> => {
     const page = walkPage(text, ranges, plan?.assign);
-    const hashes =
-      verbatim || known !== undefined
-        ? (known ?? [])
-        : (plan?.cached ??
-          page.assigned ??
-          (await (path ? lineHashes(text, path) : contentOnlyHashes(text))));
+    let hashes: string[];
+    if (verbatim || known !== undefined) {
+      hashes = known ?? [];
+    } else {
+      hashes = await (plan?.cached ??
+        page.assigned ??
+        (path ? lineHashes(text, path) : contentOnlyHashes(text)));
+    }
     return { ranges: page.ranges, hashes };
   };
   if (totalLines === 0) {
@@ -616,7 +638,7 @@ export async function fmtReadPreview(
   }));
   if (rowSizes.some((row) => row.bytes > maxBytes)) {
     return {
-      ...(await buildOversizedPreview({
+      ...buildOversizedPreview({
         rowSizes,
         selected,
         selectedHashes,
@@ -626,7 +648,7 @@ export async function fmtReadPreview(
         maxTruncLines,
         verbatim,
         ...(displayPath !== undefined ? { displayPath } : {}),
-      })),
+      }),
       hashes: allHashes,
       lineTotals: totals,
     };

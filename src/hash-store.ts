@@ -884,6 +884,15 @@ function buildStore(db: DatabaseSync): boolean {
     "CREATE INDEX IF NOT EXISTS idx_leases_file_retired " +
       "ON served_leases (file_path, retired_at)",
   );
+  // WHY: the vacuum's pin probe asks "does this (path, snapshot_hash) still have a lease?", and one
+  // WHY: path holds a lease per served line (thousands). `idx_leases_file_retired` can narrow only to
+  // WHY: the path, so the probe re-scanned that path's whole lease set once per snapshot — on a
+  // WHY: 518 MB / 408k-lease store that single query spent 2.2 s on every materialization. This
+  // WHY: composite covers the (path, snapshot_hash) probe and the retired/updated filter.
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_leases_file_snapshot " +
+      "ON served_leases (file_path, served_snapshot_hash, retired_at, updated_at)",
+  );
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_leases_session_anchor " +
       "ON served_leases (session_id, anchor)",
@@ -1161,7 +1170,9 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
   const current = cachedDb;
   if (current === null || !current.db.isOpen) return false;
   if (isHealthy(current.db)) return false;
-  console.error("[hash-store] deep check found the store damaged, quarantining and rebuilding");
+  process.emitWarning(
+    "[hash-store] deep check found the store damaged, quarantining and rebuilding",
+  );
   // WHY: the quarantine comes FIRST and on its own: the open path's fast branch accepts a store whose
   // WHY: header is intact, and an intact header is exactly the case the janitor's deep pass exists to
   // WHY: catch — so handing the open the same file would reopen the damage instead of repairing it.
@@ -1192,9 +1203,19 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
  * WHY: observe raw ones. Instance own-property doubles (`vi.spyOn`) are handled one layer up —
  * WHY: the traps return those directly — so this lookup never sees a double.
  */
-function realMethod(target: object, property: string): (...args: unknown[]) => unknown {
-  const value: unknown = Reflect.get(Object.getPrototypeOf(target), property);
-  return (value as (...args: unknown[]) => unknown).bind(target);
+function realMethod(
+  target: DatabaseSync | StatementSync,
+  property: string,
+): (...args: unknown[]) => unknown {
+  const prototype = Object.getPrototypeOf(target) as Record<
+    string,
+    (...args: unknown[]) => unknown
+  >;
+  const method = prototype[property];
+  if (method === undefined) {
+    throw new Error(`Missing method ${property} on ${target.constructor.name}`);
+  }
+  return method.bind(target);
 }
 
 function guardDatabaseHandle(raw: DatabaseSync, storePath: string): DatabaseSync {
@@ -1478,19 +1499,20 @@ export function shutdownHashStore(): void {
 }
 
 export function withStore(fn: () => void): void {
-  if (!cachedDb || !cachedDb.db.isOpen) {
+  const store = cachedDb;
+  if (!store || !store.db.isOpen) {
     throw new Error(
       "withStore requires an open SQLite store — call loadHashStore() first or use a MemoryStore in tests",
     );
   }
   withBusyRetry(() => {
-    cachedDb!.db.exec("BEGIN IMMEDIATE");
+    store.db.exec("BEGIN IMMEDIATE");
     try {
       fn();
-      cachedDb!.db.exec("COMMIT");
+      store.db.exec("COMMIT");
     } catch (e) {
       try {
-        cachedDb!.db.exec("ROLLBACK");
+        store.db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
         console.error("[hash-store] failed to rollback transaction:", rollbackError);
       }
