@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { getCached, withBusyRetry } from "../hash-store.js";
+import { getCached, withBusyRetry, RESOLVABLE_LEASE_SQL } from "../hash-store.js";
 import { SERVED_TTL_MS } from "../constants.js";
 
 // WHY: --- Global LRU vacuum (spec §3.6.1) ---
@@ -83,9 +83,12 @@ function buildVacuumStmts(db: DatabaseSync): VacuumStmts {
   const pinnedStmt = db.prepare(
     "SELECT DISTINCT fs.snapshot_id AS snapshot_id FROM file_snapshots fs " +
       "WHERE fs.committed = 1 AND (" +
-      "EXISTS (SELECT 1 FROM served_leases sl WHERE sl.file_path = fs.path " +
-      "AND sl.served_snapshot_hash = fs.snapshot_hash " +
-      "AND ((sl.retired_at IS NULL AND sl.updated_at >= ?) OR sl.retired_at >= ?)) " +
+      // WHY: (ADR-0045) the active half is the canonical expiry predicate, so the pin probe and
+      // WHY: the grant path cannot disagree about which active leases still resolve. `sl` is dropped
+      // WHY: from the subquery so the shared predicate can name `served_leases` itself.
+      "EXISTS (SELECT 1 FROM served_leases WHERE served_leases.file_path = fs.path " +
+      "AND served_leases.served_snapshot_hash = fs.snapshot_hash " +
+      `AND ((${RESOLVABLE_LEASE_SQL}) OR served_leases.retired_at >= ?)) ` +
       "OR EXISTS (SELECT 1 FROM file_undo fu WHERE fu.path = fs.path " +
       "AND fu.snapshot_hash = fs.snapshot_hash))",
   );

@@ -9,7 +9,7 @@ import { readNormFile } from "../file-reader.js";
 import { splitLines } from "../utils.js";
 import { SERVED_MAX_LINES } from "../constants.js";
 import type { LineEnding } from "../edit-diff.js";
-import type { HashStore } from "../hash-store.js";
+import { isExpiredActiveLease, type HashStore } from "../hash-store.js";
 import type { LeaseSpanSource } from "../hashline/index.js";
 import {
   createSessionHandle,
@@ -161,11 +161,17 @@ export function leaseSpanSource(input: {
   currentIds?: (number | null)[];
 }): LeaseSpanSource {
   const byAnchor = new Map<string, ServedLease>();
+  // WHY: (ADR-0045) hard expiry — an ACTIVE lease past the session TTL has no resolution
+  // WHY: authority. It is dropped here, before any `leaseFor` can return it, so the read and edit
+  // WHY: seams re-resolve content instead of trusting a dead identity. A retired lease is a
+  // WHY: different state and is still returned (the resolver judges its `retiredAt`).
+  const now = Date.now();
   for (const lease of loadLeases(input.store, input.sessionKey, input.absolutePath)) {
     // WHY: generation-gated lease source — a pre-bump lease is never honoured, so a
     // WHY: stale generation cannot resolve by line_id alone. The open-time sweep
     // WHY: deletes these rows; this gate covers rows written between sweep and read.
     if (!isCurrentAnchorGeneration(lease.served_snapshot_hash)) continue;
+    if (isExpiredActiveLease(lease, now)) continue;
     byAnchor.set(lease.anchor, lease);
   }
   const positions = input.currentIds

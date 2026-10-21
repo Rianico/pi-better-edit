@@ -8,7 +8,9 @@
  *    prune already uses (#87c). Not due means the run ends here, having issued no DELETE and no
  *    `PRAGMA quick_check`. The interval is resolved from the shared config ladder
  *    (`src/store-config.ts`), defaulting to a day.
- * 2. GC — foreign-generation and expired rows, deleted in statements of at most `batchSize` rows.
+ * 2. GC — foreign-generation, dangling and expired rows, deleted in statements of at most
+ *    `batchSize` rows. Expiry covers BOTH terminal states (ADR-0045): a retired lease past its
+ *    1-hour grace and an ACTIVE lease past the 7-day session TTL.
  *    Batching is about HOLD TIME, not statement count: one unbounded DELETE scans and holds the write
  *    lock for its whole scan, so a rival writer waits on a maintenance pass; a loop of bounded
  *    statements releases the lock between batches and lets a rival interleave. The batch width
@@ -44,6 +46,7 @@ import type { DatabaseSync } from "node:sqlite";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
 import {
   DANGLING_LEASE_SQL,
+  EXPIRED_ACTIVE_LEASE_SQL,
   FOREIGN_GENERATION_LEASE_SQL,
   FOREIGN_GENERATION_SNAPSHOT_SQL,
   ORPHAN_LINEAGE_SQL,
@@ -52,6 +55,7 @@ import {
   loadHashStore,
   markPeriodicRun,
   periodicDue,
+  servedLeaseExpiryCutoff,
   withBusyRetry,
 } from "./hash-store.js";
 import { resolveStoreJanitorSettings, type StoreJanitorSettings } from "./store-config.js";
@@ -86,6 +90,7 @@ interface JanitorDeletions {
   readonly snapshots: number;
   readonly lineage: number;
   readonly leases: number;
+  /** Lease rows removed for expiry: active past the session TTL plus retired past the grace. */
   readonly expiredLeases: number;
 }
 
@@ -211,14 +216,30 @@ function collectGarbage(
     );
     const lineage = deleteInBatches(db, "line_lineage", ORPHAN_LINEAGE_SQL, [], batchSize);
     const dangling = deleteInBatches(db, "served_leases", DANGLING_LEASE_SQL, [], batchSize);
-    const expiredLeases = deleteInBatches(
+    // WHY: (ADR-0045) hard expiry makes an ACTIVE lease past the session TTL a dead row: it has no
+    // WHY: resolution authority and no pin authority, but it still inflated every lease index and the
+    // WHY: vacuum's per-snapshot EXISTS probe. It is deleted AFTER the dangling sweep (a dead lease
+    // WHY: whose snapshot was evicted is already gone) and in the same bounded, off-path manner.
+    const expiredActive = deleteInBatches(
+      db,
+      "served_leases",
+      EXPIRED_ACTIVE_LEASE_SQL,
+      [servedLeaseExpiryCutoff(now)],
+      batchSize,
+    );
+    const expiredRetired = deleteInBatches(
       db,
       "served_leases",
       "retired_at IS NOT NULL AND retired_at < ?",
       [now - VACUUM_RETIRED_PIN_MS],
       batchSize,
     );
-    return { snapshots, lineage, leases: leases + dangling, expiredLeases };
+    return {
+      snapshots,
+      lineage,
+      leases: leases + dangling,
+      expiredLeases: expiredActive + expiredRetired,
+    };
   } catch (error) {
     // SAFETY: a failed sweep removes nothing and is retried by the next due run; the deep check below
     // SAFETY: is what decides whether this store needs the open path's recovery instead.

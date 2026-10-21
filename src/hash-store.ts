@@ -6,7 +6,7 @@ import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { errCode } from "./utils.js";
 import { initHasher } from "./hashline/hasher.js";
-import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
+import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT, SERVED_TTL_MS } from "./constants.js";
 import { ANCHOR_GENERATION, CANON_VERSION } from "./hashline/hash-identity.js";
 import { DomainError } from "./domain-errors.js";
 
@@ -661,6 +661,45 @@ export const DANGLING_LEASE_SQL =
   "NOT EXISTS (SELECT 1 FROM file_snapshots fs " +
   "WHERE fs.path = served_leases.file_path AND fs.snapshot_hash = served_leases.served_snapshot_hash " +
   "AND fs.committed = 1)";
+
+// WHY: (ADR-0045) the ONE session-TTL boundary for served leases. An ACTIVE (un-retired) lease
+// WHY: whose `updated_at` is older than `now - SERVED_TTL_MS` has lost resolution authority: the
+// WHY: read/edit grant path treats it as absent, the janitor may delete it, and the vacuum's pin
+// WHY: probe already ignores it. Retirement is the OTHER terminal state and keeps its own 1-hour
+// WHY: grace (`VACUUM_RETIRED_PIN_MS`); an expired active lease is never judged by that grace.
+
+/** The instant before which an un-retired lease has lost resolution authority (ADR-0045). */
+export function servedLeaseExpiryCutoff(now: number): number {
+  return now - SERVED_TTL_MS;
+}
+
+/**
+ * `served_leases` rows that are ACTIVE but past the session TTL — janitor GC's family. The
+ * predicate names the table so both the batched delete (bare) and the vacuum's EXISTS subquery
+ * (table-qualified) can share it; one parameter: the cutoff instant.
+ */
+export const EXPIRED_ACTIVE_LEASE_SQL =
+  "served_leases.retired_at IS NULL AND served_leases.updated_at < ?";
+
+/**
+ * The complement INSIDE the same boundary: an ACTIVE lease still inside the session TTL. The
+ * vacuum's pin probe uses this instead of restating the comparison, so pin authority and resolution
+ * authority cannot drift apart.
+ */
+export const RESOLVABLE_LEASE_SQL =
+  "served_leases.retired_at IS NULL AND served_leases.updated_at >= ?";
+
+/**
+ * The JS form of the same predicate, for the in-memory grant path (`leaseSpanSource`). The grant
+ * path used to trust any un-retired lease regardless of age; hard expiry (ADR-0045) makes the age
+ * part of the authority, so an expired row is dropped before a lease identity can be returned.
+ */
+export function isExpiredActiveLease(
+  lease: { retired_at: number | null; updated_at: number },
+  now: number,
+): boolean {
+  return lease.retired_at === null && lease.updated_at < servedLeaseExpiryCutoff(now);
+}
 
 export function ensureSnapshotTables(db: DatabaseSync): void {
   db.exec(
