@@ -21,6 +21,11 @@ export interface HashOptions {
   path: string;
   prior?: HashPrior;
   persist?: boolean;
+  /**
+   * The store-backed IO this call reads its cache from and persists through — the ONLY persistence
+   * path (arch-03 rework). Absent means derive and return with no cache read and no write; there is
+   * no ambient fallback, so a call that omits it cannot touch a store.
+   */
   snapshotIO?: HashSnapshotIO;
   blockedHashes?: ReadonlySet<string>;
   /** Passed to `HashSnapshotIO.upsert`; see `HashSnapshotUpsertOptions`. Defaults to `false`. */
@@ -235,22 +240,7 @@ export function fileBaseIndex(canonText: string, pathSeed: number): number {
 export const HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES;
 export class HashIdentity {
   private hashCache = new Map<number, string>();
-  private snapshotIO?: HashSnapshotIO;
 
-  constructor(options?: { snapshotIO?: HashSnapshotIO }) {
-    // WHY: the slot is absent, never explicitly `undefined` (`exactOptionalPropertyTypes`).
-    if (options?.snapshotIO !== undefined) this.snapshotIO = options.snapshotIO;
-  }
-
-  setSnapshotIO(io: HashSnapshotIO | undefined): void {
-    // WHY: clearing must drop the slot — a guarded write would keep a stale IO behind.
-    if (io === undefined) delete this.snapshotIO;
-    else this.snapshotIO = io;
-  }
-
-  getSnapshotIO(): HashSnapshotIO | undefined {
-    return this.snapshotIO;
-  }
   private idxToHash(idx: number): string {
     let out = "";
     for (let j = 0; j < HASH_LEN; j++) {
@@ -534,7 +524,9 @@ export class HashIdentity {
     await initHasher();
     const path = options?.path;
     const persist = options?.persist ?? true;
-    const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
+    // WHY: no instance fallback — an identity holds no IO, so a call that wants persistence names
+    // WHY: the store-backed IO explicitly (`snapshotIOFor(store)`); absent means derive-only.
+    const snapshotIO = options?.snapshotIO;
     if (!path || options?.prior) {
       return { cached: await this.hashesFor(content, options) };
     }
@@ -566,7 +558,9 @@ export class HashIdentity {
     const pathSeed = xxh32(canonicalAnchorPath(path));
     const prior = options?.prior;
     const persist = options?.persist ?? true;
-    const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
+    // WHY: no instance fallback — an identity holds no IO, so a call that wants persistence names
+    // WHY: the store-backed IO explicitly (`snapshotIOFor(store)`); absent means derive-only.
+    const snapshotIO = options?.snapshotIO;
     const upsertOptions: HashSnapshotUpsertOptions = {
       retireLeases: options?.retireLeases === true,
     };
@@ -652,12 +646,15 @@ export class HashIdentity {
   hashesForSync(content: string, path: string, blockedHashes?: ReadonlySet<string>): string[] {
     return this.fileScopedHashes(content, xxh32(canonicalAnchorPath(path)), blockedHashes);
   }
-
-  static create(snapshotIO?: HashSnapshotIO): HashIdentity {
-    return new HashIdentity(snapshotIO ? { snapshotIO } : undefined);
-  }
 }
 
+/**
+ * The stateless-derivation singleton: content-only and sync anchor derivation, nothing else.
+ *
+ * WHY: it owns no IO, so no call through it can persist — a persistence-touching caller passes
+ * WHY: `snapshotIO: snapshotIOFor(store)` to `hashesFor`/`anchorsForWalk` itself. Keeping the
+ * WHY: singleton is what lets the pure helpers stay allocation-free; it is not a store seam.
+ */
 export const defaultHashIdentity = new HashIdentity();
 
 export function contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<string>): string[] {
