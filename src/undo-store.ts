@@ -1,12 +1,6 @@
 import { DatabaseSync } from "node:sqlite";
-import {
-  loadHashStore,
-  onStoreOpen,
-  withBusyRetry,
-  getCached,
-  ensureFileUndoSchema,
-  type HashStore,
-} from "./hash-store.js";
+import { loadHashStore, onStoreOpen, ensureFileUndoSchema, type HashStore } from "./hash-store.js";
+import { withBusyRetry, getCached } from "./store-kernel/index.js";
 import { ANCHOR_GENERATION } from "./hashline/hash-identity.js";
 import { isValidHashList } from "./hashline/alphabet.js";
 

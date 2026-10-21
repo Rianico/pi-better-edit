@@ -16,6 +16,9 @@ const SETTINGS_OWNERS = [
   join("src", "bash-view-config.ts"),
   join("src", "integrations", "pi-lens", "config.ts"),
   join("src", "store-config.ts"),
+  // WHY: the janitor settings ladder moved to the kernel (arch-04); it reads the shared seam like every
+  // WHY: other settings owner and must not grow its own file access.
+  join("src", "store-kernel", "settings.ts"),
 ];
 
 function tsFiles(dir: string, out: string[] = []): string[] {

@@ -16,7 +16,7 @@ import { registerLensCommand } from "../../../src/integrations/pi-lens/command.j
 import { LENS_BRIDGE_ENV_VAR } from "../../../src/integrations/pi-lens/config.js";
 import { SettingsOverlay } from "../../../src/integrations/pi-lens/settings-overlay.js";
 import { CONFIG_REL, CONFIG_FILE_NAME } from "../../../src/json-config.js";
-import { STORE_JANITOR_ENV_VAR } from "../../../src/store-config.js";
+import { STORE_JANITOR_ENV_VAR } from "../../../src/store-kernel/settings.js";
 import { configDir } from "../../../src/config-dir.js";
 
 interface CommandOptions {

@@ -9,7 +9,7 @@ import type { ServedRow } from "./served-session/serve-render.js";
 import { loadHashStore, type HashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
-import { abortIf, assertNever } from "./utils.js";
+import { abortIf } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import {
   decodeNormText,

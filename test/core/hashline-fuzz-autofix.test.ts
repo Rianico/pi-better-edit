@@ -1,6 +1,5 @@
 import { describe, expect, it } from "vitest";
 import { applyEdit } from "../../src/hashline/apply.js";
-import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { resEdit } from "../../src/hashline/resolve.js";
 import { splitLines } from "../../src/utils";
 import { materializedLineHashes, useTestHome, expectedEditContent } from "../support/fixtures";

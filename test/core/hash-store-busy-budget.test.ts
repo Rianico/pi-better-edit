@@ -3,15 +3,14 @@ import { mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import { DatabaseSync } from "node:sqlite";
 
+import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import {
   busyBackoffMs,
   busyBudgetMs,
-  loadHashStore,
   resolveBusyBudget,
-  shutdownHashStore,
   type BusyBudget,
-} from "../../src/hash-store";
-import { HASH_STORE_BUSY_TIMEOUT } from "../../src/constants";
+} from "../../src/store-kernel/index.js";
+import { HASH_STORE_BUSY_TIMEOUT } from "../../src/store-kernel/index.js";
 import { initHasher } from "../../src/hashline/hasher";
 import { getWritableTempRoot } from "../support/fixtures";
 import vitestConfig from "../../vitest.config";

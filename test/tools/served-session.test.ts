@@ -6,7 +6,6 @@ import { readNormFile } from "../../src/file-reader.js";
 import { getWritableTempRoot, materializedLineHashes } from "../support/fixtures";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { initHasher } from "../../src/hashline/hasher";
-import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
 
 beforeAll(async () => {

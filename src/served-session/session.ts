@@ -12,16 +12,8 @@ import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "../hashline/alphabet.js";
 import { ANCHOR_GENERATION } from "../hashline/hash-identity.js";
 import { SERVED_TTL_MS, SERVED_PRUNE_INTERVAL_MS } from "../constants.js";
-import {
-  loadHashStore,
-  onStoreOpen,
-  withStore,
-  withBusyRetry,
-  getCached,
-  markPeriodicRun,
-  periodicDue,
-  type HashStore,
-} from "../hash-store.js";
+import { loadHashStore, onStoreOpen, type HashStore } from "../hash-store.js";
+import { withStore, withBusyRetry, getCached, markRun, due } from "../store-kernel/index.js";
 // WHY: snapshot retention is owned by the CAS store that owns `file_snapshots` (spec §3.6.1); the
 // WHY: session module only asks for a pass at its deterministic boundary — the store open.
 import { vacuumSnapshots } from "../snapshot-store";
@@ -501,7 +493,7 @@ export function ensureServedSchema(db: DatabaseSync): void {
 
 /**
  * The `meta` key recording when the served-mirror prune last removed rows — the periodic item's own
- * record of its last run, read through `periodicDue` and written by `markPeriodicRun` (#87c).
+ * record of its last run, read through `due` and written by `markRun` (#87c).
  */
 const SERVED_PRUNE_META_KEY = "served_prune_at";
 
@@ -523,12 +515,12 @@ const SERVED_PRUNE_META_KEY = "served_prune_at";
  */
 function pruneExpiredMirrorRows(db: DatabaseSync): void {
   const now = Date.now();
-  if (!periodicDue(db, SERVED_PRUNE_META_KEY, SERVED_PRUNE_INTERVAL_MS, now)) return;
+  if (!due(db, SERVED_PRUNE_META_KEY, SERVED_PRUNE_INTERVAL_MS, now)) return;
   const cutoff = now - SERVED_TTL_MS;
   const stmts = servedStmts(db);
   if (!stmts.servedExpiredExists(cutoff)) return;
   stmts.servedPruneOlderThan(cutoff);
-  markPeriodicRun(db, SERVED_PRUNE_META_KEY, now);
+  markRun(db, SERVED_PRUNE_META_KEY, now);
 }
 
 onStoreOpen((db) => {

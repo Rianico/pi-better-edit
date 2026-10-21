@@ -4,7 +4,7 @@ import { DomainError } from "../domain-errors.js";
 import { SERVED_MAX_LINES } from "../constants.js";
 import type { HashSnapshotIO, HashSnapshotUpsertOptions } from "../snapshot-store";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
-import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
+import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS } from "./alphabet.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
 export { initHasher, HASH_LEN, ALPHA_RE, HASH_CLASS };

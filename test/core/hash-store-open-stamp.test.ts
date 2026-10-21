@@ -33,7 +33,8 @@ import {
   shutdownHashStore,
   type HashStore,
 } from "../../src/hash-store";
-import { HASH_STORE_VERSION, SERVED_PRUNE_INTERVAL_MS, SERVED_TTL_MS } from "../../src/constants";
+import { SERVED_PRUNE_INTERVAL_MS, SERVED_TTL_MS } from "../../src/constants";
+import { HASH_STORE_VERSION } from "../../src/store-kernel/index.js";
 import {
   ANCHOR_GENERATION,
   CANON_VERSION,

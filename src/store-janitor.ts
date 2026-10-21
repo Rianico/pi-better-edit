@@ -4,7 +4,7 @@
  * sweep, which this module REUSES rather than restates (see the exported `*_SQL` predicates there).
  *
  * WHAT ONE RUN DOES, in order, and why that order:
- * 1. THROTTLE — `periodicDue(db, JANITOR_META_KEY, intervalMs, now)`, the primitives the served-mirror
+ * 1. THROTTLE — `due(db, JANITOR_META_KEY, intervalMs, now)`, the primitives the served-mirror
  *    prune already uses (#87c). Not due means the run ends here, having issued no DELETE and no
  *    `PRAGMA quick_check`. The interval is resolved from the shared config ladder
  *    (`src/store-config.ts`), defaulting to a day.
@@ -15,7 +15,7 @@
  *    lock for its whole scan, so a rival writer waits on a maintenance pass; a loop of bounded
  *    statements releases the lock between batches and lets a rival interleave. The batch width
  *    defaults to 64, the width the snapshot store already deletes in (`STAT_BATCH`).
- * 3. MARK — `markPeriodicRun` records the run, and it is written BEFORE the deep check because a
+ * 3. MARK — `markRun` records the run, and it is written BEFORE the deep check because a
  *    detected failure may close this connection (step 4).
  * 4. DEEP CHECK — the open path's own `PRAGMA quick_check` (`isHealthy`, never reimplemented), on a
  *    store the fast path no longer checks (PR #101 replaced it there with the header smoke check).
@@ -51,15 +51,12 @@ import {
   FOREIGN_GENERATION_SNAPSHOT_SQL,
   ORPHAN_LINEAGE_SQL,
   healUnhealthyStore,
-  isBusyError,
   isHealthy,
   loadHashStore,
-  markPeriodicRun,
-  periodicDue,
   servedLeaseExpiryCutoff,
-  withBusyRetry,
 } from "./hash-store.js";
-import { resolveStoreJanitorSettings, type StoreJanitorSettings } from "./store-config.js";
+import { isBusyError, markRun, due, withBusyRetry } from "./store-kernel/index.js";
+import { resolveStoreJanitorSettings, type StoreJanitorSettings } from "./store-kernel/settings.js";
 import type { ConfigOnWarn } from "./json-config.js";
 import { VACUUM_RETIRED_PIN_MS } from "./snapshot-store";
 import { reportDiagnostic } from "./diagnostics.js";
@@ -206,7 +203,7 @@ export function runJanitor(input: {
 }): JanitorOutcome {
   const { db, now, settings } = input;
   if (settings.mode === "off") return skipped("off");
-  if (!periodicDue(db, JANITOR_META_KEY, settings.intervalMs, now)) return skipped("throttled");
+  if (!due(db, JANITOR_META_KEY, settings.intervalMs, now)) return skipped("throttled");
 
   const batchSize = settings.batchSize;
   // WHY: the generation family, in the sweep's own order: leases are swept before the snapshots they
@@ -227,7 +224,7 @@ export function runJanitor(input: {
   // WHY: "ran" means "did something", and a sweep that threw did not — so a failed sweep stays due
   // WHY: and is retried at the next lifecycle event instead of being hidden for a full interval.
   // WHY: the mark precedes the deep check because a detected failure may close this connection.
-  if (deletions !== undefined) markPeriodicRun(db, JANITOR_META_KEY, now);
+  if (deletions !== undefined) markRun(db, JANITOR_META_KEY, now);
 
   // WHY: the deep check runs even when the GC threw, and that ordering is the point of ticket #100:
   // WHY: a store whose pages are damaged is exactly a store the GC may fail on, and detection must

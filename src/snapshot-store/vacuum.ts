@@ -1,5 +1,6 @@
 import type { DatabaseSync } from "node:sqlite";
-import { getCached, withBusyRetry, RESOLVABLE_LEASE_SQL } from "../hash-store.js";
+import { RESOLVABLE_LEASE_SQL } from "../hash-store.js";
+import { getCached, withBusyRetry } from "../store-kernel/index.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import { reportDiagnostic } from "../diagnostics.js";
 

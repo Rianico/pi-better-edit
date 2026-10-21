@@ -6,15 +6,8 @@ import { CANON_VERSION, ANCHOR_GENERATION, canonDigest } from "../hashline/hash-
 import type { HashSnapshotUpsertOptions } from "./snapshot-io.js";
 import { DomainError } from "../domain-errors.js";
 import { splitLines } from "../utils.js";
-import {
-  loadHashStore,
-  onStoreOpen,
-  ensureSnapshotTables,
-  withStore,
-  withBusyRetry,
-  getCached,
-  type HashStore,
-} from "../hash-store.js";
+import { loadHashStore, onStoreOpen, ensureSnapshotTables, type HashStore } from "../hash-store.js";
+import { withStore, withBusyRetry, getCached } from "../store-kernel/index.js";
 import { deleteUndo } from "../undo-store.js";
 import {
   deleteServedByPath,

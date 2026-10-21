@@ -28,12 +28,12 @@ import {
   LENS_BRIDGE_ENV_VAR,
   type LensBridgeMode,
 } from "./config.js";
+import { saveStoreJanitorConfig } from "../../store-config.js";
 import {
   readStoreJanitorConfig,
   resolveStoreJanitorSettingsWithSources,
-  saveStoreJanitorConfig,
   STORE_JANITOR_ENV_VAR,
-} from "../../store-config.js";
+} from "../../store-kernel/settings.js";
 
 /** WHY a local theme: pi-tui 0.85.1 ships the interface but no factory, so identity styling keeps the rows legible without inventing border art. */
 function getSettingsListTheme(): SettingsListTheme {

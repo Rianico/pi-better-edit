@@ -6,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it } from "vitest";
 import { BASH_VIEW_ENV_VAR } from "../../../src/bash-view-config.js";
 import { LENS_BRIDGE_ENV_VAR } from "../../../src/integrations/pi-lens/config.js";
 import { SettingsOverlay } from "../../../src/integrations/pi-lens/settings-overlay.js";
-import { STORE_JANITOR_ENV_VAR } from "../../../src/store-config.js";
+import { STORE_JANITOR_ENV_VAR } from "../../../src/store-kernel/settings.js";
 
 let root = "";
 let projectDir = "";

@@ -25,9 +25,9 @@ import {
   snapshotHashFor,
 } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
-import { HASH_STORE_VERSION, SERVED_TTL_MS } from "../../src/constants";
+import { SERVED_TTL_MS } from "../../src/constants";
+import { HASH_STORE_VERSION } from "../../src/store-kernel/index.js";
 import { initHasher } from "../../src/hashline/hasher";
-import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { getWritableTempRoot, materializedLineHashes } from "../support/fixtures";
 
 let tmpHome: string;

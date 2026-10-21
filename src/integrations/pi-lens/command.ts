@@ -23,7 +23,7 @@ import { configDirOverride, hashStorePath, STORE_CONFIG_DIR_ENV_VAR } from "../.
 import {
   resolveStoreJanitorSettingsWithSources,
   STORE_JANITOR_KEY_NAMES,
-} from "../../store-config.js";
+} from "../../store-kernel/settings.js";
 import {
   BASH_VIEW_ENV_VAR,
   isBashViewMode,

@@ -13,11 +13,11 @@ import { DomainError } from "../../src/domain-errors.js";
 import { hashStorePath } from "../../src/hash-store.js";
 import { configDir } from "../../src/config-dir.js";
 import { CONFIG_REL, CONFIG_SCHEMA_ID, CONFIG_FILE_NAME } from "../../src/json-config.js";
+import { saveStoreJanitorConfig } from "../../src/store-config.js";
 import {
   readStoreJanitorConfig,
   resolveStoreJanitorSettings,
   resolveStoreJanitorSettingsWithSources,
-  saveStoreJanitorConfig,
   STORE_JANITOR_BATCH_DEFAULT,
   STORE_JANITOR_BATCH_ENV_VAR,
   STORE_JANITOR_DEFAULTS,
@@ -27,7 +27,7 @@ import {
   type StoreJanitorMode,
   type StoreJanitorScopeSettings,
   type StoreJanitorSettings,
-} from "../../src/store-config.js";
+} from "../../src/store-kernel/settings.js";
 
 let root = "";
 let projectDir = "";

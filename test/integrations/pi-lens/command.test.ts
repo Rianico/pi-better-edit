@@ -30,7 +30,7 @@ import {
   STORE_JANITOR_BATCH_DEFAULT,
   STORE_JANITOR_ENV_VAR,
   STORE_JANITOR_INTERVAL_DEFAULT_MS,
-} from "../../../src/store-config.js";
+} from "../../../src/store-kernel/settings.js";
 import { configDir } from "../../../src/config-dir.js";
 
 const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");

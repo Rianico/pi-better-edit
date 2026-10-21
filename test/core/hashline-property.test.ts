@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { contentOnlyHashes, lineHashes } from "../../src/hashline/hash-identity.js";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { applyEdit } from "../../src/hashline/apply.js";
 import { resEdit } from "../../src/hashline/resolve.js";
 import { firstNonEmpty, lastNonEmpty, splitLines } from "../../src/utils";

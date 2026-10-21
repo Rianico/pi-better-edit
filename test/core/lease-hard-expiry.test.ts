@@ -18,7 +18,10 @@ import {
   type HashStore,
 } from "../../src/hash-store";
 import { runJanitor } from "../../src/store-janitor";
-import { STORE_JANITOR_DEFAULTS, type StoreJanitorSettings } from "../../src/store-config";
+import {
+  STORE_JANITOR_DEFAULTS,
+  type StoreJanitorSettings,
+} from "../../src/store-kernel/settings.js";
 import { leaseSpanSource } from "../../src/mutation-engine/edit-source";
 import { sessionKeyFor } from "../../src/served-session/session";
 import { snapshotHashFor, upsertSnapshot, VACUUM_RETIRED_PIN_MS } from "../../src/snapshot-store";
