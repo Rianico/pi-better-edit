@@ -3,7 +3,7 @@ import { createReadTool, createReadToolDefinition } from "@earendil-works/pi-cod
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/pi-tui";
 import { Type } from "typebox";
-import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE, SERVED_MAX_LINES } from "./constants.js";
+import { MAX_READ_WINDOWS, SERVED_MAX_LINES } from "./constants.js";
 import { HASH_LEN } from "./hashline/alphabet.js";
 import type { ServedRow } from "./served-session/serve-render.js";
 import { loadHashStore, type HashStore } from "./hash-store.js";
@@ -18,10 +18,18 @@ import {
   type LFile,
   type PrepareResult,
 } from "./file-content/index.js";
-import { visibleLineTotal, walkLines } from "./file-content/line-walker.js";
+import {
+  DEFAULT_ANCHOR_RADIUS,
+  DEFAULT_WINDOW_LIMIT,
+  admitReadRequest,
+  planWindows,
+  type AdmittedRequest,
+  type AnchorResolver,
+  type RawReadParams,
+  type RenderMode,
+  type WindowPlan,
+} from "./file-content/admission.js";
 import { formatRangedServedHeader } from "./file-content/served-header.js";
-import { leaseSpanSource } from "./mutation-engine/edit-source.js";
-import { resolveLineIdentity } from "./hashline/resolve.js";
 import { toCwd } from "./paths.js";
 import { DomainError, withPayloadSubject } from "./domain-errors.js";
 import { notifyServedSpans, servedRowsToSpans } from "./served-spans.js";
@@ -40,71 +48,8 @@ export { fmtReadPreview } from "./file-content/preview.js";
 const R_DESC = loadP("../prompts/read.md");
 const R_SNIPPET = loadP("../prompts/read-snippet.md");
 
-/** Default `limit` for an `{ offset }` window that names none. */
-const DEFAULT_WINDOW_LIMIT = 50;
-/** `radius` default for `around_anchor` (spec §4.1/§4.3). */
-const DEFAULT_ANCHOR_RADIUS = 10;
-
 function readGuide(): string[] {
   return loadGuide("../prompts/read-guidelines.md");
-}
-
-// WHY: the builtin renderers key on `file_path ?? path` plus `offset`/`limit`; our payload
-// WHY: field is `file` (ADR-0041 D1/D4), but recorded history (`files`-shaped per ADR-0040, or a
-// WHY: legacy `file`/`path` caller per ADR-0040 D3) must still render, so the seam accepts every
-// WHY: key. The D5 fallback order is exactly `file ?? path ?? files?.[0]?.file`.
-type ReadRenderWindowTarget = {
-  offset?: number;
-  limit?: number;
-  around_anchor?: string;
-  radius?: number;
-};
-type ReadRenderArgs = {
-  file?: string;
-  path?: string;
-  windows?: ReadonlyArray<ReadRenderWindowTarget>;
-  mode?: string;
-  /** Retired outer shape (ADR-0040): history tolerance only, never produced anymore. */
-  files?: ReadonlyArray<{ file?: string }>;
-};
-/** Project the flat single-file payload onto the builtin renderer's keys (ADR-0041 D4/D5).
- * Path is the call's own `file`, falling back through recorded-history shapes for rendering
- * only. A range is derived only from exactly one simple `{ offset, limit }` window; anything
- * else (multi-window, `around_anchor`) leaves the range absent rather than fabricating one.
- * A multi-window call additionally reports its window count, which the caller appends to the
- * call line. The result is a new object — `context.args` is never mutated. */
-function projectReadRenderArgs(args: ReadRenderArgs | undefined): {
-  path: string | undefined;
-  offset?: number;
-  limit?: number;
-  windowsCount?: number;
-} {
-  const windowCount = args?.windows?.length ?? 0;
-  const only = windowCount === 1 ? args!.windows![0] : undefined;
-  const ranged =
-    typeof only?.offset === "number" && typeof only?.limit === "number" ? only : undefined;
-  return {
-    path: args?.file ?? args?.path ?? args?.files?.[0]?.file,
-    ...(ranged !== undefined ? { offset: ranged.offset, limit: ranged.limit } : {}),
-    ...(windowCount >= 2 ? { windowsCount: windowCount } : {}),
-  };
-}
-
-/** Render mode of one file: `served` (anchored rows) or `verbatim` (plain text, no leases). */
-type RenderMode = "served" | "verbatim";
-
-/** A line window of one file, in the reader's 1-indexed terms (spec §4.1). */
-interface OffsetWindow {
-  offset: number;
-  limit: number;
-}
-
-/** A window anchored to a line identity this session served (spec §4.1). */
-interface AnchorWindow {
-  /** The anchor this window centres on, `${HASH_LEN}` characters wide. */
-  anchor: string;
-  /** Lines before and after the anchor's line. */
-  radius: number;
 }
 
 const renderModeSchema = Type.Union([Type.Literal("served"), Type.Literal("verbatim")], {
@@ -164,166 +109,45 @@ export const readToolSchema = Type.Object({
   mode: Type.Optional(renderModeSchema),
 });
 
-type RawReadParams = Record<string, unknown>;
-
-/** One admitted window: an offset window, or an anchor window not yet resolved to one. */
-type AdmittedWindow =
-  | { kind: "offset"; offset: number; limit: number }
-  | { kind: "anchor"; anchor: string; radius: number };
-
-interface AdmittedRequest {
-  file: string;
-  /** Absent when the request named no windows (`undefined` and `[]` both read from line 1). */
-  windows?: AdmittedWindow[];
-  mode: RenderMode;
-}
-
-function badPayload(message: string): DomainError {
-  return new DomainError("E_BAD_PAYLOAD", { message });
-}
-
-function positiveInt(value: unknown, name: string): number {
-  if (!Number.isInteger(value) || (value as number) < 1) {
-    throw badPayload(`Read request field "${name}" must be a positive integer.`);
-  }
-  return value as number;
-}
-
-/**
- * Admits a render mode. An out-of-union mode fails closed HERE, not only in schema validation: the
- * tool's exhaustiveness guard (read verbatim's contract test) runs `execute` without a validator.
- */
-function admitMode(value: unknown): RenderMode | undefined {
-  if (value === undefined) return undefined;
-  if (value === "served" || value === "verbatim") return value;
-  // WHY: `assertNever` carries the union's exhaustiveness to runtime and keeps the wording the
-  // WHY: schema rejection uses for the same payload.
-  return assertNever(value as never);
-}
-
-function admitWindow(window: unknown, label: string): AdmittedWindow {
-  if (window === null || typeof window !== "object") {
-    throw badPayload(`Read request field "${label}" must be an object.`);
-  }
-  const raw = window as RawReadParams;
-  if (raw.around_anchor !== undefined) {
-    const anchor = raw.around_anchor;
-    if (typeof anchor !== "string" || anchor.length !== HASH_LEN) {
-      throw badPayload(
-        `Read request field "${label}.around_anchor" must be a ${HASH_LEN}-character anchor.`,
-      );
-    }
-    const radius = raw.radius === undefined ? DEFAULT_ANCHOR_RADIUS : raw.radius;
-    return { kind: "anchor", anchor, radius: positiveInt(radius, `${label}.radius`) };
-  }
-  const offset = positiveInt(raw.offset, `${label}.offset`);
-  // WHY: an offset with no limit still names a window, so it takes the canonical default size
-  const limit =
-    raw.limit === undefined ? DEFAULT_WINDOW_LIMIT : positiveInt(raw.limit, `${label}.limit`);
-  return { kind: "offset", offset, limit };
-}
-
-/**
- * Admission for the flat single-file shape (ADR-0041 D1): validates the file, every window,
- * and the window cap. A payload without `file` was already rejected by the schema; the check
- * below is the safety net for callers that bypass validation.
- */
-function admitReadRequest(params: RawReadParams): AdmittedRequest {
-  const mode = admitMode(params.mode) ?? "served";
-  const file = params.file;
-  if (typeof file !== "string" || file === "") {
-    throw badPayload('Read request field "file" must be a non-empty path.');
-  }
-  const rawWindows = params.windows;
-  if (rawWindows !== undefined && !Array.isArray(rawWindows)) {
-    throw badPayload('Read request field "windows" must be an array.');
-  }
-  const windows =
-    rawWindows === undefined || rawWindows.length === 0
-      ? undefined
-      : rawWindows.map((window, windowIndex) => admitWindow(window, `windows[${windowIndex}]`));
-  // WHY: the schema's `maxItems` and this guard enforce the same cap for validated and
-  // WHY: unvalidated callers alike — window count is what multiplies the auto-read budget.
-  if ((windows?.length ?? 0) > MAX_READ_WINDOWS) {
-    throw badPayload(MAX_READ_WINDOWS_MESSAGE);
-  }
-  return { file, ...(windows !== undefined ? { windows } : {}), mode };
-}
-
-/** The inline warning one unresolvable anchor window leaves behind (spec §4.3). */
-function anchorWarning(anchor: string): string {
-  return `[Window warning: Anchor '${anchor}' not found; window omitted]`;
-}
-
-/** What one file's requested windows became: the windows to walk, the warnings, and the flags. */
-interface WindowPlan {
-  /** The offset windows the preview walks, or `undefined` for a file that named no windows. */
-  windows: OffsetWindow[] | undefined;
-  /** One warning per unresolvable anchor window, in request order. */
-  warnings: string[];
-  /** The request named windows but none survived: the file renders its warnings alone. */
-  omittedAll: boolean;
-}
-
-/** The identity seam an anchor window resolves against: the file's current content and its leases. */
-interface AnchorResolver {
-  sessionKey: string;
-  absolutePath: string;
-  normalized: string;
-  store: import("./hash-store.js").HashStore;
-}
-
-/**
- * Resolves `around_anchor` against the file's ACTIVE lineage for the session (spec §4.3): a served
- * lease names a `line_id`, `resolveLineIdentity` says where that identity lives now, and the window
- * is `line ± radius` clamped to the file. Unknown, expired or foreign anchors all resolve to
- * `undefined` — the caller emits one warning and lets the remaining windows proceed.
- */
-function resolveAnchorWindow(
-  window: AnchorWindow,
-  resolver: AnchorResolver,
-): OffsetWindow | undefined {
-  const source = leaseSpanSource({
-    store: resolver.store,
-    sessionKey: resolver.sessionKey,
-    absolutePath: resolver.absolutePath,
-    content: resolver.normalized,
-  });
-  const lease = source.leaseFor(window.anchor);
-  // WHY: no lease for this file is the whole warning (spec §4.3): an unknown anchor, one this session
-  // WHY: holds for another file, and a foreign-generation row all fail closed the same way, and the
-  // WHY: specification pins one wording for all three — so no homes lookup is needed to say it.
-  if (lease === undefined) return undefined;
-  const decision = resolveLineIdentity(lease, source);
-  if (decision.kind !== "line") return undefined;
-  const totalLines = visibleLineTotal(resolver.normalized, walkLines(resolver.normalized).total);
-  if (totalLines === 0) return undefined;
-  const start = Math.max(1, decision.line - window.radius);
-  const end = Math.min(totalLines, decision.line + window.radius);
-  return { offset: start, limit: end - start + 1 };
-}
-
-/** Turns a file's requested windows into the offset windows to walk, resolving anchors along the way. */
-function planWindows(target: AdmittedRequest, resolver: AnchorResolver | undefined): WindowPlan {
-  const requested = target.windows;
-  if (requested === undefined) return { windows: undefined, warnings: [], omittedAll: false };
-  const windows: OffsetWindow[] = [];
-  const warnings: string[] = [];
-  for (const window of requested) {
-    if (window.kind === "offset") {
-      windows.push({ offset: window.offset, limit: window.limit });
-      continue;
-    }
-    // WHY: an anchor window can only resolve against served lineage; a non-text or anchor-less load
-    // WHY: leaves it unresolved, which is the same "not found" the model has to re-read past.
-    const resolved = resolver === undefined ? undefined : resolveAnchorWindow(window, resolver);
-    if (resolved === undefined) {
-      warnings.push(anchorWarning(window.anchor));
-      continue;
-    }
-    windows.push(resolved);
-  }
-  return { windows, warnings, omittedAll: windows.length === 0 && warnings.length > 0 };
+// WHY: the builtin renderers key on `file_path ?? path` plus `offset`/`limit`; our payload
+// WHY: field is `file` (ADR-0041 D1/D4), but recorded history (`files`-shaped per ADR-0040, or a
+// WHY: legacy `file`/`path` caller per ADR-0040 D3) must still render, so the seam accepts every
+// WHY: key. The D5 fallback order is exactly `file ?? path ?? files?.[0]?.file`.
+type ReadRenderWindowTarget = {
+  offset?: number;
+  limit?: number;
+  around_anchor?: string;
+  radius?: number;
+};
+type ReadRenderArgs = {
+  file?: string;
+  path?: string;
+  windows?: ReadonlyArray<ReadRenderWindowTarget>;
+  mode?: string;
+  /** Retired outer shape (ADR-0040): history tolerance only, never produced anymore. */
+  files?: ReadonlyArray<{ file?: string }>;
+};
+/** Project the flat single-file payload onto the builtin renderer's keys (ADR-0041 D4/D5).
+ * Path is the call's own `file`, falling back through recorded-history shapes for rendering
+ * only. A range is derived only from exactly one simple `{ offset, limit }` window; anything
+ * else (multi-window, `around_anchor`) leaves the range absent rather than fabricating one.
+ * A multi-window call additionally reports its window count, which the caller appends to the
+ * call line. The result is a new object — `context.args` is never mutated. */
+function projectReadRenderArgs(args: ReadRenderArgs | undefined): {
+  path: string | undefined;
+  offset?: number;
+  limit?: number;
+  windowsCount?: number;
+} {
+  const windowCount = args?.windows?.length ?? 0;
+  const only = windowCount === 1 ? args!.windows![0] : undefined;
+  const ranged =
+    typeof only?.offset === "number" && typeof only?.limit === "number" ? only : undefined;
+  return {
+    path: args?.file ?? args?.path ?? args?.files?.[0]?.file,
+    ...(ranged !== undefined ? { offset: ranged.offset, limit: ranged.limit } : {}),
+    ...(windowCount >= 2 ? { windowsCount: windowCount } : {}),
+  };
 }
 
 interface PreparedTarget {
