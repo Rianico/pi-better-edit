@@ -10,8 +10,9 @@ import { join } from "node:path";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import { DomainError } from "../../src/domain-errors.js";
-import { configDir, hashStorePath } from "../../src/hash-store.js";
-import { CONFIG_REL, CONFIG_SCHEMA_ID } from "../../src/json-config.js";
+import { hashStorePath } from "../../src/hash-store.js";
+import { configDir } from "../../src/config-dir.js";
+import { CONFIG_REL, CONFIG_SCHEMA_ID, CONFIG_FILE_NAME } from "../../src/json-config.js";
 import {
   readStoreJanitorConfig,
   resolveStoreJanitorSettings,
@@ -44,7 +45,7 @@ const ALL_ENV_VARS = [
 ] as const;
 
 const projectConfigPath = (): string => join(projectDir, CONFIG_REL);
-const globalConfigPath = (): string => join(homeDir, CONFIG_REL);
+const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
 
 async function seedProjectConfig(value: unknown): Promise<void> {
   await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
@@ -52,7 +53,7 @@ async function seedProjectConfig(value: unknown): Promise<void> {
 }
 
 async function seedGlobalConfig(value: unknown): Promise<void> {
-  await mkdir(join(homeDir, ".pi", "agents"), { recursive: true });
+  await mkdir(configDir(), { recursive: true });
   await writeFile(globalConfigPath(), JSON.stringify(value), "utf-8");
 }
 
@@ -75,6 +76,7 @@ afterEach(async () => {
   if (savedHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedHome;
   for (const name of ALL_ENV_VARS) delete process.env[name];
+  await rm(globalConfigPath(), { force: true });
   await rm(root, { recursive: true, force: true });
 });
 
@@ -198,7 +200,7 @@ describe("resolveStoreJanitorSettings — a broken file degrades with a warning"
 
   it("warns once per scope that exists but cannot be used, and names each file", async () => {
     await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
-    await mkdir(join(homeDir, ".pi", "agents"), { recursive: true });
+    await mkdir(configDir(), { recursive: true });
     await writeFile(projectConfigPath(), "]]]", "utf-8");
     await writeFile(globalConfigPath(), '{"store": ', "utf-8");
 

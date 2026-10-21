@@ -14,6 +14,7 @@ import {
 import { dirname, join, parse, resolve, sep } from "node:path";
 import { DomainError } from "./domain-errors.js";
 import { errCode } from "./utils.js";
+import { reportDiagnostic } from "./diagnostics.js";
 
 export async function resolveTarget(path: string): Promise<string> {
   if (path.includes("\0"))
@@ -94,12 +95,12 @@ async function sweepStaleTemps(dir: string): Promise<void> {
         }
       } catch (error: unknown) {
         // SAFETY: best-effort stale temp cleanup — inspect failures are ignored; temp files are single-writer UUID names and will be retried on next sweep, no caller depends on removal.
-        console.error("[fs-write] failed to inspect stale temp", error);
+        reportDiagnostic("fs-write", "[fs-write] failed to inspect stale temp", error);
       }
     }
   } catch (error: unknown) {
     // SAFETY: best-effort stale temp sweep — readdir failures are ignored; sweep is opportunistic cleanup, writeAtomic proceeds regardless.
-    console.error("[fs-write] failed to sweep stale temps", error);
+    reportDiagnostic("fs-write", "[fs-write] failed to sweep stale temps", error);
   }
 }
 
@@ -114,7 +115,7 @@ async function syncDir(dir: string): Promise<void> {
     }
   } catch (error: unknown) {
     // SAFETY: best-effort directory sync — sync failures after atomic rename are ignored; file is already persisted, sync is durability optimization.
-    console.error("[fs-write] failed to sync directory", error);
+    reportDiagnostic("fs-write", "[fs-write] failed to sync directory", error);
   }
 }
 
@@ -178,7 +179,7 @@ export async function writeAtomic(path: string, content: string | Buffer): Promi
     try {
       await rm(tempPath, { force: true });
     } catch (error: unknown) {
-      console.error("[fs-write] failed to remove temp file", error);
+      reportDiagnostic("fs-write", "[fs-write] failed to remove temp file", error);
     }
     throw error;
   }
@@ -195,14 +196,14 @@ export async function writeAtomic(path: string, content: string | Buffer): Promi
         try {
           await rm(tempPath, { force: true });
         } catch (error: unknown) {
-          console.error("[fs-write] failed to remove temp file", error);
+          reportDiagnostic("fs-write", "[fs-write] failed to remove temp file", error);
         }
       }
     }
     try {
       await rm(tempPath, { force: true });
     } catch (error: unknown) {
-      console.error("[fs-write] failed to remove temp file", error);
+      reportDiagnostic("fs-write", "[fs-write] failed to remove temp file", error);
     }
     throw error;
   }

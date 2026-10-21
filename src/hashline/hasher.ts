@@ -1,5 +1,6 @@
 // SAFETY: large-class — hasher module owns single wasm instance and helpers as cohesive unit; no split needed.
 import xxhash from "xxhash-wasm";
+import { reportDiagnostic } from "../diagnostics.js";
 
 export type Hasher = {
   h32(input: string, seed?: number): number;
@@ -23,7 +24,7 @@ const hasherP: Promise<Hasher> = xxhash()
     return hasher;
   })
   .catch((err: unknown) => {
-    console.error("xxhash-wasm initialization failed:", err);
+    reportDiagnostic("hashline", "xxhash-wasm initialization failed:", err);
     throw err;
   });
 

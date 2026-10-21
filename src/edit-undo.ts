@@ -24,6 +24,7 @@ import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError, withPayloadSubject } from "./domain-errors.js";
 import { ANCHOR_GENERATION, changedRange, lineHashes } from "./hashline/index.js";
 import { denseServeRows, type ServedRow } from "./hashline/served.js";
+import { reportDiagnostic } from "./diagnostics.js";
 export interface UndoEntry {
   content: string;
   bom: string;
@@ -77,7 +78,7 @@ export async function saveUndo(
     });
   } catch (error) {
     // SAFETY: typed error handling — persist failure returns { persisted: false } and caller throws E_UNDO_UNAVAILABLE; logging preserves cause, not silent undefined, downstream handles rejection.
-    console.error("Failed to persist undo entry:", error);
+    reportDiagnostic("edit-undo", "Failed to persist undo entry:", error);
     return { persisted: false, restore: async () => undefined };
   }
   return {
@@ -88,7 +89,7 @@ export async function saveUndo(
         else await removeUndo(path);
       } catch (error) {
         // SAFETY: best-effort undo restore — failures to restore previous undo entry after persist failure are ignored; edit already failed and will report E_UNDO_UNAVAILABLE, stale undo state is recoverable on next edit.
-        console.error("Failed to restore previous undo entry:", error);
+        reportDiagnostic("edit-undo", "Failed to restore previous undo entry:", error);
       }
     },
   };
@@ -115,7 +116,7 @@ export async function getUndo(path: string): Promise<UndoEntry | undefined> {
     };
   } catch (error) {
     // SAFETY: best-effort undo load — failures return undefined (no history) and caller reports "No undo history"; stale or corrupt store is recoverable on next edit, not silent undefined without log.
-    console.error("Failed to load undo entry:", error);
+    reportDiagnostic("edit-undo", "Failed to load undo entry:", error);
     return undefined;
   }
 }
@@ -125,7 +126,7 @@ export async function clearUndo(path: string): Promise<void> {
     await removeUndo(path);
   } catch (error) {
     // SAFETY: best-effort undo cleanup — clearUndo failures are ignored; stale undo entry will be overwritten on next edit or pruned, file content already correct.
-    console.error("Failed to clear undo entry:", error);
+    reportDiagnostic("edit-undo", "Failed to clear undo entry:", error);
   }
 }
 
@@ -310,7 +311,7 @@ async function undoCorrelatedTransaction(
           // SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo
           // SAFETY: falls back to the stored current-generation hashes (or a fresh
           // SAFETY: file-scoped derivation for a legacy row); the file restore and diff stay valid.
-          console.error("Failed to load anchors for undo restore:", error);
+          reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
           restoredHashes = storedIsCurrentGeneration
             ? member.hashes
             : await lineHashes(member.content, member.absolutePath);
@@ -396,7 +397,11 @@ async function undoCorrelatedTransaction(
               await writeAtomic(rest.member.absolutePath, rest.restoreBytes);
               reverted.add(rest.member.absolutePath);
             } catch (completionError) {
-              console.error("Failed to complete the interrupted revert:", completionError);
+              reportDiagnostic(
+                "edit-undo",
+                "Failed to complete the interrupted revert:",
+                completionError,
+              );
               defeated ??= rest.member;
             }
           }
@@ -459,7 +464,7 @@ async function undoCorrelatedTransaction(
         } catch (error) {
           // SAFETY: section 3.6.2 post-write semantics — the bytes are back on disk, so the member
           // SAFETY: is never rolled forward again; the store re-materializes on the next read.
-          console.error("Failed to commit the undo restore transaction:", error);
+          reportDiagnostic("edit-undo", "Failed to commit the undo restore transaction:", error);
           deferredSyncWarnings.push(DEFERRED_STORE_SYNC_WARNING);
         }
 
@@ -483,7 +488,7 @@ async function undoCorrelatedTransaction(
       } catch (error) {
         // SAFETY: every byte and both row clears committed — an orphan revert intent resolves to
         // SAFETY: "every member at pre" on the next run and retires itself; the undo stands.
-        console.error("Failed to clear the revert intent after commit:", error);
+        reportDiagnostic("edit-undo", "Failed to clear the revert intent after commit:", error);
       }
 
       const names = members.map((m) => m.displayPath).join(", ");
@@ -593,7 +598,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
             // SAFETY: escape between writes leaves a half-reverted set that repair resolves.
             // WHY: the trace precedes BOTH exits, since a payload-shaped refusal returns early.
             // WHY: The operator must still see the unexpected failure that produced it.
-            console.error("Unexpected failure in correlated undo:", error);
+            reportDiagnostic("edit-undo", "Unexpected failure in correlated undo:", error);
             // WHY: the subject must be stamped BEFORE the E_UNKNOWN envelope below, or that
             // WHY: conversion would replace the tool's own name and hide which call to repair.
             const stamped = withPayloadSubject(error, "undo_last_edit");
@@ -699,7 +704,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
             // SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo
             // SAFETY: falls back to the stored current-generation hashes (or a fresh
             // SAFETY: file-scoped derivation for a legacy row); the file restore and diff stay valid.
-            console.error("Failed to load anchors for undo restore:", error);
+            reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
             restoredHashes = storedIsCurrentGeneration
               ? undo.hashes
               : await lineHashes(undo.content, mutationTargetPath);
@@ -789,7 +794,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
             // SAFETY: §3.6.2 post-write semantics — the restore transaction failed AFTER `writeAtomic`
             // SAFETY: put the bytes back, so the file is never rolled back. The result still reports
             // SAFETY: success and names the deferred synchronization; the next call re-materializes.
-            console.error("Failed to commit the undo restore transaction:", error);
+            reportDiagnostic("edit-undo", "Failed to commit the undo restore transaction:", error);
             deferredSyncWarnings.push(DEFERRED_STORE_SYNC_WARNING);
           }
 

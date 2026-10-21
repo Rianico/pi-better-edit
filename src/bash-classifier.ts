@@ -951,6 +951,13 @@ function parseViewSegment(node: Command | Pipeline): ViewSeg | SearchSeg | undef
       ...(source.lineNumbered === true ? { lineNumbered: true } : {}),
     };
   }
+  // WHY: the signature says Command | Pipeline, but `unbash` puts every statement kind in
+  // WHY: AndOr.commands; a compound operand has neither `operators` nor `commands` and must
+  // WHY: fail closed here instead of throwing out of the tool_result hook.
+  const pipelineShape = node as { operators?: unknown; commands?: unknown };
+  if (!Array.isArray(pipelineShape.operators) || !Array.isArray(pipelineShape.commands)) {
+    return undefined;
+  }
   if (node.operators.some((op) => op !== "|")) return undefined;
   if (node.commands.length < 2 || node.commands.length > BASH_VIEW_MAX_PIPELINE_STAGES) {
     return undefined;

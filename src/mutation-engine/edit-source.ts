@@ -20,6 +20,7 @@ import {
 import { snapshotHashFor, positionsByIdentity, isCurrentAnchorGeneration } from "../snapshot-store";
 import { DomainError } from "../domain-errors.js";
 import { identityPositions } from "./batch-span-gate.js";
+import { reportDiagnostic } from "../diagnostics.js";
 
 export interface EditFileSource {
   path: string;
@@ -60,17 +61,17 @@ export async function loadEditFile(source: EditFileSource): Promise<LoadedEditFi
     try {
       blockedHashes = await handle.loadBlockedHashes();
     } catch (error) {
-      console.error("Failed to load legacy blocked hashes for edit:", error);
+      reportDiagnostic("mutation-engine", "Failed to load legacy blocked hashes for edit:", error);
       blockedHashes = new Set<string>();
     }
     try {
       canonDigests = await handle.loadCanonDigests();
     } catch (error) {
-      console.error("Failed to load served canon digests for edit:", error);
+      reportDiagnostic("mutation-engine", "Failed to load served canon digests for edit:", error);
       canonDigests = [];
     }
   } catch (error) {
-    console.error("Failed to load served state for edit:", error);
+    reportDiagnostic("mutation-engine", "Failed to load served state for edit:", error);
   }
   return {
     normalized,

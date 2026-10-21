@@ -27,6 +27,7 @@ import {
 import { vacuumSnapshots } from "../snapshot-store";
 import type { ServedRow } from "../hashline/served.js";
 import type { ServeRecordPolicy, ServedEntry } from "./types.js";
+import { reportDiagnostic } from "../diagnostics.js";
 
 // WHY: --- sessionKey authority (kept here; served-state re-exports for compat) ---
 
@@ -447,7 +448,7 @@ export function ensureServedSchema(db: DatabaseSync): void {
   } catch (error) {
     // SAFETY: best-effort v6 migration — a failed ALTER leaves the legacy mirror unmigrated;
     // SAFETY: the store open still succeeds and later reads re-attempt the additive migration.
-    console.error("Failed to migrate served schema:", error);
+    reportDiagnostic("served-session", "Failed to migrate served schema:", error);
   }
 }
 
@@ -684,7 +685,11 @@ function writeServeRecord(
       writeServeMirrorInner(store, sessionKey, path, rows, shape);
     });
   } catch (error) {
-    console.error(`Failed to record ${shape ? "truncated " : ""}served rows:`, error);
+    reportDiagnostic(
+      "served-session",
+      `Failed to record ${shape ? "truncated " : ""}served rows:`,
+      error,
+    );
     throw error;
   }
   // WHY: identity is granted independently of the legacy mirror: a no-op mirror re-serve still
@@ -736,7 +741,7 @@ function grantLeasesForRows(
   } catch (error) {
     // SAFETY: best-effort lease grant — serves are already recorded and the tool result is valid;
     // SAFETY: a missed lease degrades to the fail-closed path the next edit would take anyway.
-    console.error("Failed to grant served leases:", error);
+    reportDiagnostic("served-session", "Failed to grant served leases:", error);
   }
 }
 

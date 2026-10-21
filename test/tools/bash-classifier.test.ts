@@ -243,6 +243,31 @@ describe("bash-classifier fail-closed matrix", () => {
     expect(reasonOf("! cat f")).toBe("compound-top");
   });
 
+  it("fails closed on compound AndOr operands without crashing", () => {
+    // WHY: `unbash` types AndOr.commands as Command[] but parses ANY statement kind into it;
+    // WHY: a `cd x && for …; do …; done` chain pushed a For node into the walk and threw
+    // WHY: `Cannot read properties of undefined (reading 'some')` out of the tool_result hook.
+    for (const command of [
+      "cd . && for f in a; do echo $f; done",
+      "cd . && if true; then cat f; fi",
+      "cd . && while false; do :; done",
+      "cd . && time cat f",
+      "cd . && { cat f; }",
+      "cd . && (cat f)",
+      "cd . && case x in x) cat f;; esac",
+      "cd . && f() { cat f; }; f",
+      "[[ -f f ]] && cat f",
+      "for f in a; do echo $f; done && echo done",
+      "cd . && true && for f in a; do echo $f; done",
+    ]) {
+      expect(() => classifyBashCommand(command)).not.toThrow();
+      expect(reasonOf(command)).toBe("compound-andor-operand");
+    }
+    // WHY: the guard must not sweep up the admitted chain shapes beside it.
+    expect(viewOf("cd sub && cat f").filePath).toBe("f");
+    expect(reasonOf("cat f && cat g")).toBe("multi-view");
+  });
+
   it("passes through unsafe chain segments", () => {
     // WHY: (ADR-0039 D6) a literal print beside a view is glue in an admitted compound — the
     // WHY: envelope (separately) verifies the predicted bytes against observed stdout, and the

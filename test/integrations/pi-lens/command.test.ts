@@ -1,3 +1,4 @@
+import { CONFIG_FILE_NAME } from "../../../src/json-config.js";
 import { existsSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -14,6 +15,7 @@ import {
   saveLensBridgeConfig,
 } from "../../../src/integrations/pi-lens/config.js";
 import { DomainError } from "../../../src/domain-errors.js";
+import { clearDiagnostics, readDiagnostics } from "../../support/fixtures.js";
 
 // WHY: (Issue #94) the catch's channel mapping is the unit under test, and no production input
 // WHY: makes a dependency of this command throw a DomainError — that unreachability is the fix's
@@ -29,6 +31,7 @@ import {
   STORE_JANITOR_ENV_VAR,
   STORE_JANITOR_INTERVAL_DEFAULT_MS,
 } from "../../../src/store-config.js";
+import { configDir } from "../../../src/config-dir.js";
 
 const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");
 const SETTLED_CHOICES = [
@@ -57,7 +60,7 @@ const savedStoreDir = process.env.PI_BETTER_EDIT_CONFIG_DIR;
 let previousBridge: unknown;
 
 const projectConfigPath = (): string => join(projectDir, LENS_CONFIG_REL);
-const globalConfigPath = (): string => join(homeDir, LENS_CONFIG_REL);
+const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
 
 function captureCommand(): { name: string; options: CommandOptions } {
   let name: string | undefined;
@@ -131,6 +134,7 @@ afterEach(async () => {
   delete process.env[STORE_JANITOR_ENV_VAR];
   if (savedStoreDir === undefined) delete process.env.PI_BETTER_EDIT_CONFIG_DIR;
   else process.env.PI_BETTER_EDIT_CONFIG_DIR = savedStoreDir;
+  await rm(globalConfigPath(), { force: true });
   await rm(root, { recursive: true, force: true });
 });
 
@@ -175,12 +179,12 @@ describe("registerLensCommand", () => {
     expect(text).toContain("effective: auto");
     expect(text).toContain("io bridge detected: no");
     expect(text).toContain(`project (${LENS_CONFIG_REL}): unset`);
-    expect(text).toContain(`global (~/${LENS_CONFIG_REL}): unset`);
+    expect(text).toContain(`global (${globalConfigPath()}): unset`);
     expect(text).toContain(`env ${LENS_BRIDGE_ENV_VAR}: unset`);
     expect(text).toContain("precedence: env > project > global > auto");
 
     installBridge();
-    await mkdir(join(homeDir, ".pi", "agents"), { recursive: true });
+    await mkdir(configDir(), { recursive: true });
     await writeFile(globalConfigPath(), JSON.stringify({ lens: { bridge: "off" } }), "utf-8");
     process.env[LENS_BRIDGE_ENV_VAR] = "on";
     notifications.length = 0;
@@ -191,7 +195,7 @@ describe("registerLensCommand", () => {
     const next = notifications[0] ?? "";
     expect(next).toContain("effective: on");
     expect(next).toContain("io bridge detected: yes");
-    expect(next).toContain(`global (~/${LENS_CONFIG_REL}): off`);
+    expect(next).toContain(`global (${globalConfigPath()}): off`);
     expect(next).toContain(`env ${LENS_BRIDGE_ENV_VAR}: on`);
   });
 
@@ -316,7 +320,7 @@ describe("registerLensCommand", () => {
   it("keeps a DomainError's model envelope out of the user channel and logs it instead", async () => {
     const { options } = captureCommand();
     const { ctx, notifications } = fakeCtx({ hasUI: true, cwd: projectDir });
-    const logged = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    clearDiagnostics();
     vi.mocked(saveLensBridgeConfig).mockImplementationOnce(() => {
       throw new DomainError("E_INTERNAL_INVARIANT", { message: "simulated invariant failure" });
     });
@@ -329,19 +333,23 @@ describe("registerLensCommand", () => {
     expect(notifications[0]).not.toContain("simulated invariant failure");
     // WHY: the envelope is not dropped, only re-routed: the log keeps the code and the cause,
     // WHY: which is what makes the user-facing sentence safe to be vague.
-    const logText = logged.mock.calls.flat().join("\n");
-    expect(logText).toContain("pi-better-edit: [MODEL] [E_INTERNAL_INVARIANT]");
-    expect(logText).toContain("simulated invariant failure");
+    // WHY: the envelope is not dropped, only re-routed: the diagnostics log keeps the code and the
+    // WHY: cause, which is what makes the user-facing sentence safe to be vague — and keeps the
+    // WHY: stack trace out of the terminal frame Pi's renderer owns.
+    const record = readDiagnostics().find((entry) =>
+      entry.message.includes("pi-better-edit: [MODEL] [E_INTERNAL_INVARIANT]"),
+    );
+    expect(record).toBeDefined();
+    expect(record?.error?.message).toContain("simulated invariant failure");
     // WHY: the double refuses before any write, so a failed command must leave no config.
     expect(existsSync(projectConfigPath())).toBe(false);
-    logged.mockRestore();
   });
   describe("status output — the store section (#90)", () => {
     const LENS_LINES = [
       "pi-better-edit lens bridge",
       "  effective: auto",
       `  project (${LENS_CONFIG_REL}): unset`,
-      `  global (~/${LENS_CONFIG_REL}): unset`,
+      `  global (${globalConfigPath()}): unset`,
       `  env ${LENS_BRIDGE_ENV_VAR}: unset`,
       "  precedence: env > project > global > auto",
     ] as const;
@@ -389,7 +397,7 @@ describe("registerLensCommand", () => {
     });
 
     it("labels the rung that won per key, so one rung never masks another", async () => {
-      await mkdir(join(homeDir, ".pi", "agents"), { recursive: true });
+      await mkdir(configDir(), { recursive: true });
       await writeFile(
         globalConfigPath(),
         JSON.stringify({ store: { janitorBatchSize: 8 } }),

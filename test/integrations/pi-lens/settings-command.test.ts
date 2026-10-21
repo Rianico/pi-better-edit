@@ -15,8 +15,9 @@ import { BASH_VIEW_ENV_VAR } from "../../../src/bash-view-config.js";
 import { registerLensCommand } from "../../../src/integrations/pi-lens/command.js";
 import { LENS_BRIDGE_ENV_VAR } from "../../../src/integrations/pi-lens/config.js";
 import { SettingsOverlay } from "../../../src/integrations/pi-lens/settings-overlay.js";
-import { CONFIG_REL } from "../../../src/json-config.js";
+import { CONFIG_REL, CONFIG_FILE_NAME } from "../../../src/json-config.js";
 import { STORE_JANITOR_ENV_VAR } from "../../../src/store-config.js";
+import { configDir } from "../../../src/config-dir.js";
 
 interface CommandOptions {
   description?: string;
@@ -30,7 +31,7 @@ let homeDir = "";
 const savedHome = process.env.HOME;
 
 const projectConfigPath = (): string => join(projectDir, CONFIG_REL);
-const globalConfigPath = (): string => join(homeDir, CONFIG_REL);
+const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
 
 function captureCommand(): { name: string; options: CommandOptions } {
   let name: string | undefined;
@@ -108,6 +109,7 @@ afterEach(async () => {
   delete process.env[LENS_BRIDGE_ENV_VAR];
   delete process.env[BASH_VIEW_ENV_VAR];
   delete process.env[STORE_JANITOR_ENV_VAR];
+  await rm(globalConfigPath(), { force: true });
   await rm(root, { recursive: true, force: true });
 });
 

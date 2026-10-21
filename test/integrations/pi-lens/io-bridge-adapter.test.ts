@@ -1,3 +1,4 @@
+import { CONFIG_FILE_NAME } from "../../../src/json-config.js";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
@@ -21,6 +22,7 @@ import {
   type ServedSpan,
   type ServedSpanNotification,
 } from "../../../src/served-spans.js";
+import { configDir } from "../../../src/config-dir.js";
 
 const BRIDGE_KEY = Symbol.for("pi-lens:io-bridge");
 const FILE = "/tmp/pbe-io-bridge/file.ts";
@@ -96,9 +98,9 @@ async function seedProjectMode(mode: string): Promise<void> {
 }
 
 async function seedGlobalMode(mode: string): Promise<void> {
-  await mkdir(join(homeDir, ".pi", "agents"), { recursive: true });
+  await mkdir(configDir(), { recursive: true });
   await writeFile(
-    join(homeDir, LENS_CONFIG_REL),
+    join(configDir(), CONFIG_FILE_NAME),
     JSON.stringify({ lens: { bridge: mode } }),
     "utf-8",
   );

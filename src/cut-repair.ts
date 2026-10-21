@@ -11,6 +11,7 @@ import {
   type CutIntentDirection,
   type UndoRecord,
 } from "./undo-store.js";
+import { reportDiagnostic } from "./diagnostics.js";
 
 /**
  * (ticket-04b section 2) Next-run repair for the foreign-cut transaction. NO filesystem atomicity
@@ -185,7 +186,7 @@ export async function repairCutIntents(store?: HashStore): Promise<void> {
   } catch (error) {
     // SAFETY: repair is best-effort durability cleanup — a store that will not answer the scan
     // SAFETY: leaves every intent in place for the next run; the edit that triggered it proceeds.
-    console.error("[cut-repair] failed to list cut intents:", error);
+    reportDiagnostic("cut-repair", "[cut-repair] failed to list cut intents:", error);
     return;
   }
   for (const intent of intents) {
@@ -194,7 +195,7 @@ export async function repairCutIntents(store?: HashStore): Promise<void> {
     } catch (error) {
       // SAFETY: one unresolvable intent must not abort the scan or the triggering edit; the
       // SAFETY: intent stays, which is exactly the "keep the question open" resolution.
-      console.error(`[cut-repair] intent ${intent.txnId} left in place:`, error);
+      reportDiagnostic("cut-repair", `[cut-repair] intent ${intent.txnId} left in place:`, error);
     }
   }
 }

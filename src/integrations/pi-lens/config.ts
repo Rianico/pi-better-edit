@@ -21,7 +21,7 @@ import {
   configFilePath,
   isRecord,
   isConfigScope,
-  readConfigObject,
+  readScopeConfig,
   updateConfigFile,
   type ConfigScope,
   type ConfigRung,
@@ -53,7 +53,7 @@ export function isLensBridgeScope(value: unknown): value is LensBridgeScope {
 }
 
 function readScopeMode(scope: LensBridgeScope, cwd: string): LensBridgeMode | undefined {
-  const config = readConfigObject(configFilePath(scope, cwd));
+  const config = readScopeConfig(scope, cwd);
   if (config === undefined) return undefined;
   const lens = config.lens;
   if (!isRecord(lens)) return undefined;
