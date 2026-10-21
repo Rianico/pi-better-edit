@@ -14,7 +14,8 @@ import type { ExtensionAPI, ExtensionCommandContext } from "@earendil-works/pi-c
 
 import { registerLensCommand } from "../../../src/integrations/pi-lens/command.js";
 import { BASH_VIEW_ENV_VAR, resolveBashViewMode } from "../../../src/bash-view-config.js";
-import { CONFIG_REL } from "../../../src/json-config.js";
+import { CONFIG_REL, CONFIG_FILE_NAME } from "../../../src/json-config.js";
+import { configDir } from "../../../src/config-dir.js";
 
 const SETTLED_BASH_VIEW_CHOICES = [
   "On (Project)",
@@ -38,7 +39,7 @@ let homeDir = "";
 const savedHome = process.env.HOME;
 
 const projectConfigPath = (): string => join(projectDir, CONFIG_REL);
-const globalConfigPath = (): string => join(homeDir, CONFIG_REL);
+const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
 
 function captureCommand(): { name: string; options: CommandOptions } {
   let name: string | undefined;
@@ -97,6 +98,7 @@ afterEach(async () => {
   if (savedHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedHome;
   delete process.env[BASH_VIEW_ENV_VAR];
+  await rm(globalConfigPath(), { force: true });
   await rm(root, { recursive: true, force: true });
 });
 
@@ -147,7 +149,7 @@ describe("bash-view command", () => {
     expect(text).toContain("effective: on");
     expect(text).toContain("effective source: default");
     expect(text).toContain(`project (${CONFIG_REL}): unset`);
-    expect(text).toContain(`global (~/${CONFIG_REL}): unset`);
+    expect(text).toContain(`global (${globalConfigPath()}): unset`);
     expect(text).toContain(`env ${BASH_VIEW_ENV_VAR}: unset`);
     expect(text).toContain("precedence: env > project > global > on");
   });
@@ -155,7 +157,7 @@ describe("bash-view command", () => {
   it("labels the rung that won and the file values that lost", async () => {
     const { options } = captureCommand();
     const { ctx, notifications } = fakeCtx({ hasUI: true, cwd: projectDir });
-    await mkdir(join(homeDir, ".pi", "agents"), { recursive: true });
+    await mkdir(configDir(), { recursive: true });
     await writeFile(globalConfigPath(), JSON.stringify({ bash: { view: "off" } }), "utf-8");
     await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
     await writeFile(projectConfigPath(), JSON.stringify({ bash: { view: "on" } }), "utf-8");
@@ -167,7 +169,7 @@ describe("bash-view command", () => {
     expect(text).toContain("effective: off");
     expect(text).toContain("effective source: env");
     expect(text).toContain(`project (${CONFIG_REL}): on`);
-    expect(text).toContain(`global (~/${CONFIG_REL}): off`);
+    expect(text).toContain(`global (${globalConfigPath()}): off`);
     expect(text).toContain(`env ${BASH_VIEW_ENV_VAR}: off`);
   });
 

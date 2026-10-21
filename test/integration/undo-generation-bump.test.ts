@@ -36,6 +36,8 @@ import {
   setupIntegrationTest,
   testSessionManager,
   withTempFile,
+  clearDiagnostics,
+  readDiagnostics,
 } from "../support/fixtures";
 
 const PRE = "aaa\nbbb\nccc\n";
@@ -814,10 +816,7 @@ describe("generation bump refuses pre-v3 anchors", () => {
       await readTool.execute("r1", { file: "b.txt" }, undefined, undefined, ctx);
       const store = await loadHashStore();
       const origExec = store.db.exec.bind(store.db);
-      const logged: unknown[][] = [];
-      const consoleSpy = vi.spyOn(console, "error").mockImplementation((...args: unknown[]) => {
-        logged.push(args);
-      });
+      clearDiagnostics();
       const spy = vi.spyOn(store.db, "exec").mockImplementation((sql: string) => {
         if (sql.includes("DELETE FROM file_snapshots"))
           throw new Error("injected mid-sweep failure");
@@ -828,11 +827,14 @@ describe("generation bump refuses pre-v3 anchors", () => {
         expect(() => sweepNow(store.db)).toThrow(/injected mid-sweep failure/);
       } finally {
         spy.mockRestore();
-        consoleSpy.mockRestore();
         origExec("ROLLBACK");
       }
-      expect(logged.length).toBeGreaterThan(0);
-      expect(String(logged[0]![0])).toMatch(/failed to rollback sweep transaction/);
+      // WHY: the log is the operator trace now — the terminal belongs to Pi's renderer, so a
+      // WHY: swallowed failure must land in the file instead of smearing the view.
+      const trace = readDiagnostics()
+        .map((record) => record.message)
+        .join("\n");
+      expect(trace).toMatch(/failed to rollback sweep transaction/);
       expect((store.db as unknown as { isTransaction?: boolean }).isTransaction).toBe(false);
     });
   });

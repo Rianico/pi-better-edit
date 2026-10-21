@@ -57,6 +57,7 @@ import {
 import { resolveStoreJanitorSettings, type StoreJanitorSettings } from "./store-config.js";
 import type { ConfigOnWarn } from "./json-config.js";
 import { VACUUM_RETIRED_PIN_MS } from "./snapshot-store";
+import { reportDiagnostic } from "./diagnostics.js";
 
 /**
  * The `meta` key recording when the janitor last ran — the janitor's OWN row, exactly as the stamp
@@ -222,7 +223,7 @@ function collectGarbage(
   } catch (error) {
     // SAFETY: a failed sweep removes nothing and is retried by the next due run; the deep check below
     // SAFETY: is what decides whether this store needs the open path's recovery instead.
-    console.error("[store-janitor] GC pass failed:", error);
+    reportDiagnostic("store-janitor", "[store-janitor] GC pass failed:", error);
     return undefined;
   }
 }
@@ -290,7 +291,7 @@ export function registerJanitorHooks(
       // SAFETY: best-effort maintenance — a failed janitor run leaves the store exactly as it was
       // SAFETY: (every step is idempotent and its own work is its own throttle record), so the
       // SAFETY: session continues and the next lifecycle event retries.
-      console.error("[store-janitor] maintenance pass failed:", error);
+      reportDiagnostic("store-janitor", "[store-janitor] maintenance pass failed:", error);
     }
   };
   // SAFETY: `pi.on` is typed per event name while `JANITOR_EVENTS` is a runtime tuple, so the

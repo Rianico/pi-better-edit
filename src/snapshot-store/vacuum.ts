@@ -1,6 +1,7 @@
 import type { DatabaseSync } from "node:sqlite";
 import { getCached, withBusyRetry } from "../hash-store.js";
 import { SERVED_TTL_MS } from "../constants.js";
+import { reportDiagnostic } from "../diagnostics.js";
 
 // WHY: --- Global LRU vacuum (spec §3.6.1) ---
 // WHY: The CAS store is a bounded cache of file versions: 50 MB globally, and
@@ -212,7 +213,11 @@ function deleteVacuumSnapshots(db: DatabaseSync, snapshotIds: number[]): void {
         db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
         // SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.
-        console.error("[snapshot-store] failed to rollback vacuum transaction:", rollbackError);
+        reportDiagnostic(
+          "snapshot-store",
+          "[snapshot-store] failed to rollback vacuum transaction:",
+          rollbackError,
+        );
       }
       throw error;
     }

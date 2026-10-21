@@ -1,5 +1,5 @@
 import { describe, expect, it, vi, beforeAll, afterEach } from "vitest";
-import { mkdtemp, rm } from "node:fs/promises";
+import { mkdir, mkdtemp, rm } from "node:fs/promises";
 import { join } from "node:path";
 import type { DatabaseSync } from "node:sqlite";
 
@@ -12,7 +12,8 @@ import {
   type VacuumResult,
 } from "../../src/snapshot-store";
 import { initHasher } from "../../src/hashline/hasher";
-import { getWritableTempRoot } from "../support/fixtures";
+import { diagnosticsLogPath } from "../../src/diagnostics";
+import { getWritableTempRoot, readDiagnostics } from "../support/fixtures";
 
 beforeAll(async () => {
   await initHasher();
@@ -21,6 +22,20 @@ beforeAll(async () => {
 afterEach(() => {
   vi.restoreAllMocks();
 });
+
+/**
+ * The soft-overflow warning, read from the diagnostics sink.
+ *
+ * WHY the log and not a `console.warn` spy: the sink's contract IS the file — an assertion on the
+ * console would re-assert the fd-1/2 write that splats Pi's renderer (see src/diagnostics.ts).
+ * Each case stubs HOME and clears the config override, so the log is fresh per temp home.
+ */
+function softOverflowMessages(): string[] {
+  return readDiagnostics()
+    .filter((record) => record.scope === "snapshot-store")
+    .map((record) => record.message)
+    .filter((message) => message.includes("vacuum soft overflow"));
+}
 
 async function withTempHome(run: (home: string) => Promise<void>): Promise<void> {
   const home = await mkdtemp(join(await getWritableTempRoot(), "pi-hashline-soft-overflow-"));
@@ -97,13 +112,12 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
   it("emits one operator-visible warning with byte counts when overSoftOverflow holds", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const result = overSoftOverflowResult();
 
       reportVacuumSoftOverflow(store.db, result);
 
-      expect(warn).toHaveBeenCalledTimes(1);
-      const message = String(warn.mock.calls[0]?.[0] ?? "");
+      expect(softOverflowMessages()).toHaveLength(1);
+      const [message = ""] = softOverflowMessages();
       expect(message).toContain(String(result.totalBytes));
       expect(message).toContain(String(result.pinnedBytes));
       expect(message).toContain(String(result.deferredBytes));
@@ -113,46 +127,43 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
   it("stays silent when overSoftOverflow does not hold", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       reportVacuumSoftOverflow(store.db, underSoftOverflowResult());
 
-      expect(warn).not.toHaveBeenCalled();
+      expect(softOverflowMessages()).toHaveLength(0);
     });
   });
 
   it("throttles repeated over-soft-overflow passes to a single warning", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       reportVacuumSoftOverflow(store.db, overSoftOverflowResult());
       reportVacuumSoftOverflow(store.db, overSoftOverflowResult());
       reportVacuumSoftOverflow(store.db, overSoftOverflowResult());
 
-      expect(warn).toHaveBeenCalledTimes(1);
+      expect(softOverflowMessages()).toHaveLength(1);
     });
   });
 
   it("re-arms after the store recovers below the soft cap", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
 
       reportVacuumSoftOverflow(store.db, overSoftOverflowResult());
       reportVacuumSoftOverflow(store.db, underSoftOverflowResult());
       reportVacuumSoftOverflow(store.db, overSoftOverflowResult());
 
-      expect(warn).toHaveBeenCalledTimes(2);
+      expect(softOverflowMessages()).toHaveLength(2);
     });
   });
 
   it("never throws when the diagnostic channel fails", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      vi.spyOn(console, "warn").mockImplementation(() => {
-        throw new Error("diagnostic sink down");
-      });
+      // WHY: a directory where the log file should be makes the append fail for real, so this
+      // WHY: still proves the caller survives a broken sink.
+      await mkdir(diagnosticsLogPath(), { recursive: true });
 
       expect(() => reportVacuumSoftOverflow(store.db, overSoftOverflowResult())).not.toThrow();
     });
@@ -167,7 +178,6 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
         seedVersion(db, `/p${i}.ts`, `hash-${i}`, bigLines, 1000 * (i + 1));
         seedLease(db, `/p${i}.ts`, `hash-${i}`);
       }
-      const warn = vi.spyOn(console, "warn").mockImplementation(() => {});
       const pinnedBefore = (
         db.prepare("SELECT COUNT(*) AS n FROM file_snapshots").get() as { n: number }
       ).n;
@@ -192,8 +202,8 @@ describe("vacuum soft-overflow diagnostic (spec §3.6.1)", () => {
         }),
       ).not.toThrow();
 
-      expect(warn).toHaveBeenCalledTimes(1);
-      const message = String(warn.mock.calls[0]?.[0] ?? "");
+      expect(softOverflowMessages()).toHaveLength(1);
+      const [message = ""] = softOverflowMessages();
       expect(message).toContain("totalBytes");
       expect(message).toContain("pinnedBytes");
       expect(message).toContain("deferredBytes");

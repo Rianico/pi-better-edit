@@ -1,3 +1,4 @@
+import { reportDiagnostic } from "../diagnostics.js";
 /**
  * SAFETY: EditPipeline — Strong, in-process atomic mutation seam.
  *
@@ -846,7 +847,7 @@ async function runMutations(
       hashStore,
     ).loadCanonDigests();
   } catch (error) {
-    console.error("Failed to load served canon digests for batch:", error);
+    reportDiagnostic("mutation-engine", "Failed to load served canon digests for batch:", error);
     baseCanonDigests = [];
   }
   const batchBlockedHashes = new Set<string>();
@@ -859,7 +860,7 @@ async function runMutations(
       batchBlockedHashes.add(hash);
     }
   } catch (error) {
-    console.error("Failed to load legacy blocked hashes for batch:", error);
+    reportDiagnostic("mutation-engine", "Failed to load legacy blocked hashes for batch:", error);
   }
   const accumulatedRemoved = new Set<string>();
 
@@ -1053,7 +1054,7 @@ async function runMutations(
       });
     } catch (error) {
       // SAFETY: best-effort drift notice — scanDrift failure is informational; edit already succeeded and driftNotice is optional, swallowing preserves tool success.
-      console.error("Failed to compute drift notice:", error);
+      reportDiagnostic("mutation-engine", "Failed to compute drift notice:", error);
     }
   }
 
@@ -1141,7 +1142,11 @@ async function finishCommittedFile(
           : createSessionHandle(sessionKey, file.absolutePath, options.store);
       await legacyHandle.retire(file.removedHashes);
     } catch (error) {
-      console.error("Failed to retire legacy blocked hashes after write:", error);
+      reportDiagnostic(
+        "mutation-engine",
+        "Failed to retire legacy blocked hashes after write:",
+        error,
+      );
       file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
     }
   }
@@ -1193,7 +1198,11 @@ async function finishCommittedFile(
     // SAFETY: leaves the in-memory hashes authoritative and the next read re-materializes and
     // SAFETY: retires. SPEC §3.6.2: the bytes are on disk, so the tool reports success but must
     // SAFETY: warn that store synchronization is deferred.
-    console.error("Failed to commit post-write snapshot materialization:", error);
+    reportDiagnostic(
+      "mutation-engine",
+      "Failed to commit post-write snapshot materialization:",
+      error,
+    );
     file.warnings.push(DEFERRED_STORE_SYNC_WARNING);
   }
   return diffInfo;
@@ -1332,7 +1341,11 @@ async function runCutTransaction(
         await writeAtomic(plan.absolutePath, rawPreBytes.get(plan.absolutePath)!);
       } catch (rollbackError) {
         rolledBack = false;
-        console.error("Failed to roll back a cut-transaction file:", rollbackError);
+        reportDiagnostic(
+          "mutation-engine",
+          "Failed to roll back a cut-transaction file:",
+          rollbackError,
+        );
       }
     }
     if (rolledBack) {
@@ -1340,7 +1353,11 @@ async function runCutTransaction(
       try {
         await dropCutIntent(txnId);
       } catch (dropError) {
-        console.error("Failed to drop the cut intent after rollback:", dropError);
+        reportDiagnostic(
+          "mutation-engine",
+          "Failed to drop the cut intent after rollback:",
+          dropError,
+        );
       }
     }
     // WHY: a rollback that did not hold LEAVES the intent row and the transaction-tagged undo
@@ -1354,7 +1371,7 @@ async function runCutTransaction(
   } catch (error) {
     // SAFETY: every byte is committed; a stale intent row resolves to "all == post" on the next
     // SAFETY: run and drops itself — repair owns that path, the edit result stands.
-    console.error("Failed to clear the cut intent after commit:", error);
+    reportDiagnostic("mutation-engine", "Failed to clear the cut intent after commit:", error);
   }
 
   // WHY: STEP 3 store commit per file — the same `finishCommittedFile` the single-file path

@@ -1,6 +1,6 @@
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { beforeAll, describe, expect, it, vi } from "vitest";
+import { beforeAll, describe, expect, it } from "vitest";
 import {
   DomainError,
   ERROR_REGISTRY,
@@ -12,7 +12,14 @@ import { ANCHOR_GENERATION, initHasher, lineHashes } from "../../src/hashline/in
 import { loadHashStore } from "../../src/hash-store.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { upsertUndo } from "../../src/undo-store.js";
-import { getText, setupIntegrationTest, withTempDir, withTempFile } from "../support/fixtures.js";
+import {
+  clearDiagnostics,
+  getText,
+  readDiagnostics,
+  setupIntegrationTest,
+  withTempDir,
+  withTempFile,
+} from "../support/fixtures.js";
 
 // WHY (#86, OPTION B): one E_BAD_PAYLOAD code reaches the model from three registered tools. The
 // WHY: header the model reads is composed inside the DomainError constructor, so the invoking tool
@@ -224,7 +231,7 @@ describe("the subject survives the undo correlated arm (#86)", () => {
       });
 
       const { ctx, undoTool } = setupIntegrationTest(cwd);
-      const trace = vi.spyOn(console, "error").mockImplementation(() => {});
+      clearDiagnostics();
       // SAFETY: the arm's own catches convert every unexpected failure into the E_UNKNOWN envelope,
       // SAFETY: so the injected failure stands for any E_BAD_PAYLOAD the arm's body could raise.
       // SAFETY: `onBeforeUndoWrites` is the documented fault-injection seam for that body.
@@ -241,13 +248,14 @@ describe("the subject survives the undo correlated arm (#86)", () => {
       // WHY: the landmine — the arm's E_UNKNOWN conversion must not replace the subject.
       expect(text).not.toContain("[E_UNKNOWN]");
       // WHY: the arm keeps its operator trace even when it returns a payload-shaped refusal.
-      expect(trace).toHaveBeenCalledWith(
-        "Unexpected failure in correlated undo:",
-        expect.anything(),
+      // WHY: the arm keeps its operator trace even when it returns a payload-shaped refusal;
+      // WHY: the trace is a diagnostics record now, never a write to the terminal's frame.
+      const trace = readDiagnostics().find((record) =>
+        record.message.includes("Unexpected failure in correlated undo:"),
       );
+      expect(trace?.error?.message).toContain("injected inside the arm.");
       // WHY: the injected failure aborted the revert, so the post image is still on disk.
       await expect(readFile(target, "utf-8")).resolves.toBe(post);
-      trace.mockRestore();
     });
   });
 });

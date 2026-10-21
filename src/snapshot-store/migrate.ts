@@ -4,6 +4,7 @@ import { contentChecksum } from "../hashline/hasher.js";
 import { isValidHashList } from "../hashline/hash.js";
 import { legacyHashStorePath } from "../hash-store.js";
 import { splitLines, errCode } from "../utils.js";
+import { reportDiagnostic, reportWarning } from "../diagnostics.js";
 
 interface LegacySnapshot {
   content: string;
@@ -30,7 +31,7 @@ export async function migrateLegacyStore(db: DatabaseSync): Promise<void> {
   } catch (error: unknown) {
     if (errCode(error) === "ENOENT") return;
     // SAFETY: best-effort legacy migration — read failures beyond ENOENT are ignored; migration is optional and fresh store remains valid, no caller depends on legacy data.
-    console.error("Failed to read legacy hash store for migration:", error);
+    reportDiagnostic("snapshot-store", "Failed to read legacy hash store for migration:", error);
     return;
   }
 
@@ -39,7 +40,11 @@ export async function migrateLegacyStore(db: DatabaseSync): Promise<void> {
     parsed = JSON.parse(content) as typeof parsed;
   } catch (error) {
     // SAFETY: best-effort legacy migration — parse failures are ignored; corrupted legacy file is skipped and fresh hashing will repopulate, no caller depends on legacy data.
-    console.error("Failed to parse legacy hash store, skipping migration:", error);
+    reportDiagnostic(
+      "snapshot-store",
+      "Failed to parse legacy hash store, skipping migration:",
+      error,
+    );
     return;
   }
 
@@ -50,7 +55,8 @@ export async function migrateLegacyStore(db: DatabaseSync): Promise<void> {
   for (const [key, value] of Object.entries(raw)) {
     if (!isValidSnapshot(value)) continue;
     if (new Set(value.hashes).size !== value.hashes.length) {
-      console.warn(
+      reportWarning(
+        "snapshot-store",
         `Skipped legacy snapshot with duplicate hashes for ${key}; it will be re-hashed on next read.`,
       );
       continue;
@@ -81,6 +87,10 @@ export async function migrateLegacyStore(db: DatabaseSync): Promise<void> {
     await rename(legacyPath, `${legacyPath}.bak`);
   } catch (error) {
     // SAFETY: best-effort legacy cleanup — rename failure after successful migration is ignored; legacy file remains but next migration will be skipped due to valid snapshot state, no data loss.
-    console.error("Failed to rename legacy hash store after migration:", error);
+    reportDiagnostic(
+      "snapshot-store",
+      "Failed to rename legacy hash store after migration:",
+      error,
+    );
   }
 }

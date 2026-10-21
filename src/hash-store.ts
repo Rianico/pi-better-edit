@@ -2,59 +2,19 @@
 import { closeSync, existsSync, fstatSync, openSync, readSync } from "node:fs";
 import { rename, mkdir } from "node:fs/promises";
 import { DatabaseSync, type StatementSync } from "node:sqlite";
-import { homedir } from "node:os";
 import { join, dirname } from "node:path";
 import { errCode } from "./utils.js";
 import { initHasher } from "./hashline/hasher.js";
 import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
 import { ANCHOR_GENERATION, CANON_VERSION } from "./hashline/hash-identity.js";
 import { DomainError } from "./domain-errors.js";
+import { reportDiagnostic } from "./diagnostics.js";
 
-function homeBase(): string {
-  const envHome = process.env.HOME;
-  return envHome && envHome.length > 0 ? envHome : homedir();
-}
-
-function configBase(): string {
-  if (process.platform !== "win32") {
-    const xdg = process.env.XDG_CONFIG_HOME;
-    if (xdg && xdg.length > 0) return xdg;
-  }
-  // SAFETY: join of trusted homedir (or HOME env validated by OS) with fixed ".config" segment — not user-controlled traversal, base is homedir and suffix is constant.
-  return join(homeBase(), ".config");
-}
-
-/** The environment variable that names the app config directory, and so the store's own directory. */
-export const STORE_CONFIG_DIR_ENV_VAR = "PI_BETTER_EDIT_CONFIG_DIR";
-
-/**
- * The operator's store-directory override, read VERBATIM, or `undefined` when unset. An empty value
- * counts as unset. WHY it is exported rather than read where it is used: `configDir` and the
- * `/pi-better-edit` status display both have to answer "is the store directory overridden, and to
- * what", and two readings of one variable is how they come to disagree about "unset".
- */
-export function configDirOverride(): string | undefined {
-  const override = process.env[STORE_CONFIG_DIR_ENV_VAR];
-  return override !== undefined && override.length > 0 ? override : undefined;
-}
-
-export function configDir(): string {
-  // WHY: precedence for the app config dir is PI_BETTER_EDIT_CONFIG_DIR > XDG_CONFIG_HOME > $HOME/.config
-  // WHY: — off Windows only. configBase() reads XDG_CONFIG_HOME behind a `process.platform !== "win32"`
-  // WHY: guard, so on Windows this env var is the only way to relocate the store.
-  // SAFETY: PI_BETTER_EDIT_CONFIG_DIR is trusted operator config, not attacker-controlled tool input, and
-  // SAFETY: it is returned VERBATIM: configDir() appends nothing, sanitises nothing and creates nothing.
-  // SAFETY: It IS a filesystem path, though — resolved against process.cwd() when relative, created on
-  // SAFETY: first open by openStore() (mkdir(recursive: true)), and any EEXIST/EACCES/EINVAL from that
-  // SAFETY: mkdir or the SQLite open surfaces raw out of the open path without naming the variable. The
-  // SAFETY: contract is deliberately verbatim — trimming, validating or wrapping here is out of scope by
-  // SAFETY: ticket mandate, so do not "fix" that; document it instead. An empty string counts as UNSET,
-  // SAFETY: mirroring the XDG reading in configBase() above: that whole rule lives in configDirOverride().
-  const override = configDirOverride();
-  if (override !== undefined) return override;
-  // SAFETY: join of trusted configBase (homedir/.config) with fixed "pi-better-edit" — constant suffix, no traversal.
-  return join(configBase(), "pi-better-edit");
-}
+import { configDir } from "./config-dir.js";
+// WHY: these three have been this module's surface since before the diagnostics sink existed, so
+// WHY: callers keep importing them here; the implementation moved to config-dir.ts only to break the
+// WHY: diagnostics → hash-store → hash-identity → diagnostics import cycle.
+export { STORE_CONFIG_DIR_ENV_VAR, configDir, configDirOverride } from "./config-dir.js";
 
 export function hashStorePath(): string {
   // SAFETY: join of trusted configDir with fixed "hash-store.sqlite" — constant suffix, no traversal.
@@ -370,7 +330,11 @@ function openDb(storePath: string, budget?: BusyBudget): OpenedDb {
     try {
       db.close();
     } catch (closeError: unknown) {
-      console.error("[hash-store] failed to close DB after buildStore error:", closeError);
+      reportDiagnostic(
+        "hash-store",
+        "[hash-store] failed to close DB after buildStore error:",
+        closeError,
+      );
     }
     throw error;
   }
@@ -783,7 +747,11 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
         db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
         // SAFETY: best-effort rollback — the original failure is authoritative and must not be masked.
-        console.error("[hash-store] failed to rollback sweep transaction:", rollbackError);
+        reportDiagnostic(
+          "hash-store",
+          "[hash-store] failed to rollback sweep transaction:",
+          rollbackError,
+        );
       }
       throw error;
     }
@@ -1101,7 +1069,7 @@ async function quarantineStore(storePath: string): Promise<void> {
       await rename(candidate, `${candidate}${suffix}`);
     } catch (error) {
       if (errCode(error) !== "ENOENT") {
-        console.error("Failed to quarantine corrupt hash store file:", error);
+        reportDiagnostic("hash-store", "Failed to quarantine corrupt hash store file:", error);
       }
     }
   }
@@ -1122,7 +1090,7 @@ function shutdownDb(db: DatabaseSync): void {
   try {
     db.exec("PRAGMA wal_checkpoint(TRUNCATE)");
   } catch (error: unknown) {
-    console.error("[hash-store] failed to checkpoint WAL on shutdown:", error);
+    reportDiagnostic("hash-store", "[hash-store] failed to checkpoint WAL on shutdown:", error);
   }
   db.close();
 }
@@ -1161,7 +1129,10 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
   const current = cachedDb;
   if (current === null || !current.db.isOpen) return false;
   if (isHealthy(current.db)) return false;
-  console.error("[hash-store] deep check found the store damaged, quarantining and rebuilding");
+  reportDiagnostic(
+    "hash-store",
+    "[hash-store] deep check found the store damaged, quarantining and rebuilding",
+  );
   // WHY: the quarantine comes FIRST and on its own: the open path's fast branch accepts a store whose
   // WHY: header is intact, and an intact header is exactly the case the janitor's deep pass exists to
   // WHY: catch — so handing the open the same file would reopen the damage instead of repairing it.
@@ -1357,7 +1328,7 @@ async function runUseTimeHeal(storePath: string, generation: DatabaseSync): Prom
     await quarantineStore(storePath);
     await openStore(storePath);
   } catch (error) {
-    console.error("[hash-store] use-time quarantine failed:", error);
+    reportDiagnostic("hash-store", "[hash-store] use-time quarantine failed:", error);
   } finally {
     if (useTimeHeal !== null && useTimeHeal.generation === generation) useTimeHeal = null;
   }
@@ -1375,7 +1346,7 @@ async function openStore(storePath: string, budget?: BusyBudget): Promise<HashSt
     opened = openDbWithBusyRetry(storePath, budget);
   } catch (error) {
     if (!isCorruptionError(error)) throw error;
-    console.error("Hash store failed to open, rebuilding:", error);
+    reportDiagnostic("hash-store", "Hash store failed to open, rebuilding:", error);
     await quarantineStore(storePath);
     existed = false;
     opened = openDbWithBusyRetry(storePath, budget);
@@ -1492,7 +1463,11 @@ export function withStore(fn: () => void): void {
       try {
         cachedDb!.db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
-        console.error("[hash-store] failed to rollback transaction:", rollbackError);
+        reportDiagnostic(
+          "hash-store",
+          "[hash-store] failed to rollback transaction:",
+          rollbackError,
+        );
       }
       throw e;
     }

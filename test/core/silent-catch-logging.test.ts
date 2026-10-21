@@ -14,7 +14,19 @@ import {
   setupIntegrationTest,
   getText,
   withTempFile,
+  readDiagnostics,
+  clearDiagnostics,
 } from "../support/fixtures.js";
+
+/**
+ * The sink's contract is the file, not the console: an assertion on `console.error` would re-assert
+ * the fd-1/2 write the sink exists to remove (the terminal belongs to Pi's renderer).
+ */
+function diagnosticMessages(match: RegExp): string[] {
+  return readDiagnostics()
+    .map((record) => record.message)
+    .filter((message) => match.test(message));
+}
 
 beforeAll(async () => {
   await initHasher();
@@ -55,7 +67,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
   });
 
   it("ensureServedSchema logs a migration failure without throwing", () => {
-    const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
+    clearDiagnostics();
     const db = {
       exec: vi.fn(),
       prepare: vi.fn(() => {
@@ -63,13 +75,13 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
       }),
     } as unknown as DatabaseSync;
     expect(() => ensureServedSchema(db)).not.toThrow();
-    expect(errorSpy).toHaveBeenCalledTimes(1);
-    expect(String(errorSpy.mock.calls[0]?.[0] ?? "")).toMatch(/served/i);
+    const records = readDiagnostics();
+    expect(records).toHaveLength(1);
+    expect(records[0]?.message).toMatch(/served/i);
   });
 
   it("lease grant failure logs once and keeps the serve (best-effort)", async () => {
     await withTempHome(async () => {
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       // WHY: the lease grant is the best-effort step of a serve record (#151): the mirror row is
       // WHY: already committed, so a failed grant must log with context and leave the serve intact.
       // WHY: The injection point is the SQL itself — a trigger aborts only lease writes.
@@ -89,11 +101,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
         ),
       ).resolves.toBeUndefined();
       expect(await handle.load()).toEqual(hashes);
-      const leaseLogs = errorSpy.mock.calls.filter((call) =>
-        String(call[0] ?? "")
-          .toLowerCase()
-          .includes("lease"),
-      );
+      const leaseLogs = diagnosticMessages(/lease/i);
       expect(leaseLogs).toHaveLength(1);
     });
   });
@@ -103,7 +111,6 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
     await withTempFile("undo-anchor-121.txt", original, async ({ cwd }) => {
       const { ctx, readTool, editTool, getTool } = setupIntegrationTest(cwd);
       const undoTool = getTool("undo_last_edit");
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
       vi.spyOn(snapshotStore, "anchorsForSnapshotHash").mockRejectedValue(
         new Error("anchor lookup boom"),
       );
@@ -137,11 +144,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
       );
       expect(result.isError).toBeFalsy();
       expect(await readFile(join(cwd, "undo-anchor-121.txt"), "utf-8")).toBe(original);
-      const anchorLogs = errorSpy.mock.calls.filter((call) =>
-        String(call[0] ?? "")
-          .toLowerCase()
-          .includes("anchor"),
-      );
+      const anchorLogs = diagnosticMessages(/anchor/i);
       expect(anchorLogs.length).toBeGreaterThanOrEqual(1);
     });
   });
@@ -151,7 +154,6 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
     await withTempFile("undo-restore-121.txt", original, async ({ cwd }) => {
       const { ctx, readTool, editTool, getTool } = setupIntegrationTest(cwd);
       const undoTool = getTool("undo_last_edit");
-      const errorSpy = vi.spyOn(console, "error").mockImplementation(() => {});
 
       const r1 = await readTool.execute(
         "r1",
@@ -191,11 +193,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
         expect(result.isError).toBeFalsy();
         expect(await readFile(join(cwd, "undo-restore-121.txt"), "utf-8")).toBe(original);
         expect(getText(result)).toContain("Store synchronization deferred");
-        const restoreLogs = errorSpy.mock.calls.filter((call) =>
-          String(call[0] ?? "")
-            .toLowerCase()
-            .includes("undo restore transaction"),
-        );
+        const restoreLogs = diagnosticMessages(/undo restore transaction/i);
         expect(restoreLogs.length).toBeGreaterThanOrEqual(1);
       } finally {
         store.db.exec("DROP TRIGGER IF EXISTS undo_mirror_boom");

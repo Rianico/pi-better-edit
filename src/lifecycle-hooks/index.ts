@@ -52,6 +52,8 @@ import { valAccess as defaultValAccess } from "../validation.js";
 import { visLines as defaultVisLines } from "../utils.js";
 import { fmtReadPreview as defaultFmtReadPreview } from "../read.js";
 import { finalizeToolResult as defaultFinalizeToolResult } from "../edit-response.js";
+import { reportDiagnostic, reportInfo, reportWarning } from "../diagnostics.js";
+import { DomainError } from "../domain-errors.js";
 import {
   AUTO_READ_MAX,
   BASH_SEARCH_MAX_FILES,
@@ -265,7 +267,7 @@ function notifyBashViewOnce(ctx: ToolContext, sessionKey: string): void {
     ui.notify(BASH_VIEW_FIRST_NOTICE, "warning");
     return;
   }
-  console.log(BASH_VIEW_FIRST_NOTICE);
+  reportInfo("lifecycle-hooks", BASH_VIEW_FIRST_NOTICE);
 }
 export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   onSessionStart: (event: unknown, ctx: ToolContext) => Promise<void>;
@@ -302,7 +304,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       await deps.recordDiffServes(input);
     } catch (error) {
       // SAFETY: best-effort serve recording — failures are ignored; file edit already succeeded and next read will re-establish serves, no data loss.
-      console.error("Failed to record served rows:", error);
+      reportDiagnostic("lifecycle-hooks", "Failed to record served rows:", error);
     }
   }
 
@@ -314,7 +316,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       await deps.pruneMissingAll();
     } catch (err) {
       // SAFETY: best-effort startup cleanup — pruneMissingAll failures are ignored; hash store remains usable and stale entries will be retried next startup, no user data loss.
-      console.error("Failed to load or prune hash store:", err);
+      reportDiagnostic("lifecycle-hooks", "Failed to load or prune hash store:", err);
     }
     const debugValue = process.env.PI_HASHLINE_DEBUG;
     if (debugValue === "1" || debugValue === "true") {
@@ -333,7 +335,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         await deps.clearUndo(await deps.resolveTarget(deps.toCwd(writtenPath, ctx.cwd)));
       } catch (error) {
         // SAFETY: best-effort undo cleanup after write — clearUndo failures are ignored; stale undo history will be overwritten on next edit or pruned, no data loss.
-        console.error("Failed to clear undo after write:", error);
+        reportDiagnostic("lifecycle-hooks", "Failed to clear undo after write:", error);
       }
     }
     if (typeof writtenPath !== "string") return undefined;
@@ -411,7 +413,11 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           );
         }
       } catch (error) {
-        console.error("Failed to evaluate served prefix notes after write:", error);
+        reportDiagnostic(
+          "lifecycle-hooks",
+          "Failed to evaluate served prefix notes after write:",
+          error,
+        );
         prefixNotes = [];
       }
       const resultLineCount = deps.visLines(normalized).length;
@@ -471,7 +477,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           : {}),
       };
     } catch (error) {
-      console.error("Auto-read after write failed:", error);
+      reportDiagnostic("lifecycle-hooks", "Auto-read after write failed:", error);
       const message = error instanceof Error ? error.message : String(error);
       return {
         content: [
@@ -630,7 +636,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       /**
        * WHY (#151): the single decision switch — every conversion shape routes by
        * WHY: `decision.kind`; no shape-sniffing, no stringified reasons downstream (the
-       * WHY: debug seam below is stderr-only per ADR-0033 D6). Banners and headers stay
+       * WHY: debug seam below records the reason in the diagnostics file, never in the model's
+       * WHY: text (ADR-0033 D6: observability is never model-visible). Banners and headers stay
        * WHY: in the shape seams this calls; this is where the routing decision lands.
        */
       async function renderDecision(
@@ -657,10 +664,10 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           // WHY: (ADR-0033 observability) a systematic regression (parser drift, a
           // WHY: filtering wrapper, a new view shape) is otherwise indistinguishable
           // WHY: from "no views issued". Log the internal reason behind the existing
-          // WHY: debug seam — stderr only, never model-visible text (D6 holds).
+          // WHY: debug seam — the diagnostics log, never the model's text (D6 holds).
           const debugValue = process.env.PI_HASHLINE_DEBUG;
           if (debugValue === "1" || debugValue === "true") {
-            console.error(`[bash-view] pass-through (${decision.reason})`);
+            reportDiagnostic("lifecycle-hooks", `[bash-view] pass-through (${decision.reason})`);
           }
           return undefined;
         }
@@ -683,7 +690,8 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           compound: { kind: "pureCompound"; segments: CompoundSegment[]; baseDir?: string },
         ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
           const dbg = (...a: unknown[]) => {
-            if (process.env.PI_HASHLINE_DEBUG === "1") console.error("[peel]", ...a);
+            if (process.env.PI_HASHLINE_DEBUG === "1")
+              reportDiagnostic("lifecycle-hooks", "[peel]", ...a);
           };
           dbg("segments", compound.segments.map((x) => x.kind).join(","));
           const blocks = compound.segments.filter(
@@ -934,7 +942,21 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     } catch (error) {
       // SAFETY: every failure returns undefined so the original bash output reaches
       // SAFETY: the model untouched — interception must never break a view.
-      console.error("Bash view interception failed:", error);
+      // WHY: the three-way split — a DomainError code means the file the shell just read is no
+      // WHY: longer statable/readable (deleted, chmod, rotating symlink); that is expected in a live
+      // WHY: workspace and the view already passes through, so it must not read as a defect, while
+      // WHY: anything else is a classifier/serve bug and must read as one.
+      const failureCode = error instanceof DomainError ? error.code : undefined;
+      if (failureCode === "E_NOT_FOUND" || failureCode === "E_ACCESS") {
+        reportWarning(
+          "lifecycle-hooks",
+          `bash view declined (${failureCode}) — source changed after exec:`,
+          command,
+          error,
+        );
+      } else {
+        reportDiagnostic("lifecycle-hooks", "Bash view interception failed:", command, error);
+      }
       return undefined;
     }
   }

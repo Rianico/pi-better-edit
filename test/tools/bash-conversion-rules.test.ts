@@ -172,6 +172,7 @@ describe("bash conversion rule table (#151)", () => {
       "background",
       "non-and-chain",
       "compound-top",
+      "compound-andor-operand",
       "chain-too-long",
       "compound-segment",
       "admit-glue",

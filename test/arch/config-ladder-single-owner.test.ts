@@ -51,7 +51,7 @@ describe("the config file has one owner (#90)", () => {
   it("keeps the seam's readers and writer exported for both owners", () => {
     const seam = readFileSync(SEAM, "utf-8");
 
-    for (const symbol of ["readConfigObject", "updateConfigFile", "configFilePath", "CONFIG_REL"]) {
+    for (const symbol of ["readScopeConfig", "updateConfigFile", "configFilePath", "CONFIG_REL"]) {
       expect(seam, symbol).toContain(
         `export ${symbol === "CONFIG_REL" ? "const" : "function"} ${symbol}`,
       );

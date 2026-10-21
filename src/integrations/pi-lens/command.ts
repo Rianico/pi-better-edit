@@ -33,9 +33,14 @@ import {
   saveBashViewConfig,
   type BashViewMode,
 } from "../../bash-view-config.js";
-import { CONFIG_REL, type ConfigScope } from "../../json-config.js";
+import { CONFIG_REL, configFileDisplayPath, type ConfigScope } from "../../json-config.js";
 import { DomainError } from "../../domain-errors.js";
 import { SettingsOverlay } from "./settings-overlay.js";
+import {
+  DIAGNOSTICS_LOG_MAX_BYTES,
+  diagnosticsLogStatus,
+  reportDiagnostic,
+} from "../../diagnostics.js";
 const COMMAND_NAME = "pi-better-edit";
 const IO_BRIDGE_SYMBOL_KEY = "pi-lens:io-bridge";
 
@@ -136,8 +141,10 @@ function notify(
     ctx.ui.notify(message, type);
     return;
   }
-  // SAFETY: print and json modes expose no notify surface, so the console is the only channel that
-  // SAFETY: reaches the caller; the message carries the command's entire output.
+  // WHY: the only legitimate stdout write left in the extension — `hasUI === false` means print or
+  // WHY: json mode, where no renderer owns the terminal and stdout is the channel that reaches the
+  // WHY: caller. The TUI branch above returns before this line, so a live frame is never touched.
+  // SAFETY: the message carries the command's entire output and there is no other channel in these modes.
   console.log(message);
 }
 
@@ -152,13 +159,22 @@ function statusText(cwd: string): string {
     `  effective source: ${effective.source}`,
     `  io bridge detected: ${isIOBridgeMounted() ? "yes" : "no"}`,
     `  project (${LENS_CONFIG_REL}): ${config.project ?? "unset"}`,
-    `  global (~/${LENS_CONFIG_REL}): ${config.global ?? "unset"}`,
+    `  global (${configFileDisplayPath("global", cwd)}): ${config.global ?? "unset"}`,
     `  env ${LENS_BRIDGE_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > auto",
   ];
-  // WHY: a blank line between the blocks — they are three subjects, the bridge, the store
-  // WHY: and the bash view, and each one keeps the shape the others taught the reader.
-  return [lensLines.join("\n"), "", storeStatusText(cwd), "", bashViewStatusText(cwd)].join("\n");
+  // WHY: a blank line between the blocks — they are four subjects: the bridge, the store,
+  // WHY: the bash view and the diagnostics log, and each one keeps the shape the others taught
+  // WHY: the reader.
+  return [
+    lensLines.join("\n"),
+    "",
+    storeStatusText(cwd),
+    "",
+    bashViewStatusText(cwd),
+    "",
+    diagnosticsStatusText(),
+  ].join("\n");
 }
 
 /**
@@ -218,10 +234,32 @@ function bashViewStatusText(cwd: string): string {
     `  effective: ${effective.value}`,
     `  effective source: ${effective.source}`,
     `  project (${CONFIG_REL}): ${config.project ?? "unset"}`,
-    `  global (~/${CONFIG_REL}): ${config.global ?? "unset"}`,
+    `  global (${configFileDisplayPath("global", cwd)}): ${config.global ?? "unset"}`,
     `  env ${BASH_VIEW_ENV_VAR}: ${envValue}`,
     "  precedence: env > project > global > on",
     ...warnings.map((reason) => `  warning: ${reason}`),
+  ].join("\n");
+}
+
+/**
+ * The diagnostics half of the status output: where the log is, how big it is, and when it was
+ * last written.
+ *
+ * WHY the path is printed at all: every failure that used to be smeared over the UI as untracked
+ * stderr now lands in this file instead, so "where is the error I just saw?" has to be answerable
+ * from the command an operator already runs.
+ */
+function diagnosticsStatusText(): string {
+  const status = diagnosticsLogStatus();
+  return [
+    `${COMMAND_NAME} diagnostics`,
+    `  log: ${status.path}`,
+    `  size: ${status.bytes === 0 ? "none recorded" : `${status.bytes} bytes`}`,
+    ...(status.modifiedAt === undefined
+      ? []
+      : [`  last write: ${status.modifiedAt.toISOString()}`]),
+    `  rotation: ${DIAGNOSTICS_LOG_MAX_BYTES}-byte cap, one previous generation (.1)`,
+    `  path is set by ${STORE_CONFIG_DIR_ENV_VAR} alone, beside the store`,
   ].join("\n");
 }
 
@@ -417,7 +455,7 @@ export function registerLensCommand(pi: ExtensionAPI): void {
           // WHY: and host channels, not a sentence for the operator, so the envelope goes to the log
           // WHY: (where a diagnosis can still reach it) and the user gets a plain failure notice. A
           // WHY: failure that is not a DomainError keeps its own text: that part is user-actionable.
-          console.error(`${COMMAND_NAME}: ${errorText(error)}`);
+          reportDiagnostic("lens-command", `${COMMAND_NAME}: ${errorText(error)}`, error);
           notify(ctx, `${COMMAND_NAME}: the command failed unexpectedly.`, "error");
         } else {
           notify(ctx, `${COMMAND_NAME}: ${errorText(error)}`, "error");
