@@ -56,7 +56,9 @@ export const HASH_STORE_BUSY_TIMEOUT = 250;
 // WHY: (also in `src/hash-store.ts`); an ADDITIONAL open hook is covered by the hook count in the stamp.
 // WHY: v10 adds `idx_leases_file_snapshot`, the (path, snapshot_hash) index the vacuum's pin probe
 // WHY: needs to stay covered. Without it every materialization re-scanned each path's lease set.
-export const HASH_STORE_VERSION = 10;
+// WHY: v11 adds `file_snapshots.stat_key` plus `idx_snapshots_path_stat` — the stat identity a read
+// WHY: materialization saw, so an unchanged file's next read adopts on `stat(2)` alone (ADR-0043).
+export const HASH_STORE_VERSION = 11;
 export const EDITS_MAX_ITEMS = 32;
 // WHY: the served-lease session TTL: an un-retired lease pins its snapshot for this long, and
 // WHY: the LRU vacuum's active-pin cutoff (spec §3.6.1) is measured with the same window.

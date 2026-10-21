@@ -22,8 +22,9 @@ import {
   type FileStats,
   type LFile,
 } from "./detection.js";
-import { anchorWalkFor, decodeNormText, fileSnap } from "./loader.js";
-import { fmtReadPreview, type ReadWindow } from "./preview.js";
+import { anchorWalkFor, decodeNormText, fileSnap, snapshotIdFor, statKeyOf } from "./loader.js";
+import { fmtReadPreview, StatIdentityMismatchError, type ReadWindow } from "./preview.js";
+import { findStatSnapshotFor } from "../snapshot-store";
 import type { ServedRow } from "../hashline/served.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 
@@ -33,12 +34,15 @@ export {
   readNormFile,
   decodeNormText,
   fileSnap,
+  snapshotIdFor,
+  statKeyOf,
   type NormText,
   type NormFile,
   type SnapInfo,
+  type StatIdentity,
   type ReadNormOptions,
 } from "./loader.js";
-export { fmtReadPreview } from "./preview.js";
+export { fmtReadPreview, StatIdentityMismatchError } from "./preview.js";
 export type { ReadWindow } from "./preview.js";
 
 export interface PrepareResult {
@@ -63,6 +67,25 @@ export interface PrepareResult {
   // WHY: the loader already stat'd this path; the read path hands that `Stats` to `fileSnap`, so a
   // WHY: read costs one `stat` per file instead of one per seam.
   stats?: FileStats;
+  /**
+   * The `stat(2)` identity this read observed (ADR-0043). Materializations stamp it in the same
+   * transaction, so the next read of an unchanged file adopts this snapshot without re-deriving any
+   * line identity. Absent for reads that never stat'd a file (verbatim, non-text, pathless previews).
+   */
+  statKey?: string;
+  /**
+   * Present when this page was served from an ALREADY-COMMITTED snapshot that the file's stat identity
+   * named (ADR-0043): `fileHashes` then holds only the served page's anchors, and `snapshotId` is the
+   * epoch string `fileSnap` would have produced — the checksum comes from the snapshot, not a re-hash.
+   */
+  statAdoption?: StatAdoption;
+}
+
+/** The already-committed snapshot a stat-identity read served from (ADR-0043). */
+export interface StatAdoption {
+  snapshotHash: string;
+  /** The epoch `fileSnap` would report for these bytes; no content checksum is recomputed. */
+  snapshotId: string;
 }
 
 export interface PrepareOptions {
@@ -158,32 +181,74 @@ export async function prepareFile(
     ...(maxLines === undefined ? {} : { maxLines }),
     preloadedFile: file,
   });
-  // WHY: served hands the preview a walk plan instead of a finished anchor array: the anchors are
-  // WHY: assigned inside the same walk that keeps the page, so the page costs one pass and the anchors
-  // WHY: ride along in it. Verbatim passes none at all — no store, no snapshot, no hash of a line.
-  const anchors = verbatim
-    ? []
-    : await anchorWalkFor(norm.normalized, norm.absolutePath, {
-        ...(options?.store !== undefined ? { store: options.store } : {}),
-        ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
-      });
-
-  const preview = await fmtReadPreview(
-    norm.normalized,
-    {
-      ...(options?.offset !== undefined ? { offset: options.offset } : {}),
-      ...(options?.limit !== undefined ? { limit: options.limit } : {}),
-      ...(options?.windows !== undefined ? { windows: options.windows } : {}),
-      ...(options?.render !== undefined ? { render: options.render } : {}),
-      // WHY: the caller's own path, not `absolutePath`: the header/footer name the file the caller
-      // WHY: named, while anchors stay scoped to the absolute path the walk seeded them with.
-      displayPath: path,
-    },
-    anchors,
-    norm.absolutePath,
-    options?.maxLineBytes,
-    options?.maxTruncLines ?? AUTO_READ_MAX,
-  );
+  const previewOptions = {
+    ...(options?.offset !== undefined ? { offset: options.offset } : {}),
+    ...(options?.limit !== undefined ? { limit: options.limit } : {}),
+    ...(options?.windows !== undefined ? { windows: options.windows } : {}),
+    ...(options?.render !== undefined ? { render: options.render } : {}),
+    // WHY: the caller's own path, not `absolutePath`: the header/footer name the file the caller
+    // WHY: named, while anchors stay scoped to the absolute path the walk seeded them with.
+    displayPath: path,
+  };
+  const maxLineBytes = options?.maxLineBytes;
+  const maxTruncLines = options?.maxTruncLines ?? AUTO_READ_MAX;
+  // WHY: (ADR-0043) a read that can name the file version starts from the committed snapshot that
+  // WHY: version produced. Only the served page's lineage is read — never every line's identity — and
+  // WHY: every line is re-verified against the canon it was committed under before its anchor is shown.
+  // WHY: Anything unproven falls through to the content-hash path below, which is authoritative.
+  const statKey =
+    !verbatim && options?.store !== undefined && file.stats !== undefined
+      ? statKeyOf(file.stats)
+      : undefined;
+  let preview: Awaited<ReturnType<typeof fmtReadPreview>> | undefined;
+  let statAdoption: StatAdoption | undefined;
+  if (statKey !== undefined && file.stats !== undefined) {
+    const matched = await findStatSnapshotFor(norm.absolutePath, statKey);
+    if (matched !== undefined) {
+      abortIf(signal);
+      try {
+        preview = await fmtReadPreview(
+          norm.normalized,
+          previewOptions,
+          {
+            anchorCount: matched.lineCount,
+            range: async (start, end) => matched.anchorsInRange(start, end),
+          },
+          norm.absolutePath,
+          maxLineBytes,
+          maxTruncLines,
+        );
+        statAdoption = {
+          snapshotHash: matched.snapshotHash,
+          snapshotId: snapshotIdFor(norm.absolutePath, file.stats, matched.checksum),
+        };
+      } catch (error) {
+        if (!(error instanceof StatIdentityMismatchError)) throw error;
+        // WHY: a stat identity that cannot be proven is a MISS, not a failure: the file may have been
+        // WHY: rewritten under a timestamp the filesystem did not advance. Re-derive identity from the
+        // WHY: bytes instead of serving a page the snapshot cannot back.
+      }
+    }
+  }
+  if (preview === undefined) {
+    // WHY: served hands the preview a walk plan instead of a finished anchor array: the anchors are
+    // WHY: assigned inside the same walk that keeps the page, so the page costs one pass and the anchors
+    // WHY: ride along in it. Verbatim passes none at all — no store, no snapshot, no hash of a line.
+    const anchors = verbatim
+      ? []
+      : await anchorWalkFor(norm.normalized, norm.absolutePath, {
+          ...(options?.store !== undefined ? { store: options.store } : {}),
+          ...(options?.noPersist !== undefined ? { noPersist: options.noPersist } : {}),
+        });
+    preview = await fmtReadPreview(
+      norm.normalized,
+      previewOptions,
+      anchors,
+      norm.absolutePath,
+      maxLineBytes,
+      maxTruncLines,
+    );
+  }
 
   // WHY: (04b-rem P3-4 ruling) the old tail promised "editing rewrites the file as UTF-8" — the
   // WHY: admission round-trip guard (E_LOSSY_TEXT) refuses such an edit instead, so the read
@@ -213,6 +278,8 @@ export async function prepareFile(
     served: preview.served,
     ...(preview.truncation ? { truncation: preview.truncation } : {}),
     ...(preview.nextOffset !== undefined ? { nextOffset: preview.nextOffset } : {}),
+    ...(statKey !== undefined ? { statKey } : {}),
+    ...(statAdoption !== undefined ? { statAdoption } : {}),
   };
 }
 

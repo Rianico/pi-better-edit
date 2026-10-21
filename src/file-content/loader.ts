@@ -16,6 +16,24 @@ import type { NormFile, NormText } from "./types.js";
 
 export type { NormFile, NormText } from "./types.js";
 
+/**
+ * The `stat(2)` identity of one file version (ADR-0043): the four numbers a stat key is built from.
+ *
+ * WHY ctime and not just mtime: userspace can set mtime (`utimes`, `rsync --times`), but it cannot set
+ * ctime — a write bumps ctime even when the caller restores the mtime and keeps the size. That is what
+ * makes "same size, same mtime, different bytes" a detectable change instead of an invisible one.
+ */
+export type StatIdentity = { ino: number; size: number; mtimeMs: number; ctimeMs: number };
+
+/**
+ * The opaque key a read stamps on the snapshot it materialized (ADR-0043). Deliberately a string: the
+ * store compares it, it never interprets it, and it round-trips exact doubles (`String(n)` is shortest
+ * round-trip), so no float column equality decides whether a file is unchanged.
+ */
+export function statKeyOf(info: StatIdentity): string {
+  return `${info.ino}:${info.size}:${info.mtimeMs}:${info.ctimeMs}`;
+}
+
 export type SnapInfo = {
   snapshotId: string;
   ino: number;
@@ -30,6 +48,18 @@ function fmtSnapId(
   checksum?: string,
 ): string {
   return `v2|${canonicalPath}|${info.ino}|${info.mtimeMs}|${info.ctimeMs}|${info.size}${checksum ? `|${checksum}` : ""}`;
+}
+/**
+ * The snapshot id for a file whose bytes were already proven to be `checksum` at this `stat(2)`
+ * identity. `fileSnap` resolves the path first; a caller that already holds a canonical path (and the
+ * load's `Stats`) builds the identical string without another `realpath`.
+ */
+export function snapshotIdFor(
+  canonicalPath: string,
+  info: StatIdentity,
+  checksum?: string,
+): string {
+  return fmtSnapId(canonicalPath, info, checksum);
 }
 
 export async function fileSnap(

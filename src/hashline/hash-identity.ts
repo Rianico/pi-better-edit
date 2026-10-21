@@ -41,6 +41,13 @@ export interface HashSnapshotUpsertOptions {
     /** Anchors added to the legacy retired set in this transaction (undo's displaced cleanup). */
     retireAnchors?: readonly string[];
   };
+  /**
+   * The `stat(2)` identity the caller observed for this path when it materialized `content` (ADR-0043):
+   * stamped on the snapshot row in the same transaction, so the next read of the unchanged file adopts
+   * on stat identity alone. Absent on materializations that never observed the file (working buffers,
+   * edit commits, undo restores) — their rows keep a NULL key and never match a stat lookup.
+   */
+  statKey?: string;
 }
 
 export interface HashSnapshotIO {

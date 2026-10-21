@@ -451,6 +451,42 @@ describe("hash-store — schema versioning", () => {
       expect(row?.value).toBe(String(HASH_STORE_VERSION));
     });
   });
+
+  it("adds the stat-identity column and index to a store that predates them (ADR-0043)", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/keep.ts", "x\n", ["XYZZ"]);
+      shutdownHashStore();
+
+      // WHY: simulates a v10 store — the column and its index do not exist, while the snapshot it
+      // WHY: carries (and any lease naming it) must survive the additive migration untouched.
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      db.exec("DROP INDEX IF EXISTS idx_snapshots_path_stat");
+      db.exec("ALTER TABLE file_snapshots DROP COLUMN stat_key");
+      db.close();
+
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/keep.ts", "x\n")).toEqual(["XYZZ"]);
+      shutdownHashStore();
+
+      const check = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const columns = (
+        check.prepare("PRAGMA table_info(file_snapshots)").all() as { name: string }[]
+      ).map((row) => row.name);
+      const indexes = (
+        check
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'file_snapshots'",
+          )
+          .all() as {
+          name: string;
+        }[]
+      ).map((row) => row.name);
+      check.close();
+      expect(columns).toContain("stat_key");
+      expect(indexes).toContain("idx_snapshots_path_stat");
+    });
+  });
 });
 
 describe("hash-store — anchor_generation rename (issue #20)", () => {

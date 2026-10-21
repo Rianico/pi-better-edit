@@ -2,6 +2,10 @@
 
 ## [Unreleased]
 
+### Features
+
+* **store:** adopt an unchanged file on its `stat(2)` identity instead of re-deriving every line: a read stamps `ino:size:mtimeMs:ctimeMs` on the snapshot row it materializes, and a later read whose stat key matches resolves only its page's lineage (`snapshot_id, line_number` PK range) while verifying each served line against the `canon_hash` the snapshot committed. Any mismatch — count, missing row, canon — falls back to the content-hash path; touch, atomic rename and same-size/same-mtime rewrites are covered. Page-sized adoption drops from 177 ms to 39 ms on a 100k-line fixture, with first-read time unchanged (store version 11, ADR-0043).
+
 ### Bug Fixes
 
 * **store:** keep cache-hit reads off the LRU vacuum's store-wide pin scan by running retention only when a materialization inserts a fresh snapshot; add the covering `(file_path, served_snapshot_hash)` lease index (store version 10) so a fresh commit's sweep stays cheap on a large lease table.

@@ -70,6 +70,11 @@ interface ServedStmts {
   servedExpiredExists: (updatedBefore: number) => boolean;
   snapshotByHash: (path: string, snapshotHash: string) => LeaseSnapshot | undefined;
   lineageAnchorsOf: (snapshotId: number) => LeaseLineageRow[];
+  /**
+   * The lineage rows for exactly these line numbers (ADR-0043): the page-priced half of a read
+   * grant. A whole-file serve keeps `lineageAnchorsOf`, where one scan beats a seek per line.
+   */
+  lineageForLines: (snapshotId: number, lineNumbers: readonly number[]) => LeaseLineageRow[];
   leaseUpsertMany: (
     sessionKey: string,
     path: string,
@@ -136,6 +141,13 @@ interface LeaseLineageRow {
 // WHY: a dense post-edit serve covers every line of the file, so leases are written in one
 // WHY: multi-row upsert per chunk instead of one statement per line (Probe L: 30k lines).
 const LEASE_UPSERT_CHUNK = 400;
+// WHY: (ADR-0043) the number of line numbers one `line_number IN (...)` lookup binds. SQLite's
+// WHY: parameter ceiling is far higher, but a page-sized serve is ~2000 rows and a small chunk keeps
+// WHY: every prepared statement reused across reads (the cache is keyed by chunk size).
+const LINEAGE_PAGE_CHUNK = 400;
+// WHY: at or below this many served rows, resolving the grant's lineage by line number is cheaper than
+// WHY: scanning the whole snapshot. Above it (a whole-file serve) the scan wins, so the grant switches.
+const GRANT_PAGE_MAX = 4096;
 const leaseUpsertStmts = new WeakMap<
   DatabaseSync,
   Map<number, ReturnType<DatabaseSync["prepare"]>>
@@ -215,6 +227,23 @@ function buildStmts(db: DatabaseSync): ServedStmts {
   const lineageAnchorsStmt = db.prepare(
     "SELECT anchor, line_id, canon_hash FROM line_lineage WHERE snapshot_id = ?",
   );
+  // WHY: (ADR-0043) a page-sized grant resolves only the lines it serves. `line_lineage`'s primary
+  // WHY: key is (snapshot_id, line_number), so each parameter is a b-tree seek — instead of reading the
+  // WHY: whole snapshot's lineage and building its Map on every cache-hit read. The full read above
+  // WHY: stays for whole-file serves, where one scan beats a seek per line.
+  const lineagePagesCache = new Map<number, ReturnType<DatabaseSync["prepare"]>>();
+  const lineagePagesStmt = (size: number) => {
+    let stmt = lineagePagesCache.get(size);
+    if (stmt === undefined) {
+      const placeholders = Array.from({ length: size }, () => "?").join(",");
+      stmt = db.prepare(
+        "SELECT anchor, line_id, canon_hash FROM line_lineage " +
+          `WHERE snapshot_id = ? AND line_number IN (${placeholders})`,
+      );
+      lineagePagesCache.set(size, stmt);
+    }
+    return stmt;
+  };
   // WHY: canon evidence is derived here and nowhere else (#151): the lease for the anchor a served
   // WHY: mirror row names carries the digest the served line's canon produced, so no canon text is
   // WHY: stored and no process-wide hash->canon map exists (issue #149).
@@ -242,10 +271,15 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     "SELECT DISTINCT file_path AS file_path FROM served_leases " +
       "WHERE session_id = ? AND anchor = ? ORDER BY file_path ASC",
   );
+  // WHY: (ADR-0043) NOT EXISTS keeps the NOT IN semantics (a NULL `line_id` matched nothing under
+  // WHY: NOT IN, so it still retires nothing — the explicit guard preserves that) while letting the
+  // WHY: unique (snapshot_id, line_id) index answer once per active lease. NOT IN built a 100k-row
+  // WHY: temp b-tree on every cache-hit read: ~12ms that had nothing to do with the page.
   const leaseRetireAbsentStmt = db.prepare(
     "UPDATE served_leases SET retired_at = ? " +
-      "WHERE file_path = ? AND retired_at IS NULL " +
-      "AND line_id NOT IN (SELECT line_id FROM line_lineage WHERE snapshot_id = ?)",
+      "WHERE file_path = ? AND retired_at IS NULL AND line_id IS NOT NULL " +
+      "AND NOT EXISTS (SELECT 1 FROM line_lineage ll " +
+      "WHERE ll.snapshot_id = ? AND ll.line_id = served_leases.line_id)",
   );
   const leaseDeleteStmt = db.prepare(
     "DELETE FROM served_leases WHERE session_id = ? AND file_path = ?",
@@ -320,6 +354,19 @@ function buildStmts(db: DatabaseSync): ServedStmts {
     snapshotByHash: (path: string, snapshotHash: string) =>
       snapshotByHashStmt.get(path, snapshotHash, ANCHOR_GENERATION) as LeaseSnapshot | undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
+    lineageForLines: (snapshotId, lineNumbers) => {
+      const rows: LeaseLineageRow[] = [];
+      for (let i = 0; i < lineNumbers.length; i += LINEAGE_PAGE_CHUNK) {
+        const chunk = lineNumbers.slice(i, i + LINEAGE_PAGE_CHUNK);
+        rows.push(
+          ...(lineagePagesStmt(chunk.length).all(
+            snapshotId,
+            ...chunk,
+          ) as unknown as LeaseLineageRow[]),
+        );
+      }
+      return rows;
+    },
     lineageAnchorsOf: (...params) =>
       lineageAnchorsStmt.all(...params) as unknown as LeaseLineageRow[],
     leaseUpsertMany: (sessionKey, path, snapshotHash, updatedAt, grants) => {
@@ -772,8 +819,17 @@ export function grantLeasesInTransaction(
   // WHY: an older committed snapshot leases against that snapshot, not `S_latest`.
   const snapshot = stmts.snapshotByHash(path, contentHash);
   if (!snapshot) return;
+  // WHY: (ADR-0043) a page-sized serve resolves its own lines; a dense/whole-file serve reads the
+  // WHY: snapshot's lineage once. Both produce the same anchor-keyed index — a read's grant cost should
+  // WHY: scale with the rows it shows, not with the file.
   const byAnchor = new Map(
-    stmts.lineageAnchorsOf(snapshot.snapshot_id).map((entry) => [entry.anchor, entry]),
+    (live.length <= GRANT_PAGE_MAX
+      ? stmts.lineageForLines(
+          snapshot.snapshot_id,
+          live.map((row) => row.position + 1),
+        )
+      : stmts.lineageAnchorsOf(snapshot.snapshot_id)
+    ).map((entry) => [entry.anchor, entry]),
   );
   // WHY: a lease is keyed by anchor, so a batch that repeats an anchor keeps only its last serve.
   const grants = new Map<string, LeaseGrant>();

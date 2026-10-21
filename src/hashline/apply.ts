@@ -725,7 +725,7 @@ function resolvedRange(resolved: RHEdit): ResolvedRange {
   };
 }
 
-export function fmtRegion(hashes: string[], lines: string[]): string {
+export function fmtRegion(hashes: readonly string[], lines: readonly string[]): string {
   if (hashes.length !== lines.length) {
     throw new Error(
       `fmtRegion: hashes.length (${hashes.length}) must match lines.length (${lines.length}).`,

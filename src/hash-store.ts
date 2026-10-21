@@ -383,6 +383,7 @@ function openDb(storePath: string, budget?: BusyBudget): OpenedDb {
 // WHY: and the interpolated fragments in their statements come from those members.
 const MIGRATION_COLUMNS = {
   cut_intent: { direction: "TEXT" },
+  file_snapshots: { stat_key: "TEXT" },
   file_undo: { snapshot_hash: "TEXT", transaction_id: "TEXT", raw_pre: "TEXT" },
   served: { retired: "TEXT", canons: "TEXT", snapshotId: "TEXT" },
   undo: { result_content: "TEXT NOT NULL DEFAULT ''" },
@@ -701,6 +702,12 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   // WHY: so a pre-rename store opens and its generation-gated behavior is intact; DEFAULT 0 stays
   // WHY: so an older-build row misses and re-derives.
   renameGenerationColumn(db, "file_snapshots");
+  // WHY: the stat identity a READ materialization saw for this path (ADR-0043): a later read whose
+  // WHY: `stat(2)` identity equals it adopts this snapshot's lineage without re-deriving anchors. NULL
+  // WHY: on every row the read path did not stamp (edit/undo materializations, pre-v11 stores), and
+  // WHY: NULL never matches a lookup — the fallback is always the content-hash path.
+  addColumnIfMissing(db, "file_snapshots", "stat_key");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_path_stat ON file_snapshots (path, stat_key)");
   // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave
   // WHY: unknown/foreign-generation snapshots, orphan lineage, or dangling leases
   // WHY: behind. Current-generation rows survive untouched (same-version sessions

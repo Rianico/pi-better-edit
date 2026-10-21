@@ -55,9 +55,22 @@ interface SnapshotRef {
   anchor_generation: number;
 }
 
+/** The row a stat-identity adoption names: the committed snapshot for one file version (ADR-0043). */
+interface StatSnapshotRef extends SnapshotRef {
+  snapshot_hash: string;
+}
+
 interface SnapshotStmts {
   findSnapshot: (path: string, snapshotHash: string) => SnapshotRef | undefined;
+  findSnapshotByStat: (path: string, statKey: string) => StatSnapshotRef | undefined;
   lineageAnchors: (snapshotId: number) => { anchor: string }[];
+  /** The lineage rows of a half-open 1-based line-number range, in line order (ADR-0043 page read). */
+  lineageRange: (
+    snapshotId: number,
+    fromLine: number,
+    toLine: number,
+  ) => { line_number: number; anchor: string; canon_hash: string }[];
+  setSnapshotStatKey: (snapshotId: number, statKey: string) => void;
   latestSnapshot: (path: string) => { snapshot_id: number } | undefined;
   lineageIdentities: (
     snapshotId: number,
@@ -75,6 +88,7 @@ interface SnapshotStmts {
     snapshotHash: string,
     lineCount: number,
     createdAt: number,
+    statKey: string | undefined,
   ) => number | undefined;
   insertLineage: (
     snapshotId: number,
@@ -96,6 +110,19 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
     "SELECT snapshot_id, line_count, anchor_generation FROM file_snapshots " +
       "WHERE path = ? AND snapshot_hash = ? AND committed = 1",
   );
+  // WHY: (ADR-0043) the adoption lookup names the FILE VERSION, not the content: a matching stat
+  // WHY: identity is what lets the read path resolve one page of lineage instead of materializing
+  // WHY: every anchor. Newest first so a re-stamped row (a fallback adoption) wins over a stale one.
+  const findStatStmt = db.prepare(
+    "SELECT snapshot_id, snapshot_hash, line_count, anchor_generation FROM file_snapshots " +
+      "WHERE path = ? AND stat_key = ? AND committed = 1 " +
+      "ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
+  );
+  const lineageRangeStmt = db.prepare(
+    "SELECT line_number, anchor, canon_hash FROM line_lineage " +
+      "WHERE snapshot_id = ? AND line_number >= ? AND line_number <= ? ORDER BY line_number ASC",
+  );
+  const setStatKeyStmt = db.prepare("UPDATE file_snapshots SET stat_key = ? WHERE snapshot_id = ?");
   const lineageStmt = db.prepare(
     "SELECT anchor FROM line_lineage WHERE snapshot_id = ? ORDER BY line_number ASC",
   );
@@ -139,8 +166,8 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
   // WHY: a local allocation. `DO NOTHING` + no returned row is the conflict signal the caller
   // WHY: rolls back on, so the concurrent writer's canonical snapshot is adopted instead.
   const insertSnapshotStmt = db.prepare(
-    "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) " +
-      "VALUES (?, ?, ?, ?, 1, ?) " +
+    "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation, stat_key) " +
+      "VALUES (?, ?, ?, ?, 1, ?, ?) " +
       "ON CONFLICT(path, snapshot_hash) DO NOTHING " +
       "RETURNING snapshot_id",
   );
@@ -155,6 +182,14 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
     latestSnapshot: (path: string) =>
       latestSnapshotStmt.get(path, ANCHOR_GENERATION) as { snapshot_id: number } | undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
+    findSnapshotByStat: (...params) => findStatStmt.get(...params) as StatSnapshotRef | undefined,
+    lineageRange: (...params) =>
+      lineageRangeStmt.all(...params) as unknown as {
+        line_number: number;
+        anchor: string;
+        canon_hash: string;
+      }[],
+    setSnapshotStatKey: (snapshotId, statKey) => setStatKeyStmt.run(statKey, snapshotId),
     lineageIdentities: (...params) =>
       lineageIdentitiesStmt.all(...params) as unknown as {
         line_number: number;
@@ -176,13 +211,14 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       const row = allocateStmt.get(path, count, count, count) as { start_id: number };
       return row.start_id;
     },
-    insertSnapshot: (path, snapshotHash, lineCount, createdAt) => {
+    insertSnapshot: (path, snapshotHash, lineCount, createdAt, statKey) => {
       const row = insertSnapshotStmt.get(
         path,
         snapshotHash,
         lineCount,
         createdAt,
         ANCHOR_GENERATION,
+        statKey ?? null,
       ) as { snapshot_id: number } | undefined;
       return row?.snapshot_id;
     },
@@ -344,6 +380,7 @@ function planFor(options?: HashSnapshotUpsertOptions): MaterializePlan {
     retireLeases: options?.retireLeases === true,
     ...(options?.leases !== undefined ? { leases: options.leases } : {}),
     ...(options?.servedMirror !== undefined ? { servedMirror: options.servedMirror } : {}),
+    ...(options?.statKey !== undefined ? { statKey: options.statKey } : {}),
   };
 }
 
@@ -401,6 +438,154 @@ export async function adoptPinnedSnapshotFor(
   materializeSnapshot(store, descriptor, planFor(options));
 }
 
+/**
+ * One lineage row a stat-matched page read resolves (ADR-0043): the anchor to serve and the canon
+ * digest the snapshot committed that line under, which the caller re-verifies against the bytes it
+ * is about to show. A page that cannot be proven falls back to content-hash materialization — never
+ * a stale anchor.
+ */
+interface StatLineageRow {
+  lineNumber: number;
+  anchor: string;
+  canonHash: string;
+}
+
+/**
+ * A committed snapshot selected by file version (ADR-0043). `anchorsInRange` is page-priced: one PK
+ * range scan over `line_lineage`, never a materialization of the whole file's identity. Throws when
+ * the range is not fully present — provenance it cannot prove is provenance it will not serve.
+ */
+export interface StatMatchedSnapshot {
+  snapshotHash: string;
+  /** The content checksum carried by `snapshotHash` — the epoch suffix a read reports. */
+  checksum: string;
+  lineCount: number;
+  anchorsInRange: (start: number, end: number) => StatLineageRow[];
+}
+
+function checksumOf(snapshotHash: string): string | undefined {
+  const generationSeparator = snapshotHash.indexOf(":");
+  const checksumSeparator =
+    generationSeparator < 0 ? -1 : snapshotHash.indexOf(":", generationSeparator + 1);
+  return checksumSeparator < 0 ? undefined : snapshotHash.slice(checksumSeparator + 1);
+}
+
+/**
+ * Finds the committed snapshot whose stamped stat identity names this file version (ADR-0043).
+ *
+ * Best-effort by design: a missing row, a foreign anchor generation, or an unreadable store is a
+ * MISS, never an error — the caller falls back to content-hash materialization, which is the only
+ * path that can prove an absent snapshot wrong or right.
+ */
+export async function findStatSnapshotFor(
+  path: string,
+  statKey: string,
+): Promise<StatMatchedSnapshot | undefined> {
+  let store: Awaited<ReturnType<typeof loadHashStore>>;
+  try {
+    store = await loadHashStore();
+  } catch (error) {
+    console.error("pi-better-edit: stat-identity lookup skipped:", error);
+    return undefined;
+  }
+  try {
+    const stmts = snapshotStmts(store.db);
+    const row = stmts.findSnapshotByStat(path, statKey);
+    if (
+      row === undefined ||
+      row.anchor_generation !== ANCHOR_GENERATION ||
+      !isCurrentAnchorGeneration(row.snapshot_hash)
+    ) {
+      return undefined;
+    }
+    const checksum = checksumOf(row.snapshot_hash);
+    if (checksum === undefined) {
+      return undefined;
+    }
+    return {
+      snapshotHash: row.snapshot_hash,
+      checksum,
+      lineCount: row.line_count,
+      anchorsInRange: (start, end) => {
+        const rows = stmts.lineageRange(row.snapshot_id, start + 1, end);
+        if (rows.length !== end - start) {
+          throw new Error(
+            `stat-identity snapshot ${row.snapshot_id} has ${rows.length} lineage rows for lines ` +
+              `${start + 1}-${end}; expected ${end - start}.`,
+          );
+        }
+        return rows.map((line) => ({
+          lineNumber: line.line_number,
+          anchor: line.anchor,
+          canonHash: line.canon_hash,
+        }));
+      },
+    };
+  } catch (error) {
+    console.error("pi-better-edit: stat-identity lookup skipped:", error);
+    return undefined;
+  }
+}
+
+/** The file version an adoption restates: the path, its `stat(2)` identity, and the content it names. */
+export interface StatSnapshotAdoption {
+  path: string;
+  statKey: string;
+  snapshotHash: string;
+}
+
+/**
+ * Adopts an already-committed snapshot on stat identity alone (ADR-0043): no content is hashed, no
+ * lineage is written, only the leases and mirror a materialization owns are recorded.
+ *
+ * Returns `false` when the snapshot is no longer the row this file version names (a concurrent vacuum
+ * or a re-stamp won the race). The caller must then take the content-hash path: it is the only writer
+ * allowed to decide what this content's identity is. Retirement stays authoritative — a cache-hit read
+ * still retires the leases its snapshot no longer covers (ADR-0042 §3.1.3).
+ */
+export async function adoptStatSnapshotFor(
+  adoption: StatSnapshotAdoption,
+  options?: SnapshotAdoptOptions,
+): Promise<boolean> {
+  if (!isCurrentAnchorGeneration(adoption.snapshotHash)) {
+    return false;
+  }
+  const store = await loadHashStore();
+  const plan = planFor(options);
+  return withBusyRetry(() => {
+    store.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = snapshotStmts(store.db).findSnapshotByStat(adoption.path, adoption.statKey);
+      if (
+        row === undefined ||
+        row.snapshot_hash !== adoption.snapshotHash ||
+        row.anchor_generation !== ANCHOR_GENERATION
+      ) {
+        store.db.exec("ROLLBACK");
+        return false;
+      }
+      const now = Date.now();
+      // WHY: adoption cannot grow the store, so ADR-0042's retention trigger (fresh commits only)
+      // WHY: stays exactly where it was — a cache-hit read never sweeps.
+      if (plan.retireLeases) {
+        retireAbsentLeases(store.db, adoption.path, row.snapshot_id, now);
+      }
+      grantMaterializedLeases(store.db, plan.leases, adoption.path, adoption.snapshotHash);
+      recordMaterializedMirror(store.db, plan.servedMirror, adoption.path);
+      store.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      try {
+        store.db.exec("ROLLBACK");
+      } catch (rollbackError: unknown) {
+        // SAFETY: best-effort rollback — the original failure is authoritative.
+        console.error("[snapshot-store] failed to rollback stat adoption:", rollbackError);
+      }
+      throw error;
+    }
+  });
+}
+
 interface InheritedIdentities {
   /** current line number -> `line_id` inherited from S_latest (spec §3.1.3.2). */
   inherited: Map<number, number>;
@@ -451,11 +636,12 @@ function pairAgainstLatest(store: HashStore, path: string, lines: string[]): Inh
   return { inherited };
 }
 
-/** The one transaction's own options: retirement is authoritative-only, `leases` adds the grant, `servedMirror` the mirror write. */
+/** The one transaction's own options: retirement is authoritative-only, `leases` adds the grant, `servedMirror` the mirror write, `statKey` the observed file version (ADR-0043). */
 interface MaterializePlan {
   retireLeases: boolean;
   leases?: LeaseGrant;
   servedMirror?: HashSnapshotUpsertOptions["servedMirror"];
+  statKey?: string;
 }
 
 /**
@@ -548,7 +734,7 @@ function materializeSnapshotInTxn(
   plan: MaterializePlan,
 ): MaterializedSnapshot | undefined {
   const { path, snapshotHash, lineCount, hashes, content } = descriptor;
-  const { retireLeases, leases, servedMirror } = plan;
+  const { retireLeases, leases, servedMirror, statKey } = plan;
   const lines = splitLines(content);
   // WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4 step
   // WHY: 4): the default is `false` so in-memory working-buffer snapshots — and any content that has
@@ -576,6 +762,9 @@ function materializeSnapshotInTxn(
     }
     grantMaterializedLeases(store.db, leases, path, snapshotHash);
     recordMaterializedMirror(store.db, servedMirror, path);
+    // WHY: (ADR-0043) a content-verified adoption still records the version it was observed at, so
+    // WHY: the next read of this unchanged file takes the stat path instead of the content-hash one.
+    if (statKey !== undefined) stmts.setSnapshotStatKey(existing.snapshot_id, statKey);
     return { snapshotId: existing.snapshot_id, inserted: false };
   }
   // WHY: survivors keep their exact `line_id`s (spec §3.2.4 step 1). The edit commit path hands
@@ -590,7 +779,7 @@ function materializeSnapshotInTxn(
     if (!inherited.has(lineNumber)) freshIds++;
   }
   const startId = freshIds > 0 ? stmts.allocateLineIds(path, freshIds) : 0;
-  const insertedId = stmts.insertSnapshot(path, snapshotHash, lineCount, Date.now());
+  const insertedId = stmts.insertSnapshot(path, snapshotHash, lineCount, Date.now(), statKey);
   if (insertedId === undefined) {
     // WHY: a concurrent writer committed `(path, snapshot_hash)` first (spec §3.2.4 step 3): the
     // WHY: whole transaction — counter block included — is discarded and the canonical snapshot
