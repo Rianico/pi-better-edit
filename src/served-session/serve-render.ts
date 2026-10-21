@@ -30,7 +30,7 @@
  * re-serve, relocated line keeps its hash.
  */
 import { HASH_LEN, HASH_RE } from "../hashline/alphabet.js";
-import { HASH_SEP } from "../hashline/hash.js";
+import { HASH_SEP } from "../hashline/hash-identity.js";
 import { canonDigest } from "../hashline/hash-identity.js";
 import { SERVED_ROWS_CAP } from "../constants.js";
 import {

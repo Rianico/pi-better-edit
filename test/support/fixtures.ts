@@ -301,6 +301,26 @@ export function expectedEditContent(
   return expected;
 }
 
+/**
+ * `lineHashes` with the store side effect named (arch-03).
+ *
+ * WHY: the serve/lease tests below derive a file's anchors and then read the snapshot/lineage back;
+ * WHY: that used to happen through the retired process-global IO, which silently chose a store from
+ * WHY: the environment. This threads the same store explicitly, so the call still materializes the
+ * WHY: snapshot the test asserts on without any ambient fallback to leak into src.
+ */
+export async function materializedLineHashes(
+  content: string,
+  path: string,
+  previous?: { content: string; hashes: string[]; removedHashes?: Set<string> },
+  persist?: boolean,
+): Promise<string[]> {
+  const { lineHashes } = await import("../../src/hashline/hash-identity.js");
+  const { snapshotIOFor } = await import("../../src/snapshot-store");
+  const { loadHashStore } = await import("../../src/hash-store");
+  return lineHashes(content, path, previous, snapshotIOFor(await loadHashStore()), persist);
+}
+
 export async function makeTag(
   content: string,
   line: number,

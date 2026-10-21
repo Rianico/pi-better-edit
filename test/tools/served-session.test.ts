@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { createSessionHandle, loadLeases } from "../../src/served-session/session";
 import { readNormFile } from "../../src/file-reader.js";
-import { getWritableTempRoot } from "../support/fixtures";
+import { getWritableTempRoot, materializedLineHashes } from "../support/fixtures";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { initHasher } from "../../src/hashline/hasher";
 import { lineHashes } from "../../src/hashline/hash-identity.js";
@@ -72,7 +72,7 @@ describe("ServedSession — handle deep interface", () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
       const content = "alpha\nbravo\n";
-      const hashes = await lineHashes(content, "/p.ts");
+      const hashes = await materializedLineHashes(content, "/p.ts");
       const store = await loadHashStore();
 
       await h.recordDiff(
@@ -133,7 +133,7 @@ describe("ServedSession — handle deep interface", () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
       const content = "aaa\nbbb\nccc\n";
-      const hashes = await lineHashes(content, "/p.ts");
+      const hashes = await materializedLineHashes(content, "/p.ts");
       await h.recordDiff(
         hashes.map((hash, position) => ({ position, hash })),
         { contentHash: snapshotHashFor(content) },
@@ -146,7 +146,7 @@ describe("ServedSession — handle deep interface", () => {
 
       // external insert relocates ccc from line 3 to line 4 without changing its text
       const drifted = "aaa\nbbb\nddd\nccc\n";
-      const driftedHashes = await lineHashes(drifted, "/p.ts");
+      const driftedHashes = await materializedLineHashes(drifted, "/p.ts");
       const movedAnchor = driftedHashes[3]!;
       await h.recordLeases([{ position: 3, hash: movedAnchor }], snapshotHashFor(drifted));
 
@@ -167,12 +167,12 @@ describe("ServedSession — handle deep interface", () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
       const content = "alpha\nbravo\n";
-      const hashes = await lineHashes(content, "/p.ts");
+      const hashes = await materializedLineHashes(content, "/p.ts");
       const store = await loadHashStore();
 
       // A newer materialization exists, so a `latest` fallback would bind the lease to a
       // different content version — the silent-miswrite class the empty hash must not open.
-      await lineHashes("alpha\nBRAVO\n", "/p.ts");
+      await materializedLineHashes("alpha\nBRAVO\n", "/p.ts");
 
       await h.recordDiff(
         hashes.map((hash, position) => ({ position, hash })),
@@ -190,11 +190,11 @@ describe("ServedSession — handle deep interface", () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
       const served = "alpha\nbravo\n";
-      const servedHashes = await lineHashes(served, "/p.ts");
+      const servedHashes = await materializedLineHashes(served, "/p.ts");
       // A DIFFERENT content version materializes afterwards: a symmetric reorder, so the patience
       // engine pairs nothing and `alpha`'s line_id in the newer snapshot differs from the served one.
       const reordered = "bravo\nalpha\n";
-      const newerHashes = await lineHashes(reordered, "/p.ts");
+      const newerHashes = await materializedLineHashes(reordered, "/p.ts");
       // …and both snapshots share the first line's anchor (same line text), which is what made the
       // `latest` fallback a silent miswrite rather than an obvious miss.
       expect(newerHashes[1]).toBe(servedHashes[0]);
@@ -223,8 +223,8 @@ describe("ServedSession — handle deep interface", () => {
     await withTempHome(async () => {
       const h = createSessionHandle("sessA", "/p.ts");
       const served = "alpha\nbravo\n";
-      const servedHashes = await lineHashes(served, "/p.ts");
-      const newerHashes = await lineHashes("alpha\nBRAVO\n", "/p.ts");
+      const servedHashes = await materializedLineHashes(served, "/p.ts");
+      const newerHashes = await materializedLineHashes("alpha\nBRAVO\n", "/p.ts");
       expect(newerHashes[0]).toBe(servedHashes[0]);
 
       await h.recordTruncated(

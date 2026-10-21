@@ -1,5 +1,5 @@
 import { describe, expect, it, beforeAll } from "vitest";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { findServedHashEcho, applyEdit, ServedHashEchoError } from "../../src/hashline/apply";
 import { initHasher } from "../../src/hashline/hasher";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";

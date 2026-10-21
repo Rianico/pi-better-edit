@@ -5,12 +5,12 @@ import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 
 import { initHasher } from "../../src/hashline/hasher.js";
-import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store.js";
 import { createSessionHandle, ensureServedSchema } from "../../src/served-session/session.js";
 import * as snapshotStore from "../../src/snapshot-store";
 import {
   getWritableTempRoot,
+  materializedLineHashes,
   setupIntegrationTest,
   getText,
   withTempFile,
@@ -92,7 +92,7 @@ describe("issue #121 — silent catches log with context and stay best-effort", 
       );
       const path = "/lease-121.ts";
       const content = "alpha\nbeta\n";
-      const hashes = await lineHashes(content, path);
+      const hashes = await materializedLineHashes(content, path);
       const handle = createSessionHandle("sess-lease-121", path, store);
       await expect(
         handle.recordDiff(

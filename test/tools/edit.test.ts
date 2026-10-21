@@ -2,7 +2,7 @@ import { describe, expect, it, vi } from "vitest";
 import { readFile } from "fs/promises";
 import { join } from "path";
 import { lineHashes } from "../../src/hashline/hash-identity.js";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { applyEdit } from "../../src/hashline/apply";
 import { canonDigest } from "../../src/hashline/hash-identity";
 import type { LeaseIdentityView, LeaseSpanSource, HEdit } from "../../src/hashline/resolve";

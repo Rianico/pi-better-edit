@@ -485,7 +485,7 @@ function renameGenerationColumn(db: DatabaseSync, table: GenerationTable): void 
 // WHY:       bytes it is about. A lease is generation-gated AT USE TIME (`isCurrentAnchorGeneration` on
 // WHY:       the lease's own 3-part `served_snapshot_hash`, `src/mutation-engine/edit-source.ts`), and its
 // WHY:       resolved span must clear the MVCC contiguity gate (`verifyRebasedSpan` -> `E_STALE_RANGE`,
-// WHY:       `src/hashline/served-verification.ts`), whose line identities come from the CURRENT content's
+// WHY:       `src/served-session/serve-render.ts`), whose line identities come from the CURRENT content's
 // WHY:       own lineage (`positionsByIdentity`). The served mirror decides no identity either: it feeds
 // WHY:       an evidence-only scan of the lines about to be written (`findServedHashEcho`,
 // WHY:       `src/hashline/apply.ts`) and, through `retired`, the set of anchors the RESULT may not be

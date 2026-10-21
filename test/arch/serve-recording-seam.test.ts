@@ -7,7 +7,7 @@ import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { createSessionHandle, recordServes } from "../../src/served-session";
 import { canonDigest, initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
-import { getWritableTempRoot } from "../support/fixtures";
+import { getWritableTempRoot, materializedLineHashes } from "../support/fixtures";
 
 const SESSION_MODULE = "src/served-session/session.ts";
 
@@ -132,7 +132,7 @@ describe("serve recording — one shared writer for the mirror and the lease gra
       const path = "/serve-seam.ts";
       const lines = ["alpha", "beta", "gamma"];
       const content = `${lines.join("\n")}\n`;
-      const hashes = await lineHashes(content, path);
+      const hashes = await materializedLineHashes(content, path);
       const rows = hashes.map((hash, position) => ({ position, hash }));
 
       // A mirror-only serve grants no lease, so no canon evidence exists anywhere. There is nothing

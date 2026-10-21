@@ -1,7 +1,7 @@
 import { readFile, rename } from "node:fs/promises";
 import type { DatabaseSync } from "node:sqlite";
 import { contentChecksum } from "../hashline/hasher.js";
-import { isValidHashList } from "../hashline/hash.js";
+import { isValidHashList } from "../hashline/alphabet.js";
 import { legacyHashStorePath } from "../hash-store.js";
 import { splitLines, errCode } from "../utils.js";
 import { reportDiagnostic, reportWarning } from "../diagnostics.js";

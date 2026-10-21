@@ -2,66 +2,12 @@ import { isAbsolute, resolve } from "node:path";
 import { splitLines } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { SERVED_MAX_LINES } from "../constants.js";
+import type { HashSnapshotIO, HashSnapshotUpsertOptions } from "../snapshot-store";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
 import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
 export { initHasher, HASH_LEN, ALPHA_RE, HASH_CLASS };
-
-export interface HashSnapshotUpsertOptions {
-  /**
-   * WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4
-   * WHY: step 4): it must be `true` only when `content` is the file's committed truth (read-path
-   * WHY: materialization, post-write batch commit, undo revert). In-memory working-buffer hashing
-   * WHY: that never reaches disk must leave `retired_at` untouched, or a rejected batch would
-   * WHY: retire every anchor the session still validly holds and force a re-read.
-   */
-  retireLeases?: boolean;
-  /**
-   * The served rows to lease inside the materialization transaction (spec §3.1.2 step 5 /
-   * §3.2.4 step 4): granted with `retired_at = NULL` and `served_snapshot_hash` bound to the
-   * snapshot this transaction commits, so snapshot + lineage + leases commit or roll back as
-   * one `BEGIN IMMEDIATE` unit. Absent on hashing paths that serve nothing (working buffers).
-   */
-  leases?: {
-    sessionKey: string;
-    rows: ReadonlyArray<{ position: number; hash: string | null }>;
-  };
-  /**
-   * CAND-3: the served mirror write for the same rows, committed inside the materialization's
-   * own `BEGIN IMMEDIATE` (via `recordServedMirrorInTransaction`), so the `served_leases` grant
-   * and the mirror rows commit or roll back as one unit — lease-without-mirror and
-   * mirror-without-lease become structurally unreachable on the post-write commit. Absent on
-   * paths that write the mirror separately (the read path records serves through its own seam).
-   */
-  servedMirror?: {
-    sessionKey: string;
-    rows: ReadonlyArray<{ position: number; hash: string | null }>;
-    /** Truncated-serve mirror shape: clamp to `lineCount`, clear from `clearFrom`. */
-    shape?: { lineCount: number; clearFrom?: number };
-    /** Anchors added to the legacy retired set in this transaction (undo's displaced cleanup). */
-    retireAnchors?: readonly string[];
-  };
-  /**
-   * The `stat(2)` identity the caller observed for this path when it materialized `content` (ADR-0043):
-   * stamped on the snapshot row in the same transaction, so the next read of the unchanged file adopts
-   * on stat identity alone. Absent on materializations that never observed the file (working buffers,
-   * edit commits, undo restores) — their rows keep a NULL key and never match a stat lookup.
-   */
-  statKey?: string;
-}
-
-export interface HashSnapshotIO {
-  get(path: string, content: string, deleteCorrupt: boolean): Promise<string[] | undefined>;
-  upsert(
-    path: string,
-    checksum: string,
-    lineCount: number,
-    hashes: string[],
-    content: string,
-    options?: HashSnapshotUpsertOptions,
-  ): Promise<void>;
-}
 
 type HashPrior = {
   content: string;
@@ -713,12 +659,6 @@ export class HashIdentity {
 }
 
 export const defaultHashIdentity = new HashIdentity();
-
-// SAFETY: retained pass-through for test/back-compat — delegates to defaultHashIdentity; kept as small wrapper, not inlined to preserve import surface.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- SAFETY: retained wrapper for import surface
-function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
-  defaultHashIdentity.setSnapshotIO(io);
-}
 
 export function contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<string>): string[] {
   return defaultHashIdentity.contentOnlyHashes(content, blockedHashes);

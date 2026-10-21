@@ -28,7 +28,7 @@ function req(input: unknown): NormalizedEditRequest {
 import { planServeRecording } from "../../src/served-session/index.js";
 import { computeDrift, scanDrift } from "../../src/drift";
 import { initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
-import { getWritableTempRoot } from "../support/fixtures";
+import { getWritableTempRoot, materializedLineHashes } from "../support/fixtures";
 import { canonDigest } from "../../src/hashline/hash-identity.js";
 import { readNormFile } from "../../src/file-reader.js";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
@@ -536,7 +536,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "epoch.txt");
-      const hashes = await lineHashes("alpha\nbravo\ncharlie\n", path);
+      const hashes = await materializedLineHashes("alpha\nbravo\ncharlie\n", path);
       const handle = createSessionHandle(SESSION, path, store);
       await handle.recordEpoch({
         rows: hashes.map((hash, position) => ({ position, hash })),
@@ -557,9 +557,9 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const store = await loadHashStore();
       const path = join(home, "revert.txt");
       const original = "alpha\nbravo\ncharlie\n";
-      const originalHashes = await lineHashes(original, path);
+      const originalHashes = await materializedLineHashes(original, path);
       // a later snapshot for the same path must not steal the identity of the served content
-      await lineHashes("alpha\nBRAVO\ncharlie\n", path);
+      await materializedLineHashes("alpha\nBRAVO\ncharlie\n", path);
 
       const handle = createSessionHandle(SESSION, path, store);
       await handle.recordEpoch({
@@ -589,7 +589,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "diff.txt");
-      const hashes = await lineHashes("alpha\nbravo\ncharlie\n", path);
+      const hashes = await materializedLineHashes("alpha\nbravo\ncharlie\n", path);
       const handle = createSessionHandle(SESSION, path, store);
       await handle.recordDiff(
         hashes.map((hash, position) => ({ position, hash })),
@@ -615,7 +615,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       // File A's own allocation names its anchor; file B is served under the SAME anchor string,
       // which is the same-anchor collision across two files that the process-global hash->canon
       // map used to leak through.
-      const anchor = (await lineHashes(lineA, pathA))[0]!;
+      const anchor = (await materializedLineHashes(lineA, pathA))[0]!;
       // WHY: canon evidence is derived from the leases a serve grants (#151), never from a stored canon
       // WHY: array, so each file is served against the snapshot that actually holds its own line.
       await upsertSnapshotFor({
@@ -650,7 +650,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "serve.txt");
-      const hashes = await lineHashes("alpha\nbravo\n", path);
+      const hashes = await materializedLineHashes("alpha\nbravo\n", path);
       const handle = createSessionHandle(SESSION, path, store);
       await handle.recordServeFeedback(
         [{ position: 1, hash: hashes[1]! }],
@@ -668,7 +668,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "trunc.txt");
-      const hashes = await lineHashes("alpha\nbravo\n", path);
+      const hashes = await materializedLineHashes("alpha\nbravo\n", path);
       const handle = createSessionHandle(SESSION, path, store);
       await handle.recordTruncated(
         [{ position: 0, hash: hashes[0]! }],
@@ -686,7 +686,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const path = join(home, "undo.txt");
-      const hashes = await lineHashes("alpha\nbravo\n", path);
+      const hashes = await materializedLineHashes("alpha\nbravo\n", path);
       const handle = createSessionHandle(SESSION, path, store);
       await handle.recordLeases(
         hashes.map((hash, position) => ({ position, hash })),
@@ -703,7 +703,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const store = await loadHashStore();
       const path = join(home, "cyclic.txt");
       const contentA = "alpha\nbravo\ncharlie\n";
-      const hashesA = await lineHashes(contentA, path);
+      const hashesA = await materializedLineHashes(contentA, path);
       const handle = createSessionHandle(SESSION, path, store);
 
       // read A: snapA materializes and leases its anchors
@@ -719,7 +719,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       // edit to B: the edit path's post-write commit materializes snapB authoritatively,
       // which retires A's leases; the dense diff serve then leases B's anchors
       const contentB = "alpha\nBRAVO\ncharlie\n";
-      const hashesB = await lineHashes(contentB, path);
+      const hashesB = await materializedLineHashes(contentB, path);
       await upsertSnapshotFor(
         {
           path,
@@ -770,7 +770,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       const store = await loadHashStore();
       const path = join(home, "undo-revert.txt");
       const contentA = "alpha\nbravo\ncharlie\n";
-      const hashesA = await lineHashes(contentA, path);
+      const hashesA = await materializedLineHashes(contentA, path);
       const handle = createSessionHandle(SESSION, path, store);
       await handle.recordEpoch({
         rows: hashesA.map((hash, position) => ({ position, hash })),
@@ -783,7 +783,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
 
       // the edit that undo reverts
       const contentB = "alpha\nBRAVO\ncharlie\n";
-      const hashesB = await lineHashes(contentB, path);
+      const hashesB = await materializedLineHashes(contentB, path);
       await handle.recordDiff(
         hashesB.map((hash, position) => ({ position, hash })),
         {
@@ -840,7 +840,7 @@ describe("serve hooks grant served_leases (issue #81)", () => {
       );
       expect(first.raw.appliedCount).toBe(1);
       expect(await readFile(path, "utf-8")).toBe(contentB);
-      const hashesB = await lineHashes(contentB, path);
+      const hashesB = await materializedLineHashes(contentB, path);
 
       // edit B -> A: snapA is a cache hit, so the diff serve must re-bind A's leases to snapA
       const second = await apply(

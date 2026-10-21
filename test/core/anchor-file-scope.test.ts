@@ -10,7 +10,7 @@ import {
   fileHashesFor,
 } from "../../src/hashline/hash-identity.js";
 import { ALPHA } from "../../src/hashline/alphabet.js";
-import { canon, canonDigest } from "../../src/hashline/hash.js";
+import { canon, canonDigest } from "../../src/hashline/hash-identity.js";
 import { xxh32 } from "../../src/hashline/hasher.js";
 import { applyEdit } from "../../src/hashline/apply.js";
 import {

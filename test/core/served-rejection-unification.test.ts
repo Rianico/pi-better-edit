@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { DomainError } from "../../src/domain-errors.js";
 import {
   makeServedRejection,

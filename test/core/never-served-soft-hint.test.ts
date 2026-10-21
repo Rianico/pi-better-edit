@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { applyEdit } from "../../src/hashline/apply";
 import {
   findNeverServedAnchorShapes,

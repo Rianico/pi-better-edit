@@ -10,7 +10,7 @@
 
 import { DatabaseSync } from "node:sqlite";
 import { HASH_RE } from "../hashline/alphabet.js";
-import { ANCHOR_GENERATION } from "../hashline/hash.js";
+import { ANCHOR_GENERATION } from "../hashline/hash-identity.js";
 import { SERVED_TTL_MS, SERVED_PRUNE_INTERVAL_MS } from "../constants.js";
 import {
   loadHashStore,

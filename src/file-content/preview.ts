@@ -15,6 +15,8 @@ import {
   type AnchorWalk,
 } from "../hashline/hash-identity.js";
 import { fmtRegion } from "../hashline/apply.js";
+import { loadHashStore } from "../hash-store.js";
+import { snapshotIOFor } from "../snapshot-store";
 import type { ServedRow } from "../served-session/serve-render.js";
 import { mergeRanges, visibleLineTotal, walkLines, type LineRange } from "./line-walker.js";
 
@@ -662,7 +664,9 @@ export async function fmtReadPreview(
     } else {
       hashes = await (plan?.cached ??
         page.assigned ??
-        (path ? lineHashes(text, path) : contentOnlyHashes(text)));
+        (path
+          ? lineHashes(text, path, undefined, snapshotIOFor(await loadHashStore()))
+          : contentOnlyHashes(text)));
     }
     return { ranges: page.ranges, hashes };
   };

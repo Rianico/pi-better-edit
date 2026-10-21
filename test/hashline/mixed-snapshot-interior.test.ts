@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { applyEdit } from "../../src/hashline/apply";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
 import type { HEdit, LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";
 import { verifyRebasedSpan } from "../../src/served-session/serve-render";

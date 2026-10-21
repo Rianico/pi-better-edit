@@ -7,7 +7,8 @@ import {
   ensureFileUndoSchema,
   type HashStore,
 } from "./hash-store.js";
-import { ANCHOR_GENERATION, isValidHashList } from "./hashline/hash.js";
+import { ANCHOR_GENERATION } from "./hashline/hash-identity.js";
+import { isValidHashList } from "./hashline/alphabet.js";
 
 export interface UndoRecord {
   content: string;
