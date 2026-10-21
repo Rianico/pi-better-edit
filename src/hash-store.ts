@@ -85,7 +85,7 @@ export function isCorruptionError(error: unknown): boolean {
   );
 }
 
-function isBusyError(error: unknown): boolean {
+export function isBusyError(error: unknown): boolean {
   if (error && typeof error === "object") {
     const errcode = (error as { errcode?: unknown }).errcode;
     if (typeof errcode === "number") return errcode === 5 || errcode === 6;

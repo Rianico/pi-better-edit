@@ -458,7 +458,11 @@ describe("pairSnapshots — unchanged boundary trim (issue #163)", () => {
     const full = quickest(() => pairSnapshots(prev, curr, { trim: false }));
     const trimmed = quickest(() => pairSnapshots(prev, curr));
 
-    expect(trimmed).toBeLessThan(full / 4);
+    // WHY 2x and not the measured 4-6x: this is a tripwire for the shortcut being BYPASSED (ratio
+    // WHY ~1 at the parent commit), not a performance budget. Coverage instrumentation slows the
+    // WHY trimmed path's O(n) uniqueness maps disproportionately on a loaded host, so a tighter
+    // WHY ratio flakes without catching anything the 2x floor misses.
+    expect(trimmed).toBeLessThan(full / 2);
     expect(asPairs(pairSnapshots(prev, curr))).toEqual(
       asPairs(pairSnapshots(prev, curr, { trim: false })),
     );

@@ -51,6 +51,7 @@ import {
   FOREIGN_GENERATION_SNAPSHOT_SQL,
   ORPHAN_LINEAGE_SQL,
   healUnhealthyStore,
+  isBusyError,
   isHealthy,
   loadHashStore,
   markPeriodicRun,
@@ -94,11 +95,33 @@ interface JanitorDeletions {
   readonly expiredLeases: number;
 }
 
+/**
+ * What the compaction step did (ADR-0046). `freeBytesBefore` is the reclaimable page space the
+ * sweep left behind; `reclaimedBytes` is the logical file space the VACUUM actually returned.
+ * `reason` is present exactly when `ran` is false, so a caller can tell "nothing to do" from
+ * "contended" from "failed" without parsing prose.
+ */
+interface CompactionOutcome {
+  readonly ran: boolean;
+  readonly reason?:
+    | "skipped"
+    | "in-transaction"
+    | "no-free-pages"
+    | "below-threshold"
+    | "busy"
+    | "failed";
+  readonly freeBytesBefore: number;
+  readonly reclaimedBytes: number;
+  /** The failure text when `reason` is `"failed"`; the log line carries the same message. */
+  readonly error?: string;
+}
+
 export interface JanitorOutcome {
   /** Whether the run happened at all. `false` means the throttle or the mode said no. */
   readonly ran: boolean;
   readonly reason?: "off" | "throttled";
   readonly deleted: JanitorDeletions;
+  readonly compacted: CompactionOutcome;
   /** Whether the run's deep check found the store damaged (only ever set on a run that happened). */
   readonly deepCheckFailed: boolean;
   /** Whether the store was handed to the open path's quarantine-and-rebuild. */
@@ -112,8 +135,22 @@ const NOTHING_DELETED: JanitorDeletions = {
   expiredLeases: 0,
 };
 
+const NOTHING_COMPACTED: CompactionOutcome = {
+  ran: false,
+  reason: "skipped",
+  freeBytesBefore: 0,
+  reclaimedBytes: 0,
+};
+
 function skipped(reason: "off" | "throttled"): JanitorOutcome {
-  return { ran: false, reason, deleted: NOTHING_DELETED, deepCheckFailed: false, rebuilt: false };
+  return {
+    ran: false,
+    reason,
+    deleted: NOTHING_DELETED,
+    compacted: NOTHING_COMPACTED,
+    deepCheckFailed: false,
+    rebuilt: false,
+  };
 }
 
 /**
@@ -160,6 +197,11 @@ export function runJanitor(input: {
   readonly db: DatabaseSync;
   readonly now: number;
   readonly settings: StoreJanitorSettings;
+  /**
+   * Injection seam for the reclaim floor (ADR-0046): tests use a small value to exercise a VACUUM
+   * on a tiny store. Production omits it and takes `STORE_COMPACT_MIN_FREE_BYTES`.
+   */
+  readonly compactMinFreeBytes?: number;
 }): JanitorOutcome {
   const { db, now, settings } = input;
   if (settings.mode === "off") return skipped("off");
@@ -170,6 +212,15 @@ export function runJanitor(input: {
   // WHY: name (a lease whose snapshot a later batch removes is swept as dangling), and lineage after
   // WHY: the snapshots that cascade it. All four predicates are the sweep's, imported — not restated.
   const deletions = collectGarbage(db, now, batchSize);
+  // WHY: (ADR-0046) a GC pass leaves free pages in the file; compaction is the only step that gives
+  // WHY: them back to the filesystem. It runs after the sweep, in autocommit, on this maintenance
+  // WHY: boundary — never inside a read/edit transaction — and it defers rather than waits when a
+  // WHY: rival writer holds the store. A failed sweep skips it: a damaged store is the deep check's
+  // WHY: business, and VACUUM on damage can only fail again.
+  const compacted =
+    deletions === undefined
+      ? NOTHING_COMPACTED
+      : compactStore(db, input.compactMinFreeBytes ?? STORE_COMPACT_MIN_FREE_BYTES);
 
   // WHY: the mark is written only by a run whose GC COMPLETED: the primitives' contract is that
   // WHY: "ran" means "did something", and a sweep that threw did not — so a failed sweep stays due
@@ -183,6 +234,7 @@ export function runJanitor(input: {
   return {
     ran: true,
     deleted: deletions ?? NOTHING_DELETED,
+    compacted,
     deepCheckFailed: !isHealthy(db),
     rebuilt: false,
   };
@@ -246,6 +298,91 @@ function collectGarbage(
     console.error("[store-janitor] GC pass failed:", error);
     return undefined;
   }
+}
+
+/**
+ * WHY these numbers: a VACUUM rewrites the whole database, so its cost scales with the FILE while its
+ * benefit scales with the FREE PAGES. A quarter-free file amortises the rewrite; below that, a big
+ * store would be rewritten for a few reclaimed pages. The megabyte floor keeps a tiny store from
+ * paying a rewrite for one free page, and the 100 ms start budget means a contended compaction
+ * defers to the next maintenance pass instead of stalling a session behind a rival writer.
+ */
+const STORE_COMPACT_MIN_FREE_RATIO = 0.25;
+const STORE_COMPACT_MIN_FREE_BYTES = 1024 * 1024;
+const STORE_COMPACT_BUSY_TIMEOUT_MS = 100;
+
+function pragmaNumber(db: DatabaseSync, sql: string): number {
+  const row = db.prepare(sql).get() as Record<string, unknown> | undefined;
+  const value = row === undefined ? undefined : Object.values(row)[0];
+  return typeof value === "number" ? value : 0;
+}
+
+/**
+ * Reclaim free pages into the file after a maintenance sweep (ADR-0046).
+ *
+ * One `VACUUM` in autocommit, gated on the reclaimable share, with a SHORT busy budget for STARTING
+ * it: if a rival writer holds the store the pass returns `busy` and the next maintenance pass
+ * retries. The VACUUM itself is not interruptible once started (SQLite owns it); the janitor never
+ * runs on the tool path, so a tool call never triggers this rewrite, and the store's existing busy
+ * budget covers a concurrent writer for the duration. Any failure is reported through the outcome
+ * and the log and never thrown out of a lifecycle hook.
+ */
+function compactStore(db: DatabaseSync, minFreeBytes: number): CompactionOutcome {
+  // WHY: VACUUM cannot run inside a transaction. The janitor runs in autocommit, so this is a
+  // WHY: defensive deferral for a caller that hands in a transaction, not an expected path.
+  if ((db as unknown as { isTransaction?: boolean }).isTransaction === true) {
+    return { ran: false, reason: "in-transaction", freeBytesBefore: 0, reclaimedBytes: 0 };
+  }
+  const pageSize = pragmaNumber(db, "PRAGMA page_size");
+  const pagesBefore = pragmaNumber(db, "PRAGMA page_count");
+  const freePages = pragmaNumber(db, "PRAGMA freelist_count");
+  const freeBytesBefore = freePages * pageSize;
+  if (freePages === 0) {
+    return { ran: false, reason: "no-free-pages", freeBytesBefore: 0, reclaimedBytes: 0 };
+  }
+  const totalBytes = pagesBefore * pageSize;
+  if (
+    freeBytesBefore < minFreeBytes ||
+    (totalBytes > 0 && freeBytesBefore / totalBytes < STORE_COMPACT_MIN_FREE_RATIO)
+  ) {
+    return { ran: false, reason: "below-threshold", freeBytesBefore, reclaimedBytes: 0 };
+  }
+
+  const previousTimeout = pragmaNumber(db, "PRAGMA busy_timeout");
+  try {
+    db.exec(`PRAGMA busy_timeout = ${STORE_COMPACT_BUSY_TIMEOUT_MS}`);
+    db.exec("VACUUM");
+  } catch (error) {
+    if (isBusyError(error)) {
+      console.info(
+        `[store-janitor] compaction deferred: store busy (${freeBytesBefore} bytes reclaimable)`,
+      );
+      return { ran: false, reason: "busy", freeBytesBefore, reclaimedBytes: 0 };
+    }
+    console.error("[store-janitor] store compaction failed:", error);
+    return {
+      ran: false,
+      reason: "failed",
+      freeBytesBefore,
+      reclaimedBytes: 0,
+      error: error instanceof Error ? error.message : String(error),
+    };
+  } finally {
+    try {
+      db.exec(`PRAGMA busy_timeout = ${previousTimeout}`);
+    } catch (error) {
+      // SAFETY: best-effort restore — the compaction outcome is authoritative, and the next open
+      // SAFETY: re-applies the store's own busy timeout.
+      console.error("[store-janitor] failed to restore busy timeout:", error);
+    }
+  }
+  const pagesAfter = pragmaNumber(db, "PRAGMA page_count");
+  const reclaimedBytes = Math.max(0, (pagesBefore - pagesAfter) * pageSize);
+  console.info(
+    `[store-janitor] compacted store: reclaimed ${reclaimedBytes} bytes ` +
+      `(${pagesBefore} -> ${pagesAfter} pages of ${pageSize})`,
+  );
+  return { ran: true, freeBytesBefore, reclaimedBytes };
 }
 
 export interface JanitorPassOptions {

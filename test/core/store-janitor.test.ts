@@ -409,6 +409,7 @@ describe("the exclusion invariant", () => {
   const RUN: JanitorOutcome = {
     ran: true,
     deleted: { snapshots: 0, lineage: 0, leases: 0, expiredLeases: 0 },
+    compacted: { ran: false, reason: "skipped", freeBytesBefore: 0, reclaimedBytes: 0 },
     deepCheckFailed: false,
     rebuilt: false,
   };
