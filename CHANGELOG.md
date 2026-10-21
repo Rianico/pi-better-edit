@@ -5,6 +5,7 @@
 ### Features
 
 * **store:** adopt an unchanged file on its `stat(2)` identity instead of re-deriving every line: a read stamps `ino:size:mtimeMs:ctimeMs` on the snapshot row it materializes, and a later read whose stat key matches resolves only its page's lineage (`snapshot_id, line_number` PK range) while verifying each served line against the `canon_hash` the snapshot committed. Any mismatch — count, missing row, canon — falls back to the content-hash path; touch, atomic rename and same-size/same-mtime rewrites are covered. Page-sized adoption drops from 177 ms to 39 ms on a 100k-line fixture, with first-read time unchanged (store version 11, ADR-0043).
+* **hashline:** pair a one-region change without scanning the unchanged boundary: `pairSnapshots` now zips the prefix/suffix whose canon is globally unique on both sides (a forced pair, so the result is unchanged) and runs patience pairing only on the changed middle; a duplicated or mismatched boundary falls back to the full scan, and the differential corpus pins `trim` against `{ trim: false }`. On a 100k-line fixture the pairing step drops from ~132–158 ms to ~22–25 ms (5–7x) with zero moved anchors on the untouched lines, and the read after a one-line change drops from ~791 ms to ~689 ms (ADR-0044).
 
 ### Bug Fixes
 
