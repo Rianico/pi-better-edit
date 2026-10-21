@@ -2,8 +2,8 @@ import { abortIf, rejectUnknownFields, clipLine } from "../utils.js";
 import { DomainError, formatWarning } from "../domain-errors.js";
 import { HASH_CLASS, HASH_LEN } from "./hash-identity.js";
 import { parseHashRef, parseText, type Anchor } from "./parse.js";
-import type { ServedRow } from "./served.js";
-import type { FileSnapshotContext } from "./served-verification.js";
+import type { ServedRow } from "../served-session/serve-render.js";
+import type { FileSnapshotContext } from "../served-session/serve-render.js";
 
 type RAnchor = {
   line: number;

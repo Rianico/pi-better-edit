@@ -8,7 +8,7 @@ import {
   makeTargetLostRejection,
   verifyRebasedSpan,
   type FileSnapshotContext,
-} from "../../src/hashline/served-verification";
+} from "../../src/served-session/serve-render";
 import { fmtMismatchWithServes, resEdit, valEdit } from "../../src/hashline/resolve";
 import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import type { LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";

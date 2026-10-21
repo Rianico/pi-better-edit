@@ -25,7 +25,7 @@ import {
 // WHY: snapshot retention is owned by the CAS store that owns `file_snapshots` (spec §3.6.1); the
 // WHY: session module only asks for a pass at its deterministic boundary — the store open.
 import { vacuumSnapshots } from "../snapshot-store";
-import type { ServedRow } from "../hashline/served.js";
+import type { ServedRow } from "./serve-render.js";
 import type { ServeRecordPolicy, ServedEntry } from "./types.js";
 import { reportDiagnostic } from "../diagnostics.js";
 

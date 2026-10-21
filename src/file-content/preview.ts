@@ -15,7 +15,7 @@ import {
   type AnchorWalk,
 } from "../hashline/hash-identity.js";
 import { fmtRegion } from "../hashline/apply.js";
-import type { ServedRow } from "../hashline/served.js";
+import type { ServedRow } from "../served-session/serve-render.js";
 import { mergeRanges, visibleLineTotal, walkLines, type LineRange } from "./line-walker.js";
 
 function normPosInt(value: number | undefined, name: string): number | undefined {

@@ -14,7 +14,7 @@ import {
   findServedHashEcho,
   buildServedWriteMessage,
   trackServedWriteRefusal,
-} from "./hashline/served-guard.js";
+} from "./served-session/serve-render.js";
 import { reportDiagnostic } from "./diagnostics.js";
 
 export { findServedHashEcho };

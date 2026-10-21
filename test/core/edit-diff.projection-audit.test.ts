@@ -1,7 +1,7 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { genDiff } from "../../src/edit-diff";
 import { ANCHOR_LEN, HASH_SEP } from "../../src/hashline/hash-identity";
-import type { ServedRow } from "../../src/hashline/served";
+import type { ServedRow } from "../../src/served-session/serve-render";
 import { contentOnlyHashes, initHasher } from "../../src/hashline/hash-identity.js";
 
 beforeAll(async () => {

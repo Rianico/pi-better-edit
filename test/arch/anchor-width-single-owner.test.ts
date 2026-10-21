@@ -238,7 +238,12 @@ function contractTexts(): { label: string; text: string }[] {
 // WHY: inside the hashline branch would silently drop the exact T1
 // WHY: `ANCHOR_WIDTH` case, and only a control through this helper reddens.
 function scanSrcFile(file: string, text: string): string[] {
-  const hashlineSurface = file.startsWith(join("src", "hashline") + "/");
+  // WHY: the anchor-shape surface moved its served half to `serve-render.ts` (arch-01); the strict
+  // WHY: arms follow the anchor-shape code, not the directory name it used to live in, so the new
+  // WHY: home of `anchorShapeFromLine` keeps the same digit watch.
+  const hashlineSurface =
+    file.startsWith(join("src", "hashline") + "/") ||
+    file === join("src", "served-session", "serve-render.ts");
   const violations: string[] = [];
   for (const raw of text.split("\n")) {
     const line = raw.trim();
@@ -408,10 +413,17 @@ describe("anchor width single owner", () => {
     expect(dispatchName).toHaveLength(1);
     expect(dispatchName[0]).toContain("anchor-assign");
     const dispatchPositional = scanSrcFile(
-      "src/hashline/served-guard.ts",
+      "src/hashline/apply.ts",
       "if (text[3] !== HASH_SEP) return undefined;",
     );
     expect(dispatchPositional.some((v) => v.includes("text-index"))).toBe(true);
+    // WHY: the served anchor-shape half now lives under `src/served-session/`; it must still get
+    // WHY: the strict arms that used to cover every file in `src/hashline/`.
+    const movedPositional = scanSrcFile(
+      join("src", "served-session", "serve-render.ts"),
+      "if (text[3] !== HASH_SEP) return undefined;",
+    );
+    expect(movedPositional.some((v) => v.includes("text-index"))).toBe(true);
     expect(scanStrictLine("no width here")).toEqual([]);
   });
 });

@@ -48,7 +48,7 @@ import {
   UNVERIFIED_HEADLINE,
   verifyRebasedSpan,
   type FileSnapshotContext,
-} from "./served-verification.js";
+} from "../served-session/serve-render.js";
 
 type ReversedAnchorsHeal = {
   /** The submitted `anchor_from` slot value whose resolved line ran after `toHash`. */

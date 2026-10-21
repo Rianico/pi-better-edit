@@ -1,4 +1,4 @@
-import type { ServedRow } from "../hashline/served.js";
+import type { ServedRow } from "../served-session/serve-render.js";
 import type { EditDetails } from "../edit-response.js";
 import type { NormFile, ReadNormOptions } from "../file-reader.js";
 import type { LFile, LoadFileOptions } from "../file-kind.js";

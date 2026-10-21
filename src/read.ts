@@ -5,7 +5,7 @@ import { truncateToWidth, visibleWidth, type Component } from "@earendil-works/p
 import { Type } from "typebox";
 import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE, SERVED_MAX_LINES } from "./constants.js";
 import { HASH_LEN } from "./hashline/alphabet.js";
-import type { ServedRow } from "./hashline/served.js";
+import type { ServedRow } from "./served-session/serve-render.js";
 import { loadHashStore, type HashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";

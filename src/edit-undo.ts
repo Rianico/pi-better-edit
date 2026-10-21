@@ -24,7 +24,7 @@ import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError, withPayloadSubject } from "./domain-errors.js";
 import { ANCHOR_GENERATION, lineHashes } from "./hashline/hash-identity.js";
 import { changedRange } from "./hashline/apply.js";
-import { denseServeRows, type ServedRow } from "./hashline/served.js";
+import { denseServeRows, type ServedRow } from "./served-session/serve-render.js";
 import { reportDiagnostic } from "./diagnostics.js";
 export interface UndoEntry {
   content: string;

@@ -6,7 +6,7 @@ import {
   denseServeRows,
   fmtServedRows,
   servedPositionsOf,
-} from "../../src/hashline/served-verification";
+} from "../../src/served-session/serve-render";
 
 beforeAll(async () => {
   await initHasher();
