@@ -9,7 +9,7 @@
 
 ### Bug Fixes
 
-* **bash view:** a `&&` chain whose operand is a compound statement (`for`, `if`, `while`, `time`, `{ …; }`, `( … )`, `case`, a function definition, `[[ … ]]`) no longer crashes the conversion; the chain fails closed and the raw output passes through. (#164)
+* **bash-view:** a `&&` chain whose operand is a compound statement (`for`, `if`, `while`, `time`, `{ …; }`, `( … )`, `case`, a function definition, `[[ … ]]`) no longer crashes the conversion; the chain fails closed and the raw output passes through. (#164)
 
 ## [2.13.1] - 2026-10-19
 
