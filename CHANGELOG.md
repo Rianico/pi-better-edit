@@ -13,6 +13,17 @@
 
 * **store:** keep cache-hit reads off the LRU vacuum's store-wide pin scan by running retention only when a materialization inserts a fresh snapshot; add the covering `(file_path, served_snapshot_hash)` lease index (store version 10) so a fresh commit's sweep stays cheap on a large lease table.
 
+## [2.13.2] - 2026-10-21
+
+### Features
+
+* **diagnostics:** internal failures are recorded in `<configDir>/diagnostics.log` (JSONL, 1 MiB cap with one rotated generation) instead of being written to the terminal Pi's renderer owns; `/pi-better-edit` reports the log path, size and last write. (#164)
+* **config:** the global settings file moves from `~/.pi/agents/pi-better-edit.json` to `<configDir>/pi-better-edit.json`; a file left at the retired location is adopted on first read, written to the new path and renamed `.bak`. (#164)
+
+### Bug Fixes
+
+* **bash-view:** a `&&` chain whose operand is a compound statement (`for`, `if`, `while`, `time`, `{ …; }`, `( … )`, `case`, a function definition, `[[ … ]]`) no longer crashes the conversion; the chain fails closed and the raw output passes through. (#164)
+
 ## [2.13.1] - 2026-10-19
 
 ### Bug Fixes

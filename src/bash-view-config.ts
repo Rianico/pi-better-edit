@@ -19,7 +19,7 @@ import {
   configFilePath,
   isConfigScope,
   isRecord,
-  readConfigObject,
+  readScopeConfig,
   updateConfigFile,
   type ConfigOnWarn,
   type ConfigRung,
@@ -50,8 +50,12 @@ export function isBashViewScope(value: unknown): value is ConfigScope {
 }
 
 /** One scope file's mode, or `undefined` when the file carries no accepted value. */
-function readScopeMode(path: string, onWarn?: ConfigOnWarn): BashViewMode | undefined {
-  const config = readConfigObject(path, onWarn);
+function readScopeMode(
+  scope: ConfigScope,
+  cwd: string,
+  onWarn?: ConfigOnWarn,
+): BashViewMode | undefined {
+  const config = readScopeConfig(scope, cwd, onWarn);
   if (config === undefined) return undefined;
   const bash = config.bash;
   if (!isRecord(bash)) return undefined;
@@ -68,8 +72,8 @@ export function readBashViewConfig(
   cwd: string,
   onWarn?: ConfigOnWarn,
 ): { project?: BashViewMode; global?: BashViewMode } {
-  const project = readScopeMode(configFilePath("project", cwd), onWarn);
-  const global = readScopeMode(configFilePath("global", cwd), onWarn);
+  const project = readScopeMode("project", cwd, onWarn);
+  const global = readScopeMode("global", cwd, onWarn);
   return {
     ...(project !== undefined ? { project } : {}),
     ...(global !== undefined ? { global } : {}),

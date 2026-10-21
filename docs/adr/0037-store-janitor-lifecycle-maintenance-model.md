@@ -79,7 +79,7 @@ The janitor therefore adds **no** checkpoint site and no second owner of the WAL
 
 ### 8. The config ladder, and the one key that is deliberately absent
 
-The janitor's knobs live in the same JSON seam the lens bridge uses — `.pi/agents/pi-better-edit.json` (project) and `~/.pi/agents/pi-better-edit.json` (global) — resolved **per key** through one ladder: environment, then project file, then global file, then the default.
+The janitor's knobs live in the same JSON seam the lens bridge uses — `<project>/.pi/agents/pi-better-edit.json` (project) and `<configDir>/pi-better-edit.json` (global, default `~/.config/pi-better-edit/pi-better-edit.json`) — resolved **per key** through one ladder: environment, then project file, then global file, then the default. The global file moved out of `~/.pi/agents/` after this record was accepted: a file left there is adopted on first read (written to the new location, renamed `.bak`), so the precedence order is unchanged.
 
 | setting | file key | env override | default |
 |---|---|---|---|

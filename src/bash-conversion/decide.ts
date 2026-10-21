@@ -52,6 +52,7 @@ export type DeclineReason =
   | "background"
   | "non-and-chain"
   | "compound-top"
+  | "compound-andor-operand"
   | "chain-too-long"
   | "compound-segment"
   | "non-literal-command"
@@ -213,6 +214,23 @@ export const RULES: readonly ConversionRule[] = [
       return type !== "AndOr" && type !== "Command" && type !== "Pipeline";
     },
     run: () => ({ kind: "passThrough", reason: "compound-top" }),
+  },
+  {
+    id: "compound-andor-operand",
+    // WHY: ADR-0033 D1 span-kind chain rule; `unbash` types AndOr.commands as Command[]
+    // WHY: but the parser puts ANY statement kind there (For/If/While/TimeClause/Block/
+    // WHY: Subshell/Case/FuncDecl/TestClause), so `cd x && for …; do …; done` pushed a
+    // WHY: node with no `operators` into the walk and crashed parseViewSegment.
+    why: "ADR-0033 D1 span-kind chain rule (structural: AndOr operands must be Command/Pipeline)",
+    phase: "statement",
+    when: (ctx) => {
+      const top = statementOf(ctx).command;
+      if (top.type !== "AndOr") return false;
+      return (top as AndOr).commands.some(
+        (node) => node.type !== "Command" && node.type !== "Pipeline",
+      );
+    },
+    run: () => ({ kind: "passThrough", reason: "compound-andor-operand" }),
   },
   {
     id: "chain-too-long",

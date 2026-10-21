@@ -20,7 +20,9 @@
  */
 import { mkdirSync, readFileSync, renameSync, unlinkSync, writeFileSync } from "node:fs";
 import { homedir } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, sep } from "node:path";
+import { configDir } from "./config-dir.js";
+import { reportInfo, reportWarning } from "./diagnostics.js";
 
 /** The two places the config file may live: beside the project, or in the user's home directory. */
 export type ConfigScope = "project" | "global";
@@ -36,7 +38,23 @@ export type ConfigRung = "env" | ConfigScope | "default";
 export type ConfigOnWarn = (reason: string) => void;
 
 /** Config location relative to the project root or to the home directory. */
+/**
+ * The PROJECT config location, relative to the project root.
+ *
+ * WHY it is also spelled here for the retired global location: the global file used to live at
+ * `$HOME/<this>` and is still read once to migrate (see `readScopeConfig`). Keeping the literal in
+ * one module is what the arch guard pins, so the retired path is a constant, not a second copy.
+ */
 export const CONFIG_REL = ".pi/agents/pi-better-edit.json";
+
+/**
+ * The file name inside `configDir()` for the GLOBAL scope.
+ *
+ * WHY the global scope lives in the per-user state directory: everything else this extension
+ * persists (the store, the diagnostics log) already lives there, and `.pi/agents/` belongs to pi's
+ * own agent definitions rather than to an extension's settings.
+ */
+export const CONFIG_FILE_NAME = "pi-better-edit.json";
 
 /** Published schema id written into config files (see `schemas/pi-better-edit.json`). */
 export const CONFIG_SCHEMA_ID =
@@ -51,7 +69,65 @@ function homeBase(): string {
 
 /** The config file one scope reads and writes. A path is derived, never created, by asking for it. */
 export function configFilePath(scope: ConfigScope, cwd: string): string {
-  return scope === "global" ? join(homeBase(), CONFIG_REL) : join(cwd, CONFIG_REL);
+  return scope === "global" ? join(configDir(), CONFIG_FILE_NAME) : join(cwd, CONFIG_REL);
+}
+
+/** The retired global location, read once so an existing file is adopted instead of ignored. */
+function legacyGlobalConfigPath(): string {
+  return join(homeBase(), CONFIG_REL);
+}
+
+/**
+ * The config path as a person reads it: `~` for the home prefix, unchanged otherwise. WHY a
+ * separate function: `/pi-better-edit` prints these paths, and a status line that shows an absolute
+ * home path is both long and wrong for a machine whose HOME moved.
+ */
+export function configFileDisplayPath(scope: ConfigScope, cwd: string): string {
+  const path = configFilePath(scope, cwd);
+  const home = homeBase();
+  return path === home || !path.startsWith(home + sep) ? path : `~${path.slice(home.length)}`;
+}
+
+/**
+ * The config object for one scope, after adopting a file left at the retired global location.
+ *
+ * WHY migration lives here rather than in each owner: exactly one scope moved, and an owner that
+ * spelled the old path out would adopt a different subset of keys than its neighbour. One read,
+ * one adoption, one report.
+ */
+export function readScopeConfig(
+  scope: ConfigScope,
+  cwd: string,
+  onWarn?: ConfigOnWarn,
+): Record<string, unknown> | undefined {
+  const path = configFilePath(scope, cwd);
+  const current = readConfigObject(path, onWarn);
+  if (current !== undefined || scope !== "global") return current;
+  return adoptLegacyGlobalConfig(path);
+}
+
+/**
+ * Move a global config out of `$HOME/.pi/agents/` on first read.
+ *
+ * WHY the legacy file is renamed rather than deleted: a rename marks it retired while leaving the
+ * bytes recoverable (the same `.bak` convention the legacy store migration uses), and it stops a
+ * later edit to the old file from silently doing nothing. WHY a failed adoption still returns the
+ * object: settings must keep working when the new location is, say, read-only — the write is the
+ * only part that can fail.
+ */
+function adoptLegacyGlobalConfig(newPath: string): Record<string, unknown> | undefined {
+  const legacyPath = legacyGlobalConfigPath();
+  const legacy = readConfigObject(legacyPath);
+  if (legacy === undefined) return undefined;
+  try {
+    updateConfigFile(newPath, () => legacy);
+    renameSync(legacyPath, `${legacyPath}.bak`);
+    reportInfo("json-config", `adopted global config ${legacyPath} → ${newPath}`);
+  } catch (error: unknown) {
+    // SAFETY: the read side keeps working from the legacy object; only the move is reported.
+    reportWarning("json-config", `could not adopt global config ${legacyPath}:`, error);
+  }
+  return legacy;
 }
 
 /** Runtime guard for the two config scopes. */
@@ -82,7 +158,7 @@ function reasonOf(error: unknown): string {
  * truncated or hand-edited file, a root of the wrong kind. A missing file is not one of them: it is
  * the ordinary "not configured" state that every first run starts in.
  */
-export function readConfigObject(
+function readConfigObject(
   path: string,
   onWarn?: ConfigOnWarn,
 ): Record<string, unknown> | undefined {

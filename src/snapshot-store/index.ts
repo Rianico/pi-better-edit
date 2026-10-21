@@ -46,6 +46,7 @@ export {
   VACUUM_LINEAGE_BYTES_PER_LINE,
   VACUUM_RETIRED_PIN_MS,
 } from "./vacuum.js";
+import { reportDiagnostic, reportWarning } from "../diagnostics.js";
 
 interface SnapshotRef {
   snapshot_id: number;
@@ -701,7 +702,8 @@ export function reportVacuumSoftOverflow(db: DatabaseSync, result: VacuumResult)
     }
     if (softOverflowWarnedByDb.get(db) === true) return;
     softOverflowWarnedByDb.set(db, true);
-    process.emitWarning(
+    reportWarning(
+      "snapshot-store",
       `[snapshot-store] vacuum soft overflow: totalBytes=${result.totalBytes} ` +
         `pinnedBytes=${result.pinnedBytes} deferredBytes=${result.deferredBytes} ` +
         `over the 50 MB budget; pinned snapshots are never evicted and this state ` +
@@ -835,7 +837,11 @@ function materializeSnapshot(
           store.db.exec("ROLLBACK");
         } catch (rollbackError: unknown) {
           // SAFETY: best-effort rollback — the original failure is authoritative; a failed rollback of an already-aborted transaction must not mask it.
-          console.error("[snapshot-store] failed to rollback transaction:", rollbackError);
+          reportDiagnostic(
+            "snapshot-store",
+            "[snapshot-store] failed to rollback transaction:",
+            rollbackError,
+          );
         }
         throw error;
       }
@@ -920,7 +926,11 @@ function materializeBatch(
           store.db.exec("ROLLBACK");
         } catch (rollbackError: unknown) {
           // SAFETY: best-effort rollback — the original failure is authoritative.
-          console.error("[snapshot-store] failed to rollback batch transaction:", rollbackError);
+          reportDiagnostic(
+            "snapshot-store",
+            "[snapshot-store] failed to rollback batch transaction:",
+            rollbackError,
+          );
         }
         throw error;
       }

@@ -4,6 +4,7 @@ import { DomainError } from "../domain-errors.js";
 import { SERVED_MAX_LINES } from "../constants.js";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
 import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
+import { reportDiagnostic } from "../diagnostics.js";
 
 export { initHasher, HASH_LEN, ALPHA_RE, HASH_CLASS };
 
@@ -606,7 +607,7 @@ export class HashIdentity {
         cached = await snapshotIO.get(path, content, persist);
       } catch (error) {
         // SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
-        console.error("Failed to read hash store snapshot:", error);
+        reportDiagnostic("hashline", "Failed to read hash store snapshot:", error);
       }
     }
     if (cached) return { cached };
@@ -653,7 +654,7 @@ export class HashIdentity {
           );
         } catch (error) {
           // SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
-          console.error("Failed to persist hash snapshot:", error);
+          reportDiagnostic("hashline", "Failed to persist hash snapshot:", error);
         }
       }
       return newHashes;
@@ -665,7 +666,7 @@ export class HashIdentity {
         cached = await snapshotIO.get(path, content, persist);
       } catch (error) {
         // SAFETY: best-effort cache read — snapshot read failures are ignored; fallback to recomputing hashes preserves correctness, only loses caching benefit.
-        console.error("Failed to read hash store snapshot:", error);
+        reportDiagnostic("hashline", "Failed to read hash store snapshot:", error);
       }
     }
     if (cached) {
@@ -685,7 +686,7 @@ export class HashIdentity {
           );
         } catch (error) {
           // SAFETY: best-effort cache re-adopt — snapshot/lease update failures are ignored; the hashes are already authoritative and the next materialization retries.
-          console.error("Failed to re-adopt hash snapshot:", error);
+          reportDiagnostic("hashline", "Failed to re-adopt hash snapshot:", error);
         }
       }
       return cached;
@@ -704,7 +705,7 @@ export class HashIdentity {
         );
       } catch (error) {
         // SAFETY: best-effort cache persist — hash snapshot write failures are ignored; hashes are already computed and returned, next read will recompute and retry persist, no data loss.
-        console.error("Failed to persist hash snapshot:", error);
+        reportDiagnostic("hashline", "Failed to persist hash snapshot:", error);
       }
     }
     return newHashes;

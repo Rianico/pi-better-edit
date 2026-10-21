@@ -1,3 +1,4 @@
+import { readFileSync, rmSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { beforeAll, afterAll, vi } from "vitest";
@@ -6,6 +7,43 @@ import { Compile } from "typebox/compile";
 import register from "../../index";
 import { regEdit } from "../../src/edit";
 import { shutdownHashStore } from "../../src/hash-store";
+import { diagnosticsLogPath } from "../../src/diagnostics";
+
+/** The shape `diagnostics.log` writes: one JSON object per line (see src/diagnostics.ts). */
+export type DiagnosticRecord = {
+  ts: string;
+  level: "error" | "warn" | "info";
+  scope: string;
+  message: string;
+  error?: { name: string; code?: string; message: string; stack: string[] };
+  context?: Record<string, unknown>;
+  pid: number;
+};
+
+/**
+ * The records the extension's diagnostic sink wrote for this worker.
+ *
+ * WHY a file read rather than a `console` spy: the sink's contract IS the file, and a spy on
+ * console would re-assert the very fd-1/2 write the sink exists to remove — the terminal belongs to
+ * Pi's differential renderer, so an assertion of "it printed" is an assertion of the bug.
+ */
+export function readDiagnostics(): DiagnosticRecord[] {
+  try {
+    return readFileSync(diagnosticsLogPath(), "utf-8")
+      .split("\n")
+      .filter((line) => line.length > 0)
+      .map((line) => JSON.parse(line) as DiagnosticRecord);
+  } catch {
+    // WHY: an absent log is the honest reading of "nothing was reported".
+    return [];
+  }
+}
+
+/** Drop the records written so far, so a test can assert on its own slice of the log. */
+export function clearDiagnostics(): void {
+  // SAFETY: best effort — a missing file already means "no records".
+  rmSync(diagnosticsLogPath(), { force: true });
+}
 export async function getWritableTempRoot(): Promise<string> {
   const fallback = join(process.cwd(), ".tmp");
   await mkdir(fallback, { recursive: true });

@@ -5,15 +5,26 @@
  * passes both branches through byte-identical, and a successful interception warns
  * once per session (reset by `session_start`).
  */
-import { mkdir, writeFile } from "node:fs/promises";
+import { mkdir, rm, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { afterEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 import register from "../../index";
 import { BASH_VIEW_ENV_VAR } from "../../src/bash-view-config.js";
-import { useTestHome, withTempDir } from "../support/fixtures";
+import { configDir } from "../../src/config-dir.js";
+import { CONFIG_FILE_NAME } from "../../src/json-config.js";
+import { clearDiagnostics, readDiagnostics, useTestHome, withTempDir } from "../support/fixtures";
 
 useTestHome();
+
+/**
+ * WHY this reset exists: the global settings file now lives in `configDir()`, which the harness
+ * allocates once per FILE — so a `bash-view off global` written by one test would otherwise steer
+ * the next one. Before the move it lived under the per-test HOME, which `withTempDir` removed.
+ */
+beforeEach(async () => {
+  await rm(join(configDir(), CONFIG_FILE_NAME), { force: true });
+});
 
 function makeFakePi() {
   const handlers = new Map<string, (...args: unknown[]) => unknown>();
@@ -224,12 +235,12 @@ describe("bash view off-switch lifecycle", () => {
     });
   });
 
-  it("falls back to the console when the context carries no ui surface", async () => {
+  it("records the notice when the context carries no ui surface", async () => {
     await withTempDir("bash-view-warn-headless-", async (dir) => {
       await writeFile(join(dir, "f.txt"), numberedLines(30), "utf-8");
       const { pi, handlers } = makeFakePi();
       register(pi);
-      const log = vi.spyOn(console, "log").mockImplementation(() => undefined);
+      clearDiagnostics();
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "warn-headless" } };
 
       const result = await bashResult(
@@ -242,7 +253,13 @@ describe("bash view off-switch lifecycle", () => {
       expect(result?.content[0]?.text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(
         true,
       );
-      expect(log.mock.calls.flat().join("\n")).toContain("/pi-better-edit bash-view off");
+      // WHY the file and not the console: with no `ui` surface there is no in-TUI notice, but
+      // WHY the terminal belongs to Pi's renderer, so the notice is recorded instead of printed.
+      expect(
+        readDiagnostics()
+          .map((record) => record.message)
+          .join("\n"),
+      ).toContain("/pi-better-edit bash-view off");
     });
   });
 });

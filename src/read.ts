@@ -33,6 +33,7 @@ import {
   upsertSnapshotsFor,
 } from "./snapshot-store";
 import { lineHashes } from "./hashline/index.js";
+import { reportDiagnostic } from "./diagnostics.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
 
@@ -788,7 +789,7 @@ export function regRead(pi: ExtensionAPI): void {
           // SAFETY: best-effort post-read materialization — the preview rows are already computed
           // SAFETY: and the served mirror below still records them; a missed snapshot/lease degrades
           // SAFETY: to the fail-closed path the next edit would take anyway.
-          console.error("Failed to commit read-path snapshot materialization:", error);
+          reportDiagnostic("read", "Failed to commit read-path snapshot materialization:", error);
         }
         for (const entry of servedEntries) {
           const session = sessionFromContext(sessionCtx, entry.prepared.absolutePath);

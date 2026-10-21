@@ -6,7 +6,7 @@ import register from "../../index";
 import { lineHashes } from "../../src/hashline";
 
 import { SEARCH_MAX_MATCHES } from "../../src/constants";
-import { useTestHome, withTempDir } from "../support/fixtures";
+import { clearDiagnostics, readDiagnostics, useTestHome, withTempDir } from "../support/fixtures";
 
 useTestHome();
 
@@ -260,24 +260,21 @@ describe("bash view lifecycle", () => {
       const handler = handlers.get("tool_result");
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-view-debug" } };
       const previous = process.env.PI_HASHLINE_DEBUG;
-      const logged: string[] = [];
-      const originalError = console.error;
-      console.error = (...args: unknown[]) => {
-        logged.push(args.map(String).join(" "));
-      };
+      clearDiagnostics();
       try {
         process.env.PI_HASHLINE_DEBUG = "1";
         // WHY: observability must never become model-visible — the handler still
-        // WHY: returns undefined (original output untouched); the reason goes to
-        // WHY: stderr only (ADR-0033 D6 holds).
+        // WHY: returns undefined (original output untouched); the reason goes to the
+        // WHY: diagnostics log, never to the terminal's frame (ADR-0033 D6 holds).
         expect(await bashResult(handler!, "cat -A f.txt", ctx, "<<raw stdout>>")).toBeUndefined();
       } finally {
-        console.error = originalError;
         if (previous === undefined) delete process.env.PI_HASHLINE_DEBUG;
         else process.env.PI_HASHLINE_DEBUG = previous;
       }
       expect(
-        logged.some((line) => line.includes("[bash-view] pass-through (unsupported-command:cat)")),
+        readDiagnostics().some((record) =>
+          record.message.includes("[bash-view] pass-through (unsupported-command:cat)"),
+        ),
       ).toBe(true);
     });
   });

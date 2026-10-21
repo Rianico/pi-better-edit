@@ -12,6 +12,7 @@
 import { describe, expect, it, vi } from "vitest";
 
 import { registerJanitorHooks } from "../../src/store-janitor";
+import { clearDiagnostics, readDiagnostics } from "../support/fixtures";
 
 /** A stand-in for `pi` that records what was subscribed and hands the handlers back. */
 function fakePi(): {
@@ -35,13 +36,11 @@ describe("the janitor's failure containment", () => {
     const run = vi.fn(async () => {
       throw new Error("store unavailable");
     });
-    const reported = vi.spyOn(console, "error").mockImplementation(() => {});
+    // WHY the log file and not the console: a maintenance failure must stay out of the terminal
+    // WHY Pi's renderer owns; the containment contract is "reported, never thrown".
+    clearDiagnostics();
     registerJanitorHooks(pi as never, { runJanitor: run });
-    try {
-      await expect(subscriptions[0]?.handler()).resolves.toBeUndefined();
-      expect(reported).toHaveBeenCalled();
-    } finally {
-      reported.mockRestore();
-    }
+    await expect(subscriptions[0]?.handler()).resolves.toBeUndefined();
+    expect(readDiagnostics()).not.toHaveLength(0);
   });
 });

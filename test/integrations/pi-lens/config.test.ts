@@ -1,3 +1,4 @@
+import { CONFIG_FILE_NAME } from "../../../src/json-config.js";
 import { existsSync, readdirSync, readFileSync } from "node:fs";
 import { mkdir, mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
@@ -16,6 +17,7 @@ import {
   type LensBridgeMode,
   type LensBridgeScope,
 } from "../../../src/integrations/pi-lens/config.js";
+import { configDir } from "../../../src/config-dir.js";
 
 let root = "";
 let projectDir = "";
@@ -23,7 +25,7 @@ let homeDir = "";
 const savedHome = process.env.HOME;
 
 const projectConfigPath = (): string => join(projectDir, LENS_CONFIG_REL);
-const globalConfigPath = (): string => join(homeDir, LENS_CONFIG_REL);
+const globalConfigPath = (): string => join(configDir(), CONFIG_FILE_NAME);
 
 async function seedProjectConfig(value: unknown): Promise<void> {
   await mkdir(join(projectDir, ".pi", "agents"), { recursive: true });
@@ -31,7 +33,7 @@ async function seedProjectConfig(value: unknown): Promise<void> {
 }
 
 async function seedGlobalConfig(value: unknown): Promise<void> {
-  await mkdir(join(homeDir, ".pi", "agents"), { recursive: true });
+  await mkdir(configDir(), { recursive: true });
   await writeFile(globalConfigPath(), JSON.stringify(value), "utf-8");
 }
 
@@ -53,6 +55,7 @@ afterEach(async () => {
   if (savedHome === undefined) delete process.env.HOME;
   else process.env.HOME = savedHome;
   delete process.env[LENS_BRIDGE_ENV_VAR];
+  await rm(globalConfigPath(), { force: true });
   await rm(root, { recursive: true, force: true });
 });
 

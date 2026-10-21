@@ -24,7 +24,7 @@ import {
   configFilePath,
   isConfigScope,
   isRecord,
-  readConfigObject,
+  readScopeConfig,
   updateConfigFile,
   type ConfigOnWarn,
   type ConfigRung,
@@ -144,8 +144,12 @@ function readEnvBatchSize(): number | undefined {
 }
 
 /** The keys one scope's file actually carries, read once so a bad file warns once per scope. */
-function readScopeSettings(path: string, onWarn?: ConfigOnWarn): StoreJanitorScopeSettings {
-  const config = readConfigObject(path, onWarn);
+function readScopeSettings(
+  scope: ConfigScope,
+  cwd: string,
+  onWarn?: ConfigOnWarn,
+): StoreJanitorScopeSettings {
+  const config = readScopeConfig(scope, cwd, onWarn);
   if (config === undefined) return {};
   const store = config.store;
   if (!isRecord(store)) return {};
@@ -170,8 +174,8 @@ export function readStoreJanitorConfig(
   cwd: string,
   onWarn?: ConfigOnWarn,
 ): { project?: StoreJanitorScopeSettings; global?: StoreJanitorScopeSettings } {
-  const project = readScopeSettings(configFilePath("project", cwd), onWarn);
-  const global = readScopeSettings(configFilePath("global", cwd), onWarn);
+  const project = readScopeSettings("project", cwd, onWarn);
+  const global = readScopeSettings("global", cwd, onWarn);
   return {
     ...(Object.keys(project).length > 0 ? { project } : {}),
     ...(Object.keys(global).length > 0 ? { global } : {}),

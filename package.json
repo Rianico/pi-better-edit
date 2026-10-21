@@ -1,6 +1,6 @@
 {
   "name": "pi-better-edit",
-  "version": "2.13.1",
+  "version": "2.13.2",
   "description": "Hash-anchored read/edit/undo tools for pi-coding-agent. Every line gets a unique 4-char hash (A-Za-z0-9) that stays stable across edits; stale or ambiguous anchors are rejected, never fuzzy-matched. Undo persists across restarts.",
   "keywords": [
     "anchors",
@@ -82,7 +82,7 @@
     "semantic-release": "^25.0.9",
     "typebox": "*",
     "typescript": "^7.0.0",
-    "vite": "^8.2.2",
+    "vite": "^8.3.5",
     "vitest": "^4.1.8"
   },
   "peerDependencies": {

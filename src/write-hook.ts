@@ -15,6 +15,7 @@ import {
   buildServedWriteMessage,
   trackServedWriteRefusal,
 } from "./hashline/served-guard.js";
+import { reportDiagnostic } from "./diagnostics.js";
 
 export { findServedHashEcho };
 
@@ -53,7 +54,7 @@ export async function servedHashEchoDenial(
   try {
     canonDigests = await handle.loadCanonDigests();
   } catch (error) {
-    console.error("Failed to load served canon digests for write:", error);
+    reportDiagnostic("write-hook", "Failed to load served canon digests for write:", error);
     canonDigests = [];
   }
   const lines = splitLines(content);
@@ -119,7 +120,8 @@ export function registerWriteHook(pi: ExtensionAPI): void {
       }
     } catch (error) {
       if (signal?.aborted) throw error;
-      console.error(
+      reportDiagnostic(
+        "write-hook",
         `pi-better-edit: pre-write served hash guard failed open: ${error instanceof Error ? error.message : String(error)}`,
       );
     }
