@@ -56,9 +56,22 @@ interface SnapshotRef {
   anchor_generation: number;
 }
 
+/** The row a stat-identity adoption names: the committed snapshot for one file version (ADR-0043). */
+interface StatSnapshotRef extends SnapshotRef {
+  snapshot_hash: string;
+}
+
 interface SnapshotStmts {
   findSnapshot: (path: string, snapshotHash: string) => SnapshotRef | undefined;
+  findSnapshotByStat: (path: string, statKey: string) => StatSnapshotRef | undefined;
   lineageAnchors: (snapshotId: number) => { anchor: string }[];
+  /** The lineage rows of a half-open 1-based line-number range, in line order (ADR-0043 page read). */
+  lineageRange: (
+    snapshotId: number,
+    fromLine: number,
+    toLine: number,
+  ) => { line_number: number; anchor: string; canon_hash: string }[];
+  setSnapshotStatKey: (snapshotId: number, statKey: string) => void;
   latestSnapshot: (path: string) => { snapshot_id: number } | undefined;
   lineageIdentities: (
     snapshotId: number,
@@ -76,6 +89,7 @@ interface SnapshotStmts {
     snapshotHash: string,
     lineCount: number,
     createdAt: number,
+    statKey: string | undefined,
   ) => number | undefined;
   insertLineage: (
     snapshotId: number,
@@ -97,6 +111,19 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
     "SELECT snapshot_id, line_count, anchor_generation FROM file_snapshots " +
       "WHERE path = ? AND snapshot_hash = ? AND committed = 1",
   );
+  // WHY: (ADR-0043) the adoption lookup names the FILE VERSION, not the content: a matching stat
+  // WHY: identity is what lets the read path resolve one page of lineage instead of materializing
+  // WHY: every anchor. Newest first so a re-stamped row (a fallback adoption) wins over a stale one.
+  const findStatStmt = db.prepare(
+    "SELECT snapshot_id, snapshot_hash, line_count, anchor_generation FROM file_snapshots " +
+      "WHERE path = ? AND stat_key = ? AND committed = 1 " +
+      "ORDER BY created_at DESC, snapshot_id DESC LIMIT 1",
+  );
+  const lineageRangeStmt = db.prepare(
+    "SELECT line_number, anchor, canon_hash FROM line_lineage " +
+      "WHERE snapshot_id = ? AND line_number >= ? AND line_number <= ? ORDER BY line_number ASC",
+  );
+  const setStatKeyStmt = db.prepare("UPDATE file_snapshots SET stat_key = ? WHERE snapshot_id = ?");
   const lineageStmt = db.prepare(
     "SELECT anchor FROM line_lineage WHERE snapshot_id = ? ORDER BY line_number ASC",
   );
@@ -140,8 +167,8 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
   // WHY: a local allocation. `DO NOTHING` + no returned row is the conflict signal the caller
   // WHY: rolls back on, so the concurrent writer's canonical snapshot is adopted instead.
   const insertSnapshotStmt = db.prepare(
-    "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation) " +
-      "VALUES (?, ?, ?, ?, 1, ?) " +
+    "INSERT INTO file_snapshots (path, snapshot_hash, line_count, created_at, committed, anchor_generation, stat_key) " +
+      "VALUES (?, ?, ?, ?, 1, ?, ?) " +
       "ON CONFLICT(path, snapshot_hash) DO NOTHING " +
       "RETURNING snapshot_id",
   );
@@ -156,6 +183,14 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
     latestSnapshot: (path: string) =>
       latestSnapshotStmt.get(path, ANCHOR_GENERATION) as { snapshot_id: number } | undefined,
     // SAFETY: `node:sqlite` returns untyped rows; the SELECT above lists exactly these columns.
+    findSnapshotByStat: (...params) => findStatStmt.get(...params) as StatSnapshotRef | undefined,
+    lineageRange: (...params) =>
+      lineageRangeStmt.all(...params) as unknown as {
+        line_number: number;
+        anchor: string;
+        canon_hash: string;
+      }[],
+    setSnapshotStatKey: (snapshotId, statKey) => setStatKeyStmt.run(statKey, snapshotId),
     lineageIdentities: (...params) =>
       lineageIdentitiesStmt.all(...params) as unknown as {
         line_number: number;
@@ -177,13 +212,14 @@ function buildStmts(db: DatabaseSync): SnapshotStmts {
       const row = allocateStmt.get(path, count, count, count) as { start_id: number };
       return row.start_id;
     },
-    insertSnapshot: (path, snapshotHash, lineCount, createdAt) => {
+    insertSnapshot: (path, snapshotHash, lineCount, createdAt, statKey) => {
       const row = insertSnapshotStmt.get(
         path,
         snapshotHash,
         lineCount,
         createdAt,
         ANCHOR_GENERATION,
+        statKey ?? null,
       ) as { snapshot_id: number } | undefined;
       return row?.snapshot_id;
     },
@@ -256,7 +292,7 @@ export function getSnapshot(
   store: HashStore,
   path: string,
   content: string,
-  deleteCorrupt = true,
+  corruptPolicy: "delete" | "keep" = "delete",
 ): string[] | undefined {
   const snapshotHash = cacheKey(contentChecksum(content));
   const row = snapshotStmts(store.db).findSnapshot(path, snapshotHash);
@@ -265,7 +301,7 @@ export function getSnapshot(
   // WHY: poisoned row (written before the column existed). Unknown/foreign
   // WHY: anchor generation is a miss that deletes, like any corrupt row.
   if (row.anchor_generation !== ANCHOR_GENERATION) {
-    if (deleteCorrupt) {
+    if (corruptPolicy === "delete") {
       withBusyRetry(() => {
         snapshotStmts(store.db).deleteSnapshot(row.snapshot_id);
         snapshotStmts(store.db).deleteLineage(row.snapshot_id);
@@ -277,7 +313,7 @@ export function getSnapshot(
     .lineageAnchors(row.snapshot_id)
     .map((entry) => entry.anchor);
   if (anchors.length !== row.line_count || !isValidHashList(anchors)) {
-    if (deleteCorrupt) {
+    if (corruptPolicy === "delete") {
       withBusyRetry(() => {
         snapshotStmts(store.db).deleteSnapshot(row.snapshot_id);
       });
@@ -345,6 +381,7 @@ function planFor(options?: HashSnapshotUpsertOptions): MaterializePlan {
     retireLeases: options?.retireLeases === true,
     ...(options?.leases !== undefined ? { leases: options.leases } : {}),
     ...(options?.servedMirror !== undefined ? { servedMirror: options.servedMirror } : {}),
+    ...(options?.statKey !== undefined ? { statKey: options.statKey } : {}),
   };
 }
 
@@ -402,6 +439,154 @@ export async function adoptPinnedSnapshotFor(
   materializeSnapshot(store, descriptor, planFor(options));
 }
 
+/**
+ * One lineage row a stat-matched page read resolves (ADR-0043): the anchor to serve and the canon
+ * digest the snapshot committed that line under, which the caller re-verifies against the bytes it
+ * is about to show. A page that cannot be proven falls back to content-hash materialization — never
+ * a stale anchor.
+ */
+interface StatLineageRow {
+  lineNumber: number;
+  anchor: string;
+  canonHash: string;
+}
+
+/**
+ * A committed snapshot selected by file version (ADR-0043). `anchorsInRange` is page-priced: one PK
+ * range scan over `line_lineage`, never a materialization of the whole file's identity. Throws when
+ * the range is not fully present — provenance it cannot prove is provenance it will not serve.
+ */
+export interface StatMatchedSnapshot {
+  snapshotHash: string;
+  /** The content checksum carried by `snapshotHash` — the epoch suffix a read reports. */
+  checksum: string;
+  lineCount: number;
+  anchorsInRange: (start: number, end: number) => StatLineageRow[];
+}
+
+function checksumOf(snapshotHash: string): string | undefined {
+  const generationSeparator = snapshotHash.indexOf(":");
+  const checksumSeparator =
+    generationSeparator < 0 ? -1 : snapshotHash.indexOf(":", generationSeparator + 1);
+  return checksumSeparator < 0 ? undefined : snapshotHash.slice(checksumSeparator + 1);
+}
+
+/**
+ * Finds the committed snapshot whose stamped stat identity names this file version (ADR-0043).
+ *
+ * Best-effort by design: a missing row, a foreign anchor generation, or an unreadable store is a
+ * MISS, never an error — the caller falls back to content-hash materialization, which is the only
+ * path that can prove an absent snapshot wrong or right.
+ */
+export async function findStatSnapshotFor(
+  path: string,
+  statKey: string,
+): Promise<StatMatchedSnapshot | undefined> {
+  let store: Awaited<ReturnType<typeof loadHashStore>>;
+  try {
+    store = await loadHashStore();
+  } catch (error) {
+    console.error("pi-better-edit: stat-identity lookup skipped:", error);
+    return undefined;
+  }
+  try {
+    const stmts = snapshotStmts(store.db);
+    const row = stmts.findSnapshotByStat(path, statKey);
+    if (
+      row === undefined ||
+      row.anchor_generation !== ANCHOR_GENERATION ||
+      !isCurrentAnchorGeneration(row.snapshot_hash)
+    ) {
+      return undefined;
+    }
+    const checksum = checksumOf(row.snapshot_hash);
+    if (checksum === undefined) {
+      return undefined;
+    }
+    return {
+      snapshotHash: row.snapshot_hash,
+      checksum,
+      lineCount: row.line_count,
+      anchorsInRange: (start, end) => {
+        const rows = stmts.lineageRange(row.snapshot_id, start + 1, end);
+        if (rows.length !== end - start) {
+          throw new Error(
+            `stat-identity snapshot ${row.snapshot_id} has ${rows.length} lineage rows for lines ` +
+              `${start + 1}-${end}; expected ${end - start}.`,
+          );
+        }
+        return rows.map((line) => ({
+          lineNumber: line.line_number,
+          anchor: line.anchor,
+          canonHash: line.canon_hash,
+        }));
+      },
+    };
+  } catch (error) {
+    console.error("pi-better-edit: stat-identity lookup skipped:", error);
+    return undefined;
+  }
+}
+
+/** The file version an adoption restates: the path, its `stat(2)` identity, and the content it names. */
+export interface StatSnapshotAdoption {
+  path: string;
+  statKey: string;
+  snapshotHash: string;
+}
+
+/**
+ * Adopts an already-committed snapshot on stat identity alone (ADR-0043): no content is hashed, no
+ * lineage is written, only the leases and mirror a materialization owns are recorded.
+ *
+ * Returns `false` when the snapshot is no longer the row this file version names (a concurrent vacuum
+ * or a re-stamp won the race). The caller must then take the content-hash path: it is the only writer
+ * allowed to decide what this content's identity is. Retirement stays authoritative — a cache-hit read
+ * still retires the leases its snapshot no longer covers (ADR-0042 §3.1.3).
+ */
+export async function adoptStatSnapshotFor(
+  adoption: StatSnapshotAdoption,
+  options?: SnapshotAdoptOptions,
+): Promise<boolean> {
+  if (!isCurrentAnchorGeneration(adoption.snapshotHash)) {
+    return false;
+  }
+  const store = await loadHashStore();
+  const plan = planFor(options);
+  return withBusyRetry(() => {
+    store.db.exec("BEGIN IMMEDIATE");
+    try {
+      const row = snapshotStmts(store.db).findSnapshotByStat(adoption.path, adoption.statKey);
+      if (
+        row === undefined ||
+        row.snapshot_hash !== adoption.snapshotHash ||
+        row.anchor_generation !== ANCHOR_GENERATION
+      ) {
+        store.db.exec("ROLLBACK");
+        return false;
+      }
+      const now = Date.now();
+      // WHY: adoption cannot grow the store, so ADR-0042's retention trigger (fresh commits only)
+      // WHY: stays exactly where it was — a cache-hit read never sweeps.
+      if (plan.retireLeases) {
+        retireAbsentLeases(store.db, adoption.path, row.snapshot_id, now);
+      }
+      grantMaterializedLeases(store.db, plan.leases, adoption.path, adoption.snapshotHash);
+      recordMaterializedMirror(store.db, plan.servedMirror, adoption.path);
+      store.db.exec("COMMIT");
+      return true;
+    } catch (error) {
+      try {
+        store.db.exec("ROLLBACK");
+      } catch (rollbackError: unknown) {
+        // SAFETY: best-effort rollback — the original failure is authoritative.
+        console.error("[snapshot-store] failed to rollback stat adoption:", rollbackError);
+      }
+      throw error;
+    }
+  });
+}
+
 interface InheritedIdentities {
   /** current line number -> `line_id` inherited from S_latest (spec §3.1.3.2). */
   inherited: Map<number, number>;
@@ -452,11 +637,12 @@ function pairAgainstLatest(store: HashStore, path: string, lines: string[]): Inh
   return { inherited };
 }
 
-/** The one transaction's own options: retirement is authoritative-only, `leases` adds the grant, `servedMirror` the mirror write. */
+/** The one transaction's own options: retirement is authoritative-only, `leases` adds the grant, `servedMirror` the mirror write, `statKey` the observed file version (ADR-0043). */
 interface MaterializePlan {
   retireLeases: boolean;
   leases?: LeaseGrant;
   servedMirror?: HashSnapshotUpsertOptions["servedMirror"];
+  statKey?: string;
 }
 
 /**
@@ -529,22 +715,28 @@ export function reportVacuumSoftOverflow(db: DatabaseSync, result: VacuumResult)
 }
 
 /**
- * Commits (or adopts) the canonical snapshot for `(path, snapshotHash)` and returns its id so the
- * caller-owned vacuum can protect the in-flight row. `undefined` is unreachable at the outermost
- * call: a conflict re-enters with `isConflictRetry` and throws if it cannot adopt a canonical row.
+ * What the materialization body did: the canonical row plus whether THIS transaction inserted it.
+ * Retention is only owed by the transaction that inserted a fresh row — adoption cannot grow the
+ * store, and charging a global sweep to every read is what made the read path seconds-slow.
  */
+interface MaterializedSnapshot {
+  snapshotId: number;
+  inserted: boolean;
+}
+
 /**
  * The materialization body: commits (or adopts) the canonical snapshot for `(path, snapshotHash)` on
- * the caller's OPEN `BEGIN IMMEDIATE` and returns its id, or `undefined` when a concurrent writer
- * committed the same `(path, snapshot_hash)` first — the caller owns the rollback and the retry.
+ * the caller's OPEN `BEGIN IMMEDIATE`; returns `{snapshotId, inserted}`, or `undefined` when a
+ * concurrent writer committed the same `(path, snapshot_hash)` first — the caller owns the rollback
+ * and the retry.
  */
 function materializeSnapshotInTxn(
   store: HashStore,
   descriptor: SnapshotDescriptor,
   plan: MaterializePlan,
-): number | undefined {
+): MaterializedSnapshot | undefined {
   const { path, snapshotHash, lineCount, hashes, content } = descriptor;
-  const { retireLeases, leases, servedMirror } = plan;
+  const { retireLeases, leases, servedMirror, statKey } = plan;
   const lines = splitLines(content);
   // WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4 step
   // WHY: 4): the default is `false` so in-memory working-buffer snapshots — and any content that has
@@ -572,7 +764,10 @@ function materializeSnapshotInTxn(
     }
     grantMaterializedLeases(store.db, leases, path, snapshotHash);
     recordMaterializedMirror(store.db, servedMirror, path);
-    return existing.snapshot_id;
+    // WHY: (ADR-0043) a content-verified adoption still records the version it was observed at, so
+    // WHY: the next read of this unchanged file takes the stat path instead of the content-hash one.
+    if (statKey !== undefined) stmts.setSnapshotStatKey(existing.snapshot_id, statKey);
+    return { snapshotId: existing.snapshot_id, inserted: false };
   }
   // WHY: survivors keep their exact `line_id`s (spec §3.2.4 step 1). The edit commit path hands
   // WHY: in the working buffer's map, so its identities are taken verbatim (0% diffing); the
@@ -586,7 +781,7 @@ function materializeSnapshotInTxn(
     if (!inherited.has(lineNumber)) freshIds++;
   }
   const startId = freshIds > 0 ? stmts.allocateLineIds(path, freshIds) : 0;
-  const insertedId = stmts.insertSnapshot(path, snapshotHash, lineCount, Date.now());
+  const insertedId = stmts.insertSnapshot(path, snapshotHash, lineCount, Date.now(), statKey);
   if (insertedId === undefined) {
     // WHY: a concurrent writer committed `(path, snapshot_hash)` first (spec §3.2.4 step 3): the
     // WHY: whole transaction — counter block included — is discarded and the canonical snapshot
@@ -594,10 +789,10 @@ function materializeSnapshotInTxn(
     return undefined;
   }
   let nextFreshId = startId;
-  for (let i = 0; i < hashes.length; i++) {
-    const lineNumber = i + 1;
+  for (const [index, hash] of hashes.entries()) {
+    const lineNumber = index + 1;
     const lineId = inherited.get(lineNumber) ?? nextFreshId++;
-    stmts.insertLineage(insertedId, lineNumber, lineId, canonDigest(lines[i] ?? ""), hashes[i]!);
+    stmts.insertLineage(insertedId, lineNumber, lineId, canonDigest(lines[index] ?? ""), hash);
   }
   // WHY: `retireLeases` is `true` only for an authoritative materialization (spec §3.1.3): leases
   // WHY: whose line_id is absent from the snapshot just committed are retired here, inside the same
@@ -614,74 +809,75 @@ function materializeSnapshotInTxn(
   // WHY: and the mirror rows commit or roll back as one unit, so a torn store state
   // WHY: (lease-without-mirror, mirror-without-lease) is structurally unreachable.
   recordMaterializedMirror(store.db, servedMirror, path);
-  return insertedId;
+  return { snapshotId: insertedId, inserted: true };
 }
 /**
  * Commits (or adopts) the canonical snapshot for `(path, snapshotHash)` in its own
- * `BEGIN IMMEDIATE` and returns its id so the caller-owned vacuum can protect the in-flight row.
- * `undefined` is unreachable at the outermost call: a conflict re-enters with `isConflictRetry` and
- * throws if it cannot adopt a canonical row.
+ * `BEGIN IMMEDIATE`; returns `{snapshotId, inserted}` for the caller's retention decision.
+ * A conflict re-enters with `isConflictRetry` and throws if it cannot adopt a canonical row.
  */
 function materializeSnapshot(
   store: HashStore,
   descriptor: SnapshotDescriptor,
   plan: MaterializePlan,
-  isConflictRetry = false,
-): number | undefined {
-  let snapshotId = withBusyRetry(() => {
-    store.db.exec("BEGIN IMMEDIATE");
-    try {
-      const id = materializeSnapshotInTxn(store, descriptor, plan);
-      if (id === undefined) {
-        store.db.exec("ROLLBACK");
-        return undefined;
-      }
-      store.db.exec("COMMIT");
-      return id;
-    } catch (error) {
+): MaterializedSnapshot {
+  for (let attempt = 0; ; attempt++) {
+    const materialized = withBusyRetry(() => {
+      store.db.exec("BEGIN IMMEDIATE");
       try {
-        store.db.exec("ROLLBACK");
-      } catch (rollbackError: unknown) {
-        // SAFETY: best-effort rollback — the original failure is authoritative; a failed rollback of an already-aborted transaction must not mask it.
-        reportDiagnostic(
-          "snapshot-store",
-          "[snapshot-store] failed to rollback transaction:",
-          rollbackError,
+        const committed = materializeSnapshotInTxn(store, descriptor, plan);
+        if (committed === undefined) {
+          store.db.exec("ROLLBACK");
+          return undefined;
+        }
+        store.db.exec("COMMIT");
+        return committed;
+      } catch (error) {
+        try {
+          store.db.exec("ROLLBACK");
+        } catch (rollbackError: unknown) {
+          // SAFETY: best-effort rollback — the original failure is authoritative; a failed rollback of an already-aborted transaction must not mask it.
+          reportDiagnostic(
+            "snapshot-store",
+            "[snapshot-store] failed to rollback transaction:",
+            rollbackError,
+          );
+        }
+        throw error;
+      }
+    });
+    if (materialized === undefined) {
+      // WHY: a concurrent writer committed the canonical row between our ROLLBACK and now (spec
+      // WHY: §3.2.4 step 3) — one retry adopts it; a second miss is a store invariant violation.
+      if (attempt > 0) {
+        throw new Error(
+          `Unresolvable snapshot conflict for ${descriptor.path} (${descriptor.snapshotHash}): canonical row missing after conflict.`,
         );
       }
-      throw error;
+      continue;
     }
-  });
-  if (snapshotId === undefined) {
-    // WHY: a concurrent writer committed the canonical row between our ROLLBACK and now (spec §3.2.4
-    // WHY: step 3) — one re-entry adopts it; a second miss is a store invariant violation.
-    if (isConflictRetry) {
-      throw new Error(
-        `Unresolvable snapshot conflict for ${descriptor.path} (${descriptor.snapshotHash}): canonical row missing after conflict.`,
-      );
+    // WHY: retention is paid only by the call that inserted a fresh snapshot — a fresh commit is
+    // WHY: exactly when a path's retention window can overflow. Adoption (the read-path cache hit) adds
+    // WHY: no row and cannot overflow the budget; making it sweep the whole store was what turned each
+    // WHY: read into seconds of pin-query CPU on a large lease table. The sweep runs after the
+    // WHY: transaction (never inside it — it owns `BEGIN IMMEDIATE`), and a vacuum failure can never
+    // WHY: fail the read/edit that already committed. The just-materialized row is protected: its
+    // WHY: leases committed inside the transaction, and an unpinned in-flight row would otherwise be
+    // WHY: the sweep's first candidate in an over-budget store.
+    if (materialized.inserted) {
+      try {
+        const vacuumResult = vacuumSnapshots(store.db, {
+          protectSnapshotIds: [materialized.snapshotId],
+        });
+        reportVacuumSoftOverflow(store.db, vacuumResult);
+      } catch (error) {
+        // SAFETY: best-effort retention — the snapshot is committed and the tool result is valid; a
+        // SAFETY: missed pass only defers eviction to the next fresh commit or store open.
+        console.error("[snapshot-store] vacuum failed:", error);
+      }
     }
-    snapshotId = materializeSnapshot(store, descriptor, plan, true);
+    return materialized;
   }
-  // WHY: a fresh commit is exactly when a path's retention window can overflow, so the vacuum runs
-  // WHY: after the transaction (never inside it — it owns `BEGIN IMMEDIATE`). The retry recursion
-  // WHY: above skips this so one materialization vacuums once, and a vacuum failure can never fail
-  // WHY: the read/edit that already committed. The just-materialized row is protected: its leases
-  // WHY: committed inside the transaction, and an unpinned in-flight row would otherwise be the
-  // WHY: sweep's first candidate in an over-budget store.
-  if (!isConflictRetry) {
-    try {
-      const vacuumResult = vacuumSnapshots(
-        store.db,
-        snapshotId === undefined ? {} : { protectSnapshotIds: [snapshotId] },
-      );
-      reportVacuumSoftOverflow(store.db, vacuumResult);
-    } catch (error) {
-      // SAFETY: best-effort retention — the snapshot is committed and the tool result is valid; a
-      // SAFETY: missed pass only defers eviction to the next materialization or store open.
-      reportDiagnostic("snapshot-store", "[snapshot-store] vacuum failed:", error);
-    }
-  }
-  return snapshotId;
 }
 
 /**
@@ -705,53 +901,66 @@ function materializeBatch(
   store: HashStore,
   descriptors: readonly SnapshotDescriptor[],
   plans: readonly MaterializePlan[],
-  isConflictRetry = false,
 ): number[] {
-  const snapshotIds = withBusyRetry(() => {
-    store.db.exec("BEGIN IMMEDIATE");
-    try {
-      const committed: number[] = [];
-      for (const [index, descriptor] of descriptors.entries()) {
-        const id = materializeSnapshotInTxn(store, descriptor, plans[index]!);
-        if (id === undefined) {
-          store.db.exec("ROLLBACK");
-          return undefined;
-        }
-        committed.push(id);
-      }
-      store.db.exec("COMMIT");
-      return committed;
-    } catch (error) {
+  for (let attempt = 0; ; attempt++) {
+    const materialized = withBusyRetry(() => {
+      store.db.exec("BEGIN IMMEDIATE");
       try {
-        store.db.exec("ROLLBACK");
-      } catch (rollbackError: unknown) {
-        // SAFETY: best-effort rollback — the original failure is authoritative.
-        reportDiagnostic(
-          "snapshot-store",
-          "[snapshot-store] failed to rollback batch transaction:",
-          rollbackError,
+        const committed: MaterializedSnapshot[] = [];
+        for (const [index, descriptor] of descriptors.entries()) {
+          const plan = plans[index];
+          if (plan === undefined) {
+            throw new Error(`Missing materialize plan at index ${index} for ${descriptor.path}`);
+          }
+          const outcome = materializeSnapshotInTxn(store, descriptor, plan);
+          if (outcome === undefined) {
+            store.db.exec("ROLLBACK");
+            return undefined;
+          }
+          committed.push(outcome);
+        }
+        store.db.exec("COMMIT");
+        return committed;
+      } catch (error) {
+        try {
+          store.db.exec("ROLLBACK");
+        } catch (rollbackError: unknown) {
+          // SAFETY: best-effort rollback — the original failure is authoritative.
+          reportDiagnostic(
+            "snapshot-store",
+            "[snapshot-store] failed to rollback batch transaction:",
+            rollbackError,
+          );
+        }
+        throw error;
+      }
+    });
+    if (materialized === undefined) {
+      if (attempt > 0) {
+        throw new Error(
+          `Unresolvable snapshot conflict for ${descriptors.map((entry) => entry.path).join(", ")}: canonical row missing after conflict.`,
         );
       }
-      throw error;
+      continue;
     }
-  });
-  if (snapshotIds === undefined) {
-    if (isConflictRetry) {
-      throw new Error(
-        `Unresolvable snapshot conflict for ${descriptors.map((entry) => entry.path).join(", ")}: canonical row missing after conflict.`,
-      );
+    const snapshotIds = materialized.map((entry) => entry.snapshotId);
+    // WHY: a batch where every descriptor adopted an existing row cannot grow the store, so it owes no
+    // WHY: retention. This is the read path on unchanged content (`upsertSnapshotsFor`): skipping the
+    // WHY: global pin scan here is what keeps a large store's reads off the vacuum query. A batch with at
+    // WHY: least one fresh commit still sweeps once, after the transaction, with every in-flight row
+    // WHY: protected.
+    if (materialized.some((entry) => entry.inserted)) {
+      try {
+        const vacuumResult = vacuumSnapshots(store.db, { protectSnapshotIds: snapshotIds });
+        reportVacuumSoftOverflow(store.db, vacuumResult);
+      } catch (error) {
+        // SAFETY: best-effort retention — the batch is committed and the tool result is valid; a missed
+        // SAFETY: pass only defers eviction to the next fresh commit or store open.
+        console.error("[snapshot-store] vacuum failed:", error);
+      }
     }
-    return materializeBatch(store, descriptors, plans, true);
+    return snapshotIds;
   }
-  try {
-    const vacuumResult = vacuumSnapshots(store.db, { protectSnapshotIds: snapshotIds });
-    reportVacuumSoftOverflow(store.db, vacuumResult);
-  } catch (error) {
-    // SAFETY: best-effort retention — the batch is committed and the tool result is valid; a missed
-    // SAFETY: pass only defers eviction to the next materialization or store open.
-    reportDiagnostic("snapshot-store", "[snapshot-store] vacuum failed:", error);
-  }
-  return snapshotIds;
 }
 
 function upsertSnapshots(store: HashStore, entries: readonly SnapshotEnrollment[]): void {
@@ -772,7 +981,7 @@ export async function upsertSnapshotsFor(entries: readonly SnapshotEnrollment[])
 export function snapshotIOFor(store: HashStore): HashSnapshotIO {
   return {
     async get(path, content, deleteCorrupt) {
-      return getSnapshot(store, path, content, deleteCorrupt);
+      return getSnapshot(store, path, content, deleteCorrupt ? "delete" : "keep");
     },
     async upsert(path, checksum, lineCount, hashes, content, options) {
       upsertSnapshot(
@@ -787,7 +996,7 @@ export function snapshotIOFor(store: HashStore): HashSnapshotIO {
 setDefaultHashSnapshotIO({
   async get(path, content, deleteCorrupt) {
     const store = await loadHashStore();
-    return getSnapshot(store, path, content, deleteCorrupt);
+    return getSnapshot(store, path, content, deleteCorrupt ? "delete" : "keep");
   },
   async upsert(path, checksum, lineCount, hashes, content, options) {
     const store = await loadHashStore();
@@ -803,7 +1012,7 @@ onStoreOpen(() => {
   setDefaultHashSnapshotIO({
     async get(path, content, deleteCorrupt) {
       const store = await loadHashStore();
-      return getSnapshot(store, path, content, deleteCorrupt);
+      return getSnapshot(store, path, content, deleteCorrupt ? "delete" : "keep");
     },
     async upsert(path, checksum, lineCount, hashes, content, options) {
       const store = await loadHashStore();

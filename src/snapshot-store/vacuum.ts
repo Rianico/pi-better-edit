@@ -1,5 +1,5 @@
 import type { DatabaseSync } from "node:sqlite";
-import { getCached, withBusyRetry } from "../hash-store.js";
+import { getCached, withBusyRetry, RESOLVABLE_LEASE_SQL } from "../hash-store.js";
 import { SERVED_TTL_MS } from "../constants.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
@@ -77,19 +77,28 @@ function buildVacuumStmts(db: DatabaseSync): VacuumStmts {
   );
   // WHY: pinning is a two-table predicate (spec §3.6.1): a lease that is still active inside the
   // WHY: session TTL, a lease retired inside the 1-hour grace, or an undo restore target.
+  // WHY: the probe MUST stay index-covered. `file_path` alone is not enough — one path holds a lease
+  // WHY: per served line (thousands), so without `served_snapshot_hash` each snapshot re-scans the
+  // WHY: path's whole lease set. `idx_leases_file_snapshot` in the schema owner is that exact tuple
+  // WHY: and its covering order; dropping the hash column turns a ~35 ms pass into seconds.
   const pinnedStmt = db.prepare(
     "SELECT DISTINCT fs.snapshot_id AS snapshot_id FROM file_snapshots fs " +
       "WHERE fs.committed = 1 AND (" +
-      "EXISTS (SELECT 1 FROM served_leases sl WHERE sl.file_path = fs.path " +
-      "AND sl.served_snapshot_hash = fs.snapshot_hash " +
-      "AND ((sl.retired_at IS NULL AND sl.updated_at >= ?) OR sl.retired_at >= ?)) " +
+      // WHY: (ADR-0045) the active half is the canonical expiry predicate, so the pin probe and
+      // WHY: the grant path cannot disagree about which active leases still resolve. `sl` is dropped
+      // WHY: from the subquery so the shared predicate can name `served_leases` itself.
+      "EXISTS (SELECT 1 FROM served_leases WHERE served_leases.file_path = fs.path " +
+      "AND served_leases.served_snapshot_hash = fs.snapshot_hash " +
+      `AND ((${RESOLVABLE_LEASE_SQL}) OR served_leases.retired_at >= ?)) ` +
       "OR EXISTS (SELECT 1 FROM file_undo fu WHERE fu.path = fs.path " +
       "AND fu.snapshot_hash = fs.snapshot_hash))",
   );
   const deleteLineageStmt = db.prepare("DELETE FROM line_lineage WHERE snapshot_id = ?");
   const deleteSnapshotStmt = db.prepare("DELETE FROM file_snapshots WHERE snapshot_id = ?");
   return {
+    // SAFETY: node:sqlite returns the exact column list selected by `listStmt`; this cast names that projection.
     listSnapshots: () => listStmt.all() as unknown as VacuumSnapshotRow[],
+    // SAFETY: `pinnedStmt` selects only `snapshot_id`; this cast names that projection.
     listPinned: (...params) => pinnedStmt.all(...params) as unknown as { snapshot_id: number }[],
     deleteLineage: (snapshotId) => deleteLineageStmt.run(snapshotId),
     deleteSnapshot: (snapshotId) => deleteSnapshotStmt.run(snapshotId),
@@ -193,6 +202,7 @@ export function vacuumSnapshots(db: DatabaseSync, options: VacuumOptions = {}): 
 function deleteVacuumSnapshots(db: DatabaseSync, snapshotIds: number[]): void {
   const stmts = vacuumStmts(db);
   withBusyRetry(() => {
+    // SAFETY: node:sqlite exposes `isTransaction` at runtime although DatabaseSync's public type omits it.
     const inTransaction = (db as unknown as { isTransaction?: boolean }).isTransaction === true;
     if (inTransaction) {
       for (const id of snapshotIds) {

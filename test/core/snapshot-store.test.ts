@@ -382,7 +382,7 @@ describe("snapshot-store — corrupt lineage handling", () => {
       put(store, "/p.ts", "x\ny\n", ["AAAA", "BBBB"]);
       await corruptAnchors(home, "/p.ts", ["ZZ", "ZZZZ"]);
 
-      expect(getSnapshot(store, "/p.ts", "x\ny\n", false)).toBeUndefined();
+      expect(getSnapshot(store, "/p.ts", "x\ny\n", "keep")).toBeUndefined();
       expect(snapshotCount(home, "/p.ts")).toBe(1);
     });
   });

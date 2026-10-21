@@ -44,6 +44,7 @@ import {
 } from "../../src/store-janitor";
 import { STORE_JANITOR_DEFAULTS, type StoreJanitorSettings } from "../../src/store-config";
 import { VACUUM_RETIRED_PIN_MS } from "../../src/snapshot-store";
+import { SERVED_TTL_MS } from "../../src/constants";
 import { CANON_VERSION } from "../../src/hashline";
 import { snapshotHashFor, upsertSnapshot } from "../../src/snapshot-store";
 import { initHasher } from "../../src/hashline/hasher";
@@ -108,7 +109,13 @@ function plantCurrentSnapshot(store: HashStore, path: string, content: string): 
 
 function plantLease(
   db: DatabaseSync,
-  input: { path: string; anchor: string; servedSnapshotHash: string; retiredAt: number | null },
+  input: {
+    path: string;
+    anchor: string;
+    servedSnapshotHash: string;
+    retiredAt: number | null;
+    updatedAt?: number;
+  },
 ): void {
   db.prepare(
     "INSERT INTO served_leases (session_id, file_path, anchor, line_id, canon_hash, served_snapshot_hash, served_line_number, updated_at, retired_at) " +
@@ -121,7 +128,7 @@ function plantLease(
     "cafe",
     input.servedSnapshotHash,
     1,
-    NOW,
+    input.updatedAt ?? NOW,
     input.retiredAt,
   );
 }
@@ -301,7 +308,7 @@ describe("the janitor's GC", () => {
     });
   });
 
-  it("removes a terminal lease past the retirement grace and keeps a live one and one inside it", async () => {
+  it("removes terminal and TTL-expired leases, keeping live ones and both boundaries", async () => {
     await withStoreDir("pi-janitor-grace-", async () => {
       const store = await loadHashStore();
       const live = plantCurrentSnapshot(store, "/live.ts", "x\n");
@@ -323,13 +330,29 @@ describe("the janitor's GC", () => {
         servedSnapshotHash: live,
         retiredAt: NOW - VACUUM_RETIRED_PIN_MS - 1,
       });
+      // #160: an ACTIVE lease past the session TTL is expired authority and is removed too.
+      plantLease(store.db, {
+        path: "/live.ts",
+        anchor: "dddd",
+        servedSnapshotHash: live,
+        retiredAt: null,
+        updatedAt: NOW - SERVED_TTL_MS - 1,
+      });
+      // Exactly at the TTL is still inside the boundary (ADR-0045) and survives.
+      plantLease(store.db, {
+        path: "/live.ts",
+        anchor: "eeee",
+        servedSnapshotHash: live,
+        retiredAt: null,
+        updatedAt: NOW - SERVED_TTL_MS,
+      });
 
       const outcome = runJanitor({ db: store.db, now: NOW, settings: SETTINGS });
-      expect(outcome.deleted.expiredLeases).toBe(1);
+      expect(outcome.deleted.expiredLeases).toBe(2);
       const surviving = store.db
         .prepare("SELECT anchor FROM served_leases ORDER BY anchor")
         .all() as { anchor: string }[];
-      expect(surviving.map((row) => row.anchor)).toEqual(["aaaa", "bbbb"]);
+      expect(surviving.map((row) => row.anchor)).toEqual(["aaaa", "bbbb", "eeee"]);
     });
   });
 
@@ -386,6 +409,7 @@ describe("the exclusion invariant", () => {
   const RUN: JanitorOutcome = {
     ran: true,
     deleted: { snapshots: 0, lineage: 0, leases: 0, expiredLeases: 0 },
+    compacted: { ran: false, reason: "skipped", freeBytesBefore: 0, reclaimedBytes: 0 },
     deepCheckFailed: false,
     rebuilt: false,
   };

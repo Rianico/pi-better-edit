@@ -38,6 +38,13 @@ export interface PairingOptions {
    * WHY: silently recursing past it.
    */
   scanBudget?: number;
+  /**
+   * Whether to zip the unchanged, provably-forced prefix/suffix before the engine runs (default
+   * `true`; see ADR-0044). Diagnostic/test seam: the differential corpus in
+   * `test/hashline/patience-pairing.test.ts` compares this path against the full scan, which is
+   * how the shortcut's result-equivalence is pinned.
+   */
+  trim?: boolean;
 }
 
 interface LcsAlignment {
@@ -55,6 +62,51 @@ const MAXIMAL_PAIRING_CAP = 2;
 /** Dynamic scan budget: `MAX(100000, 4 * (prevLines + currLines))` (spec §5.1/§5.2). */
 export function pairingScanBudget(prevCount: number, currCount: number): number {
   return Math.max(MIN_SCAN_BUDGET, BUDGET_LINES_FACTOR * (prevCount + currCount));
+}
+
+/**
+ * The unchanged boundary runs whose pairs are FORCED, so they may be zipped without the engine
+ * (ADR-0044).
+ *
+ * WHY uniqueness is the safety condition: a canon that occurs exactly once in `prevLines` and
+ * exactly once in `currLines` must be paired by every maximum-length alignment — skipping it would
+ * leave a strictly longer alignment available — so pairing it positionally cannot change any other
+ * line's pairing. A duplicated canon stops the run at that line: which copy survived is exactly
+ * what the engine's backbone/rigid-run/leaf handling exists to decide, and the shortcut must never
+ * guess it. `prefix + suffix` never exceeds the shorter length, so the runs cannot overlap.
+ */
+function forcedBoundaryRun(
+  prevLines: LineDescriptor[],
+  currLines: LineDescriptor[],
+): { prefix: number; suffix: number } {
+  const limit = Math.min(prevLines.length, currLines.length);
+  if (limit === 0) return { prefix: 0, suffix: 0 };
+  const prevCounts = new Map<string, number>();
+  for (const line of prevLines) {
+    prevCounts.set(line.canonHash, (prevCounts.get(line.canonHash) ?? 0) + 1);
+  }
+  const currCounts = new Map<string, number>();
+  for (const line of currLines) {
+    currCounts.set(line.canonHash, (currCounts.get(line.canonHash) ?? 0) + 1);
+  }
+  const forced = (canonHash: string): boolean =>
+    prevCounts.get(canonHash) === 1 && currCounts.get(canonHash) === 1;
+
+  let prefix = 0;
+  while (prefix < limit) {
+    const canonHash = prevLines[prefix]!.canonHash;
+    if (canonHash !== currLines[prefix]!.canonHash) break;
+    if (!forced(canonHash)) break;
+    prefix++;
+  }
+  let suffix = 0;
+  while (suffix < limit - prefix) {
+    const canonHash = prevLines[prevLines.length - 1 - suffix]!.canonHash;
+    if (canonHash !== currLines[currLines.length - 1 - suffix]!.canonHash) break;
+    if (!forced(canonHash)) break;
+    suffix++;
+  }
+  return { prefix, suffix };
 }
 
 /** First index whose value is `>= target` in an ascending array. */
@@ -465,7 +517,26 @@ export function pairSnapshots(
     }
   }
 
-  alignRecursive(1, prevLines.length, 1, currLines.length);
+  const boundaries =
+    options?.trim === false ? { prefix: 0, suffix: 0 } : forcedBoundaryRun(prevLines, currLines);
+  if (boundaries.prefix === 0 && boundaries.suffix === 0) {
+    alignRecursive(1, prevLines.length, 1, currLines.length);
+  } else {
+    // WHY: (ADR-0044) the shortcut still charges the top-level interval the full scan would have
+    // WHY: charged, so an injected `scanBudget` keeps its pre-trim meaning: a budget too small for
+    // WHY: the whole interval pairs nothing, exactly as before. The middle is then aligned on its
+    // WHY: own and charged like any other sub-interval.
+    const fullLength = prevLines.length + currLines.length;
+    if (scanBudget < fullLength) return pairing;
+    scanBudget -= fullLength;
+    for (let line = 1; line <= boundaries.prefix; line++) pairing.set(line, line);
+    const pEnd = prevLines.length - boundaries.suffix;
+    const cEnd = currLines.length - boundaries.suffix;
+    alignRecursive(boundaries.prefix + 1, pEnd, boundaries.prefix + 1, cEnd);
+    for (let offset = 1; offset <= boundaries.suffix; offset++) {
+      pairing.set(pEnd + offset, cEnd + offset);
+    }
+  }
   assertMonotonicPairing(pairing);
   return pairing;
 }

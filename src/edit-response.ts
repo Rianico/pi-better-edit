@@ -291,8 +291,6 @@ export type BatchSection = {
   };
 };
 
-type _BatchDetails = EditDetails;
-
 export function buildBatchResult(sections: BatchSection[]): TResult {
   const totalEdits = sections.reduce((n, s) => n + s.appliedCount + s.noopCount, 0);
   const appliedFiles = sections.filter((s) => s.appliedCount > 0);
@@ -388,7 +386,9 @@ export function buildBatchResult(sections: BatchSection[]): TResult {
       ...(warnings.length > 0 ? { warnings } : {}),
       servedRows: servedByPath.flatMap((e) => e.servedRows),
       servedByPath,
-      ...(appliedFiles.length === 1 ? { contentHash: appliedFiles[0]!.resultHash } : {}),
+      ...(appliedFiles.length === 1 && appliedFiles[0] !== undefined
+        ? { contentHash: appliedFiles[0].resultHash }
+        : {}),
       ...(driftNotice !== undefined ? { driftNotice } : {}),
     },
   };

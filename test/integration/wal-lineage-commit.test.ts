@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { HASH_LEN } from "../../src/hashline/index.js";
-import { readFile } from "fs/promises";
+import { readFile, writeFile } from "fs/promises";
 import {
   withTempFile,
   setupIntegrationTest,
@@ -11,7 +11,7 @@ import {
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { loadLeases, sessionKeyFor } from "../../src/served-session/session";
-import { canon } from "../../src/hashline/index";
+import { canon, lineHashes } from "../../src/hashline/index";
 import { xxh32 } from "../../src/hashline/hasher";
 import { pairSnapshots, type LineDescriptor } from "../../src/hashline/patience-pairing";
 
@@ -207,6 +207,51 @@ describe("WAL lineage commit from the working buffer", () => {
       const restored = leases.find((lease) => lease.anchor === bravo);
       expect(restored?.line_id).toBe(canonicalLineage[1]!.line_id);
       expect(restored?.retired_at).toBeNull();
+    });
+  });
+});
+
+/**
+ * Ticket #163: a one-region change to a file that is not yet materialized runs the read path's
+ * re-pairing (`pairAgainstLatest` → `pairSnapshots`) over the whole file. The unchanged-boundary
+ * trim must keep every untouched line's identity and anchor exactly where they were (ADR-0044).
+ */
+describe("read-path re-pairing across a one-region change (issue #163)", () => {
+  it("inherits the line_id and anchor of every unchanged prefix/suffix line", async () => {
+    const lines = Array.from({ length: 40 }, (_, index) => `row ${index} value`);
+    const before = lines.join("\n") + "\n";
+    const changed = [...lines];
+    changed[20] = "row 20 CHANGED";
+    const after = changed.join("\n") + "\n";
+
+    await withTempFile("trim.txt", before, async ({ cwd, path }) => {
+      const { ctx, readTool } = setupIntegrationTest(cwd);
+      await readTool.execute("r0", { file: "trim.txt" }, undefined, undefined, ctx);
+
+      const store = await loadHashStore();
+      const beforeRows = lineageRows(store, path, before);
+      const beforeAnchors = await lineHashes(before, path);
+      expect(beforeRows).toHaveLength(40);
+
+      // A plain rewrite (no edit tool): the next read is a content-hash miss, so the read path
+      // pairs the new content against the previous snapshot to inherit identities.
+      await writeFile(path, after, "utf-8");
+      await readTool.execute("r1", { file: "trim.txt" }, undefined, undefined, ctx);
+
+      const afterRows = lineageRows(store, path, after);
+      const afterAnchors = await lineHashes(after, path);
+      expect(afterRows).toHaveLength(40);
+
+      for (let line = 0; line < 40; line++) {
+        if (line === 20) continue;
+        expect(afterRows[line]!.line_id, `line ${line + 1} identity`).toBe(
+          beforeRows[line]!.line_id,
+        );
+        expect(afterAnchors[line], `line ${line + 1} anchor`).toBe(beforeAnchors[line]);
+      }
+      // The edited line is the only one that takes a fresh identity.
+      expect(afterRows[20]!.line_id).not.toBe(beforeRows[20]!.line_id);
+      expect(afterAnchors[20]).not.toBe(beforeAnchors[20]);
     });
   });
 });

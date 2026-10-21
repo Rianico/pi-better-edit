@@ -451,6 +451,42 @@ describe("hash-store — schema versioning", () => {
       expect(row?.value).toBe(String(HASH_STORE_VERSION));
     });
   });
+
+  it("adds the stat-identity column and index to a store that predates them (ADR-0043)", async () => {
+    await withTempHome(async (home) => {
+      const store = await loadHashStore();
+      await put(store, "/keep.ts", "x\n", ["XYZZ"]);
+      shutdownHashStore();
+
+      // WHY: simulates a v10 store — the column and its index do not exist, while the snapshot it
+      // WHY: carries (and any lease naming it) must survive the additive migration untouched.
+      const db = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      db.exec("DROP INDEX IF EXISTS idx_snapshots_path_stat");
+      db.exec("ALTER TABLE file_snapshots DROP COLUMN stat_key");
+      db.close();
+
+      const reloaded = await loadHashStore();
+      expect(getSnapshot(reloaded, "/keep.ts", "x\n")).toEqual(["XYZZ"]);
+      shutdownHashStore();
+
+      const check = new DatabaseSync(sqlitePath(home), { defensive: false } as any);
+      const columns = (
+        check.prepare("PRAGMA table_info(file_snapshots)").all() as { name: string }[]
+      ).map((row) => row.name);
+      const indexes = (
+        check
+          .prepare(
+            "SELECT name FROM sqlite_master WHERE type = 'index' AND tbl_name = 'file_snapshots'",
+          )
+          .all() as {
+          name: string;
+        }[]
+      ).map((row) => row.name);
+      check.close();
+      expect(columns).toContain("stat_key");
+      expect(indexes).toContain("idx_snapshots_path_stat");
+    });
+  });
 });
 
 describe("hash-store — anchor_generation rename (issue #20)", () => {
@@ -633,7 +669,7 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
     });
   });
 
-  it("creates the v7 indexes and enforces foreign keys", async () => {
+  it("creates the line-identity indexes and enforces foreign keys", async () => {
     await withTempHome(async (home) => {
       await loadHashStore();
       shutdownHashStore();
@@ -646,9 +682,19 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
           "idx_leases_line",
           "idx_leases_line_num",
           "idx_leases_file_retired",
+          "idx_leases_file_snapshot",
         ]) {
           expect(indexes).toContain(idx);
         }
+        // The vacuum pin probe filters on all four; losing the hash column (or the covering order)
+        // silently turns each snapshot's probe back into a full scan of the path's leases.
+        expect(
+          (
+            db.prepare("PRAGMA index_info(idx_leases_file_snapshot)").all() as Array<{
+              name: string;
+            }>
+          ).map((row) => row.name),
+        ).toEqual(["file_path", "served_snapshot_hash", "retired_at", "updated_at"]);
         const fk = db.prepare("PRAGMA foreign_keys").get() as { foreign_keys?: number };
         expect(fk.foreign_keys).toBe(1);
       } finally {
@@ -721,11 +767,21 @@ describe("hash-store — v7 CAS schema (issue #79)", () => {
         "VALUES ('/a.ts', 'old', '', '\n', '[\"abcc\"]', 'new', 'v1:aaaa', 111)",
     ).run();
   }
+  // Static statements instead of interpolating `table`: the identifiers are a closed union, but the
+  // SQL-injection rule cannot see that a loop variable came from a literal tuple.
+  const V7_SELECT_ALL: Record<(typeof V7_TABLES)[number], string> = {
+    file_snapshots: "SELECT * FROM file_snapshots ORDER BY rowid",
+    line_id_counters: "SELECT * FROM line_id_counters ORDER BY rowid",
+    line_lineage: "SELECT * FROM line_lineage ORDER BY rowid",
+    served_leases: "SELECT * FROM served_leases ORDER BY rowid",
+    served_session_meta: "SELECT * FROM served_session_meta ORDER BY rowid",
+    file_undo: "SELECT * FROM file_undo ORDER BY rowid",
+  };
 
   function v7Rows(db: DatabaseSync): Record<string, unknown[]> {
     const rows: Record<string, unknown[]> = {};
     for (const table of V7_TABLES) {
-      rows[table] = db.prepare(`SELECT * FROM ${table} ORDER BY rowid`).all() as unknown[];
+      rows[table] = db.prepare(V7_SELECT_ALL[table]).all() as unknown[];
     }
     return rows;
   }

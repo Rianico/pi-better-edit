@@ -5,7 +5,7 @@ import { DatabaseSync, type StatementSync } from "node:sqlite";
 import { join, dirname } from "node:path";
 import { errCode } from "./utils.js";
 import { initHasher } from "./hashline/hasher.js";
-import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT } from "./constants.js";
+import { HASH_STORE_VERSION, HASH_STORE_BUSY_TIMEOUT, SERVED_TTL_MS } from "./constants.js";
 import { ANCHOR_GENERATION, CANON_VERSION } from "./hashline/hash-identity.js";
 import { DomainError } from "./domain-errors.js";
 import { reportDiagnostic } from "./diagnostics.js";
@@ -45,7 +45,7 @@ export function isCorruptionError(error: unknown): boolean {
   );
 }
 
-function isBusyError(error: unknown): boolean {
+export function isBusyError(error: unknown): boolean {
   if (error && typeof error === "object") {
     const errcode = (error as { errcode?: unknown }).errcode;
     if (typeof errcode === "number") return errcode === 5 || errcode === 6;
@@ -347,6 +347,7 @@ function openDb(storePath: string, budget?: BusyBudget): OpenedDb {
 // WHY: and the interpolated fragments in their statements come from those members.
 const MIGRATION_COLUMNS = {
   cut_intent: { direction: "TEXT" },
+  file_snapshots: { stat_key: "TEXT" },
   file_undo: { snapshot_hash: "TEXT", transaction_id: "TEXT", raw_pre: "TEXT" },
   served: { retired: "TEXT", canons: "TEXT", snapshotId: "TEXT" },
   undo: { result_content: "TEXT NOT NULL DEFAULT ''" },
@@ -625,6 +626,45 @@ export const DANGLING_LEASE_SQL =
   "WHERE fs.path = served_leases.file_path AND fs.snapshot_hash = served_leases.served_snapshot_hash " +
   "AND fs.committed = 1)";
 
+// WHY: (ADR-0045) the ONE session-TTL boundary for served leases. An ACTIVE (un-retired) lease
+// WHY: whose `updated_at` is older than `now - SERVED_TTL_MS` has lost resolution authority: the
+// WHY: read/edit grant path treats it as absent, the janitor may delete it, and the vacuum's pin
+// WHY: probe already ignores it. Retirement is the OTHER terminal state and keeps its own 1-hour
+// WHY: grace (`VACUUM_RETIRED_PIN_MS`); an expired active lease is never judged by that grace.
+
+/** The instant before which an un-retired lease has lost resolution authority (ADR-0045). */
+export function servedLeaseExpiryCutoff(now: number): number {
+  return now - SERVED_TTL_MS;
+}
+
+/**
+ * `served_leases` rows that are ACTIVE but past the session TTL — janitor GC's family. The
+ * predicate names the table so both the batched delete (bare) and the vacuum's EXISTS subquery
+ * (table-qualified) can share it; one parameter: the cutoff instant.
+ */
+export const EXPIRED_ACTIVE_LEASE_SQL =
+  "served_leases.retired_at IS NULL AND served_leases.updated_at < ?";
+
+/**
+ * The complement INSIDE the same boundary: an ACTIVE lease still inside the session TTL. The
+ * vacuum's pin probe uses this instead of restating the comparison, so pin authority and resolution
+ * authority cannot drift apart.
+ */
+export const RESOLVABLE_LEASE_SQL =
+  "served_leases.retired_at IS NULL AND served_leases.updated_at >= ?";
+
+/**
+ * The JS form of the same predicate, for the in-memory grant path (`leaseSpanSource`). The grant
+ * path used to trust any un-retired lease regardless of age; hard expiry (ADR-0045) makes the age
+ * part of the authority, so an expired row is dropped before a lease identity can be returned.
+ */
+export function isExpiredActiveLease(
+  lease: { retired_at: number | null; updated_at: number },
+  now: number,
+): boolean {
+  return lease.retired_at === null && lease.updated_at < servedLeaseExpiryCutoff(now);
+}
+
 export function ensureSnapshotTables(db: DatabaseSync): void {
   db.exec(
     "CREATE TABLE IF NOT EXISTS file_snapshots (" +
@@ -665,6 +705,12 @@ export function ensureSnapshotTables(db: DatabaseSync): void {
   // WHY: so a pre-rename store opens and its generation-gated behavior is intact; DEFAULT 0 stays
   // WHY: so an older-build row misses and re-derives.
   renameGenerationColumn(db, "file_snapshots");
+  // WHY: the stat identity a READ materialization saw for this path (ADR-0043): a later read whose
+  // WHY: `stat(2)` identity equals it adopts this snapshot's lineage without re-deriving anchors. NULL
+  // WHY: on every row the read path did not stamp (edit/undo materializations, pre-v11 stores), and
+  // WHY: NULL never matches a lookup — the fallback is always the content-hash path.
+  addColumnIfMissing(db, "file_snapshots", "stat_key");
+  db.exec("CREATE INDEX IF NOT EXISTS idx_snapshots_path_stat ON file_snapshots (path, stat_key)");
   // WHY: open-time generation sweep — a pre-bump or poisoned store cannot leave
   // WHY: unknown/foreign-generation snapshots, orphan lineage, or dangling leases
   // WHY: behind. Current-generation rows survive untouched (same-version sessions
@@ -851,6 +897,15 @@ function buildStore(db: DatabaseSync): boolean {
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_leases_file_retired " +
       "ON served_leases (file_path, retired_at)",
+  );
+  // WHY: the vacuum's pin probe asks "does this (path, snapshot_hash) still have a lease?", and one
+  // WHY: path holds a lease per served line (thousands). `idx_leases_file_retired` can narrow only to
+  // WHY: the path, so the probe re-scanned that path's whole lease set once per snapshot — on a
+  // WHY: 518 MB / 408k-lease store that single query spent 2.2 s on every materialization. This
+  // WHY: composite covers the (path, snapshot_hash) probe and the retired/updated filter.
+  db.exec(
+    "CREATE INDEX IF NOT EXISTS idx_leases_file_snapshot " +
+      "ON served_leases (file_path, served_snapshot_hash, retired_at, updated_at)",
   );
   db.exec(
     "CREATE INDEX IF NOT EXISTS idx_leases_session_anchor " +
@@ -1163,9 +1218,19 @@ export async function healUnhealthyStore(budget?: BusyBudget): Promise<boolean> 
  * WHY: observe raw ones. Instance own-property doubles (`vi.spyOn`) are handled one layer up —
  * WHY: the traps return those directly — so this lookup never sees a double.
  */
-function realMethod(target: object, property: string): (...args: unknown[]) => unknown {
-  const value: unknown = Reflect.get(Object.getPrototypeOf(target), property);
-  return (value as (...args: unknown[]) => unknown).bind(target);
+function realMethod(
+  target: DatabaseSync | StatementSync,
+  property: string,
+): (...args: unknown[]) => unknown {
+  const prototype = Object.getPrototypeOf(target) as Record<
+    string,
+    (...args: unknown[]) => unknown
+  >;
+  const method = prototype[property];
+  if (method === undefined) {
+    throw new Error(`Missing method ${property} on ${target.constructor.name}`);
+  }
+  return method.bind(target);
 }
 
 function guardDatabaseHandle(raw: DatabaseSync, storePath: string): DatabaseSync {
@@ -1449,19 +1514,20 @@ export function shutdownHashStore(): void {
 }
 
 export function withStore(fn: () => void): void {
-  if (!cachedDb || !cachedDb.db.isOpen) {
+  const store = cachedDb;
+  if (!store || !store.db.isOpen) {
     throw new Error(
       "withStore requires an open SQLite store — call loadHashStore() first or use a MemoryStore in tests",
     );
   }
   withBusyRetry(() => {
-    cachedDb!.db.exec("BEGIN IMMEDIATE");
+    store.db.exec("BEGIN IMMEDIATE");
     try {
       fn();
-      cachedDb!.db.exec("COMMIT");
+      store.db.exec("COMMIT");
     } catch (e) {
       try {
-        cachedDb!.db.exec("ROLLBACK");
+        store.db.exec("ROLLBACK");
       } catch (rollbackError: unknown) {
         reportDiagnostic(
           "hash-store",

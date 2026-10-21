@@ -2,6 +2,17 @@
 
 ## [Unreleased]
 
+### Features
+
+* **store:** adopt an unchanged file from its `stat(2)` identity instead of re-deriving every line: stamp `ino:size:mtimeMs:ctimeMs` on the materialized snapshot and resolve only the kept page's lineage, verifying each served line against its committed canon hash. Any mismatch falls back to the content-hash path; touch, atomic rename, and same-size/same-mtime rewrites are covered. (store version 11, ADR-0043) (#166)
+* **hashline:** pair a one-region change without scanning the unchanged boundary: zip the prefix/suffix whose canon is globally unique on both sides, then run patience pairing only on the changed middle. Duplicated or mismatched boundaries fall back to the full scan; untouched lines keep their anchors. (ADR-0044) (#166)
+* **store:** end a served lease's authority at the 7-day TTL (hard expiry, ADR-0045): an un-retired lease older than `SERVED_TTL_MS` no longer resolves, and the janitor deletes expired active leases in bounded off-path batches. Resolution and vacuum share one expiry predicate; a lease exactly at the TTL still resolves, while retirement keeps its own 1-hour grace. Anchors older than the TTL fail closed and need a fresh read. (#166)
+* **store:** reclaim the file space lease GC frees: run one gated `VACUUM` after a maintenance sweep (ADR-0046), only when free pages are at least a quarter of the file and at least 1 MB, and only on lifecycle events. A contended rewrite waits briefly and defers with a reason; the outcome reports reclaimed bytes and failures never escape the hook. (#166)
+
+### Bug Fixes
+
+* **store:** keep cache-hit reads off the LRU vacuum's store-wide pin scan by running retention only when a materialization inserts a fresh snapshot; add the covering `(file_path, served_snapshot_hash)` lease index (store version 10) so a fresh commit's sweep stays cheap on a large lease table. (#166)
+
 ## [2.13.2] - 2026-10-21
 
 ### Features

@@ -6,7 +6,7 @@ import { Type } from "typebox";
 import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE, SERVED_MAX_LINES } from "./constants.js";
 import { HASH_LEN } from "./hashline/alphabet.js";
 import type { ServedRow } from "./hashline/served.js";
-import { loadHashStore } from "./hash-store.js";
+import { loadHashStore, type HashStore } from "./hash-store.js";
 import { sessionFromContext } from "./served-session/index.js";
 import { contentChecksum } from "./hashline/hasher.js";
 import { abortIf, assertNever } from "./utils.js";
@@ -26,7 +26,13 @@ import { toCwd } from "./paths.js";
 import { DomainError, withPayloadSubject } from "./domain-errors.js";
 import { notifyServedSpans, servedRowsToSpans } from "./served-spans.js";
 import { fileSnap } from "./file-reader.js";
-import { snapshotHashFor, upsertSnapshotsFor } from "./snapshot-store";
+import {
+  adoptStatSnapshotFor,
+  snapshotHashFor,
+  snapshotIOFor,
+  upsertSnapshotsFor,
+} from "./snapshot-store";
+import { lineHashes } from "./hashline/index.js";
 import { reportDiagnostic } from "./diagnostics.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";
@@ -448,6 +454,31 @@ function servedRowsOf(entry: PreparedTarget): ServedRow[] {
   return entry.plan.omittedAll ? [] : entry.prepared.served;
 }
 
+/**
+ * The whole file's anchors for a content-hash materialization (ADR-0043).
+ *
+ * A stat-adopted page resolved only the anchors it served, so an entry that must fall back to content
+ * hashing re-derives the rest through the usual cache path. That is the rare race — its snapshot lost
+ * to a concurrent vacuum or re-stamp between the lookup and the adoption — never the common read.
+ */
+async function fullHashesFor(
+  entry: PreparedTarget,
+  store: HashStore | undefined,
+): Promise<string[]> {
+  const prepared = entry.prepared;
+  if (prepared.fileHashes.length === prepared.lineTotals.split) return prepared.fileHashes;
+  const hashStore = store ?? (await loadHashStore());
+  // WHY: not persisted here — the caller's single batch transaction is the only writer allowed to
+  // WHY: materialize this read (spec §3.1.2); a pre-write would split the snapshot from its leases.
+  return lineHashes(
+    prepared.normalized,
+    prepared.absolutePath,
+    undefined,
+    snapshotIOFor(hashStore),
+    false,
+  );
+}
+
 export function regRead(pi: ExtensionAPI): void {
   // WHY: pi falls back to the builtin `read` renderer by tool name, but that renderer keys on
   // WHY: `file_path ?? path` plus `offset`/`limit`. Our payload field is `file` (ADR-0041 D1), so
@@ -641,6 +672,14 @@ export function regRead(pi: ExtensionAPI): void {
         const preparedFiles = results.filter(isPrepared);
         for (const entry of preparedFiles) {
           if (entry.mode !== "served" || entry.plan.omittedAll) continue;
+          const adopted = entry.prepared.statAdoption;
+          if (adopted !== undefined) {
+            // WHY: (ADR-0043) the epoch names the same bytes `fileSnap` would describe — the checksum
+            // WHY: comes from the stat-matched snapshot, so adoption does not re-hash the content just
+            // WHY: to state which version it read.
+            entry.snapshotId = adopted.snapshotId;
+            continue;
+          }
           try {
             entry.snapshotId = (
               await fileSnap(
@@ -700,21 +739,52 @@ export function regRead(pi: ExtensionAPI): void {
         // WHY: anchors without its snapshot.
         // WHY: Best-effort — a store failure never fails the read; the next call re-materializes.
         try {
-          await upsertSnapshotsFor(
-            servedEntries.map((entry) => ({
-              descriptor: {
+          // WHY: (ADR-0043) a stat-matched page already names a committed snapshot: adopting it on the
+          // WHY: same identity commits the leases and mirror a materialization owns without hashing the
+          // WHY: content or splitting its lines again. A `false` (the row lost a race with a vacuum or a
+          // WHY: re-stamp) folds the entry back into the content-hash batch below, which is the only
+          // WHY: writer allowed to decide what this content's identity is.
+          const unmatched: PreparedTarget[] = [];
+          for (const entry of servedEntries) {
+            const adopted = entry.prepared.statAdoption;
+            const statKey = entry.prepared.statKey;
+            if (adopted === undefined || statKey === undefined) {
+              unmatched.push(entry);
+              continue;
+            }
+            const committed = await adoptStatSnapshotFor(
+              {
                 path: entry.prepared.absolutePath,
-                snapshotHash: snapshotHashFor(entry.prepared.normalized),
-                lineCount: entry.prepared.lineTotals.split,
-                hashes: entry.prepared.fileHashes,
-                content: entry.prepared.normalized,
+                statKey,
+                snapshotHash: adopted.snapshotHash,
               },
-              options: {
-                retireLeases: true,
-                leases: { sessionKey, rows: servedRowsOf(entry) },
-              },
-            })),
-          );
+              { retireLeases: true, leases: { sessionKey, rows: servedRowsOf(entry) } },
+            );
+            if (!committed) unmatched.push(entry);
+          }
+          if (unmatched.length > 0) {
+            const enrollments = await Promise.all(
+              unmatched.map(async (entry) => ({
+                descriptor: {
+                  path: entry.prepared.absolutePath,
+                  snapshotHash: snapshotHashFor(entry.prepared.normalized),
+                  lineCount: entry.prepared.lineTotals.split,
+                  hashes: await fullHashesFor(entry, store),
+                  content: entry.prepared.normalized,
+                },
+                options: {
+                  retireLeases: true,
+                  leases: { sessionKey, rows: servedRowsOf(entry) },
+                  // WHY: stamp the version this read actually observed, so the next read of an
+                  // WHY: unchanged file adopts on stat identity instead of content hashing again.
+                  ...(entry.prepared.statKey !== undefined
+                    ? { statKey: entry.prepared.statKey }
+                    : {}),
+                },
+              })),
+            );
+            await upsertSnapshotsFor(enrollments);
+          }
         } catch (error) {
           // SAFETY: best-effort post-read materialization — the preview rows are already computed
           // SAFETY: and the served mirror below still records them; a missed snapshot/lease degrades
@@ -733,7 +803,10 @@ export function regRead(pi: ExtensionAPI): void {
           await session.recordEpoch({
             rows: servedRowsOf(entry),
             lineCount: entry.prepared.lineTotals.visible,
-            fullReadHashes: entry.prepared.fileHashes,
+            // WHY: (ADR-0043) a stat-adopted page holds only the anchors it served. A full read
+            // WHY: resolved every line (its one range is the whole file), so the array is whole exactly
+            // WHY: then; a partial read never consumes these hashes, so it passes none.
+            ...(isFullRead ? { fullReadHashes: entry.prepared.fileHashes } : {}),
             ...(isFullRead && entry.snapshotId !== undefined
               ? { snapshotId: entry.snapshotId }
               : {}),

@@ -10,6 +10,7 @@ import { readNormFile } from "../../src/file-reader";
 import { createSessionHandle, loadLeases } from "../../src/served-session/index.js";
 import { visLines } from "../../src/utils";
 import {
+  upsertSnapshotsFor,
   vacuumSnapshots,
   VACUUM_GLOBAL_BUDGET_BYTES,
   VACUUM_LINEAGE_BYTES_PER_LINE,
@@ -57,7 +58,7 @@ function seedVersion(
   db.prepare(
     "INSERT INTO line_lineage (snapshot_id, line_number, line_id, canon_hash, anchor) " +
       "VALUES (?, 1, ?, ?, ?)",
-  ).run(row.snapshot_id, row.snapshot_id * 1000, `canon-${hash}`, `anc-${hash}`);
+  ).run(row.snapshot_id, row.snapshot_id * 1000, `canon-${hash}`, `anchor-${hash}`);
   return row.snapshot_id;
 }
 
@@ -77,7 +78,7 @@ function seedLease(
   ).run(
     input.session ?? "sessionA",
     input.path,
-    `anc-${input.snapshotHash}`,
+    `anchor-${input.snapshotHash}`,
     `canon-${input.snapshotHash}`,
     input.snapshotHash,
     input.updatedAt ?? Date.now(),
@@ -460,7 +461,7 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
     });
   });
 
-  it("keeps a cache-hit served snapshot through an over-budget mixed pass", async () => {
+  it("does not sweep an over-budget store when a read adopts a served snapshot", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
       const db = store.db;
@@ -471,7 +472,7 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
       const file = join(home, "served.ts");
       await writeFile(file, "alpha\nbeta\ngamma\n");
       const probe = await readNormFile(file, home, { store, noPersist: true });
-      // the served snapshot is the oldest unpinned row, so the sweep reaches it first.
+      // The served snapshot is the oldest unpinned row; a sweep here would reach it first.
       seedAnchoredSnapshot(
         db,
         probe.absolutePath,
@@ -485,8 +486,11 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
 
       const norm = await readAndServe(store, file, home, "sessionA");
 
-      expect(snapshotCount(db, norm.absolutePath)).toBe(1);
+      // A cache-hit read adopts the committed row: it adds no version, so it owes no retention and
+      // must not evict the in-flight served row (or any other candidate) behind the read's back.
+      expect(snapshotCount(db, norm.absolutePath)).toBe(2);
       expect(loadLeases(store, "sessionA", norm.absolutePath).length).toBeGreaterThan(0);
+      expect(totalBytes(db)).toBeGreaterThan(VACUUM_GLOBAL_BUDGET_BYTES);
     });
   });
 
@@ -501,6 +505,63 @@ describe("global LRU vacuum (spec §3.6.1)", () => {
 
       expect(totalBytes(reopened.db)).toBeLessThanOrEqual(VACUUM_GLOBAL_BUDGET_BYTES);
       expect(versions(reopened.db)).toHaveLength(4);
+    });
+  });
+});
+
+describe("retention is owed only by a fresh commit", () => {
+  it("does not sweep when a batch adopts an already-committed snapshot", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const db = store.db;
+      seedBigStore(db);
+      expect(totalBytes(db)).toBeGreaterThan(VACUUM_GLOBAL_BUDGET_BYTES);
+
+      await upsertSnapshotsFor([
+        {
+          descriptor: {
+            path: "/p3.ts",
+            snapshotHash: "hash-3",
+            lineCount: BIG_LINES,
+            hashes: [],
+            content: "",
+          },
+        },
+      ]);
+
+      // Adoption (the read path on unchanged content) adds no row: it cannot overflow the budget,
+      // and a read must not pay the store-wide pin scan just because the store is already over it.
+      expect(versions(db)).toHaveLength(BIG_FILES);
+      expect(totalBytes(db)).toBeGreaterThan(VACUUM_GLOBAL_BUDGET_BYTES);
+    });
+  });
+
+  it("still sweeps once after a batch inserts a fresh snapshot", async () => {
+    await withTempHome(async () => {
+      const store = await loadHashStore();
+      const db = store.db;
+      seedBigStore(db);
+
+      await upsertSnapshotsFor([
+        {
+          descriptor: {
+            path: "/p6.ts",
+            snapshotHash: "hash-6",
+            lineCount: BIG_LINES,
+            hashes: [],
+            content: "",
+          },
+        },
+      ]);
+
+      // 7 x 12 MB -> 48 MB: the three oldest go; the fresh row stays because it is the in-flight one.
+      expect(versions(db).map((v) => v.snapshot_hash)).toEqual([
+        "hash-3",
+        "hash-4",
+        "hash-5",
+        "hash-6",
+      ]);
+      expect(totalBytes(db)).toBeLessThanOrEqual(VACUUM_GLOBAL_BUDGET_BYTES);
     });
   });
 });

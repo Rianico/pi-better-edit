@@ -8,6 +8,7 @@ import {
 import { MAX_READ_WINDOWS, MAX_READ_WINDOWS_MESSAGE } from "../constants.js";
 import { DomainError } from "../domain-errors.js";
 import {
+  canonDigest,
   contentOnlyHashes,
   lineHashes,
   fmtRegion,
@@ -88,7 +89,7 @@ function formatPaginationHint(
 }
 // WHY: verbatim renders the identical admitted rows with no anchor prefix; the row set, budgets,
 // WHY: and hints are computed once, so only this formatter differs between the two modes.
-function fmtRows(hashes: string[], lines: string[], verbatim: boolean): string {
+function fmtRows(hashes: readonly string[], lines: readonly string[], verbatim: boolean): string {
   if (!verbatim) return fmtRegion(hashes, lines);
   const joined = lines.join("\n");
   // WHY: a lone empty line renders as "" — indistinguishable from an empty result, so mark it.
@@ -105,7 +106,10 @@ function emptyFilePreview(
   if (startLine === 1) {
     // WHY: the walk already anchored this empty file's one line, which is the anchor of the empty
     // WHY: string — the only line an empty file has (`splitLines("")`), so it is the marker's own.
-    const emptyLineHash = hashes[0]!;
+    const emptyLineHash = hashes[0];
+    if (emptyLineHash === undefined) {
+      throw new Error("empty file preview is missing its walk anchor");
+    }
     return {
       text: `${emptyLineHash}${hashSep}\n[File is empty. Use edit to insert content.]`,
       served: [{ position: 0, hash: emptyLineHash }],
@@ -122,9 +126,10 @@ function oversizedWarning(oversized: { lineNumber: number }[]): {
   verb: string;
   addresses: string;
 } {
+  const [firstOversized] = oversized;
   const lineLabel =
-    oversized.length === 1
-      ? `Line ${oversized[0]!.lineNumber}`
+    oversized.length === 1 && firstOversized !== undefined
+      ? `Line ${firstOversized.lineNumber}`
       : `Lines ${oversized.map((row) => row.lineNumber).join(", ")}`;
   const verb = oversized.length === 1 ? "exceeds" : "exceed";
   const addresses = oversized.map((row) => `${row.lineNumber}p`).join(";");
@@ -134,7 +139,7 @@ function oversizedWarning(oversized: { lineNumber: number }[]): {
 function buildOversizedPreview(params: {
   rowSizes: { lineNumber: number; bytes: number }[];
   selected: string[];
-  selectedHashes: string[];
+  selectedHashes: readonly string[];
   startLine: number;
   totalLines: number;
   maxBytes: number;
@@ -158,11 +163,17 @@ function buildOversizedPreview(params: {
     displayPath,
   } = params;
   const oversized = rowSizes.filter((row) => row.bytes > maxBytes);
-  const rows = rowSizes.map((row, index) =>
-    row.bytes > maxBytes
-      ? `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`
-      : fmtRows([selectedHashes[index]!], [selected[index]!], verbatim),
-  );
+  const rows = rowSizes.map((row, index) => {
+    if (row.bytes > maxBytes) {
+      return `[Line ${row.lineNumber} is ${formatSize(row.bytes)}, exceeds ${formatSize(maxBytes)}; content not shown. Use bash: sed -n '${row.lineNumber}p' <path> | head -c ${maxBytes}]`;
+    }
+    const hash = selectedHashes[index];
+    const line = selected[index];
+    if (hash === undefined || line === undefined) {
+      throw new Error(`preview row ${index} has no selected line`);
+    }
+    return fmtRows([hash], [line], verbatim);
+  });
   const skippedTruncation = truncateHead(rows.join("\n"), { maxBytes, maxLines: maxTruncLines });
   const shownRowCount =
     skippedTruncation.content === "" ? 0 : skippedTruncation.content.split("\n").length;
@@ -185,9 +196,14 @@ function buildOversizedPreview(params: {
   }
   const served: ServedRow[] = [];
   if (!verbatim)
-    for (let index = 0; index < shownRowCount; index++)
-      if (rowSizes[index]!.bytes <= maxBytes)
-        served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+    for (let index = 0; index < shownRowCount; index++) {
+      const row = rowSizes[index];
+      const hash = selectedHashes[index];
+      if (row === undefined || hash === undefined) {
+        throw new Error(`preview served row ${index} is missing`);
+      }
+      if (row.bytes <= maxBytes) served.push({ position: startLine - 1 + index, hash });
+    }
   return {
     text: preview,
     ...(skippedTruncation.truncated ? { truncation: skippedTruncation } : {}),
@@ -203,7 +219,7 @@ function buildNormalPreview(params: {
   totalLines: number;
   maxBytes: number;
   maxTruncLines: number;
-  selectedHashes: string[];
+  selectedHashes: readonly string[];
   verbatim: boolean;
   // WHY: an entry of an explicit `windows` request is a bounded ask, not a page: the caller named
   // WHY: exactly these lines, so a trailing continuation footer would invent intent.
@@ -243,8 +259,10 @@ function buildNormalPreview(params: {
   }
   const served: ServedRow[] = [];
   if (!verbatim)
-    for (let index = 0; index < truncation.outputLines; index++)
-      served.push({ position: startLine - 1 + index, hash: selectedHashes[index]! });
+    for (const [index, hash] of selectedHashes.entries()) {
+      if (index >= truncation.outputLines) break;
+      served.push({ position: startLine - 1 + index, hash });
+    }
   return { preview, truncation, ...(nextOffset !== undefined ? { nextOffset } : {}), served };
 }
 
@@ -259,7 +277,7 @@ function windowHeader(startLine: number, endLine: number, totalLines: number): s
 function buildWindowSection(params: {
   rowSizes: { lineNumber: number; bytes: number }[];
   selected: string[];
-  selectedHashes: string[];
+  selectedHashes: readonly string[];
   startLine: number;
   endIdx: number;
   totalLines: number;
@@ -343,13 +361,16 @@ function sliceMergedRanges(
   end: number,
 ): string[] {
   const lines: string[] = [];
-  for (let index = 0; index < merged.length; index++) {
-    const piece = merged[index]!;
+  for (const [index, piece] of merged.entries()) {
     if (piece.end <= start) continue;
     if (piece.start >= end) break;
     const from = Math.max(start, piece.start) - piece.start;
     const to = Math.min(end, piece.end) - piece.start;
-    lines.push(...pieces[index]!.slice(from, to));
+    const pieceLines = pieces[index];
+    if (pieceLines === undefined) {
+      throw new Error(`preview merge piece ${index} has no lines`);
+    }
+    lines.push(...pieceLines.slice(from, to));
   }
   return lines;
 }
@@ -384,6 +405,8 @@ function buildWindowedPreview(params: {
   ranges: string[][];
   totalLines: number;
   allHashes: string[];
+  /** Per-window page-aligned anchors when the source resolved pages, not the file (ADR-0043). */
+  rangedHashes?: readonly (readonly string[])[];
   maxBytes: number;
   maxTruncLines: number;
   verbatim: boolean;
@@ -396,6 +419,7 @@ function buildWindowedPreview(params: {
     ranges,
     totalLines,
     allHashes,
+    rangedHashes,
     maxBytes,
     maxTruncLines,
     verbatim,
@@ -418,7 +442,7 @@ function buildWindowedPreview(params: {
     const endIdx = Math.min(window.offset - 1 + window.limit, totalLines);
     const header = (sectionHeader ?? windowHeader)(window.offset, endIdx, totalLines);
     const selected = ranges[index] ?? [];
-    const selectedHashes = allHashes.slice(window.offset - 1, endIdx);
+    const selectedHashes = rangedHashes?.[index] ?? allHashes.slice(window.offset - 1, endIdx);
     if (remainingBytes <= 0 || remainingLines <= 0) {
       sections.push(
         `${header}\n[Read budget exhausted; this window is not shown. Re-read it on its own.]`,
@@ -479,13 +503,92 @@ function buildWindowedPreview(params: {
  * - an array: anchors this caller already holds;
  * - a walk plan: the served read's assignment, which the same walk that selects the page runs — see
  *   `HashIdentity.anchorsForWalk`;
+ * - a ranged source: anchors of an ALREADY-COMMITTED snapshot, resolved for exactly the ranges the
+ *   page keeps (ADR-0043) — the stat-identity fast path never materializes the whole file's identity;
  * - `undefined`: none known yet, so served reaches for its own lazy call and verbatim never does.
  */
-export type RenderAnchors = string[] | AnchorWalk;
+export type RenderAnchors = string[] | AnchorWalk | RangedAnchorSource;
 
+/** One committed line as the page read sees it: the anchor to serve and the canon it was based on. */
+interface RangedAnchorLine {
+  anchor: string;
+  canonHash: string;
+}
+
+/**
+ * A committed snapshot's line identity, read a page at a time (ADR-0043).
+ *
+ * `anchorCount` is the line count the snapshot committed; a preview whose own walk disagrees with it
+ * is not describing the same file, and refuses the source.
+ */
+interface RangedAnchorSource {
+  readonly anchorCount: number;
+  /** Lines `[start, end)` (0-based, half-open), exactly `end - start` of them, in line order. */
+  range(start: number, end: number): Promise<readonly RangedAnchorLine[]>;
+}
+
+/**
+ * A stat-matched snapshot could not describe the bytes being served (ADR-0043): its line count, a
+ * missing lineage row, or a line's canon digest disagreed with the file. The caller re-derives the
+ * file's identity through the content-hash path — the served page is never rendered from a source it
+ * could not prove.
+ */
+export class StatIdentityMismatchError extends Error {}
 /** Whether the caller handed anchors rather than a walk plan (readonly arrays do not narrow on their own). */
 function isAnchorArray(anchors: RenderAnchors): anchors is string[] {
   return Array.isArray(anchors);
+}
+
+/** Whether the anchors come a page at a time from a committed snapshot (ADR-0043). */
+function isRangedSource(anchors: RenderAnchors): anchors is RangedAnchorSource {
+  return !Array.isArray(anchors) && "range" in anchors;
+}
+/**
+ * Resolves a stat-matched page, verifying every line before its anchor is served (ADR-0043).
+ *
+ * The snapshot's own `canon_hash` is the evidence: an anchor is only served for a line whose current
+ * canon still digests to it, so a stat identity that lied (a same-size rewrite on a filesystem with
+ * coarse timestamps, a replaced-but-identical path) costs a fallback, never a stale anchor. Any
+ * disagreement — a missing lineage row, a short range, a foreign canon — surfaces as
+ * `StatIdentityMismatchError`, which the caller answers by re-deriving identity from content.
+ */
+async function rangedPageHashes(
+  source: RangedAnchorSource,
+  ranges: readonly LineRange[],
+  kept: readonly (readonly string[])[],
+  text: string,
+): Promise<string[]> {
+  // WHY: an empty file still has one anchorable line. There is no page to keep, but the empty-file
+  // WHY: marker renders that line's anchor, so resolve and verify it too.
+  const wanted: readonly LineRange[] =
+    ranges.length === 0 && text === "" ? [{ start: 0, end: 1 }] : ranges;
+  const hashes: string[] = [];
+  for (const [index, range] of wanted.entries()) {
+    const lines = kept[index] ?? (text === "" ? [""] : []);
+    let resolved: readonly RangedAnchorLine[];
+    try {
+      resolved = await source.range(range.start, range.end);
+    } catch (error) {
+      throw new StatIdentityMismatchError(
+        `stat-matched snapshot cannot serve lines ${range.start + 1}-${range.end}: ${String(error)}`,
+      );
+    }
+    if (resolved.length !== lines.length) {
+      throw new StatIdentityMismatchError(
+        `stat-matched snapshot returned ${resolved.length} anchors for ${lines.length} kept lines.`,
+      );
+    }
+    for (const [offset, line] of lines.entries()) {
+      const committed = resolved[offset];
+      if (committed === undefined || canonDigest(line) !== committed.canonHash) {
+        throw new StatIdentityMismatchError(
+          `stat-matched snapshot line ${range.start + offset + 1} no longer matches the file.`,
+        );
+      }
+      hashes.push(committed.anchor);
+    }
+  }
+  return hashes;
 }
 
 export async function fmtReadPreview(
@@ -522,13 +625,24 @@ export async function fmtReadPreview(
   // WHY: they are; verbatim never reaches for anchors at all.
   const known: string[] | undefined =
     anchors !== undefined && isAnchorArray(anchors) ? anchors : undefined;
+  const ranged: RangedAnchorSource | undefined =
+    !verbatim && anchors !== undefined && isRangedSource(anchors) ? anchors : undefined;
   const plan: AnchorWalk | undefined =
-    !verbatim && anchors !== undefined && !isAnchorArray(anchors) ? anchors : undefined;
+    !verbatim && anchors !== undefined && !isAnchorArray(anchors) && !isRangedSource(anchors)
+      ? anchors
+      : undefined;
   // WHY: the page walk below cannot know which lines to keep until the total is known, so the counts
   // WHY: come from one allocation-free walk of their own — two passes, neither holding a line.
   const counted = walkLines(text);
   const totalLines = visibleLineTotal(text, counted.total);
   const totals = { visible: totalLines, split: counted.total };
+  // WHY: (ADR-0043) the stat-matched snapshot must name the same number of lines this walk counted.
+  // WHY: A disagreement is a changed file under a lying stat identity — refuse the source, never the page.
+  if (ranged !== undefined && ranged.anchorCount !== counted.total) {
+    throw new StatIdentityMismatchError(
+      `stat-matched snapshot has ${ranged.anchorCount} lines, file has ${counted.total}.`,
+    );
+  }
   const startLine = normPosInt(options.offset, "offset") ?? 1;
   const windows = normWindows(options.windows);
   /**
@@ -540,12 +654,16 @@ export async function fmtReadPreview(
     ranges: LineRange[],
   ): Promise<{ ranges: string[][]; hashes: string[] }> => {
     const page = walkPage(text, ranges, plan?.assign);
-    const hashes =
-      verbatim || known !== undefined
-        ? (known ?? [])
-        : (plan?.cached ??
-          page.assigned ??
-          (await (path ? lineHashes(text, path) : contentOnlyHashes(text))));
+    let hashes: string[];
+    if (verbatim || known !== undefined) {
+      hashes = known ?? [];
+    } else if (ranged !== undefined) {
+      hashes = await rangedPageHashes(ranged, ranges, page.ranges, text);
+    } else {
+      hashes = await (plan?.cached ??
+        page.assigned ??
+        (path ? lineHashes(text, path) : contentOnlyHashes(text)));
+    }
     return { ranges: page.ranges, hashes };
   };
   if (totalLines === 0) {
@@ -570,11 +688,31 @@ export async function fmtReadPreview(
     const ranges = requested.map((range) =>
       sliceMergedRanges(merged, page.ranges, range.start, range.end),
     );
+    // WHY: a ranged source resolved `page.hashes` one piece per merged range — the same shape
+    // WHY: `page.ranges` has — so `sliceMergedRanges` gives each window its own page-aligned anchors
+    // WHY: without ever holding the file's whole anchor array (ADR-0043).
+    const rangedHashes =
+      ranged === undefined
+        ? undefined
+        : (() => {
+            let cursor = 0;
+            const pieces = page.ranges.map((lines) => {
+              const piece = page.hashes.slice(cursor, cursor + lines.length);
+              cursor += lines.length;
+              return piece;
+            });
+            return requested.map((range) =>
+              sliceMergedRanges(merged, pieces, range.start, range.end),
+            );
+          })();
     return {
       ...buildWindowedPreview({
         windows,
         ranges,
         totalLines,
+        // WHY: a ranged source resolves the page, not the file: its array is aligned to the merged ranges,
+        // WHY: so each window takes the same slice `sliceMergedRanges` gave its lines (ADR-0043).
+        ...(rangedHashes !== undefined ? { rangedHashes } : {}),
         allHashes: page.hashes,
         maxBytes: maxLineBytes,
         maxTruncLines,
@@ -604,7 +742,9 @@ export async function fmtReadPreview(
   const page = await pageFor([{ start: startLine - 1, end: endIdx }]);
   const selected = page.ranges[0] ?? [];
   const allHashes = page.hashes;
-  const selectedHashes = allHashes.slice(startLine - 1, endIdx);
+  // WHY: a ranged source is already page-aligned (its array starts at `startLine`), while a full anchor
+  // WHY: array is indexed by absolute line — slice only the latter (ADR-0043).
+  const selectedHashes = ranged !== undefined ? allHashes : allHashes.slice(startLine - 1, endIdx);
   const formatted = fmtRows(selectedHashes, selected, verbatim);
   const maxBytes = maxLineBytes;
   const rowSizes = selected.map((line, index) => ({
@@ -616,7 +756,7 @@ export async function fmtReadPreview(
   }));
   if (rowSizes.some((row) => row.bytes > maxBytes)) {
     return {
-      ...(await buildOversizedPreview({
+      ...buildOversizedPreview({
         rowSizes,
         selected,
         selectedHashes,
@@ -626,7 +766,7 @@ export async function fmtReadPreview(
         maxTruncLines,
         verbatim,
         ...(displayPath !== undefined ? { displayPath } : {}),
-      })),
+      }),
       hashes: allHashes,
       lineTotals: totals,
     };
