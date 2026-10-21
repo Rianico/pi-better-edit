@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.13.2] - 2026-10-21
+
 ### Features
 
 * **diagnostics:** internal failures are recorded in `<configDir>/diagnostics.log` (JSONL, 1 MiB cap with one rotated generation) instead of being written to the terminal Pi's renderer owns; `/pi-better-edit` reports the log path, size and last write. (#164)
