@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { writeFile, readFile } from "fs/promises";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { createSessionHandle, sessionKeyFor } from "../../src/served-session/index.js";
 
 const CLEAN = "function hello() {\n  const x = 1;\n  return x;\n}\n";

@@ -5,7 +5,7 @@ import { beforeAll, afterEach, describe, expect, it, vi } from "vitest";
 import type { DatabaseSync } from "node:sqlite";
 
 import { initHasher } from "../../src/hashline/hasher.js";
-import { lineHashes } from "../../src/hashline/index.js";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store.js";
 import { createSessionHandle, ensureServedSchema } from "../../src/served-session/session.js";
 import * as snapshotStore from "../../src/snapshot-store";

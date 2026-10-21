@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lineHashes, contentOnlyHashes, HASH_SPACE } from "../../src/hashline";
+import { lineHashes, contentOnlyHashes, HASH_SPACE } from "../../src/hashline/hash-identity.js";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();

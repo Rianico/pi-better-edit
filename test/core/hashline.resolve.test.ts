@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { resEdit, type Anchor, type HTEdit } from "../../src/hashline";
+import { resEdit, type HTEdit } from "../../src/hashline/resolve.js";
+import type { Anchor } from "../../src/hashline/parse.js";
 
 describe("resEdit", () => {
   it("resolves replace with anchor_from/anchor_to", () => {

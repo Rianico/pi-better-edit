@@ -14,7 +14,7 @@ import { hashStorePath, loadHashStore, shutdownHashStore } from "../../src/hash-
 import { runJanitor } from "../../src/store-janitor";
 import { STORE_JANITOR_DEFAULTS, type StoreJanitorSettings } from "../../src/store-config";
 import { SERVED_TTL_MS } from "../../src/constants";
-import { ANCHOR_GENERATION, CANON_VERSION } from "../../src/hashline";
+import { ANCHOR_GENERATION, CANON_VERSION } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
 import { getWritableTempRoot } from "../support/fixtures";
 

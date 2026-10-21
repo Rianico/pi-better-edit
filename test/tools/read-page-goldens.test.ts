@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { SERVED_MAX_LINES } from "../../src/constants.js";
 import { toLF } from "../../src/edit-diff.js";
-import { fileHashesFor } from "../../src/hashline";
+import { fileHashesFor } from "../../src/hashline/hash-identity.js";
 import { setupReadTest, withTempFile } from "../support/fixtures";
 
 // Provenance. The verbatim goldens below are static literals (verbatim renders no anchors).

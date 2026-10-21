@@ -1,5 +1,5 @@
 import { describe, expect, it, vi } from "vitest";
-import { fmtRegion } from "../../src/hashline";
+import { fmtRegion } from "../../src/hashline/apply.js";
 import { fmtReadPreview } from "../../src/read";
 import { useTestHome, withTempFile, setupIntegrationTest } from "../support/fixtures";
 

@@ -11,10 +11,10 @@ import {
   canonDigest,
   contentOnlyHashes,
   lineHashes,
-  fmtRegion,
   HASH_SEP,
   type AnchorWalk,
-} from "../hashline/index.js";
+} from "../hashline/hash-identity.js";
+import { fmtRegion } from "../hashline/apply.js";
 import type { ServedRow } from "../hashline/served.js";
 import { mergeRanges, visibleLineTotal, walkLines, type LineRange } from "./line-walker.js";
 

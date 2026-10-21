@@ -2,14 +2,14 @@ import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { initHasher as defaultInitHasher } from "../hashline/hash-identity.js";
 import {
-  initHasher as defaultInitHasher,
   findServedHashEcho,
   findServedPrefixMismatches,
   buildServedWritePrefixNote,
   LITERAL_BYPASS_NOTICE,
   clearServedRefusals,
-} from "../hashline/index.js";
+} from "../hashline/served-guard.js";
 import { assertNever, splitLines } from "../utils.js";
 import { denseServeRows, fmtServedRows, type ServedRow } from "../hashline/served.js";
 import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served-spans.js";

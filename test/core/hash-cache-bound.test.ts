@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HashIdentity } from "../../src/hashline";
+import { HashIdentity } from "../../src/hashline/hash-identity.js";
 import { HASH_CACHE_MAX_ENTRIES } from "../../src/hashline/hash-identity.js";
 import { SERVED_MAX_LINES } from "../../src/constants.js";
 

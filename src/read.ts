@@ -32,7 +32,7 @@ import {
   snapshotIOFor,
   upsertSnapshotsFor,
 } from "./snapshot-store";
-import { lineHashes } from "./hashline/index.js";
+import { lineHashes } from "./hashline/hash-identity.js";
 import { reportDiagnostic } from "./diagnostics.js";
 // WHY: Facade re-export for callers still importing preview directly
 export { fmtReadPreview } from "./file-content/preview.js";

@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "node:path";
 import { readFile } from "node:fs/promises";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import {
   withTempFile,
   withTempBytes,

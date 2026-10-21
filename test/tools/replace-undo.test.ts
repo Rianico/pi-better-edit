@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFile, writeFile, rm } from "fs/promises";
 import { join } from "path";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { getSnapshot } from "../../src/snapshot-store";
 import * as undoStoreModule from "../../src/undo-store";

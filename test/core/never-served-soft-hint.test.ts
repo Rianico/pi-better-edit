@@ -8,11 +8,10 @@ import {
   buildNeverServedEditHint,
   ANCHOR_PREFIX_REMEDY,
 } from "../../src/hashline/served-guard";
-import { initHasher } from "../../src/hashline";
+import { initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import { EDIT_GUIDELINES } from "../../src/payload-contract.js";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";
-import { lineHashes } from "../../src/hashline";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
 import { readFile as readFsFile, writeFile } from "node:fs/promises";
 

@@ -2,7 +2,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { describe, expect, it } from "vitest";
 import { findServedHashEcho, servedHashEchoDenial, registerWriteHook } from "../../src/write-hook";
-import { initHasher, canonDigest } from "../../src/hashline";
+import { initHasher, canonDigest } from "../../src/hashline/hash-identity.js";
 import { createSessionHandle } from "../../src/served-session/index.js";
 import { loadHashStore } from "../../src/hash-store.js";
 import { readNormFile } from "../../src/file-reader.js";
@@ -42,7 +42,7 @@ async function servedPreviewForFile(
   await initHasher();
   const store = await loadHashStore();
   const prepared = await readNormFile(path, cwd, { store });
-  const { fmtRegion } = await import("../../src/hashline");
+  const { fmtRegion } = await import("../../src/hashline/apply.js");
   const lines = splitLines(prepared.normalized);
   const hashes = prepared.fileHashes;
   // WHY: the guard's evidence is derived from the leases a serve grants (#151), so the fixture must

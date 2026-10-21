@@ -34,7 +34,11 @@ import {
   type HashStore,
 } from "../../src/hash-store";
 import { HASH_STORE_VERSION, SERVED_PRUNE_INTERVAL_MS, SERVED_TTL_MS } from "../../src/constants";
-import { ANCHOR_GENERATION, CANON_VERSION, contentOnlyHashes } from "../../src/hashline";
+import {
+  ANCHOR_GENERATION,
+  CANON_VERSION,
+  contentOnlyHashes,
+} from "../../src/hashline/hash-identity.js";
 import { splitLines } from "../../src/utils";
 import { initHasher } from "../../src/hashline/hasher";
 import { snapshotHashFor, upsertSnapshot } from "../../src/snapshot-store";

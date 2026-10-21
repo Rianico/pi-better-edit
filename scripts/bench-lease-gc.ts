@@ -19,7 +19,7 @@ import { vacuumSnapshots } from "../src/snapshot-store";
 import { STORE_JANITOR_DEFAULTS } from "../src/store-config";
 import { runJanitor } from "../src/store-janitor";
 import { SERVED_TTL_MS } from "../src/constants";
-import { CANON_VERSION, ANCHOR_GENERATION } from "../src/hashline";
+import { CANON_VERSION, ANCHOR_GENERATION } from "../src/hashline/hash-identity.js";
 
 const PATHS = 200;
 const VERSIONS = 5;

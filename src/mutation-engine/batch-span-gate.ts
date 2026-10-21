@@ -11,13 +11,8 @@
 import { DomainError } from "../domain-errors.js";
 import { splitLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
-import {
-  resolveLeasedEdit,
-  swapReversedRanges,
-  type HEdit,
-  type LeasedEditResolution,
-  type LeaseSpanSource,
-} from "../hashline/index.js";
+import { resolveLeasedEdit, type LeasedEditResolution } from "../hashline/lease-resolve.js";
+import { swapReversedRanges, type HEdit, type LeaseSpanSource } from "../hashline/resolve.js";
 import { buildRangeServeRows, fmtServedRows, type ServedRow } from "../hashline/served.js";
 import { snapshotHashFor, positionsByIdentity } from "../snapshot-store";
 import { batchAbortFor, batchAbortForMany } from "../edit-response.js";

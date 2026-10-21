@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { parseText, parseHashRef } from "../../src/hashline";
+import { parseText, parseHashRef } from "../../src/hashline/parse.js";
 
 describe("parseHashRef", () => {
   it("parses a hash anchor without # prefix", () => {

@@ -9,7 +9,7 @@ import {
   USABLE_HASH_SPACE,
   lineHashes,
   MAX_HASH_LINES,
-} from "../../src/hashline";
+} from "../../src/hashline/hash-identity.js";
 import { HASH_SPACE_EXHAUSTED_PAYLOAD } from "../../src/hashline/hash-identity.js";
 import { SERVED_MAX_LINES } from "../../src/constants.js";
 import { useTestHome, withTempFile, setupReadTest } from "../support/fixtures";

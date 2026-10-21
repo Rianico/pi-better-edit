@@ -63,7 +63,7 @@ export interface HashSnapshotIO {
   ): Promise<void>;
 }
 
-export type HashPrior = {
+type HashPrior = {
   content: string;
   hashes: string[];
   removedHashes?: Set<string>;
@@ -144,14 +144,6 @@ export const HASH_SPACE_EXHAUSTED_PAYLOAD = {
   limitKind: "hash-space",
   limit: USABLE_HASH_SPACE,
 } as const;
-
-export function isValidHashList(value: unknown): value is string[] {
-  if (!Array.isArray(value)) return false;
-  for (const hash of value) {
-    if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
-  }
-  return true;
-}
 
 // WHY: the stride stays coprime with both the raw space and the usable space
 // WHY: (see the stride pin) — the probe cycles the raw bitset where reserved
@@ -267,7 +259,7 @@ export function canonicalAnchorPath(path: string): string {
   // WHY: trailing separator, so `/x/a.ts/` and `/x/a.ts` seed identically.
   return resolve(path);
 }
-export function contentBaseIndex(canonText: string): number {
+function contentBaseIndex(canonText: string): number {
   return (xxh32(canonText) >>> 14) % HASH_SPACE;
 }
 export function fileBaseIndex(canonText: string, pathSeed: number): number {

@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyEdit, lineHashes, resEdit, type HTEdit } from "../../src/hashline";
+import { applyEdit } from "../../src/hashline/apply.js";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
+import { resEdit, type HTEdit } from "../../src/hashline/resolve.js";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();
@@ -326,7 +328,10 @@ describe("diff-prefix false-positive guards (tightened shapes)", () => {
 describe("literal bytes reach disk unchanged (#126)", () => {
   const file = "alpha\nbeta\ngamma\ndelta";
 
-  function applyTool(toolEdit: import("../../src/hashline").HTEdit, precomputedHashes?: string[]) {
+  function applyTool(
+    toolEdit: import("../../src/hashline/resolve.js").HTEdit,
+    precomputedHashes?: string[],
+  ) {
     return applyEdit(file, resEdit(toolEdit), undefined, precomputedHashes);
   }
 

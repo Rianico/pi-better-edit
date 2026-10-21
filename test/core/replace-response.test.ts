@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { buildNoop, buildChanged, finalizeResult } from "../../src/edit-response";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { useTestHome } from "../support/fixtures";
 

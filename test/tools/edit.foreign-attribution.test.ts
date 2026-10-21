@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { execute, isMutationSuccess, isMutationFailure } from "../../src/mutation-engine/index.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
-import { lineHashes, initHasher } from "../../src/hashline/index.js";
+import { lineHashes, initHasher } from "../../src/hashline/hash-identity.js";
 import {
   withTempDir,
   setupIntegrationTest,

@@ -17,7 +17,7 @@ import { mkdtemp, rm, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import register from "../index";
-import { initHasher, lineHashes } from "../src/hashline";
+import { initHasher, lineHashes } from "../src/hashline/hash-identity.js";
 import { shutdownHashStore } from "../src/hash-store";
 import { pairSnapshots, type LineDescriptor } from "../src/hashline/patience-pairing";
 

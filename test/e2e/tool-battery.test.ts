@@ -2,7 +2,7 @@ import { describe, it, expect } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import {
   withTempFile,
   getText,

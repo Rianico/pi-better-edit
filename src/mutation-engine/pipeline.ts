@@ -66,13 +66,9 @@ import { abortIf, assertNever, splitLines, visLines } from "../utils.js";
 import type { HashStore } from "../hash-store.js";
 import { loadHashStore } from "../hash-store.js";
 import { snapshotIOFor, upsertSnapshotFor, snapshotHashFor } from "../snapshot-store";
-import {
-  applyEdit,
-  buildNeverServedEditHint,
-  resEdit,
-  type HEdit,
-  type NEdit,
-} from "../hashline/index.js";
+import { applyEdit } from "../hashline/apply.js";
+import { buildNeverServedEditHint } from "../hashline/served-guard.js";
+import { resEdit, type HEdit, type NEdit } from "../hashline/resolve.js";
 import { defaultHashIdentity, lineHashes } from "../hashline/hash-identity.js";
 import { HASH_LEN } from "../hashline/alphabet.js";
 import { denseServeRows, type ResolvedRange } from "../hashline/served.js";

@@ -11,8 +11,7 @@ import { withTempFile, setupIntegrationTest, TEST_SESSION_ID } from "../support/
 import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
 import { genDiff } from "../../src/edit-diff.js";
 import { DIFF_PREVIEW_CONTEXT } from "../../src/constants.js";
-import { lineHashes } from "../../src/hashline/index.js";
-import { initHasher } from "../../src/hashline/index.js";
+import { lineHashes, initHasher } from "../../src/hashline/hash-identity.js";
 import { useTestHome } from "../support/fixtures.js";
 
 // WHY: the engine seam's input is the admission-normalized request (ticket-01 union) — these

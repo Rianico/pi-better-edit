@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll } from "vitest";
 import { readFile, writeFile, rm, mkdir } from "node:fs/promises";
 import { chmodSync } from "node:fs";
 import { join } from "node:path";
-import { lineHashes, initHasher } from "../../src/hashline/index.js";
+import { lineHashes, initHasher } from "../../src/hashline/hash-identity.js";
 import { execute, isMutationSuccess } from "../../src/mutation-engine/index.js";
 import { normReq, assertReq, type NormalizedEditRequest } from "../../src/payload-contract.js";
 import { getUndo } from "../../src/edit-undo.js";

@@ -5,7 +5,7 @@ import { beforeAll, describe, expect, it, vi } from "vitest";
 
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { createSessionHandle, recordServes } from "../../src/served-session";
-import { canonDigest, initHasher, lineHashes } from "../../src/hashline";
+import { canonDigest, initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { getWritableTempRoot } from "../support/fixtures";
 

@@ -13,7 +13,7 @@ import {
 } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { initHasher, contentChecksum, xxh32 } from "../../src/hashline/hasher";
-import { canon, contentOnlyHashes, lineHashes } from "../../src/hashline";
+import { canon, contentOnlyHashes, lineHashes } from "../../src/hashline/hash-identity.js";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";
 

@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { writeFile } from "fs/promises";
 import { join } from "path";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { compPreview, buildToolDef, reuseText, reuseMarkdown } from "../../src/edit";
 import register from "../../index";
 import type { RRState } from "../../src/edit-render";

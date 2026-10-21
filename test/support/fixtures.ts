@@ -2,7 +2,7 @@ import { readFileSync, rmSync } from "node:fs";
 import { mkdtemp, mkdir, rm, writeFile } from "fs/promises";
 import { join } from "path";
 import { beforeAll, afterAll, vi } from "vitest";
-import { initHasher } from "../../src/hashline";
+import { initHasher } from "../../src/hashline/hash-identity.js";
 import { Compile } from "typebox/compile";
 import register from "../../index";
 import { regEdit } from "../../src/edit";
@@ -306,7 +306,7 @@ export async function makeTag(
   line: number,
   path: string,
 ): Promise<{ hash: string }> {
-  const { lineHashes } = await import("../../src/hashline");
+  const { lineHashes } = await import("../../src/hashline/hash-identity.js");
   const hashes = await lineHashes(content, path);
   return { hash: hashes[line - 1]! };
 }

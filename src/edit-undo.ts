@@ -22,7 +22,8 @@ import { visLines, splitLines, errCode } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError, withPayloadSubject } from "./domain-errors.js";
-import { ANCHOR_GENERATION, changedRange, lineHashes } from "./hashline/index.js";
+import { ANCHOR_GENERATION, lineHashes } from "./hashline/hash-identity.js";
+import { changedRange } from "./hashline/apply.js";
 import { denseServeRows, type ServedRow } from "./hashline/served.js";
 import { reportDiagnostic } from "./diagnostics.js";
 export interface UndoEntry {

@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from "vitest";
 import { readFile } from "node:fs/promises";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
 
 /** The atomicity trailer every item rejection of a multi-item call must carry (spec §3.2.3). */

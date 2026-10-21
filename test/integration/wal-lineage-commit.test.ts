@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { HASH_LEN } from "../../src/hashline/index.js";
+import { HASH_LEN, canon, lineHashes } from "../../src/hashline/hash-identity.js";
 import { readFile, writeFile } from "fs/promises";
 import {
   withTempFile,
@@ -11,7 +11,6 @@ import {
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { loadLeases, sessionKeyFor } from "../../src/served-session/session";
-import { canon, lineHashes } from "../../src/hashline/index";
 import { xxh32 } from "../../src/hashline/hasher";
 import { pairSnapshots, type LineDescriptor } from "../../src/hashline/patience-pairing";
 

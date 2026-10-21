@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from "vitest";
 import { writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { normReq, assertReq, prepareEditArguments } from "../../src/payload-contract.js";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";
 import { servedHashEchoDenial } from "../../src/write-hook.js";
@@ -243,7 +243,7 @@ describe("write served-row gate with declaration", () => {
       const eCtx = { cwd, sessionManager: { getSessionId: () => "sess-w" } } as any;
       await rTool.execute("r1", { file: "notes.md" }, undefined, undefined, eCtx);
       const io = localIO();
-      const { lineHashes: lh } = await import("../../src/hashline");
+      const { lineHashes: lh } = await import("../../src/hashline/hash-identity.js");
       const hashes = await lh("one\ntwo\n", path);
       const verbatim = `${hashes[0]}│one\n${hashes[1]}│two\n`;
       const refused = await servedHashEchoDenial(io, path, verbatim, cwd, "sess-w");
@@ -300,7 +300,7 @@ describe("write literal audit via tool_result", () => {
       const rTool = getTool("read");
       const eCtx = { cwd, sessionManager: { getSessionId: () => "sess-audit" } } as any;
       await rTool.execute("r1", { file: "notes.md" }, undefined, undefined, eCtx);
-      const { lineHashes: lh } = await import("../../src/hashline");
+      const { lineHashes: lh } = await import("../../src/hashline/hash-identity.js");
       const hashes = await lh("one\ntwo\n", path);
       const verbatim = `${hashes[0]}│one\n${hashes[1]}│two\n`;
       // Simulate a successful literal write that bypassed the pre-write guard

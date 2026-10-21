@@ -1,6 +1,6 @@
 import { describe, expect, it, beforeAll } from "vitest";
 
-import { canon, canonDigest, _lineHashesPure } from "../../src/hashline";
+import { canon, canonDigest, _lineHashesPure } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
 
 beforeAll(async () => {

@@ -5,7 +5,7 @@ import { editToolSchema, assertReq, buildToolDef } from "../../src/edit";
 import { editItemSchema } from "../../src/payload-contract.js";
 import { createEditTool } from "../../src/edit-tool.js";
 import { normReq } from "../../src/edit-normalize";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { setupIntegrationTest, withTempFile } from "../support/fixtures";
 
 describe("edit payload contract", () => {

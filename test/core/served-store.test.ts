@@ -27,7 +27,7 @@ import {
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
 import { HASH_STORE_VERSION, SERVED_TTL_MS } from "../../src/constants";
 import { initHasher } from "../../src/hashline/hasher";
-import { lineHashes } from "../../src/hashline/index.js";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { getWritableTempRoot } from "../support/fixtures";
 
 let tmpHome: string;

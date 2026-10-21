@@ -9,7 +9,7 @@ import {
   MAX_HASH_LINES,
   USABLE_HASH_SPACE,
 } from "../../src/hashline/hash-identity.js";
-import { HASH_PROBE_STRIDE } from "../../src/hashline/index.js";
+import { HASH_PROBE_STRIDE } from "../../src/hashline/hash-identity.js";
 
 function tsFiles(dir: string, out: string[] = []): string[] {
   for (const entry of readdirSync(dir, { withFileTypes: true })) {

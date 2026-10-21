@@ -10,7 +10,7 @@ import {
   buildNeverServedEditHint,
   ANCHOR_PREFIX_REMEDY,
 } from "../../src/hashline/served-guard";
-import { initHasher, lineHashes } from "../../src/hashline";
+import { initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import { HASH_RE } from "../../src/hashline/alphabet.js";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";

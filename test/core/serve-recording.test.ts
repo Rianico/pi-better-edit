@@ -27,7 +27,7 @@ function req(input: unknown): NormalizedEditRequest {
 }
 import { planServeRecording } from "../../src/served-session/index.js";
 import { computeDrift, scanDrift } from "../../src/drift";
-import { initHasher, lineHashes } from "../../src/hashline";
+import { initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { getWritableTempRoot } from "../support/fixtures";
 import { canonDigest } from "../../src/hashline/hash-identity.js";
 import { readNormFile } from "../../src/file-reader.js";

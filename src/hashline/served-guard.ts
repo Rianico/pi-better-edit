@@ -395,23 +395,6 @@ export function trackServedWriteRefusal(
 /** SAFETY: dimmed human line for a literal declaration; never a model retry instruction. */
 export const LITERAL_BYPASS_NOTICE = formatWarning("W_LITERAL_BYPASS", {});
 
-export function buildServedEditMessage(args: {
-  path: string;
-  k: number;
-  hash: string;
-  servedLine: number;
-  count: number;
-}): string {
-  return new DomainError("E_SUSPICIOUS_TEXT", {
-    target: "edit",
-    path: args.path,
-    line: args.k,
-    hash: args.hash,
-    servedLine: args.servedLine,
-    count: args.count,
-  }).message;
-}
-
 export function buildServedWriteMessage(args: {
   path: string;
   line: number;

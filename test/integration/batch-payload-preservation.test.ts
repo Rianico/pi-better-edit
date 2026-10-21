@@ -3,7 +3,7 @@ import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 import type { ServedRow } from "../../src/domain-errors.js";
-import { fileHashesFor } from "../../src/hashline/index.js";
+import { fileHashesFor } from "../../src/hashline/hash-identity.js";
 
 /**
  * Payload-preservation oracle (spec section 6, item 2: PAYLOAD

@@ -17,7 +17,7 @@ import {
   canonDigest,
   contentOnlyHashes,
   fileHashesFor,
-} from "../../src/hashline/index.js";
+} from "../../src/hashline/hash-identity.js";
 import { contentChecksum } from "../../src/hashline/hasher.js";
 import { servedHashEchoDenial } from "../../src/write-hook.js";
 import { resolveTarget } from "../../src/fs-write.js";

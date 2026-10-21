@@ -1,5 +1,6 @@
 import { describe, expect, it } from "vitest";
-import { applyEdit, resEdit, type HEdit } from "../../src/hashline";
+import { applyEdit } from "../../src/hashline/apply.js";
+import { resEdit, type HEdit } from "../../src/hashline/resolve.js";
 import { makeTag, useTestHome } from "../support/fixtures";
 
 const home = useTestHome();

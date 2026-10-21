@@ -10,7 +10,7 @@ import {
   CANON_VERSION,
   canon,
   canonDigest,
-} from "../../src/hashline";
+} from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { getSnapshot, snapshotHashFor, upsertSnapshot } from "../../src/snapshot-store";

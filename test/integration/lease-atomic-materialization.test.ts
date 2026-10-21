@@ -9,7 +9,7 @@ import {
 } from "../support/fixtures";
 import { loadHashStore, type HashStore } from "../../src/hash-store";
 import { snapshotHashFor } from "../../src/snapshot-store";
-import { HASH_LEN } from "../../src/hashline/index.js";
+import { HASH_LEN } from "../../src/hashline/hash-identity.js";
 import { loadLeases, sessionKeyFor, type ServedLease } from "../../src/served-session/session";
 
 const ORIGINAL = "alpha\nbravo\ncharlie\n";

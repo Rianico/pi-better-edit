@@ -11,7 +11,7 @@ import {
   contentOnlyHashes,
   fileHashesFor,
   lineHashes,
-} from "../../src/hashline/index.js";
+} from "../../src/hashline/hash-identity.js";
 import {
   resEdit,
   type LeaseIdentityView,

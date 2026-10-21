@@ -3,7 +3,7 @@ import { DatabaseSync } from "node:sqlite";
 import { saveUndo, getUndo, clearUndo } from "../../src/edit-undo";
 import { loadHashStore, shutdownHashStore } from "../../src/hash-store";
 import { upsertUndo, getUndoEntry, deleteUndo } from "../../src/undo-store";
-import { ANCHOR_GENERATION } from "../../src/hashline";
+import { ANCHOR_GENERATION } from "../../src/hashline/hash-identity.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import * as hashStoreModule from "../../src/hash-store";
 import { hashStorePath } from "../../src/paths";

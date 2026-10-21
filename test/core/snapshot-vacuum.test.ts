@@ -4,7 +4,7 @@ import { join } from "path";
 import type { DatabaseSync } from "node:sqlite";
 
 import { loadHashStore, shutdownHashStore, type HashStore } from "../../src/hash-store";
-import { ANCHOR_GENERATION } from "../../src/hashline";
+import { ANCHOR_GENERATION } from "../../src/hashline/hash-identity.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { readNormFile } from "../../src/file-reader";
 import { createSessionHandle, loadLeases } from "../../src/served-session/index.js";

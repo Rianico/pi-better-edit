@@ -8,7 +8,7 @@ import {
   withPayloadSubject,
 } from "../../src/domain-errors.js";
 import { buildToolDef } from "../../src/edit.js";
-import { ANCHOR_GENERATION, initHasher, lineHashes } from "../../src/hashline/index.js";
+import { ANCHOR_GENERATION, initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { loadHashStore } from "../../src/hash-store.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { upsertUndo } from "../../src/undo-store.js";

@@ -178,7 +178,7 @@ function placementSpellings(): string {
  * the source's own span is deleted in the same single-pass assembly, computed against the same
  * pre-item buffer as the target splice.
  */
-export type SpanSourceRef = { bounds: [Anchor, Anchor]; retire: boolean };
+type SpanSourceRef = { bounds: [Anchor, Anchor]; retire: boolean };
 
 export type HEdit = {
   content_lines: string[];
