@@ -1,0 +1,7 @@
+{
+  "ignore": ["**/changelog-gate.py"],
+  "rules": {
+    "strict-indexing": { "disable": ["no-non-null-assertion"] },
+    "directory-imports": { "disable": ["find-import-file-without-extension"] }
+  }
+}
