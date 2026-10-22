@@ -55,9 +55,7 @@
     "measure:import": "node scripts/measure-import.mjs --max-ratio 0.75",
     "smoke:install": "node scripts/install-smoke.mjs",
     "prepare": "node scripts/prepare.mjs",
-    "prepack": "node scripts/build-dist.mjs && node scripts/verify-dist.mjs",
-    "audit": "pnpm audit --audit-level high --registry https://registry.npmjs.org/",
-    "verify": "pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage"
+    "prepack": "node scripts/build-dist.mjs && node scripts/verify-dist.mjs"
   },
   "dependencies": {
     "diff": "^8.0.2",

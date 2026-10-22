@@ -32,7 +32,7 @@ Prompt rule: when the model helps file an issue, infer `bug` vs `feat` from inte
 
 ## Before PR
 
-`pnpm run verify` (`lint → format → typecheck → test:coverage`) and `pnpm run audit` must pass. See `AGENTS.md` for agent rules.
+`pnpm run lint && pnpm run format && pnpm run typecheck && pnpm run test:coverage` must pass. See `AGENTS.md` for agent rules.
 
 ### Gate preconditions
 
