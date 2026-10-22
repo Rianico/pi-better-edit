@@ -206,6 +206,15 @@ describe("changelog-check workflow audits the title it lands", () => {
     expect(workflow).toContain('args+=(--squash-title "$PR_TITLE")');
   });
 
+  it("guards the landed subject against a squash-title setting flip", () => {
+    // `squash_merge_commit_title` is unreadable with the workflow token (the REST payload omits it
+    // without admin), so the guard asserts the outcome instead: a merge must land
+    // `<PR title> (#N)`, while a release push or a merge commit has no PR title to compare and
+    // skips. Under GitHub's default, a single-commit PR lands a bare commit title — no suffix.
+    expect(workflow).toContain("name: Landed subject is the PR title");
+    expect(workflow).toContain('"chore(release): "* | "Merge "*)');
+  });
+
   it("re-runs after an edit, so a finding cannot be dodged by rewording", () => {
     const triggerTypes = /^ {4}types:\s*\[([^\]]*)\]$/m.exec(workflow)?.[1];
     expect(triggerTypes).toBeDefined();

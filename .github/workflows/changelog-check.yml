@@ -34,20 +34,41 @@ jobs:
         with:
           python-version: "3.14"
       # The gate audits the PR title as *the landed squash subject*, and that equivalence holds
-      # only because this repo sets `squash_merge_commit_title: PR_TITLE`. A repo setting has no
-      # diff, so nothing else can pin it: a silent flip back to COMMIT_OR_PR_TITLE re-opens the
-      # #166 defect (patch release carrying feature notes) behind a green check.
-      - name: Squash subject is the PR title
-        if: github.event_name == 'pull_request'
+      # only while this repo sets `squash_merge_commit_title: PR_TITLE`. A repo setting has no
+      # diff, so nothing else pins it: a silent flip back to COMMIT_OR_PR_TITLE re-opens the #166
+      # defect (patch release carrying feature notes) behind a green check.
+      #
+      # The setting itself is unreadable here: the REST repository payload omits
+      # `squash_merge_commit_title` to callers without admin, and the workflow token has none.
+      # Assert the OUTCOME instead. Under PR_TITLE every squash lands `<title> (#N)`; under the
+      # COMMIT_OR_PR_TITLE default a single-commit PR lands its bare commit title, with no number.
+      # Only semantic-release's own push and a merge-commit landing legitimately lack the suffix.
+      - name: Landed subject is the PR title
+        if: github.event_name == 'push'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -o pipefail
-          actual=$(gh api "repos/${{ github.repository }}" --jq .squash_merge_commit_title)
-          if [ "$actual" != "PR_TITLE" ]; then
-            echo "::error::squash_merge_commit_title is '$actual', not PR_TITLE: a single-commit PR would land a commit message the ledger gate never audited."
+          subject=$(git log -1 --format=%s)
+          case "$subject" in
+            "chore(release): "* | "Merge "*)
+              echo "::warning::no PR title involved in this push; skipping the squash-subject check: $subject"
+              exit 0
+              ;;
+          esac
+          pr=$(printf '%s\n' "$subject" | sed -n 's/.*(#\([0-9][0-9]*\))$/\1/p')
+          if [ -z "$pr" ]; then
+            echo "::error::landed subject has no (#N) suffix: '$subject'"
+            echo "::error::under squash_merge_commit_title=PR_TITLE every squash lands '<PR title> (#N)'; a bare subject means the repo setting flipped back, so the ledger gate audited a title that never landed."
+            echo "::error::fix: gh api -X PATCH repos/${GITHUB_REPOSITORY} -f squash_merge_commit_title=PR_TITLE"
             exit 1
           fi
+          expected=$(gh api "repos/${GITHUB_REPOSITORY}/pulls/${pr}" --jq .title) || exit 1
+          if [ "$subject" != "${expected} (#${pr})" ]; then
+            echo "::error::landed subject '${subject}' is not '${expected} (#${pr})': the squash subject did not come from the PR title, so the ledger gate audited a string that never landed."
+            exit 1
+          fi
+          echo "ok: landed subject matches PR #${pr}"
       # The deterministic floor (ADR-0016), replacing the old synchronisation
       # check: the ledger is curated, not a projection of commit subjects, so
       # `update`-equality is no longer the invariant. On a PR the floor is given
