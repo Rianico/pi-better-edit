@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { assertNever } from "../../src/utils.js";
 import type {
   ConversionRule,
   DeclineReason,
@@ -203,5 +204,97 @@ describe("bash conversion rule table (#151)", () => {
     expect(phases[0]).toBe("pre");
     expect(phases[phases.length - 1]).toBe("post");
     expect(new Set(phases)).toEqual(new Set(["pre", "statement", "presegment", "segment", "post"]));
+  });
+});
+
+describe("bash serve attribution admission (#175)", () => {
+  // WHY: (#175) total over the closed decline vocabulary minus the template family — a new
+  // WHY: `DeclineReason` breaks typecheck here instead of slipping in silently. The guards
+  // WHY: live at the serve seam, so admission is unchanged and no new reason exists.
+  function pinDeclineReason(
+    reason: Exclude<DeclineReason, `unsupported-command:${string}`>,
+  ): string {
+    switch (reason) {
+      case "empty":
+        return "empty";
+      case "parse-error":
+        return "parse-error";
+      case "multi-statement":
+        return "multi-statement";
+      case "background":
+        return "background";
+      case "non-and-chain":
+        return "non-and-chain";
+      case "compound-top":
+        return "compound-top";
+      case "compound-andor-operand":
+        return "compound-andor-operand";
+      case "chain-too-long":
+        return "chain-too-long";
+      case "compound-segment":
+        return "compound-segment";
+      case "non-literal-command":
+        return "non-literal-command";
+      case "unsupported-pipeline":
+        return "unsupported-pipeline";
+      case "post-block-cd":
+        return "post-block-cd";
+      case "post-view-cd":
+        return "post-view-cd";
+      case "multi-cd":
+        return "multi-cd";
+      case "multi-view":
+        return "multi-view";
+      case "no-view":
+        return "no-view";
+      default:
+        return assertNever(reason);
+    }
+  }
+
+  it("keeps the guard shapes admitted by the pure classifier", () => {
+    // WHY: G1's twin and G2's search are admitted shapes — the guards refuse at the serve
+    // WHY: seam, so the rule table and admission are untouched.
+    expect(decide("grep -n x a a:1:b.txt").kind).toBe("pureMultiSearch");
+    expect(decide("grep -n pat f").kind).toBe("pureSearch");
+  });
+
+  // WHY: `startsWith` is not a type guard, so the template family needs a predicate for the
+  // WHY: `Exclude` below to narrow — without it the closed-switch call below would not typecheck.
+  function isTemplateReason(reason: DeclineReason): reason is `unsupported-command:${string}` {
+    return reason.startsWith("unsupported-command:");
+  }
+  it("adds no DeclineReason and keeps the neighbours firing", () => {
+    // WHY: every reachable closed reason still fires on its command — the pin is not vacuous.
+    // WHY: `compound-segment` is defensive-only (no parsed command reaches it — the walker only
+    // WHY: pushes Command/Pipeline, and `compound-andor-operand` shadows the rest), so it is
+    // WHY: pinned by the total switch above, not by a firing command. That switch is what would
+    // WHY: break typecheck on a new reason.
+    const pairs: Array<[string, Exclude<DeclineReason, `unsupported-command:${string}`>]> = [
+      ["", "empty"],
+      ["cat f |", "parse-error"],
+      ["cat a\ncat b", "multi-statement"],
+      ["sleep 1 &", "background"],
+      ["cat f || echo x", "non-and-chain"],
+      ["(cat f)", "compound-top"],
+      ["true && true && true && true && true && true && true && true && cat f", "chain-too-long"],
+      ["FOO=bar", "non-literal-command"],
+      ["cat f | grep", "unsupported-pipeline"],
+      ["echo hi && cat f && cd sub", "post-block-cd"],
+      ["cat f && cd sub", "post-view-cd"],
+      ["cd a && cd b && cat f", "multi-cd"],
+      ["cat a && cat b", "multi-view"],
+      [": && true", "no-view"],
+    ];
+    for (const [command, want] of pairs) {
+      const reason = reasonOf(command);
+      // WHY: the predicate narrows away the template family so the closed switch typechecks.
+      expect(isTemplateReason(reason) ? "unsupported-command:*" : pinDeclineReason(reason)).toBe(
+        want,
+      );
+    }
+    // WHY: the template family and the defensive literal, pinned by direct assertion.
+    expect(reasonOf("ls /tmp")).toBe("unsupported-command:ls");
+    expect(reasonOf("cat f && (cat g)")).toBe("compound-andor-operand");
   });
 });

@@ -993,12 +993,65 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   }
 
   /**
+   * WHY: (ADR-0042 D1 — bash serve admission; pending merge) never content matching, no
+   * WHY: other-file anchor bleed. The triple regex splits `FILE:LINE:content` non-greedily, so
+   * WHY: when two splits of one observed row both resolve into the admitted set, the row is
+   * WHY: served under a coordinate bash never printed. Concrete twin: file `a` line 1 ==
+   * WHY: `b.txt:3:x` and file `a:1:b.txt` line 3 == `x` produce the identical stdout row
+   * WHY: `a:1:b.txt:3:x`. Enumerate EVERY split whose suffix is itself a line-number shape
+   * WHY: (`^\d+:` with a safe integer >= 1, the parser's own line rule) and resolve the prefix —
+   * WHY: candidates are resolved, never display-matched, because `admitted` displays are
+   * WHY: `path.join`-normalized (`sub/a`) while bash prints the operand spelling (`./sub/a`
+   * WHY: for a `.` root). A prefix that fails to resolve is not a file and is skipped, never a
+   * WHY: refusal: matched content beginning `digits:` yields phantom candidates (e.g.
+   * WHY: `sub/ok.txt:2:5:foo` yields `sub/ok.txt:2`), and refusing on throw would make the
+   * WHY: common content-with-colons case unservable. More than one distinct resolved path
+   * WHY: fails the WHOLE serve closed before the first lease — several display aliases of one
+   * WHY: resolved path are not ambiguous. Residual, still fail-closed: `resolveTarget` catches
+   * WHY: ENOENT and resolves a deleted admitted file lexically, so deletion cannot blind this
+   * WHY: guard — the serve then fails at `valAccess` (`E_NOT_FOUND`) in `loadTextTarget` before
+   * WHY: the first lease, and the outer `handleBash` catch passes the command through raw.
+   */
+  async function tripleSplitAmbiguous(
+    rawLines: readonly string[],
+    effCwd: string,
+    admitted: ReadonlyMap<string, string>,
+  ): Promise<boolean> {
+    // WHY: ambiguity needs two admitted paths — a single-operand search skips the fs cost whole.
+    if (admitted.size < 2) return false;
+    for (const raw of rawLines) {
+      const resolved = new Set<string>();
+      let idx = raw.indexOf(":");
+      while (idx !== -1) {
+        const prefix = raw.slice(0, idx);
+        const rest = raw.slice(idx + 1);
+        const numbered = /^(\d+):[\s\S]*$/.exec(rest);
+        const line = numbered === null ? NaN : Number(numbered[1]);
+        if (Number.isSafeInteger(line) && line >= 1) {
+          try {
+            const abs = await deps.resolveTarget(deps.toCwd(prefix, effCwd));
+            if (admitted.has(abs)) {
+              resolved.add(abs);
+              if (resolved.size > 1) return true;
+            }
+          } catch {
+            // SAFETY: an unresolvable prefix is not a file, therefore not admitted — skip.
+          }
+        }
+        idx = raw.indexOf(":", idx + 1);
+      }
+    }
+    return false;
+  }
+
+  /**
    * WHY: (item 10) the shared multi-file / recursive serve seam. Every named file must resolve
    * INTO the admitted set (explicit operands or the walked set), every row's bytes must equal
    * the disk line at that number, and the total row count must fit `SEARCH_MAX_MATCHES` — all
    * verified BEFORE the first lease, so a refusal grants nothing (invariant 2) and an over-cap
    * search passes through raw instead of truncating (invariant 3). Sections render in operand /
-   * first-seen order with the triple's own spelling, so coordinates are stable.
+   * first-seen order under the admitted display (which differs from bash's spelling for a `.`
+   * root: `sub/a` renders where bash printed `./sub/a`), so coordinates are stable.
    */
   async function serveMatchTriples(
     event: ToolResultEvent,
@@ -1007,9 +1060,16 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   ): Promise<{ content: Array<{ type: string; text: string }> } | undefined> {
     const stdoutText = singleTextBlock(event);
     if (stdoutText === undefined) return undefined;
-    const parsed = parseTripleStdout(toLF(stripBOM(stdoutText).text));
+    const normalizedObserved = toLF(stripBOM(stdoutText).text);
+    const parsed = parseTripleStdout(normalizedObserved);
     if (parsed === undefined || parsed.length === 0) return undefined;
     if (parsed.length > SEARCH_MAX_MATCHES) return undefined;
+    // WHY: (ADR-0042 D1 — bash serve admission; pending merge) the ambiguity gate below runs
+    // WHY: on raw lines, not parsed rows, so every candidate split is enumerated before the
+    // WHY: first lease is recorded.
+    const rawLines = normalizedObserved.split("\n");
+    if (rawLines.length > 0 && rawLines[rawLines.length - 1] === "") rawLines.pop();
+    if (await tripleSplitAmbiguous(rawLines, input.effCwd, input.admitted)) return undefined;
     const grouped = new Map<string, Array<{ line: number; content: string }>>();
     for (const row of parsed) {
       const resolved = await deps.resolveTarget(deps.toCwd(row.file, input.effCwd));
@@ -1024,6 +1084,16 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
         rows.push({ line: row.line, content: row.content });
       }
       grouped.set(resolved, rows);
+    }
+    // WHY: (serve-seam policy: one row per file line, rows in stream order) the repeat dedupe
+    // WHY: above already yields one row per `(file, line)`, so a reordering would keep the
+    // WHY: bijection — what this refuses is an unproven render order from a reordering consumer
+    // WHY: (`grep -n pat a.txt a.txt` repeats a coordinate legitimately and still serves). A
+    // WHY: reordered file's rows fail the whole serve closed here, with zero leases.
+    for (const rows of grouped.values()) {
+      for (let i = 1; i < rows.length; i++) {
+        if (rows[i]!.line <= rows[i - 1]!.line) return undefined;
+      }
     }
     if (grouped.size === 0 || grouped.size > BASH_SEARCH_MAX_FILES) return undefined;
     const verified: Array<{
@@ -1427,6 +1497,15 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
     const matches = parseSearchStdout(toLF(stripBOM(stdoutText).text));
     if (matches === undefined || matches.length === 0) return undefined;
     if (matches.length > SEARCH_MAX_MATCHES) return undefined;
+    // WHY: (serve-seam policy: one row per file line, rows in stream order — ADR-0042, bash
+    // WHY: serve admission, pending merge, states the no-bleed invariant, not an ordering clause)
+    // WHY: the printed number is a label whose ORDER is proven by the stream, not by matching
+    // WHY: content. A descending or repeated label breaks stream order, so the WHOLE serve fails
+    // WHY: closed with zero leases. Real `grep`/`rg` on one file always print ascending, so
+    // WHY: nothing served regresses.
+    for (let i = 1; i < matches.length; i++) {
+      if (matches[i]!.line <= matches[i - 1]!.line) return undefined;
+    }
     const { normalized, fileHashes, absolutePath } = await deps.readNormFile(
       search.filePath,
       effCwd,
