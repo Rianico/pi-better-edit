@@ -2,6 +2,8 @@
 
 ## [Unreleased]
 
+## [2.13.3] - 2026-10-22
+
 ### Features
 
 * **store:** adopt an unchanged file from its `stat(2)` identity instead of re-deriving every line: stamp `ino:size:mtimeMs:ctimeMs` on the materialized snapshot and resolve only the kept page's lineage, verifying each served line against its committed canon hash. Any mismatch falls back to the content-hash path; touch, atomic rename, and same-size/same-mtime rewrites are covered. (store version 11, ADR-0043) (#166)
