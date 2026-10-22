@@ -75,7 +75,7 @@ describe("the verbatim page never materializes the line array", () => {
         return result.content[0]?.text ?? "";
       };
       await expect(run({ windows: [{ offset: 1, limit: 2 }] })).resolves.toBe(
-        "[plain.txt (verbatim, 4 lines, no anchors)]\nalpha\nbeta\n\n[plain.txt lines 1-2 of 4. Use windows: [{ offset: 3, limit: 2 }] to continue.]",
+        "[plain.txt (verbatim, lines 1-2 of 4 total)]\nalpha\nbeta",
       );
       await expect(
         run({
@@ -85,7 +85,7 @@ describe("the verbatim page never materializes the line array", () => {
           ],
         }),
       ).resolves.toBe(
-        "[plain.txt (verbatim, 4 lines, no anchors)]\n=== Lines 2-2 of 4 ===\nbeta\n\n=== Lines 4-4 of 4 ===\ndelta",
+        "[plain.txt (verbatim, 4 lines total)]\n[Lines 2-2 of 4 total]\nbeta\n\n[Lines 4-4 of 4 total]\ndelta",
       );
       await expect(run({ windows: [{ offset: 9, limit: 1 }] })).resolves.toContain(
         "Offset 9 is beyond end of file (4 lines total)",
@@ -106,7 +106,7 @@ describe("the verbatim page never materializes the line array", () => {
         ctx,
       );
       expect(result.content[0]?.text).toBe(
-        "[empty.txt (verbatim, 0 lines, no anchors)]\n[File is empty.]",
+        "[empty.txt (verbatim, 0 lines total)]\n[File is empty.]",
       );
       expect(splitCalls).toEqual([]);
     });
@@ -129,7 +129,7 @@ describe("the served page never materializes the line array", () => {
         return result.content[0]?.text ?? "";
       };
       await expect(run({ windows: [{ offset: 1, limit: 2 }] })).resolves.toMatch(
-        /^\[plain\.txt \(lines 1-2 of 4\)\]\n\w{4}│alpha\n\w{4}│beta\n\n\[plain\.txt lines 1-2 of 4\. Use windows: \[\{ offset: 3, limit: 2 \}\] to continue\.\]$/,
+        /^\[plain\.txt \(lines 1-2 of 4 total\)\]\n\w{4}│alpha\n\w{4}│beta$/,
       );
       await expect(
         run({
@@ -139,7 +139,7 @@ describe("the served page never materializes the line array", () => {
           ],
         }),
       ).resolves.toMatch(
-        /^\[plain\.txt \(4 lines total\)\]\n=== Lines 2-2 of 4 ===\n\w{4}│beta\n\n=== Lines 4-4 of 4 ===\n\w{4}│delta$/,
+        /^\[plain\.txt \(4 lines total\)\]\n\[Lines 2-2 of 4 total\]\n\w{4}│beta\n\n\[Lines 4-4 of 4 total\]\n\w{4}│delta$/,
       );
       await expect(run({ windows: [{ offset: 9, limit: 1 }] })).resolves.toContain(
         "Offset 9 is beyond end of file (4 lines total)",

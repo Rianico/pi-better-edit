@@ -23,7 +23,12 @@ import {
   type LFile,
 } from "./detection.js";
 import { anchorWalkFor, decodeNormText, fileSnap, snapshotIdFor, statKeyOf } from "./loader.js";
-import { fmtReadPreview, StatIdentityMismatchError, type ReadWindow } from "./preview.js";
+import {
+  fmtReadPreview,
+  StatIdentityMismatchError,
+  type ReadWindow,
+  type ShownRange,
+} from "./preview.js";
 import { findStatSnapshotFor } from "../snapshot-store";
 import type { ServedRow } from "../served-session/serve-render.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
@@ -62,6 +67,8 @@ export interface PrepareResult {
   served: ServedRow[];
   truncation?: TruncationResult;
   nextOffset?: number;
+  /** The lines the preview actually rendered — the page header's range, absent when it showed none. */
+  shownRange?: ShownRange;
   description?: string;
   mimeType?: string;
   // WHY: the loader already stat'd this path; the read path hands that `Stats` to `fileSnap`, so a
@@ -186,9 +193,6 @@ export async function prepareFile(
     ...(options?.limit !== undefined ? { limit: options.limit } : {}),
     ...(options?.windows !== undefined ? { windows: options.windows } : {}),
     ...(options?.render !== undefined ? { render: options.render } : {}),
-    // WHY: the caller's own path, not `absolutePath`: the header/footer name the file the caller
-    // WHY: named, while anchors stay scoped to the absolute path the walk seeded them with.
-    displayPath: path,
   };
   const maxLineBytes = options?.maxLineBytes;
   const maxTruncLines = options?.maxTruncLines ?? AUTO_READ_MAX;
@@ -278,6 +282,7 @@ export async function prepareFile(
     served: preview.served,
     ...(preview.truncation ? { truncation: preview.truncation } : {}),
     ...(preview.nextOffset !== undefined ? { nextOffset: preview.nextOffset } : {}),
+    ...(preview.shownRange !== undefined ? { shownRange: preview.shownRange } : {}),
     ...(statKey !== undefined ? { statKey } : {}),
     ...(statAdoption !== undefined ? { statAdoption } : {}),
   };

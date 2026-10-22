@@ -44,9 +44,10 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
       undefined,
       home.testPath,
     );
-    expect(verbatim.text).toBe(
-      "b\nc\n\n[lines 2-3 of 4. Use windows: [{ offset: 4, limit: 2 }] to continue.]",
-    );
+    // WHY: a page's only chrome is its header (spec §4.4); the rows are the page, nothing follows them.
+    expect(verbatim.text).toBe("b\nc");
+    expect(verbatim.shownRange).toEqual({ startLine: 2, endLine: 3 });
+    expect(verbatim.nextOffset).toBe(4);
   });
 
   it("sizes verbatim rows without the anchor prefix they never emit (fix 5)", async () => {
@@ -123,9 +124,9 @@ describe("fmtReadPreview — mode: verbatim rendering", () => {
       undefined,
       home.testPath,
     );
-    expect(verbatim.text).toContain("=== Lines 1-2 of 4 ===");
+    expect(verbatim.text).toContain("[Lines 1-2 of 4 total]");
     expect(verbatim.text).toContain("a\nb");
-    expect(verbatim.text).toContain("=== Lines 4-4 of 4 ===");
+    expect(verbatim.text).toContain("[Lines 4-4 of 4 total]");
     expect(verbatim.text.split("\n").some((line) => ANCHOR_ROW.test(line))).toBe(false);
     expect(verbatim.served).toEqual([]);
   });
@@ -193,7 +194,7 @@ describe("read tool — mode: verbatim", () => {
         ctx,
       );
       const text = result.content[0].text as string;
-      expect(text).toBe("[verbatim.txt (verbatim, 2 lines, no anchors)]\nalpha\nbeta");
+      expect(text).toBe("[verbatim.txt (verbatim, 2 lines total)]\nalpha\nbeta");
       expect(text.split("\n").some((line) => ANCHOR_ROW.test(line))).toBe(false);
       expect(result.details.snapshotId).toBeUndefined();
     });
@@ -210,7 +211,7 @@ describe("read tool — mode: verbatim", () => {
         ctx,
       );
       expect(result.content[0].text).toBe(
-        "[empty.txt (verbatim, 0 lines, no anchors)]\n[File is empty.]",
+        "[empty.txt (verbatim, 0 lines total)]\n[File is empty.]",
       );
     });
   });
@@ -226,7 +227,7 @@ describe("read tool — mode: verbatim", () => {
         ctx,
       );
       expect(result.content[0].text).toBe(
-        "[oneblank.txt (verbatim, 1 lines, no anchors)]\n[1 empty line]",
+        "[oneblank.txt (verbatim, 1 lines total)]\n[1 empty line]",
       );
     });
   });
@@ -242,7 +243,7 @@ describe("read tool — mode: verbatim", () => {
         ctx,
       );
       expect(result.content[0].text).toBe(
-        "[literal.txt (verbatim, 1 lines, no anchors)]\nAb3│kept literally",
+        "[literal.txt (verbatim, 1 lines total)]\nAb3│kept literally",
       );
     });
   });
@@ -265,8 +266,8 @@ describe("read tool — mode: verbatim", () => {
         ctx,
       );
       const text = result.content[0].text as string;
-      expect(text).toContain("=== Lines 1-2 of 4 ===");
-      expect(text).toContain("=== Lines 4-4 of 4 ===");
+      expect(text).toContain("[Lines 1-2 of 4 total]");
+      expect(text).toContain("[Lines 4-4 of 4 total]");
       expect(text.split("\n").some((line) => ANCHOR_ROW.test(line))).toBe(false);
       expect(result.details.snapshotId).toBeUndefined();
     });

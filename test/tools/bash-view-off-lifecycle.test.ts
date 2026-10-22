@@ -153,9 +153,7 @@ describe("bash view off-switch lifecycle", () => {
         ctx,
         "3:line3",
       );
-      expect(on?.content[0]?.text.startsWith("--- Bash search (hashline anchors) ---\n")).toBe(
-        true,
-      );
+      expect(on?.content[0]?.text.startsWith("[Bash search (anchors)]\n")).toBe(true);
     });
   });
 
@@ -173,9 +171,7 @@ describe("bash view off-switch lifecycle", () => {
         ctx,
         numberedLines(30),
       );
-      expect(first?.content[0]?.text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(
-        true,
-      );
+      expect(first?.content[0]?.text.startsWith("[Bash view: ")).toBe(true);
       expect(notices).toHaveLength(1);
       expect(notices[0]?.level).toBe("warning");
       expect(notices[0]?.message).toContain("/pi-better-edit bash-view off");
@@ -186,9 +182,7 @@ describe("bash view off-switch lifecycle", () => {
         ctx,
         numberedLines(30),
       );
-      expect(second?.content[0]?.text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(
-        true,
-      );
+      expect(second?.content[0]?.text.startsWith("[Bash view: ")).toBe(true);
       expect(notices).toHaveLength(1);
     });
   });
@@ -210,9 +204,7 @@ describe("bash view off-switch lifecycle", () => {
         ctx,
         "3:line3",
       );
-      expect(search?.content[0]?.text.startsWith("--- Bash search (hashline anchors) ---\n")).toBe(
-        true,
-      );
+      expect(search?.content[0]?.text.startsWith("[Bash search (anchors)]\n")).toBe(true);
       expect(notices).toHaveLength(1);
     });
   });
@@ -250,9 +242,7 @@ describe("bash view off-switch lifecycle", () => {
         numberedLines(30),
       );
 
-      expect(result?.content[0]?.text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(
-        true,
-      );
+      expect(result?.content[0]?.text.startsWith("[Bash view: ")).toBe(true);
       // WHY the file and not the console: with no `ui` surface there is no in-TUI notice, but
       // WHY the terminal belongs to Pi's renderer, so the notice is recorded instead of printed.
       expect(

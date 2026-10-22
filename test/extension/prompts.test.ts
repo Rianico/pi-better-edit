@@ -71,9 +71,11 @@ describe("prompts/read.md (model-facing contract)", () => {
   });
 
   it("documents pagination support", () => {
-    // The published schema is strictly the flat `{ file, windows?, mode? }` shape (ADR-0041),
-    // so the continuation the prompt teaches is the 4.4 footer, not a top-level offset/limit pair.
-    expect(readPrompt).toContain("Use windows: [{ offset, limit }] to continue.");
+    // The published schema is strictly the flat `{ file, windows?, mode? }` shape (ADR-0041), so the
+    // continuation the prompt teaches is the header's shown range plus the next `windows` offset.
+    expect(readPrompt).toContain(
+      "continue from the next unshown line with `windows: [{ offset, limit }]`",
+    );
     expect(readPrompt).toContain("`windows`");
   });
 

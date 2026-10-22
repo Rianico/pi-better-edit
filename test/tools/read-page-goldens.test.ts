@@ -22,30 +22,32 @@ const NO_TRAILING = Array.from({ length: 5 }, (_, i) => `n${i}`).join("\n");
 // The per-file header every tool-level golden now opens with (spec §4.4). The line count is written
 // out per case rather than recomputed, so a count regression fails here instead of agreeing with itself.
 const servedHeader = (lines: number) => `[golden.txt (${lines} lines total)]\n`;
-// WHY: a single windowed read carries its shown range in the header (#149) — the same range the
-// WHY: footer already names — while whole-file and multi-window goldens keep the bare total above.
+// WHY: a partial page carries its shown range and the file's total in its header (#149, read-chrome);
+// WHY: whole-file and multi-window pages keep the bare total above.
 const servedRangeHeader = (start: number, end: number, lines: number) =>
-  `[golden.txt (lines ${start}-${end} of ${lines})]\n`;
-const verbatimHeader = (lines: number) => `[golden.txt (verbatim, ${lines} lines, no anchors)]\n`;
+  `[golden.txt (lines ${start}-${end} of ${lines} total)]\n`;
+const verbatimHeader = (lines: number) => `[golden.txt (verbatim, ${lines} lines total)]\n`;
+const verbatimRangeHeader = (start: number, end: number, lines: number) =>
+  `[golden.txt (verbatim, lines ${start}-${end} of ${lines} total)]\n`;
 
 const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]> = [
   [
     "the first page",
     NL,
     { windows: [{ offset: 1, limit: 5 }] },
-    `${verbatimHeader(40)}l0\nl1\nl2\nl3\nl4\n\n[golden.txt lines 1-5 of 40. Use windows: [{ offset: 6, limit: 5 }] to continue.]`,
+    `${verbatimRangeHeader(1, 5, 40)}l0\nl1\nl2\nl3\nl4`,
   ],
   [
     "a middle page",
     NL,
     { windows: [{ offset: 17, limit: 5 }] },
-    `${verbatimHeader(40)}l16\nl17\nl18\nl19\nl20\n\n[golden.txt lines 17-21 of 40. Use windows: [{ offset: 22, limit: 5 }] to continue.]`,
+    `${verbatimRangeHeader(17, 21, 40)}l16\nl17\nl18\nl19\nl20`,
   ],
   [
     "the last page",
     NL,
     { windows: [{ offset: 38, limit: 10 }] },
-    `${verbatimHeader(40)}l37\nl38\nl39`,
+    `${verbatimRangeHeader(38, 40, 40)}l37\nl38\nl39`,
   ],
   [
     "a page past the end",
@@ -62,7 +64,7 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
         { offset: 20, limit: 3 },
       ],
     },
-    `${verbatimHeader(40)}=== Lines 2-3 of 40 ===\nl1\nl2\n\n=== Lines 20-22 of 40 ===\nl19\nl20\nl21`,
+    `${verbatimHeader(40)}[Lines 2-3 of 40 total]\nl1\nl2\n\n[Lines 20-22 of 40 total]\nl19\nl20\nl21`,
   ],
   [
     "overlapping windows",
@@ -73,13 +75,13 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
         { offset: 4, limit: 3 },
       ],
     },
-    `${verbatimHeader(40)}=== Lines 3-5 of 40 ===\nl2\nl3\nl4\n\n=== Lines 4-6 of 40 ===\nl3\nl4\nl5`,
+    `${verbatimHeader(40)}[Lines 3-5 of 40 total]\nl2\nl3\nl4\n\n[Lines 4-6 of 40 total]\nl3\nl4\nl5`,
   ],
   [
     "a limit alone",
     NL,
     { windows: [{ offset: 1, limit: 7 }] },
-    `${verbatimHeader(40)}l0\nl1\nl2\nl3\nl4\nl5\nl6\n\n[golden.txt lines 1-7 of 40. Use windows: [{ offset: 8, limit: 7 }] to continue.]`,
+    `${verbatimRangeHeader(1, 7, 40)}l0\nl1\nl2\nl3\nl4\nl5\nl6`,
   ],
   [
     "no arguments (the whole file)",
@@ -91,7 +93,7 @@ const VERBATIM_GOLDENS: Array<[string, string, Record<string, unknown>, string]>
     "the page ending on the last line",
     NL,
     { windows: [{ offset: 39, limit: 9 }] },
-    `${verbatimHeader(40)}l38\nl39`,
+    `${verbatimRangeHeader(39, 40, 40)}l38\nl39`,
   ],
   ["CRLF text (normalized to LF)", CRLF, {}, `${verbatimHeader(3)}a\nb\nc`],
   ["a lone \\r is not a break", LONE_CR, {}, `${verbatimHeader(3)}one\ntwo\nthree`],
@@ -108,14 +110,14 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
     NL,
     { windows: [{ offset: 1, limit: 5 }] },
     (a) =>
-      `${servedRangeHeader(1, 5, 40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n\n[golden.txt lines 1-5 of 40. Use windows: [{ offset: 6, limit: 5 }] to continue.]`,
+      `${servedRangeHeader(1, 5, 40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4`,
   ],
   [
     "a middle page",
     NL,
     { windows: [{ offset: 17, limit: 5 }] },
     (a) =>
-      `${servedRangeHeader(17, 21, 40)}${a[16]}│l16\n${a[17]}│l17\n${a[18]}│l18\n${a[19]}│l19\n${a[20]}│l20\n\n[golden.txt lines 17-21 of 40. Use windows: [{ offset: 22, limit: 5 }] to continue.]`,
+      `${servedRangeHeader(17, 21, 40)}${a[16]}│l16\n${a[17]}│l17\n${a[18]}│l18\n${a[19]}│l19\n${a[20]}│l20`,
   ],
   [
     "the last page",
@@ -140,14 +142,14 @@ const SERVED_CASES: Array<[string, string, Record<string, unknown>, AnchorOracle
       ],
     },
     (a) =>
-      `${servedHeader(40)}=== Lines 2-3 of 40 ===\n${a[1]}│l1\n${a[2]}│l2\n\n=== Lines 20-22 of 40 ===\n${a[19]}│l19\n${a[20]}│l20\n${a[21]}│l21`,
+      `${servedHeader(40)}[Lines 2-3 of 40 total]\n${a[1]}│l1\n${a[2]}│l2\n\n[Lines 20-22 of 40 total]\n${a[19]}│l19\n${a[20]}│l20\n${a[21]}│l21`,
   ],
   [
     "a limit alone",
     NL,
     { windows: [{ offset: 1, limit: 7 }] },
     (a) =>
-      `${servedRangeHeader(1, 7, 40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n${a[5]}│l5\n${a[6]}│l6\n\n[golden.txt lines 1-7 of 40. Use windows: [{ offset: 8, limit: 7 }] to continue.]`,
+      `${servedRangeHeader(1, 7, 40)}${a[0]}│l0\n${a[1]}│l1\n${a[2]}│l2\n${a[3]}│l3\n${a[4]}│l4\n${a[5]}│l5\n${a[6]}│l6`,
   ],
   [
     "no trailing newline",

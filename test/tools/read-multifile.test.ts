@@ -275,13 +275,13 @@ describe("read windows — interval algebra", () => {
         ctx,
       );
       const text = getText(result);
-      expect(text).toContain("=== Lines 1-3 of 12 ===");
-      expect(text).toContain("=== Lines 2-4 of 12 ===");
-      expect(text).toContain("=== Lines 4-5 of 12 ===");
+      expect(text).toContain("[Lines 1-3 of 12 total]");
+      expect(text).toContain("[Lines 2-4 of 12 total]");
+      expect(text).toContain("[Lines 4-5 of 12 total]");
       // WHY: a shared or abutting line is retained once by the merged walk and still belongs to every
       // WHY: window that named it, so the rows of each section stay exactly what it asked for.
       expect(
-        text.split("=== Lines 2-4 of 12 ===")[1]!.split("=== Lines 4-5 of 12 ===")[0]!.match(/│/g),
+        text.split("[Lines 2-4 of 12 total]")[1]!.split("[Lines 4-5 of 12 total]")[0]!.match(/│/g),
       ).toHaveLength(3);
       expect(rowsOf(text)).toEqual([
         "line 1",
@@ -317,7 +317,7 @@ describe("read windows — around_anchor", () => {
         ctx,
       );
       const text = getText(result);
-      expect(text).toContain("=== Lines 3-7 of 12 ===");
+      expect(text).toContain("[anchored.ts (lines 3-7 of 12 total)]");
       expect(rowsOf(text)).toEqual(["line 3", "line 4", "line 5", "line 6", "line 7"]);
     });
   });
@@ -340,7 +340,7 @@ describe("read windows — around_anchor", () => {
         undefined,
         ctx,
       );
-      expect(getText(result)).toContain("=== Lines 1-12 of 12 ===");
+      expect(getText(result)).toContain("[anchored.ts (12 lines total)]");
     });
   });
 
@@ -356,7 +356,7 @@ describe("read windows — around_anchor", () => {
       );
       const text = getText(result);
       expect(text).toContain("[Window warning: Anchor 'a1b2' not found; window omitted]");
-      expect(text).toContain("=== Lines 1-2 of 12 ===");
+      expect(text).toContain("[unknown.ts (lines 1-2 of 12 total)]");
       expect(rowsOf(text)).toEqual(["line 1", "line 2"]);
     });
   });
@@ -589,8 +589,8 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
         ),
       );
       expect(text.startsWith("[a.ts (12 lines total)]\n")).toBe(true);
-      expect(text).toContain("=== Lines 2-3 of 12 ===\n");
-      expect(text).toContain("=== Lines 6-7 of 12 ===\n");
+      expect(text).toContain("[Lines 2-3 of 12 total]\n");
+      expect(text).toContain("[Lines 6-7 of 12 total]\n");
       // WHY: four served rows (2 + 2), each strictly `HASH│content` — never a numbered row.
       const rowLines = text.split("\n").filter((line) => line.includes("│"));
       expect(rowLines).toHaveLength(4);
@@ -612,7 +612,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       const text = getText(result);
       // WHY: exact bytes — a `HASH│` prefix or a row-level line number breaks this equality, so the
       // WHY: assertion discriminates where the shape checks it replaces could not.
-      expect(text).toBe(`[README.md (verbatim, 45 lines, no anchors)]\n${readme.trimEnd()}`);
+      expect(text).toBe(`[README.md (verbatim, 45 lines total)]\n${readme.trimEnd()}`);
       // WHY: the lease half of the verbatim contract (§4.4): a served read would have left this
       // WHY: session one lease per row — the verbatim read leaves none.
       const store = await loadHashStore();
@@ -632,9 +632,9 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
           ctx,
         ),
       );
-      expect(text).toContain(
-        "[app.ts lines 1-50 of 200. Use windows: [{ offset: 51, limit: 50 }] to continue.]",
-      );
+      // WHY: no footer (spec §4.4) — a partial page states its range in the header instead.
+      expect(text).toContain("[app.ts (lines 1-50 of 200 total)]");
+      expect(text).not.toContain("Use windows");
     });
   });
 
@@ -652,11 +652,9 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       );
       // WHY: the flattening unifies single-window reads on the §4.4 page form — the retired
       // WHY: files-shaped canonical read rendered the bounded-ask sub-banner with no footer.
-      expect(text).toContain("[app.ts (lines 1-50 of 200)]");
-      expect(text).toContain(
-        "[app.ts lines 1-50 of 200. Use windows: [{ offset: 51, limit: 50 }] to continue.]",
-      );
-      expect(text).not.toContain("=== Lines");
+      expect(text).toContain("[app.ts (lines 1-50 of 200 total)]");
+      expect(text).not.toContain("Use windows");
+      expect(text).not.toContain("[Lines ");
     });
   });
 
@@ -668,7 +666,7 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       const text = getText(
         await readTool.execute("r1", { file: "exact.ts" }, undefined, undefined, ctx),
       );
-      expect(text).toContain("[exact.ts (200000 lines total)]\n");
+      expect(text).toContain("[exact.ts (lines 1-2000 of 200000 total)]\n");
       expect(text).not.toContain("[MODEL] [E_LARGE_FILE]");
     });
   });
@@ -678,9 +676,9 @@ describe("read render UX — headers, sub-banners and continuation footers (spec
       const text = getText(
         await readTool.execute("r1", { file: "a.ts" }, undefined, undefined, ctx),
       );
-      expect(text).toContain(
-        "[a.ts lines 1-2000 of 2500. Use windows: [{ offset: 2001, limit: 2000 }] to continue.]",
-      );
+      // WHY: the header names the range it actually showed and where it stopped, not a footer.
+      expect(text).toContain("[a.ts (lines 1-2000 of 2500 total)]");
+      expect(text).not.toContain("Use windows");
     });
   });
 
@@ -767,7 +765,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
         ctx,
       );
       expect(getText(result)).toBe(
-        "[plain.txt (verbatim, 12 lines, no anchors)]\n" +
+        "[plain.txt (verbatim, 12 lines total)]\n" +
           "[Window warning: Anchor 'a1b2' not found; window omitted]",
       );
       // WHY: a verbatim read is a reference read — it grants no lease and writes no served state.
@@ -798,11 +796,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
       // WHY: target renders verbatim. §4.4's verbatim contract constrains RENDERING (plain lines, no
       // WHY: anchors) and LEASES (none granted) only — never resolution. The default radius 10 clamps
       // WHY: the window to the whole file.
-      expect(getText(verbatim)).toBe(
-        "[plain.txt (verbatim, 12 lines, no anchors)]\n" +
-          "=== Lines 1-12 of 12 ===\n" +
-          TWELVE.trimEnd(),
-      );
+      expect(getText(verbatim)).toBe(`[plain.txt (verbatim, 12 lines total)]\n${TWELVE.trimEnd()}`);
       // WHY: resolution renders no anchor and writes no served state — the leases are untouched.
       expect(loadLeases(store, TEST_SESSION_ID, absolute)).toEqual(before);
     });
@@ -826,9 +820,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
         ),
       );
       expect(text).toContain(
-        "[plain.txt (verbatim, 12 lines, no anchors)]\n" +
-          "=== Lines 2-4 of 12 ===\n" +
-          "line 2\nline 3\nline 4",
+        "[plain.txt (verbatim, lines 2-4 of 12 total)]\nline 2\nline 3\nline 4",
       );
     });
   });
@@ -850,7 +842,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
       // WHY: opening the store for a verbatim target must not make a FOREIGN anchor resolve — §4.3
       // WHY: keeps the one wording for unknown, expired and foreign alike.
       expect(text).toBe(
-        "[b.ts (verbatim, 12 lines, no anchors)]\n" +
+        "[b.ts (verbatim, 12 lines total)]\n" +
           `[Window warning: Anchor '${foreign}' not found; window omitted]`,
       );
     });
@@ -867,7 +859,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
         ctx,
       );
       expect(getText(result)).toBe(
-        "[plain.txt (verbatim, 12 lines, no anchors)]\n" +
+        "[plain.txt (verbatim, 12 lines total)]\n" +
           "[Window warning: Anchor 'a1b2' not found; window omitted]",
       );
     });
@@ -894,7 +886,7 @@ describe("read tool — remediation (verbatim anchor windows, shared budget, mir
           ctx,
         ),
       );
-      expect(text).toContain("=== Lines 3-5 of 12 ===\n");
+      expect(text).toContain("[a.ts (lines 3-5 of 12 total)]\n");
       expect(text).toContain("[Window warning: Anchor 'a1b2' not found; window omitted]");
       expect(rowsOf(text)).toEqual(["line 3", "line 4", "line 5"]);
     });

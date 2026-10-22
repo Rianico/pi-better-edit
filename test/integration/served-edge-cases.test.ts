@@ -210,7 +210,9 @@ describe("served-state edge cases for edit", () => {
 
       const servedLines = rejected!.message.split("\n").filter((l) => /^[A-Za-z0-9]{4}│/.test(l));
       expect(servedLines).toHaveLength(150);
-      expect(rejected!.message).toMatch(/\[\s*\.\.\.\s*50 more — read offset=151\]/);
+      expect(rejected!.message).toMatch(
+        /\[\s*\.\.\.\s*50 more — use windows: \[\{ offset: 151 \}\]/,
+      );
       expect(await readFile(path, "utf-8")).toBe(mutated);
     });
   });

@@ -196,7 +196,7 @@ describe("read tool line cap", () => {
       const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│x0");
-      expect(text).toContain("[big.ts lines 1-");
+      expect(text).toContain("[big.ts (lines 1-2000 of ");
     });
   });
   it("rejects oversized files with E_LARGE_FILE before hashing", async () => {
@@ -239,7 +239,7 @@ describe("read tool line cap", () => {
       const result = await readTool.execute("r1", { file: "big.ts" }, undefined, undefined, ctx);
       const text = result.content?.[0]?.text ?? "";
       expect(text).toContain("│x0");
-      expect(text).toContain("[big.ts lines 1-");
+      expect(text).toContain("[big.ts (lines 1-2000 of ");
     });
   }, 60_000);
 
@@ -341,7 +341,7 @@ describe("read tool line cap", () => {
       );
       const text = verbatim.content?.[0]?.text ?? "";
       expect(text).toBe(
-        `[huge-verbatim.ts (verbatim, ${SERVED_MAX_LINES + 1} lines, no anchors)]\nx\nx\nx\n\n[huge-verbatim.ts lines 1-3 of ${SERVED_MAX_LINES + 1}. Use windows: [{ offset: 4, limit: 3 }] to continue.]`,
+        `[huge-verbatim.ts (verbatim, lines 1-3 of ${SERVED_MAX_LINES + 1} total)]\nx\nx\nx`,
       );
       expect(verbatim.details?.snapshotId).toBeUndefined();
 

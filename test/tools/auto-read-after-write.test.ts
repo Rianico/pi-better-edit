@@ -87,7 +87,7 @@ describe("auto-read after write", () => {
 
       expect(writeResult).toBeDefined();
       expect(writeResult!.content).toHaveLength(2);
-      expect(writeResult!.content![1]!.text!).toContain("--- Auto-read (hashline anchors) ---");
+      expect(writeResult!.content![1]!.text!).toContain("[Auto-read: ");
     } finally {
       await cleanupCwd(cwd);
     }
@@ -128,7 +128,7 @@ describe("auto-read after write", () => {
       });
 
       const autoReadText = writeResult!.content![1]!.text!;
-      expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
+      expect(autoReadText).toContain("[Auto-read: ");
       expect(autoReadText).toMatch(/[A-Za-z0-9]{4}│hello/);
       expect(autoReadText).toMatch(/[A-Za-z0-9]{4}│world/);
     } finally {
@@ -245,7 +245,7 @@ describe("auto-read after write", () => {
         type: "text",
         text: "Successfully wrote 5 bytes to nonexistent/deeply/nested/file.txt",
       });
-      expect(content[1].text).toContain("--- Auto-read failed:");
+      expect(content[1].text).toContain("[Auto-read failed:");
       expect(content[1].text).toContain("[E_NOT_FOUND]");
     } finally {
       await cleanupCwd(cwd);
@@ -279,9 +279,7 @@ describe("auto-read after write", () => {
       const lines = autoReadText.split("\n");
       const hashlinePattern = /^[A-Za-z0-9]{4}│/;
 
-      const headerIndex = lines.findIndex((l) =>
-        l.includes("--- Auto-read (hashline anchors) ---"),
-      );
+      const headerIndex = lines.findIndex((l) => l.startsWith("[Auto-read: "));
       expect(headerIndex).toBeGreaterThanOrEqual(0);
 
       const contentLines = lines.slice(headerIndex + 1).filter((l) => l.length > 0);
@@ -326,11 +324,14 @@ describe("auto-read after write", () => {
       expect(writeResult).toBeDefined();
       const autoReadText = writeResult!.content![1]!.text!;
 
-      expect(autoReadText).toContain("--- Auto-read (hashline anchors) ---");
+      expect(autoReadText).toContain("[Auto-read: ");
 
       expect(autoReadText).toContain("line 1");
 
-      expect(autoReadText).toMatch(/Use windows: \[\{ offset: \d+, limit: \d+ \}\] to continue\./);
+      // WHY: the page states its own range and stop (spec §4.4); there is no footer to continue from.
+      expect(autoReadText).toContain("[Auto-read: ");
+      expect(autoReadText).toMatch(/\(lines 1-\d+ of 2500 total\)/);
+      expect(autoReadText).not.toContain("Use windows");
     } finally {
       await cleanupCwd(cwd);
     }
@@ -359,7 +360,7 @@ describe("auto-read after write", () => {
       expect(writeResult).toBeDefined();
       const text = (writeResult as { content: Array<{ type: string; text: string }> }).content[1]
         .text;
-      expect(text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(text).toContain("[Auto-read: ");
       expect(text).toContain("[File is empty. Use edit to insert content.]");
       expect(text).toMatch(/^[A-Za-z0-9]{4}│/m);
     } finally {
@@ -398,7 +399,7 @@ describe("auto-read after write", () => {
       expect(editResult).toBeDefined();
       expect(editResult!.content).toHaveLength(1);
       expect(editResult!.content![0]!.text).toBe(diff);
-      expect(editResult!.content![0]!.text).not.toContain("--- Auto-read");
+      expect(editResult!.content![0]!.text).not.toContain("[Auto-read");
     } finally {
       await cleanupCwd(cwd);
     }
@@ -427,7 +428,7 @@ describe("auto-read after write", () => {
       expect(undoResult).toBeDefined();
       expect(undoResult!.content).toHaveLength(1);
       expect(undoResult!.content![0]!.text).toBe(diff);
-      expect(undoResult!.content![0]!.text).not.toContain("--- Auto-read");
+      expect(undoResult!.content![0]!.text).not.toContain("[Auto-read");
     } finally {
       await cleanupCwd(cwd);
     }

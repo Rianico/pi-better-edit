@@ -18,6 +18,7 @@ import { fmtRegion } from "../hashline/apply.js";
 import { loadHashStore } from "../hash-store.js";
 import { snapshotIOFor } from "../snapshot-store";
 import type { ServedRow } from "../served-session/serve-render.js";
+import { formatSectionHeader } from "./served-header.js";
 import { mergeRanges, visibleLineTotal, walkLines, type LineRange } from "./line-walker.js";
 
 function normPosInt(value: number | undefined, name: string): number | undefined {
@@ -30,6 +31,12 @@ function normPosInt(value: number | undefined, name: string): number | undefined
     });
   }
   return value;
+}
+
+/** The lines one page actually rendered, 1-based and inclusive. */
+export interface ShownRange {
+  readonly startLine: number;
+  readonly endLine: number;
 }
 
 /** One requested line range of a multi-window read. */
@@ -71,26 +78,8 @@ function normWindows(windows: ReadWindow[] | undefined): ReadWindow[] | undefine
   });
 }
 
-/**
- * The page footer (spec §4.4). Names the file the continuation belongs to whenever the caller owns a
- * display path, so a multi-file result's footer is copy-pasteable on its own; `limit` repeats the number
- * of lines this footer covers, so continuing reads exactly as much as the page just shown.
- */
-function formatPaginationHint(
-  displayPath: string | undefined,
-  startLine: number,
-  endLine: number,
-  totalLines: number,
-  nextOffset: number,
-  byteLimit?: number,
-): string {
-  const name = displayPath === undefined ? "" : `${displayPath} `;
-  const sizeSuffix = byteLimit !== undefined ? ` (${formatSize(byteLimit)} limit)` : "";
-  const limit = endLine - startLine + 1;
-  return `[${name}lines ${startLine}-${endLine} of ${totalLines}${sizeSuffix}. Use windows: [{ offset: ${nextOffset}, limit: ${limit} }] to continue.]`;
-}
-// WHY: verbatim renders the identical admitted rows with no anchor prefix; the row set, budgets,
-// WHY: and hints are computed once, so only this formatter differs between the two modes.
+// WHY: verbatim renders the identical admitted rows with no anchor prefix; the row set and budgets
+// WHY: are computed once, so only this formatter differs between the two modes.
 function fmtRows(hashes: readonly string[], lines: readonly string[], verbatim: boolean): string {
   if (!verbatim) return fmtRegion(hashes, lines);
   const joined = lines.join("\n");
@@ -146,13 +135,14 @@ function buildOversizedPreview(params: {
   totalLines: number;
   maxBytes: number;
   maxTruncLines: number;
-  // WHY: a window is a bounded ask, so its section must not advertise a page it never owed
-  // WHY: (mirrors buildNormalPreview); a genuinely truncated window still keeps its own hint.
-  hintRemainder?: boolean;
-  /** The caller's own path, for the footer that names the file a continuation belongs to. */
-  displayPath?: string;
   verbatim: boolean;
-}): { text: string; truncation?: TruncationResult; nextOffset?: number; served: ServedRow[] } {
+}): {
+  text: string;
+  truncation?: TruncationResult;
+  nextOffset?: number;
+  served: ServedRow[];
+  shownRange?: ShownRange;
+} {
   const {
     rowSizes,
     selected,
@@ -162,7 +152,6 @@ function buildOversizedPreview(params: {
     maxBytes,
     maxTruncLines,
     verbatim,
-    displayPath,
   } = params;
   const oversized = rowSizes.filter((row) => row.bytes > maxBytes);
   const rows = rowSizes.map((row, index) => {
@@ -185,17 +174,13 @@ function buildOversizedPreview(params: {
     ? "content not shown; line exceeds the read byte budget"
     : "content not shown because hashline anchors require full lines";
   const warning = `[${lineLabel} ${verb} ${formatSize(maxBytes)}; ${reason}. Inspect with bash: sed -n '${addresses}' <path> | head -c ${maxBytes}]`;
-  let preview = skippedTruncation.content;
-  let nextOffset: number | undefined;
-  if (shownRowCount > 0 && skippedTruncation.truncated) {
-    nextOffset = lastShownLine + 1;
-    preview += `\n\n${warning}\n${formatPaginationHint(displayPath, startLine, lastShownLine, totalLines, nextOffset, skippedTruncation.maxBytes)}`;
-  } else if (shownRowCount > 0 && params.hintRemainder !== false && lastShownLine < totalLines) {
-    nextOffset = lastShownLine + 1;
-    preview += `\n\n${warning}\n${formatPaginationHint(displayPath, startLine, lastShownLine, totalLines, nextOffset)}`;
-  } else {
-    preview += `\n\n${warning}`;
-  }
+  // WHY: no page footer (spec §4.4): the header already names the shown range and, when the byte
+  // WHY: budget cut the page, where it stopped. `nextOffset` survives only for the call's `details`.
+  const preview = `${skippedTruncation.content}\n\n${warning}`;
+  const nextOffset =
+    shownRowCount > 0 && (skippedTruncation.truncated || lastShownLine < totalLines)
+      ? lastShownLine + 1
+      : undefined;
   const served: ServedRow[] = [];
   if (!verbatim)
     for (let index = 0; index < shownRowCount; index++) {
@@ -210,6 +195,7 @@ function buildOversizedPreview(params: {
     text: preview,
     ...(skippedTruncation.truncated ? { truncation: skippedTruncation } : {}),
     ...(nextOffset !== undefined ? { nextOffset } : {}),
+    ...(shownRowCount > 0 ? { shownRange: { startLine, endLine: lastShownLine } } : {}),
     served,
   };
 }
@@ -223,16 +209,12 @@ function buildNormalPreview(params: {
   maxTruncLines: number;
   selectedHashes: readonly string[];
   verbatim: boolean;
-  // WHY: an entry of an explicit `windows` request is a bounded ask, not a page: the caller named
-  // WHY: exactly these lines, so a trailing continuation footer would invent intent.
-  hintRemainder?: boolean;
-  /** The caller's own path, for the footer that names the file a continuation belongs to. */
-  displayPath?: string;
 }): {
   preview: string;
   nextOffset?: number;
   truncation: ReturnType<typeof truncateHead>;
   served: ServedRow[];
+  shownRange?: ShownRange;
 } {
   const {
     formatted,
@@ -243,33 +225,30 @@ function buildNormalPreview(params: {
     maxTruncLines,
     selectedHashes,
     verbatim,
-    displayPath,
   } = params;
   const truncation = truncateHead(formatted, { maxBytes, maxLines: maxTruncLines });
-  let preview = truncation.content;
-  let nextOffset: number | undefined;
-  if (truncation.truncated) {
-    const endLineDisplay = startLine + truncation.outputLines - 1;
-    nextOffset = endLineDisplay + 1;
-    if (truncation.truncatedBy === "lines")
-      preview += `\n\n${formatPaginationHint(displayPath, startLine, endLineDisplay, totalLines, nextOffset)}`;
-    else
-      preview += `\n\n${formatPaginationHint(displayPath, startLine, endLineDisplay, totalLines, nextOffset, truncation.maxBytes)}`;
-  } else if (params.hintRemainder !== false && endIdx < totalLines) {
-    nextOffset = endIdx + 1;
-    preview += `\n\n${formatPaginationHint(displayPath, startLine, endIdx, totalLines, nextOffset)}`;
-  }
+  // WHY: no page footer (spec §4.4): the header states the shown range and the byte stop; the
+  // WHY: continuation offset survives only for the call's `details`.
+  const nextOffset = truncation.truncated
+    ? startLine + truncation.outputLines
+    : endIdx < totalLines
+      ? endIdx + 1
+      : undefined;
   const served: ServedRow[] = [];
   if (!verbatim)
     for (const [index, hash] of selectedHashes.entries()) {
       if (index >= truncation.outputLines) break;
       served.push({ position: startLine - 1 + index, hash });
     }
-  return { preview, truncation, ...(nextOffset !== undefined ? { nextOffset } : {}), served };
-}
-
-function windowHeader(startLine: number, endLine: number, totalLines: number): string {
-  return `=== Lines ${startLine}-${endLine} of ${totalLines} ===`;
+  return {
+    preview: truncation.content,
+    truncation,
+    ...(nextOffset !== undefined ? { nextOffset } : {}),
+    ...(truncation.outputLines > 0
+      ? { shownRange: { startLine, endLine: startLine + truncation.outputLines - 1 } }
+      : {}),
+    served,
+  };
 }
 
 /**
@@ -286,9 +265,12 @@ function buildWindowSection(params: {
   maxBytes: number;
   maxTruncLines: number;
   verbatim: boolean;
-  /** The caller's own path, for the footer that names the file a continuation belongs to. */
-  displayPath?: string;
-}): { text: string; truncation?: TruncationResult; served: ServedRow[] } {
+}): {
+  text: string;
+  truncation?: TruncationResult;
+  served: ServedRow[];
+  shownRange?: ShownRange;
+} {
   const {
     rowSizes,
     selected,
@@ -299,7 +281,6 @@ function buildWindowSection(params: {
     maxBytes,
     maxTruncLines,
     verbatim,
-    displayPath,
   } = params;
   if (rowSizes.some((row) => row.bytes > maxBytes)) {
     return buildOversizedPreview({
@@ -310,9 +291,7 @@ function buildWindowSection(params: {
       totalLines,
       maxBytes,
       maxTruncLines,
-      hintRemainder: false,
       verbatim,
-      ...(displayPath !== undefined ? { displayPath } : {}),
     });
   }
   const normal = buildNormalPreview({
@@ -323,13 +302,12 @@ function buildWindowSection(params: {
     maxBytes,
     maxTruncLines,
     selectedHashes,
-    hintRemainder: false,
     verbatim,
-    ...(displayPath !== undefined ? { displayPath } : {}),
   });
   return {
     text: normal.preview,
     ...(normal.truncation.truncated ? { truncation: normal.truncation } : {}),
+    ...(normal.shownRange !== undefined ? { shownRange: normal.shownRange } : {}),
     served: normal.served,
   };
 }
@@ -412,10 +390,12 @@ function buildWindowedPreview(params: {
   maxBytes: number;
   maxTruncLines: number;
   verbatim: boolean;
-  /** The caller's own path, for the footer that names the file a continuation belongs to. */
-  displayPath?: string;
-  sectionHeader?: (startLine: number, endLine: number, totalLines: number) => string;
-}): { text: string; truncation?: TruncationResult; served: ServedRow[] } {
+}): {
+  text: string;
+  truncation?: TruncationResult;
+  served: ServedRow[];
+  shownRange?: ShownRange;
+} {
   const {
     windows,
     ranges,
@@ -425,12 +405,13 @@ function buildWindowedPreview(params: {
     maxBytes,
     maxTruncLines,
     verbatim,
-    displayPath,
-    sectionHeader,
   } = params;
   const sections: string[] = [];
   const hashByPosition = new Map<number, string>();
   let truncation: TruncationResult | undefined;
+  // WHY: a `windows` request of ONE entry is still a single page, so its own range names it; several
+  // WHY: entries are sections and the page header keeps the file's total (read-chrome).
+  let shownRange: ShownRange | undefined;
   let remainingBytes = maxBytes;
   let remainingLines = maxTruncLines;
 
@@ -442,12 +423,11 @@ function buildWindowedPreview(params: {
       continue;
     }
     const endIdx = Math.min(window.offset - 1 + window.limit, totalLines);
-    const header = (sectionHeader ?? windowHeader)(window.offset, endIdx, totalLines);
     const selected = ranges[index] ?? [];
     const selectedHashes = rangedHashes?.[index] ?? allHashes.slice(window.offset - 1, endIdx);
     if (remainingBytes <= 0 || remainingLines <= 0) {
       sections.push(
-        `${header}\n[Read budget exhausted; this window is not shown. Re-read it on its own.]`,
+        `${formatSectionHeader(window.offset, endIdx, totalLines)}\n[Read budget exhausted; this window is not shown. Re-read it on its own.]`,
       );
       // WHY: `metrics.truncated` must be honest when the shared budget cut a window away, so the
       // WHY: same function that reports truncation elsewhere derives it from the budget actually spent.
@@ -475,18 +455,31 @@ function buildWindowedPreview(params: {
       maxBytes: remainingBytes,
       maxTruncLines: remainingLines,
       verbatim,
-      ...(displayPath !== undefined ? { displayPath } : {}),
     });
-    sections.push(`${header}\n${built.text}`);
+    // WHY: build the section before its header: the header states where the section stopped, which
+    // WHY: only the builder knows. A single-window page carries no section header — its page header
+    // WHY: already named the range, and repeating it would be the second dialect this change removed.
+    const block =
+      windows.length === 1
+        ? built.text
+        : `${formatSectionHeader(
+            window.offset,
+            endIdx,
+            totalLines,
+            built.truncation?.truncatedBy === "bytes" ? built.truncation.maxBytes : undefined,
+          )}\n${built.text}`;
+    sections.push(block);
+    shownRange = built.shownRange;
     for (const row of built.served) hashByPosition.set(row.position, row.hash);
     remainingLines -= built.text === "" ? 0 : built.text.split("\n").length;
-    remainingBytes -= Buffer.byteLength(`${built.text}${header}`, "utf-8");
+    remainingBytes -= Buffer.byteLength(block, "utf-8");
     if (truncation === undefined && built.truncation) truncation = built.truncation;
   }
 
   return {
     text: sections.join("\n\n"),
     ...(truncation ? { truncation } : {}),
+    ...(windows.length === 1 && shownRange !== undefined ? { shownRange } : {}),
     // WHY: a multi-window request is N discrete slices, not one stream, so the result carries no root
     // WHY: `nextOffset`: a scalar would invite `offset = nextOffset` and silently re-read a window the
     // WHY: caller never asked to continue. A truncated window says so in its own section text.
@@ -600,9 +593,6 @@ export async function fmtReadPreview(
     limit?: number;
     windows?: ReadWindow[];
     render?: "served" | "verbatim";
-    /** The caller's own path for the file header/footer; absent for a pathless preview. */
-    displayPath?: string;
-    sectionHeader?: (startLine: number, endLine: number, totalLines: number) => string;
   },
   anchors?: RenderAnchors,
   path?: string,
@@ -617,12 +607,12 @@ export async function fmtReadPreview(
   hashes: string[];
   /** The walk's counts, so no caller splits the text again to learn them. */
   lineTotals: { visible: number; split: number };
+  /** The lines this page rendered, absent when it rendered none (empty, beyond EOF, all-oversized). */
+  shownRange?: ShownRange;
 }> {
   const verbatim = options.render === "verbatim";
-  // WHY: the anchor seed path is not the display path — the first is the absolute path a hash is
-  // WHY: scoped to, the second is what the caller wrote, which is what a header/footer must name.
-  const displayPath = options.displayPath;
-  const sectionHeader = options.sectionHeader;
+  // WHY: the anchor seed `path` is the absolute path a hash is scoped to; the header names the
+  // WHY: caller's own path, which only the call site knows.
   // WHY: only a walk plan carries an assignment. Anchors the caller already holds are rendered as
   // WHY: they are; verbatim never reaches for anchors at all.
   const known: string[] | undefined =
@@ -721,8 +711,6 @@ export async function fmtReadPreview(
         maxBytes: maxLineBytes,
         maxTruncLines,
         verbatim,
-        ...(displayPath !== undefined ? { displayPath } : {}),
-        ...(sectionHeader !== undefined ? { sectionHeader } : {}),
       }),
       hashes: page.hashes,
       lineTotals: totals,
@@ -769,7 +757,6 @@ export async function fmtReadPreview(
         maxBytes,
         maxTruncLines,
         verbatim,
-        ...(displayPath !== undefined ? { displayPath } : {}),
       }),
       hashes: allHashes,
       lineTotals: totals,
@@ -785,7 +772,6 @@ export async function fmtReadPreview(
     maxTruncLines,
     selectedHashes,
     verbatim,
-    ...(displayPath !== undefined ? { displayPath } : {}),
   });
   return {
     text: normal.preview,
@@ -794,5 +780,6 @@ export async function fmtReadPreview(
     served: normal.served,
     hashes: allHashes,
     lineTotals: totals,
+    ...(normal.shownRange !== undefined ? { shownRange: normal.shownRange } : {}),
   };
 }

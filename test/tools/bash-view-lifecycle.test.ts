@@ -93,7 +93,7 @@ describe("bash view lifecycle", () => {
       expect(result).toBeDefined();
       expect(result!.content).toHaveLength(1);
       const text = result!.content[0]!.text;
-      expect(text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(true);
+      expect(text.startsWith("[Bash view: ")).toBe(true);
       expect(text).not.toContain("<<raw stdout>>");
       const rows = rowsOf(text);
       expect(rows).toHaveLength(30);
@@ -625,7 +625,7 @@ describe("bash search interception (I1a #73)", () => {
       );
       expect(result).toBeDefined();
       const text = result!.content[0]!.text;
-      expect(text.startsWith("--- Bash search (hashline anchors) ---\n")).toBe(true);
+      expect(text.startsWith("[Bash search (anchors)]\n")).toBe(true);
       expect(text).toContain("[f.txt (1 match)]");
       const rows = rowsOf(text);
       expect(rows).toHaveLength(1);
@@ -1233,7 +1233,7 @@ describe("bash numbered view lifecycle (Tier-2 item 8)", () => {
       expect(result).toBeDefined();
       expect(result!.content).toHaveLength(1);
       const text = result!.content[0]!.text;
-      expect(text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(true);
+      expect(text.startsWith("[Bash view: ")).toBe(true);
       const rows = rowsOf(text);
       expect(rows).toHaveLength(10);
       for (const n of [1, 5, 10]) expect(rows.some((l) => l.endsWith(`│line${n}`))).toBe(true);
@@ -1276,9 +1276,7 @@ describe("bash numbered view lifecycle (Tier-2 item 8)", () => {
       expect(catRes).toBeDefined();
       expect(nlRes).toBeDefined();
       // ONE renderer: same header; same row count; row bodies identical up to per-run hashes.
-      expect(nlRes!.content[0]!.text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(
-        true,
-      );
+      expect(nlRes!.content[0]!.text.startsWith("[Bash view: ")).toBe(true);
       expect(rowsOf(nlRes!.content[0]!.text)).toHaveLength(6);
       const bodies = (t: string) =>
         rowsOf(t)
@@ -1437,10 +1435,8 @@ describe("bash filter-stage lifecycle (Tier-3 item 9)", () => {
         "line1\nline2\n",
       );
       expect(result).toBeDefined();
-      expect(result!.content[0]!.text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(
-        true,
-      );
-      expect(result!.content[0]!.text).toContain("[f.txt (2 lines)]");
+      expect(result!.content[0]!.text.startsWith("[Bash view: ")).toBe(true);
+      expect(result!.content[0]!.text).toContain("[Bash view: f.txt (2 lines)]");
       const rows = rowsOf(result!.content[0]!.text);
       expect(rows).toHaveLength(2);
       // WHY: file-true coordinates — the survivors are lines 1 and 2, and both edit cleanly.
@@ -1613,7 +1609,7 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
       );
       expect(result).toBeDefined();
       const text = result!.content[0]!.text;
-      expect(text.startsWith("--- Bash search (hashline anchors) ---\n")).toBe(true);
+      expect(text.startsWith("[Bash search (anchors)]\n")).toBe(true);
       expect(text).toContain("[a.txt (1 match)]");
       expect(text).toContain("[b.txt (1 match)]");
       expect(text.indexOf("[a.txt")).toBeLessThan(text.indexOf("[b.txt"));
@@ -1820,9 +1816,7 @@ describe("bash multi-file and recursive lifecycle (Tier-3 item 10)", () => {
         "a.txt\nb.txt\n",
       );
       expect(result).toBeDefined();
-      expect(result!.content[0]!.text.startsWith("--- Bash file list (no anchors) ---\n")).toBe(
-        true,
-      );
+      expect(result!.content[0]!.text.startsWith("[Bash file list (no anchors)]\n")).toBe(true);
       expect(rowsOf(result!.content[0]!.text)).toHaveLength(0);
       // WHY: anchorless means anchorless — even a valid content anchor grants nothing.
       const hashes = await lineHashes("x\n", join(dir, "a.txt"));
@@ -1865,8 +1859,8 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       );
       expect(result).toBeDefined();
       const text = result!.content[0]!.text;
-      expect(text.startsWith("--- Bash view (hashline anchors) ---\n")).toBe(true);
-      expect(text).toContain("[f.txt (3 lines, sorted)]");
+      expect(text.startsWith("[Bash view: ")).toBe(true);
+      expect(text).toContain("[Bash view: f.txt (3 lines, sorted)]");
       const rows = rowsOf(text);
       expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["alpha", "beta", "gamma"]);
       // WHY: coordinates travel WITH the row — the surviving `beta` is file line 1 (the FIRST
@@ -1924,7 +1918,7 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       );
       expect(result).toBeDefined();
       const text = result!.content[0]!.text;
-      expect(text).toContain("[f.txt (3 lines, adjacent-dedup)]");
+      expect(text).toContain("[Bash view: f.txt (3 lines, adjacent-dedup)]");
       const rows = rowsOf(text);
       expect(rows.map((row) => row.split("\u2502")[1])).toEqual(["x", "y", "x"]);
       // WHY: `uniq` never sorts — the SECOND `x` run (file line 4) survives beside the first,
@@ -1983,7 +1977,7 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
       );
       expect(result).toBeDefined();
       const text = result!.content[0]!.text;
-      expect(text).toContain("[f.txt (count: 4)]");
+      expect(text).toContain("[Bash view: f.txt (count: 4)]");
       const rows = rowsOf(text);
       expect(rows.map((row) => row.split("\u2502")[1])).toEqual([
         "line1",
@@ -2044,7 +2038,7 @@ describe("bash line-set consumer lifecycle (Tier-3 item 11)", () => {
         );
       const plain = await run("bash-lineset-count-plain", "3\n");
       expect(plain).toBeDefined();
-      expect(plain!.content[0]!.text).toContain("[f.txt (count: 3)]");
+      expect(plain!.content[0]!.text).toContain("[Bash view: f.txt (count: 3)]");
       expect(await run("bash-lineset-count-padded", "  3\n")).toBeDefined();
       const ctx = { cwd: dir, sessionManager: { getSessionId: () => "bash-lineset-count-gates" } };
       // WHY: every other observed shape refuses the WHOLE serve with zero leases — a number the
@@ -2368,7 +2362,7 @@ describe("bash Tier-3 hardening (walk bounds and boundary twins)", () => {
 describe("bash view — pureView section banners (#134)", () => {
   // WHY: the read tool's own per-window header. The bash view renders through a one-element window
   // WHY: array, so it used to inherit this string as its file banner; that is the defect fixed here.
-  const READ_HEADER = /^=== Lines \d+-\d+ of \d+ ===$/;
+  const READ_HEADER = /^\[Lines \d+-\d+ of \d+ total\]$/;
   const catNumberedLocal = (text: string): string =>
     `${text
       .split("\n")
@@ -2401,10 +2395,9 @@ describe("bash view — pureView section banners (#134)", () => {
       const text = await drive(dir, { "f.txt": body }, "cat f.txt", body, "bv-a1");
       expect(text).toBeDefined();
       const lines = text!.split("\n");
-      expect(lines[0]).toBe("--- Bash view (hashline anchors) ---");
-      expect(lines[1]).toBe("[f.txt (30 lines)]");
-      expect(lines[2]).toMatch(/│line1$/);
-      expect(READ_HEADER.test(lines[1]!)).toBe(false);
+      expect(lines[0]).toBe("[Bash view: f.txt (30 lines total)]");
+      expect(lines[1]).toMatch(/│line1$/);
+      expect(READ_HEADER.test(lines[0]!)).toBe(false);
       expect(text!.split("\n").some((l) => READ_HEADER.test(l))).toBe(false);
     });
   });
@@ -2419,14 +2412,14 @@ describe("bash view — pureView section banners (#134)", () => {
         catNumberedLocal(body),
         "bv-a1n",
       );
-      expect(text!.split("\n")[1]).toBe("[f.txt (10 lines)]");
+      expect(text!.split("\n")[0]).toBe("[Bash view: f.txt (10 lines total)]");
     });
   });
 
   it("A2 — a one-line file reads singular", async () => {
     await withTempDir("bash-view-", async (dir) => {
       const text = await drive(dir, { "one.txt": "line1\n" }, "cat one.txt", "line1\n", "bv-a2");
-      expect(text!.split("\n")[1]).toBe("[one.txt (1 line)]");
+      expect(text!.split("\n")[0]).toBe("[Bash view: one.txt (1 lines total)]");
     });
   });
 
@@ -2435,7 +2428,7 @@ describe("bash view — pureView section banners (#134)", () => {
       const body = numberedLines(30);
       const head2 = `${body.split("\n").slice(0, 2).join("\n")}\n`;
       const text = await drive(dir, { "f.txt": body }, "head -n 2 f.txt", head2, "bv-a3");
-      expect(text!.split("\n")[1]).toBe("[f.txt (lines 1-2 of 30)]");
+      expect(text!.split("\n")[0]).toBe("[Bash view: f.txt (lines 1-2 of 30 total)]");
     });
   });
 
@@ -2444,7 +2437,7 @@ describe("bash view — pureView section banners (#134)", () => {
       const body = numberedLines(30);
       const slice = `${body.split("\n").slice(4, 10).join("\n")}\n`;
       const text = await drive(dir, { "f.txt": body }, "sed -n '5,10p' f.txt", slice, "bv-a4a");
-      expect(text!.split("\n")[1]).toBe("[f.txt (lines 5-10 of 30)]");
+      expect(text!.split("\n")[0]).toBe("[Bash view: f.txt (lines 5-10 of 30 total)]");
     });
   });
 
@@ -2453,7 +2446,7 @@ describe("bash view — pureView section banners (#134)", () => {
       const body = numberedLines(30);
       const tail = `${body.split("\n").slice(15, 30).join("\n")}\n`;
       const text = await drive(dir, { "f.txt": body }, "tail -n 15 f.txt", tail, "bv-a4b");
-      expect(text!.split("\n")[1]).toBe("[f.txt (lines 16-30 of 30)]");
+      expect(text!.split("\n")[0]).toBe("[Bash view: f.txt (lines 16-30 of 30 total)]");
     });
   });
 
@@ -2467,7 +2460,7 @@ describe("bash view — pureView section banners (#134)", () => {
         `${body.split("\n")[4]}\n`,
         "bv-a4c",
       );
-      expect(text!.split("\n")[1]).toBe("[f.txt (lines 5-5 of 30)]");
+      expect(text!.split("\n")[0]).toBe("[Bash view: f.txt (lines 5-5 of 30 total)]");
     });
   });
 
@@ -2486,7 +2479,7 @@ describe("bash view — pureView section banners (#134)", () => {
         union,
         "bv-a5",
       );
-      expect(text!.split("\n")[1]).toBe("[f.txt (lines 16-20 of 30)]");
+      expect(text!.split("\n")[0]).toBe("[Bash view: f.txt (lines 16-20 of 30 total)]");
       expect(text!.split("\n").some((l) => READ_HEADER.test(l))).toBe(false);
     });
   });
@@ -2533,10 +2526,11 @@ describe("bash view — pureView section banners (#134)", () => {
         head2,
         "bv-a7b",
       );
-      const pathOf = (t: string) => /^\[([^\]]*?) \(/.exec(t.split("\n")[1]!)?.[1];
+      // WHY: the page header is the first line, so that is what names the caller's path.
+      const pathOf = (t: string) => /^\[Bash view: ([^\]]*?) \(/.exec(t.split("\n")[0]!)?.[1];
       expect(pathOf(pure!)).toBe("sub/f.txt");
       expect(pathOf(piped!)).toBe(pathOf(pure!));
-      expect(pure!.split("\n")[1]).not.toContain(dir);
+      expect(pure!.split("\n")[0]).not.toContain(dir);
     });
   });
 
@@ -2697,7 +2691,7 @@ describe("bash search — pipelined head/tail slices (#135 W1)", () => {
   });
 });
 describe("bash compound envelope (#135 C4)", () => {
-  const SEARCH_HEAD = "--- Bash search (hashline anchors) ---";
+  const SEARCH_HEAD = "[Bash search (anchors)]";
   const catNumberedLocal = (text: string): string =>
     `${text
       .split("\n")
@@ -2932,8 +2926,7 @@ describe("bash compound envelope (#135 C4)", () => {
         "w5num",
       );
       expect(text).toBeDefined();
-      expect(text!.split("\n")[1]).toBe("--- Bash view (hashline anchors) ---");
-      expect(text!.split("\n")[2]).toBe("[f.txt (10 lines)]");
+      expect(text!.split("\n")[1]).toBe("[Bash view: f.txt (10 lines total)]");
       expect(rowsOf(text!)).toHaveLength(10);
       const ok = await editTool.execute(
         "e1",
@@ -2986,7 +2979,7 @@ describe("bash compound envelope (#135 C4)", () => {
         "w5mix",
       );
       expect(text).toBeDefined();
-      expect(text).toContain("[f.txt (lines 1-2 of 10)]");
+      expect(text).toContain("[Bash view: f.txt (lines 1-2 of 10 total)]");
       expect(text).toContain("[f.txt (2 matches)]");
       expect(rowsOf(text!)).toHaveLength(4);
       // WHY: F4 — file line 5 sits in the gap (view took 1-2, search took 9-10);

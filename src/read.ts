@@ -29,7 +29,7 @@ import {
   type RenderMode,
   type WindowPlan,
 } from "./file-content/admission.js";
-import { formatRangedServedHeader } from "./file-content/served-header.js";
+import { formatPageHeader } from "./file-content/served-header.js";
 import { toCwd } from "./paths.js";
 import { DomainError, withPayloadSubject } from "./domain-errors.js";
 import { notifyServedSpans, servedRowsToSpans } from "./served-spans.js";
@@ -206,34 +206,21 @@ type OrderedOutcome =
   | { kind: "file"; entry: FileResult }
   | { kind: "image"; blocks: RoutedContent[] };
 /**
-
-/**
- * WHY: the served header names the shown range a single windowed read actually rendered (#149):
- * WHY: the footer's continuation range already does, and the bash view's own header does, so the
- * WHY: file header carries the same numbers. Whole-file and multi-window reads keep the bare total.
+ * WHY: the page header names the range this read actually rendered (#149, read-chrome): the shown
+ * WHY: range, the file's total, and — when the byte budget cut the page — where it stopped. A page
+ * WHY: covering the whole file states the count alone, because a range would only restate it.
  */
 function fileHeader(entry: PreparedTarget): string {
-  const lines = entry.prepared.lineTotals.visible;
-  if (entry.mode === "verbatim") return `[${entry.file} (verbatim, ${lines} lines, no anchors)]`;
-  const shown = shownSingleWindow(entry);
-  if (shown === undefined) return `[${entry.file} (${lines} lines total)]`;
-  return formatRangedServedHeader(entry.file, shown.start, shown.end, lines);
-}
-
-/**
- * WHY: the header's range is the rows actually shown, not the rows asked for: truncation cuts the
- * WHY: tail, so the served rows' own positions are the honest range — the same numbers the footer
- * WHY: already carries. Exactly one walked window with at least one served row is a ranged header;
- * WHY: anything else (whole file, several windows, warnings alone, an empty page) keeps the total.
- */
-function shownSingleWindow(entry: PreparedTarget): { start: number; end: number } | undefined {
-  if (entry.plan.omittedAll || (entry.plan.windows?.length ?? 0) !== 1) return undefined;
-  // WHY: an empty file's marker row carries a phantom position (0-based 0); ranging it would print
-  // WHY: `lines 1-1 of 0` — a range beyond the total. Nothing was shown, so the total header stands.
-  if (entry.prepared.lineTotals.visible === 0) return undefined;
-  const served = entry.prepared.served;
-  if (served.length === 0) return undefined;
-  return { start: served[0]!.position + 1, end: served[served.length - 1]!.position + 1 };
+  const shown = entry.prepared.shownRange;
+  return formatPageHeader({
+    file: entry.file,
+    totalLines: entry.prepared.lineTotals.visible,
+    ...(shown !== undefined ? { shownRange: shown } : {}),
+    ...(entry.mode === "verbatim" ? { verbatim: true } : {}),
+    ...(entry.truncation?.truncatedBy === "bytes" && shown !== undefined
+      ? { stoppedAtBytes: entry.truncation.maxBytes }
+      : {}),
+  });
 }
 
 /** One prepared file's section: its header, then any inline anchor warnings, then its rows. */

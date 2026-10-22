@@ -37,23 +37,24 @@ describe("fmtReadPreview", () => {
     expect(result.text).not.toContain("│c");
   });
 
-  it("shows pagination hint when limit is less than total lines", async () => {
+  it("carries no footer when limit is less than total lines", async () => {
     const result = await fmtReadPreview("a\nb\nc\n", { limit: 2 }, undefined, home.testPath);
-    expect(result.text).toContain(
-      "[lines 1-2 of 3. Use windows: [{ offset: 3, limit: 2 }] to continue.]",
-    );
+    // WHY: the page's chrome is its header (spec §4.4) — `nextOffset` is a `details` fact, not text.
+    expect(result.text).not.toContain("Use windows");
+    expect(result.nextOffset).toBe(3);
+    expect(result.shownRange).toEqual({ startLine: 1, endLine: 2 });
   });
 
-  it("shows pagination hint when offset is beyond start", async () => {
+  it("carries no footer when offset is beyond start", async () => {
     const result = await fmtReadPreview(
       "a\nb\nc\nd\n",
       { offset: 2, limit: 2 },
       undefined,
       home.testPath,
     );
-    expect(result.text).toContain(
-      "[lines 2-3 of 4. Use windows: [{ offset: 4, limit: 2 }] to continue.]",
-    );
+    expect(result.text).not.toContain("Use windows");
+    expect(result.shownRange).toEqual({ startLine: 2, endLine: 3 });
+    expect(result.nextOffset).toBe(4);
   });
 
   it("rejects non-positive offset", async () => {
@@ -133,9 +134,7 @@ describe("fmtReadPreview", () => {
     expect(result.text).not.toContain("│W");
     expect(result.text).toContain("[Line 2 is");
     expect(result.nextOffset).toBe(4);
-    expect(result.text).toContain(
-      "[lines 1-3 of 6. Use windows: [{ offset: 4, limit: 3 }] to continue.]",
-    );
+    expect(result.text).not.toContain("Use windows");
   });
 
   it("withholds a 60KB line under the one default row budget (pi's 50KB)", async () => {
@@ -176,7 +175,7 @@ describe("fmtReadPreview — oversized marker truncation", () => {
     expect(first.text).toContain("[Line 2 is");
     expect(first.text).not.toContain("│b");
     expect(first.text).not.toContain("Line 3");
-    expect(first.text).toContain("Use windows: [{ offset: 3, limit: 2 }] to continue");
+    expect(first.text).not.toContain("Use windows");
     expect(first.nextOffset).toBe(3);
 
     const second = await fmtReadPreview(content, { offset: 3 }, undefined, home.testPath, budget);
@@ -193,10 +192,9 @@ describe("fmtReadPreview — maxTruncLines budget", () => {
     expect(result.text).toContain("│l1");
     expect(result.text).toContain("│l3");
     expect(result.text).not.toContain("│l4");
-    expect(result.text).toContain(
-      "[lines 1-3 of 5. Use windows: [{ offset: 4, limit: 3 }] to continue.]",
-    );
+    expect(result.text).not.toContain("Use windows");
     expect(result.nextOffset).toBe(4);
+    expect(result.shownRange).toEqual({ startLine: 1, endLine: 3 });
   });
 
   it("caps oversized-marker rows via maxTruncLines with continuation", async () => {
@@ -214,9 +212,7 @@ describe("fmtReadPreview — maxTruncLines budget", () => {
     expect(result.text).toContain("[Line 2 is");
     expect(result.text).not.toContain("[Line 3 is");
     expect(result.text).not.toContain("│b");
-    expect(result.text).toContain(
-      "[lines 1-2 of 4 (50.0KB limit). Use windows: [{ offset: 3, limit: 2 }] to continue.]",
-    );
+    expect(result.text).not.toContain("Use windows");
     expect(result.nextOffset).toBe(3);
   });
 });
