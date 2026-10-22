@@ -187,3 +187,6 @@ coverage/
 .lsz/*
 !.lsz/config.yaml
 __pycache__/
+# WHY: the skills tool rewrites this lock whenever a skill is installed or refreshed, so tracking
+# WHY: it turns every skill read into a dirty tree. It is derived state: regenerate it locally.
+skills-lock.json
