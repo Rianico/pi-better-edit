@@ -151,7 +151,7 @@ function projectReadRenderArgs(args: ReadRenderArgs | undefined): {
 }
 
 interface PreparedTarget {
-  /** The path the caller named: the file header, and every footer, name the file with this. */
+  /** The path the caller named: the page header is the only chrome, and it names the file with this. */
   file: string;
   mode: RenderMode;
   plan: WindowPlan;
@@ -417,10 +417,10 @@ export function regRead(pi: ExtensionAPI): void {
             };
           }
           const plan = planWindows(target, resolver);
-          // WHY: single-window reads render as one §4.4 page (header plus continuation footer,
-          // WHY: no sub-banner): the flattening unifies the legacy page chrome onto the canonical
+          // WHY: single-window reads render as one §4.4 page (a header, no sub-banner, no
+          // WHY: continuation token): the flattening unified the old page chrome onto the header-only
           // WHY: shape, a visible change for `files`-shaped singles that rendered the bounded-ask
-          // WHY: sub-banner at base. Multi-window and anchor-window reads keep the sub-banners.
+          // WHY: sub-banner at base. Multi-window reads keep their per-section headers.
           const singlePage =
             target.windows?.length === 1 && target.windows[0]?.kind === "offset"
               ? { offset: target.windows[0].offset, limit: target.windows[0].limit }

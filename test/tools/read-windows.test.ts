@@ -148,6 +148,28 @@ describe("fmtReadPreview — windows", () => {
     expect(result.nextOffset).toBeUndefined();
   });
 
+  it("names a lines-truncated section by the rows it showed, not the rows it asked for", async () => {
+    // WHY: the shared line budget cuts the SECOND section to one row; a header over the requested
+    // WHY: range would claim `5-6` while only line 5 was laid down — and a lines stop has no marker.
+    const result = await fmtReadPreview(
+      TWELVE,
+      {
+        windows: [
+          { offset: 1, limit: 2 },
+          { offset: 5, limit: 2 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      400,
+      3,
+    );
+    expect(result.text).toContain("[Lines 1-2 of 12 total]");
+    expect(result.text).toContain("[Lines 5-5 of 12 total]");
+    expect(result.text).not.toContain("[Lines 5-6");
+    expect(result.served.map((row) => row.position)).toEqual([0, 1, 4]);
+  });
+
   it("treats an empty windows array as no windows", async () => {
     const result = await fmtReadPreview(TWELVE, { windows: [] }, undefined, home.testPath);
     expect(result.served).toHaveLength(12);

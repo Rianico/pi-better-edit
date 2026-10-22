@@ -457,14 +457,15 @@ function buildWindowedPreview(params: {
       verbatim,
     });
     // WHY: build the section before its header: the header states where the section stopped, which
-    // WHY: only the builder knows. A single-window page carries no section header — its page header
-    // WHY: already named the range, and repeating it would be the second dialect this change removed.
+    // WHY: only the builder knows — so the range and the byte stop both come from `built`. A header
+    // WHY: over the REQUESTED range would overstate a lines-truncated section with no stop signal.
+    // WHY: A single-window page carries no section header — its page header already named the range.
     const block =
       windows.length === 1
         ? built.text
         : `${formatSectionHeader(
-            window.offset,
-            endIdx,
+            built.shownRange?.startLine ?? window.offset,
+            built.shownRange?.endLine ?? endIdx,
             totalLines,
             built.truncation?.truncatedBy === "bytes" ? built.truncation.maxBytes : undefined,
           )}\n${built.text}`;
