@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";
 
 describe("disjoint batch drift gap", () => {

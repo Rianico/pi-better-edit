@@ -1,6 +1,6 @@
 import { beforeAll, describe, expect, it } from "vitest";
 import { detectEnding, toLF, restoreEndings, stripBOM, genDiff } from "../../src/edit-diff";
-import { contentOnlyHashes, initHasher } from "../../src/hashline";
+import { contentOnlyHashes, initHasher } from "../../src/hashline/hash-identity.js";
 
 beforeAll(async () => {
   await initHasher();

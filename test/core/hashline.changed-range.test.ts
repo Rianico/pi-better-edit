@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { changedRange } from "../../src/hashline";
+import { changedRange } from "../../src/hashline/apply.js";
 
 describe("changedRange", () => {
   it("returns null when content is unchanged", () => {

@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
-import { applyEdit, lineHashes, resEdit } from "../../src/hashline";
+import { applyEdit } from "../../src/hashline/apply.js";
+import { resEdit } from "../../src/hashline/resolve.js";
 import { splitLines } from "../../src/utils";
-import { useTestHome, expectedEditContent } from "../support/fixtures";
+import { materializedLineHashes, useTestHome, expectedEditContent } from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -98,12 +99,16 @@ async function runStep(
   }
   expect(result.content).toBe(expected);
   if (expected === content) {
-    const rehashed = await lineHashes(content, path, { content, hashes });
+    const rehashed = await materializedLineHashes(content, path, { content, hashes });
     expect(rehashed).toEqual(hashes);
     return { content, hashes, noop: true };
   }
   const removedHashes = new Set(hashes.slice(s - 1, e));
-  const resultHashes = await lineHashes(expected, path, { content, hashes, removedHashes });
+  const resultHashes = await materializedLineHashes(expected, path, {
+    content,
+    hashes,
+    removedHashes,
+  });
   const newLines = splitLines(expected);
   expect(resultHashes).toHaveLength(newLines.length);
   expect(new Set(resultHashes).size).toBe(resultHashes.length);
@@ -114,7 +119,7 @@ async function runStep(
   for (let i = e; i < lines.length; i++) {
     expect(resultHashes[i + shift]).toBe(hashes[i]);
   }
-  const reloaded = await lineHashes(expected, path);
+  const reloaded = await materializedLineHashes(expected, path);
   expect(reloaded).toEqual(resultHashes);
   return { content: expected, hashes: resultHashes, noop: false };
 }
@@ -126,7 +131,7 @@ describe("fuzz: pure edit with hash stability (no boundary stripping)", () => {
       const rnd = mulberry32(iter * 32452843 + 5);
       const path = `${home.testPath}-fuzz-${iter}`;
       const content = randContent(rnd);
-      const hashes = await lineHashes(content, path);
+      const hashes = await materializedLineHashes(content, path);
       const state = await runStep(content, hashes, path, rnd);
       if (!state) continue;
       if (state.noop) noop++;
@@ -139,7 +144,7 @@ describe("fuzz: pure edit with hash stability (no boundary stripping)", () => {
       const rnd = mulberry32(iter * 15485867 + 11);
       const path = `${home.testPath}-chain-${iter}`;
       let content = randContent(rnd);
-      let hashes = await lineHashes(content, path);
+      let hashes = await materializedLineHashes(content, path);
       let edited = 0;
       for (let step = 0; step < 8 && edited < 6; step++) {
         const state = await runStep(content, hashes, path, rnd);
@@ -149,7 +154,7 @@ describe("fuzz: pure edit with hash stability (no boundary stripping)", () => {
         hashes = state.hashes;
       }
       if (edited >= 2) {
-        const reloaded = await lineHashes(content, path);
+        const reloaded = await materializedLineHashes(content, path);
         expect(reloaded).toEqual(hashes);
       }
     }

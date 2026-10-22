@@ -42,10 +42,13 @@ import {
   runJanitor,
   type JanitorOutcome,
 } from "../../src/store-janitor";
-import { STORE_JANITOR_DEFAULTS, type StoreJanitorSettings } from "../../src/store-config";
+import {
+  STORE_JANITOR_DEFAULTS,
+  type StoreJanitorSettings,
+} from "../../src/store-kernel/settings.js";
 import { VACUUM_RETIRED_PIN_MS } from "../../src/snapshot-store";
 import { SERVED_TTL_MS } from "../../src/constants";
-import { CANON_VERSION } from "../../src/hashline";
+import { CANON_VERSION } from "../../src/hashline/hash-identity.js";
 import { snapshotHashFor, upsertSnapshot } from "../../src/snapshot-store";
 import { initHasher } from "../../src/hashline/hasher";
 import { getWritableTempRoot } from "../support/fixtures";

@@ -1,10 +1,10 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
 import { applyEdit } from "../../src/hashline/apply";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
 import type { HEdit, LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";
-import { verifyRebasedSpan } from "../../src/hashline/served-verification";
+import { verifyRebasedSpan } from "../../src/served-session/serve-render";
 import { DomainError } from "../../src/domain-errors.js";
 
 beforeAll(async () => {

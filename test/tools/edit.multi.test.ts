@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { Compile } from "typebox/compile";
 import { readFile, writeFile } from "fs/promises";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { editToolSchema } from "../../src/edit";
 import { prepareEditArguments } from "../../src/edit-normalize";
 import { withTempFile, setupIntegrationTest, getText, extractHash } from "../support/fixtures";

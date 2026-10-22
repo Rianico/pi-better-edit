@@ -10,13 +10,8 @@ import {
 } from "../../src/payload-contract.js";
 import { DomainError } from "../../src/domain-errors.js";
 import { toLF } from "../../src/edit-diff.js";
-import {
-  lineHashes,
-  contentOnlyHashes,
-  initHasher,
-  resEdit,
-  type HTEdit,
-} from "../../src/hashline/index.js";
+import { lineHashes, contentOnlyHashes, initHasher } from "../../src/hashline/hash-identity.js";
+import { resEdit, type HTEdit } from "../../src/hashline/resolve.js";
 import { loadHashStore } from "../../src/hash-store.js";
 import { getServed, loadLeases } from "../../src/served-session/session.js";
 import { readNormFile } from "../../src/file-reader.js";

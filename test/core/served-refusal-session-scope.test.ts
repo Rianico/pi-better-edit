@@ -16,8 +16,8 @@ import {
   clearServedRefusals,
   trackServedEditRefusal,
   trackServedWriteRefusal,
-} from "../../src/hashline/served-guard.js";
-import { lineHashes } from "../../src/hashline";
+} from "../../src/served-session/serve-render.js";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { setupIntegrationTest, useTestHome, withTempFile } from "../support/fixtures";
 
 const REFUSED_LINE = "Ab3X│hello";

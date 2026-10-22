@@ -8,7 +8,7 @@ import { readBytes, resolveTarget, writeAtomic } from "../../src/fs-write.js";
 import { canonicalAnchorPath } from "../../src/hashline/hash-identity.js";
 import { genDiff } from "../../src/edit-diff.js";
 import { computeDrift } from "../../src/drift.js";
-import { initHasher, lineHashes } from "../../src/hashline/index.js";
+import { initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { execute, isMutationFailure } from "../../src/mutation-engine/index.js";
 import { withTempDir, setupIntegrationTest, TEST_SESSION_ID } from "../support/fixtures.js";
 

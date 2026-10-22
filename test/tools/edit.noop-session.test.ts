@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { lineHashes, contentOnlyHashes } from "../../src/hashline";
+import { lineHashes, contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { _noopLoopHasSession, clearNoopLoop, runNoopPolicy } from "../../src/noop-guard";
 import { withTempFile, setupIntegrationTest, getText } from "../support/fixtures";
 

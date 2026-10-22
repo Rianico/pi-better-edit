@@ -1,7 +1,7 @@
 import { abortIf, splitLines } from "../utils.js";
 import { DomainError, formatWarning } from "../domain-errors.js";
 import { HASH_SEP, defaultHashIdentity } from "./hash-identity.js";
-import { type ResolvedRange } from "./served.js";
+import { type ResolvedRange } from "../served-session/serve-render.js";
 import {
   findServedHashEcho,
   findServedPrefixMismatches,
@@ -9,7 +9,7 @@ import {
   buildServedEditPrefixNote,
   trackServedEditRefusal,
   LITERAL_BYPASS_NOTICE,
-} from "./served-guard.js";
+} from "../served-session/serve-render.js";
 import {
   resolveEditByContent,
   swapReversedRanges,
@@ -59,8 +59,8 @@ type NoopSpan = {
   currentContent: string;
 };
 
-/** SAFETY: served hash echo predicate lives in `./served-guard.js` — one evidence predicate for the edit apply path and the write hook. */
-export { findServedHashEcho, ServedHashEchoError } from "./served-guard.js";
+/** SAFETY: served hash echo predicate lives in `../served-session/serve-render.js` — one evidence predicate for the edit apply path and the write hook. */
+export { findServedHashEcho, ServedHashEchoError } from "../served-session/serve-render.js";
 
 /**
  * The verification cluster that travels with an edit from the session pipeline

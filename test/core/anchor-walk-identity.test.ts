@@ -1,7 +1,11 @@
 import { beforeAll, describe, expect, it, vi } from "vitest";
 import { walkLines } from "../../src/file-content/line-walker.js";
 import { loadHashStore } from "../../src/hash-store.js";
-import { _lineHashesPure, defaultHashIdentity, fileHashesFor } from "../../src/hashline/index.js";
+import {
+  _lineHashesPure,
+  defaultHashIdentity,
+  fileHashesFor,
+} from "../../src/hashline/hash-identity.js";
 import { snapshotIOFor } from "../../src/snapshot-store";
 import { splitLines } from "../../src/utils.js";
 import {

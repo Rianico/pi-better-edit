@@ -1,6 +1,6 @@
 import { existsSync } from "node:fs";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { defaultHashIdentity } from "../../src/hashline/index.js";
+import { defaultHashIdentity } from "../../src/hashline/hash-identity.js";
 import { fmtReadPreview } from "../../src/read";
 import { hashStorePath } from "../../src/hash-store.js";
 import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
@@ -9,8 +9,8 @@ import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
 // WHY: is replaced with a thrower, so a verbatim read that completes could not have hashed a row.
 // WHY: `hashesFor` is a prototype method reached directly on the singleton below, so a spy on the
 // WHY: instance covers the loader half while this mock covers the preview half.
-vi.mock("../../src/hashline/index.js", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../../src/hashline/index.js")>();
+vi.mock("../../src/hashline/hash-identity.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../src/hashline/hash-identity.js")>();
   return {
     ...actual,
     lineHashes: () => {

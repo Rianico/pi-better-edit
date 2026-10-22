@@ -12,7 +12,7 @@ import { mkdtemp, rename, rm, utimes, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import register from "../index";
-import { initHasher } from "../src/hashline";
+import { initHasher } from "../src/hashline/hash-identity.js";
 import { shutdownHashStore } from "../src/hash-store";
 
 const LINES = 100_000;

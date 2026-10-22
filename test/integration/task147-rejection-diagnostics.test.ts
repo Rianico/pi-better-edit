@@ -1,8 +1,8 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { writeFile } from "fs/promises";
 import { initHasher } from "../../src/hashline/hasher";
-import { contentOnlyHashes } from "../../src/hashline/hash";
-import { lineHashes } from "../../src/hashline";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { fmtMismatchWithServes, resEdit, valEdit } from "../../src/hashline/resolve";
 import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import type { LeaseSpanSource } from "../../src/hashline/resolve";

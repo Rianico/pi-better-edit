@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { DomainError } from "../../src/domain-errors.js";
 import {
   makeServedRejection,
@@ -8,7 +8,7 @@ import {
   makeTargetLostRejection,
   verifyRebasedSpan,
   type FileSnapshotContext,
-} from "../../src/hashline/served-verification";
+} from "../../src/served-session/serve-render";
 import { fmtMismatchWithServes, resEdit, valEdit } from "../../src/hashline/resolve";
 import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import type { LeaseIdentityView, LeaseSpanSource } from "../../src/hashline/resolve";

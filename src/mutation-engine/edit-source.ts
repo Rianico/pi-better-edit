@@ -10,7 +10,7 @@ import { splitLines } from "../utils.js";
 import { SERVED_MAX_LINES } from "../constants.js";
 import type { LineEnding } from "../edit-diff.js";
 import { isExpiredActiveLease, type HashStore } from "../hash-store.js";
-import type { LeaseSpanSource } from "../hashline/index.js";
+import type { LeaseSpanSource } from "../hashline/resolve.js";
 import {
   createSessionHandle,
   loadAnchorHomes,

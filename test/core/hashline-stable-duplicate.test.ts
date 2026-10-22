@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { lineHashes, applyEdit, type HEdit } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
+import { applyEdit } from "../../src/hashline/apply.js";
+import type { HEdit } from "../../src/hashline/resolve.js";
 import {
   useTestHome,
   withTempFile,

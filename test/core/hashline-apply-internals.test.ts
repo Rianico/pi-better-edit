@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
-import { applyEdit, lineHashes, resEdit } from "../../src/hashline";
+import { applyEdit } from "../../src/hashline/apply.js";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
+import { resEdit } from "../../src/hashline/resolve.js";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();

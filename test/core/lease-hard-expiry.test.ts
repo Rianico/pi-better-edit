@@ -18,7 +18,10 @@ import {
   type HashStore,
 } from "../../src/hash-store";
 import { runJanitor } from "../../src/store-janitor";
-import { STORE_JANITOR_DEFAULTS, type StoreJanitorSettings } from "../../src/store-config";
+import {
+  STORE_JANITOR_DEFAULTS,
+  type StoreJanitorSettings,
+} from "../../src/store-kernel/settings.js";
 import { leaseSpanSource } from "../../src/mutation-engine/edit-source";
 import { sessionKeyFor } from "../../src/served-session/session";
 import { snapshotHashFor, upsertSnapshot, VACUUM_RETIRED_PIN_MS } from "../../src/snapshot-store";
@@ -26,7 +29,7 @@ import { vacuumSnapshots } from "../../src/snapshot-store";
 import { anchorRows, getText, setupIntegrationTest, withTempFile } from "../support/fixtures";
 import { getWritableTempRoot } from "../support/fixtures";
 import { initHasher } from "../../src/hashline/hasher";
-import { ANCHOR_GENERATION } from "../../src/hashline";
+import { ANCHOR_GENERATION } from "../../src/hashline/hash-identity.js";
 
 beforeAll(async () => {
   await initHasher();

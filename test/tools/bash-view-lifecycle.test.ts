@@ -3,7 +3,7 @@ import { execFileSync } from "child_process";
 import { mkdir, symlink, writeFile } from "fs/promises";
 import { join } from "path";
 import register from "../../index";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 
 import { SEARCH_MAX_MATCHES } from "../../src/constants";
 import { clearDiagnostics, readDiagnostics, useTestHome, withTempDir } from "../support/fixtures";

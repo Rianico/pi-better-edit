@@ -20,7 +20,7 @@
  *
  * LIMITATION, restated because this test must not be read as covering it: a SWAP (one hook removed,
  * another added) preserves the count, so this guards ADDITION only; a semantic change to an existing
- * hook's work is `HASH_STORE_VERSION`'s job (see the bump convention in `src/constants.ts`).
+ * hook's work is `HASH_STORE_VERSION`'s job (see the bump convention in `src/store-kernel/constants.ts`).
  */
 import { execFileSync } from "node:child_process";
 import { mkdtempSync, rmSync, writeFileSync } from "node:fs";

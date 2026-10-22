@@ -6,7 +6,7 @@
  */
 
 import type { LineEnding } from "../edit-diff.js";
-import type { ResolvedRange } from "../hashline/served.js";
+import type { ResolvedRange } from "../served-session/serve-render.js";
 import type { HashStore } from "../hash-store.js";
 import type { EditDetails, RMetrics } from "../edit-response.js";
 import type { DomainErrorCode, RangeCause } from "../domain-errors.js";

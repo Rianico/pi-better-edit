@@ -12,8 +12,8 @@ import {
 import { resolveLeasedEdit } from "../../src/hashline/lease-resolve";
 import { applyEdit } from "../../src/hashline/apply";
 import { DomainError, ERROR_REGISTRY } from "../../src/domain-errors.js";
-import { makeServedRejection, verifyRebasedSpan } from "../../src/hashline/served-verification";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { makeServedRejection, verifyRebasedSpan } from "../../src/served-session/serve-render";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
 
 beforeAll(async () => {

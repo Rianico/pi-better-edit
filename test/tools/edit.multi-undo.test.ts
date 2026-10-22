@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { readFile, writeFile } from "fs/promises";
 import { join } from "path";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { withTempDir, setupIntegrationTest, getText } from "../support/fixtures";
 
 describe("edit multi-item undo", () => {

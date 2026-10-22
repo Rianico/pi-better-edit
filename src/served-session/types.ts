@@ -5,7 +5,7 @@
  * Keeps fact authority (what this session saw) inside the module.
  */
 
-import type { ServedRow } from "../hashline/served.js";
+import type { ServedRow } from "./serve-render.js";
 
 /**
  * SAFETY: one served row's fact for this (session, path) — no canon text: canon evidence is derived

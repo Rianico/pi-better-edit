@@ -3,7 +3,7 @@ import { realpath, rename, stat, utimes, writeFile } from "node:fs/promises";
 import { join } from "node:path";
 import { anchorRows, getText, setupIntegrationTest, withTempFile } from "../support/fixtures";
 import { loadHashStore } from "../../src/hash-store";
-import { lineHashes } from "../../src/hashline/index.js";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { contentChecksum } from "../../src/hashline/hasher.js";
 import { fileSnap, prepareFile, statKeyOf } from "../../src/file-content/index.js";
 import { findStatSnapshotFor, snapshotHashFor } from "../../src/snapshot-store";

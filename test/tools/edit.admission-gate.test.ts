@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import { readFile } from "fs/promises";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { createEditTool } from "../../src/edit-tool.js";
 import { assertReq, normReq } from "../../src/payload-contract.js";
 import { withTempFile, setupIntegrationTest } from "../support/fixtures";

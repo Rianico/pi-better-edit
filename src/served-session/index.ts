@@ -29,5 +29,5 @@ export {
   loadLeases,
 } from "./session.js";
 
-export { servedPositionsOf } from "../hashline/served.js";
+export { servedPositionsOf } from "./serve-render.js";
 export { currentPositionOfDrifted } from "./drift-helpers.js";

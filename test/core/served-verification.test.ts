@@ -1,12 +1,12 @@
 import { describe, it, expect, beforeAll } from "vitest";
 import { initHasher } from "../../src/hashline/hasher";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import {
   buildRangeServeRows,
   denseServeRows,
   fmtServedRows,
   servedPositionsOf,
-} from "../../src/hashline/served-verification";
+} from "../../src/served-session/serve-render";
 
 beforeAll(async () => {
   await initHasher();

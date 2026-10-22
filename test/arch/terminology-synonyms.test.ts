@@ -258,13 +258,16 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () =>
     expect(apply).toContain("E_SUSPICIOUS_TEXT");
     expect(apply).toContain("findServedHashEcho");
     expect(apply).not.toContain("findEditHashEcho");
-    const index = readFileSync("src/hashline/index.ts", "utf-8");
-    expect(index).toContain("ServedHashEchoError");
-    expect(index).not.toContain("EditHashEchoError");
-    expect(index).toContain("resolveLineIdentity");
+    expect(readFileSync("src/served-session/serve-render.ts", "utf-8")).toContain(
+      "ServedHashEchoError",
+    );
+    expect(readFileSync("src/served-session/serve-render.ts", "utf-8")).not.toContain(
+      "EditHashEchoError",
+    );
+    expect(readFileSync("src/hashline/resolve.ts", "utf-8")).toContain("resolveLineIdentity");
     // The canonical `served-range staleness` term stays named in the verification module; the
     // glossary list wraps, so accept the wrap between the hyphenated head and `staleness`.
-    expect(readFileSync("src/hashline/served-verification.ts", "utf-8")).toMatch(
+    expect(readFileSync("src/served-session/serve-render.ts", "utf-8")).toMatch(
       /served-range[\s*]+staleness/,
     );
   });

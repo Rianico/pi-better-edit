@@ -9,7 +9,7 @@ import {
   TEST_SESSION_ID,
   useTestHome,
 } from "../support/fixtures.js";
-import { lineHashes, initHasher } from "../../src/hashline/index.js";
+import { lineHashes, initHasher } from "../../src/hashline/hash-identity.js";
 import { loadHashStore, type HashStore } from "../../src/hash-store.js";
 import { readNormFile } from "../../src/file-reader.js";
 import type { NormalizedEditRequest, Placement } from "../../src/payload-contract.js";

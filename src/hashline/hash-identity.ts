@@ -2,68 +2,14 @@ import { isAbsolute, resolve } from "node:path";
 import { splitLines } from "../utils.js";
 import { DomainError } from "../domain-errors.js";
 import { SERVED_MAX_LINES } from "../constants.js";
+import type { HashSnapshotIO, HashSnapshotUpsertOptions } from "../snapshot-store";
 import { xxh32, contentChecksum, initHasher } from "./hasher.js";
-import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS, HASH_RE } from "./alphabet.js";
+import { HASH_LEN, ALPHA, ALPHA_RE, HASH_CLASS } from "./alphabet.js";
 import { reportDiagnostic } from "../diagnostics.js";
 
 export { initHasher, HASH_LEN, ALPHA_RE, HASH_CLASS };
 
-export interface HashSnapshotUpsertOptions {
-  /**
-   * WHY: retirement is conditional on an authoritative materialization (spec §3.1.3.3 / §3.2.4
-   * WHY: step 4): it must be `true` only when `content` is the file's committed truth (read-path
-   * WHY: materialization, post-write batch commit, undo revert). In-memory working-buffer hashing
-   * WHY: that never reaches disk must leave `retired_at` untouched, or a rejected batch would
-   * WHY: retire every anchor the session still validly holds and force a re-read.
-   */
-  retireLeases?: boolean;
-  /**
-   * The served rows to lease inside the materialization transaction (spec §3.1.2 step 5 /
-   * §3.2.4 step 4): granted with `retired_at = NULL` and `served_snapshot_hash` bound to the
-   * snapshot this transaction commits, so snapshot + lineage + leases commit or roll back as
-   * one `BEGIN IMMEDIATE` unit. Absent on hashing paths that serve nothing (working buffers).
-   */
-  leases?: {
-    sessionKey: string;
-    rows: ReadonlyArray<{ position: number; hash: string | null }>;
-  };
-  /**
-   * CAND-3: the served mirror write for the same rows, committed inside the materialization's
-   * own `BEGIN IMMEDIATE` (via `recordServedMirrorInTransaction`), so the `served_leases` grant
-   * and the mirror rows commit or roll back as one unit — lease-without-mirror and
-   * mirror-without-lease become structurally unreachable on the post-write commit. Absent on
-   * paths that write the mirror separately (the read path records serves through its own seam).
-   */
-  servedMirror?: {
-    sessionKey: string;
-    rows: ReadonlyArray<{ position: number; hash: string | null }>;
-    /** Truncated-serve mirror shape: clamp to `lineCount`, clear from `clearFrom`. */
-    shape?: { lineCount: number; clearFrom?: number };
-    /** Anchors added to the legacy retired set in this transaction (undo's displaced cleanup). */
-    retireAnchors?: readonly string[];
-  };
-  /**
-   * The `stat(2)` identity the caller observed for this path when it materialized `content` (ADR-0043):
-   * stamped on the snapshot row in the same transaction, so the next read of the unchanged file adopts
-   * on stat identity alone. Absent on materializations that never observed the file (working buffers,
-   * edit commits, undo restores) — their rows keep a NULL key and never match a stat lookup.
-   */
-  statKey?: string;
-}
-
-export interface HashSnapshotIO {
-  get(path: string, content: string, deleteCorrupt: boolean): Promise<string[] | undefined>;
-  upsert(
-    path: string,
-    checksum: string,
-    lineCount: number,
-    hashes: string[],
-    content: string,
-    options?: HashSnapshotUpsertOptions,
-  ): Promise<void>;
-}
-
-export type HashPrior = {
+type HashPrior = {
   content: string;
   hashes: string[];
   removedHashes?: Set<string>;
@@ -75,6 +21,11 @@ export interface HashOptions {
   path: string;
   prior?: HashPrior;
   persist?: boolean;
+  /**
+   * The store-backed IO this call reads its cache from and persists through — the ONLY persistence
+   * path (arch-03 rework). Absent means derive and return with no cache read and no write; there is
+   * no ambient fallback, so a call that omits it cannot touch a store.
+   */
   snapshotIO?: HashSnapshotIO;
   blockedHashes?: ReadonlySet<string>;
   /** Passed to `HashSnapshotIO.upsert`; see `HashSnapshotUpsertOptions`. Defaults to `false`. */
@@ -144,14 +95,6 @@ export const HASH_SPACE_EXHAUSTED_PAYLOAD = {
   limitKind: "hash-space",
   limit: USABLE_HASH_SPACE,
 } as const;
-
-export function isValidHashList(value: unknown): value is string[] {
-  if (!Array.isArray(value)) return false;
-  for (const hash of value) {
-    if (typeof hash !== "string" || !HASH_RE.test(hash)) return false;
-  }
-  return true;
-}
 
 // WHY: the stride stays coprime with both the raw space and the usable space
 // WHY: (see the stride pin) — the probe cycles the raw bitset where reserved
@@ -267,7 +210,7 @@ export function canonicalAnchorPath(path: string): string {
   // WHY: trailing separator, so `/x/a.ts/` and `/x/a.ts` seed identically.
   return resolve(path);
 }
-export function contentBaseIndex(canonText: string): number {
+function contentBaseIndex(canonText: string): number {
   return (xxh32(canonText) >>> 14) % HASH_SPACE;
 }
 export function fileBaseIndex(canonText: string, pathSeed: number): number {
@@ -297,22 +240,7 @@ export function fileBaseIndex(canonText: string, pathSeed: number): number {
 export const HASH_CACHE_MAX_ENTRIES = SERVED_MAX_LINES;
 export class HashIdentity {
   private hashCache = new Map<number, string>();
-  private snapshotIO?: HashSnapshotIO;
 
-  constructor(options?: { snapshotIO?: HashSnapshotIO }) {
-    // WHY: the slot is absent, never explicitly `undefined` (`exactOptionalPropertyTypes`).
-    if (options?.snapshotIO !== undefined) this.snapshotIO = options.snapshotIO;
-  }
-
-  setSnapshotIO(io: HashSnapshotIO | undefined): void {
-    // WHY: clearing must drop the slot — a guarded write would keep a stale IO behind.
-    if (io === undefined) delete this.snapshotIO;
-    else this.snapshotIO = io;
-  }
-
-  getSnapshotIO(): HashSnapshotIO | undefined {
-    return this.snapshotIO;
-  }
   private idxToHash(idx: number): string {
     let out = "";
     for (let j = 0; j < HASH_LEN; j++) {
@@ -596,7 +524,9 @@ export class HashIdentity {
     await initHasher();
     const path = options?.path;
     const persist = options?.persist ?? true;
-    const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
+    // WHY: no instance fallback — an identity holds no IO, so a call that wants persistence names
+    // WHY: the store-backed IO explicitly (`snapshotIOFor(store)`); absent means derive-only.
+    const snapshotIO = options?.snapshotIO;
     if (!path || options?.prior) {
       return { cached: await this.hashesFor(content, options) };
     }
@@ -628,7 +558,9 @@ export class HashIdentity {
     const pathSeed = xxh32(canonicalAnchorPath(path));
     const prior = options?.prior;
     const persist = options?.persist ?? true;
-    const snapshotIO = options?.snapshotIO ?? this.snapshotIO;
+    // WHY: no instance fallback — an identity holds no IO, so a call that wants persistence names
+    // WHY: the store-backed IO explicitly (`snapshotIOFor(store)`); absent means derive-only.
+    const snapshotIO = options?.snapshotIO;
     const upsertOptions: HashSnapshotUpsertOptions = {
       retireLeases: options?.retireLeases === true,
     };
@@ -714,19 +646,16 @@ export class HashIdentity {
   hashesForSync(content: string, path: string, blockedHashes?: ReadonlySet<string>): string[] {
     return this.fileScopedHashes(content, xxh32(canonicalAnchorPath(path)), blockedHashes);
   }
-
-  static create(snapshotIO?: HashSnapshotIO): HashIdentity {
-    return new HashIdentity(snapshotIO ? { snapshotIO } : undefined);
-  }
 }
 
+/**
+ * The stateless-derivation singleton: content-only and sync anchor derivation, nothing else.
+ *
+ * WHY: it owns no IO, so no call through it can persist — a persistence-touching caller passes
+ * WHY: `snapshotIO: snapshotIOFor(store)` to `hashesFor`/`anchorsForWalk` itself. Keeping the
+ * WHY: singleton is what lets the pure helpers stay allocation-free; it is not a store seam.
+ */
 export const defaultHashIdentity = new HashIdentity();
-
-// SAFETY: retained pass-through for test/back-compat — delegates to defaultHashIdentity; kept as small wrapper, not inlined to preserve import surface.
-// eslint-disable-next-line @typescript-eslint/no-unused-vars -- SAFETY: retained wrapper for import surface
-function setDefaultHashSnapshotIO(io: HashSnapshotIO | undefined): void {
-  defaultHashIdentity.setSnapshotIO(io);
-}
 
 export function contentOnlyHashes(content: string, blockedHashes?: ReadonlySet<string>): string[] {
   return defaultHashIdentity.contentOnlyHashes(content, blockedHashes);

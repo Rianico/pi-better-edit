@@ -1,18 +1,17 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { applyEdit } from "../../src/hashline/apply";
 import {
   findNeverServedAnchorShapes,
   buildNeverServedEditHint,
   ANCHOR_PREFIX_REMEDY,
-} from "../../src/hashline/served-guard";
-import { initHasher } from "../../src/hashline";
+} from "../../src/served-session/serve-render";
+import { initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import { EDIT_GUIDELINES } from "../../src/payload-contract.js";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";
-import { lineHashes } from "../../src/hashline";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
 import { readFile as readFsFile, writeFile } from "node:fs/promises";
 

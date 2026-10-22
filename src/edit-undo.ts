@@ -12,7 +12,13 @@ import {
   type UndoRecord,
 } from "./undo-store.js";
 import { withSortedMutationQueues } from "./mutation-queue.js";
-import { adoptPinnedSnapshotFor, anchorsForSnapshotHash, snapshotHashFor } from "./snapshot-store";
+import {
+  adoptPinnedSnapshotFor,
+  anchorsForSnapshotHash,
+  snapshotHashFor,
+  snapshotIOFor,
+} from "./snapshot-store";
+import { loadHashStore } from "./hash-store.js";
 import { sessionKeyFor } from "./served-session/session.js";
 import { readBytes, resolveTarget, writeAtomic } from "./fs-write.js";
 import { toCwd } from "./paths.js";
@@ -22,8 +28,19 @@ import { visLines, splitLines, errCode } from "./utils.js";
 import { loadP, loadGuide } from "./prompts.js";
 import { buildMetrics, type EditDetails } from "./edit-response.js";
 import { DomainError, withPayloadSubject } from "./domain-errors.js";
-import { ANCHOR_GENERATION, changedRange, lineHashes } from "./hashline/index.js";
-import { denseServeRows, type ServedRow } from "./hashline/served.js";
+import { ANCHOR_GENERATION, lineHashes } from "./hashline/hash-identity.js";
+
+/**
+ * Derives a row's anchors and persists the snapshot through the named store (arch-03).
+ *
+ * WHY: these restore paths used to reach the retired process-global IO, which silently picked a
+ * WHY: store; naming it keeps the write visible and identical to what the default resolved to.
+ */
+async function restoreHashes(content: string, path: string): Promise<string[]> {
+  return lineHashes(content, path, undefined, snapshotIOFor(await loadHashStore()));
+}
+import { changedRange } from "./hashline/apply.js";
+import { denseServeRows, type ServedRow } from "./served-session/serve-render.js";
 import { reportDiagnostic } from "./diagnostics.js";
 export interface UndoEntry {
   content: string;
@@ -306,7 +323,7 @@ async function undoCorrelatedTransaction(
             (await anchorsForSnapshotHash(member.absolutePath, restoredContentHash)) ??
             (storedIsCurrentGeneration
               ? member.hashes
-              : await lineHashes(member.content, member.absolutePath));
+              : await restoreHashes(member.content, member.absolutePath));
         } catch (error) {
           // SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo
           // SAFETY: falls back to the stored current-generation hashes (or a fresh
@@ -314,9 +331,9 @@ async function undoCorrelatedTransaction(
           reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
           restoredHashes = storedIsCurrentGeneration
             ? member.hashes
-            : await lineHashes(member.content, member.absolutePath);
+            : await restoreHashes(member.content, member.absolutePath);
         }
-        const currentHashes = await lineHashes(currentNormalized, member.absolutePath);
+        const currentHashes = await restoreHashes(currentNormalized, member.absolutePath);
         const remainingUndoCounts = new Map<string, number>();
         for (const line of visLines(member.content)) {
           remainingUndoCounts.set(line, (remainingUndoCounts.get(line) ?? 0) + 1);
@@ -699,7 +716,7 @@ export function regEditUndo(pi: ExtensionAPI): void {
               (await anchorsForSnapshotHash(mutationTargetPath, restoredContentHash)) ??
               (storedIsCurrentGeneration
                 ? undo.hashes
-                : await lineHashes(undo.content, mutationTargetPath));
+                : await restoreHashes(undo.content, mutationTargetPath));
           } catch (error) {
             // SAFETY: best-effort anchor recovery — the pinned snapshot lookup failed, so the undo
             // SAFETY: falls back to the stored current-generation hashes (or a fresh
@@ -707,9 +724,9 @@ export function regEditUndo(pi: ExtensionAPI): void {
             reportDiagnostic("edit-undo", "Failed to load anchors for undo restore:", error);
             restoredHashes = storedIsCurrentGeneration
               ? undo.hashes
-              : await lineHashes(undo.content, mutationTargetPath);
+              : await restoreHashes(undo.content, mutationTargetPath);
           }
-          const currentHashes = await lineHashes(currentNormalized, mutationTargetPath);
+          const currentHashes = await restoreHashes(currentNormalized, mutationTargetPath);
           // WHY: #173 — the summary counts come from the source line multisets, never from the
           // WHY: rendered projection: a deleted run past DIFF_REMOVED_CAP collapses behind a marker
           // WHY: row at context 0, so counting `-` rows underreported the restored lines (#169

@@ -1,4 +1,4 @@
-import { denseServeRows, type ServedRow } from "./hashline/served.js";
+import { denseServeRows, type ServedRow } from "./served-session/serve-render.js";
 import { genDiff } from "./edit-diff.js";
 import { visLines, clipLine } from "./utils.js";
 import { isDomainErrorCode, withPayloadSubject } from "./domain-errors.js";

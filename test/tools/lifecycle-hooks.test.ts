@@ -1,7 +1,10 @@
 import { describe, expect, it, vi } from "vitest";
 import { createLifecycleHooks } from "../../src/lifecycle-hooks/index.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
-import { clearServedRefusals, trackServedWriteRefusal } from "../../src/hashline/served-guard.js";
+import {
+  clearServedRefusals,
+  trackServedWriteRefusal,
+} from "../../src/served-session/serve-render.js";
 
 function ctx(overrides: Partial<{ cwd: string; sessionId: string }> = {}) {
   return {

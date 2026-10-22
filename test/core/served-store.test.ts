@@ -25,10 +25,10 @@ import {
   snapshotHashFor,
 } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
-import { HASH_STORE_VERSION, SERVED_TTL_MS } from "../../src/constants";
+import { SERVED_TTL_MS } from "../../src/constants";
+import { HASH_STORE_VERSION } from "../../src/store-kernel/index.js";
 import { initHasher } from "../../src/hashline/hasher";
-import { lineHashes } from "../../src/hashline/index.js";
-import { getWritableTempRoot } from "../support/fixtures";
+import { getWritableTempRoot, materializedLineHashes } from "../support/fixtures";
 
 let tmpHome: string;
 beforeAll(async () => {
@@ -146,7 +146,7 @@ describe("hash-store — served state (issue #2)", () => {
   it("deletes the served record, its leases and its drift meta for a path", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const hashes = await lineHashes("alpha\n", "/p.ts");
+      const hashes = await materializedLineHashes("alpha\n", "/p.ts");
       upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: hashes[0]! }]);
       const { createSessionHandle: createHandle } =
         await import("../../src/served-session/session.js");
@@ -305,7 +305,7 @@ describe("hash-store — served corrupt row handling", () => {
   it("drops leases and drift meta when a corrupt served row is reset", async () => {
     await withTempHome(async (home) => {
       const store = await loadHashStore();
-      const hashes = await lineHashes("alpha\n", "/p.ts");
+      const hashes = await materializedLineHashes("alpha\n", "/p.ts");
       upsertServed(store, "sessionA", "/p.ts", [{ position: 0, hash: hashes[0]! }]);
       const { createSessionHandle: createHandle } =
         await import("../../src/served-session/session.js");
@@ -905,7 +905,7 @@ describe("served_leases — universal lease granting (issue #81)", () => {
     store: Awaited<ReturnType<typeof loadHashStore>>,
     sessionKey = "sessionA",
   ): Promise<string[]> {
-    const hashes = await lineHashes(LEASE_CONTENT, LEASE_PATH);
+    const hashes = await materializedLineHashes(LEASE_CONTENT, LEASE_PATH);
     const { createSessionHandle: createHandle } =
       await import("../../src/served-session/session.js");
     await createHandle(sessionKey, LEASE_PATH, store).recordLeases(
@@ -942,9 +942,9 @@ describe("served_leases — universal lease granting (issue #81)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const original = "alpha\nbravo\n";
-      const originalHashes = await lineHashes(original, LEASE_PATH);
+      const originalHashes = await materializedLineHashes(original, LEASE_PATH);
       const edited = "alpha\nbravo\ncharlie\n";
-      const editedHashes = await lineHashes(edited, LEASE_PATH);
+      const editedHashes = await materializedLineHashes(edited, LEASE_PATH);
       const { createSessionHandle: createHandle } =
         await import("../../src/served-session/session.js");
       await createHandle("sessionA", LEASE_PATH, store).recordLeases(
@@ -1042,7 +1042,7 @@ describe("served_leases — universal lease granting (issue #81)", () => {
 
       // Same content as the "newly materialized snapshot" case, but not declared authoritative:
       // in-memory working-buffer hashing must leave every active lease alone (issue #81 §3.2.4).
-      await lineHashes("alpha\nbravo\ncharlie\ndelta\n", LEASE_PATH);
+      await materializedLineHashes("alpha\nbravo\ncharlie\ndelta\n", LEASE_PATH);
 
       const leases = loadLeases(store, "sessionA", LEASE_PATH);
       expect(leases).toHaveLength(3);
@@ -1060,7 +1060,7 @@ describe("served_leases — universal lease granting (issue #81)", () => {
 
       // external insert moves charlie from line 3 to line 4 without changing its text
       const drifted = "alpha\nbravo\ninserted\ncharlie\n";
-      const driftedHashes = await lineHashes(drifted, LEASE_PATH);
+      const driftedHashes = await materializedLineHashes(drifted, LEASE_PATH);
       const movedAnchor = driftedHashes[3]!;
       const { createSessionHandle: createHandle } =
         await import("../../src/served-session/session.js");
@@ -1161,7 +1161,7 @@ describe("served_session_meta — drift dedup storage (issue #81)", () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
       const content = "alpha\nbravo\n";
-      const hashes = await lineHashes(content, "/w.ts");
+      const hashes = await materializedLineHashes(content, "/w.ts");
       const { createSessionHandle: createHandle } =
         await import("../../src/served-session/session.js");
       for (const session of ["sessionA", "sessionB"]) {
@@ -1184,7 +1184,7 @@ describe("served_session_meta — drift dedup storage (issue #81)", () => {
   it("prunes leases and session meta for paths that no longer exist", async () => {
     await withTempHome(async () => {
       const store = await loadHashStore();
-      const hashes = await lineHashes("gone\n", "/gone.ts");
+      const hashes = await materializedLineHashes("gone\n", "/gone.ts");
       upsertServed(store, "sessionA", "/gone.ts", [{ position: 0, hash: hashes[0]! }]);
       addReported(store, "sessionA", "/gone.ts", [hashes[0]!]);
 

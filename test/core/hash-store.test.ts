@@ -12,8 +12,8 @@ import {
 } from "../../src/hash-store";
 import { getSnapshot, upsertSnapshot, snapshotHashFor } from "../../src/snapshot-store";
 import { upsertUndo, getUndoEntry } from "../../src/undo-store";
-import { HASH_STORE_VERSION } from "../../src/constants";
-import { ANCHOR_GENERATION } from "../../src/hashline";
+import { HASH_STORE_VERSION } from "../../src/store-kernel/index.js";
+import { ANCHOR_GENERATION } from "../../src/hashline/hash-identity.js";
 import { initHasher } from "../../src/hashline/hasher";
 import { splitLines } from "../../src/utils";
 import { getWritableTempRoot } from "../support/fixtures";

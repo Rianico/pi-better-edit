@@ -3,7 +3,7 @@ import { fileURLToPath } from "node:url";
 import { parse } from "@babel/parser";
 import { describe, expect, it, vi } from "vitest";
 import * as utils from "../../src/utils.js";
-import { MAX_HASH_LINES } from "../../src/hashline/index.js";
+import { MAX_HASH_LINES } from "../../src/hashline/hash-identity.js";
 import { decodeNormText } from "../../src/file-content/loader.js";
 import { setupReadTest, useTestHome, withTempFile } from "../support/fixtures";
 

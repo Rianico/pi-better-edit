@@ -1,26 +1,13 @@
 import { stat } from "node:fs/promises";
 import { DatabaseSync } from "node:sqlite";
 import { contentChecksum } from "../hashline/hasher.js";
-import {
-  isValidHashList,
-  CANON_VERSION,
-  ANCHOR_GENERATION,
-  canonDigest,
-  setDefaultHashSnapshotIO,
-  type HashSnapshotIO,
-  type HashSnapshotUpsertOptions,
-} from "../hashline/hash.js";
+import { isValidHashList } from "../hashline/alphabet.js";
+import { CANON_VERSION, ANCHOR_GENERATION, canonDigest } from "../hashline/hash-identity.js";
+import type { HashSnapshotUpsertOptions } from "./snapshot-io.js";
 import { DomainError } from "../domain-errors.js";
 import { splitLines } from "../utils.js";
-import {
-  loadHashStore,
-  onStoreOpen,
-  ensureSnapshotTables,
-  withStore,
-  withBusyRetry,
-  getCached,
-  type HashStore,
-} from "../hash-store.js";
+import { loadHashStore, onStoreOpen, ensureSnapshotTables, type HashStore } from "../hash-store.js";
+import { withStore, withBusyRetry, getCached } from "../store-kernel/index.js";
 import { deleteUndo } from "../undo-store.js";
 import {
   deleteServedByPath,
@@ -34,6 +21,8 @@ import type { VacuumResult } from "./vacuum.js";
 import { migrateLegacyStore } from "./migrate.js";
 
 export { vacuumSnapshots };
+export { snapshotIOFor } from "./snapshot-io.js";
+export type { HashSnapshotIO, HashSnapshotUpsertOptions } from "./snapshot-io.js";
 export type { VacuumResult };
 // WHY: the vacuum budgets are the store's retention policy constants, so the module entry keeps
 // WHY: them on the public surface; consumers must never reach into the eviction module directly.
@@ -284,7 +273,7 @@ export function positionsByIdentity(
   return map;
 }
 
-function cacheKey(checksum: string): string {
+export function cacheKey(checksum: string): string {
   return `${CANON_VERSION}:${ANCHOR_GENERATION}:${checksum}`;
 }
 
@@ -977,53 +966,6 @@ export async function upsertSnapshotsFor(entries: readonly SnapshotEnrollment[])
   const store = await loadHashStore();
   upsertSnapshots(store, entries);
 }
-
-export function snapshotIOFor(store: HashStore): HashSnapshotIO {
-  return {
-    async get(path, content, deleteCorrupt) {
-      return getSnapshot(store, path, content, deleteCorrupt ? "delete" : "keep");
-    },
-    async upsert(path, checksum, lineCount, hashes, content, options) {
-      upsertSnapshot(
-        store,
-        { path, snapshotHash: cacheKey(checksum), lineCount, hashes, content },
-        options,
-      );
-    },
-  };
-}
-
-setDefaultHashSnapshotIO({
-  async get(path, content, deleteCorrupt) {
-    const store = await loadHashStore();
-    return getSnapshot(store, path, content, deleteCorrupt ? "delete" : "keep");
-  },
-  async upsert(path, checksum, lineCount, hashes, content, options) {
-    const store = await loadHashStore();
-    upsertSnapshot(
-      store,
-      { path, snapshotHash: cacheKey(checksum), lineCount, hashes, content },
-      options,
-    );
-  },
-});
-
-onStoreOpen(() => {
-  setDefaultHashSnapshotIO({
-    async get(path, content, deleteCorrupt) {
-      const store = await loadHashStore();
-      return getSnapshot(store, path, content, deleteCorrupt ? "delete" : "keep");
-    },
-    async upsert(path, checksum, lineCount, hashes, content, options) {
-      const store = await loadHashStore();
-      upsertSnapshot(
-        store,
-        { path, snapshotHash: cacheKey(checksum), lineCount, hashes, content },
-        options,
-      );
-    },
-  });
-});
 
 export async function pruneMissingAll(): Promise<void> {
   const store = await loadHashStore();

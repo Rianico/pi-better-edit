@@ -4,7 +4,7 @@ import { join } from "path";
 import register from "../../index";
 import { loadHashStore } from "../../src/hash-store";
 import { getServed, loadLeases } from "../../src/served-session/index.js";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { snapshotHashFor } from "../../src/snapshot-store";
 import { useTestHome, withTempDir } from "../support/fixtures";
 

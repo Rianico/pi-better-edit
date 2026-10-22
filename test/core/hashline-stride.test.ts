@@ -5,7 +5,7 @@ import {
   USABLE_HASH_SPACE,
   contentOnlyHashes,
   lineHashes,
-} from "../../src/hashline";
+} from "../../src/hashline/hash-identity.js";
 import { useTestHome } from "../support/fixtures";
 
 const home = useTestHome();

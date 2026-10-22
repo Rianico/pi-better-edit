@@ -1,7 +1,7 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { writeFile, readFile } from "node:fs/promises";
 import { join } from "node:path";
-import { contentOnlyHashes } from "../../src/hashline/hash";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
 import { applyEdit } from "../../src/hashline/apply";
 import {
   findServedPrefixMismatches,
@@ -9,8 +9,8 @@ import {
   buildServedWritePrefixNote,
   buildNeverServedEditHint,
   ANCHOR_PREFIX_REMEDY,
-} from "../../src/hashline/served-guard";
-import { initHasher, lineHashes } from "../../src/hashline";
+} from "../../src/served-session/serve-render";
+import { initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
 import { HASH_SEP, canonDigest } from "../../src/hashline/hash-identity";
 import { HASH_RE } from "../../src/hashline/alphabet.js";
 import { withTempFile, withTempDir, setupIntegrationTest, useTestHome } from "../support/fixtures";

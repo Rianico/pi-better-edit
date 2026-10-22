@@ -178,7 +178,7 @@ Batch up to 32 edits to the same file in a single transaction. If any edit fails
                                          │
 ┌────────────────────────────────────────▼─────────────────────────────────────────┐
 │                       RESOLUTION & REBASE TIER                                   │
-│  src/hashline/lease-resolve.ts & src/hashline/served-verification.ts             │
+│  src/hashline/lease-resolve.ts & src/served-session/serve-render.ts             │
 │  - On-Demand CAS Materialization: Materializes current disk state                │
 │  - Patience LIS Pin Backbone: O(m log m) non-crossing line alignment             │
 │  - Minimal Displacement Tie-Breaking: Deterministic unique pairing               │

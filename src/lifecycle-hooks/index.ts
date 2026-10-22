@@ -2,16 +2,16 @@ import { lstat, readdir } from "node:fs/promises";
 import { join } from "node:path";
 import { DEFAULT_MAX_BYTES } from "@earendil-works/pi-coding-agent";
 import type { ExtensionAPI } from "@earendil-works/pi-coding-agent";
+import { initHasher as defaultInitHasher } from "../hashline/hash-identity.js";
 import {
-  initHasher as defaultInitHasher,
   findServedHashEcho,
   findServedPrefixMismatches,
   buildServedWritePrefixNote,
   LITERAL_BYPASS_NOTICE,
   clearServedRefusals,
-} from "../hashline/index.js";
+} from "../served-session/serve-render.js";
 import { assertNever, splitLines } from "../utils.js";
-import { denseServeRows, fmtServedRows, type ServedRow } from "../hashline/served.js";
+import { denseServeRows, fmtServedRows, type ServedRow } from "../served-session/serve-render.js";
 import { notifyServedSpans, servedRowsToSpans, type ServedSpan } from "../served-spans.js";
 import { notifyMutatedFile } from "../mutated-files.js";
 import { applySliceOps, isSliceOp } from "../bash-classifier.js";
@@ -31,7 +31,7 @@ import { formatRangedServedHeader } from "../file-content/served-header.js";
 async function defaultRecordDiffServes(input: {
   sessionKey: string;
   path: string;
-  servedRows: import("../hashline/served.js").ServedRow[];
+  servedRows: import("../served-session/serve-render.js").ServedRow[];
   contentHash: string;
   resultLineCount?: number;
   firstChangedLine?: number;
@@ -293,7 +293,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
   async function recordServesBestEffort(input: {
     sessionKey: string;
     path: string;
-    servedRows: import("../hashline/served.js").ServedRow[];
+    servedRows: import("../served-session/serve-render.js").ServedRow[];
     contentHash: string;
     resultLineCount?: number;
     firstChangedLine?: number;

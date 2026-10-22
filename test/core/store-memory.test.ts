@@ -105,7 +105,7 @@ describe("store — withStore fail-loud", () => {
     vi.stubEnv("XDG_CONFIG_HOME", "");
     try {
       shutdownHashStore();
-      const { withStore } = await import("../../src/hash-store");
+      const { withStore } = await import("../../src/store-kernel");
       expect(() => withStore(() => {})).toThrow(/requires an open SQLite store/);
     } finally {
       vi.unstubAllEnvs();

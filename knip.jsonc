@@ -3,7 +3,7 @@
 // package.json block would be dead config that silently drifts.)
 {
   "$schema": "https://unpkg.com/knip@6/schema.json",
-  "entry": ["index.ts", "src/hashline/index.ts", "scripts/**/*.{js,mjs,ts,mts}"],
+  "entry": ["index.ts", "scripts/**/*.{js,mjs,ts,mts}"],
   "project": ["src/**/*.ts", "scripts/**/*.{js,mjs,ts,mts}"],
   "ignore": [],
   // Strict: reports exports that nothing outside their own module imports. This is the setting that

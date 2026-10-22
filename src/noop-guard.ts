@@ -1,6 +1,10 @@
 import { NOOP_LOOP_THRESHOLD } from "./constants.js";
 import { DomainError, formatWarning } from "./domain-errors.js";
-import { buildRangeServeRows, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
+import {
+  buildRangeServeRows,
+  fmtServedRows,
+  type ResolvedRange,
+} from "./served-session/serve-render.js";
 import { createSessionHandle } from "./served-session/session.js";
 
 type NoopLoopEntry = {

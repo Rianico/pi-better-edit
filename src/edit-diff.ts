@@ -2,7 +2,7 @@ import * as Diff from "diff";
 import { DIFF_REMOVED_CAP, DIFF_REMOVED_EDGE } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
 import { ANCHOR_LEN, HASH_SEP, defaultHashIdentity } from "./hashline/hash-identity.js";
-import type { ServedRow } from "./hashline/served.js";
+import type { ServedRow } from "./served-session/serve-render.js";
 
 export type LineEnding = "\r\n" | "\n" | "\r";
 

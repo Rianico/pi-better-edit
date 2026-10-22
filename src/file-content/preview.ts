@@ -11,11 +11,13 @@ import {
   canonDigest,
   contentOnlyHashes,
   lineHashes,
-  fmtRegion,
   HASH_SEP,
   type AnchorWalk,
-} from "../hashline/index.js";
-import type { ServedRow } from "../hashline/served.js";
+} from "../hashline/hash-identity.js";
+import { fmtRegion } from "../hashline/apply.js";
+import { loadHashStore } from "../hash-store.js";
+import { snapshotIOFor } from "../snapshot-store";
+import type { ServedRow } from "../served-session/serve-render.js";
 import { mergeRanges, visibleLineTotal, walkLines, type LineRange } from "./line-walker.js";
 
 function normPosInt(value: number | undefined, name: string): number | undefined {
@@ -662,7 +664,9 @@ export async function fmtReadPreview(
     } else {
       hashes = await (plan?.cached ??
         page.assigned ??
-        (path ? lineHashes(text, path) : contentOnlyHashes(text)));
+        (path
+          ? lineHashes(text, path, undefined, snapshotIOFor(await loadHashStore()))
+          : contentOnlyHashes(text)));
     }
     return { ranges: page.ranges, hashes };
   };

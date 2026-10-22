@@ -1,7 +1,11 @@
 import { SERVED_ROWS_CAP } from "./constants.js";
 import { DomainError } from "./domain-errors.js";
-import { type ServedRow, fmtServedRows, type ResolvedRange } from "./hashline/served.js";
-import { servedPositionsOf } from "./hashline/served.js";
+import {
+  type ServedRow,
+  fmtServedRows,
+  type ResolvedRange,
+} from "./served-session/serve-render.js";
+import { servedPositionsOf } from "./served-session/serve-render.js";
 import { canonDigest } from "./hashline/hash-identity.js";
 import { ALPHA, HASH_LEN } from "./hashline/alphabet.js";
 import { currentPositionOfDrifted } from "./served-session/drift-helpers.js";

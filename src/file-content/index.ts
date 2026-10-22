@@ -25,7 +25,7 @@ import {
 import { anchorWalkFor, decodeNormText, fileSnap, snapshotIdFor, statKeyOf } from "./loader.js";
 import { fmtReadPreview, StatIdentityMismatchError, type ReadWindow } from "./preview.js";
 import { findStatSnapshotFor } from "../snapshot-store";
-import type { ServedRow } from "../hashline/served.js";
+import type { ServedRow } from "../served-session/serve-render.js";
 import type { TruncationResult } from "@earendil-works/pi-coding-agent";
 
 export type { FileStats, LFile, LoadFileOptions } from "./detection.js";

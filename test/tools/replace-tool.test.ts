@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vitest";
 import { join } from "path";
 import { readFile } from "fs/promises";
-import { lineHashes } from "../../src/hashline";
+import { lineHashes } from "../../src/hashline/hash-identity.js";
 import { editToolSchema } from "../../src/edit";
 import {
   setupIntegrationTest,

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "vitest";
-import { contentOnlyHashes, applyEdit, lineHashes, resEdit } from "../../src/hashline";
+import { contentOnlyHashes } from "../../src/hashline/hash-identity.js";
+import { applyEdit } from "../../src/hashline/apply.js";
+import { resEdit } from "../../src/hashline/resolve.js";
 import { firstNonEmpty, lastNonEmpty, splitLines } from "../../src/utils";
-import { useTestHome, expectedEditContent } from "../support/fixtures";
+import { materializedLineHashes, useTestHome, expectedEditContent } from "../support/fixtures";
 
 const home = useTestHome();
 
@@ -139,7 +141,7 @@ describe("property: single random edit per call", () => {
       const rnd = mulberry32(iter * 7919 + 13);
       const content = randContent(rnd);
       const lines = splitLines(content);
-      const hashes = await lineHashes(content, home.testPath);
+      const hashes = await materializedLineHashes(content, home.testPath);
       const span = randSpan(rnd, lines, [], !content.endsWith("\n"));
       if (!span) continue;
       const edit = resEdit({
@@ -157,7 +159,7 @@ describe("property: single random edit per call", () => {
       );
       expect(result.content).toBe(correctedExpected);
       const removedHashes = new Set(hashes.slice(span.s - 1, span.e));
-      const resultHashes = await lineHashes(correctedExpected, home.testPath, {
+      const resultHashes = await materializedLineHashes(correctedExpected, home.testPath, {
         content,
         hashes,
         removedHashes,
@@ -173,7 +175,7 @@ describe("property: sequential random edits", () => {
       const rnd = mulberry32(iter * 104729 + 7);
       const content = randContent(rnd);
       const lines = splitLines(content);
-      const hashes = await lineHashes(content, home.testPath);
+      const hashes = await materializedLineHashes(content, home.testPath);
       const spans: { s: number; e: number; repl: string[] }[] = [];
       for (let i = 0; i < 3 && spans.length < 3; i++) {
         const span = randSpan(rnd, lines, spans, !content.endsWith("\n"));
@@ -183,7 +185,7 @@ describe("property: sequential random edits", () => {
       let current = content;
       const applied: { s: number; e: number; repl: string[] }[] = [];
       for (const span of [...spans].sort((a, b) => b.s - a.s)) {
-        const currentHashes = await lineHashes(current, home.testPath);
+        const currentHashes = await materializedLineHashes(current, home.testPath);
         const edit = resEdit({
           anchor_from: currentHashes[span.s - 1]!,
           anchor_to: currentHashes[span.e - 1]!,
@@ -221,7 +223,7 @@ describe("property: sequential random edits", () => {
           removedHashes.add(hash);
         }
       }
-      const resultHashes = await lineHashes(expected, home.testPath, {
+      const resultHashes = await materializedLineHashes(expected, home.testPath, {
         content,
         hashes,
         removedHashes,
@@ -250,7 +252,7 @@ describe("property: chained stable mapping at every step", () => {
       const chainPath = `${home.testPath}-chain-${iter}`;
       let content = randContent(rnd);
       let lines = splitLines(content);
-      let hashes = await lineHashes(content, chainPath);
+      let hashes = await materializedLineHashes(content, chainPath);
       let edited = 0;
       for (let step = 0; step < 8 && edited < 6; step++) {
         const span = randSpan(rnd, lines, [], !content.endsWith("\n"));
@@ -276,7 +278,7 @@ describe("property: chained stable mapping at every step", () => {
         );
         expect(result.content).toBe(expected);
         const removedHashes = new Set(hashes.slice(span.s - 1, span.e));
-        const nextHashes = await lineHashes(expected, chainPath, {
+        const nextHashes = await materializedLineHashes(expected, chainPath, {
           content,
           hashes,
           removedHashes,
@@ -289,7 +291,7 @@ describe("property: chained stable mapping at every step", () => {
         edited++;
       }
       if (edited > 0) {
-        const reloaded = await lineHashes(content, chainPath);
+        const reloaded = await materializedLineHashes(content, chainPath);
         expect(reloaded).toEqual(hashes);
       }
     }

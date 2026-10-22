@@ -1,8 +1,9 @@
 import { describe, expect, it, beforeAll } from "vitest";
 import { readFile, writeFile } from "node:fs/promises";
 import { join } from "node:path";
-import { initHasher, lineHashes, applyEdit } from "../../src/hashline";
-import type { ServedRow } from "../../src/hashline/served-verification";
+import { initHasher, lineHashes } from "../../src/hashline/hash-identity.js";
+import { applyEdit } from "../../src/hashline/apply.js";
+import type { ServedRow } from "../../src/served-session/serve-render";
 import {
   withTempFile,
   withTempDir,

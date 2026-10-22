@@ -1,5 +1,5 @@
 import { DatabaseSync } from "node:sqlite";
-import { withBusyRetry as hashWithBusyRetry } from "./hash-store.js";
+import { withBusyRetry as hashWithBusyRetry } from "./store-kernel/index.js";
 
 interface SnapshotStore {
   get(path: string, checksum: string, lineCount: number): string[] | undefined;
