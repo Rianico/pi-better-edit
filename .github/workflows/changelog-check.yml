@@ -2,7 +2,13 @@ name: Changelog Check
 on:
   pull_request:
     branches: [main]
-    types: [opened, synchronize, reopened, ready_for_review]
+    # `edited` is load-bearing for BOTH fields the gate reads. The TITLE is audited as
+    # --squash-title, so a retitle after the last push would never be re-audited (a `feat`
+    # title could be pushed, pass, then be retitled to `perf` and merged); retitling is also
+    # exactly how a bump-alignment finding is fixed, so the fix must re-trigger the audit. The
+    # BODY carries the `Ledger-Waiver:` and `Landing:` trailers, whose documented remedy is
+    # "add the trailer and re-run" — without `edited` that re-run never happens on its own.
+    types: [opened, synchronize, reopened, ready_for_review, edited]
   push:
     branches: [main]
 permissions:
@@ -27,6 +33,21 @@ jobs:
       - uses: actions/setup-python@5fda3b95a4ea91299a34e894583c3862153e4b97
         with:
           python-version: "3.14"
+      # The gate audits the PR title as *the landed squash subject*, and that equivalence holds
+      # only because this repo sets `squash_merge_commit_title: PR_TITLE`. A repo setting has no
+      # diff, so nothing else can pin it: a silent flip back to COMMIT_OR_PR_TITLE re-opens the
+      # #166 defect (patch release carrying feature notes) behind a green check.
+      - name: Squash subject is the PR title
+        if: github.event_name == 'pull_request'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -o pipefail
+          actual=$(gh api "repos/${{ github.repository }}" --jq .squash_merge_commit_title)
+          if [ "$actual" != "PR_TITLE" ]; then
+            echo "::error::squash_merge_commit_title is '$actual', not PR_TITLE: a single-commit PR would land a commit message the ledger gate never audited."
+            exit 1
+          fi
       # The deterministic floor (ADR-0016), replacing the old synchronisation
       # check: the ledger is curated, not a projection of commit subjects, so
       # `update`-equality is no longer the invariant. On a PR the floor is given
@@ -73,12 +94,14 @@ jobs:
               '> [!warning] Changelog ledger check failed',
               '',
               'The `## [Unreleased]` block did not pass verification: well-formedness,',
-              'section integrity, duplicate identities, placeholders, or PR attribution.',
+              'section integrity, duplicate identities, placeholders, PR attribution, or the',
+              'squash-title audit: every `### Section` this PR ships must fit inside the release',
+              'level its title licenses (`feat` for Features, `fix`/`perf` for Bug Fixes).',
               '',
               'Every new entry must name this PR (`(#' + pr + ')`). Multiple entries are allowed.',
               '',
               '```bash',
-              'uv run scripts/changelog-gate.py ledger --pr ' + pr,
+              'uv run scripts/changelog-gate.py ledger --pr ' + pr + ' --squash-title "<this PR title>"',
               '```',
               '',
               'A blocked ledger is waived only with a recorded reason: add a',
@@ -91,7 +114,7 @@ jobs:
               issue_number: pr
             });
             const seen = comments.some(
-              c => c.body.includes('Changelog ledger floor failed')
+              c => c.body.includes('Changelog ledger check failed')
             );
             if (seen) return;
             await github.rest.issues.createComment({
