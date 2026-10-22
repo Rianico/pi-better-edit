@@ -9,7 +9,8 @@ Validates the `## [Unreleased]` block in CHANGELOG.md:
 - Heading and section integrity (conventional commit types)
 - Well-formedness of bullets (markdown syntax, no placeholders, no empty bullets)
 - Entry shape budget (max 100 words / 4 lines per bullet, no raw benchmark telemetry,
-  scope label on current-PR entries) and the squash-title/entry-scope alignment audit
+  scope label on current-PR entries), the squash-title/entry-scope alignment audit, and
+  the release-bump audit (a patch title cannot publish feature or breaking entries)
 - Duplicate entry detection
 - Provenance and attribution (#PR)
 - PR-boundary coverage: the current PR must carry an entry, exempt when
@@ -70,6 +71,39 @@ ENTRY_SCOPE_RE = re.compile(r"^\* \*\*(?P<scope>[^*:]+):\*\* \S")
 TITLE_SCOPE_RE = re.compile(r"^[A-Za-z]+(?:\((?P<scope>[^()]+)\))?!?:")
 HIDDEN_TYPES = frozenset({"docs", "chore", "style", "test", "ci", "build"})
 HIDDEN_TITLE_RE = re.compile(r"^(?P<type>[a-z]+)(?P<bang>!)?(\([^)]*\))?:")
+
+# Release levels a squash title or a ledger section licenses (semantic-release defaults).
+BUMP_NONE = 0
+BUMP_PATCH = 1
+BUMP_MINOR = 2
+BUMP_MAJOR = 3
+BUMP_NAMES = {
+    BUMP_NONE: "no release",
+    BUMP_PATCH: "patch",
+    BUMP_MINOR: "minor",
+    BUMP_MAJOR: "major",
+}
+
+SECTION_BUMP: dict[str, int] = {
+    "Features": BUMP_MINOR,
+    "Bug Fixes": BUMP_PATCH,
+    "Performance Improvements": BUMP_PATCH,
+    "Reverts": BUMP_PATCH,
+}
+TITLE_BUMP: dict[str, int] = {
+    "feat": BUMP_MINOR,
+    "fix": BUMP_PATCH,
+    "perf": BUMP_PATCH,
+    "revert": BUMP_PATCH,
+    "docs": BUMP_NONE,
+    "style": BUMP_NONE,
+    "chore": BUMP_NONE,
+    "refactor": BUMP_NONE,
+    "test": BUMP_NONE,
+    "build": BUMP_NONE,
+    "ci": BUMP_NONE,
+}
+BREAKING_ENTRY_RE = re.compile(r"\(BREAKING CHANGE\)\s*$")
 
 KNOWN_SECTIONS = frozenset(
     {
@@ -261,6 +295,60 @@ def title_is_hidden(title: str) -> bool:
     return match.group("type") in HIDDEN_TYPES
 
 
+def _bump_phrase(level: int) -> str:
+    return "no release" if level == BUMP_NONE else f"a {BUMP_NAMES[level]}"
+
+
+def _title_bump(squash_title: str) -> int | None:
+    """The release level the squash title licenses, or None when it is not conventional."""
+    match = HIDDEN_TITLE_RE.match(squash_title.strip().casefold())
+    if match is None:
+        return None
+    if match.group("bang") is not None:
+        return BUMP_MAJOR
+    return TITLE_BUMP.get(match.group("type"))
+
+
+def check_bump_alignment(
+    sections: dict[str, list[str]], pr: str | None, squash_title: str | None
+) -> list[Finding]:
+    """The squash title's release level must cover every ledger entry this PR adds.
+
+    A `fix(...)` title licenses a patch, so a `### Features` entry under it would publish
+    feature text inside a patch release. A breaking entry likewise needs a major title.
+    Hidden-type titles license no release, so they cannot carry a visible entry either.
+    """
+    if pr is None or not squash_title:
+        return []
+    licensed = _title_bump(squash_title)
+    if licensed is None:
+        return []
+    findings: list[Finding] = []
+    for section, entries in sections.items():
+        for entry in entries:
+            if attributed_pr(entry) != pr:
+                continue
+            breaking = BREAKING_ENTRY_RE.search(entry.rstrip()) is not None
+            required = BUMP_MAJOR if breaking else SECTION_BUMP.get(section, BUMP_NONE)
+            if required <= licensed:
+                continue
+            reason = (
+                "is marked (BREAKING CHANGE) and requires a major"
+                if breaking
+                else f"is a {BUMP_NAMES[required]} change"
+            )
+            findings.append(
+                Finding(
+                    "bump-alignment",
+                    f"squash title {squash_title.strip()!r} licenses {_bump_phrase(licensed)} "
+                    f"but the '### {section}' entry {reason}: {entry_identity(entry)!r}",
+                    hint="retitle the squash commit to the higher level (`feat(...)` for a feature, "
+                    "`feat(...)!` or a BREAKING CHANGE for a major), or land this entry in its own PR",
+                )
+            )
+    return findings
+
+
 def check_squash_alignment(
     entries: list[str], pr: str | None, squash_title: str | None
 ) -> list[Finding]:
@@ -437,6 +525,7 @@ def check_ledger(
             )
         )
     findings += check_squash_alignment(entries, pr, squash_title)
+    findings += check_bump_alignment(sections, pr, squash_title)
     return findings
 
 
