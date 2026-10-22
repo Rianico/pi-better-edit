@@ -77,8 +77,7 @@ function main() {
 
   // 1. The walked anchor array: one entry per hashed line, retained even for an
   // unshown window (src/file-content/preview.ts walkPage).
-  const walked = new Array(N);
-  for (let i = 0; i < N; i++) walked[i] = spelling(i);
+  const walked = Array.from({ length: N }, (_, i) => spelling(i));
   const afterWalked = heapMB();
 
   // 2. The spelling memo over the same strings (HASH_CACHE_MAX_ENTRIES =

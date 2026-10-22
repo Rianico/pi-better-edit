@@ -41,7 +41,7 @@ type Tool = {
   ) => Promise<{ content: Array<{ text?: string }> }>;
 };
 
-function makeTool(name: string, cwd: string): Tool {
+function makeTool(name: string): Tool {
   const tools = new Map<string, Tool>();
   let sessionStart: ((event: unknown, ctx: unknown) => unknown) | undefined;
   const pi = {
@@ -77,7 +77,7 @@ const path = join(dir, "big.txt");
 const baseContent = BASE.join("\n") + "\n";
 await writeFile(path, baseContent, "utf-8");
 await initHasher();
-const readTool = makeTool("read", dir);
+const readTool = makeTool("read");
 const ctx = { cwd: dir, ui: { notify() {} }, sessionManager: { getSessionId: () => "bench-pair" } };
 const PAGE = { file: "big.txt", windows: [{ offset: 1, limit: 500 }] };
 let request = 0;
