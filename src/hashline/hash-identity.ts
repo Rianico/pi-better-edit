@@ -476,7 +476,8 @@ export class HashIdentity {
     const oldLines = splitLines(oldContent);
     const newLines = splitLines(newContent);
     const canonCache = new Map<string, string>();
-    const newHashes = new Array<string>(newLines.length);
+    const newHashes: string[] = [];
+    newHashes.length = newLines.length;
     const used = new Uint32Array(BITSET_WORDS);
     // WHY: pre-marked before old/blocked hashes — survivor reuse is spelling
     // WHY: reuse (faithful copy), not allocation, so only fresh assignment is gated.

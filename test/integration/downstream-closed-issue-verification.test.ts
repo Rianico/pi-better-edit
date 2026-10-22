@@ -164,7 +164,7 @@ describe("closed #51 — anchor space is a line-count limit, not a retirement ac
   it("keeps serving and editing after delete-heavy churn across fresh sessions", async () => {
     const content = Array.from({ length: 20 }, (_, i) => `row ${i + 1}`).join("\n") + "\n";
     await withTempFile("churn.txt", content, async ({ cwd, path }) => {
-      const { ctx, readTool, editTool } = setupIntegrationTest(cwd);
+      const { readTool, editTool } = setupIntegrationTest(cwd);
 
       for (let round = 0; round < 6; round++) {
         const sessionCtx = ctxFor(cwd, `churn-${round}`);
