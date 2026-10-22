@@ -695,7 +695,7 @@ describe("makeServedRejection — reject-and-serve serve block", () => {
       cause: "served-range staleness",
     });
     expect(err.servedRows).toHaveLength(150);
-    expect(err.message).toMatch(/50 more — read offset=151/);
+    expect(err.message).toMatch(/50 more — use windows: \[\{ offset: 151 \}\]/);
   });
 });
 

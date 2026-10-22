@@ -57,7 +57,7 @@ describe("auto-read handler", () => {
       expect(content).toHaveLength(2);
       expect(content[0]).toEqual({ type: "text", text: "File written." });
       expect(content[1].type).toBe("text");
-      expect(content[1].text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(content[1].text).toContain("[Auto-read: ");
       expect(content[1].text).toContain("│hello");
       expect(content[1].text).toContain("│world");
     });
@@ -146,7 +146,7 @@ describe("auto-read handler", () => {
 
       expect(result).toBeDefined();
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
-      expect(content[1].text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(content[1].text).toContain("[Auto-read: ");
       expect(content[1].text).toContain("[File is empty. Use edit to insert content.]");
       expect(content[1].text).toMatch(/^[A-Za-z0-9]{4}│/m);
     });
@@ -199,7 +199,7 @@ describe("auto-read handler", () => {
     const content = (result as { content: Array<{ type: string; text: string }> }).content;
     expect(content).toHaveLength(2);
     expect(content[0]).toEqual({ type: "text", text: "File written." });
-    expect(content[1].text).toContain("--- Auto-read failed:");
+    expect(content[1].text).toContain("[Auto-read failed:");
     expect(content[1].text).toContain("[E_NOT_FOUND]");
   });
 
@@ -229,7 +229,7 @@ describe("auto-read handler", () => {
       expect(result).toBeDefined();
       const content = (result as { content: Array<{ type: string; text: string }> }).content;
       expect(content).toHaveLength(2);
-      expect(content[1].text).toContain("--- Auto-read (hashline anchors) ---");
+      expect(content[1].text).toContain("[Auto-read: ");
       expect(content[1].text).toContain("│hello");
     });
   });
@@ -259,7 +259,7 @@ describe("auto-read handler", () => {
     const content = (result as { content: Array<{ type: string; text: string }> }).content;
     expect(content).toHaveLength(1);
     expect(content[0].text).toBe(diff);
-    expect(content[0].text).not.toContain("--- Auto-read");
+    expect(content[0].text).not.toContain("[Auto-read");
   });
 
   it("returns only the diff for an undo_last_edit with auto-read on (no anchors block)", async () => {
@@ -287,7 +287,7 @@ describe("auto-read handler", () => {
     const content = (result as { content: Array<{ type: string; text: string }> }).content;
     expect(content).toHaveLength(1);
     expect(content[0].text).toBe(diff);
-    expect(content[0].text).not.toContain("--- Auto-read");
+    expect(content[0].text).not.toContain("[Auto-read");
   });
 
   it("does not auto-display lines over 50KB, matching the read tool's 50KB row budget", async () => {
@@ -355,7 +355,7 @@ describe("edit diff in model-visible text", () => {
       expect(content).toHaveLength(1);
       expect(content[0].text).toBe(diff);
       expect(content[0].text).not.toContain("Successfully edited");
-      expect(content[0].text).not.toContain("--- Auto-read");
+      expect(content[0].text).not.toContain("[Auto-read");
     });
   });
 
@@ -390,7 +390,7 @@ describe("edit diff in model-visible text", () => {
       expect(text).toContain("[E_MALFORMED_ANCHOR]");
       expect(text).toContain("[E_MALFORMED_ANCHOR]");
       expect(text).not.toContain("Successfully edited");
-      expect(text).not.toContain("--- Auto-read");
+      expect(text).not.toContain("[Auto-read");
     });
   });
 
@@ -448,7 +448,7 @@ describe("edit diff in model-visible text", () => {
       expect(content).toHaveLength(1);
       expect(content[0].text).toBe(diff);
       expect(content[0].text).not.toContain("Undone last edit");
-      expect(content[0].text).not.toContain("--- Auto-read");
+      expect(content[0].text).not.toContain("[Auto-read");
     });
   });
 

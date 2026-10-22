@@ -89,8 +89,10 @@ export function fmtServedRows(rows: ServedRow[], fileLines: string[]): string {
   return rows.map((row) => `${row.hash}${HASH_SEP}${fileLines[row.position] ?? ""}`).join("\n");
 }
 
+// WHY: the one continuation a rejected edit offers (read-chrome): the `windows` offset, not a bare
+// WHY: `offset`, because `offset` alone no longer continues anything a page footer used to name.
 function paginationHint(nextOffset: number, more: number): string {
-  return `[... ${more} more — read offset=${nextOffset}]`;
+  return `[... ${more} more — use windows: [{ offset: ${nextOffset} }]]`;
 }
 
 export function servedPositionsOf(served: (string | null)[], hash: string): number[] {

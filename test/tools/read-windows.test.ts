@@ -41,8 +41,8 @@ describe("fmtReadPreview — windows", () => {
       undefined,
       home.testPath,
     );
-    expect(result.text).toContain("=== Lines 1-2 of 12 ===");
-    expect(result.text).toContain("=== Lines 10-11 of 12 ===");
+    expect(result.text).toContain("[Lines 1-2 of 12 total]");
+    expect(result.text).toContain("[Lines 10-11 of 12 total]");
     expect(rowsOf(result.text)).toEqual(["line 1", "line 2", "line 10", "line 11"]);
     expect(result.served.map((row) => row.position)).toEqual([0, 1, 9, 10]);
   });
@@ -59,8 +59,8 @@ describe("fmtReadPreview — windows", () => {
       undefined,
       home.testPath,
     );
-    expect(result.text).toContain("=== Lines 1-3 of 12 ===");
-    expect(result.text).toContain("=== Lines 2-4 of 12 ===");
+    expect(result.text).toContain("[Lines 1-3 of 12 total]");
+    expect(result.text).toContain("[Lines 2-4 of 12 total]");
     const positions = result.served.map((row) => row.position);
     expect(positions).toEqual([0, 1, 2, 3]);
     expect(new Set(positions).size).toBe(positions.length);
@@ -84,7 +84,9 @@ describe("fmtReadPreview — windows", () => {
       undefined,
       home.testPath,
     );
-    expect(result.text).toContain("=== Lines 11-12 of 12 ===");
+    // WHY: one window is a page, and a page is named by its header (read.ts), never a section header.
+    expect(result.text).not.toContain("[Lines ");
+    expect(result.shownRange).toEqual({ startLine: 11, endLine: 12 });
     expect(result.served.map((row) => row.position)).toEqual([10, 11]);
     // WHY: a window that fit the shared budget is not a truncated result, so no metadata is owed.
     expect(result.truncation).toBeUndefined();
@@ -104,7 +106,7 @@ describe("fmtReadPreview — windows", () => {
     );
     expect(result.text).toContain("Offset 99 is beyond end of file (12 lines total)");
     // WHY: a window past EOF has no line range to name, so its section carries the message alone.
-    expect(result.text).not.toContain("=== Lines 99");
+    expect(result.text).not.toContain("[Lines 99");
     expect(result.served.map((row) => row.position)).toEqual([0]);
   });
 
@@ -140,10 +142,32 @@ describe("fmtReadPreview — windows", () => {
       2,
     );
     expect(result.truncation?.truncated).toBe(true);
-    // The window keeps its own continuation cue...
-    expect(result.text).toContain("to continue");
-    // ...but the request is not one stream, so no scalar offset is offered for it.
+    // WHY: there is no footer (spec §4.4) — the truncation shows in `details`, and the request is not
+    // WHY: one stream, so no scalar offset is offered for it either.
+    expect(result.text).not.toContain("to continue");
     expect(result.nextOffset).toBeUndefined();
+  });
+
+  it("names a lines-truncated section by the rows it showed, not the rows it asked for", async () => {
+    // WHY: the shared line budget cuts the SECOND section to one row; a header over the requested
+    // WHY: range would claim `5-6` while only line 5 was laid down — and a lines stop has no marker.
+    const result = await fmtReadPreview(
+      TWELVE,
+      {
+        windows: [
+          { offset: 1, limit: 2 },
+          { offset: 5, limit: 2 },
+        ],
+      },
+      undefined,
+      home.testPath,
+      400,
+      3,
+    );
+    expect(result.text).toContain("[Lines 1-2 of 12 total]");
+    expect(result.text).toContain("[Lines 5-5 of 12 total]");
+    expect(result.text).not.toContain("[Lines 5-6");
+    expect(result.served.map((row) => row.position)).toEqual([0, 1, 4]);
   });
 
   it("treats an empty windows array as no windows", async () => {
@@ -163,11 +187,11 @@ describe("fmtReadPreview — windows", () => {
     );
     expect(windowed.text).toContain("exceeds 200B");
     expect(windowed.text).toContain("│short two");
-    // WHY: the window named lines 1-2; "use offset=3 to continue" would offer a page it never asked for.
+    // WHY: the window named lines 1-2; a "use offset=3" cue would offer a page it never asked for.
     expect(windowed.text).not.toContain("to continue");
     expect(windowed.nextOffset).toBeUndefined();
 
-    // The same range read alone IS a page, so the hint is still owed there.
+    // The same range read alone IS a page, so its header names the range it showed.
     const single = await fmtReadPreview(
       content,
       { offset: 1, limit: 2 },
@@ -176,7 +200,8 @@ describe("fmtReadPreview — windows", () => {
       200,
       100,
     );
-    expect(single.text).toContain("to continue");
+    expect(single.shownRange).toEqual({ startLine: 1, endLine: 2 });
+    expect(single.nextOffset).toBe(3);
   });
 
   it("prefers windows over offset/limit when both are given", async () => {
@@ -261,7 +286,7 @@ describe("read tool — windows", () => {
         undefined,
         ctx,
       );
-      expect(getText(readResult)).toContain("=== Lines 1-3 of 12 ===");
+      expect(getText(readResult)).toContain("[Lines 1-3 of 12 total]");
       const byLine = anchorsByLine(getText(readResult));
       // Lines 2-3 appear in both windows; their anchors must resolve against the lease granted once.
       const edited = await editTool.execute(
@@ -321,7 +346,7 @@ describe("read tool — windows", () => {
         ctx,
       );
       const text = getText(result);
-      expect(text).not.toContain("=== Lines");
+      expect(text).not.toContain("[Lines ");
       expect(rowsOf(text)).toEqual(["line 2", "line 3"]);
     });
   });

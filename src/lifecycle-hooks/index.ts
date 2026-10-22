@@ -24,9 +24,9 @@ import {
   sessionKeyFor as defaultSessionKeyFor,
 } from "../served-session/session.js";
 import { snapshotHashFor } from "../snapshot-store";
-import { bashBanner } from "../bash-view-banner.js";
+import { BASH_AUTO_READ_LABEL, BASH_VIEW_LABEL, bashBanner } from "../bash-view-banner.js";
 import type { Decision } from "../bash-conversion/decide.js";
-import { formatRangedServedHeader } from "../file-content/served-header.js";
+import { formatPageHeader } from "../file-content/served-header.js";
 
 async function defaultRecordDiffServes(input: {
   sessionKey: string;
@@ -135,30 +135,14 @@ function singleTextBlock(event: ToolResultEvent): string | undefined {
  * WHY: (so the item-9/item-10 headers stay byte-identical), and `count` names itself instead.
  */
 function viewHeader(filePath: string, ops: readonly ViewOp[], count: number): string {
-  if (ops.some((op) => op.kind === "count")) return `[${filePath} (count: ${count})]`;
+  if (ops.some((op) => op.kind === "count")) {
+    return `[${BASH_VIEW_LABEL}: ${filePath} (count: ${count})]`;
+  }
   const markers: string[] = [];
   if (ops.some((op) => op.kind === "sortUnique")) markers.push("sorted");
   if (ops.some((op) => op.kind === "uniq")) markers.push("adjacent-dedup");
   const order = markers.length === 0 ? "" : `, ${markers.join(", ")}`;
-  return `[${filePath} (${count} ${count === 1 ? "line" : "lines"}${order})]`;
-}
-
-/**
- * WHY: the bash view's own section banner. The read tool's `=== Lines X-Y of Z ===` header is that
- * WHY: tool's rendered contract, and this view only ever reached it by rendering through a
- * WHY: one-element window. A view that names its own pages states them in the shape its sibling
- * WHY: banners already use: bracketed, a range for a slice, a bare count for a whole file.
- */
-function pureViewHeader(
-  filePath: string,
-  startLine: number,
-  endLine: number,
-  totalLines: number,
-): string {
-  if (startLine === 1 && endLine === totalLines) {
-    return `[${filePath} (${totalLines} ${totalLines === 1 ? "line" : "lines"})]`;
-  }
-  return formatRangedServedHeader(filePath, startLine, endLine, totalLines);
+  return `[${BASH_VIEW_LABEL}: ${filePath} (${count} ${count === 1 ? "line" : "lines"}${order})]`;
 }
 
 /**
@@ -452,12 +436,25 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       } catch {
         // SAFETY: best-effort counter clear — a missed clear only sharpens the next refusal message, never blocks a write.
       }
+      // WHY: the auto-read is a whole-file page, so its header states the file's total (and, when the
+      // WHY: byte budget cut it, where it stopped) — the same grammar the read tool uses (read-chrome).
+      const autoReadHeader = formatPageHeader({
+        label: BASH_AUTO_READ_LABEL,
+        file: writtenPath,
+        totalLines: resultLineCount,
+        ...(preview.truncation === undefined
+          ? {}
+          : { shownRange: { startLine: 1, endLine: preview.truncation.outputLines } }),
+        ...(preview.truncation?.truncatedBy === "bytes"
+          ? { stoppedAtBytes: preview.truncation.maxBytes }
+          : {}),
+      });
       return {
         content: [
           ...(event.content ?? []),
           {
             type: "text",
-            text: `\n\n${bashBanner("auto-read")}\n${preview.text}`,
+            text: `\n\n${autoReadHeader}\n${preview.text}`,
           },
           ...(literalBypass ? [{ type: "text" as const, text: LITERAL_BYPASS_NOTICE }] : []),
           ...prefixNotes.map((note) => ({ type: "text" as const, text: note })),
@@ -482,7 +479,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       return {
         content: [
           ...(event.content ?? []),
-          { type: "text", text: `\n\n--- Auto-read failed: ${message} ---` },
+          { type: "text", text: `\n\n[Auto-read failed: ${message}]` },
         ],
       };
     }
@@ -889,8 +886,6 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           const preview = await deps.fmtReadPreview(
             normalized,
             {
-              sectionHeader: (startLine, endLine, totalLines) =>
-                pureViewHeader(filePath, startLine, endLine, totalLines),
               windows: intervals.map((iv) => ({ offset: iv.lo, limit: iv.hi - iv.lo + 1 })),
             },
             fileHashes,
@@ -931,9 +926,19 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
           // WHY: FIRST-notice: the interception landed, so the session is told once what saved
           // WHY: the round trip and where the off switch lives; later interceptions stay silent.
           notifyBashViewOnce(ctx, sessionKey);
-          return {
-            content: [{ type: "text", text: `${bashBanner("view")}\n${preview.text}` }],
-          };
+          // WHY: the view's page names itself (read-chrome): one interval is a page, so its header
+          // WHY: carries the range; several intervals keep the total and let each section name its own.
+          const [firstInterval] = intervals;
+          const lastInterval = intervals[intervals.length - 1];
+          const header = formatPageHeader({
+            label: BASH_VIEW_LABEL,
+            file: filePath,
+            totalLines: allLines.length,
+            ...(intervals.length === 1 && firstInterval !== undefined && lastInterval !== undefined
+              ? { shownRange: { startLine: firstInterval.lo, endLine: lastInterval.hi } }
+              : {}),
+          });
+          return { content: [{ type: "text", text: `${header}\n${preview.text}` }] };
         }
 
         return await servePureViewBlock(decision.view, singleTextBlock(event), ctx);
@@ -1284,7 +1289,7 @@ export function createLifecycleHooks(overrides: Partial<LifecycleDeps> = {}): {
       content: [
         {
           type: "text",
-          text: `${bashBanner("view")}\n${viewHeader(input.filePath, input.ops, count)}\n${fmtServedRows(servedRows, input.allLines)}`,
+          text: `${viewHeader(input.filePath, input.ops, count)}\n${fmtServedRows(servedRows, input.allLines)}`,
         },
       ],
     };

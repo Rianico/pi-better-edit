@@ -24,12 +24,14 @@ describe("fmtReadPreview", () => {
     expect(emptyContentLines).toHaveLength(0);
   });
 
-  it("keeps continuation hints for partial previews", async () => {
+  it("carries no footer on a partial preview, only the details' next offset", async () => {
     const text = "a\nb\nc\nd\ne\nf\ng\nh\ni\nj\n";
     const result = await fmtReadPreview(text, { limit: 3 }, undefined, home.testPath);
-    expect(result.text).toContain(
-      "[lines 1-3 of 10. Use windows: [{ offset: 4, limit: 3 }] to continue.]",
-    );
+    // WHY: the header is the only page chrome (spec §4.4) — the continuation lives in `details`.
+    expect(result.text).not.toContain("Use windows");
+    expect(result.text.split("\n")).toHaveLength(3);
+    expect(result.nextOffset).toBe(4);
+    expect(result.shownRange).toEqual({ startLine: 1, endLine: 3 });
   });
 
   it("reports when offset is beyond end of content", async () => {

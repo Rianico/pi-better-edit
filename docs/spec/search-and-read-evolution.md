@@ -53,7 +53,7 @@ Model issues: { command: "grep 'function' src/app.ts" }
   ├─ Parses line 42 from stdout
   ├─ Verifies line 42 on disk matches stdout content byte-for-byte (D9 Gate)
   └─ Replaces stdout with:
-       --- Bash search (hashline anchors) ---
+       [Bash search (anchors)]
        [src/app.ts (1 match)]
        a1b2│function computeHash() {
      (and admits lease a1b2 into servedRows)
@@ -90,14 +90,18 @@ In `tool_result`:
 2. **Line Geometry Parsing**: Parse lines conforming to `^(\d+):(.*)$`. If any non-empty line cannot be parsed, fail closed to raw bash.
 3. **Match Cap Gate**: If match count exceeds `SEARCH_MAX_MATCHES` (default 50), pass through raw bash directly without truncation or partial leases (raw bash output is complete and safer).
 4. **Byte Equality Check**: Read disk lines via `readNormFile`. For every parsed match $L$, verify `diskLines[L - 1] === parsedContent`. Any mismatch fails closed.
-5. **Frozen Header & Formatting** (single definition site: `src/bash-view-banner.ts`; call sites must import `bashBanner(kind)`, never re-declare the text):
+5. **Frozen Header & Formatting** (single definition sites: `src/bash-view-banner.ts` for the two bracket roots and the two page labels, `src/file-content/served-header.ts` for every page/section header; call sites must import those builders, never re-declare the text):
    ```text
-   --- Bash search (hashline anchors) ---
+   [Bash search (anchors)]
    [src/app.ts (2 matches)]
    a1b2│function computeHash(input: string): string {
    c3d4│export function verifyHash(hash: string): boolean {
    ```
-   Synchronously enroll served hashes into `servedRows`.
+   A bash view is a page like any other read, so its header carries the label and the facts:
+   `[Bash view: src/app.ts (lines 1-5 of 40 total)]`, `[Bash view: src/app.ts (40 lines total)]`, and
+   for the content stage `[Bash view: src/app.ts (count: 3)]` / `[Bash view: src/app.ts (3 lines, sorted)]`.
+   The auto-read is `[Auto-read: src/big.txt (lines 1-2000 of 2500 total)]`. A path list stays
+   `[Bash file list (no anchors)]`. Synchronously enroll served hashes into `servedRows`.
 
 ---
 
@@ -164,11 +168,21 @@ export const ReadParamsSchema = Type.Object({
    - Walk lines via single-pass `walkLines`.
 
 ### 4.4 Render UX & Verbatim Contract
-- **Served File Header**: `[src/server.ts (120 lines total)]` for a whole-file or multi-window read; `[src/server.ts (lines 1-15 of 120)]` for a single windowed read (the range actually shown, matching the bash view).
-- **Window Sub-banners**: `=== Lines 1-15 of 120 ===`
+- **The header is the only page chrome** (single definition site: `src/file-content/served-header.ts`;
+  `formatPageHeader` for a page, `formatSectionHeader` for a multi-window section). There is no footer
+  and no continuation token: a page that stopped short says so in its own header, and the model
+  continues with the next `windows` offset.
+- **Page Header**: `[src/server.ts (120 lines total)]` for a whole-file page;
+  `[src/server.ts (lines 1-15 of 120 total)]` for a partial one (the range actually shown); the byte
+  budget adds `; stopped at 50.0KB`, set only when `TruncationResult.truncatedBy === "bytes"`.
+- **Window Sub-headers**: `[Lines 1-15 of 120 total]` (same `; stopped at` suffix). A single-window
+  page carries no section header — its page header already named the range.
 - **Served Rows**: Strictly `HASH│content` (no row-level line numbers).
-- **Verbatim File Header**: `[README.md (verbatim, 45 lines, no anchors)]` (rows render as plain text, no leases granted).
-- **Pagination Footer**: `[src/app.ts lines 1-50 of 200. Use windows: [{ offset: 51, limit: 50 }] to continue.]`
+- **Verbatim Page Header**: `[README.md (verbatim, 45 lines total)]` — `verbatim` is the only mode
+  marker; `no anchors` never appears in a header (rows render as plain text, no leases granted).
+- **Empty File**: `[src/app.ts (0 lines total)]` then `[File is empty. Use edit to insert content.]`.
+- **Reject-and-serve tailer**: the only remaining continuation hint is
+  `[... N more — use windows: [{ offset: 151 }]]`.
 - Diagnostic wordings for `offset > totalLines` and oversized lines (`[Line N is ... exceeds ...]`) remain byte-identical to preserve existing test pins.
 
 ---
