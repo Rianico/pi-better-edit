@@ -63,13 +63,12 @@ PERCENTILE_RE = re.compile(r"\bp\d{2}\b", re.IGNORECASE)
 SUBSECOND_RE = re.compile(r"(?<![\w.])\d+(?:[.,]\d+)?\s*(?:ns|ps|µs|μs|us)\b")
 RATE_RE = re.compile(r"\b[\w-]+/(?:s|sec|min)\b", re.IGNORECASE)
 ERROR_CODE_RE = re.compile(
-    r"\b(?:err|error|errno|exit|status)[ _-]?(?:code|no|num)?\s*[=:]\s*-?\d+\b"
-    r"|\b0x[0-9a-fA-F]{6,}\b",
+    r"\b(?:err|error|errno|exit|status)[ _-]?(?:code|no|num)?\s*[=:]\s*-?\d+\b|\b0x[0-9a-fA-F]{6,}\b",
     re.IGNORECASE,
 )
 ENTRY_SCOPE_RE = re.compile(r"^\* \*\*(?P<scope>[^*:]+):\*\* \S")
 TITLE_SCOPE_RE = re.compile(r"^[A-Za-z]+(?:\((?P<scope>[^()]+)\))?!?:")
-HIDDEN_TYPES = frozenset({"docs", "chore", "style", "test", "ci", "build"})
+HIDDEN_TYPES = frozenset({"docs", "chore", "style", "test", "ci", "build", "refactor"})
 HIDDEN_TITLE_RE = re.compile(r"^(?P<type>[a-z]+)(?P<bang>!)?(\([^)]*\))?:")
 
 # Release levels a squash title or a ledger section licenses (semantic-release defaults).
@@ -341,9 +340,11 @@ def check_bump_alignment(
                 Finding(
                     "bump-alignment",
                     f"squash title {squash_title.strip()!r} licenses {_bump_phrase(licensed)} "
-                    f"but the '### {section}' entry {reason}: {entry_identity(entry)!r}",
-                    hint="retitle the squash commit to the higher level (`feat(...)` for a feature, "
-                    "`feat(...)!` or a BREAKING CHANGE for a major), or land this entry in its own PR",
+                    + f"but the '### {section}' entry {reason}: {entry_identity(entry)!r}",
+                    hint=(
+                        "retitle the squash commit to the higher level (`feat(...)` for a feature, "
+                        "`feat(...)!` or a BREAKING CHANGE for a major), or land this entry in its own PR"
+                    ),
                 )
             )
     return findings
@@ -377,7 +378,7 @@ def check_squash_alignment(
         Finding(
             "squash-alignment",
             f"squash title scope {title.group('scope')!r} matches no entry scope under #{pr} "
-            f"(entry scopes: {', '.join(sorted(set(entry_scopes)))!r})",
+            + f"(entry scopes: {', '.join(sorted(set(entry_scopes)))!r})",
             hint="retarget the ledger entries, or reuse one of their scopes in the squash title",
         )
     ]
@@ -472,7 +473,7 @@ def check_ledger(
         return findings
 
     # Check provenance
-    landings = landing_commits() if not pr else set()
+    landings: set[str] = landing_commits() if not pr else set()
 
     for entry in entries:
         ref = attributed_pr(entry)
@@ -510,11 +511,8 @@ def check_ledger(
     # Current PR coverage: must carry at least one entry attributed to this PR
     if pr is not None:
         pr_entries = [entry for entry in entries if attributed_pr(entry) == pr]
-        if not pr_entries:
-            if not (squash_title is not None and title_is_hidden(squash_title)):
-                findings.append(
-                    Finding("landing", f"#{pr} carries no entries in {UNRELEASED_HEADING}")
-                )
+        if not pr_entries and not (squash_title is not None and title_is_hidden(squash_title)):
+            findings.append(Finding("landing", f"#{pr} carries no entries in {UNRELEASED_HEADING}"))
     # Declared squash landing without a PR number: the squash commit is unresolvable
     # from the ledger, so reachability is skipped above and only shape is checked.
     elif landing == "squash" and not entries:
