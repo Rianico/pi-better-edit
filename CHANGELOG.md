@@ -13,6 +13,10 @@
 
 * **store:** keep cache-hit reads off the LRU vacuum's store-wide pin scan by running retention only when a materialization inserts a fresh snapshot; add the covering `(file_path, served_snapshot_hash)` lease index (store version 10) so a fresh commit's sweep stays cheap on a large lease table. (#166)
 
+### Code Refactoring
+
+* **architecture:** reorganize internal module seams with no behavior change: delete the hashline barrel and retarget its importers, move serve rendering into served-session, fold the hash facade into snapshot-store/snapshot-io, move read admission into file-content/admission, sever the ambient IO fallback, and move store open/busy/janitor policy into store-kernel. (#167)
+
 ## [2.13.2] - 2026-10-21
 
 ### Features
