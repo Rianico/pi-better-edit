@@ -16,6 +16,7 @@
 ### Code Refactoring
 
 * **architecture:** reorganize internal module seams with no behavior change: delete the hashline barrel and retarget its importers, move serve rendering into served-session, fold the hash facade into snapshot-store/snapshot-io, move read admission into file-content/admission, sever the ambient IO fallback, and move store open/busy/janitor policy into store-kernel. (#167)
+* **read:** make the page header the only chrome: it states the file's total line count, the shown range, and — for a byte-truncated page — the budget it stopped at. Remove the pagination footer and unify auto-read, bash-view, search and file-list banners into the same bracket grammar; `verbatim` is the sole mode marker.
 
 ## [2.13.2] - 2026-10-21
 
