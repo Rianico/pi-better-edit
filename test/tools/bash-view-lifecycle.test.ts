@@ -3018,3 +3018,393 @@ describe("bash compound envelope (#135 C4)", () => {
     });
   });
 });
+
+describe("bash serve attribution guards (#175)", () => {
+  const drive = async (
+    dir: string,
+    files: Record<string, string>,
+    command: string,
+    stdout: string,
+    session: string,
+  ) => {
+    for (const [name, text] of Object.entries(files)) {
+      await writeFile(join(dir, name), text, "utf-8");
+    }
+    const { pi, handlers, getTool } = makeFakePi();
+    register(pi);
+    const ctx = { cwd: dir, sessionManager: { getSessionId: () => session } };
+    const result = await bashResult(handlers.get("tool_result")!, command, ctx, stdout);
+    return { text: result?.content[0]?.text, editTool: getTool("edit"), ctx };
+  };
+
+  it("G1 twin: identical stdout rows from two admitted files fail closed, zero leases", async () => {
+    await withTempDir("bash-attr-g1-", async (dir) => {
+      // WHY: (ADR-0042 D1 — bash serve admission; pending merge) never content matching, no other-file anchor bleed — file `a`
+      // WHY: line 1 (`b.txt:3:x`) and file `a:1:b.txt` line 3 (`x`) print the identical row
+      // WHY: `a:1:b.txt:3:x`, so either coordinate is a guess. Fail closed, zero leases.
+      const files = { a: "b.txt:3:x\n", "a:1:b.txt": "y\nz\nx\n" };
+      const command = "grep -n x a 'a:1:b.txt'";
+      const stdout = "a:1:b.txt:3:x\na:1:b.txt:3:x\n";
+      const { text, editTool, ctx } = await drive(dir, files, command, stdout, "attr-g1");
+      // WHY: `text` is undefined on pass-through — the twin must not render an anchor block.
+      expect(text).toBeUndefined();
+      const hashesA = await lineHashes(files.a, join(dir, "a"));
+      await expect(
+        editTool.execute(
+          "e0",
+          { file: "a", edits: [{ anchor_from: hashesA[0]!, anchor_to: hashesA[0]!, text: "X" }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("G1 dot root: recursive spelling twin fails closed", async () => {
+    await withTempDir("bash-attr-g1d-", async (dir) => {
+      // WHY: `admitted` displays are `path.join`-normalized (`a`) while bash echoes the operand
+      // WHY: spelling (`./a` for a `.` root) — candidates are resolved, never display-matched,
+      // WHY: so the `./a` vs `a:1:b.txt` twin is still ambiguous and fails closed, zero leases.
+      const files = { a: "b.txt:3:x\n", "a:1:b.txt": "y\nz\nx\n" };
+      const { text, editTool, ctx } = await drive(
+        dir,
+        files,
+        "grep -rn x .",
+        "./a:1:b.txt:3:x\n./a:1:b.txt:3:x\n",
+        "attr-g1d",
+      );
+      expect(text).toBeUndefined();
+      const hashesA = await lineHashes(files.a, join(dir, "a"));
+      await expect(
+        editTool.execute(
+          "e0",
+          { file: "a", edits: [{ anchor_from: hashesA[0]!, anchor_to: hashesA[0]!, text: "X" }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("G1 adjacent control: one admitted split still serves", async () => {
+    await withTempDir("bash-attr-g1c-", async (dir) => {
+      // WHY: only `a` is admitted, so `a:1:b.txt:3:x` has exactly one resolving split —
+      // WHY: the guard is an ambiguity refusal, not a multi-file refusal.
+      const { text, editTool, ctx } = await drive(
+        dir,
+        { a: "b.txt:3:x\n", "other.txt": "q\n" },
+        "grep -n x a other.txt",
+        "a:1:b.txt:3:x\n",
+        "attr-g1c",
+      );
+      expect(text).toBeDefined();
+      const rows = rowsOf(text!);
+      expect(rows).toHaveLength(1);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "a",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "b.txt:3:x"),
+              anchor_to: anchorFor(rows, "b.txt:3:x"),
+              text: "X",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("G2: descending and duplicated search rows fail closed, ascending serves", async () => {
+    // WHY: (serve-seam rule, one served row per file line — ADR-0042, bash serve admission,
+    // WHY: pending merge, states the no-bleed invariant, not an ordering clause) the printed
+    // WHY: number is a label whose ORDER is proven by the stream, not by matching content — a
+    // WHY: descending or repeated label owns no disjoint ordered intervals and no lease↔row
+    // WHY: bijection, even with byte-equal rows.
+    await withTempDir("bash-attr-g2-", async (dir) => {
+      const files = { "f.txt": numberedLines(3) };
+      const { text: desc } = await drive(
+        dir,
+        files,
+        "grep -n line f.txt",
+        "3:line3\n1:line1\n",
+        "attr-g2d",
+      );
+      expect(desc).toBeUndefined();
+      const {
+        text: dup,
+        editTool,
+        ctx,
+      } = await drive(dir, files, "grep -n line f.txt", "2:line2\n2:line2\n", "attr-g2u");
+      expect(dup).toBeUndefined();
+      const hashes = await lineHashes(numberedLines(3), join(dir, "f.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          { file: "f.txt", edits: [{ anchor_from: hashes[1]!, anchor_to: hashes[1]!, text: "X" }] },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+    await withTempDir("bash-attr-g2c-", async (dir) => {
+      const { text, editTool, ctx } = await drive(
+        dir,
+        { "f.txt": numberedLines(3) },
+        "grep -n line f.txt",
+        "1:line1\n2:line2\n",
+        "attr-g2c",
+      );
+      expect(text).toBeDefined();
+      const rows = rowsOf(text!);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rows, "line2"),
+              anchor_to: anchorFor(rows, "line2"),
+              text: "L2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("equal bytes in different compound blocks lease per block, the gap stays unleased", async () => {
+    // WHY: (#175) lines 1-2 ARE lines 5-6 byte-for-byte — attribution is by interval, not
+    // WHY: content, so each block leases its own lines while lines 3-4 (shown nowhere) refuse.
+    // WHY: Two setups: rejection probes always run before the one mutating edit per session,
+    // WHY: because leases are snapshot-bound and a success would move the snapshot.
+    const body = "s1\ns2\nmid1\nmid2\ns1\ns2\n";
+    const command = "printf \"h\\n\"; sed -n '1,2p' f.txt; sed -n '5,6p' f.txt";
+    const stdout = "h\ns1\ns2\ns1\ns2\n";
+    await withTempDir("bash-attr-eq-", async (dir) => {
+      const { text, editTool, ctx } = await drive(
+        dir,
+        { "f.txt": body },
+        command,
+        stdout,
+        "attr-eq-a",
+      );
+      expect(text).toBeDefined();
+      expect(rowsOf(text!)).toHaveLength(4);
+      const allHashes = await lineHashes(body, join(dir, "f.txt"));
+      for (const idx of [2, 3]) {
+        await expect(
+          editTool.execute(
+            "e0",
+            {
+              file: "f.txt",
+              edits: [{ anchor_from: allHashes[idx]!, anchor_to: allHashes[idx]!, text: "LX" }],
+            },
+            undefined,
+            undefined,
+            ctx,
+          ),
+        ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+      }
+      const rows = rowsOf(text!);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            { anchor_from: anchorFor(rows, "s1"), anchor_to: anchorFor(rows, "s1"), text: "L1" },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+    await withTempDir("bash-attr-eq-", async (dir) => {
+      // WHY: the second block's own line 5 leases independently of block 1's line 1.
+      const { text } = await drive(dir, { "f.txt": body }, command, stdout, "attr-eq-b");
+      const rows = rowsOf(text!);
+      const anchors = rows.filter((l) => l.endsWith("│s2")).map((l) => l.split("│")[0]!);
+      expect(anchors).toHaveLength(2);
+      expect(anchors[0]).not.toBe(anchors[1]);
+    });
+  });
+
+  it("CRLF in a non-leading block is normalized; BOM there fails that block closed", async () => {
+    // WHY: (ADR-0033 D9) the whole-observed CRLF/BOM normalization runs before the peel, so a
+    // WHY: CRLF block still matches its disk-predicted bytes — while a mid-stream BOM is bytes
+    // WHY: the disk prediction never contains, so the peel halts: block 1 keeps its leases,
+    // WHY: the BOM block and remainder stay raw (ADR-0039 D4 prefix semantics).
+    await withTempDir("bash-attr-crlf-", async (dir) => {
+      const { text, editTool, ctx } = await drive(
+        dir,
+        { "a.txt": "a1\n", "c.txt": "c1\r\nc2\r\n" },
+        'printf "h\\n"; cat a.txt; cat c.txt',
+        "h\na1\nc1\r\nc2\r\n",
+        "attr-crlf",
+      );
+      expect(text).toBeDefined();
+      expect(rowsOf(text!).map((l) => l.split("│").slice(1).join("│"))).toEqual(["a1", "c1", "c2"]);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "c.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rowsOf(text!), "c2"),
+              anchor_to: anchorFor(rowsOf(text!), "c2"),
+              text: "C2",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+    await withTempDir("bash-attr-bom2-", async (dir) => {
+      const { text, editTool, ctx } = await drive(
+        dir,
+        { "a.txt": "a1\n", "b.txt": "﻿b1\nb2\n" },
+        'printf "h\\n"; cat a.txt; cat b.txt',
+        "h\na1\n﻿b1\nb2\n",
+        "attr-bom2",
+      );
+      expect(text).toBeDefined();
+      // WHY: only block 1 anchored; the BOM block passes through as raw bytes.
+      expect(rowsOf(text!)).toHaveLength(1);
+      expect(text!.includes("﻿b1")).toBe(true);
+      const hashesB = await lineHashes("﻿b1\nb2\n", join(dir, "b.txt"));
+      await expect(
+        editTool.execute(
+          "e0",
+          {
+            file: "b.txt",
+            edits: [{ anchor_from: hashesB[0]!, anchor_to: hashesB[0]!, text: "X" }],
+          },
+          undefined,
+          undefined,
+          ctx,
+        ),
+      ).rejects.toThrow("E_UNKNOWN_ANCHOR");
+    });
+  });
+
+  it("a triple without the trailing newline still serves both rows", async () => {
+    // WHY: (#175) the lone-trailing-newline tolerance is pop-if, not content matching — an
+    // WHY: observed stream ending mid-row still owns two disjoint ordered intervals.
+    await withTempDir("bash-attr-nonl3-", async (dir) => {
+      const { text, editTool, ctx } = await drive(
+        dir,
+        { "a.txt": "l1\n", "b.txt": "m1\n" },
+        "grep -n 1 a.txt b.txt",
+        "a.txt:1:l1\nb.txt:1:m1",
+        "attr-nonl3",
+      );
+      expect(text).toBeDefined();
+      expect(rowsOf(text!)).toHaveLength(2);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "b.txt",
+          edits: [
+            {
+              anchor_from: anchorFor(rowsOf(text!), "m1"),
+              anchor_to: anchorFor(rowsOf(text!), "m1"),
+              text: "B",
+            },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("missing trailing newline as the last block and a one-empty-line file both serve", async () => {
+    await withTempDir("bash-attr-tail-", async (dir) => {
+      // WHY: trailing-newline-only leniency (`joined` vs `joined + "\n"`) covers the last block.
+      const { text } = await drive(
+        dir,
+        { "a.txt": "a1\n", "n.txt": "n1" },
+        'printf "h\\n"; cat a.txt; cat n.txt',
+        "h\na1\nn1",
+        "attr-tail",
+      );
+      expect(text).toBeDefined();
+      expect(rowsOf(text!)).toHaveLength(2);
+    });
+    await withTempDir("bash-attr-empty1-", async (dir) => {
+      const { text, editTool, ctx } = await drive(
+        dir,
+        { "f.txt": "\n" },
+        "cat f.txt",
+        "\n",
+        "attr-e1",
+      );
+      expect(text).toBeDefined();
+      expect(rowsOf(text!)).toHaveLength(1);
+      const rows = rowsOf(text!);
+      const ok = await editTool.execute(
+        "e1",
+        {
+          file: "f.txt",
+          edits: [
+            { anchor_from: rows[0]!.split("│")[0]!, anchor_to: rows[0]!.split("│")[0]!, text: "E" },
+          ],
+        },
+        undefined,
+        undefined,
+        ctx,
+      );
+      expect(ok.isError).toBeFalsy();
+    });
+  });
+
+  it("content that mimics geometry serves by byte equality, not by parsing content", async () => {
+    // WHY: (#175) a `grep -n` row whose text starts `5:foo` and a `cat -n` line whose text
+    // WHY: starts `5\tfoo` both serve — the label widths come from counters (leased line digits,
+    // WHY: the fixed `%6d\t` field), so mimic content can never shift a split.
+    await withTempDir("bash-attr-mimic-", async (dir) => {
+      const { text } = await drive(
+        dir,
+        { "f.txt": "5:foo\nplain\n" },
+        "grep -n foo f.txt",
+        "1:5:foo\n",
+        "attr-mimic-g",
+      );
+      expect(text).toBeDefined();
+      expect(rowsOf(text!).map((l) => l.split("│").slice(1).join("│"))).toEqual(["5:foo"]);
+    });
+    await withTempDir("bash-attr-mimic-", async (dir) => {
+      const { text } = await drive(
+        dir,
+        { "f.txt": "5\tfoo\nplain\n" },
+        "cat -n f.txt",
+        "     1\t5\tfoo\n     2\tplain\n",
+        "attr-mimic-n",
+      );
+      expect(text).toBeDefined();
+      expect(rowsOf(text!).map((l) => l.split("│").slice(1).join("│"))).toEqual([
+        "5\tfoo",
+        "plain",
+      ]);
+    });
+  });
+});
