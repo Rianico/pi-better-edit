@@ -3,7 +3,7 @@ import { join } from "node:path";
 import { describe, it, expect } from "vitest";
 
 /**
- * `CONTEXT.md` bans three synonyms the resolution seams used to carry (#101):
+ * `GLOSSARY.md` bans three synonyms the resolution seams used to carry (#101):
  * `anchor identity` (identity belongs to a line's `line_id`), `range staleness` (canonical:
  * `served-range staleness`), and `echo` for served feedback rows (canonical only inside
  * `served hash echo`). This guard keeps the rename from creeping back in (#108, #114).
@@ -108,7 +108,7 @@ function testTitleViolations(): string[] {
   return out;
 }
 
-// Scope 3 — binding domain docs (#114): `CONTEXT.md` plus `docs/adr/**.md` whole
+// Scope 3 — binding domain docs (#114): `GLOSSARY.md` plus `docs/adr/**.md` whole
 // files. Canonical allowlist: same `CANONICAL_TOKENS` plus the glossary phrase
 // `served hash echo` (via `stripCanonical`) plus the glossary `_Avoid_:` lines
 // themselves (they must name the banned synonym to define the ban, e.g.
@@ -129,7 +129,7 @@ function testTitleViolations(): string[] {
 //   that quotes a retired code
 // - removalCondition: delete an entry when its file no longer quotes every
 //   declared retired code; retire the baseline when no entries remain
-// `CONTEXT.md`, `README.md`, `src/`, and `docs/spec/` stay fully checked:
+// `GLOSSARY.md`, `README.md`, `src/`, and `docs/spec/` stay fully checked:
 // no entry may name them. Only the listed records are exempt, and only for
 // the retired codes they declare. Growth without a declared retired code
 // cannot pass: a file outside the baseline gets no stripping, and an entry
@@ -207,7 +207,7 @@ function stripBaselineCodes(text: string, codes: string[]): string {
 
 function bindingDocsViolations(): string[] {
   const byFile = baselineByFile();
-  const docs = ["CONTEXT.md", ...allFiles("docs/adr", ".md")];
+  const docs = ["GLOSSARY.md", ...allFiles("docs/adr", ".md")];
   return docs.filter((file) => {
     const text = readFileSync(file, "utf-8");
     // Strip `_Avoid_:` definition lines: the glossary must name the banned term
@@ -230,13 +230,13 @@ function bindingDocsViolations(): string[] {
   });
 }
 
-describe("CONTEXT.md terminology — forbidden synonyms stay out of src/", () => {
+describe("GLOSSARY.md terminology — forbidden synonyms stay out of src/", () => {
   it("names no `anchor identity`: identity belongs to a line_id, not a presentation anchor", () => {
     expect(matching(/anchor identity|AnchorIdentity/)).toEqual([]);
   });
 
   it("names no `range staleness`: the canonical term is served-range staleness", () => {
-    // The canonical `served-range staleness` cause value (CONTEXT.md glossary) is exempt:
+    // The canonical `served-range staleness` cause value (GLOSSARY.md glossary) is exempt:
     // only the bare synonym stays banned.
     const violations = files.filter((file) => {
       const stripped = readFileSync(file, "utf-8").replace(/served-range staleness/gi, "");
@@ -289,7 +289,7 @@ describe("quoted homonym strip stays narrow (option c)", () => {
   });
 });
 
-describe("CONTEXT.md terminology — forbidden synonyms stay out of test titles/", () => {
+describe("GLOSSARY.md terminology — forbidden synonyms stay out of test titles/", () => {
   it("keeps test titles free of the avoided synonym for served feedback (canonical family stripped)", () => {
     // Title-only: strip the canonical `served hash echo` family, then assert no
     // `/echo/i` remains on `it`/`test`/`describe` lines. A title calling served
@@ -299,9 +299,9 @@ describe("CONTEXT.md terminology — forbidden synonyms stay out of test titles/
   });
 });
 
-describe("CONTEXT.md terminology — forbidden synonyms stay out of binding docs/", () => {
+describe("GLOSSARY.md terminology — forbidden synonyms stay out of binding docs/", () => {
   it("keeps the binding domain docs free of the avoided synonym for served feedback (canonical family stripped)", () => {
-    // Whole-file over live binding docs (`CONTEXT.md` + ADRs): strip the
+    // Whole-file over live binding docs (`GLOSSARY.md` + ADRs): strip the
     // canonical `served hash echo` family, then assert no `/echo/i` remains.
     // Prose calling served rows by the avoided synonym fails here; prose
     // naming the canonical condition stays green. Listed records are exempt
@@ -349,7 +349,7 @@ describe("terminology baseline stays recorded and shrink-only", () => {
     expect(HISTORICAL_BASELINE_POLICY.reviewTrigger).not.toBe("");
     expect(HISTORICAL_BASELINE_POLICY.removalCondition).not.toBe("");
     const names = HISTORICAL_BASELINE.map((entry) => entry.file);
-    expect(names).not.toContain("CONTEXT.md");
+    expect(names).not.toContain("GLOSSARY.md");
     expect(names).not.toContain("README.md");
     expect(names.some((file) => file.startsWith("src/"))).toBe(false);
     expect(names.some((file) => file.startsWith("docs/spec/"))).toBe(false);
@@ -368,19 +368,19 @@ const ANCHOR_TERM_BASELINE: AnchorTermBaselineEntry[] = [
     term: "reversed anchors",
     avoids: ["E_REVERSED_ANCHORS"],
     supersededCode: "W_REVERSED_ANCHORS",
-    definedIn: "CONTEXT.md",
+    definedIn: "GLOSSARY.md",
   },
   {
     term: "unknown anchor",
     avoids: ["unserved anchor", "missing anchor", "stale anchor"],
     supersededCode: "E_STALE_ANCHOR",
-    definedIn: "CONTEXT.md",
+    definedIn: "GLOSSARY.md",
   },
   {
     term: "foreign anchor",
     avoids: ["cross-file anchor", "wrong-file anchor", "leaked anchor"],
     supersededCode: "E_STALE_ANCHOR",
-    definedIn: "CONTEXT.md",
+    definedIn: "GLOSSARY.md",
   },
 ];
 
@@ -408,7 +408,7 @@ describe("anchor term baseline stays recorded and shrink-only", () => {
 
 /**
  * ticket-07 — the retired wire spellings get a witness.
- * WHY: 05's doc rewrite had no witness in the suite: README.md/CONTEXT.md could
+ * WHY: 05's doc rewrite had no witness in the suite: README.md/GLOSSARY.md could
  * reintroduce a retired spelling (this header names `replace_with` in prose as
  * the example) with every test green — demonstrated by planting the spelling
  * and watching the arch suite stay green. This block is the ban half (absence)
@@ -459,7 +459,7 @@ const OP_KEY_NEEDLE =
 // comment ABOUT a live alias on a leading-marker line is textually
 // indistinguishable from the sanctioned sweep note.
 // `op` prose: the key-shaped needle does not match it (pinned by quiet arms).
-// SCOPE BY SURFACE (E26 — a reason per exclusion). IN: README.md, CONTEXT.md
+// SCOPE BY SURFACE (E26 — a reason per exclusion). IN: README.md, GLOSSARY.md
 // (the taught contract), prompts/*.md (model instructions), src/**/*.ts
 // (shipped code), scripts/ (model-facing strings on declared entry points
 // (package.json scripts — scripts/ is NOT in the shipped files list) —
@@ -484,7 +484,7 @@ function retiredWireScope(): string[] {
   // of ANY extension is then a member unless carved.
   return [
     "README.md",
-    "CONTEXT.md",
+    "GLOSSARY.md",
     ...allFiles("prompts", ".md"),
     ...srcFiles(),
     ...allFiles("scripts", "").filter((f) => !f.endsWith(".pyc")),
@@ -526,7 +526,7 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
     // fixed in one line.
     const scope = retiredWireScope();
     expect(scope.length).toBeGreaterThan(0);
-    for (const required of ["README.md", "CONTEXT.md"]) expect(scope).toContain(required);
+    for (const required of ["README.md", "GLOSSARY.md"]) expect(scope).toContain(required);
     // WHY (R1, per-file membership per surface): each surface is pinned
     // member-by-member from the pins' own walk — one surviving member can no
     // longer satisfy a surface. Carve-outs skipped (the loop would redden on
@@ -668,7 +668,7 @@ describe("retired wire spellings stay banned and corrected facts stay present (t
   });
 
   it("presence: exactly one payload per item", () => {
-    const context = readFileSync("CONTEXT.md", "utf-8");
+    const context = readFileSync("GLOSSARY.md", "utf-8");
     expect(context).toContain(
       "exactly one payload per item (`text` XOR `text_ref`, both or neither refused)",
     );
