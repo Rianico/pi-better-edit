@@ -5,6 +5,7 @@
 ### Bug Fixes
 
 * **bash:** refuse ambiguous `FILE:LINE:content` splits and non-monotone search rows at the serve seam, so every served row is byte-verified and its interval is ordered; add a real-binary attribution property suite. (#175) (#177)
+* **prompts:** state what the tools actually do — bash-view and auto-read rows count as served, `[W_*]` is informational under `[E_*]`, `cut` removes the source span instead of “retiring” it, undo names its call scope, correlated-transaction reach and `E_UNDO_STALE` invariant, a `-` diff row's hash is not served, and read's expansion off-ramp is documented. Read's always-loaded description drops 2494 → 1377 chars by dropping the page-header prose, the guidelines become plain procedural English with glossary terms (`served hash echo`, `cut`, `lease`) and without redundant negations, and the `mode: "literal"` escape stays undisclosed outside its `E_SUSPICIOUS_TEXT` refusal — now pinned by a test that can fail. (#179)
 
 ## [2.13.3] - 2026-10-22
 

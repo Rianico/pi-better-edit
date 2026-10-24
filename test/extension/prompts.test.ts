@@ -257,3 +257,26 @@ describe("EDIT_DESCRIPTION null rule (ticket-75)", () => {
     expect(EDIT_DESCRIPTION).toContain("reads as absent");
   });
 });
+
+describe("prompts carry no literal-declaration prose (ADR-0021 section 6)", () => {
+  // WHY: ADR-0021 decision 6 makes the disclosure evidence-gated: the flag is taught only by the
+  // WHY: `[E_SUSPICIOUS_TEXT]` refusal, and "`prompts/` carry zero `literal` mentions". No test
+  // WHY: pinned that invariant, so a well-meaning guidance edit could re-teach the escape silently
+  // WHY: (it did, in #179). The scan is the pin; the control below proves it can fail.
+  const namesLiteralDeclaration = (text: string): boolean => /\bliteral\b/i.test(text);
+
+  it("keeps every shipped prompt file free of the flag", () => {
+    const promptsDir = fileURLToPath(new URL("../../prompts", import.meta.url));
+    const offenders = readdirSync(promptsDir)
+      .filter((name) => name.endsWith(".md"))
+      .filter((name) => namesLiteralDeclaration(readFileSync(join(promptsDir, name), "utf-8")));
+    expect(offenders).toEqual([]);
+  });
+
+  it("detects the flag when a prompt names it (positive control)", () => {
+    expect(namesLiteralDeclaration('mode: "literal" writes the line verbatim')).toBe(true);
+    expect(namesLiteralDeclaration("join lines with a backslash-n and use an empty string")).toBe(
+      false,
+    );
+  });
+});
