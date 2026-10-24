@@ -184,7 +184,7 @@ const ALLOWLISTED_LINES = [
 // WHY: width-relative consistency for the shipped contract surface — every
 // WHY: `N-char(s)` / `N-character(s)` must name the live `HASH_LEN`, so any
 // WHY: leftover static digit fails loudly instead of shipping a mixed-width
-// WHY: contract. `README.md` and `CONTEXT.md` ship (`package.json.files`) and
+// WHY: contract. `README.md` and `GLOSSARY.md` ship (`package.json.files`) and
 // WHY: state the width, so they are scanned; `docs/**` stays out for breadth,
 // WHY: and `CHANGELOG.md` / `docs/adr/**` stay out as frozen history.
 function countWordWidths(line: string): string[] {
@@ -227,7 +227,7 @@ function contractTexts(): { label: string; text: string }[] {
   // WHY: ships to every install, so the next width change must touch it too.
   // WHY: Only these two files, not all of `docs/**` (breadth) and never
   // WHY: `CHANGELOG.md` / `docs/adr/**` (frozen history).
-  for (const file of ["README.md", "CONTEXT.md"]) {
+  for (const file of ["README.md", "GLOSSARY.md"]) {
     entries.push({ label: file, text: readFileSync(file, "utf-8") });
   }
   return entries;

@@ -10,7 +10,7 @@ import { describe, expect, it } from "vitest";
  * leaked back through comments and refusal wording once the ticket renamed it.
  *
  * The needle is BUILT DYNAMICALLY so this guard file never itself contains the retired string;
- * the one terminology record that must name the term to ban it (`CONTEXT.md` Avoid line, quoted
+ * the one terminology record that must name the term to ban it (`GLOSSARY.md` Avoid line, quoted
  * by the anchor-term baseline in `test/arch/terminology-synonyms.test.ts`) is carved out per
  * file and its need is re-asserted, shrink-only.
  */
@@ -26,7 +26,7 @@ function allFiles(dir: string, exts: string[], out: string[] = []): string[] {
 }
 
 // WHY: the anchor-term baseline must quote the avoided synonym to define the ban
-// (CONTEXT.md:32 is its source of truth); it is exempt, and its continued need is asserted
+// (GLOSSARY.md:32 is its source of truth); it is exempt, and its continued need is asserted
 // below so the carve-out cannot outlive its purpose. Nothing else is exempt: `src/` and
 // `prompts/` keep zero tolerance, `test/` keeps zero tolerance outside this one record file.
 const CARVE_OUT = new Set(["test/arch/terminology-synonyms.test.ts"]);
