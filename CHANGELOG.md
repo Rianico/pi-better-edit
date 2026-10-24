@@ -5,6 +5,7 @@
 ### Bug Fixes
 
 * **bash:** refuse ambiguous `FILE:LINE:content` splits and non-monotone search rows at the serve seam, so every served row is byte-verified and its interval is ordered; add a real-binary attribution property suite. (#175) (#177)
+* **prompts:** state what the tools actually do: bash-view and auto-read rows count as served, `[W_*]` is informational and `[E_*]` retries, `cut` removes the source span, undo names its scope and `E_UNDO_STALE` invariant, and a `-` diff row is not served. Read's description drops 2494 → 1377 chars; the guidelines become plain procedural English with glossary terms. The `mode: "literal"` escape stays refusal-only per ADR-0021, now pinned by a test. (#179) (#180)
 
 ## [2.13.3] - 2026-10-22
 
